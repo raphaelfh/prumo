@@ -82,8 +82,6 @@ ORDER_KEY = "sort_order"
 NESTING_KEY = "fields"
 #: Compared as a set of option codes, not as an opaque attribute (D1).
 OPTION_KEY = "allowed_values"
-#: Keys that carry structure rather than meaning: never an attribute change.
-STRUCTURAL_KEYS = frozenset({IDENTITY_KEY, ORDER_KEY, NESTING_KEY})
 
 _MODEL_CONTAINER_ROLE = "model_container"
 _DEFAULT_ENTRY_LABEL = "model"

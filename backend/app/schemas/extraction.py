@@ -148,7 +148,7 @@ class SectionExtractionRequest(BaseModel):
     # the dropped key — under ``forbid`` that rebuild dies terminally, no
     # retry. The pre-C1a era reached prod 2026-08-11 and the queue drains in
     # minutes, so as of 2026-08-16 an unknown key is always a live client's
-    # mistake: a loud 422, matching ``CreateProposalRequest``'s precedent.
+    # mistake: a loud 422 rather than a silently-dropped key.
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     @model_validator(mode="after")
@@ -278,8 +278,8 @@ class ModelExtractionRequest(BaseModel):
 
     # C1a: the engine is server-owned. ``extra="forbid"`` turns a client that
     # still sends ``model`` into a loud 422 instead of silently dropping its
-    # choice — same reasoning as ``CreateProposalRequest`` in
-    # ``schemas/extraction_run.py``. Safe here (and NOT on
+    # choice — the same reasoning every server-owned write schema applies.
+    # Safe here (and NOT on
     # ``SectionExtractionRequest``) because this payload is validated once, in
     # the request cycle: there is no Celery hop that could replay an older body.
     model_config = ConfigDict(populate_by_name=True, extra="forbid")

@@ -517,22 +517,16 @@ export function LlmEndpointsDialog({
                 onSubmit={form.handleSubmit(handleSubmit)}
                 className="space-y-3 rounded-md border border-border/60 p-3"
               >
-                {/* `fieldState.error` is threaded into the message on
-                    purpose: the render callback's output is memoized by
-                    React Compiler, so a subtree that does not READ the
-                    error never re-renders when validation sets one — the
-                    field would silently reject the submit with no visible
-                    reason. */}
                 <FormField
                   control={form.control}
                   name="label"
-                  render={({field, fieldState}) => (
+                  render={({field}) => (
                     <FormItem>
                       <FormLabel>{t('llmEngine', 'endpointLabelLabel')}</FormLabel>
                       <FormControl>
                         <Input {...field} disabled={saving} />
                       </FormControl>
-                      <FormMessage>{fieldState.error?.message}</FormMessage>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -540,7 +534,7 @@ export function LlmEndpointsDialog({
                 <FormField
                   control={form.control}
                   name="base_url"
-                  render={({field, fieldState}) => (
+                  render={({field}) => (
                     <FormItem>
                       <FormLabel>
                         {t('llmEngine', 'endpointBaseUrlLabel')}
@@ -551,7 +545,7 @@ export function LlmEndpointsDialog({
                       <FormDescription className="text-[11px]">
                         {t('llmEngine', 'endpointBaseUrlHint')}
                       </FormDescription>
-                      <FormMessage>{fieldState.error?.message}</FormMessage>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />

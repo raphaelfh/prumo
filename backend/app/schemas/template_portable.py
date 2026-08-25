@@ -69,6 +69,14 @@ class PortableField(BaseModel):
     other_placeholder: str | None = Field(default=None, max_length=200)
     allows_not_applicable: bool = False
     allows_not_evaluated: bool = False
+    # 0059. Export and import are both generic — ``model_validate(...,
+    # from_attributes=True)`` on the way out and ``**f.model_dump()`` in
+    # ``_field_row`` on the way in — so this line is the whole feature.
+    # Omitting it would not merely skip the flag: ``extra="forbid"`` makes
+    # a bundle exported WITH the key fail to re-import, and one exported
+    # without it degrades the template to "no key declared", which the AI
+    # path refuses rather than duplicating.
+    is_entity_key: bool = False
 
 
 class PortableSection(BaseModel):

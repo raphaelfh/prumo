@@ -54,6 +54,7 @@ from app.services.derived_judgment_service import (
     compute_derived_judgments,
     derived_spec,
     is_recommendation,
+    warn_dangling_spec_refs,
 )
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
@@ -95,7 +96,6 @@ class FieldDescriptor:
     label: str
     type: ExtractionFieldType
     allowed_values: tuple[str, ...]
-    parent_section_id: UUID
     description: str | None = None
     unit: str | None = None
     is_required: bool = False
@@ -144,23 +144,12 @@ class ArticleDescriptor:
     article_id: UUID
     header_label: str
     run_id: UUID | None
-    run_stage: ExtractionRunStage | None
     version_id: UUID | None
     # Ordered model_section instance ids; empty when the template has no
     # model_container OR when the article has zero model instances.
     model_instances: tuple[UUID, ...]
     # entity_type_id (study/section) → ORDERED instance ids for the run.
     section_instances: dict[UUID, tuple[UUID, ...]]
-
-    @property
-    def study_instances(self) -> dict[UUID, UUID]:
-        """Read-compat alias: first instance per section (legacy dict shape).
-
-        Consumed by the not-yet-migrated matrix builder + AI loader until the
-        builder slice fans out over ``section_instances``. Sections with no
-        instance are dropped (nothing to render).
-        """
-        return {sid: ids[0] for sid, ids in self.section_instances.items() if ids}
 
 
 @dataclass(frozen=True)
@@ -177,10 +166,6 @@ class ExportNotes:
 
     omitted_articles_by_stage: dict[str, int] = field(default_factory=dict)
     obsolete_fields_per_article: dict[UUID, list[str]] = field(default_factory=dict)
-    template_version_label: str = ""
-    export_mode_label: str = ""
-    anonymize_reviewer_names: bool = False
-    include_ai_metadata: bool = False
     generated_at: datetime | None = None
 
 
@@ -214,7 +199,8 @@ class AIProposalRow:
 
     Field order matches the sheet's column order; the builder writes
     ``tuple(row)`` directly via ``dataclasses.astuple`` so the two
-    contracts stay in lockstep.
+    contracts stay in lockstep. That is also why no field here is ever
+    read by name — reordering or dropping one silently shifts a column.
     """
 
     article_label: str
@@ -523,10 +509,6 @@ class ExtractionExportService(LoggerMixin):
         notes = ExportNotes(
             omitted_articles_by_stage=omitted,
             obsolete_fields_per_article=obsolete_fields,
-            template_version_label=f"{template.name} v{version.version}",
-            export_mode_label=mode.value,
-            anonymize_reviewer_names=anonymize_reviewer_names,
-            include_ai_metadata=include_ai_metadata,
             generated_at=datetime.now(UTC),
         )
 
@@ -666,8 +648,16 @@ class ExtractionExportService(LoggerMixin):
         # the rule module) are advice, not record — the stored judgments they
         # target already print as domain columns, so only the overalls become
         # derived columns.
-        spec = [d for d in derived_spec(template_schema) if not is_recommendation(d)]
+        spec_entries = derived_spec(template_schema)
+        spec = [d for d in spec_entries if not is_recommendation(d)]
         derived_labels = tuple(str(d.get("label", "")) for d in spec)
+
+        # §9: the run view already warns on spec coordinates the frozen tree
+        # no longer carries; the export used to blank the column in silence.
+        # Same event, same emitter, so the two surfaces cannot drift.
+        if spec_entries:
+            known = {(s.name, f.name) for s in sections for f in s.fields}
+            warn_dangling_spec_refs(spec_entries, known)
 
         domain_section_ids = tuple(s.entity_type_id for s, _ in domains)
         domain_labels = tuple(s.label for s, _ in domains)
@@ -847,7 +837,6 @@ class ExtractionExportService(LoggerMixin):
                         label=f.label,
                         type=f.type,
                         allowed_values=tuple(av.label for av in f.allowed_values),
-                        parent_section_id=s.entity_type_id,
                         description=f.description or f.llm_description,
                         unit=f.unit,
                         is_required=f.is_required,
@@ -979,7 +968,6 @@ class ExtractionExportService(LoggerMixin):
                     article_id=aid,
                     header_label=headers.get(aid) or _short_id(aid),
                     run_id=run.id,
-                    run_stage=ExtractionRunStage(run.stage),
                     version_id=run.version_id,
                     model_instances=tuple(model_instances),
                     section_instances={k: tuple(v) for k, v in section_instances.items()},
@@ -1225,7 +1213,6 @@ class ExtractionExportService(LoggerMixin):
                     article_id=aid,
                     header_label=headers.get(aid) or _short_id(aid),
                     run_id=run.id,
-                    run_stage=ExtractionRunStage(run.stage),
                     version_id=run.version_id,
                     model_instances=tuple(model_instances),
                     section_instances={k: tuple(v) for k, v in section_instances.items()},
@@ -1477,7 +1464,6 @@ class ExtractionExportService(LoggerMixin):
                     article_id=aid,
                     header_label=headers.get(aid) or _short_id(aid),
                     run_id=run.id,
-                    run_stage=ExtractionRunStage(run.stage),
                     version_id=run.version_id,
                     model_instances=tuple(model_instances),
                     section_instances={k: tuple(v) for k, v in section_instances.items()},

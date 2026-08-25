@@ -51,18 +51,13 @@ class TokenPayload(BaseModel):
 
     sub: str  # User ID (UUID)
     email: str | None = None
-    phone: str | None = None
     role: str = "authenticated"
     aal: str = "aal1"  # Authenticator Assurance Level
-    session_id: str | None = None
-
-    # Timestamps
-    iat: int | None = None  # Issued at
     exp: int | None = None  # Expiration
 
-    # App metadata
-    app_metadata: dict[str, Any] | None = None
-    user_metadata: dict[str, Any] | None = None
+    # Supabase sends more claims than this (phone, session_id, iat,
+    # app_metadata, ...); Pydantic's default extra="ignore" drops the ones
+    # nothing reads. Add a field here only when a caller consumes it.
 
 
 class JWKSCache:
@@ -100,11 +95,6 @@ class JWKSCache:
             self._expires_at = now + self._ttl
 
         return self._jwks
-
-    def invalidate(self) -> None:
-        """Invalida o cache forcando nova busca."""
-        self._jwks = None
-        self._expires_at = None
 
 
 # Instancia global do cache

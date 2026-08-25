@@ -51,6 +51,7 @@ fields tree here, expose a ``seed_<name>`` function, and call it from
 """
 
 import asyncio
+from collections.abc import Sequence
 from typing import Any, NamedTuple
 from uuid import UUID
 
@@ -117,6 +118,41 @@ def _entity_type_from_spec(
 # ---------------------------------------------------------------------------
 
 _CHARMS_TEMPLATE_ID = UUID("000c0000-0000-0000-0000-000000000001")
+
+
+# The repeating groups that declare an identity key, as
+# (entity_type.name, field.name). Two mechanisms must agree on this list:
+# this seed, which only ever runs on a FRESH database, and migration
+# 0059's backfill, which is the only thing that reaches an installation
+# that already holds the templates (``seed_charms`` and ``seed_charms_mm``
+# both early-return on an existing row). ``test_seed_entity_keys`` pins
+# the two against each other.
+ENTITY_KEY_FIELDS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("prediction_models", "model_name"),  # CHARMS (000c)
+        ("prediction_models", "mdl_name"),  # CHARMS + Multimodal (000e)
+        ("final_predictors", "predictor_name"),  # CHARMS (000c)
+        ("numeric_performance", "pnum_validation_type"),  # CHARMS + Multimodal (000e)
+    }
+)
+
+
+def _apply_entity_keys(
+    entity_specs: Sequence[_EntitySpec], fields: Sequence[ExtractionField]
+) -> None:
+    """Stamp ``is_entity_key`` on the fields named by ``ENTITY_KEY_FIELDS``.
+
+    Derived here rather than hand-passed at each call site so the constant
+    is load-bearing rather than decorative. The seed and migration 0059's
+    backfill must agree on ONE list; a literal at the call site would let
+    them drift while the constant sat beside them looking authoritative —
+    and the dead-code gate would be right to call it dead.
+    """
+    name_by_id = {spec.id: spec.name for spec in entity_specs}
+    for field in fields:
+        if (name_by_id.get(field.entity_type_id), field.name) in ENTITY_KEY_FIELDS:
+            field.is_entity_key = True
+
 
 # PROBAST — quality_assessment template
 _PROBAST_TEMPLATE_ID = UUID("00b00000-0000-0000-0000-000000000001")
@@ -1326,6 +1362,8 @@ async def seed_charms(session: AsyncSession) -> None:
             llm="Extract any additional information or observations about the model or extraction process.",
         ),
     ]
+
+    _apply_entity_keys(_charms_entity_types, fields)
 
     for field in fields:
         session.add(field)
@@ -3120,6 +3158,8 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
         ),
     ]
+    _apply_entity_keys(entity_types, fields)
+
     for field in fields:
         session.add(field)
 

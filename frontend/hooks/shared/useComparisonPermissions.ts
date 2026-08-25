@@ -11,7 +11,7 @@
  * @hook
  */
 
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {loadComparisonPermissions} from '@/services/projectSettingsService';
 import {type PermissionRules, type ReviewKind, type UserRole} from '@/lib/comparison/permissions';
 import {t} from '@/lib/copy';
@@ -75,10 +75,22 @@ export function useComparisonPermissions(
     }
   }
 
+  // Monotonic generation token: only the most-recent fetch may commit. Without
+  // it a slow stale response overwrites a newer one — e.g. the mount fetch
+  // (still blind) resolving after the `refresh()` a manager's Reveal fires
+  // (`onReveal` → setManagerReviewVisibility → refresh), reverting the screen
+  // to blind mode despite a successful reveal. Mirrors useQAAssessmentSession.
+  const generationRef = useRef(0);
+
   const fetchPermissions = async () => {
+    const myGeneration = ++generationRef.current;
     setPermissions(prev => ({ ...prev, loading: true, error: null }));
 
     const result = await loadComparisonPermissions(projectId, userId, kind);
+
+    // A newer fetch (param change, unmount, or a concurrent refresh) superseded
+    // this one while it was in flight — discard its now-stale result.
+    if (myGeneration !== generationRef.current) return;
 
     if (result.ok) {
       setPermissions({
@@ -111,6 +123,11 @@ export function useComparisonPermissions(
     }
     // Microtask so the loader's setState calls run in an async callback.
     queueMicrotask(() => void fetchPermissions());
+    return () => {
+      // Supersede any in-flight fetch when the coordinates change or the
+      // component unmounts, so its late resolve is dropped, not committed.
+      generationRef.current += 1;
+    };
   }, [projectId, userId, kind, fetchPermissions]);
 
   // Return refresh function to reload permissions

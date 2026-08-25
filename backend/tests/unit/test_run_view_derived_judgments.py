@@ -355,7 +355,7 @@ def test_dangling_target_pointer_warns_and_leaves_ids_none() -> None:
     spec = copy.deepcopy(_V2_SPEC)
     spec["derived_judgments"][0]["target"]["field"] = "renamed_gone"
     d1, overall, _ids = _v2_tree()
-    with patch("app.services.derived_judgment_payload.logger") as mock_logger:
+    with patch("app.services.derived_judgment_service.logger") as mock_logger:
         out = build_derived_judgments_payload(
             template_schema=spec, entity_types=[d1, overall], instances=[], values=[]
         )
@@ -383,6 +383,61 @@ def test_contribution_passes_through_to_the_breakdown() -> None:
     # Recommendation rows are named after the QUESTION (field label; the fake
     # field carries none, so its machine name), never the shared section.
     assert out[0].inputs == [RunViewDerivedInput(label="q1", value="PN", contribution="High")]
+
+
+def test_group_state_passes_through_to_the_breakdown() -> None:
+    """A performance type the study never reported must not reach the client
+    looking like an unfinished one. Both contribute nothing and neither has a
+    stored answer, so ``state`` is the only thing separating them on the wire —
+    without it the run view cannot tell a reviewer their assessment is done."""
+    spec: dict[str, Any] = {
+        "derived_judgments": [
+            {
+                "id": "eval_d4_rob",
+                "label": "Evaluation D4: Analysis",
+                "rule": "signaling_worst",
+                "target": {"section": "d4_judgment", "field": "risk_of_bias"},
+                "inputs": [
+                    {
+                        "collapse": "worst_of",
+                        "label": "Apparent performance",
+                        "inputs": [{"section": "d4_a", "field": "q1"}],
+                    },
+                    {
+                        "collapse": "worst_of",
+                        "label": "Internal validation",
+                        "inputs": [
+                            {"section": "d4_i", "field": "q1"},
+                            {"section": "d4_i", "field": "q2"},
+                        ],
+                    },
+                ],
+            }
+        ]
+    }
+    a_q1, i_q1, i_q2, rob = uuid4(), uuid4(), uuid4(), uuid4()
+    d4_a = _EntityType("d4_a", [_Field(a_q1, "q1")], label="Apparent")
+    d4_i = _EntityType("d4_i", [_Field(i_q1, "q1"), _Field(i_q2, "q2")], label="Internal")
+    judgment = _EntityType("d4_judgment", [_Field(rob, "risk_of_bias")])
+    iid = uuid4()
+
+    out = build_derived_judgments_payload(
+        template_schema=spec,
+        entity_types=[d4_a, d4_i, judgment],
+        # No instance for d4_a: the study never reported apparent performance.
+        instances=[_Instance(d4_i.id, iid)],
+        # Internal is half-answered — q2 is still blank.
+        values=[_Value(iid, i_q1, {"value": "Y"})],
+    )
+    assert out[0].value is None
+    # Read the attribute rather than comparing whole models: RunViewDerivedInput
+    # is a response schema without extra="forbid", so an unknown kwarg on the
+    # expected side would be dropped and the comparison would pass against a
+    # payload that never carried the field.
+    assert [(i.label, i.value, i.state) for i in out[0].inputs] == [
+        ("Apparent performance", None, "unreported"),
+        ("Internal validation", None, "in-progress"),
+    ]
 
 
 def test_recommendation_rows_are_named_after_the_question() -> None:

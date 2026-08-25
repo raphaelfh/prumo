@@ -39,6 +39,7 @@ from app.repositories import (
 )
 from app.schemas.llm_target import LlmTarget
 from app.services.engine_credentials import EngineCredentials
+from app.services.entity_key import existing_keys, match_or_none, resolve_key_field, stamp
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_snapshot import (
     entity_types_for_version,
@@ -403,6 +404,26 @@ class ModelExtractionService(LoggerMixin):
 
         container_label = model_entity.label if model_entity else "prediction models"
         general_instructions = await general_instructions_for_version(self.db, run.version_id)
+
+        # Re-run grounding: show the model what this article already has, so
+        # it returns the existing name instead of a fresh wording for the
+        # same entity. The identity key is free text and would otherwise
+        # drift between runs, and matching on a drifted key recreates the
+        # very duplicate it exists to prevent. Reads instances only — no
+        # reviewer-attributable row is touched.
+        already_identified: list[str] = []
+        live_container_id = await self._get_model_container_entity_type_id(run.template_id)
+        if live_container_id is not None:
+            already_identified = sorted(
+                (
+                    await existing_keys(
+                        self.db,
+                        article_id=run.article_id,
+                        entity_type_id=UUID(live_container_id),
+                    )
+                ).keys()
+            )
+
         output, usage = await extract_structured(
             output_model=model_identification.ModelIdentificationOutput,
             system_prompt=model_identification.SYSTEM_PROMPT,
@@ -410,6 +431,7 @@ class ModelExtractionService(LoggerMixin):
                 container_label=container_label,
                 article_text=pdf_text,
                 general_instructions=general_instructions,
+                existing_keys=already_identified,
             ),
             model=build_model(
                 self._engine.provider,
@@ -588,22 +610,57 @@ class ModelExtractionService(LoggerMixin):
         # B-8: unnamed models are labelled with the container's entry noun.
         label_stem = await self._pinned_entry_noun(run)
 
+        # Refuse rather than duplicate when the container declares no
+        # identity: without a key this loop cannot tell a new model from one
+        # a previous run already extracted, which is the bug it exists to
+        # fix. Raised before any write so the run fails clean.
+        await resolve_key_field(self.db, UUID(entity_type_id))
+
         for idx, model_data in enumerate(models):
-            # 1. Criar instance do modelo (parent). The label comes from
-            # the LLM's neutral "name" field — see
-            # ``app/llm/prompts/model_identification.py`` for the contract.
+            # 1. Reuse or create the model instance (parent). The label comes
+            # from the LLM's neutral "name" field — see
+            # ``app/llm/prompts/model_identification.py`` for the contract —
+            # and that same name is the container's identity.
+            model_label = model_data.get("name") or f"{label_stem} {idx + 1}"
+
+            reused_id = await match_or_none(
+                self.db,
+                article_id=article_id,
+                entity_type_id=UUID(entity_type_id),
+                key_value=model_label,
+            )
+            if reused_id is not None:
+                # A previous run already extracted this entity. Reuse the row
+                # so reviewer decisions anchored on it stay attached; the
+                # per-field guard (``skip_fields_with_human_proposals``)
+                # decides what happens to its values, and its children
+                # already exist.
+                existing = await self._instances.get_by_id(str(reused_id))
+                if existing is not None:
+                    created.append(existing)
+                    self.logger.info(
+                        "model_instance_reused",
+                        trace_id=self.trace_id,
+                        instance_id=str(reused_id),
+                        label=model_label,
+                    )
+                    continue
+
             model_instance = ExtractionInstance(
                 project_id=project_id,
                 article_id=article_id,
                 template_id=template_id,
                 entity_type_id=UUID(entity_type_id),
-                label=model_data.get("name") or f"{label_stem} {idx + 1}",
+                label=model_label,
                 sort_order=idx,
-                metadata_={
-                    "ai_extracted": True,
-                    "ai_run_id": str(run.id),
-                    "raw_extraction": model_data,
-                },
+                metadata_=stamp(
+                    {
+                        "ai_extracted": True,
+                        "ai_run_id": str(run.id),
+                        "raw_extraction": model_data,
+                    },
+                    model_label,
+                ),
                 created_by=UUID(self.user_id),
             )
 
@@ -650,23 +707,3 @@ class ModelExtractionService(LoggerMixin):
         )
 
         return created, total_children_created
-
-    def to_dict(self, result: ModelExtractionResult) -> dict[str, Any]:
-        """
-        Converte resultado for dict compativel with resposta do endpoint.
-
-        Mantem formato compativel with a Edge Function original.
-        """
-        return {
-            "extractionRunId": result.extraction_run_id,
-            "modelsCreated": result.models_created,
-            "totalModels": result.total_models,
-            "childInstancesCreated": result.child_instances_created,
-            "metadata": {
-                "duration": int(result.duration_ms),
-                "modelsFound": result.total_models,
-                "tokensPrompt": result.tokens_prompt,
-                "tokensCompletion": result.tokens_completion,
-                "tokensTotal": result.tokens_total,
-            },
-        }

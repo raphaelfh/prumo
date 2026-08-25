@@ -27,7 +27,7 @@ API (Endpoints) → Service → Repository → Model
 - Endpoints MUST NOT access the database directly (no `db.execute()` in endpoints).
 - Services MUST NOT import endpoint modules or return HTTP objects (`Request`, `Response`, `JSONResponse`). Services receive and return Python domain objects only.
 - Repositories MUST NOT contain business logic. They perform CRUD and query operations exclusively.
-- Repositories MUST call `flush()`, never `commit()`. Commit responsibility belongs to the endpoint or `UnitOfWork`.
+- Repositories MUST call `flush()`, never `commit()`. Commit responsibility belongs to whoever owns the request's session — normally the service or endpoint.
 - Every new feature MUST respect this flow: define models, create repositories, build services, expose via endpoints.
 
 **Rationale**: Strict layering enforces testability in isolation, prevents circular dependencies, and keeps HTTP concerns out of business logic.
@@ -39,7 +39,6 @@ All runtime dependencies MUST be injected, never imported as global singletons.
 - Backend: FastAPI `Depends()` for `DbSession`, `CurrentUser`, `SupabaseClient`, `RequestCtx`.
 - Services receive `db`, `user_id`, `storage`, and `trace_id` via constructor parameters.
 - Repositories are instantiated inside the service that owns them.
-- The only permitted singleton is `EventBus` (domain event pub/sub).
 - Factory functions (`app/core/factories.py`) MUST be used for complex dependency construction (e.g., `create_storage_adapter`).
 
 **Rationale**: Constructor injection makes dependencies explicit, enables test doubles, and prevents hidden coupling.
@@ -128,7 +127,7 @@ All I/O-bound operations MUST be asynchronous.
 
 - ALL database operations use `async/await` with SQLAlchemy 2.0 async sessions.
 - Long-running tasks (AI assessment, PDF processing, Zotero imports) MUST be offloaded to Celery workers via Redis broker.
-- In-process decoupled operations use the `EventBus` domain event system (`publish` / `subscribe`).
+- Decoupled operations go through Celery, not an in-process event bus.
 - Endpoints MUST NOT perform blocking I/O on the main event loop.
 
 **Rationale**: Async I/O maximizes throughput under concurrent load. Celery offloading prevents request timeouts for AI and file processing operations.
@@ -207,7 +206,7 @@ lowered). No merge is permitted when any required gate fails.
 |--------------------------|------------------------------------------------------------------------------|
 | FastAPI endpoint         | `backend/app/api/v1/endpoints/{domain}.py` + register in `router.py`         |
 | Service                  | `backend/app/services/{domain}_service.py`                                   |
-| Repository               | `backend/app/repositories/{entity}_repository.py` + add to `unit_of_work.py` |
+| Repository               | `backend/app/repositories/{entity}_repository.py` (constructed directly by the service that owns it)                        |
 | SQLAlchemy model         | `backend/app/models/{entity}.py` + export in `__init__.py`                   |
 | Pydantic schema          | `backend/app/schemas/{domain}.py`                                            |
 | App table migration      | `backend/alembic/versions/{YYYYMMDD}_{rev}_{slug}.py` (Alembic)              |

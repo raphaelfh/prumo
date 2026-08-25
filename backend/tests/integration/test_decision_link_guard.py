@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, make_ai_proposal
 
 API_PREFIX = "/api/v1/runs"
 
@@ -70,19 +70,18 @@ async def _create_run_in_extract(client: AsyncClient) -> UUID:
     return run_id
 
 
-async def _post_ai_proposal(client: AsyncClient, run_id: UUID) -> UUID:
-    res = await client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(SEED.primary_instance),
-            "field_id": str(SEED.primary_field),
-            "source": "ai",
-            "proposed_value": {"value": "candidate"},
-            "confidence_score": 0.9,
-        },
+async def _seed_ai_proposal(db: AsyncSession, run_id: UUID) -> UUID:
+    """Seed the AI basis a link can point at, on the seed coordinate.
+
+    ``db_client`` overrides ``get_db`` with this very session, so the row is
+    visible over HTTP.
+    """
+    return await make_ai_proposal(
+        db,
+        run_id=run_id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
     )
-    assert res.status_code == 201, res.text
-    return UUID(res.json()["data"]["id"])
 
 
 def _edit_body(field_id: UUID, proposal_id: UUID) -> dict[str, object]:
@@ -105,7 +104,7 @@ async def test_edit_decision_with_valid_same_coord_link_persists(
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     run_id = await _create_run_in_extract(db_client)
-    proposal_id = await _post_ai_proposal(db_client, run_id)
+    proposal_id = await _seed_ai_proposal(db_session, run_id)
 
     res = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
@@ -126,7 +125,7 @@ async def test_edit_decision_link_must_match_coord(
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     run_id = await _create_run_in_extract(db_client)
-    proposal_id = await _post_ai_proposal(db_client, run_id)
+    proposal_id = await _seed_ai_proposal(db_session, run_id)
 
     # A second, coherent field on the seed entity type (raw insert: Python-side
     # column defaults don't apply, so supply them explicitly).
@@ -200,7 +199,7 @@ async def test_edit_decision_link_same_coord_older_run_ok(
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     older_run = await _create_run_in_extract(db_client)
-    older_proposal = await _post_ai_proposal(db_client, older_run)
+    older_proposal = await _seed_ai_proposal(db_session, older_run)
 
     # uq_one_live_extraction_run_per_coord (0045): only one live run per
     # coordinate — finalize the older run before creating its successor.
@@ -242,7 +241,7 @@ async def test_link_guard_service_direct(
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     run_id = await _create_run_in_extract(db_client)
-    proposal_id = await _post_ai_proposal(db_client, run_id)
+    proposal_id = await _seed_ai_proposal(db_session, run_id)
 
     other_field = uuid4()
     await db_session.execute(
@@ -297,42 +296,16 @@ async def test_link_guard_service_direct(
 
 
 @pytest.mark.asyncio
-async def test_human_proposal_forged_source_user_id_rejected(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_manager: UUID,  # noqa: ARG001
-) -> None:
-    """``CreateProposalRequest`` carries no attribution field (extra='forbid'):
-    a client-supplied ``source_user_id`` is an unknown field and dies at body
-    validation. Human proposals are attributed server-side to the
-    authenticated caller, so forged attribution is unrepresentable at the
-    API boundary — not merely guarded."""
-    if not await _seeded(db_session):
-        pytest.skip("Missing fixtures.")
-    run_id = await _create_run_in_extract(db_client)
-
-    res = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(SEED.primary_instance),
-            "field_id": str(SEED.primary_field),
-            "source": "human",
-            "proposed_value": {"value": "typed"},
-            "source_user_id": str(SEED.outsider_profile),
-        },
-    )
-    assert res.status_code == 422, res.text
-    assert "source_user_id" in res.text
-
-
-@pytest.mark.asyncio
-async def test_viewer_cannot_write_decisions_or_proposals(
+async def test_viewer_cannot_write_decisions(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_manager: UUID,  # noqa: ARG001
 ) -> None:
     """The write endpoints are reviewer-role-gated, not just membership-gated
-    (mirrors mark_ready; a read-only viewer's writes must 403)."""
+    (mirrors mark_ready; a read-only viewer's writes must 403).
+
+    /decisions is the whole surface now — /proposals was removed once every
+    source it could accept turned out to be forbidden (ADR-0019)."""
     if not await _seeded(db_session):
         pytest.skip("Missing fixtures.")
     run_id = await _create_run_in_extract(db_client)
@@ -358,17 +331,6 @@ async def test_viewer_cannot_write_decisions_or_proposals(
     )
     assert dec.status_code == 403, dec.text
     assert "reviewer role required" in dec.json()["error"]["message"].lower()
-
-    prop = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(SEED.primary_instance),
-            "field_id": str(SEED.primary_field),
-            "source": "human",
-            "proposed_value": {"value": "viewer proposal"},
-        },
-    )
-    assert prop.status_code == 403, prop.text
 
 
 @pytest.mark.asyncio
@@ -403,29 +365,3 @@ async def test_viewer_cannot_advance_run(
         )
     ).scalar()
     assert stage == "extract", "a viewer's advance must not transition the run"
-
-
-@pytest.mark.asyncio
-async def test_system_proposal_rejected_via_api(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_manager: UUID,  # noqa: ARG001
-) -> None:
-    """'system' proposals are server-generated (reopen seeding); for QA runs
-    they hydrate into EVERY caller's baseline via current_values Layer-1, so
-    an authenticated member must not be able to plant them."""
-    if not await _seeded(db_session):
-        pytest.skip("Missing fixtures.")
-    run_id = await _create_run_in_extract(db_client)
-
-    res = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(SEED.primary_instance),
-            "field_id": str(SEED.primary_field),
-            "source": "system",
-            "proposed_value": {"value": "planted"},
-        },
-    )
-    assert res.status_code == 400, res.text
-    assert "server-generated" in res.json()["error"]["message"]

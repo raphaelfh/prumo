@@ -86,7 +86,7 @@ dockerfilePath = "Dockerfile"   # relative to source.rootDirectory (/backend)
 #
 # Project-level shared variables (set on each service — Railway has no
 # project-level shared variables in the way some platforms do):
-#   ENCRYPTION_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
+#   ENCRYPTION_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
 #   DATABASE_URL, DIRECT_DATABASE_URL, OPENAI_API_KEY, OPENAI_DEFAULT_MODEL,
 #   DEBUG=false, RATE_LIMIT_PER_MINUTE=60, PROJECT_NAME="Prumo API",
 #   API_V1_PREFIX=/api/v1, SUPABASE_ENV=production.

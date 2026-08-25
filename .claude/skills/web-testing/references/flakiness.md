@@ -10,6 +10,7 @@ Read this **before** adding retries. Flake almost always has a single root cause
 | Test fails 1-in-N runs locally                                       | Timing / race            | §2                     |
 | Test fails right after the previous test changes                     | Fixture leak             | §4                     |
 | Test fails when run in parallel, passes serially                     | Shared resource          | §5                     |
+| Vitest test **times out** in parallel, passes in isolation           | Heavy import inside `it()` | §5                   |
 | Test fails after a Vite/dep upgrade                                  | Real bug or transitive   | §6                     |
 | Test fails with `Future attached to different loop` (pytest)         | Async fixture scope      | §7                     |
 | Test fails with `Cannot read property X of undefined` intermittently | Optimistic UI race       | §8                     |
@@ -78,7 +79,20 @@ Symptoms: passes when `--workers=1`, fails parallel.
 - **Port collision:** integration test starts a service on a fixed port. Use dynamic ports or session-scope the fixture.
 - **DB row contention:** two workers UPSERT to the same row, deadlock. Use UUID keys and isolate by `project_id` per worker.
 
+- **Vitest: heavy `await import()` inside an `it()`.** Not a shared resource at
+  all — vitest defaults to `pool: 'forks'` + `isolate: true`, so files run in
+  separate processes and globals cannot leak between them. The import's
+  transform cost is charged against `testTimeout` (5000 ms); parallelism starves
+  the shared Vite pipeline and whichever import loses the race times out, so the
+  failing subset moves between runs. Fix by hoisting the import to module scope
+  (collection-time work has no deadline) — never by raising the timeout or
+  serialising the suite, which only widen the race window.
+
 Diagnostic: `npx playwright test --workers=1` confirms shared-resource theory.
+For the vitest case, don't wait for a random flake — sort per-test durations
+with `npx vitest run --reporter=json --outputFile=out.json` (module-load cost
+shows up as one multi-second test among ~0 ms siblings), then force it with
+`npx vitest run --testTimeout=1500`.
 
 ## 6. Real bug surfaced by upgrade
 

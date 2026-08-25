@@ -6,7 +6,6 @@ Permite trocar implementacao (Supabase, S3, local) sem afetar services.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 
 class StorageAdapter(ABC):
@@ -124,26 +123,6 @@ class StorageAdapter(ABC):
 
         Raises:
             StorageError: On failure.
-        """
-        pass
-
-    @abstractmethod
-    async def list_files(
-        self,
-        bucket: str,
-        prefix: str = "",
-        limit: int = 100,
-    ) -> list[dict[str, Any]]:
-        """
-        List files em um bucket/path.
-
-        Args:
-            bucket: Nome do bucket.
-            prefix: Prefixo for filtrar.
-            limit: Maximo de resultados.
-
-        Returns:
-            List de metadata of the files.
         """
         pass
 
