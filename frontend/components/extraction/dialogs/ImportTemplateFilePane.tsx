@@ -7,7 +7,7 @@
  */
 
 import {useId, useState} from 'react';
-import {Loader2, Upload} from 'lucide-react';
+import {Import, Loader2} from 'lucide-react';
 import {toast} from 'sonner';
 
 import {Alert, AlertDescription, AlertTitle} from '@/components/ui/alert';
@@ -98,7 +98,7 @@ export function ImportTemplateFilePane({projectId, onImported}: ImportTemplateFi
           disabled={!file || importing}
           onClick={() => void handleImport()}
         >
-          {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <Upload className="mr-2 h-4 w-4" aria-hidden />}
+          {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : <Import className="mr-2 h-4 w-4" aria-hidden />}
           {t('templateConfig', 'importFileSubmit')}
         </Button>
       </div>
