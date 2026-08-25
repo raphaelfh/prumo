@@ -20,8 +20,6 @@ app/api/v1/endpoints/zotero_import.py:assignment
 app/api/v1/endpoints/zotero_import.py:return-value
 app/core/factories.py:no-untyped-def
 app/core/logging.py:no-any-return
-app/domain/events/base.py:attr-defined
-app/domain/events/base.py:misc
 app/infrastructure/parsing/docling_parser.py:attr-defined
 app/infrastructure/parsing/llamaparse_parser.py:arg-type
 app/infrastructure/storage/supabase_storage.py:return-value

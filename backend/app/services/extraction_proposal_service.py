@@ -1,6 +1,6 @@
 """Service: validate + record proposals append-only."""
 
-from typing import Any
+from typing import Any, assert_never
 from uuid import UUID
 
 from sqlalchemy import select
@@ -45,7 +45,7 @@ class ExtractionProposalService:
         run_id: UUID,
         instance_id: UUID,
         field_id: UUID,
-        source: ExtractionProposalSource | str,
+        source: ExtractionProposalSource,
         proposed_value: dict[str, Any],
         source_user_id: UUID | None = None,
         confidence_score: float | None = None,
@@ -56,38 +56,38 @@ class ExtractionProposalService:
         if run is None:
             raise InvalidProposalError(f"Run {run_id} not found")
 
-        source_value = source.value if isinstance(source, ExtractionProposalSource) else source
-        # Stage gate is source-specific in the collapsed ``extract``
-        # lifecycle (pending -> extract -> consensus -> finalized):
-        #
-        # * ``ai`` / ``system`` proposals are produced during ``extract`` —
-        #   the AI phase and any system seeding both live in that single
-        #   stage now that ``proposal``/``review`` are unified.
-        # * ``human`` proposals are REJECTED outright for BOTH kinds —
-        #   humans write via /decisions:
-        #     - kind='extraction' (Layer 1b of the multi-reviewer blind
-        #       fix): a reviewer's values must land as per-user
-        #       ``ReviewerDecision`` rows so the blind-review contract holds
-        #       (``loadValuesForUser`` filters by reviewer_id). A shared
-        #       ``human`` proposal here opens the leak Layer 1 patched on
-        #       the read side; this gate closes it on the write side so a
-        #       frontend bypass (curl, agent client) cannot resurrect it.
-        #     - kind='quality_assessment': the QA form writes /decisions
-        #       since D8 unified the write path. Without this gate any API
-        #       client could still leave bare human proposals that
-        #       ``materialize_qa_decisions`` would have to reconcile at
-        #       every extract->consensus advance, forever; rejecting them
-        #       bounds that materializer to pre-D8 rows already stored.
-        if source_value in ("ai", "system"):
-            allowed_stages = {ExtractionRunStage.EXTRACT.value}
-        else:
-            raise InvalidProposalError(
-                "Human writes must go through /decisions (ReviewerDecision), not /proposals."
-            )
-        if run.stage not in allowed_stages:
+        source_value = source.value
+        # ``human`` proposals are REJECTED outright for BOTH kinds — humans
+        # write via /decisions. HUMAN is a domain-legal enum value refused for
+        # policy reasons, which is why this is a runtime check and not a type:
+        #   - kind='extraction' (Layer 1b of the multi-reviewer blind fix): a
+        #     reviewer's values must land as per-user ``ReviewerDecision``
+        #     rows so the blind-review contract holds (``loadValuesForUser``
+        #     filters by reviewer_id). A shared ``human`` proposal here opens
+        #     the leak Layer 1 patched on the read side; this gate closes it
+        #     on the write side.
+        #   - kind='quality_assessment': the QA form writes /decisions since
+        #     D8 unified the write path. Without this gate a caller could
+        #     still leave bare human proposals that ``materialize_qa_decisions``
+        #     would have to reconcile at every extract->consensus advance,
+        #     forever; rejecting them bounds that materializer to pre-D8 rows
+        #     already stored.
+        match source:
+            case ExtractionProposalSource.HUMAN:
+                raise InvalidProposalError(
+                    "Human writes must go through /decisions (ReviewerDecision), not as a proposal."
+                )
+            case ExtractionProposalSource.AI | ExtractionProposalSource.SYSTEM:
+                pass
+            case _:  # pragma: no cover - mypy proves this unreachable
+                assert_never(source)
+        # Stage gate: in the collapsed lifecycle (pending -> extract ->
+        # consensus -> finalized) the AI phase and any system seeding both
+        # live in ``extract``, now that ``proposal``/``review`` are unified.
+        if run.stage != ExtractionRunStage.EXTRACT.value:
             raise InvalidProposalError(
                 f"Cannot record proposal: kind={run.kind} run stage is "
-                f"{run.stage}, not in {sorted(allowed_stages)}."
+                f"{run.stage}, not {ExtractionRunStage.EXTRACT.value}."
             )
 
         await assert_coords_coherent(

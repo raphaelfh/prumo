@@ -18,13 +18,12 @@ from app.services.extraction_export_service import (
 )
 
 
-def _field(parent, label):
+def _field(label):
     return FieldDescriptor(
         field_id=uuid4(),
         label=label,
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=parent,
     )
 
 
@@ -35,7 +34,7 @@ def _study_section():
         label="Study characteristics",
         role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
-        fields=(_field(eid, "Author"), _field(eid, "Year")),
+        fields=(_field("Author"), _field("Year")),
         cardinality=ExtractionCardinality.ONE,
         sort_order=0,
     )
@@ -48,7 +47,7 @@ def _model_section():
         label="Model characteristics",
         role=ExtractionEntityRole.MODEL_SECTION,
         parent_entity_type_id=None,
-        fields=(_field(eid, "Method"),),
+        fields=(_field("Method"),),
         cardinality=ExtractionCardinality.MANY,
         sort_order=1,
     )
@@ -62,7 +61,6 @@ def test_one_cardinality_section_is_one_row_per_article():
         article_id=uuid4(),
         header_label="Gaca, 2011",
         run_id=run,
-        run_stage=None,
         version_id=None,
         model_instances=(),
         section_instances={study.entity_type_id: (inst,)},
@@ -90,7 +88,6 @@ def test_many_cardinality_section_fans_out_per_instance():
         article_id=uuid4(),
         header_label="Gaca, 2011",
         run_id=run,
-        run_stage=None,
         version_id=None,
         model_instances=(m_a, m_b),
         section_instances={},

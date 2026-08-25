@@ -13,7 +13,6 @@ from app.schemas.extraction_run import (
     ConsensusResultResponse,
     CreateConsensusRequest,
     CreateDecisionRequest,
-    CreateProposalRequest,
     CreateRunRequest,
     ProposalRecordResponse,
     PublishedStateResponse,
@@ -63,65 +62,6 @@ class TestCreateRunRequest:
                 article_id=uuid4(),
                 project_template_id=uuid4(),
             )
-
-
-# --------------------------------------------------------------------------- #
-# CreateProposalRequest  (source pattern ^(ai|human|system)$)
-# --------------------------------------------------------------------------- #
-class TestCreateProposalRequest:
-    @staticmethod
-    def _kwargs(**kw: object) -> dict[str, object]:
-        base: dict[str, object] = {
-            "instance_id": uuid4(),
-            "field_id": uuid4(),
-            "source": "ai",
-            "proposed_value": {"value": 1},
-        }
-        base.update(kw)
-        return base
-
-    @pytest.mark.parametrize("source", ["ai", "human", "system"])
-    def test_valid_sources_accepted(self, source: str) -> None:
-        req = CreateProposalRequest(**self._kwargs(source=source))
-        assert req.source == source
-
-    @pytest.mark.parametrize("source", ["robot", "AI", "human ", "", "ai|human"])
-    def test_invalid_source_rejected(self, source: str) -> None:
-        with pytest.raises(ValidationError):
-            CreateProposalRequest(**self._kwargs(source=source))
-
-    def test_optional_defaults(self) -> None:
-        req = CreateProposalRequest(**self._kwargs())
-        assert req.confidence_score is None
-        assert req.rationale is None
-
-    def test_all_optionals_populated(self) -> None:
-        req = CreateProposalRequest(**self._kwargs(confidence_score=0.9, rationale="why"))
-        assert req.confidence_score == 0.9
-        assert req.rationale == "why"
-
-    def test_client_attribution_rejected(self) -> None:
-        """Attribution is server-side: a client-supplied ``source_user_id``
-        is an unknown field under ``extra='forbid'``, not silently dropped."""
-        with pytest.raises(ValidationError):
-            CreateProposalRequest(**self._kwargs(source_user_id=uuid4()))
-
-    def test_client_verification_sibling_rejected(self) -> None:
-        """``proposed_value.verification`` is the server-written Verified-mode
-        verdict (provenance): a client-sent copy is a loud 422 — the
-        ``source_user_id`` forgery precedent — never a silently-stored one."""
-        with pytest.raises(ValidationError):
-            CreateProposalRequest(
-                **self._kwargs(
-                    proposed_value={"value": 1, "verification": {"verdict": "confirmed"}}
-                )
-            )
-
-    def test_missing_proposed_value_rejected(self) -> None:
-        kwargs = self._kwargs()
-        del kwargs["proposed_value"]
-        with pytest.raises(ValidationError):
-            CreateProposalRequest(**kwargs)
 
 
 # --------------------------------------------------------------------------- #

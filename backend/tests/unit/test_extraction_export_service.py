@@ -146,13 +146,12 @@ def _make_instance(
     return inst
 
 
-def _make_field(label: str, parent: UUID) -> FieldDescriptor:
+def _make_field(label: str) -> FieldDescriptor:
     return FieldDescriptor(
         field_id=uuid4(),
         label=label,
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=parent,
     )
 
 
@@ -163,7 +162,7 @@ def _make_section(label: str, role: ExtractionEntityRole) -> SectionDescriptor:
         label=label,
         role=role,
         parent_entity_type_id=None,
-        fields=(_make_field(f"{label} F1", eid),),
+        fields=(_make_field(f"{label} F1"),),
     )
 
 
@@ -527,7 +526,7 @@ class TestResolveArticlesForConsensus:
         assert len(articles) == 1
         desc = articles[0]
         assert len(desc.model_instances) == 2
-        assert study_entity_id in desc.study_instances
+        assert study_entity_id in desc.section_instances
         assert omitted == {}
 
 
@@ -745,11 +744,10 @@ class TestLoadAiProposalRows:
             article_id=article_id or uuid4(),
             header_label="Test Article",
             run_id=run_id or uuid4(),
-            run_stage=ExtractionRunStage.FINALIZED,
             version_id=None,
             model_instances=model_instances,
-            # ``study_instances`` is now a read-compat alias property; build
-            # the ordered ``section_instances`` from the legacy single-id arg.
+            # Fan the one-instance-per-section shorthand out to the ordered
+            # tuples ArticleDescriptor actually carries.
             section_instances={sid: (iid,) for sid, iid in (study_instances or {}).items()},
         )
 
@@ -762,7 +760,6 @@ class TestLoadAiProposalRows:
                 article_id=uuid4(),
                 header_label="No Run",
                 run_id=None,
-                run_stage=None,
                 version_id=None,
                 model_instances=(),
                 section_instances={},
@@ -832,7 +829,6 @@ class TestLoadAiProposalRows:
                     label="Age",
                     type=ExtractionFieldType.TEXT,
                     allowed_values=(),
-                    parent_section_id=entity_type_id,
                 ),
             ),
         )
@@ -2501,7 +2497,6 @@ class TestAiProposalRowsModelInstances:
             article_id=article_id,
             header_label="Test Article",
             run_id=run_id,
-            run_stage=ExtractionRunStage.FINALIZED,
             version_id=None,
             model_instances=(model_instance_id1, model_instance_id2),
             section_instances={},

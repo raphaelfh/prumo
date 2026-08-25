@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, make_ai_proposal
 
 API_PREFIX = "/api/v1/runs"
 
@@ -404,236 +404,30 @@ async def test_advance_for_nonexistent_run_returns_404(
     assert response.status_code == 404
 
 
-# =================== POST /runs/{id}/proposals ===================
+# =================== POST /runs/{id}/proposals — REMOVED (ADR-0019) ===================
 
 
 @pytest.mark.asyncio
-async def test_create_proposal_returns_201(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _, instance_id, field_id = fx
+async def test_proposals_route_no_longer_exists(db_client: AsyncClient) -> None:
+    """The proposal write path is closed at the routing table, not by a guard.
 
-    created = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "extract")
+    No source could ever be accepted: 'ai' and 'system' are server-generated
+    and written in-process, and 'human' belongs on /decisions so each
+    reviewer's value lands as a per-user ReviewerDecision. Rather than keep an
+    endpoint whose OpenAPI entry advertises a 201 it can never return, the
+    route was removed (ADR-0019). The stage and coordinate-coherence guards it
+    used to surface live on ExtractionProposalService, which is where the
+    pipeline actually reaches them.
 
+    Starlette resolves routing before it reads the body, so no run, no auth and
+    no payload are needed to prove the route is gone — and varying ``source``
+    would exercise the same routing miss three times.
+    """
     response = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"text": "candidate"},
-            "confidence_score": 0.91,
-            "rationale": "model rationale",
-        },
+        f"{API_PREFIX}/{uuid4()}/proposals",
+        json={"instance_id": str(uuid4()), "field_id": str(uuid4()), "source": "ai"},
     )
-    assert response.status_code == 201, response.text
-    payload = response.json()
-    assert payload["ok"] is True
-    data = payload["data"]
-    assert UUID(data["id"])
-    assert data["run_id"] == str(run_id)
-    assert data["source"] == "ai"
-    assert data["confidence_score"] == 0.91
-
-
-@pytest.mark.asyncio
-async def test_create_proposal_invalid_source_returns_422(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _, instance_id, field_id = fx
-
-    created = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "extract")
-
-    response = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "robot",  # not in enum
-            "proposed_value": {"v": "x"},
-        },
-    )
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_create_proposal_client_verification_returns_422(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    """``proposed_value.verification`` is server-written Verified-mode
-    provenance — a client-sent copy is refused loudly (the ``source_user_id``
-    forgery precedent), never stored."""
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _, instance_id, field_id = fx
-
-    created = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "extract")
-
-    response = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"value": "x", "verification": {"verdict": "confirmed"}},
-        },
-    )
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_create_proposal_outside_proposal_stage_returns_400(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    """Run in PENDING stage -> proposal write must fail with 400."""
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _, instance_id, field_id = fx
-
-    created = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(created["id"])
-
-    response = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"v": "x"},
-        },
-    )
-    assert response.status_code == 400
-    body = response.json()
-    assert body["ok"] is False
-    assert "stage" in body["error"]["message"].lower()
-
-
-@pytest.mark.asyncio
-async def test_create_proposal_with_incoherent_coords_returns_422(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _, instance_id, _ = fx
-
-    other_field_row = await db_session.execute(
-        text(
-            """
-            SELECT f.id FROM public.extraction_fields f
-            WHERE f.entity_type_id <> (
-                SELECT entity_type_id FROM public.extraction_instances WHERE id = :iid
-            )
-            LIMIT 1
-            """
-        ),
-        {"iid": instance_id},
-    )
-    other_field_id = other_field_row.scalar()
-    if other_field_id is None:
-        pytest.skip("Need >=2 entity_types with fields.")
-
-    created = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "extract")
-
-    response = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(other_field_id),
-            "source": "ai",
-            "proposed_value": {"v": "x"},
-        },
-    )
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_create_human_proposal_rejected_for_extraction(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    """Human writes on an extraction run are rejected at /proposals (400):
-    they must go through /decisions so each reviewer's value lands as a
-    per-user ReviewerDecision (blind-review write defense). The old
-    auto-fill-the-caller behaviour no longer applies — human extraction
-    proposals are forbidden outright."""
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _, instance_id, field_id = fx
-
-    created = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(created["id"])
-    await _advance(db_client, run_id, "extract")
-
-    response = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "human",
-            "proposed_value": {"v": "x"},
-        },
-    )
-    assert response.status_code == 400, response.text
-    assert "/decisions" in response.json()["error"]["message"]
+    assert response.status_code == 404, response.text
 
 
 # =================== POST /runs/{id}/decisions ===================
@@ -658,17 +452,14 @@ async def _setup_review_run(
     )
     run_id = UUID(created["id"])
     await _advance(db_client, run_id, "extract")
-    proposal_resp = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"v": "candidate"},
-        },
+    # Seeded the way the pipeline writes it — see make_ai_proposal.
+    proposal_id = await make_ai_proposal(
+        db_session,
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        proposed_value={"v": "candidate"},
     )
-    assert proposal_resp.status_code == 201, proposal_resp.text
-    proposal_id = UUID(proposal_resp.json()["data"]["id"])
     return run_id, instance_id, field_id, proposal_id
 
 
@@ -1033,21 +824,17 @@ async def test_full_lifecycle_create_to_finalized(
     # pending -> extract
     await _advance(db_client, run_id, "extract")
 
-    # POST proposal
-    proposal_resp = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"v": "candidate"},
-            "confidence_score": 0.85,
-        },
+    # Seed the AI proposal the way the pipeline writes it — in-process.
+    proposal_id = await make_ai_proposal(
+        db_session,
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        proposed_value={"v": "candidate"},
+        confidence_score=0.85,
     )
-    assert proposal_resp.status_code == 201, proposal_resp.text
 
     # POST decision (accept proposal) — recorded in extract; no review stage
-    proposal_id = UUID(proposal_resp.json()["data"]["id"])
     decision_resp = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
         json={
@@ -1263,40 +1050,6 @@ async def _force_finalize(db_session: AsyncSession, run_id: UUID) -> None:
     )
     await db_session.flush()
     db_session.expire_all()
-
-
-@pytest.mark.asyncio
-async def test_proposal_on_finalized_run_returns_400(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    fx = await _resolve_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Missing fixtures.")
-    project_id, article_id, template_id, _profile_id, instance_id, field_id = fx
-
-    run = await _create_run_via_api(
-        db_client,
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-    run_id = UUID(run["id"])
-    await _advance(db_client, run_id, "extract")
-    await _force_finalize(db_session, run_id)
-
-    resp = await db_client.post(
-        f"{API_PREFIX}/{run_id}/proposals",
-        json={
-            "instance_id": str(instance_id),
-            "field_id": str(field_id),
-            "source": "ai",
-            "proposed_value": {"value": "late write"},
-        },
-    )
-    assert resp.status_code == 400, resp.text
-    assert "stage" in resp.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio

@@ -1694,54 +1694,6 @@
         "title": "ApiResponse[PortableTemplate]",
         "type": "object"
       },
-      "ApiResponse_ProposalRecordResponse_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ProposalRecordResponse"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[ProposalRecordResponse]",
-        "type": "object"
-      },
       "ApiResponse_RepublishTemplateVersionResponse_": {
         "properties": {
           "data": {
@@ -4129,61 +4081,6 @@
         "title": "CreateProjectTemplateRequest",
         "type": "object"
       },
-      "CreateProposalRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "confidence_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Confidence Score"
-          },
-          "field_id": {
-            "format": "uuid",
-            "title": "Field Id",
-            "type": "string"
-          },
-          "instance_id": {
-            "format": "uuid",
-            "title": "Instance Id",
-            "type": "string"
-          },
-          "proposed_value": {
-            "additionalProperties": true,
-            "title": "Proposed Value",
-            "type": "object"
-          },
-          "rationale": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rationale"
-          },
-          "source": {
-            "pattern": "^(ai|human|system)$",
-            "title": "Source",
-            "type": "string"
-          }
-        },
-        "required": [
-          "instance_id",
-          "field_id",
-          "source",
-          "proposed_value"
-        ],
-        "title": "CreateProposalRequest",
-        "type": "object"
-      },
       "CreateRunRequest": {
         "properties": {
           "article_id": {
@@ -6460,6 +6357,11 @@
             ],
             "title": "Description"
           },
+          "is_entity_key": {
+            "default": false,
+            "title": "Is Entity Key",
+            "type": "boolean"
+          },
           "label": {
             "maxLength": 100,
             "minLength": 1,
@@ -7340,7 +7242,7 @@
         "type": "object"
       },
       "RunViewDerivedInput": {
-        "description": "One input feeding a derived judgment, as the rule consumed it.\n\n``value`` is the display value: the judgment for a ``worst_domain`` row,\nthe reviewer's RAW answer (\"PN\", a marker label) for a ``signaling_worst``\nrow, None when unjudged/unanswered \u2014 which is exactly why the derived\nvalue shows a dash, so the client can name the blocking input instead of\nleaving the reviewer to hunt for it. ``contribution`` is uniformly the\nLow/High/Unclear the rule consumed from this row (None when it\ncontributed nothing) \u2014 clients highlight and color by it with zero\nanswer-mapping knowledge.",
+        "description": "One input feeding a derived judgment, as the rule consumed it.\n\n``value`` is the display value: the judgment for a ``worst_domain`` row,\nthe reviewer's RAW answer (\"PN\", a marker label) for a ``signaling_worst``\nrow, None when unjudged/unanswered \u2014 which is exactly why the derived\nvalue shows a dash, so the client can name the blocking input instead of\nleaving the reviewer to hunt for it. ``contribution`` is uniformly the\nLow/High/Unclear the rule consumed from this row (None when it\ncontributed nothing) \u2014 clients highlight and color by it with zero\nanswer-mapping knowledge.\n\n``state`` is set only on a collapse-group row that contributed nothing,\nand is the complement of ``contribution`` (never both). It is\n``\"unreported\"`` when the study did not report that performance type \u2014 a\nlegitimate outcome, not a gap \u2014 and ``\"in-progress\"`` when the group is\nonly half-answered. A group has no stored answer, so ``value`` is always\nNone there and this is the only thing telling the two apart: render them\nwith different copy and tone, or a complete assessment looks unfinished.",
         "properties": {
           "contribution": {
             "anyOf": [
@@ -7356,6 +7258,17 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
           },
           "value": {
             "anyOf": [
@@ -9286,6 +9199,11 @@
             "title": "Field Type",
             "type": "string"
           },
+          "is_entity_key": {
+            "default": false,
+            "title": "Is Entity Key",
+            "type": "boolean"
+          },
           "is_required": {
             "default": false,
             "title": "Is Required",
@@ -9505,6 +9423,11 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "is_entity_key": {
+            "default": false,
+            "title": "Is Entity Key",
+            "type": "boolean"
           },
           "is_required": {
             "title": "Is Required",
@@ -9747,6 +9670,17 @@
               }
             ],
             "title": "Field Type"
+          },
+          "is_entity_key": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Entity Key"
           },
           "is_required": {
             "anyOf": [
@@ -14579,64 +14513,6 @@
           }
         ],
         "summary": "Create Decision",
-        "tags": [
-          "extraction-runs"
-        ]
-      }
-    },
-    "/api/v1/runs/{run_id}/proposals": {
-      "post": {
-        "operationId": "create_proposal_api_v1_runs__run_id__proposals_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Run Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateProposalRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ProposalRecordResponse_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Create Proposal",
         "tags": [
           "extraction-runs"
         ]

@@ -12,7 +12,6 @@ from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecision,
     ExtractionReviewerDecisionType,
-    ExtractionReviewerState,
 )
 from app.repositories.extraction_proposal_repository import (
     ExtractionProposalRepository,
@@ -236,18 +235,3 @@ class ExtractionReviewService:
             )
             inserted += 1
         return inserted
-
-    async def get_reviewer_state(
-        self,
-        *,
-        run_id: UUID,
-        reviewer_id: UUID,
-        instance_id: UUID,
-        field_id: UUID,
-    ) -> ExtractionReviewerState | None:
-        return await self._states.get(
-            run_id=run_id,
-            reviewer_id=reviewer_id,
-            instance_id=instance_id,
-            field_id=field_id,
-        )

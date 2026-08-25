@@ -246,7 +246,8 @@ async def test_record_proposal_blocked_outside_extract_stage(
         user_id=profile_id,
     )
     service = ExtractionProposalService(db_session)
-    with pytest.raises(InvalidProposalError):
+    # Every stage but extract takes this one branch — consensus stands in for all.
+    with pytest.raises(InvalidProposalError, match="stage"):
         await service.record_proposal(
             run_id=run_id,
             instance_id=instance_id,

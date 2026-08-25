@@ -23,6 +23,30 @@ export const qa = {
   // QASectionAccordion — the per-domain judgment card
   domainJudgmentCardTitle: 'Domain judgment',
 
+  // Derived-default recommendation (PROBAST+AI v2): the backend computes a
+  // suggested judgment from the signaling answers; the assessor records the
+  // final value, with a rationale required on divergence (UI-level gate).
+  derivedDefaultLabel: 'Derived default',
+  derivedDefaultIncomplete: 'Incomplete',
+  derivedDefaultIncompleteHint:
+    'Not every signaling question has been answered yet, so no default is derived.',
+  derivedDefaultApply: 'Apply',
+  derivedExplainShow: 'From the signaling answers',
+  derivedInputNotAnswered: 'Not answered',
+  // The two ways an Evaluation D4 collapse group can contribute nothing. On
+  // the wire they differ only by `state`, and they mean opposite things:
+  // "Not reported" is a FINISHED assessment of a performance type the study
+  // never claimed ("não se julga o que o estudo não fez"), while "In progress"
+  // is work the reviewer still owes. Only the second is a gap, so only the
+  // second is warning-toned — see DerivedDefaultChip's rowDisplay.
+  derivedInputUnreported: 'Not reported',
+  derivedInputInProgress: 'In progress',
+  divergenceNeedsRationale:
+    'Differs from the derived default — write the rationale below, then record the judgment.',
+  divergenceConfirm: 'Record judgment',
+  divergenceNote: 'Recorded judgment differs from the derived default.',
+  outOfScopeBadge: 'Out of scope for this study type',
+
   // Computed overall judgments (worst-domain; never entered by a reviewer)
   overallBannerTitle: 'Overall judgments',
   overallBannerHint: 'Computed from the domain judgments (worst domain). Not editable.',

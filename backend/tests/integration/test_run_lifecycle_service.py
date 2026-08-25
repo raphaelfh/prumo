@@ -1487,7 +1487,6 @@ async def test_qa_single_user_export_not_blank_after_advance(
                 label="QA Field",
                 type=ExtractionFieldType.SELECT,
                 allowed_values=(),
-                parent_section_id=uuid4(),
             )
         },
     )

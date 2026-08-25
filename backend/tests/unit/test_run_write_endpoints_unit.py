@@ -14,8 +14,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.api.v1.endpoints.extraction_runs import create_decision, create_proposal
-from app.schemas.extraction_run import CreateDecisionRequest, CreateProposalRequest
+from app.api.v1.endpoints.extraction_runs import create_decision
+from app.schemas.extraction_run import CreateDecisionRequest
 
 _EP = "app.api.v1.endpoints.extraction_runs"
 
@@ -56,45 +56,6 @@ async def test_create_decision_awaits_reviewer_role_gate() -> None:
     ):
         db = AsyncMock()
         resp = await create_decision(
-            run_id=run_id, body=body, request=MagicMock(), db=db, current_user_sub=caller
-        )
-
-    gate.assert_awaited_once_with(db, project_id, caller)
-    assert resp.ok is True
-
-
-@pytest.mark.asyncio
-async def test_create_proposal_awaits_reviewer_role_gate() -> None:
-    run_id, project_id, caller = uuid4(), uuid4(), uuid4()
-    record = SimpleNamespace(
-        id=uuid4(),
-        run_id=run_id,
-        instance_id=uuid4(),
-        field_id=uuid4(),
-        source="ai",
-        source_user_id=caller,
-        proposed_value={"value": "x"},
-        confidence_score=None,
-        rationale=None,
-        created_at="2026-07-05T00:00:00Z",
-    )
-    body = CreateProposalRequest(
-        instance_id=record.instance_id,
-        field_id=record.field_id,
-        source="ai",
-        proposed_value={"value": "x"},
-    )
-    service = MagicMock()
-    service.record_proposal = AsyncMock(return_value=record)
-
-    with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run(project_id))),
-        patch(f"{_EP}.ensure_project_reviewer", AsyncMock()) as gate,
-        patch(f"{_EP}.ExtractionProposalService", return_value=service),
-        patch(f"{_EP}._trace", return_value=None),
-    ):
-        db = AsyncMock()
-        resp = await create_proposal(
             run_id=run_id, body=body, request=MagicMock(), db=db, current_user_sub=caller
         )
 

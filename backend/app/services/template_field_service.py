@@ -49,6 +49,7 @@ from app.schemas.template_structure import (
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 
 __all__ = [
+    "DuplicateEntityKeyError",
     "CrossTemplateMoveError",
     "DuplicateFieldNameError",
     "DuplicateReorderIdsError",
@@ -68,6 +69,8 @@ _UNIQUE_VIOLATION = "23505"
 # Frozen by the B-7 plan (panel 7); matches migration 0050's CREATE
 # UNIQUE INDEX — the DB backstop behind the read-time checks below.
 _FIELD_NAME_UNIQUE_INDEX = "uq_extraction_fields_entity_type_name"
+# 0059: at most one identity field per section.
+_ENTITY_KEY_UNIQUE_INDEX = "uq_extraction_fields_one_entity_key"
 
 
 class EntityTypeNotFoundError(Exception):
@@ -80,6 +83,15 @@ class FieldNotFoundError(Exception):
 
 class DuplicateFieldNameError(Exception):
     """A sibling field in the target section already carries this name."""
+
+
+class DuplicateEntityKeyError(Exception):
+    """The section already declares an identity field (422).
+
+    A section has ONE identity. Moving the key means clearing it on the
+    current holder first; refusing here keeps the raw 23505 from the
+    partial unique index out of the response.
+    """
 
 
 class FieldInUseError(Exception):
@@ -121,15 +133,32 @@ def _is_field_name_unique_violation(exc: IntegrityError) -> bool:
     return _FIELD_NAME_UNIQUE_INDEX in str(orig or exc)
 
 
+async def _entity_key_taken(
+    db: AsyncSession, *, entity_type_id: UUID, exclude_field_id: UUID | None = None
+) -> bool:
+    """Does a sibling already declare this section's identity?"""
+    stmt = select(ExtractionField.id).where(
+        ExtractionField.entity_type_id == entity_type_id,
+        ExtractionField.is_entity_key.is_(True),
+    )
+    if exclude_field_id is not None:
+        stmt = stmt.where(ExtractionField.id != exclude_field_id)
+    return (await db.execute(stmt.limit(1))).scalar_one_or_none() is not None
+
+
 async def _flush_name_guarded(db: AsyncSession) -> None:
-    """Flush a name-bearing write; remap the 0050 backstop to the typed
-    duplicate error (a racing writer past the read-time check)."""
+    """Flush a name-bearing write; remap the 0050/0059 backstops to their
+    typed errors (a racing writer past the read-time checks)."""
     try:
         await db.flush()
     except IntegrityError as exc:
         if _is_field_name_unique_violation(exc):
             raise DuplicateFieldNameError(
                 "A field with this name already exists in this section"
+            ) from exc
+        if _ENTITY_KEY_UNIQUE_INDEX in str(getattr(exc, "orig", exc)):
+            raise DuplicateEntityKeyError(
+                "This section already has an entry key; clear it on the other field first"
             ) from exc
         raise
 
@@ -225,6 +254,12 @@ async def update_field(
     await _owned_template(db, project_id=project_id, template_id=template_id)
     field = await _owned_field(db, template_id=template_id, field_id=field_id)
     changes = payload.model_dump(exclude_unset=True)
+    if changes.get("is_entity_key") and await _entity_key_taken(
+        db, entity_type_id=field.entity_type_id, exclude_field_id=field.id
+    ):
+        raise DuplicateEntityKeyError(
+            "This section already has an entry key; clear it on the other field first"
+        )
     if "name" in changes and await _name_taken(
         db,
         entity_type_id=field.entity_type_id,

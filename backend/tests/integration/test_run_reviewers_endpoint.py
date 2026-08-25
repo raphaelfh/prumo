@@ -154,8 +154,8 @@ async def test_reviewers_collects_proposer_decision_consensus(
     adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "extract"})
     assert adv.status_code == 200
 
-    # 2. Post a human value as an edit decision — extraction writes go through
-    # /decisions (the blind-review write defense rejects /proposals here).
+    # 2. Post a human value as an edit decision — /decisions is the only human
+    # write path (the blind-review write defense; see ADR-0019).
     decision = await db_client.post(
         f"/api/v1/runs/{run_id}/decisions",
         json={
