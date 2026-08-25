@@ -25,17 +25,21 @@ This guide explains how to load seed data after the schema migrations run.
   studies. 5 domains + Overall, 11 signaling questions + summary fields with
   `allowed_values=['Y','N','Unclear']`. Deterministic UUID. Helper:
   `seed_quadas2()`.
-- **PROBAST+AI** — global quality-assessment template (Moons et al., BMJ 2025)
-  covering regression- and AI/ML-based prediction models. 10 flat sections
-  (development D1–D4 judged on Quality; evaluation D1–D3 plus evaluation D4
-  split by performance type — apparent / internal / external — judged on Risk
-  of Bias), 58 fields: 42 signaling rows and 16 domain judgments. Deterministic
-  UUID. Helper: `seed_probast_ai()` in
+- **PROBAST+AI 2.0.0** — instrument-exact global quality-assessment template
+  (Moons et al., BMJ 2025) covering regression- and AI/ML-based prediction
+  models. 13 sections / 95 fields in the form's page order (describes →
+  signaling questions → judgment → rationale → applicability), including
+  `assessment_scope` and the four Step-4 summary boxes; 20 assessor-owned
+  fields carry no `llm_description`. Seeded under its own UUID
+  (`00ba…0002`) — databases seeded before v2 keep their untouched v1 row
+  (`00ba…0001`, 10×58) beside it. Helper: `seed_probast_ai()` in
   [`backend/app/seed_probast_ai.py`](../../backend/app/seed_probast_ai.py)
-  (its own module because `seed.py` is at the file-size ratchet cap).
+  (its own module because `seed.py` is at the file-size ratchet cap; the
+  question banks live in `seed_probast_ai_data.py`).
   The four **overall** judgments are deliberately NOT fields: they are computed
-  from the domain judgments by the worst-domain rule, configured by the
-  `derived_judgments` spec on the template's `schema` JSONB.
+  from the stored domain judgments by the worst-domain rule, configured by the
+  `derived_judgments` spec on the template's `schema` JSONB (the domain
+  judgments themselves get `signaling_worst` derived *defaults*).
 
 > **Re-seeding does not update an existing template.** Every `seed_*` helper is
 > idempotent *by primary key*: it returns early when the row already exists and
@@ -145,8 +149,11 @@ Expected:
 | --- | --- | --- | --- |
 | CHARMS | 1.1.0 | 14 | ~80 |
 | PROBAST | 1.0.0 | 5 | 29 |
-| PROBAST+AI | 1.0.0 | 10 | 58 |
+| PROBAST+AI | 2.0.0 | 13 | 95 |
 | QUADAS-2 | 1.0.0 | 5 | 20 |
+
+A database seeded before v2 additionally shows the legacy
+`PROBAST+AI 1.0.0 | 10 | 58` row — the seed never removes it.
 
 ## Troubleshooting
 
