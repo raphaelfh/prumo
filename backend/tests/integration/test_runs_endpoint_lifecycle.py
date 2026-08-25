@@ -3,7 +3,8 @@
 Walks through the canonical sequence:
   POST /v1/runs                  → create
   POST /v1/runs/{id}/advance     → pending → proposal
-  POST /v1/runs/{id}/proposals   → AI proposal recorded
+  (AI proposal seeded in-process — the pipeline's own write path; there is
+   no HTTP route for it, see ADR-0019)
   POST /v1/runs/{id}/advance     → proposal → review
   POST /v1/runs/{id}/decisions   → accept_proposal
   POST /v1/runs/{id}/advance     → review → consensus
@@ -106,19 +107,16 @@ async def test_full_hitl_lifecycle(
     assert advance_res.status_code == 200, advance_res.text
     assert advance_res.json()["data"]["stage"] == "extract"
 
-    # 3) Record AI proposal — seeded in-process, the way the extraction
-    # pipeline writes it; the API refuses source='ai' as server-generated.
+    # 3) Record AI proposal — seeded the way the pipeline writes it.
     proposal_id = str(
-        (
-            await make_ai_proposal(
-                db_session,
-                run_id=UUID(run_id),
-                instance_id=UUID(instance_id),
-                field_id=UUID(field_id),
-                proposed_value={"text": "lifecycle E2E"},
-                confidence_score=0.88,
-            )
-        ).id
+        await make_ai_proposal(
+            db_session,
+            run_id=UUID(run_id),
+            instance_id=UUID(instance_id),
+            field_id=UUID(field_id),
+            proposed_value={"text": "lifecycle E2E"},
+            confidence_score=0.88,
+        )
     )
 
     # 4) Reviewer accepts the proposal (run stays in extract; no review stage)
@@ -203,49 +201,6 @@ async def test_invalid_stage_transition_returns_400(
     # pending → consensus (not allowed; must go pending → extract first)
     bad = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "consensus"})
     assert bad.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_proposal_outside_extract_stage_is_rejected(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
-) -> None:
-    """A pending run takes no proposals.
-
-    Asserted against the service: /proposals refuses every source outright
-    now, so going through the endpoint would pass for the wrong reason — the
-    source guard fires before the stage is ever consulted.
-    """
-    from app.models.extraction_workflow import ExtractionProposalSource
-    from app.services.extraction_proposal_service import (
-        ExtractionProposalService,
-        InvalidProposalError,
-    )
-
-    fx = await _pick_fixtures(db_session)
-    if fx is None:
-        pytest.skip("Need fixtures.")
-    project_id, article_id, template_id, instance_id, field_id = fx
-
-    create_res = await db_client.post(
-        "/api/v1/runs",
-        json={
-            "project_id": project_id,
-            "article_id": article_id,
-            "project_template_id": template_id,
-        },
-    )
-    run_id = create_res.json()["data"]["id"]
-
-    with pytest.raises(InvalidProposalError, match="stage"):
-        await ExtractionProposalService(db_session).record_proposal(
-            run_id=UUID(run_id),
-            instance_id=UUID(instance_id),
-            field_id=UUID(field_id),
-            source=ExtractionProposalSource.AI,
-            proposed_value={"v": "x"},
-        )
 
 
 @pytest.mark.asyncio

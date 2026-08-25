@@ -1408,23 +1408,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/runs/{run_id}/proposals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Proposal */
-        post: operations["create_proposal_api_v1_runs__run_id__proposals_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/runs/{run_id}/ready": {
         parameters: {
             query?: never;
@@ -2306,23 +2289,6 @@ export interface components {
         ApiResponse_PortableTemplate_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["PortableTemplate"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[ProposalRecordResponse] */
-        ApiResponse_ProposalRecordResponse_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["ProposalRecordResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3295,29 +3261,6 @@ export interface components {
             framework: "CHARMS" | "PICOS" | "CUSTOM";
             /** Name */
             name: string;
-        };
-        /** CreateProposalRequest */
-        CreateProposalRequest: {
-            /** Confidence Score */
-            confidence_score?: number | null;
-            /**
-             * Field Id
-             * Format: uuid
-             */
-            field_id: string;
-            /**
-             * Instance Id
-             * Format: uuid
-             */
-            instance_id: string;
-            /** Proposed Value */
-            proposed_value: {
-                [key: string]: unknown;
-            };
-            /** Rationale */
-            rationale?: string | null;
-            /** Source */
-            source: string;
         };
         /** CreateRunRequest */
         CreateRunRequest: {
@@ -8673,41 +8616,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ReviewerDecisionResponse_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_proposal_api_v1_runs__run_id__proposals_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                run_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateProposalRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_ProposalRecordResponse_"];
                 };
             };
             /** @description Validation Error */
