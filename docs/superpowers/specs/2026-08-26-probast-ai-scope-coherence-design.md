@@ -87,7 +87,12 @@ New key on the v2 template's `schema_`, beside `derived_judgments`:
 
 - Coordinates use section/field NAMES, same idiom as `derived_judgments`;
   the seed test extends its dangling-ref assertion to the classifier
-  coordinate and every excluded section name.
+  coordinate and every excluded section name, and asserts the
+  classifier's own section is never listed in `excludes` (a
+  self-excluding classifier would collapse the form's entry point).
+  The payload builder's dangling warning covers `scope_rules` names too
+  — an unresolvable name excludes nothing, conservatively, but is
+  logged.
 - `combination`, a blank/unanswered classifier, an absent-reason marker,
   or an unknown value exclude **nothing** — the conservative default: an
   unclassified assessment shows the full form and full denominator.
@@ -112,19 +117,38 @@ diverge. One client evaluator, one backend evaluator, one data source.
 
 ## 2. Backend consumers
 
-### 2a. AI-path guard (authoritative)
+### 2a. Scope-filtered values (the load-bearing rule)
+
+Out-of-scope semantics for the DERIVATION are made real by **dropping
+the excluded sections' values before the rules run** — one helper
+(`scope_filtered_values`, beside `out_of_scope_sections`), applied by
+the payload builder and the export. The aggregation rules stay
+untouched and yield None naturally. Without this filter, a reviewer who
+fills the evaluation part and THEN classifies `development_only` leaks
+a real judgment into `eval_overall_rob` — the banner would show a
+verdict for a part the UI calls "Not applicable" while progress reads
+100%, and the §5 gate could demand a rationale for the inapplicable
+part. Stored values are still never deleted (reclassify back and they
+return); they are only invisible to the rules while out of scope,
+mirroring what §3 does to the progress numerator.
+
+### 2b. AI-path guard (authoritative)
 
 At the single point in `section_extraction_service` where the eligible
 field list is assembled (where `excluded_field_coordinates` already
 applies), a section named in the resolved exclusion set is **skipped**,
-reusing the existing "empty eligible list → no LLM call" semantics. The
-classifier value is read from the same value set the caller's form shows.
-This covers the per-section button AND the `extractAllSections` path in
-one place — the client's button-hiding (§3) is a courtesy, not the
-enforcement. No `kind ==` branch; a template without rules passes
-through untouched (regression guard reused from v2 §12).
+reusing the existing "empty eligible list → no LLM call" semantics.
+The classifier is resolved from the run's **newest proposal on the
+classifier coordinate** — the same source the QA form hydrates from
+("latest proposal per (instance, field)"), probed with the same idiom
+as `_fields_with_recent_human_proposal`; one targeted query, no new
+data path. This covers the per-section button AND the
+`extractAllSections` path in one place — the client's button-hiding
+(§3) is a courtesy, not the enforcement. No `kind ==` branch; a
+template without rules passes through untouched (regression guard
+reused from v2 §12).
 
-### 2b. Derived-judgment state (the #704 pattern, one level up)
+### 2c. Derived-judgment state (the #704 pattern, one level up)
 
 `derived_judgment_payload` stamps `state="out-of-scope"` on every
 `RunViewDerivedInput` whose section(s) are all excluded, using the same
@@ -136,15 +160,28 @@ string, not a constant name. `RunViewDerivedInput.state` is already
 `str | null` in the OpenAPI contract (#704), so **no schema change and
 no type regeneration**.
 
-`worst_domain` / `signaling_worst` / `worst_of` are untouched — an
-out-of-scope input carries no value, so the rules already yield None;
-the state only explains WHY. Nobody re-touches the strict/lenient
-asymmetry.
+Two deliberate amendments to the #704 contract, called out because its
+docstring states the old invariants:
 
-### 2c. Export parity
+- **Plain rows may now carry `state`** (only ever `"out-of-scope"`);
+  "state stays None on plain rows" becomes "state on a plain row means
+  out of scope". The exactly-one-of-`state`/`contribution` rule holds
+  everywhere.
+- **Precedence**: after §2a's filter, a fully-excluded collapse group
+  computes `unreported` (all members missing); the payload's
+  out-of-scope stamp **wins** over `unreported`/`in-progress` — the
+  reviewer must never be told an inapplicable part is "in progress".
 
-The appraisal export renders "Not applicable" for a derived entry whose
-inputs are all out-of-scope (same helper, same spec data), keeping the
+`worst_domain` / `signaling_worst` / `worst_of` are untouched — with
+§2a's filter, out-of-scope inputs carry no value and the rules already
+yield None; the state only explains WHY. Nobody re-touches the
+strict/lenient asymmetry.
+
+### 2d. Export parity
+
+The appraisal export applies `scope_filtered_values` (§2a) before its
+`compute_derived_judgments` call and renders "Not applicable" for a
+derived entry whose inputs are all out-of-scope, keeping the
 screen↔workbook parity invariant — the banner (§3) will say "Not
 applicable" and the workbook must not silently show the same blank it
 shows for "unfinished".
@@ -160,14 +197,16 @@ API consolidation remains extraction-only per the roadmap).
   (generic value read); `isDomainOutOfScope(prefix…)` is replaced by
   `outOfScopeSections(scopeRules, studyTypeValue): Set<string>`. The
   prefix tests are replaced, not appended to.
-- **Progress**: `computeRequiredFieldProgress` gains an optional
-  `excludedEntityTypeIds?: Set<string>`; excluded entity types leave
-  BOTH numerator and denominator (a filled out-of-scope field must not
-  push progress above 100% or count as work owed). Callers that pass
-  nothing are byte-identical — extraction surfaces unaffected. The QA
-  form header and `HITLArticleTable` resolve the set from the active
-  template's `scope_rules` + the values they already hold
-  (`useArticleExtractionValues`). A worklist row whose scope value
+- **Progress**: `computeRequiredFieldProgress` is **not changed**.
+  Its numerator maps value keys through the projections it is given, so
+  filtering the `entityTypes` projection array at the two QA call sites
+  (form header, `HITLArticleTable` per row) removes an excluded entity
+  type from BOTH numerator and denominator already — a filled
+  out-of-scope field neither pushes progress above 100% nor counts as
+  work owed. Zero change to the shared function; extraction surfaces
+  untouched by construction. Each caller resolves the excluded set from
+  the active template's `scope_rules` + the values it already holds
+  (`useArticleExtractionValues`); a worklist row whose scope value
   isn't loaded excludes nothing (conservative).
 - **Section presentation**: an out-of-scope section renders collapsed by
   default with a muted title; the existing badge stays; fields remain
@@ -201,6 +240,12 @@ clone snapshots). If that invariant ever breaks, the RESTRICT on
 `extraction_instances.entity_type_id` aborts the boot loudly and Railway
 keeps the previous build live — the correct failure mode.
 
+Convergence makes the CODE authoritative in **both directions**: a
+deploy rollback re-runs the older seed, whose different `version`
+rewrites the template back to that code's shape. Intended — the
+catalogue always matches the running build, and globals are referenced
+by nothing that could break.
+
 v2 bumps `2.0.0 → 2.1.0` carrying `scope_rules`. The next deploy's boot
 seed (#715) installs it in prod by itself — the first real exercise of
 convergence, and the reason this section is a dependency of §1 rather
@@ -220,13 +265,16 @@ In `RunLifecycleService.advance`, at `target == FINALIZED`, beside the
 existing gates (and therefore inside `approve_and_finalize`'s
 transaction, after its publishes):
 
-- Load the run template's `derived_judgments`; for each RECOMMENDATION
-  entry, compute the derived default from the **published states** (the
-  canonical set at this point).
-- If the default is non-None, the published target resolves to a
-  judgment (via `_judgment(..., no_information_as_unclear=True)`; a
-  blank or NA-marker target skips the check), the judgment differs from
-  the default, and the published rationale is empty → collect.
+- Call `build_derived_judgments_payload` with the **published states**
+  (the canonical set at this point) — reuse, not a second
+  implementation (the module's own iron rule), and the §2a scope filter
+  comes with it: an out-of-scope domain's default is None, so leftover
+  published values in an inapplicable part can never trigger the gate.
+- For each RECOMMENDATION entry: if the default is non-None, the
+  published target resolves to a judgment (via
+  `_judgment(..., no_information_as_unclear=True)`; a blank or
+  NA-marker target skips the check), the judgment differs from the
+  default, and the published rationale is empty → collect.
 - Any collected coordinate raises `DivergenceRationaleError`
   (a new `InvalidStageTransitionError` subclass → the existing 422
   envelope), naming the domains.
@@ -246,13 +294,17 @@ superseded by this section.
   value; both caller value shapes; template without rules → empty set.
 - **Unit — payload**: `state="out-of-scope"` stamped on affected inputs;
   the string literal asserted verbatim (wire contract, like #704's);
-  blind vs revealed classifier source.
+  blind vs revealed classifier source; **the leak case** — evaluation
+  values filled, then classified `development_only` → the eval overall
+  yields None + out-of-scope state, never a judgment; precedence —
+  out-of-scope wins over `unreported`/`in-progress` on group rows.
 - **Unit — AI guard** (`section_extraction_service`): excluded section
   skipped on the single-section path and the extract-all path; a
   template without rules reaches `build_output_models` with its field
   list unchanged (regression guard).
-- **Unit — progress**: excluded set removes numerator AND denominator;
-  filled out-of-scope field never yields >100%; no set → byte-identical.
+- **Unit — progress**: call-site projection filtering removes numerator
+  AND denominator; filled out-of-scope field never yields >100%; the
+  shared function itself is untouched (no new tests there).
 - **Unit — `studyTypeScope`**: data-driven cases replacing the prefix
   tests.
 - **Unit — seed convergence**: seed twice same version → no-op; bump
@@ -279,10 +331,14 @@ superseded by this section.
 2. **PR2 — backend consumers**: scope helper, AI-path guard, payload
    state, export parity. No contract change.
 3. **PR3 — frontend**: schema in selects, data-driven `studyTypeScope`,
-   progress parameter, collapse + copy, banner/chip state, TanStack
-   migration of `useProjectQATemplate`.
+   call-site projection filtering for progress, collapse + copy,
+   banner/chip state.
 4. **PR4 — finalize backstop** (backend): independent; can land any
    time after PR1.
+5. **PR5 — TanStack migration of `useProjectQATemplate`**: orthogonal
+   pattern cleanup, its own tiny PR (surgical-on-unrelated-code — it
+   ships even if the train pauses, and reverts without touching the
+   feature).
 
 Rollout is the normal dev→main promotion; the boot seed carries the
 template change to prod with no manual step.
@@ -291,6 +347,15 @@ template change to prod with no manual step.
 
 - **Server-resolved scope ids in the payload** — cut (§1): would coexist
   with the client evaluator the worklist needs, i.e. two client paths.
+- **`excludedEntityTypeIds` parameter on
+  `computeRequiredFieldProgress`** — cut (adversarial review): the
+  function's numerator already maps value keys through the given
+  projections, so filtering the projection array at the QA call sites
+  does the whole job with zero shared-function change.
+- **"Answered count" on a collapsed out-of-scope section** — considered
+  for the filled-then-reclassified case, dropped: the reviewer avatar
+  stack already survives on the collapsed row as the activity signal,
+  and the values are one click away.
 - **Stored `not_applicable` markers on out-of-scope fields** — rejected:
   creates data to clean up on reclassification; display-layer semantics
   satisfy the instrument.
