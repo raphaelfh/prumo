@@ -8,7 +8,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {Plus, ChevronDown, Upload, FileText, Download, FileBarChart, LayoutDashboard, ListChecks} from "lucide-react";
+import {Plus, ChevronDown, Import, FileText, FileUp, FileBarChart, LayoutDashboard, ListChecks} from "lucide-react";
 import {ComingSoonPanel} from "@/components/layout/ComingSoonPanel";
 import {toast} from "sonner";
 import {ArticlesList, type ArticlesListHandle} from "@/components/articles/ArticlesList";
@@ -262,7 +262,7 @@ export default function ProjectView() {
                                   variant="outline"
                                   className="h-7 px-2 gap-1 text-xs font-medium rounded-md border-border/50 hover:bg-muted/50 hover:border-border transition-colors"
                               >
-                                  <Upload className="h-3.5 w-3.5 shrink-0"/>
+                                  <Import className="h-3.5 w-3.5 shrink-0"/>
                                   {t('pages', 'projectViewImportArticles')}
                                   <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70"/>
                               </Button>
@@ -305,7 +305,7 @@ export default function ProjectView() {
                           onClick={() => articlesListRef.current?.openExportDialog()}
                           className="h-7 px-2 gap-1 text-xs font-medium rounded-md border-border/50 hover:bg-muted/50 hover:border-border transition-colors disabled:opacity-50"
                       >
-                          <Download className="h-3.5 w-3.5 shrink-0"/>
+                          <FileUp className="h-3.5 w-3.5 shrink-0"/>
                           {t('pages', 'projectViewExportArticles')}
                       </Button>
                       <Button

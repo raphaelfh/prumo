@@ -12,7 +12,7 @@ import {createSection, deleteSection, updateEntityTypeLabel} from '@/services/te
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
-import {AlertTriangle, Loader2, Plus, Settings, Upload} from 'lucide-react';
+import {AlertTriangle, Import, Loader2, Plus, Settings} from 'lucide-react';
 import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
 import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
 import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
@@ -280,7 +280,7 @@ export function TemplateConfigEditor({
             onClick={() => setShowImportDialog(true)}
             className="h-8 text-muted-foreground hover:text-foreground"
           >
-            <Upload className="h-4 w-4 mr-2" />
+            <Import className="h-4 w-4 mr-2" />
             {t('extraction', 'configImportTemplateButton')}
           </Button>
           <TemplateConfigPublishControls
@@ -363,7 +363,7 @@ export function TemplateConfigEditor({
                   data-testid="template-config-open-import"
                   onClick={() => setShowImportDialog(true)}
                 >
-                  <Upload className="h-4 w-4 mr-2" />
+                  <Import className="h-4 w-4 mr-2" />
                   {t('extraction', 'configImportTemplateButton')}
                 </Button>
                 <Button
