@@ -85,6 +85,12 @@ square sizes bump width too) so touch targets reach 44px — that belongs in the
 scale, never at the call site. A square button takes an `icon*` size: dropping
 a height while leaving `w-8` renders a 28×32 rectangle.
 
+**This table is the target, not yet the whole truth.** ~68 buttons carry no
+`size` prop at all, so they still render `default` (h-10) — dialog footers
+across the app are the visible case (`Cancel` / a confirm action at 40px next
+to 28px content). They are neither migrated nor caught by the ratchet, which
+only sees `h-*` overrides. Give a button an explicit size when you touch one.
+
 - **Primary:** High contrast (Black in light mode, White in dark mode).
 - **Secondary:** Transparent background, subtle border.
 - **Ghost:** Used for all toolbar/menu items until hovered.
