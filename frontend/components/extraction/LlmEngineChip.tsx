@@ -267,7 +267,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1.5 text-[13px] font-normal text-muted-foreground hover:text-foreground"
+                className="gap-1.5 text-[13px] font-normal text-muted-foreground hover:text-foreground"
                 aria-label={t('llmEngine', 'chipAria')}
                 data-testid="llm-engine-chip"
               >
@@ -343,8 +343,8 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
             {engine.hasAlternates && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                size="xs"
+                className="px-2 text-[11px] text-muted-foreground hover:text-foreground"
                 onClick={() => setManagingAlternates(!managingAlternates)}
                 data-testid="llm-engine-alternates-manage"
               >
@@ -400,8 +400,8 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                         <TooltipTrigger asChild>
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
+                            size="icon-xs"
+                            className="shrink-0 text-muted-foreground hover:text-foreground"
                             aria-label={t('llmEngine', 'alternatesRemoveAria')}
                             disabled={setEngine.isPending}
                             onClick={() => removeAlternate(alt)}
@@ -650,7 +650,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-full justify-start px-2 text-[11px] font-normal text-muted-foreground hover:text-foreground"
+            className="w-full justify-start px-2 text-[11px] font-normal text-muted-foreground hover:text-foreground"
             onClick={() => {
               setOpen(false);
               setEndpointsOpen(true);

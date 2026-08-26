@@ -59,7 +59,9 @@ export function SectionViewSwitcher() {
             data-testid={activeSection === 'quality' ? `hitl-quality_assessment-tab-${value}` : undefined}
             onClick={() => select(value)}
             className={cn(
-              'h-7 rounded px-3 text-header-meta font-medium transition-colors duration-75 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:h-11',
+              // Matches the `sm` Button used as this control's collapsed
+              // alternate below — one control must not carry two type sizes.
+              'h-7 rounded px-3 text-[13px] font-medium transition-colors duration-75 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:h-11',
               active === value
                 ? 'bg-background text-foreground shadow-xs'
                 : 'text-muted-foreground hover:text-foreground',
@@ -74,7 +76,7 @@ export function SectionViewSwitcher() {
       <div className="@[34rem]/headerbar:hidden">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="header" variant="outline" className="gap-1.5">
+            <Button size="sm" variant="outline" className="gap-1.5">
               {activeLabel}
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
             </Button>

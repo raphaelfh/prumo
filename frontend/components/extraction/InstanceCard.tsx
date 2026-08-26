@@ -142,7 +142,6 @@ export function InstanceCard(props: InstanceCardProps) {
                       onClick={handleSaveLabel}
                       disabled={saving}
                       aria-label={saveActionLabel}
-                      className="h-7 w-7"
                     >
                       <Save className="h-4 w-4" />
                     </Button>
@@ -159,7 +158,6 @@ export function InstanceCard(props: InstanceCardProps) {
                       onClick={handleCancelEdit}
                       disabled={saving}
                       aria-label={cancelActionLabel}
-                      className="h-7 w-7"
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -195,7 +193,7 @@ export function InstanceCard(props: InstanceCardProps) {
                   size="icon"
                   onClick={onRemove}
                   aria-label={removeActionLabel}
-                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

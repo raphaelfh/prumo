@@ -122,8 +122,8 @@ export function TemplateConfigPublishControls({
         <TooltipTrigger asChild>
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 rounded-full border border-warning/50 bg-warning/10 px-2.5 text-xs font-semibold text-warning hover:bg-warning/20 hover:text-warning"
+            size="xs"
+            className="rounded-full border border-warning/50 bg-warning/10 px-2.5 text-xs font-semibold text-warning hover:bg-warning/20 hover:text-warning"
             onClick={() => onDiffSheetOpenChange(true)}
           >
             {draftChangeCount == null
@@ -150,8 +150,8 @@ export function TemplateConfigPublishControls({
         <TooltipTrigger asChild>
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 rounded-full border border-border px-2.5 text-xs font-normal text-muted-foreground"
+            size="xs"
+            className="rounded-full border border-border px-2.5 text-xs font-normal text-muted-foreground"
             onClick={() => setHistoryOpen(true)}
           >
             {t('extraction', 'configPublishedVersion').replace(
@@ -184,7 +184,7 @@ export function TemplateConfigPublishControls({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="text-xs"
                 disabled={takingOver}
                 onClick={() => void takeOver()}
               >
@@ -204,7 +204,6 @@ export function TemplateConfigPublishControls({
             <Button
               variant="outline"
               size="sm"
-              className="h-8"
               onClick={() => setDiscardOpen(true)}
               disabled={!canDiscard}
               aria-label={t('templateConfig', 'discardButtonAria')}
@@ -222,7 +221,6 @@ export function TemplateConfigPublishControls({
           <span className="inline-flex">
             <Button
               size="sm"
-              className="h-8"
               onClick={() => void handlePublish()}
               disabled={!hasPendingChanges}
               aria-label={t('extraction', 'configPublishTooltip')}
