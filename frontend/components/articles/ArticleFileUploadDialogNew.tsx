@@ -517,7 +517,7 @@ export function ArticleFileUploadDialogNew({
                               <div className="shrink-0 sm:ml-auto">
                                 <Button
                                   variant="ghost"
-                                  size="sm"
+                                  size="icon"
                                   onClick={() => removeFile(fileWithRole.id)}
                                   disabled={isUploading}
                                   className="h-8 w-8 p-0"
