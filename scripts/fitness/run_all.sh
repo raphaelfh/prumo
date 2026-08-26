@@ -89,6 +89,9 @@ run_check "check_skill_router_sync.py" \
 run_check "check_file_size.py" \
   python3 "${SCRIPT_DIR}/check_file_size.py"
 
+run_check "check_button_scale.py" \
+  python3 "${SCRIPT_DIR}/check_button_scale.py"
+
 echo ""
 echo "Summary:"
 for line in "${results[@]}"; do

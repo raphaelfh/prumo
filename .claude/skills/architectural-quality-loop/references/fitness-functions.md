@@ -38,6 +38,20 @@ AST import-graph of `backend/app/{api,services,repositories,models}`. Forbidden 
 
 Reads `concept-glossary.md` and `docs/reference/extraction-hitl-architecture.md` §6. Asserts every term defined in the glossary appears in the architecture doc (catches glossary drift when the canonical doc is edited without updating the skill mirror). No baseline file — the two must always agree.
 
+### `check_button_scale.py`
+
+Walks every `<Button>` opening tag under `frontend/` and asserts its
+`className` carries no `h-*` utility — the button scale in
+`frontend/components/ui/button.tsx` owns height, and an override is the drift
+that let five different heights coexist across 254 buttons. Deliberately a
+parser, not a regex: a non-greedy `<Button\b(.*?)>` stops at the first `>`,
+which `onClick={() => …}` and `disabled={a >= b}` supply before `className`,
+and a quoted-literal `className` pattern cannot see `className={cn("h-8")}` —
+together ~20% of the real drift, and a one-keystroke escape hatch. `min-h-*`
+and `max-h-*` are not overrides; `[&_svg]:h-3.5` targets a descendant, not the
+button box; `sm:h-8` is an override. Maintains a `.baseline` of `path:count`
+for grandfathered files: may shrink, never grow.
+
 ## Planned (Phase 5)
 
 ### `check_react_query_keys.py`
