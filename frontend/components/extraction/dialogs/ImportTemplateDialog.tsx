@@ -246,6 +246,7 @@ export function ImportTemplateDialog({
 
         <DialogFooter>
           <Button
+            size="sm"
             type="button"
             variant="outline"
             onClick={handleClose}
@@ -254,6 +255,7 @@ export function ImportTemplateDialog({
               {t('common', 'cancel')}
           </Button>
           <Button
+            size="sm"
             type="button"
             data-testid="import-template-submit"
             onClick={handleImport}

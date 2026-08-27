@@ -603,7 +603,8 @@ export function ArticleFileUploadDialogNew({
               </div>
               
               <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                <Button 
+                <Button
+                  size="sm"
                   variant="outline" 
                   onClick={handleClose} 
                   disabled={isUploading}
@@ -612,6 +613,7 @@ export function ArticleFileUploadDialogNew({
                     {t('common', 'cancel')}
                 </Button>
                 <Button
+                  size="sm"
                   onClick={handleUpload}
                   disabled={files.length === 0 || isUploading || !user}
                   className="w-full sm:w-auto"
@@ -637,6 +639,7 @@ export function ArticleFileUploadDialogNew({
               </div>
               
               <Button
+                size="sm"
                 onClick={handleClose}
                 disabled={isUploading}
                 variant={isUploading ? "outline" : "default"}
