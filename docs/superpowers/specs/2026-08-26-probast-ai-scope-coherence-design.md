@@ -4,7 +4,7 @@ last_reviewed: 2026-08-26
 owner: '@raphaelfh'
 ---
 
-# PROBAST+AI scope coherence — study-type gating, seed convergence, finalize backstop
+# PROBAST+AI scope coherence — study-type gating, instrument-exact scale, seed convergence, finalize backstop
 
 ## Problem
 
@@ -27,14 +27,26 @@ consequences compound across every layer:
 4. **Two of the four overalls dash forever** (`worst_domain` is strict
    below High), indistinguishable from "unfinished" — the same
    unreported-vs-in-progress confusion #704 fixed inside D4, one level up.
+5. **The signaling-question scale is split across two controls.** The
+   instrument's SQ answer set is Y/PY/PN/N/**NI**, but the select
+   carries only four answers and "No information" is a separate marker
+   button — hardcoded as universal in `FieldInput` while its NA/NE
+   siblings are opt-in per field. On judgments the button duplicates
+   what the scale already encodes (NI → Unclear); on optional text
+   boxes it is noise.
+6. **`is_required=True` on every non-text field is the wrong tool.**
+   Which part applies is unknown until Step 2, and an assessor may
+   legitimately judge a domain without answering every SQ — yet
+   requiredness hardcodes "all 95 fields owed" into the progress
+   metric.
 
 Two adjacent debts are folded in because this work depends on them:
 
-5. **The boot-time seed converges by insertion only** (#715): every
+7. **The boot-time seed converges by insertion only** (#715): every
    seeder early-returns on an existing row, so a corrected
    `derived_judgments` spec — or the `scope_rules` this design adds —
    never reaches an existing database. `version` is decorative.
-6. **The divergence-rationale gate is client-side only.** A direct POST
+8. **The divergence-rationale gate is client-side only.** A direct POST
    records a judgment diverging from its derived default with no
    rationale and no trace — against constitution §IX (every human
    selection traceable).
@@ -58,6 +70,15 @@ pattern the rest of the app (and #677 specifically) established.
   evaluates it where that layer acts; evaluation is set membership, not
   rule logic. This kills the last name-convention dependency in v2
   (`studyTypeScope.ts`'s hardcoded `dev_`/`eval_` prefixes).
+- **"No information" leaves QA the clean way**: NI becomes the fifth SQ
+  select answer (instrument-exact, one control) and the marker button
+  becomes opt-in per field like its NA/NE siblings — a real disposition
+  flag, not a client-side hide. Extraction keeps the button
+  (constitution: a no-info outcome is a recorded proposal there).
+- **Required = the deliverable, not the scaffolding**: the scope
+  classifier, the domain judgments and applicability stay required;
+  signaling questions and all text boxes are optional. Progress reads
+  "in-scope domains judged".
 - **§11 migrations (classic PROBAST, QUADAS-2) are deferred** to their
   own follow-up — fully specified in the v2 spec §11, independent
   seed-data work. The seed convergence shipped here is what will make
@@ -90,9 +111,9 @@ New key on the v2 template's `schema_`, beside `derived_judgments`:
   coordinate and every excluded section name, and asserts the
   classifier's own section is never listed in `excludes` (a
   self-excluding classifier would collapse the form's entry point).
-  The payload builder's dangling warning covers `scope_rules` names too
-  — an unresolvable name excludes nothing, conservatively, but is
-  logged.
+  No runtime dangling warning for `scope_rules` — unlike a nulled
+  overall, this failure mode is visible (excluded sections simply
+  reappear), so the seed test is enough.
 - `combination`, a blank/unanswered classifier, an absent-reason marker,
   or an unknown value exclude **nothing** — the conservative default: an
   unclassified assessment shows the full form and full denominator.
@@ -114,6 +135,46 @@ declared data (shipped to the client via the template `schema_`, §3).
 no run view per row and must evaluate client-side anyway; shipping
 resolved ids to the form would create a second client path free to
 diverge. One client evaluator, one backend evaluator, one data source.
+
+## 1b. Instrument-exact scale, opt-in "No information", optionality
+
+All carried by seed v2.1.0 (§4 delivers it) plus **one additive
+migration**:
+
+- **Model**: `allows_no_information` boolean on `extraction_fields`,
+  `server_default true` — NI joins NA/NE as a per-field disposition and
+  `FieldInput` loses its "universal NI" special case: three
+  dispositions, uniformly flag-gated (net simplification). Every
+  existing template behaves identically by default. The flag joins its
+  siblings at the same touchpoints, no more: snapshot SQL, clone copy,
+  template diff (SEMANTIC tier) + discard normalization, the
+  template-config editor toggle, and the publish-contract default map.
+- **Seed v2.1.0**: every field `allows_no_information=False`; SQ
+  selects gain the instrument's fifth answer via a **v2-local** answer
+  list (`{value: "NI", label: "No information"}` envelope — the shared
+  `_PROBAST_SIGNALING` constant stays untouched for the classic seed);
+  `_SIGNALING_MAP` gains `"ni" → Unclear`. Parity holds by
+  construction: the export's label path resolves "No information"
+  through the existing marker-label table to the same Unclear.
+- **Judgments and text boxes**: no NI anywhere — the judgment scale
+  already encodes it (NI → Unclear, the instrument's own semantics)
+  and a blank optional text box needs no marker.
+- **Optionality**: signaling questions become `is_required=False`;
+  required = the scope classifier + the 8 domain judgments + the 6
+  applicability judgments. `is_required` feeds only the progress
+  metric (the finalize completeness gate is extraction-only, ADR-0009),
+  so this is pure seed data. With §3's scope filtering, progress now
+  means "in-scope domains judged" — a development_only study reaches
+  100% by classifying and judging the development part. The 6
+  conditional NA rows keep `allows_not_applicable` (an explicit
+  "doesn't apply" beats a silent blank on exactly those rows).
+- **Derivation unchanged**: `signaling_worst` is already
+  completeness-gated below High, so a partially-answered domain simply
+  offers no derived default and the assessor judges directly — the
+  chip's nudge toward answering SQs survives without requiredness.
+- Marker handling in the derivation stays (v1 / QUADAS-2 / CHARMS
+  clones and extraction still use it) — already on the
+  deliberately-not-dead list.
 
 ## 2. Backend consumers
 
@@ -246,10 +307,11 @@ rewrites the template back to that code's shape. Intended — the
 catalogue always matches the running build, and globals are referenced
 by nothing that could break.
 
-v2 bumps `2.0.0 → 2.1.0` carrying `scope_rules`. The next deploy's boot
-seed (#715) installs it in prod by itself — the first real exercise of
-convergence, and the reason this section is a dependency of §1 rather
-than hygiene. Local stacks converge on the next `make db-seed` — the
+v2 bumps `2.0.0 → 2.1.0` carrying `scope_rules`, the NI answer, the
+disposition flags and the optionality change (§1b) in one replace. The
+next deploy's boot seed (#715) installs it in prod by itself — the
+first real exercise of convergence, and the reason this section is a
+dependency of §1 rather than hygiene. Local stacks converge on the next `make db-seed` — the
 docstring's "requires `make db-fresh` or a manual UPDATE" caveat is
 retired. The helper stays local to `seed_probast_ai`;
 other seeders adopt it when their own migrations (§11 follow-up) touch
@@ -313,7 +375,16 @@ superseded by this section.
   types are untouched.
 - **Seed test extension**: `scope_rules` coordinates resolve against the
   seeded tree (dangling-ref, alongside the `derived_judgments`
-  assertion).
+  assertion); the optionality matrix is rewritten (required = classifier
+  + judgments + applicability; SQs and text optional); the six NA rows
+  unchanged; `allows_no_information` false on all 95 fields; SQ selects
+  carry the five-answer envelope list.
+- **Unit — NI answer**: `_SIGNALING_MAP` maps `ni → Unclear`;
+  screen↔workbook parity for the "NI" select answer through BOTH caller
+  shapes (raw envelope and resolved label).
+- **Unit — `FieldInput`**: the NI disposition renders only when
+  `allows_no_information` — flag-gated exactly like NA/NE; a field with
+  the default (true) is byte-identical to today.
 - **Integration — finalize gate**: diverged target + empty rationale →
   422 naming the domain; with rationale → finalizes; target blank or
   NA-marker → passes; extraction-kind run → unaffected.
@@ -325,14 +396,16 @@ superseded by this section.
 
 ## 7. Delivery — PR train on dev
 
-1. **PR1 — rules + seed convergence** (backend): `scope_rules` data,
+1. **PR1 — model + seed** (backend): the `allows_no_information`
+   migration, `scope_rules` data, NI answer, optionality,
    version-gated convergence, `2.1.0`, seed tests. Inert to every
-   runtime path.
+   runtime path (the flag defaults true everywhere it already exists).
 2. **PR2 — backend consumers**: scope helper, AI-path guard, payload
    state, export parity. No contract change.
 3. **PR3 — frontend**: schema in selects, data-driven `studyTypeScope`,
    call-site projection filtering for progress, collapse + copy,
-   banner/chip state.
+   banner/chip state, flag-gated NI disposition in `FieldInput` + the
+   config-editor toggle.
 4. **PR4 — finalize backstop** (backend): independent; can land any
    time after PR1.
 5. **PR5 — TanStack migration of `useProjectQATemplate`**: orthogonal
@@ -356,6 +429,16 @@ template change to prod with no manual step.
   for the filled-then-reclassified case, dropped: the reviewer avatar
   stack already survives on the collapsed row as the activity signal,
   and the values are one click away.
+- **Runtime dangling warning for `scope_rules`** — cut (this review):
+  the failure mode is visible (sections reappear), unlike a silently
+  nulled overall; the seed test carries the guarantee.
+- **Hiding the NI button client-side for QA** — rejected as the
+  shortcut it is; the opt-in flag is the same mechanism NA/NE already
+  use and deletes a special case instead of adding one.
+- **Keeping SQs required with NA as the escape hatch** — rejected:
+  requiredness encoded "all 95 owed", which Step 2 makes unknowable
+  upfront; optional SQs + required judgments state what is actually
+  owed.
 - **Stored `not_applicable` markers on out-of-scope fields** — rejected:
   creates data to clean up on reclassification; display-layer semantics
   satisfy the instrument.
@@ -378,6 +461,11 @@ template change to prod with no manual step.
 - Blocking autosave or field writes on divergence (finalize-time only).
 - Migrating QA reads off PostgREST (read-path consolidation remains
   extraction-only).
-- Backfilling existing v2.0.0 project clones with `scope_rules`
-  (adoption = re-import, as with every template change).
-- Alembic migrations — none; entirely seed/data + rule code.
+- Backfilling existing v2.0.0 project clones with `scope_rules`, the NI
+  answer or the optionality change (adoption = re-import, as with every
+  template change).
+- Backend rejection of a marker the field's flags disallow — the flags
+  stay a template-data contract surfaced by the UI, as NA/NE already
+  are; a rogue NI marker still degrades gracefully (→ Unclear).
+- Alembic migrations beyond the single additive
+  `allows_no_information` column (server_default true, no backfill).
