@@ -200,6 +200,7 @@ export function CreateCustomTemplateDialog({
 
             <DialogFooter>
               <Button
+                size="sm"
                 type="button"
                 variant="outline"
                 onClick={handleCancel}
@@ -207,7 +208,7 @@ export function CreateCustomTemplateDialog({
               >
                   {t('common', 'cancel')}
               </Button>
-              <Button type="submit" disabled={loading}>
+              <Button size="sm" type="submit" disabled={loading}>
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />

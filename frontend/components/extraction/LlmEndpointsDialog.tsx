@@ -420,7 +420,7 @@ export function LlmEndpointsDialog({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            className="text-muted-foreground hover:text-foreground"
                             aria-label={t('llmEngine', 'endpointVerifyAria')}
                             // Scoped to the row in flight: one slow probe
                             // (up to 60s) must not lock every other row's
@@ -443,7 +443,7 @@ export function LlmEndpointsDialog({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            className="text-muted-foreground hover:text-foreground"
                             aria-label={t('llmEngine', 'endpointEditAria')}
                             onClick={() => openEditForm(endpoint)}
                           >
@@ -461,7 +461,7 @@ export function LlmEndpointsDialog({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                className="text-muted-foreground hover:text-destructive"
                                 aria-label={t('llmEngine', 'endpointDeleteAria')}
                               >
                                 <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -505,7 +505,7 @@ export function LlmEndpointsDialog({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 w-fit gap-1.5 text-[13px] font-normal"
+              className="w-fit gap-1.5 text-[13px] font-normal"
               onClick={openCreateForm}
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -632,8 +632,8 @@ export function LlmEndpointsDialog({
                                   <Button
                                     type="button"
                                     variant="ghost"
-                                    size="icon"
-                                    className="h-4 w-4 text-muted-foreground hover:text-foreground"
+                                    size="icon-xs"
+                                    className="text-muted-foreground hover:text-foreground"
                                     aria-label={t(
                                       'llmEngine',
                                       'endpointModelRemoveAria',

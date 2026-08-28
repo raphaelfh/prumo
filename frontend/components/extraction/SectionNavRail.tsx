@@ -110,7 +110,7 @@ export default function SectionNavRail({
                       variant="ghost"
                       onClick={onJumpToNextPending}
                       aria-label={t('extraction', 'sectionNavJumpNext')}
-                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      className="text-muted-foreground hover:text-foreground"
                     >
                       <ArrowDown className="h-4 w-4" />
                     </Button>
@@ -120,7 +120,7 @@ export default function SectionNavRail({
                       size="sm"
                       variant="outline"
                       onClick={onJumpToNextPending}
-                      className="mt-2 h-7 w-full justify-start gap-1.5 px-2 text-[11px] font-normal"
+                      className="mt-2 w-full justify-start gap-1.5 px-2 text-[11px] font-normal"
                     >
                       <ArrowDown className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">{t('extraction', 'sectionNavJumpNext')}</span>

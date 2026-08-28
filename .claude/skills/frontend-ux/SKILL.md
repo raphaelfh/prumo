@@ -64,6 +64,33 @@ Sidebars should feel integrated into the window, not like a separate drawer.
 
 ### Buttons
 
+**Never write a height into a Button's `className`.** The scale owns height.
+Overriding it is what let five different heights coexist across 254 buttons —
+`sm` used to be `h-9`, which never fit this language, so half the call sites
+routed around it. `scripts/fitness/check_button_scale.py` now fails the build
+on a new override (and it parses the tag, so `className={cn("h-8")}` and an
+`onClick={() => …}` before `className` do not hide one).
+
+| Size | Height | Use |
+|---|---|---|
+| `sm` | h-7 | **The default for all product chrome** — toolbars, dialog footers, row actions, cards |
+| `xs` | h-6 | Nested density only — inside a popover, inline chips |
+| `default` | h-10 | CTAs only — empty states, auth, marketing |
+| `icon` | h-7 w-7 | Icon-only at chrome density |
+| `icon-xs` | h-6 w-6 | Icon-only nested density |
+
+Font size lives in the size, not the base, so a dense call site never has to
+override it. Every dense size carries `[@media(pointer:coarse)]:h-11` (and the
+square sizes bump width too) so touch targets reach 44px — that belongs in the
+scale, never at the call site. A square button takes an `icon*` size: dropping
+a height while leaving `w-8` renders a 28×32 rectangle.
+
+**This table is the target, not yet the whole truth.** ~68 buttons carry no
+`size` prop at all, so they still render `default` (h-10) — dialog footers
+across the app are the visible case (`Cancel` / a confirm action at 40px next
+to 28px content). They are neither migrated nor caught by the ratchet, which
+only sees `h-*` overrides. Give a button an explicit size when you touch one.
+
 - **Primary:** High contrast (Black in light mode, White in dark mode).
 - **Secondary:** Transparent background, subtle border.
 - **Ghost:** Used for all toolbar/menu items until hovered.
@@ -121,7 +148,9 @@ the `useIsMobile`/`useIsNarrow` hooks, the priority-track header — live in
 - [ ] Header height is exactly `h-12`.
 - [ ] Main UI font size is `text-[13px]`.
 - [ ] Borders use `border-border/40`.
-- [ ] Icons are `h-4 w-4` and consistent.
+- [ ] Icons are `h-4 w-4` and consistent (14px inside `xs` / `icon-xs`, which
+      set their own `[&_svg]:size-3.5`).
+- [ ] Buttons use a named size — no `h-<n>` in a Button `className`.
 - [ ] Hover states on lists use `hover:bg-muted/50`.
 - [ ] Breadcrumbs are used for navigation context.
 - [ ] Shadows are soft and minimal.

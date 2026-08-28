@@ -138,9 +138,9 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
             <Tooltip open={showTooltip && !copied} delayDuration={300}>
               <TooltipTrigger asChild>
                 <Button
-                  size="sm"
+                  size="icon"
                   variant="ghost"
-                  className="h-8 w-8 p-0 shrink-0 hover:bg-muted"
+                  className="p-0 shrink-0 hover:bg-muted"
                   onClick={(e) => {
                     e.stopPropagation();
                     copy(citation.text);
@@ -232,7 +232,7 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-fit gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+            className="w-fit gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
             onClick={(e) => {
               e.stopPropagation();
               setExpanded((prev) => !prev);

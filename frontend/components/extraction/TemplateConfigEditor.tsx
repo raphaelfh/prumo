@@ -278,7 +278,7 @@ export function TemplateConfigEditor({
             size="sm"
             data-testid="template-config-open-import"
             onClick={() => setShowImportDialog(true)}
-            className="h-8 text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground"
           >
             <Import className="h-4 w-4 mr-2" />
             {t('extraction', 'configImportTemplateButton')}
@@ -309,7 +309,7 @@ export function TemplateConfigEditor({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 shrink-0 hover:bg-warning/20 hover:text-warning"
+            className="shrink-0 hover:bg-warning/20 hover:text-warning"
             onClick={() => void invalidateStructure()}
           >
             {t('common', 'tryAgain')}
