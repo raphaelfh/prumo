@@ -194,10 +194,11 @@ export function RISImportDialog({
                 </div>
 
                 <DialogFooter>
-                    <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={importing}>
+                    <Button size="sm" variant="outline" onClick={() => handleOpenChange(false)} disabled={importing}>
                         {t('common', 'cancel')}
                     </Button>
                     <Button
+                      size="sm"
                         onClick={handleImport}
                         disabled={records.length === 0 || importing}
                     >

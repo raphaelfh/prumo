@@ -489,6 +489,7 @@ export function ExtractionExportDialog({
 
                 <DialogFooter>
                     <Button
+                      size="sm"
                         variant="outline"
                         onClick={dismiss}
                         disabled={submitting}
@@ -496,11 +497,12 @@ export function ExtractionExportDialog({
                         {t("extraction", "exportCancel")}
                     </Button>
                     {error && !submitting ? (
-                        <Button onClick={() => void submit()} disabled={!canSubmit}>
+                        <Button size="sm" onClick={() => void submit()} disabled={!canSubmit}>
                             {t("extraction", "exportRetry")}
                         </Button>
                     ) : (
                         <Button
+                          size="sm"
                             onClick={() => void submit()}
                             disabled={!canSubmit}
                             data-testid="extraction-export-submit"

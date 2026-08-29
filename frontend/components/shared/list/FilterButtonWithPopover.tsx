@@ -29,7 +29,7 @@ export function FilterButtonWithPopover({
                         <PopoverTrigger asChild>
                             <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon"
                                 className={`h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors relative ${
                                     activeCount > 0 ? 'text-primary' : 'text-muted-foreground'
                                 }`}

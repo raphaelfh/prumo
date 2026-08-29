@@ -511,7 +511,6 @@ function FieldInspectorForm({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7"
           onClick={() => setDraft(baseline)}
           disabled={!dirty || saving}
         >
@@ -520,7 +519,6 @@ function FieldInspectorForm({
         <Button
           type="button"
           size="sm"
-          className="h-7"
           onClick={handleSave}
           disabled={!canSave}
         >
