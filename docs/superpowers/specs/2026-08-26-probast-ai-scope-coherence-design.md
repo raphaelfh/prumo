@@ -159,6 +159,16 @@ migration**:
 - **Judgments and text boxes**: no NI anywhere — the judgment scale
   already encodes it (NI → Unclear, the instrument's own semantics)
   and a blank optional text box needs no marker.
+- **LLM instructions follow the scale**: the seeded texts still steer
+  the model to the marker ("mark no information when the article is
+  silent" on SQs; same tail on applicability). v2.1.0 rewrites them —
+  SQs: "Answer Y, PY, PN, N or NI (no information)"; applicability:
+  "answer Unclear when the article gives too little to judge". The
+  response-schema enum picks up "NI" automatically from the allowed
+  values. Applicability itself is untouched: it is already
+  AI-proposable by design (judged directly against the Step-1 PICOTS,
+  full suggestion flow in the no-entry judgment card path) — verified,
+  not changed.
 - **Optionality**: signaling questions become `is_required=False`;
   required = the scope classifier + the 8 domain judgments + the 6
   applicability judgments. `is_required` feeds only the progress
@@ -381,7 +391,9 @@ superseded by this section.
   carry the five-answer envelope list.
 - **Unit — NI answer**: `_SIGNALING_MAP` maps `ni → Unclear`;
   screen↔workbook parity for the "NI" select answer through BOTH caller
-  shapes (raw envelope and resolved label).
+  shapes (raw envelope and resolved label); the seeded instruction
+  tails name the five-answer scale and no llm_description mentions
+  "mark no information" anymore.
 - **Unit — `FieldInput`**: the NI disposition renders only when
   `allows_no_information` — flag-gated exactly like NA/NE; a field with
   the default (true) is byte-identical to today.
