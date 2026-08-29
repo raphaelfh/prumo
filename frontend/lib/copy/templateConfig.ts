@@ -347,7 +347,7 @@ export const templateConfig = {
   projectTemplateDeleteBody: 'Its sections and fields are removed. This cannot be undone.',
   projectTemplateDeleted: 'Template deleted',
   importTabCatalogue: 'Catalogue',
-  importTabFile: 'JSON file',
+  importTabFile: 'Import',
   importTabProject: 'This project',
   importFromFileHeading: 'Add from a file',
   importFromFileHint: 'A .prumo-template.json file exported from prumo, or one you wrote with an AI assistant.',

@@ -117,8 +117,12 @@ export function ImportTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
+      {/* One fixed height for every pane: the panes differ a lot in length
+          (a two-row list vs. the whole catalogue), and letting the dialog
+          size to its content made it jump on every tab switch. The shell
+          stays put and the active pane scrolls inside it. */}
       <DialogContent
-        className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto"
+        className="flex h-[560px] max-h-[85vh] flex-col gap-3 overflow-hidden sm:max-w-[620px]"
         data-testid="import-template-dialog"
       >
         <DialogHeader>
@@ -131,8 +135,8 @@ export function ImportTemplateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="catalogue" className="w-full">
-          <TabsList>
+        <Tabs defaultValue="catalogue" className="flex min-h-0 w-full flex-1 flex-col">
+          <TabsList className="shrink-0 self-start">
             <TabsTrigger value="catalogue" data-testid="import-template-tab-catalogue">
               {t('templateConfig', 'importTabCatalogue')}
             </TabsTrigger>
@@ -144,7 +148,7 @@ export function ImportTemplateDialog({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="catalogue" className="space-y-2">
+          <TabsContent value="catalogue" className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
             {loadingTemplates ? (
               <div className="flex items-center justify-center p-8">
                 <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -161,7 +165,7 @@ export function ImportTemplateDialog({
               <div className="space-y-4">
                 {/* The catalogue, one card per template */}
                 <RadioGroup value={selectedTemplateId || ''} onValueChange={setSelectedTemplateId}>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {templates.map((template) => {
                       const isSelected = selectedTemplateId === template.id;
                       return (
@@ -175,17 +179,17 @@ export function ImportTemplateDialog({
                             isSelected && 'border-primary/60 bg-muted/30 ring-1 ring-primary/30',
                           )}
                         >
-                          <CardHeader className="pb-3">
+                          <CardHeader className="p-3 pb-2">
                             <div className="flex items-start justify-between">
                               <div className="flex items-center gap-3">
                                 <RadioGroupItem value={template.id} id={template.id} />
                                 <div>
-                                  <CardTitle className="text-base text-foreground">
+                                  <CardTitle className="text-[13px] text-foreground">
                                     <Label htmlFor={template.id} className="cursor-pointer">
                                       {template.name}
                                     </Label>
                                   </CardTitle>
-                                  <CardDescription className="text-xs mt-1 text-muted-foreground">
+                                  <CardDescription className="mt-0.5 line-clamp-3 text-xs text-muted-foreground">
                                     {template.description}
                                   </CardDescription>
                                 </div>
@@ -195,14 +199,14 @@ export function ImportTemplateDialog({
                               </Badge>
                             </div>
                           </CardHeader>
-                          <CardContent className="pt-0">
-                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <CardContent className="px-3 pb-3 pt-0">
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
                               <div className="flex items-center gap-1.5">
-                                <Layers className="h-4 w-4" strokeWidth={1.5} />
+                                <Layers className="h-3.5 w-3.5" strokeWidth={1.5} />
                                   <span>{template.entityTypesCount} {t('templateConfig', 'importSections')}</span>
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <FileText className="h-4 w-4" strokeWidth={1.5} />
+                                <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />
                                 <span>v{template.version}</span>
                               </div>
                             </div>
@@ -252,17 +256,17 @@ export function ImportTemplateDialog({
             </div>
           </TabsContent>
 
-          <TabsContent value="file" className="space-y-3">
+          <TabsContent value="file" className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             <ImportTemplateJsonGuidance />
             <ImportTemplateFilePane projectId={projectId} onImported={closeAfterImport} />
           </TabsContent>
 
-          <TabsContent value="project">
+          <TabsContent value="project" className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
             <ProjectTemplatesList projectId={projectId} onSwitched={closeWith} />
           </TabsContent>
         </Tabs>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button
             size="sm"
             type="button"
