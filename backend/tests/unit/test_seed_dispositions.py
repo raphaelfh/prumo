@@ -113,8 +113,9 @@ async def test_probast_ai_owns_ni_as_an_answer_with_the_marker_turned_off() -> N
             carrying_ni.append(f)
             assert f.allows_no_information is False, f.name
     assert len(carrying_ni) == 42
-    # The marker is off everywhere on this template, not just where NI appears.
-    assert not any(f.allows_no_information for f in fields)
+    # The Step-2 classifier is the ONLY field that keeps the marker: it is
+    # required and none of its three options means "the article does not say".
+    assert [f.name for f in fields if f.allows_no_information] == ["study_type"]
 
 
 @pytest.mark.asyncio

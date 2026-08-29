@@ -23,7 +23,7 @@ from app.models.extraction import (
     ExtractionTemplateGlobal,
 )
 from app.seed import _PROBAST_JUDGMENT, _PROBAST_SIGNALING
-from app.seed_probast_ai import seed_probast_ai
+from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID, seed_probast_ai
 from app.seed_probast_ai_data import _PAI_SIGNALING
 from app.services.derived_judgment_service import is_recommendation, spec_coordinates
 from app.services.value_semantics import ABSENT_REASON_LABELS
@@ -165,11 +165,14 @@ async def test_signaling_selects_carry_the_instruments_five_answer_scale() -> No
         "NI",
     ]
     assert _PROBAST_SIGNALING == ["Y", "PY", "PN", "N"]
-    # The NI option's LABEL is load-bearing, not cosmetic: the export hands
-    # ``derived_judgment_service`` a resolved label, which reaches Unclear only
-    # by matching the marker-label table. Drift here breaks screen/workbook
-    # parity silently.
+    # The label is display only — ``resolve_value`` emits an option's VALUE,
+    # and maps to a marker label only for a coded absent_reason — so both the
+    # screen and the workbook reach Unclear through ``_SIGNALING_MAP["ni"]``.
+    # It coincides with the marker's label on purpose (one concept reads the
+    # same wherever it appears), which is only safe because the marker is off
+    # on these fields; a field offering both would be ambiguous downstream.
     assert _PAI_SIGNALING[-1]["label"] in ABSENT_REASON_LABELS.values()
+    assert all(not f.allows_no_information for _, f in rows)
 
 
 @pytest.mark.asyncio
@@ -200,11 +203,20 @@ async def test_no_prompt_still_steers_the_model_to_the_retired_marker() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_no_information_marker_is_off_on_every_field() -> None:
+async def test_the_marker_is_off_everywhere_the_answer_set_carries_the_concept() -> None:
+    """...and ON for the one field where it does not.
+
+    Signaling questions have NI on the scale, judgments have Unclear, text
+    boxes are optional. The Step-2 classifier has neither: it is REQUIRED,
+    its three options are all substantive, and none of them means "the article
+    does not say" — so turning the marker off there would leave an
+    unclassifiable study with no representable answer, and would make the
+    "an absent-reason marker excludes nothing" branch of §1 unreachable.
+    """
     session = await _seed()
     fields = _of(session, ExtractionField)
     assert len(fields) == 95
-    assert not any(f.allows_no_information for f in fields)
+    assert [f.name for f in fields if f.allows_no_information] == ["study_type"]
 
 
 @pytest.mark.asyncio
@@ -528,6 +540,30 @@ async def test_converging_produces_the_same_tree_as_a_fresh_insert() -> None:
     [tpl] = _of(fresh, ExtractionTemplateGlobal)
     assert converged.existing.schema_ == tpl.schema_
     assert converged.existing.version == tpl.version
+
+
+@pytest.mark.asyncio
+async def test_a_referenced_catalogue_skips_the_replace_instead_of_wedging() -> None:
+    """The RESTRICT FK would abort the boot, and STAY aborted.
+
+    Nothing should ever point recorded work at the catalogue's own entity
+    types, but the schema does not forbid it and the global ids are
+    deterministic. One such row would make the DELETE raise on every deploy
+    from then on — including the one carrying the fix — because the offending
+    row survives each failed boot. Skipping keeps deploys flowing; the scalar
+    columns still converge, and the log says the tree did not.
+    """
+    session = ConvergingSession()
+    session.scalar_result = uuid5(_PROBAST_AI_TEMPLATE_ID, "an-instance")
+
+    await seed_probast_ai(session)
+
+    assert not [s for s in session.executed if "DELETE" in str(s).upper()]
+    assert _of(session, ExtractionEntityType) == []
+    assert _of(session, ExtractionField) == []
+    # The row's own columns still converge — only the tree is left alone.
+    assert session.existing.version == "2.1.0"
+    assert "scope_rules" in session.existing.schema_
 
 
 @pytest.mark.asyncio

@@ -55,13 +55,14 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID, uuid5
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
     ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
+    ExtractionInstance,
     ExtractionTemplateGlobal,
 )
 from app.models.extraction_versioning import TemplateKind
@@ -95,6 +96,7 @@ from app.seed_probast_ai_data import (
     _F_APPLICABILITY,
     _F_QUALITY,
     _F_ROB,
+    _F_STUDY_TYPE,
     _PAI_DERIVED_JUDGMENTS,
     _PAI_SCOPE_RULES,
     _PAI_SIGNALING,
@@ -293,7 +295,7 @@ def _scope_fields(eid: UUID) -> list[ExtractionField]:
     return [
         _field(
             eid,
-            "study_type",
+            _F_STUDY_TYPE,
             "Study type",
             "Step 2: classification of the study — model development only, "
             "model evaluation only, or a combination.",
@@ -659,6 +661,33 @@ _DESCRIPTION = (
 )
 
 
+async def _catalogue_is_referenced(session: AsyncSession) -> bool:
+    """True when recorded work points at the catalogue's OWN entity types.
+
+    It should never be true: an instance is created against a project clone's
+    entity type, and clones mint their own ids. But the coordinate is
+    client-supplied on the section-extraction path and the global ids are
+    deterministic, so nothing in the schema forbids it — and one such row would
+    make the replace below raise on ``extraction_instances``' RESTRICT FK.
+    Checking instances is sufficient: every proposal / decision / published
+    state hangs off an instance whose coordinate coherence is enforced
+    (``assert_coords_coherent``), so none of them can reach a global field
+    without an instance reaching a global entity type first.
+    """
+    referenced = (
+        await session.execute(
+            select(ExtractionInstance.id)
+            .join(
+                ExtractionEntityType,
+                ExtractionEntityType.id == ExtractionInstance.entity_type_id,
+            )
+            .where(ExtractionEntityType.template_id == _PROBAST_AI_TEMPLATE_ID)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return referenced is not None
+
+
 async def seed_probast_ai(session: AsyncSession) -> None:
     """Seeds the PROBAST+AI 2.1.0 quality-assessment template (13 sections,
     95 fields).
@@ -673,10 +702,14 @@ async def seed_probast_ai(session: AsyncSession) -> None:
 
     The template ROW is never deleted: dropping it would SET NULL every clone's
     ``global_template_id`` and break clone dedupe/heal. Only its children are
-    replaced, and nothing outside their own fields references a GLOBAL entity
-    type (clones copy by value; runs pin clone snapshots), so the replace is
-    safe. If that invariant ever breaks, the RESTRICT FKs abort the boot loudly
-    and the previous build stays live — the correct failure mode.
+    replaced. Nothing SHOULD reference a global entity type — clones copy by
+    value and runs pin clone snapshots — but that is an assumption, not a
+    constraint the database enforces, and a RESTRICT violation here would not
+    be a one-off: the offending row survives the failed boot, so every later
+    deploy dies at the same statement, including the one carrying the fix.
+    ``_catalogue_is_referenced`` therefore checks first and downgrades the
+    replace to a loud skip, keeping deploys flowing at the cost of a stale
+    catalogue tree that the log names.
 
     Rows are keyed deterministically (entity types by ``_et_id``, fields by
     uuid5 of their entity type + name), so converging is genuinely idempotent
@@ -691,9 +724,18 @@ async def seed_probast_ai(session: AsyncSession) -> None:
     await take_advisory_xact_lock(session, _PROBAST_AI_TEMPLATE_ID, _PROBAST_AI_TEMPLATE_ID)
 
     template = await session.get(ExtractionTemplateGlobal, _PROBAST_AI_TEMPLATE_ID)
+    replace_children = True
     if template is None:
         template = ExtractionTemplateGlobal(id=_PROBAST_AI_TEMPLATE_ID)
         session.add(template)
+    elif await _catalogue_is_referenced(session):
+        replace_children = False
+        print(
+            "  WARNING: recorded work references the PROBAST+AI catalogue's own "
+            "entity types, which should never happen; skipping the section and "
+            "field replace so the deploy is not wedged. The catalogue tree stays "
+            "STALE until those rows are removed."
+        )
     else:
         await session.execute(
             delete(ExtractionEntityType).where(
@@ -714,6 +756,9 @@ async def seed_probast_ai(session: AsyncSession) -> None:
         "scope_rules": _PAI_SCOPE_RULES,
     }
 
+    if not replace_children:
+        return
+
     n_fields = 0
     for order, (eid, name, label, description, build) in enumerate(_SECTIONS, start=1):
         session.add(
@@ -733,10 +778,16 @@ async def seed_probast_ai(session: AsyncSession) -> None:
         )
         for field in build(eid):
             field.id = uuid5(eid, field.name)
-            # NI is the fifth signaling ANSWER here, and the judgment scale
-            # already encodes it (NI → Unclear), so the separate marker button
-            # would duplicate the control on every row of this instrument.
-            field.allows_no_information = False
+            # The marker is turned off where the answer set ALREADY carries the
+            # concept: NI is the fifth signaling answer, Unclear is the
+            # judgment scale's, and a blank optional text box needs no marker.
+            # The Step-2 classifier is the one exception — it is required, its
+            # three options are all substantive, and none of them means "the
+            # article does not say", so without the marker an unclassifiable
+            # study would have no representable answer. §1 of the design
+            # depends on that state existing: an absent-reason marker on the
+            # classifier excludes nothing, the conservative default.
+            field.allows_no_information = field.name == _F_STUDY_TYPE
             session.add(field)
             n_fields += 1
 

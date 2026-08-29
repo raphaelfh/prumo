@@ -299,6 +299,7 @@ _S_OVERALL = "overall_judgement"
 _F_QUALITY = "quality_concern"
 _F_ROB = "risk_of_bias"
 _F_APPLICABILITY = "applicability_concerns"
+_F_STUDY_TYPE = "study_type"
 
 # The instrument's signaling answer set, v2-local. PROBAST+AI answers each
 # signaling question Y / PY / PN / N / NI, and 2.1.0 carries all five on the

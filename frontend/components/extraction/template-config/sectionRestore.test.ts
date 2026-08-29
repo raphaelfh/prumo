@@ -46,6 +46,8 @@ const GROUP = {
       other_placeholder: 'Name the model',
       allows_not_applicable: true,
       allows_not_evaluated: true,
+      // Deliberately ABSENT: pre-0062 rows carry no such key, and the capture
+      // must read that as "the marker was available", not as off.
       validation_schema: {minLength: 2},
       sort_order: 0,
     },
@@ -152,6 +154,9 @@ describe('captureSection', () => {
       otherPlaceholder: 'Name the model',
       allowsNotApplicable: true,
       allowsNotEvaluated: true,
+      // Absent on the raw row, captured as TRUE — pre-0062 rows have no such
+      // key and the marker WAS available then.
+      allowsNoInformation: true,
       validationSchema: {minLength: 2},
     });
     // A row that never set them captures the server defaults, not undefined.
@@ -162,6 +167,7 @@ describe('captureSection', () => {
       otherPlaceholder: null,
       allowsNotApplicable: false,
       allowsNotEvaluated: false,
+      allowsNoInformation: true,
       validationSchema: {},
     });
   });
@@ -242,6 +248,7 @@ describe('replaySection', () => {
       other_placeholder: 'Name the model',
       allows_not_applicable: true,
       allows_not_evaluated: true,
+      allows_no_information: true,
       validation_schema: {minLength: 2},
       sort_order: 0,
     });

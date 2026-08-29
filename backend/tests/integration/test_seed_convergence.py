@@ -26,8 +26,11 @@ from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID, seed_probast_ai
 from app.services.template_clone_service import TemplateCloneService
 from tests.integration.conftest import SEED, clean_project_clones
 
+# NOTE: the COLUMN is `schema`; `schema_` is only the Python attribute name
+# (``mapped_column("schema", ...)``). Getting this wrong makes every test in
+# this file ERROR rather than fail, which is how it would prove nothing.
 _TEMPLATE_SQL = text(
-    "SELECT name, version, framework, kind, schema_, llm_template_instruction "
+    'SELECT name, version, framework, kind, "schema", llm_template_instruction '
     "FROM public.extraction_templates_global WHERE id = :tid"
 )
 
@@ -85,7 +88,7 @@ async def test_the_code_is_authoritative_over_a_manual_edit(db_session: AsyncSes
     await db_session.execute(
         text(
             "UPDATE public.extraction_templates_global "
-            "SET version = '9.9.9', schema_ = '{}'::jsonb WHERE id = :tid"
+            "SET version = '9.9.9', \"schema\" = '{}'::jsonb WHERE id = :tid"
         ),
         {"tid": str(_PROBAST_AI_TEMPLATE_ID)},
     )
@@ -154,13 +157,15 @@ async def test_convergence_leaves_project_clones_untouched(db_session: AsyncSess
         "LEFT JOIN public.extraction_fields f ON f.entity_type_id = et.id "
         "WHERE et.project_template_id = :cid ORDER BY et.sort_order, f.sort_order"
     )
-    before = (await db_session.execute(clone_sql, {"cid": str(clone.id)})).all()
+    before = (await db_session.execute(clone_sql, {"cid": str(clone.project_template_id)})).all()
     assert before, "clone produced no structure"
 
     await seed_probast_ai(db_session)
     await db_session.commit()
 
-    assert (await db_session.execute(clone_sql, {"cid": str(clone.id)})).all() == before
+    assert (
+        await db_session.execute(clone_sql, {"cid": str(clone.project_template_id)})
+    ).all() == before
     # The clone row itself still points at the global template: converging must
     # never delete the catalogue ROW, which would SET NULL this FK and break
     # clone dedupe on the next import.
@@ -169,7 +174,7 @@ async def test_convergence_leaves_project_clones_untouched(db_session: AsyncSess
             text(
                 "SELECT global_template_id FROM public.project_extraction_templates WHERE id = :cid"
             ),
-            {"cid": str(clone.id)},
+            {"cid": str(clone.project_template_id)},
         )
     ).scalar()
     assert still_linked == _PROBAST_AI_TEMPLATE_ID

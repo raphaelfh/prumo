@@ -32,11 +32,26 @@ class CapturingSession:
     def add(self, obj: object) -> None:
         self.added.append(obj)
 
-    async def execute(self, statement: object, *_a: object, **_k: object) -> None:
+    #: What ``execute``'s result reports from ``scalar_one_or_none`` — the shape
+    #: the converging seeder's "is the catalogue referenced?" probe reads.
+    scalar_result: Any = None
+
+    async def execute(self, statement: object, *_a: object, **_k: object) -> _Result:
         self.executed.append(statement)
+        return _Result(self.scalar_result)
 
     async def flush(self) -> None:
         return None
+
+
+class _Result:
+    """The sliver of ``sqlalchemy.Result`` the seeders touch."""
+
+    def __init__(self, scalar: Any) -> None:
+        self._scalar = scalar
+
+    def scalar_one_or_none(self) -> Any:
+        return self._scalar
 
 
 class ExistingTemplateSession(CapturingSession):

@@ -496,16 +496,19 @@ def test_excluded_field_coordinates_unions_the_assessor_pointers() -> None:
 def test_ni_answer_contributes_unclear_through_both_caller_shapes() -> None:
     """Screen/workbook parity for the instrument's fifth answer.
 
-    The two callers hand this module different shapes for the same stored
-    value: the run view passes the raw jsonb envelope (the stored code "NI"),
-    while the export passes a value_map whose entries ``resolve_value`` has
-    already collapsed to the option LABEL ("No information"). Both must reach
-    Unclear — the instrument's own reading of NI, and the same result the
-    retired marker path produced, so nothing downstream needs a branch.
+    The two callers hand this module different shapes: the run view passes the
+    raw jsonb envelope, the export passes a value_map ``resolve_value`` has
+    already collapsed to a scalar. For a select ANSWER that scalar is the
+    option's value ("NI"), so both paths land on ``_SIGNALING_MAP["ni"]`` —
+    which is what 2.1.0 adds, and which reads NI as Unclear: the instrument's
+    own reading, and the same result the retired marker produced, so nothing
+    downstream needs a branch.
 
-    The label path already resolved via the marker-label table before 2.1.0;
-    the raw path is what ``_SIGNALING_MAP["ni"]`` adds. Asserting both is what
-    pins the parity rather than one mechanism.
+    The bare "No information" case is the MARKER's label, which
+    ``resolve_value`` emits for a coded ``absent_reason``. It already resolved
+    to Unclear before 2.1.0; it is asserted here so the answer and the marker
+    are pinned to the same contribution, which is what makes the NI option's
+    label safe to share with the marker's.
     """
     assert _signaling_contribution({"value": "NI"}) == "Unclear"
     assert _signaling_contribution("NI") == "Unclear"

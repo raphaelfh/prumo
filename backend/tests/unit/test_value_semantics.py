@@ -211,9 +211,21 @@ def test_disposition_to_marker_converts_in_domain(raw, allowed, expected):
 _PAI_SIGNALING = ["Y", "PY", "PN", "N", {"value": "NI", "label": "No information"}]
 
 
-@pytest.mark.parametrize("raw", [{"value": "NI"}, "NI", {"value": "No information"}])
-def test_no_information_is_a_value_when_the_field_opts_out(raw):
-    assert disposition_to_marker(raw, _PAI_SIGNALING, allows_no_information=False) == raw
+@pytest.mark.parametrize(
+    ("raw", "allowed"),
+    [
+        # PROBAST+AI 2.1.0's abbreviated code — the shipped case
+        ({"value": "NI"}, _PAI_SIGNALING),
+        ("NI", _PAI_SIGNALING),
+        # the full-word encoding, so the flag is not accidentally code-specific
+        ({"value": "No information"}, ["Yes", "No", "No information"]),
+    ],
+)
+def test_no_information_is_a_value_when_the_field_opts_out(raw, allowed):
+    # Guards the guard: each case must be IN-domain, or it would return
+    # unchanged at the allowed_values check and never reach the flag.
+    assert disposition_to_marker(raw, allowed) != raw
+    assert disposition_to_marker(raw, allowed, allows_no_information=False) == raw
 
 
 def test_opting_out_does_not_spare_the_other_dispositions():
