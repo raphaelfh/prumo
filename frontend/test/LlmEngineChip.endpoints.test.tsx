@@ -168,10 +168,14 @@ beforeEach(() => {
 });
 
 describe('popover footer', () => {
-  it('opens the custom-endpoint management dialog', async () => {
+  it('reaches the custom-endpoint manager through engine settings', async () => {
+    // Slice C: the endpoints manager is policy, so it moved behind the
+    // settings dialog. This walks the whole path the user now takes, because
+    // the popover no longer opens it directly.
     mockEndpoints([makeEndpointRead()]);
     await renderOpenPopover();
 
+    await userEvent.click(screen.getByTestId('llm-engine-open-settings'));
     await userEvent.click(
       screen.getByRole('button', {name: copy.manageEndpoints}),
     );
@@ -301,18 +305,10 @@ describe('endpoint groups (C2 C3)', () => {
     expect(screen.queryByText(copy.endpointGroupNote)).not.toBeInTheDocument();
   });
 
-  it('hides endpoint rows while managing alternates (catalogue pairs only)', async () => {
-    mockEndpoints([OK_ENDPOINT]);
-    await renderOpenPopover();
-
-    await userEvent.click(
-      screen.getByRole('button', {name: copy.alternatesAddLabel}),
-    );
-
-    expect(
-      screen.queryByTestId('llm-engine-endpoint-option-e1-qwen3-30b'),
-    ).not.toBeInTheDocument();
-  });
+  // The old "hides endpoint rows while managing alternates" case is gone with
+  // the managing mode itself: alternates are a CATALOGUE pair, and their
+  // picker now lives in the settings dialog, so it can no longer hide rows in
+  // this list. Endpoint rows are always offered here.
 });
 
 /**
