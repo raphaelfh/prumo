@@ -19,7 +19,7 @@ export function Label({
   htmlFor?: string;
 }) {
   const cls =
-    'mb-[3px] mt-[9px] block text-[9.5px] uppercase tracking-[0.05em] text-muted-foreground';
+    'mb-[3px] mt-[9px] block text-[11px] uppercase tracking-[0.05em] text-muted-foreground';
   if (htmlFor) {
     return (
       <label htmlFor={htmlFor} className={cls}>
