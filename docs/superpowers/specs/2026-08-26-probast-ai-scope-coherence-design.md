@@ -328,16 +328,20 @@ API consolidation remains extraction-only per the roadmap).
 
 ## 4. Seed convergence (the delivery vehicle)
 
-`seed_probast_ai` becomes version-gated instead of insert-only:
+`seed_probast_ai` converges **unconditionally** instead of
+insert-only:
 
 - Row absent → insert (today's path).
-- Row present, `version` equals the code's → skip (today's path).
-- Row present, `version` differs → **update** the template row in place
-  (name, description, version, `schema_`) and **replace its children**:
-  delete the global template's entity types (fields CASCADE), re-insert
-  from `_SECTIONS`. The template ROW is never deleted — deleting it
-  would SET NULL every clone's `global_template_id` and break clone
-  dedupe/heal.
+- Row present → **update** the template row in place (name,
+  description, version, `schema_`) and **replace its children**: delete
+  the global template's entity types (fields CASCADE), re-insert from
+  `_SECTIONS`. Every boot, no version compare — a version GATE would
+  reintroduce the forgotten-bump silent no-op, the exact bug class this
+  section exists to fix. The writes are idempotent by construction
+  (deterministic UUIDs, same data → same rows) and cost ~100 rows per
+  deploy. `version` stays as display metadata (2.1.0 still ships). The
+  template ROW is never deleted — deleting it would SET NULL every
+  clone's `global_template_id` and break clone dedupe/heal.
 
 Safety, verified against the models: no FK references global entity
 types from clones, runs, instances or proposals (clones copy; runs pin
@@ -345,11 +349,11 @@ clone snapshots). If that invariant ever breaks, the RESTRICT on
 `extraction_instances.entity_type_id` aborts the boot loudly and Railway
 keeps the previous build live — the correct failure mode.
 
-Convergence makes the CODE authoritative in **both directions**: a
-deploy rollback re-runs the older seed, whose different `version`
-rewrites the template back to that code's shape. Intended — the
-catalogue always matches the running build, and globals are referenced
-by nothing that could break.
+Convergence makes the CODE authoritative **by construction**: a deploy
+rollback rewrites the template back to that build's shape, and a manual
+prod UPDATE to the global row is reverted on the next boot. Intended —
+the catalogue always matches the running build, and globals are
+referenced by nothing that could break.
 
 v2 bumps `2.0.0 → 2.1.0` carrying `scope_rules`, the NI answer, the
 disposition flags and the optionality change (§1b) in one replace. The
@@ -413,10 +417,11 @@ superseded by this section.
   shared function itself is untouched (no new tests there).
 - **Unit — `studyTypeScope`**: data-driven cases replacing the prefix
   tests.
-- **Unit — seed convergence**: seed twice same version → no-op; bump
-  version → row updated, children replaced under the same deterministic
-  UUIDs, field counts re-asserted; a project clone row and its entity
-  types are untouched.
+- **Unit — seed convergence**: seeding twice yields an identical final
+  state (idempotent); a manual UPDATE to the global row is reverted by
+  the next seed (code authoritative); children replaced under the same
+  deterministic UUIDs with field counts re-asserted; a project clone
+  row and its entity types are untouched.
 - **Seed test extension**: `scope_rules` coordinates resolve against the
   seeded tree (dangling-ref, alongside the `derived_judgments`
   assertion); the optionality matrix is rewritten (required = classifier
@@ -449,7 +454,7 @@ superseded by this section.
 
 1. **PR1 — model + seed** (backend): the `allows_no_information`
    migration, `scope_rules` data, NI answer, optionality,
-   version-gated convergence, `2.1.0`, seed tests. Inert to every
+   unconditional convergence, `2.1.0`, seed tests. Inert to every
    runtime path (the flag defaults true everywhere it already exists).
 2. **PR2 — backend consumers**: scope helper, AI-path guard, payload
    state, export parity, and the run view's `general_instructions`
@@ -481,6 +486,12 @@ template change to prod with no manual step.
   for the filled-then-reclassified case, dropped: the reviewer avatar
   stack already survives on the collapsed row as the activity signal,
   and the values are one click away.
+- **Version-gated convergence** — cut (complexity review): gating the
+  §4 replace on a `version` bump reintroduces the forgotten-bump
+  silent no-op, the exact bug class the section exists to fix.
+  Unconditional convergence deletes the compare branch and makes the
+  code authoritative by construction; `version` stays display
+  metadata.
 - **Runtime dangling warning for `scope_rules`** — cut (this review):
   the failure mode is visible (sections reappear), unlike a silently
   nulled overall; the seed test carries the guarantee.
