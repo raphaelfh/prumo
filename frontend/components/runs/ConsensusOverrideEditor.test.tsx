@@ -19,6 +19,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
@@ -38,6 +39,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
@@ -55,6 +57,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
@@ -75,6 +78,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         initialValue="High"
         initialRationale="prior"
@@ -91,6 +95,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled
         initialValue="High"
         onCancel={() => {}}
@@ -103,12 +108,8 @@ describe('ConsensusOverrideEditor', () => {
   });
 
   it('omits the "No information" button when the field opts out (ADR-0016 / 0062)', () => {
-    // PROBAST+AI 2.1.0 signaling questions carry "NI" as the fifth answer of
-    // the scale, so `allows_no_information` is false and FieldInput renders no
-    // marker button. This writer must agree: a marker published from here would
-    // be INVISIBLE and UNCLEARABLE on the form (a set reason blanks the display
-    // value and the disposition row filters the entry out) while still counting
-    // as filled.
+    // Must agree with FieldInput: on an opted-out field a published marker is
+    // invisible AND unclearable on the form, yet still counts as filled.
     render(
       <ConsensusOverrideEditor
         coordKey="i1::f1"
@@ -127,29 +128,13 @@ describe('ConsensusOverrideEditor', () => {
     expect(screen.getByTestId('consensus-override-submit-i1::f1')).toBeEnabled();
   });
 
-  it('renders the "No information" button when the flag is absent (defaults ON)', () => {
-    // The marker was universal before 0062, so an omitting caller — or a
-    // pre-0062 snapshot — keeps the button.
-    render(
-      <ConsensusOverrideEditor
-        coordKey="i1::f1"
-        field={field}
-        disabled={false}
-        onCancel={() => {}}
-        onPublish={() => {}}
-      />,
-    );
-    expect(
-      screen.getByRole('button', { name: /dispositionNoInformation/i }),
-    ).toBeInTheDocument();
-  });
-
   it('Cancel fires onCancel', () => {
     const onCancel = vi.fn();
     render(
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         onCancel={onCancel}
         onPublish={() => {}}

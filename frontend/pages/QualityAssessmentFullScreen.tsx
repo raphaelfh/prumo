@@ -580,13 +580,11 @@ export default function QualityAssessmentFullScreen() {
     (domain) => ({
       id: domain.entityType.id,
       label: domain.entityType.label,
-      // Editor-relevant attributes so the resolve-mode override renders the
-      // right typed input per field (not a bare text box).
-      fields: domain.fields.map((f) => ({
-        id: f.id, label: f.label, field_type: f.field_type, unit: f.unit, allow_other: f.allow_other,
-        allowed_values: f.allowed_values, allowed_units: f.allowed_units, other_label: f.other_label,
-        other_placeholder: f.other_placeholder, allows_no_information: f.allows_no_information,
-      })),
+      // `ExtractionField` already satisfies `ComparisonField` structurally, so
+      // pass it whole — a hand-written projection silently drops any attribute
+      // it forgets (every key but `id` is optional), which is how the ADR-0016
+      // disposition flag went missing on this path.
+      fields: domain.fields,
     }),
   );
   const compareInstances: ComparisonInstance[] = sortedDomains

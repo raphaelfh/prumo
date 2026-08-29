@@ -1,8 +1,9 @@
 /**
  * Typed consensus override editor — replaces the raw-JSON override box.
  *
- * Renders the shared FieldValueEditor for the field's type plus a universal
- * "No information" disposition toggle (ADR-0016) and an optional rationale.
+ * Renders the shared FieldValueEditor for the field's type plus the
+ * "No information" disposition toggle (ADR-0016, shown only where the field
+ * allows that marker) and an optional rationale.
  * It emits the FORM-SHAPED value (e.g. a scalar, `{value, unit}`, an array, or
  * the flat `{value: null, absent_reason}` marker); the caller applies
  * `toConsensusValueEnvelope` before POSTing so the payload is shape-identical
@@ -25,15 +26,9 @@ import { t } from '@/lib/copy';
 export interface ConsensusOverrideEditorProps {
   coordKey: string;
   field: FieldValueEditorField;
-  /**
-   * ADR-0016 per-field disposition flag (migration 0062), mirroring the gate
-   * `FieldInput` applies to the same marker. Defaults ON when undefined — the
-   * marker was universal before the flag existed, so an omitting caller (or a
-   * pre-0062 snapshot) keeps the button. Turned off where the answer set
-   * already carries the concept as a value (PROBAST+AI 2.1.0's "NI"), because
-   * a marker written there is invisible AND unclearable on the form.
-   */
-  allowsNoInformation?: boolean;
+  /** ADR-0016 marker gate (0062) — same rule `FieldInput` applies. Required:
+   *  the caller owns the "absent ⇒ ON" default so it is spelled once. */
+  allowsNoInformation: boolean;
   disabled: boolean;
   /** Seed for "Change" on a resolved manual_override (form-shaped, unwrapped). */
   initialValue?: unknown;
@@ -46,7 +41,7 @@ export interface ConsensusOverrideEditorProps {
 export function ConsensusOverrideEditor({
   coordKey,
   field,
-  allowsNoInformation = true,
+  allowsNoInformation,
   disabled,
   initialValue,
   initialRationale,
@@ -55,6 +50,9 @@ export function ConsensusOverrideEditor({
 }: ConsensusOverrideEditorProps) {
   const [value, setValue] = useState<unknown>(initialValue ?? '');
   const [rationale, setRationale] = useState(initialRationale ?? '');
+  // Always false while `allowsNoInformation` is off: the caller drops a marker
+  // from `overrideSeed`, and with the toggle hidden nothing can set one. If that
+  // ever changes, the editor would open disabled with no control to clear it.
   const markerActive = valueAbsentReason(value) !== null;
 
   return (

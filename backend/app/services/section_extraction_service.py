@@ -1659,11 +1659,11 @@ class SectionExtractionService(LoggerMixin):
                 # affirmative "the source is silent" answer (ADR-0016), so the
                 # coordinate counts as filled once a reviewer accepts it.
                 # Gated by ``allows_no_information`` (0062) as
-                # ``disposition_to_marker`` gates the human write path: an
-                # opted-out field renders no marker button, so a marker written
-                # here would be invisible AND unclearable yet still count filled.
-                _ni_field = field_by_name.get(field_name)
-                if getattr(_ni_field, "allows_no_information", True) is not False:
+                # ``disposition_to_marker`` gates the human write path: on an
+                # opted-out field a marker here is invisible AND unclearable yet
+                # still counts as filled. Reads the LIVE row while the form reads
+                # the run's frozen snapshot — a mid-run republish can skew them.
+                if field_by_name[field_name].allows_no_information:
                     proposed_value["absent_reason"] = AbsentReason.NO_INFORMATION.value
             elif verdicts and field_name in verdicts:
                 # Verified mode: the verdict is ANNOTATION, never mutation
