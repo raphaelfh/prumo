@@ -583,9 +583,9 @@ export default function QualityAssessmentFullScreen() {
       // Editor-relevant attributes so the resolve-mode override renders the
       // right typed input per field (not a bare text box).
       fields: domain.fields.map((f) => ({
-        id: f.id, label: f.label, field_type: f.field_type,
-        allowed_values: f.allowed_values, unit: f.unit, allowed_units: f.allowed_units,
-        allow_other: f.allow_other, other_label: f.other_label, other_placeholder: f.other_placeholder,
+        id: f.id, label: f.label, field_type: f.field_type, unit: f.unit, allow_other: f.allow_other,
+        allowed_values: f.allowed_values, allowed_units: f.allowed_units, other_label: f.other_label,
+        other_placeholder: f.other_placeholder, allows_no_information: f.allows_no_information,
       })),
     }),
   );

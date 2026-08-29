@@ -102,6 +102,48 @@ describe('ConsensusOverrideEditor', () => {
     expect(screen.getByTestId('consensus-override-submit-i1::f1')).toBeDisabled();
   });
 
+  it('omits the "No information" button when the field opts out (ADR-0016 / 0062)', () => {
+    // PROBAST+AI 2.1.0 signaling questions carry "NI" as the fifth answer of
+    // the scale, so `allows_no_information` is false and FieldInput renders no
+    // marker button. This writer must agree: a marker published from here would
+    // be INVISIBLE and UNCLEARABLE on the form (a set reason blanks the display
+    // value and the disposition row filters the entry out) while still counting
+    // as filled.
+    render(
+      <ConsensusOverrideEditor
+        coordKey="i1::f1"
+        field={field}
+        allowsNoInformation={false}
+        disabled={false}
+        onCancel={() => {}}
+        onPublish={() => {}}
+      />,
+    );
+    expect(
+      screen.queryByRole('button', { name: /dispositionNoInformation/i }),
+    ).not.toBeInTheDocument();
+    // The typed editor and submit are untouched — only the marker is gone.
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'NI' } });
+    expect(screen.getByTestId('consensus-override-submit-i1::f1')).toBeEnabled();
+  });
+
+  it('renders the "No information" button when the flag is absent (defaults ON)', () => {
+    // The marker was universal before 0062, so an omitting caller — or a
+    // pre-0062 snapshot — keeps the button.
+    render(
+      <ConsensusOverrideEditor
+        coordKey="i1::f1"
+        field={field}
+        disabled={false}
+        onCancel={() => {}}
+        onPublish={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: /dispositionNoInformation/i }),
+    ).toBeInTheDocument();
+  });
+
   it('Cancel fires onCancel', () => {
     const onCancel = vi.fn();
     render(

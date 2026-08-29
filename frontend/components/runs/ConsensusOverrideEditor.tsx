@@ -25,6 +25,15 @@ import { t } from '@/lib/copy';
 export interface ConsensusOverrideEditorProps {
   coordKey: string;
   field: FieldValueEditorField;
+  /**
+   * ADR-0016 per-field disposition flag (migration 0062), mirroring the gate
+   * `FieldInput` applies to the same marker. Defaults ON when undefined — the
+   * marker was universal before the flag existed, so an omitting caller (or a
+   * pre-0062 snapshot) keeps the button. Turned off where the answer set
+   * already carries the concept as a value (PROBAST+AI 2.1.0's "NI"), because
+   * a marker written there is invisible AND unclearable on the form.
+   */
+  allowsNoInformation?: boolean;
   disabled: boolean;
   /** Seed for "Change" on a resolved manual_override (form-shaped, unwrapped). */
   initialValue?: unknown;
@@ -37,6 +46,7 @@ export interface ConsensusOverrideEditorProps {
 export function ConsensusOverrideEditor({
   coordKey,
   field,
+  allowsNoInformation = true,
   disabled,
   initialValue,
   initialRationale,
@@ -59,34 +69,36 @@ export function ConsensusOverrideEditor({
         onChange={setValue}
         disabled={disabled || markerActive}
       />
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          aria-pressed={markerActive}
-          disabled={disabled}
-          onClick={() =>
-            setValue(
-              markerActive ? '' : { value: null, absent_reason: 'no_information' },
-            )
-          }
-          className={cn(
-            'h-6 gap-1 px-2 text-xs',
-            markerActive
-              ? 'text-success ring-1 ring-inset ring-success bg-success/10 hover:bg-success/15 hover:text-success'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {markerActive ? <Check className="h-3 w-3" /> : null}
-          {t('extraction', 'dispositionNoInformation')}
-        </Button>
-        {markerActive ? (
-          <span className="text-[11px] text-muted-foreground">
-            {t('consensus', 'overrideNoInfoRecorded')}
-          </span>
-        ) : null}
-      </div>
+      {allowsNoInformation ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-pressed={markerActive}
+            disabled={disabled}
+            onClick={() =>
+              setValue(
+                markerActive ? '' : { value: null, absent_reason: 'no_information' },
+              )
+            }
+            className={cn(
+              'h-6 gap-1 px-2 text-xs',
+              markerActive
+                ? 'text-success ring-1 ring-inset ring-success bg-success/10 hover:bg-success/15 hover:text-success'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {markerActive ? <Check className="h-3 w-3" /> : null}
+            {t('extraction', 'dispositionNoInformation')}
+          </Button>
+          {markerActive ? (
+            <span className="text-[11px] text-muted-foreground">
+              {t('consensus', 'overrideNoInfoRecorded')}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <Label htmlFor={`override-rationale-${coordKey}`} className="text-xs">
         {t('consensus', 'panelRationaleLabel')}
       </Label>
