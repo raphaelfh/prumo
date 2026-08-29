@@ -148,10 +148,12 @@ export interface RunViewFieldResponse {
   allow_other: boolean;
   other_label: string | null;
   other_placeholder: string | null;
-  /** ADR-0016 opt-in disposition flags — gate the "Not applicable" /
-   * "Not evaluated" markers in FieldInput. */
+  /** ADR-0016 per-field disposition flags — gate the marker buttons in
+   * FieldInput. `allows_no_information` defaults TRUE server-side (0062);
+   * a pre-0062 snapshot omits it, which means the marker was available. */
   allows_not_applicable: boolean;
   allows_not_evaluated: boolean;
+  allows_no_information?: boolean;
 }
 
 interface RunViewEntityType {

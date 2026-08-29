@@ -114,12 +114,18 @@ class ExtractionReviewService:
         # was already normalized at record_proposal time. Scoped by the field's
         # live domain so a coincidental value is untouched.
         if is_disposition_candidate(value):
-            allowed = (
+            domain = (
                 await self.db.execute(
-                    select(ExtractionField.allowed_values).where(ExtractionField.id == field_id)
+                    select(
+                        ExtractionField.allowed_values,
+                        ExtractionField.allows_no_information,
+                    ).where(ExtractionField.id == field_id)
                 )
-            ).scalar_one_or_none()
-            value = disposition_to_marker(value, allowed)
+            ).one_or_none()
+            if domain is not None:
+                value = disposition_to_marker(
+                    value, domain.allowed_values, allows_no_information=domain.allows_no_information
+                )
 
         # Idempotent re-record: an unchanged decision replay (form remount,
         # retry) must not append a duplicate row. Compare the decision kind,

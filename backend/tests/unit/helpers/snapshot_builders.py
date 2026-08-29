@@ -38,6 +38,7 @@ def field_node(field_id: UUID, **over: Any) -> dict[str, Any]:
         "other_placeholder": None,
         "allows_not_applicable": False,
         "allows_not_evaluated": False,
+        "allows_no_information": True,
     }
     node.update(over)
     return node

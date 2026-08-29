@@ -69,6 +69,10 @@ class PortableField(BaseModel):
     other_placeholder: str | None = Field(default=None, max_length=200)
     allows_not_applicable: bool = False
     allows_not_evaluated: bool = False
+    # 0062. TRUE by default, unlike the two above: a bundle exported before the
+    # column existed carries no key, and the marker WAS available then — so it
+    # must re-import as available rather than silently off.
+    allows_no_information: bool = True
     # 0059. Export and import are both generic — ``model_validate(...,
     # from_attributes=True)`` on the way out and ``**f.model_dump()`` in
     # ``_field_row`` on the way in — so this line is the whole feature.

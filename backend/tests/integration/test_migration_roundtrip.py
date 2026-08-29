@@ -488,6 +488,47 @@ async def test_migration_0038_round_trip(
     )
 
 
+_NO_INFORMATION_COL = text(
+    "SELECT column_default FROM information_schema.columns "
+    "WHERE table_schema='public' AND table_name='extraction_fields' "
+    "AND column_name='allows_no_information'"
+)
+
+
+@pytest.mark.asyncio
+async def test_migration_0062_round_trip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0062_allows_no_information`` adds the third disposition flag.
+
+    Its server_default is ``true`` — the OPPOSITE of 0038's two — because the
+    marker was universal before the column existed, so every pre-existing row
+    must backfill to "available". Asserting the default (not just the column's
+    presence) is what pins that; a copy-paste of 0038 would silently retire the
+    marker on every field in the database.
+
+    Downgrades to the explicit parent ``0061_rls_initplan_config_reads`` (not
+    ``-1``) so the test stays correct as later migrations stack on top.
+    """
+    assert "true" in ((await migration_session.execute(_NO_INFORMATION_COL)).scalar() or ""), (
+        "the column must exist at HEAD with a TRUE server_default"
+    )
+
+    _run_alembic("downgrade", "0061_rls_initplan_config_reads", database_url=migration_db_url)
+    try:
+        await migration_session.commit()
+        assert (await migration_session.execute(_NO_INFORMATION_COL)).scalar() is None, (
+            "downgrade must drop the column"
+        )
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    await migration_session.commit()
+    assert "true" in ((await migration_session.execute(_NO_INFORMATION_COL)).scalar() or ""), (
+        "upgrade head must restore the column with its TRUE default"
+    )
+
+
 @pytest.mark.asyncio
 async def test_migration_0039_round_trip(
     migration_db_url: str, migration_session: AsyncSession
@@ -1225,8 +1266,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0061_rls_initplan_config_reads" in out, (
-        f"Expected head revision '0061_rls_initplan_config_reads', got:\n{out}"
+    assert "0062_allows_no_information" in out, (
+        f"Expected head revision '0062_allows_no_information', got:\n{out}"
     )
 
 

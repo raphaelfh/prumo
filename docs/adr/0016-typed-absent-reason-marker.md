@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-07-02
+last_reviewed: 2026-08-29
 owner: '@raphaelfh'
 adr_number: '0016'
 ---
@@ -70,7 +70,8 @@ Precise semantics:
 
 - **`no_information`** is available on every field; **`not_applicable`** and
   **`not_evaluated`** are opt-in per field. `"Unclear"` stays a substantive
-  value.
+  value. **Amended 2026-08-29** — see "Amendment: `no_information` becomes
+  opt-in too" below.
 - **AI abstention is a first-class acceptable proposal**
   (`{value:null, absent_reason:"no_information"}`) the reviewer accepts in one
   click — not bare `null` (**amends §IX**, `constitution.md:154`). The gate
@@ -123,8 +124,39 @@ Full design, per-layer detail, and test strategy:
   label rendering, and an `allowed_values`-scoped migration verified offline
   (`--sql`) both directions.
 
+## Amendment: `no_information` becomes opt-in too (2026-08-29)
+
+Migration `0062_allows_no_information` adds the third per-field flag, so all
+three dispositions are uniformly flag-gated. The original "available on every
+field" reading is retained as the DEFAULT (`server_default true`, and the same
+`true` for every absent-key default), not as an invariant.
+
+Why: PROBAST+AI 2.1.0 restores the instrument's own five-answer signaling scale
+(Y/PY/PN/N/**NI**). With NI as a select answer, a separate marker button offers
+the same concept twice on the same control — the duplication this ADR's
+rejected option B exists to prevent, arriving from the other direction. Turning
+the marker off on exactly those fields keeps one concept on one control.
+
+Two consequences worth stating, because they read like contradictions:
+
+- **An in-band `"NI"` is no longer always a retired disposition string.**
+  `disposition_to_marker` now takes the field's flag and skips the rewrite when
+  the field opts out — there, the string is the field's own answer, and
+  rewriting it would erase a reviewer's answer into a marker the form does not
+  render. NA/NE on the same field still normalize; the flag is scoped to its
+  own disposition.
+- **The scale absorbs the semantics rather than losing them.** `NI → Unclear`
+  in `derived_judgment_service._SIGNALING_MAP` is the instrument's own reading,
+  and the same result the marker path already produced — so derivation, export
+  and the screen agree without a special case.
+
+This narrows the ADR's scope; it does not supersede it. The marker remains the
+only encoding of "no value, on purpose" wherever a field has no such answer,
+which is every field in every other seeded template.
+
 ## More Information
 
+- Amendment design: `docs/superpowers/specs/2026-08-26-probast-ai-scope-coherence-design.md`
 - Design spec: `docs/superpowers/specs/2026-06-30-no-information-representation-design.md`
 - Constitution §IX: `docs/reference/constitution.md`
 - Emptiness oracle: `backend/app/services/value_semantics.py`
