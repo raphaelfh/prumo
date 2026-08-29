@@ -136,7 +136,7 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        className="text-muted-foreground hover:text-destructive"
                         aria-label={t('templateConfig', 'projectTemplateDelete')}
                         data-testid={`project-template-delete-${tpl.id}`}
                         disabled={busyId !== null}

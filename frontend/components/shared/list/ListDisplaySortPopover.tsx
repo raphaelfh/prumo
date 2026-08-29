@@ -59,7 +59,7 @@ export function ListDisplaySortPopover({
                         <PopoverTrigger asChild>
                             <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon"
                                 className="h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
                                 aria-label={ariaLabel}
                             >
@@ -92,7 +92,7 @@ export function ListDisplaySortPopover({
                             </Select>
                             <Button
                                 variant="outline"
-                                size="sm"
+                                size="icon"
                                 className="h-8 w-8 p-0 shrink-0"
                                 onClick={onSortDirectionChange}
                             >

@@ -314,7 +314,7 @@ export function FieldInput(props: FieldInputProps) {
                           size="icon"
                           variant="ghost"
                           className={cn(
-                            "h-7 w-7",
+                            "",
                             "text-muted-foreground hover:text-foreground hover:bg-muted"
                           )}
                           title={t('extraction', 'reviewTitle')}
@@ -351,13 +351,13 @@ export function FieldInput(props: FieldInputProps) {
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    size="sm"
+                    size="xs"
                     variant="ghost"
                     aria-pressed={active}
                     disabled={inputDisabled}
                     onClick={() => setDisposition(d.code)}
                     className={cn(
-                      'h-6 gap-1 px-2 text-xs',
+                      'gap-1 px-2 text-xs',
                       active
                         ? 'text-success ring-1 ring-inset ring-success bg-success/10 hover:bg-success/15 hover:text-success'
                         : 'text-muted-foreground hover:text-foreground',

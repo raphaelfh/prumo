@@ -57,8 +57,8 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0"
+                size="icon-xs"
+                className="p-0"
                 onClick={handleRestore}
                 title={t('extraction', 'fullAIProgressRestore')}
               >
@@ -67,8 +67,8 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
               {onClose && (
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0"
+                  size="icon-xs"
+                  className="p-0"
                   onClick={handleClose}
                   title={t('extraction', 'fullAIProgressClose')}
                 >
@@ -96,8 +96,8 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
             {onMinimize && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
+                size="icon"
+                className="p-0"
                 onClick={handleMinimize}
                 title={t('extraction', 'fullAIProgressMinimize')}
               >
@@ -107,8 +107,8 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
             {onClose && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
+                size="icon"
+                className="p-0"
                 onClick={handleClose}
                 title={t('extraction', 'fullAIProgressClose')}
               >

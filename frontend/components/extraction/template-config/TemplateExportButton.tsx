@@ -66,7 +66,7 @@ export function TemplateExportButton({projectId, templateId}: TemplateExportButt
             data-testid="template-config-export"
             aria-label={t('extraction', 'exportButton')}
             onClick={handleClick}
-            className="h-8 text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground"
           >
             <FileUp className="h-4 w-4 @6xl/configbar:mr-2" />
             {/* The command bar (a @container) is full at ~920px — its title

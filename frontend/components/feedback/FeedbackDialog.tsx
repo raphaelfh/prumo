@@ -237,10 +237,10 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={resetAndClose} disabled={submitting}>
+            <Button size="sm" type="button" variant="outline" onClick={resetAndClose} disabled={submitting}>
               {t('common', 'cancel')}
             </Button>
-            <Button type="submit" disabled={submitting || !isDescriptionValid}>
+            <Button size="sm" type="submit" disabled={submitting || !isDescriptionValid}>
               {submitting ? t('navigation', 'feedbackSubmitting') : t('navigation', 'feedbackSubmit')}
             </Button>
           </DialogFooter>

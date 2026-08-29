@@ -174,6 +174,7 @@ export function RemoveModelDialog({
 
         <DialogFooter>
           <Button
+            size="sm"
             type="button"
             variant="outline"
             onClick={onCancel}
@@ -182,6 +183,7 @@ export function RemoveModelDialog({
               {t('common', 'cancel')}
           </Button>
           <Button
+            size="sm"
             type="button"
             variant="destructive"
             onClick={handleConfirm}

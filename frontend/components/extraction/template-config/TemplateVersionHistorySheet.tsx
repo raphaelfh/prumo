@@ -102,7 +102,7 @@ function HistoryRow({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 shrink-0 text-xs"
+                className="shrink-0 text-xs"
                 disabled={restoring}
                 onClick={() => onRestore(entry)}
               >

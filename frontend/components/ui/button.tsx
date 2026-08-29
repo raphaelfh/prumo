@@ -5,7 +5,9 @@ import {cva, type VariantProps} from "class-variance-authority";
 import {cn} from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  // No `text-sm` here: font size is per-size (below), so a dense call site
+  // does not have to override a base it cannot win against cleanly.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium ring-offset-background transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -16,13 +18,23 @@ const buttonVariants = cva(
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
+      // Named by ROLE, not by location. `sm` is the chrome default at the
+      // h-7 density `frontend-ux` specifies; `default` is for CTAs only.
+      // Never override a height in a call site's className —
+      // scripts/fitness/check_button_scale.py fails the build on a new one.
+      //
+      // Every dense size carries the coarse-pointer bump to 44px, and the
+      // square sizes bump width too: `twMerge` keeps the bump alongside a
+      // plain `h-*` (different modifier group), so a height-only bump would
+      // render a tall thin sliver on touch.
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-3",
-        lg: "h-11 rounded-md px-8",
-        icon: "h-10 w-10",
-        header: "h-8 rounded-md px-2 text-header-meta [@media(pointer:coarse)]:h-11",
-        "header-icon": "h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
+        default: "h-10 px-4 py-2 text-sm",
+        sm: "h-7 rounded-md px-2.5 text-[13px] [@media(pointer:coarse)]:h-11",
+        xs: "h-6 rounded-md px-2 text-xs [&_svg]:size-3.5 [@media(pointer:coarse)]:h-11",
+        lg: "h-11 rounded-md px-8 text-sm",
+        icon: "h-7 w-7 text-[13px] [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
+        "icon-xs":
+          "h-6 w-6 text-xs [&_svg]:size-3.5 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
       },
     },
     defaultVariants: {

@@ -1198,7 +1198,7 @@ export function ArticleForm({
                                                             </Button>
                                                             <Button
                                                                 type="button"
-                                                                size="sm"
+                                                                size="icon"
                                                                 variant="ghost"
                                                                 className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                                                                 onClick={() => openDeleteDialog(file)}

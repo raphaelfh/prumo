@@ -368,7 +368,7 @@ export function ApiKeysSection() {
                                   {getValidationBadge(key.validationStatus)}
                                   <Button
                                       variant="ghost"
-                                      size="sm"
+                                      size="icon"
                                       className="h-8 w-8 p-0"
                                       onClick={() => handleValidate(key.id)}
                                       disabled={validating === key.id}
@@ -383,7 +383,7 @@ export function ApiKeysSection() {
                                   {!key.isDefault && key.isActive && (
                                       <Button
                                           variant="ghost"
-                                          size="sm"
+                                          size="icon"
                                           className="h-8 w-8 p-0"
                                           onClick={() => handleSetDefault(key.id)}
                                           title={t('user', 'apiKeysTitleSetDefault')}
@@ -395,7 +395,7 @@ export function ApiKeysSection() {
                                       <AlertDialogTrigger asChild>
                                           <Button
                                               variant="ghost"
-                                              size="sm"
+                                              size="icon"
                                               className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
                                               title={t('user', 'apiKeysTitleRemove')}
                                           >

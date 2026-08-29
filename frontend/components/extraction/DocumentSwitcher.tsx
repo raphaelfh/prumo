@@ -154,7 +154,7 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 text-xs"
+            className="text-xs"
             disabled={reparse.isPending}
             aria-label={t('pdf', 'docReparse')}
           >
@@ -178,7 +178,7 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
       <Button
         size="sm"
         variant={status === 'parse_failed' ? 'outline' : 'ghost'}
-        className="h-7 text-xs"
+        className="text-xs"
         disabled={reparse.isPending}
         onClick={fire}
         aria-label={t('pdf', 'docReparse')}
