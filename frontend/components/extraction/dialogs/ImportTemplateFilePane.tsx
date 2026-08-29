@@ -56,11 +56,10 @@ export function ImportTemplateFilePane({projectId, onImported}: ImportTemplateFi
     onImported(result.data.templateId);
   };
 
+  // The enclosing tab already names this pane, so no visible heading here;
+  // the accessible name lives on the section.
   return (
-    <section aria-labelledby={`${inputId}-heading`} className="space-y-2">
-      <h3 id={`${inputId}-heading`} className="text-[13px] font-medium text-foreground">
-        {t('templateConfig', 'importFromFileHeading')}
-      </h3>
+    <section aria-label={t('templateConfig', 'importFromFileHeading')} className="space-y-2">
       <p className="text-xs text-muted-foreground">{t('templateConfig', 'importFromFileHint')}</p>
       <div className="flex items-center gap-2">
         <label
