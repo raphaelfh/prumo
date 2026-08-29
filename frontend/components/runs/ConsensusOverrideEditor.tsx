@@ -1,16 +1,15 @@
 /**
  * Typed consensus override editor — replaces the raw-JSON override box.
  *
- * Renders the shared FieldValueEditor for the field's type plus the
- * "No information" disposition toggle (ADR-0016, shown only where the field
- * allows that marker) and an optional rationale.
+ * Renders the shared FieldValueEditor for the field's type plus the shared
+ * DispositionRow (ADR-0016 — the same chips the extraction form offers, gated
+ * by the same per-field flags) and an optional rationale.
  * It emits the FORM-SHAPED value (e.g. a scalar, `{value, unit}`, an array, or
  * the flat `{value: null, absent_reason}` marker); the caller applies
  * `toConsensusValueEnvelope` before POSTing so the payload is shape-identical
  * to a `select_existing` publish.
  */
 import { useState } from 'react';
-import { Check } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -19,16 +18,18 @@ import {
   FieldValueEditor,
   type FieldValueEditorField,
 } from '@/components/extraction/FieldValueEditor';
+import {
+  DispositionRow,
+  type DispositionRowField,
+} from '@/components/extraction/DispositionRow';
 import { isValueFilled, valueAbsentReason } from '@/lib/extraction/valueSemantics';
-import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
 
 export interface ConsensusOverrideEditorProps {
   coordKey: string;
-  field: FieldValueEditorField;
-  /** ADR-0016 marker gate (0062) — same rule `FieldInput` applies. Required:
-   *  the caller owns the "absent ⇒ ON" default so it is spelled once. */
-  allowsNoInformation: boolean;
+  /** Carries the typed-editor attributes AND the ADR-0016 disposition flags —
+   *  one field object, so a new flag reaches both controls at once. */
+  field: FieldValueEditorField & DispositionRowField;
   disabled: boolean;
   /** Seed for "Change" on a resolved manual_override (form-shaped, unwrapped). */
   initialValue?: unknown;
@@ -41,7 +42,6 @@ export interface ConsensusOverrideEditorProps {
 export function ConsensusOverrideEditor({
   coordKey,
   field,
-  allowsNoInformation,
   disabled,
   initialValue,
   initialRationale,
@@ -67,36 +67,13 @@ export function ConsensusOverrideEditor({
         onChange={setValue}
         disabled={disabled || markerActive}
       />
-      {allowsNoInformation ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-pressed={markerActive}
-            disabled={disabled}
-            onClick={() =>
-              setValue(
-                markerActive ? '' : { value: null, absent_reason: 'no_information' },
-              )
-            }
-            className={cn(
-              'h-6 gap-1 px-2 text-xs',
-              markerActive
-                ? 'text-success ring-1 ring-inset ring-success bg-success/10 hover:bg-success/15 hover:text-success'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {markerActive ? <Check className="h-3 w-3" /> : null}
-            {t('extraction', 'dispositionNoInformation')}
-          </Button>
-          {markerActive ? (
-            <span className="text-[11px] text-muted-foreground">
-              {t('consensus', 'overrideNoInfoRecorded')}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
+      <DispositionRow
+        field={field}
+        value={value}
+        onChange={setValue}
+        disabled={disabled}
+        activeHint={t('consensus', 'overrideDispositionRecorded')}
+      />
       <Label htmlFor={`override-rationale-${coordKey}`} className="text-xs">
         {t('consensus', 'panelRationaleLabel')}
       </Label>

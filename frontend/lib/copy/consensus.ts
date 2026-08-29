@@ -84,7 +84,7 @@ export const consensus = {
     overrideAction: 'Override',
     overrideValueLabel: 'Custom value',
     adoptValueAria: 'Publish this reviewer’s value as consensus',
-    overrideNoInfoRecorded: '“No information” will be published as the consensus value.',
+    overrideDispositionRecorded: 'Will be published as the consensus value.',
     badgeRequiredGap: 'Required · not filled',
     badgeSingleFiller: 'Only one reviewer',
     nothingToReconcile: 'Nothing to reconcile. Use “Approve & finalize” in the header.',

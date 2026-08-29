@@ -4,6 +4,7 @@
  * marker); the caller envelopes it via toConsensusValueEnvelope before POST.
  */
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
@@ -19,7 +20,6 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
-        allowsNoInformation
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
@@ -39,7 +39,6 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
-        allowsNoInformation
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
@@ -57,7 +56,6 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
-        allowsNoInformation
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
@@ -78,7 +76,6 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
-        allowsNoInformation
         disabled={false}
         initialValue="High"
         initialRationale="prior"
@@ -95,7 +92,6 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
-        allowsNoInformation
         disabled
         initialValue="High"
         onCancel={() => {}}
@@ -109,12 +105,12 @@ describe('ConsensusOverrideEditor', () => {
 
   it('omits the "No information" button when the field opts out (ADR-0016 / 0062)', () => {
     // Must agree with FieldInput: on an opted-out field a published marker is
-    // invisible AND unclearable on the form, yet still counts as filled.
+    // invisible AND unclearable on the form, yet still counts as filled. Both
+    // controls now read the same flags off the same field object.
     render(
       <ConsensusOverrideEditor
         coordKey="i1::f1"
-        field={field}
-        allowsNoInformation={false}
+        field={{ ...field, allows_no_information: false }}
         disabled={false}
         onCancel={() => {}}
         onPublish={() => {}}
@@ -128,13 +124,35 @@ describe('ConsensusOverrideEditor', () => {
     expect(screen.getByTestId('consensus-override-submit-i1::f1')).toBeEnabled();
   });
 
+  it('offers the opt-in Not applicable / Not evaluated chips (was unreachable)', async () => {
+    // The hand-copied row only ever rendered "No information", yet
+    // toConsensusValueEnvelope accepts all three codes — so a manager could not
+    // publish a `not_applicable` override on a field that explicitly allows it.
+    const user = userEvent.setup();
+    const onPublish = vi.fn();
+    render(
+      <ConsensusOverrideEditor
+        coordKey="i1::f1"
+        field={{ ...field, allows_not_applicable: true, allows_not_evaluated: true }}
+        disabled={false}
+        onCancel={() => {}}
+        onPublish={onPublish}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /dispositionNotApplicable/i }));
+    fireEvent.click(screen.getByTestId('consensus-override-submit-i1::f1'));
+    expect(onPublish).toHaveBeenCalledWith(
+      { value: null, absent_reason: 'not_applicable' },
+      '',
+    );
+  });
+
   it('Cancel fires onCancel', () => {
     const onCancel = vi.fn();
     render(
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
-        allowsNoInformation
         disabled={false}
         onCancel={onCancel}
         onPublish={() => {}}
