@@ -352,7 +352,9 @@ class ExtractionFieldSchema(BaseModel):
     allowed_units: list[str] | None = Field(default=None, alias="allowedUnits")
     llm_description: str | None = Field(default=None, alias="llmDescription")
     sort_order: int = Field(default=0, alias="sortOrder")
-    # ADR-0016 opt-in disposition flags (no_information is universal, needs none).
+    # ADR-0016 disposition flags. ``allows_no_information`` (migration 0062) is
+    # deliberately absent: this schema is served by no endpoint (it is not in
+    # openapi.json), so carrying the flag here would be dead wire surface.
     allows_not_applicable: bool = Field(default=False, alias="allowsNotApplicable")
     allows_not_evaluated: bool = Field(default=False, alias="allowsNotEvaluated")
 

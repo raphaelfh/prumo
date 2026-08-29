@@ -371,6 +371,7 @@ class TemplateCloneService:
                         # question (and freezes that loss into the snapshot).
                         allows_not_applicable=f.allows_not_applicable,
                         allows_not_evaluated=f.allows_not_evaluated,
+                        allows_no_information=f.allows_no_information,
                     )
                 )
                 field_count += 1

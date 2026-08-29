@@ -239,6 +239,7 @@ class TestUpdateRequest:
             "allow_other",
             "allows_not_applicable",
             "allows_not_evaluated",
+            "allows_no_information",
             "sort_order",
         ],
     )
@@ -394,3 +395,50 @@ class TestResponses:
 
     def test_reorder_response_shape(self) -> None:
         assert TemplateFieldReorderResponse(updated_count=3).updated_count == 3
+
+
+class TestNoInformationDefault:
+    """``allows_no_information`` inverts its siblings' default (migration 0062).
+
+    ``not_applicable`` / ``not_evaluated`` default False because they were
+    always opt-in. ``no_information`` was UNIVERSAL before 0062, so an absent
+    key — an old bundle, a pre-0062 snapshot, an update that omits it — means
+    "the marker was available", i.e. ``True``. Copying the siblings' ``False``
+    here would silently switch the marker off on every existing template.
+    """
+
+    def test_create_defaults_to_allowing_the_marker(self) -> None:
+        assert make_create().allows_no_information is True
+
+    def test_read_defaults_to_allowing_the_marker(self) -> None:
+        row = SimpleNamespace(
+            id=FIELD_ID,
+            entity_type_id=ENTITY_TYPE_ID,
+            name="field_example",
+            label="X",
+            description=None,
+            field_type="text",
+            is_required=False,
+            unit=None,
+            allowed_units=None,
+            llm_description=None,
+            allowed_values=None,
+            allow_other=False,
+            other_label=None,
+            other_placeholder=None,
+            is_entity_key=False,
+            allows_not_applicable=False,
+            allows_not_evaluated=False,
+            validation_schema=None,
+            sort_order=0,
+            created_at=datetime(2026, 8, 8, tzinfo=UTC),
+        )
+        assert TemplateFieldRead.model_validate(row).allows_no_information is True
+
+    def test_update_omitting_the_key_leaves_it_unset(self) -> None:
+        update = TemplateFieldUpdateRequest(label="X")
+        assert "allows_no_information" not in update.model_fields_set
+
+    def test_update_can_turn_the_marker_off(self) -> None:
+        update = TemplateFieldUpdateRequest(allows_no_information=False)
+        assert update.allows_no_information is False

@@ -215,9 +215,13 @@ class RunViewField(BaseModel):
     allow_other: bool = False
     other_label: str | None = None
     other_placeholder: str | None = None
-    # ADR-0016 opt-in disposition flags; default False for pre-0038 snapshots.
+    # ADR-0016 disposition flags; default False for pre-0038 snapshots.
     allows_not_applicable: bool = False
     allows_not_evaluated: bool = False
+    # 0062, and the default is deliberately the OTHER way: a pre-0062 snapshot
+    # carries no key and the marker was universal in that era, so absent means
+    # available. False here would retro-disable it on every frozen snapshot.
+    allows_no_information: bool = True
 
 
 class RunViewEntityType(BaseModel):
