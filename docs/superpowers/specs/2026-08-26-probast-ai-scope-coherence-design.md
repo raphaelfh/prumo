@@ -79,6 +79,11 @@ pattern the rest of the app (and #677 specifically) established.
   classifier, the domain judgments and applicability stay required;
   signaling questions and all text boxes are optional. Progress reads
   "in-scope domains judged".
+- **Step-1 PICOTS gets a read-only run-screen surface** (2026-08-29):
+  the wiring already passes the pinned ✨ instruction to every AI call;
+  the gap is visibility. One disclosure at the top of the QA form,
+  showing the PIN (what this run's AI actually sees), never the live
+  column.
 - **§11 migrations (classic PROBAST, QUADAS-2) are deferred** to their
   own follow-up — fully specified in the v2 spec §11, independent
   seed-data work. The seed convergence shipped here is what will make
@@ -248,7 +253,24 @@ docstring states the old invariants:
 yield None; the state only explains WHY. Nobody re-touches the
 strict/lenient asymmetry.
 
-### 2d. Export parity
+### 2d. Pinned Step-1 instructions on the run view
+
+Verified: the ✨ template instruction reaches every QA AI call already —
+all three extract paths inject `general_instructions_for_version`
+(version-PINNED: a run keeps the instruction it was opened under until
+a republish re-pins it). What's missing is any run-screen surface
+showing it, so a manager who never replaced the seeded
+`[customize: state the review's Step-1 PICOTS…]` placeholder finds out
+only by wondering at the AI's applicability judgments.
+
+The run view gains one nullable field, `general_instructions`, read via
+the SAME `general_instructions_for_version` the prompts call — single
+implementation, so the screen can never show a text the AI didn't get.
+Kind-neutral (extraction runs carry the pin too; only the QA screen
+renders it for now). This IS a contract change — regenerate
+`frontend/types/api/*` and the hand-mirrored `hooks/runs/types.ts`.
+
+### 2e. Export parity
 
 The appraisal export applies `scope_filtered_values` (§2a) before its
 `compute_derived_judgments` call and renders "Not applicable" for a
@@ -288,6 +310,18 @@ API consolidation remains extraction-only per the roadmap).
   `out-of-scope`; `DerivedDefaultChip.rowDisplay` learns the third
   state literal with muted tone. No mixed case exists — rules exclude
   whole parts.
+- **Step-1 PICOTS disclosure**: a quiet collapsible row at the top of
+  the QA form, beside the `assessment_scope` section (the instrument's
+  own order — Step 1 precedes Steps 2–3): "Step 1 — Review question
+  (PICOTS)", one muted line collapsed, the run's PINNED
+  `general_instructions` read-only when expanded (§2d — never the live
+  template column, which can differ until republish). Null renders one
+  muted "not configured" line naming where to set it (the template's ✨
+  instruction); a still-unedited seeded placeholder renders as-is — the
+  `[customize: …]` text is its own call to action, no detection logic.
+  Rejected placements: the run header (declutter, #475/#476), a
+  per-applicability-row popover (×6 noise), a side sheet (weight).
+  Copy via `lib/copy/qa.ts`.
 - **`useProjectQATemplate` → TanStack Query** while touched: wrap
   `loadProjectQATemplate` in `useQuery` with a key-factory entry,
   mirroring #677. Behavior-preserving otherwise.
@@ -397,6 +431,11 @@ superseded by this section.
 - **Unit — `FieldInput`**: the NI disposition renders only when
   `allows_no_information` — flag-gated exactly like NA/NE; a field with
   the default (true) is byte-identical to today.
+- **Unit — pinned instructions**: the run view returns the
+  version-pinned text, not the live column (edit the template after
+  the run opens → the view still shows the pin); null → null.
+- **Unit — PICOTS disclosure**: collapsed one-liner, expands to the
+  pinned text; null renders the "not configured" line.
 - **Integration — finalize gate**: diverged target + empty rationale →
   422 naming the domain; with rationale → finalizes; target blank or
   NA-marker → passes; extraction-kind run → unaffected.
@@ -413,7 +452,8 @@ superseded by this section.
    version-gated convergence, `2.1.0`, seed tests. Inert to every
    runtime path (the flag defaults true everywhere it already exists).
 2. **PR2 — backend consumers**: scope helper, AI-path guard, payload
-   state, export parity. No contract change.
+   state, export parity, and the run view's `general_instructions`
+   field (§2d) — the train's one contract change (types regen).
 3. **PR3 — frontend**: schema in selects, data-driven `studyTypeScope`,
    call-site projection filtering for progress, collapse + copy,
    banner/chip state, flag-gated NI disposition in `FieldInput` + the
@@ -471,6 +511,10 @@ template change to prod with no manual step.
 - Any change to `worst_domain` / `worst_of` / `signaling_worst`
   aggregation semantics.
 - Blocking autosave or field writes on divergence (finalize-time only).
+- Rendering the PICOTS disclosure on the extraction run screen (the
+  payload field is kind-neutral; the surface ships QA-only for now).
+- Editing the ✨ instruction from the run screen (that stays in
+  template configuration, where republish re-pins it).
 - Migrating QA reads off PostgREST (read-path consolidation remains
   extraction-only).
 - Backfilling existing v2.0.0 project clones with `scope_rules`, the NI
