@@ -62,7 +62,7 @@ export type SaveFieldHandler = (
 ) => void;
 
 const PANEL_CLASS =
-  'w-[300px] shrink-0 overflow-y-auto border-l bg-muted/20 px-3.5 py-3 text-xs';
+  'w-[300px] shrink-0 overflow-y-auto border-l bg-muted/20 px-3.5 py-3 text-[13px]';
 
 interface TemplateInspectorProps {
   /** Section-pane commit context (B-8 T6) — the immediate PATCH needs
@@ -298,12 +298,12 @@ function FieldInspectorForm({
         value={draft.label}
         onChange={(e) => setDraft({...draft, label: e.target.value})}
         disabled={saving}
-        className="h-7 text-xs"
+        className="h-7 text-[13px]"
       />
 
       <Label>{t('extraction', 'inspectorKeyLabel')}</Label>
       <ReadOnlyValue muted>
-        <span className="font-mono text-[10px]">{field.key}</span>
+        <span className="font-mono text-[11px]">{field.key}</span>
       </ReadOnlyValue>
 
       {owningSection && (
@@ -320,7 +320,7 @@ function FieldInspectorForm({
             value={owningSection.id}
             onChange={(e) => onMoveField(field, e.target.value)}
             disabled={saving || moveDisabled}
-            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-7 w-full rounded-md border border-input bg-background px-2 text-[13px] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
             {sections.map((s) => (
               <option key={s.id} value={s.id}>
@@ -341,7 +341,7 @@ function FieldInspectorForm({
         value={draft.fieldType}
         onChange={(e) => setDraft({...draft, fieldType: e.target.value})}
         disabled={saving}
-        className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-7 w-full rounded-md border border-input bg-background px-2 text-[13px] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         {FIELD_TYPE_OPTIONS.map(({value, copyKey}) => (
           <option key={value} value={value}>
@@ -355,7 +355,7 @@ function FieldInspectorForm({
           "blocked", promising a guarantee the product does not make. Blocking
           would also be the wrong product: a field typed `text` that should
           have been `number` is exactly the correction a manager needs. */}
-      <p className="mt-[3px] text-[10.5px] text-muted-foreground">
+      <p className="mt-[3px] text-[11px] text-muted-foreground">
         {t('extraction', 'inspectorTypeChangeHint')}
       </p>
 
@@ -367,7 +367,7 @@ function FieldInspectorForm({
             onChange={(units) => setDraft({...draft, allowedUnits: units})}
             disabled={saving}
           />
-          <p className="mt-[3px] text-[10.5px] text-muted-foreground">
+          <p className="mt-[3px] text-[11px] text-muted-foreground">
             {t('extraction', 'inspectorUnitsHint')}
           </p>
         </>
@@ -425,7 +425,7 @@ function FieldInspectorForm({
                 onChange={(e) => setDraft({...draft, otherLabel: e.target.value})}
                 placeholder={t('extraction', 'otherSpecifyDefault')}
                 disabled={saving}
-                className="h-7 text-xs"
+                className="h-7 text-[13px]"
               />
               <Label htmlFor="inspector-field-other-placeholder">
                 {t('extraction', 'placeholderLabel')}
@@ -438,7 +438,7 @@ function FieldInspectorForm({
                 }
                 placeholder={t('extraction', 'placeholderTypeHere')}
                 disabled={saving}
-                className="h-7 text-xs"
+                className="h-7 text-[13px]"
               />
             </>
           )}
@@ -466,7 +466,7 @@ function FieldInspectorForm({
           }
         />
       </div>
-      <p className="mt-[3px] text-[10.5px] text-muted-foreground">
+      <p className="mt-[3px] text-[11px] text-muted-foreground">
         {t('extraction', 'dispositionBuilderHint')}
       </p>
 
@@ -484,9 +484,9 @@ function FieldInspectorForm({
         placeholder={t('extraction', 'inspectorAiEmpty')}
         disabled={saving}
         rows={3}
-        className="text-xs"
+        className="text-[13px]"
       />
-      <p className="mt-[3px] text-[10.5px] text-muted-foreground">
+      <p className="mt-[3px] text-[11px] text-muted-foreground">
         {t('extraction', 'inspectorAiHint')}
       </p>
 
@@ -500,9 +500,9 @@ function FieldInspectorForm({
         placeholder={t('extraction', 'inspectorDescriptionEmpty')}
         disabled={saving}
         rows={2}
-        className="text-xs"
+        className="text-[13px]"
       />
-      <p className="mt-[3px] text-[10.5px] text-muted-foreground">
+      <p className="mt-[3px] text-[11px] text-muted-foreground">
         {t('extraction', 'inspectorDescriptionHint')}
       </p>
 
