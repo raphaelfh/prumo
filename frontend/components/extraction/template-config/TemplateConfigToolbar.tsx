@@ -95,7 +95,6 @@ export function TemplateConfigToolbar({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-8"
                 aria-label={t('extraction', 'gridDisplayMenu')}
               >
                 <SlidersHorizontal className="size-3.5" aria-hidden />
@@ -126,7 +125,6 @@ export function TemplateConfigToolbar({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8"
             aria-label={t('extraction', 'inspectorToggle')}
             aria-pressed={inspectorPressed}
             onClick={onToggleInspector}

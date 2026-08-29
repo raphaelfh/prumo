@@ -214,6 +214,7 @@ export function ArticlesExportDialog({
                 </div>
                 <DialogFooter>
                     <Button
+                      size="sm"
                         variant="outline"
                         onClick={() => onOpenChange(false)}
                         disabled={submitting}
@@ -221,6 +222,7 @@ export function ArticlesExportDialog({
                         {t("articles", "listCancel")}
                     </Button>
                     <Button
+                      size="sm"
                         onClick={handleSubmit}
                         disabled={!canSubmit || submitting}
                     >

@@ -36,7 +36,7 @@ export function AIActions({ pendingCount, canExtract, extracting, onExtract, onO
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
-              size="sm"
+              size="icon"
               variant="ghost"
               aria-label={ariaLabel}
               data-testid="run-ai-actions"

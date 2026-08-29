@@ -53,7 +53,10 @@ Files you will touch most:
    tokens are defined that way in `frontend/index.css` and `tailwind.config.ts`.
 4. **Always extend the base via the `className` prop**, never override base
    styles in the consuming file by re-declaring layout primitives. Pass a thin
-   delta. `cn()` will merge correctly.
+   delta. `cn()` will merge correctly. **Exception — Button height:** the size
+   scale owns it. Pick a named size (`sm`/`xs`/`icon`/`icon-xs`/`default`),
+   never `className="h-8"`. `scripts/fitness/check_button_scale.py` fails the
+   build on a new one; see `frontend-ux` § Buttons for the scale.
 5. **Dark mode is `class`-based**, driven by `next-themes` via `ThemeProvider`
    (`frontend/contexts/ThemeContext.tsx`: `attribute="class"`,
    `defaultTheme="system"`, `storageKey="prumo:theme"`). Switch through it (the
@@ -90,7 +93,11 @@ After adding:
 3. **Confirm the cva config** uses our variant names. We have extra status
    variants on `Badge` and we add `success`/`warning` to buttons in domain UIs —
    not in `ui/button.tsx`. Keep `ui/*` close to upstream shadcn so future
-   `shadcn add` diffs stay clean.
+   `shadcn add` diffs stay clean. **The one deliberate divergence** is
+   `ui/button.tsx`'s `size` scale: upstream's heights do not fit this
+   codebase's density (see `frontend-ux` § Buttons), so `sm`/`icon` are
+   retuned and `xs`/`icon-xs` added. Re-apply that scale after any
+   `shadcn add button`; `button.test.tsx` fails if you forget.
 4. **Wire copy** through `frontend/lib/copy/*` for any user-visible string.
 
 If the component already exists, **edit it directly** — do not re-run

@@ -132,9 +132,9 @@ function ProvenanceSummaryRow({
         {summary}
       </span>
       <Button
-        size="sm"
+        size="xs"
         variant="ghost"
-        className="h-6 shrink-0 gap-1 px-1.5 text-[11px] font-medium text-ai hover:text-ai"
+        className="shrink-0 gap-1 px-1.5 text-[11px] font-medium text-ai hover:text-ai"
         onClick={onOpenDetails}
       >
         {t('extraction', 'provenanceToggle')}
@@ -252,7 +252,7 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
               {selectedChipLabel ?? t('extraction', 'reviewSelected')}
             </span>
           ) : readOnly ? null : (
-            <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={onUse}>
+            <Button size="sm" variant="outline" className="px-2 text-xs" onClick={onUse}>
               {t('extraction', 'reviewUseThisVersion')}
             </Button>
           )}
@@ -263,9 +263,9 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
           a Details toggle. */}
       {hasDetails && !isSelected && (
         <Button
-          size="sm"
+          size="xs"
           variant="ghost"
-          className="mt-1.5 h-6 gap-1 px-1 text-xs text-muted-foreground hover:text-foreground"
+          className="mt-1.5 gap-1 px-1 text-xs text-muted-foreground hover:text-foreground"
           onClick={() => setExpanded((prev) => !prev)}
         >
           {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
@@ -461,7 +461,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
               <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={t('extraction', 'reviewClearHint')}>
                 {t('extraction', 'reviewClearHint')}
               </span>
-              <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" onClick={handleClear}>
+              <Button size="sm" variant="ghost" className="shrink-0 px-2 text-xs" onClick={handleClear}>
                 {t('extraction', 'reviewClear')}
               </Button>
             </div>

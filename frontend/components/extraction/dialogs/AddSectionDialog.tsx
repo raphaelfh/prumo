@@ -406,6 +406,7 @@ export function AddSectionDialog({
 
             <DialogFooter>
               <Button
+                size="sm"
                 type="button"
                 variant="outline"
                 onClick={handleClose}
@@ -413,7 +414,7 @@ export function AddSectionDialog({
               >
                   {t('common', 'cancel')}
               </Button>
-              <Button type="submit" disabled={loading}>
+              <Button size="sm" type="submit" disabled={loading}>
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />

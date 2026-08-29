@@ -161,15 +161,23 @@ export function FieldInput(props: FieldInputProps) {
   };
 
     // ADR-0016 runtime disposition control — record a coded "no value, on purpose"
-    // answer on ANY field type. `no_information` is universal; the opt-in codes
-    // render only where the field enables them. Toggling the active one clears back
-    // to unresolved. Setting a marker clears any validation error (it is resolved).
+    // answer on ANY field type. All three codes are per-field opt-ins and render
+    // only where the field enables them; `no_information` defaults ON (migration
+    // 0062) because it was universal before the flag existed, and is turned off
+    // where the answer set already carries the concept as a value — PROBAST+AI's
+    // "NI", where rendering both would give one answer two encodings and read as
+    // a consensus divergence. Toggling the active one clears back to unresolved.
+    // Setting a marker clears any validation error (it is resolved).
   const dispositions: { code: string; label: string; hint: string }[] = [
-    {
-      code: 'no_information',
-      label: t('extraction', 'dispositionNoInformation'),
-      hint: t('extraction', 'dispositionNoInformationHint'),
-    },
+    ...(field.allows_no_information !== false
+      ? [
+          {
+            code: 'no_information',
+            label: t('extraction', 'dispositionNoInformation'),
+            hint: t('extraction', 'dispositionNoInformationHint'),
+          },
+        ]
+      : []),
     ...(field.allows_not_applicable
       ? [
           {
@@ -314,7 +322,7 @@ export function FieldInput(props: FieldInputProps) {
                           size="icon"
                           variant="ghost"
                           className={cn(
-                            "h-7 w-7",
+                            "",
                             "text-muted-foreground hover:text-foreground hover:bg-muted"
                           )}
                           title={t('extraction', 'reviewTitle')}
@@ -351,13 +359,13 @@ export function FieldInput(props: FieldInputProps) {
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    size="sm"
+                    size="xs"
                     variant="ghost"
                     aria-pressed={active}
                     disabled={inputDisabled}
                     onClick={() => setDisposition(d.code)}
                     className={cn(
-                      'h-6 gap-1 px-2 text-xs',
+                      'gap-1 px-2 text-xs',
                       active
                         ? 'text-success ring-1 ring-inset ring-success bg-success/10 hover:bg-success/15 hover:text-success'
                         : 'text-muted-foreground hover:text-foreground',

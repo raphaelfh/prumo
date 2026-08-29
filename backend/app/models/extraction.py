@@ -423,15 +423,22 @@ class ExtractionField(BaseModel):
     other_label: Mapped[str | None] = mapped_column(String, nullable=True)
     other_placeholder: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # Opt-in "no value, on purpose" dispositions (ADR-0016). ``no_information`` is
-    # universal (any source can be silent) so it needs no flag; these two are
-    # per-field opt-ins for signaling-question style fields (PROBAST/CHARMS) and
-    # drive the runtime FieldInput affordance + the frozen version snapshot.
+    # Opt-in "no value, on purpose" dispositions (ADR-0016). All three are
+    # per-field flags driving the runtime FieldInput affordance + the frozen
+    # version snapshot. ``no_information`` was universal until migration 0062
+    # and so defaults TRUE, while its two siblings were always opt-in and
+    # default FALSE; the asymmetry is the whole point — an absent key means
+    # "the marker was available" for the era that had no column.
     allows_not_applicable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
     allows_not_evaluated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
+    )
+    # Off only where the answer set already encodes "no information" as a value
+    # (PROBAST+AI 2.1.0's fifth signaling answer), so one concept has one control.
+    allows_no_information: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
     )
 
     # Identity of an instance within its (article, entity_type,

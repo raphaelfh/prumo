@@ -86,6 +86,9 @@ def test_from_attributes_by_name_reads_orm_like_objects() -> None:
         "kg",
         True,
     )
+    # A bundle exported before 0062 carries no key; the marker was universal
+    # then, so it must re-import as available rather than silently off.
+    assert fld.allows_no_information is True
 
 
 def test_dict_input_rejects_attribute_names() -> None:

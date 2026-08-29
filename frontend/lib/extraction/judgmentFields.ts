@@ -56,10 +56,16 @@ export function isJudgmentField(field: JudgmentCandidate): boolean {
 
 /**
  * The instrument's signaling answer vocabularies (PROBAST Y/PY/PN/N;
- * QUADAS-2 adds a substantive Unclear) — lowercase, mirroring backend
- * `_SIGNALING_MAP` the same way `JUDGMENT_LABELS` mirrors `_RISK_LABELS`.
+ * PROBAST+AI 2.1.0 adds NI; QUADAS-2 adds a substantive Unclear) — lowercase,
+ * mirroring backend `_SIGNALING_MAP` the same way `JUDGMENT_LABELS` mirrors
+ * `_RISK_LABELS`.
+ *
+ * `isSignalingSelect` requires EVERY option to be in this set, so a missing
+ * answer does not degrade one question — it silently reclassifies the whole
+ * vocabulary as "not signaling", which drops the section header's question
+ * count to zero. Keep it in step with the backend map.
  */
-const SIGNALING_LABELS: ReadonlySet<string> = new Set(["y", "py", "pn", "n", "unclear"]);
+const SIGNALING_LABELS: ReadonlySet<string> = new Set(["y", "py", "pn", "n", "ni", "unclear"]);
 
 /**
  * A signaling QUESTION: a select whose every option comes from the signaling

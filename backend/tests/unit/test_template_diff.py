@@ -623,6 +623,23 @@ def test_snapshot_key_regex_still_matches_the_builder() -> None:
     assert "entity_types" not in keys
 
 
+def test_no_information_default_is_true_unlike_its_siblings() -> None:
+    """0062 added ``allows_no_information`` with ``server_default true``.
+
+    The absent-key default MUST mirror the column, not the two opt-in siblings:
+    a baseline snapshot written before 0062 has no such key, and the marker was
+    universal in that era. Defaulting it False would make every pre-0062
+    baseline diff as "marker turned off" against a live template that still
+    offers it.
+    """
+    assert template_diff.FIELD_ATTRIBUTE_DEFAULTS["allows_no_information"] is True
+    assert template_diff.FIELD_ATTRIBUTE_DEFAULTS["allows_not_applicable"] is False
+    assert template_diff.FIELD_ATTRIBUTE_DEFAULTS["allows_not_evaluated"] is False
+    assert (
+        template_diff.ATTRIBUTE_TIERS["allows_no_information"] == template_diff.ChangeTier.SEMANTIC
+    )
+
+
 def test_tier_map_is_exhaustive_over_the_snapshot_key_set() -> None:
     """A new SNAPSHOT_SQL key must fail here, not default silently (D2)."""
     covered = (
