@@ -2,8 +2,14 @@
 
 The in-band disposition strings ("No information" / "Not applicable" /
 "Not evaluated" / PROBAST "NI" / "NA") are retired as select ``allowed_values``;
-no_information is the universal marker and not_applicable / not_evaluated are
-per-field opt-in flags. "Unclear" stays a substantive value.
+all three dispositions are per-field opt-in flags. "Unclear" stays a
+substantive value.
+
+Amended by migration 0062 / PROBAST+AI 2.1.0: "NI" returns on that ONE
+template as the instrument's own fifth signaling answer, with
+``allows_no_information`` switched off there. The invariant is unchanged — one
+concept, one control — so the rule is asserted per field ("never both") rather
+than as a global ban on the string.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ from app.seed import (
     seed_quadas2,
 )
 from app.seed_probast_ai import seed_probast_ai
+from app.seed_probast_ai_data import _PAI_SIGNALING
 from tests.unit.conftest import CapturingSession
 
 _DISPOSITION_STRINGS = {"No information", "Not applicable", "Not evaluated", "NI", "NA"}
@@ -53,7 +60,7 @@ def test_probast_signaling_set_dropped_ni_na() -> None:
 def test_signaling_sets_not_applicable_for_probast() -> None:
     field = _signaling(_SENTINEL_EID, "q", "Question?", 0, _PROBAST_SIGNALING)
     assert field.allows_not_applicable is True
-    # no_information is universal (no flag); not_evaluated is not a PROBAST option.
+    # not_evaluated is not a PROBAST option; no_information defaults on (0062).
     assert field.allows_not_evaluated is False
     assert field.allowed_values == _PROBAST_SIGNALING
 
@@ -65,18 +72,49 @@ def test_signaling_no_flag_for_quadas() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "seed_fn", [seed_charms, seed_charms_mm, seed_probast, seed_quadas2, seed_probast_ai]
-)
+@pytest.mark.parametrize("seed_fn", [seed_charms, seed_charms_mm, seed_probast, seed_quadas2])
 async def test_no_seeded_field_carries_a_disposition_value(seed_fn) -> None:
     """No seeded field's allowed_values may contain any in-band disposition
     string in any encoding (full-word or PROBAST abbreviation). Catches inline
-    ``allowed=[...]`` lists the constant sweep would miss."""
+    ``allowed=[...]`` lists the constant sweep would miss.
+
+    ``seed_probast_ai`` is excluded and gets its own assertion below: 2.1.0
+    restores "NI" as the instrument's own fifth signaling ANSWER, which is a
+    different thing from the retired in-band disposition string this test
+    guards against."""
     fields = await _seeded_fields(seed_fn)
     assert fields, "seed produced no fields"
     for f in fields:
         values = {v["value"] if isinstance(v, dict) else v for v in (f.allowed_values or [])}
         assert _DISPOSITION_STRINGS.isdisjoint(values), (f.name, values)
+
+
+@pytest.mark.asyncio
+async def test_probast_ai_owns_ni_as_an_answer_with_the_marker_turned_off() -> None:
+    """The narrow, deliberate exception to the rule above (spec 2026-08-26 §1b).
+
+    ADR-0016 Phase 2 retired in-band disposition strings because a field
+    offering BOTH the string and the marker encodes one concept twice. 2.1.0
+    keeps that invariant from the other side: "NI" comes back as the
+    instrument's own answer and the marker is switched OFF on those fields, so
+    there is still exactly one control. What must never exist is a field
+    carrying both — that is what this asserts, per field rather than globally,
+    and it is also what keeps ``disposition_to_marker`` from rewriting the
+    answer into a marker the form refuses to render.
+    """
+    fields = await _seeded_fields(seed_probast_ai)
+    assert fields, "seed produced no fields"
+    carrying_ni = []
+    for f in fields:
+        values = {v["value"] if isinstance(v, dict) else v for v in (f.allowed_values or [])}
+        offending = values & (_DISPOSITION_STRINGS - {"NI"})
+        assert not offending, (f.name, offending)
+        if "NI" in values:
+            carrying_ni.append(f)
+            assert f.allows_no_information is False, f.name
+    assert len(carrying_ni) == 42
+    # The marker is off everywhere on this template, not just where NI appears.
+    assert not any(f.allows_no_information for f in fields)
 
 
 @pytest.mark.asyncio
@@ -106,7 +144,9 @@ async def test_probast_ai_na_restricted_to_conditional_rows() -> None:
     (spec 2026-08-22 §5). The other 36 signaling rows and every judgment
     field carry no disposition flag."""
     fields = await _seeded_fields(seed_probast_ai)
-    signaling = [f for f in fields if f.allowed_values == _PROBAST_SIGNALING]
+    # 2.1.0's answer set is v2-local (five answers, NI included), so selecting
+    # on the shared four-answer constant would match nothing and pass vacuously.
+    signaling = [f for f in fields if f.allowed_values == _PAI_SIGNALING]
     assert len(signaling) == 42
     flagged = sorted(f.name for f in signaling if f.allows_not_applicable)
     assert flagged == [

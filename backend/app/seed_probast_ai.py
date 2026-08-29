@@ -1,8 +1,9 @@
-"""PROBAST+AI 2.0.0 — instrument-exact quality-assessment template.
+"""PROBAST+AI 2.1.0 — instrument-exact quality-assessment template.
 
 Moons et al., BMJ 2025 (Suppl. Table 3 fillable tool + E&E Light), mapped
 item-by-item in ``docs/reference/templates/probast-ai-instrument.md``; design
-in ``docs/superpowers/specs/2026-08-22-probast-ai-derived-domain-judgments-design.md``.
+in ``docs/superpowers/specs/2026-08-22-probast-ai-derived-domain-judgments-design.md``
+and ``docs/superpowers/specs/2026-08-26-probast-ai-scope-coherence-design.md``.
 
 Kept in its own module because ``app.seed`` is at its file-size ratchet cap and
 this definition is large. Shares every helper with ``app.seed`` so the field
@@ -33,24 +34,39 @@ NA is restricted to the instrument's four conditional (asterisked) items —
 six field rows after triplication. Step 1 (the review's PICOTS) lives in the
 project template's ✨ instruction, which reaches every AI call as general
 instructions and is the reference for the applicability judgments.
+
+2.1.0 (spec 2026-08-26) makes the Step-2 classification load-bearing and puts
+the instrument's own scale back on one control:
+
+* ``scope_rules`` on ``schema_`` declares which sections each study type takes
+  out of scope — read by progress, derivation, the AI calls and the export,
+  which is what retires the ``dev_``/``eval_`` name-prefix convention.
+* Signaling questions answer Y/PY/PN/N/**NI**; the separate "no information"
+  marker is turned off per field (``allows_no_information``), so one concept
+  has one control.
+* Required = what the assessment OWES — the classifier, the 8 domain judgments
+  and the 6 applicability judgments. Signaling questions and text boxes are
+  optional: which part applies is unknown until Step 2, so "all 95 owed" was
+  unknowable and pinned a development-only study at ~52% forever.
 """
 
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
     ExtractionEntityRole,
+    ExtractionEntityType,
     ExtractionField,
     ExtractionTemplateGlobal,
 )
 from app.models.extraction_versioning import TemplateKind
 from app.seed import (
     _PROBAST_JUDGMENT,
-    _PROBAST_SIGNALING,
     _entity_type_from_spec,
     _EntitySpec,
     _field,
@@ -80,6 +96,8 @@ from app.seed_probast_ai_data import (
     _F_QUALITY,
     _F_ROB,
     _PAI_DERIVED_JUDGMENTS,
+    _PAI_SCOPE_RULES,
+    _PAI_SIGNALING,
     _RATIONALE_QUALITY,
     _RATIONALE_ROB,
     _S_DEV_D1,
@@ -97,6 +115,7 @@ from app.seed_probast_ai_data import (
     _S_SCOPE,
     _Question,
 )
+from app.services.advisory_locks import take_advisory_xact_lock
 
 # ---------------------------------------------------------------------------
 # Fixed UUIDs — never change (prefix convention: 000c CHARMS, 00b0 PROBAST,
@@ -113,13 +132,15 @@ def _et_id(n: int) -> UUID:
     return UUID(f"00ba{n:04x}-0000-0000-0000-000000000002")
 
 
-# The instrument's answer scale. NA exists on exactly four conditional items
-# (dev 4.4, eval 4.4, 4.5, 4.6 — six rows after triplication), so the
-# instruction comes in two variants and the flag is passed per row.
-_ANSWER_INSTRUCTION = " Answer Y, PY, PN or N; mark no information when the article is silent."
+# The instrument's answer scale. NI is the fifth ANSWER (2.1.0), so the prompt
+# names it in the scale instead of steering the model to a separate marker.
+# NA exists on exactly four conditional items (dev 4.4, eval 4.4, 4.5, 4.6 —
+# six rows after triplication), so the instruction comes in two variants and
+# the flag is passed per row.
+_ANSWER_INSTRUCTION = " Answer Y, PY, PN, N or NI (no information)."
 _ANSWER_INSTRUCTION_NA = (
-    " Answer Y, PY, PN or N; mark no information when the article is silent, "
-    "and not applicable when the criterion does not apply."
+    " Answer Y, PY, PN, N or NI (no information), and mark not applicable "
+    "when the criterion does not apply."
 )
 
 _NA_QUESTIONS = frozenset(
@@ -152,17 +173,28 @@ def _describe(eid: UUID, name: str, prompt: str, sort: int) -> ExtractionField:
 
 
 def _sq(eid: UUID, question: _Question, sort: int) -> ExtractionField:
+    """One signaling question on the instrument's five-answer scale.
+
+    Optional since 2.1.0: which part of the instrument applies is unknown until
+    the Step-2 classification, and an assessor may legitimately judge a domain
+    without answering every question, so requiredness cannot state what the
+    assessment owes — the domain judgment does. ``is_required`` is set here
+    rather than through ``_signaling`` because ``app.seed`` sits at its
+    file-size ratchet cap.
+    """
     name, text, criterion = question
     conditional = name in _NA_QUESTIONS
-    return _signaling(
+    field = _signaling(
         eid,
         name,
         text,
         sort,
-        _PROBAST_SIGNALING,
+        _PAI_SIGNALING,
         allows_not_applicable=conditional,
         llm=criterion + (_ANSWER_INSTRUCTION_NA if conditional else _ANSWER_INSTRUCTION),
     )
+    field.is_required = False
+    return field
 
 
 def _judgment(eid: UUID, name: str, label: str, official_text: str, sort: int) -> ExtractionField:
@@ -201,9 +233,8 @@ def _applicability(eid: UUID, official_text: str, aspect: str, sort: int) -> Ext
             "Applicability judgment (not aggregated from signaling questions): "
             f"judge whether {aspect} match the review question and the "
             "assessor's intended use of the prediction model, as stated in the "
-            "review's general instructions (the Step-1 PICOTS). Answer Low, "
-            "High or Unclear; mark no information when the article gives too "
-            "little to judge."
+            "review's general instructions (the Step-1 PICOTS). Answer Low or "
+            "High, and Unclear when the article gives too little to judge."
         ),
     )
 
@@ -613,44 +644,75 @@ _SECTIONS: tuple[tuple[UUID, str, str, str, Any], ...] = (
 )
 
 
+_DESCRIPTION = (
+    "PROBAST+AI — Prediction model Risk Of Bias ASsessment Tool "
+    "for regression- and AI/ML-based prediction models (Moons et "
+    "al., BMJ 2025), digitizing the official form's flow: describe "
+    "the facts, answer the signaling questions, then record each "
+    "domain judgment — a derived default is computed from the "
+    "signaling answers, and diverging from it asks for the paired "
+    "rationale. Model development is judged on Quality; model "
+    "evaluation on Risk of Bias; applicability on domains 1-3 of "
+    "each part. The four overall judgments are computed from the "
+    "recorded domain judgments (worst domain), never entered, each "
+    "beside its Step-4 summary box."
+)
+
+
 async def seed_probast_ai(session: AsyncSession) -> None:
-    """Seeds the PROBAST+AI 2.0.0 quality-assessment template (13 sections,
+    """Seeds the PROBAST+AI 2.1.0 quality-assessment template (13 sections,
     95 fields).
 
-    Idempotent by primary key. NOTE: an existing row is left untouched, so a
-    corrected ``derived_judgments`` spec requires ``make db-fresh`` (or a
-    manual UPDATE) — ``make db-seed`` alone will not install it.
+    Converges UNCONDITIONALLY. An existing row is UPDATEd in place and its
+    entity types replaced (fields CASCADE) on every boot — no version compare.
+    Gating the replace on a ``version`` bump would reintroduce the
+    forgotten-bump silent no-op, which is the exact bug this replaces: every
+    seeder used to early-return, so a corrected ``derived_judgments`` spec
+    could never reach a database that already had the row, and ``version`` was
+    decorative. It stays decorative — display metadata, never a gate.
+
+    The template ROW is never deleted: dropping it would SET NULL every clone's
+    ``global_template_id`` and break clone dedupe/heal. Only its children are
+    replaced, and nothing outside their own fields references a GLOBAL entity
+    type (clones copy by value; runs pin clone snapshots), so the replace is
+    safe. If that invariant ever breaks, the RESTRICT FKs abort the boot loudly
+    and the previous build stays live — the correct failure mode.
+
+    Rows are keyed deterministically (entity types by ``_et_id``, fields by
+    uuid5 of their entity type + name), so converging is genuinely idempotent
+    rather than merely content-equal: identity is stable across deploys.
+
+    Serialized on a transaction-scoped advisory lock: the boot runs this before
+    gunicorn starts, and two containers starting at once would otherwise race
+    the delete against each other's re-insert.
     """
     print("Seeding PROBAST+AI template...")
 
-    template = await session.get(ExtractionTemplateGlobal, _PROBAST_AI_TEMPLATE_ID)
-    if template:
-        print("  PROBAST+AI already exists — skipping.")
-        return
+    await take_advisory_xact_lock(session, _PROBAST_AI_TEMPLATE_ID, _PROBAST_AI_TEMPLATE_ID)
 
-    session.add(
-        ExtractionTemplateGlobal(
-            id=_PROBAST_AI_TEMPLATE_ID,
-            name="PROBAST+AI",
-            description=(
-                "PROBAST+AI — Prediction model Risk Of Bias ASsessment Tool "
-                "for regression- and AI/ML-based prediction models (Moons et "
-                "al., BMJ 2025), digitizing the official form's flow: describe "
-                "the facts, answer the signaling questions, then record each "
-                "domain judgment — a derived default is computed from the "
-                "signaling answers, and diverging from it asks for the paired "
-                "rationale. Model development is judged on Quality; model "
-                "evaluation on Risk of Bias; applicability on domains 1-3 of "
-                "each part. The four overall judgments are computed from the "
-                "recorded domain judgments (worst domain), never entered, each "
-                "beside its Step-4 summary box."
-            ),
-            framework="CUSTOM",
-            version="2.0.0",
-            kind=TemplateKind.QUALITY_ASSESSMENT.value,
-            schema_={"derived_judgments": _PAI_DERIVED_JUDGMENTS},
+    template = await session.get(ExtractionTemplateGlobal, _PROBAST_AI_TEMPLATE_ID)
+    if template is None:
+        template = ExtractionTemplateGlobal(id=_PROBAST_AI_TEMPLATE_ID)
+        session.add(template)
+    else:
+        await session.execute(
+            delete(ExtractionEntityType).where(
+                ExtractionEntityType.template_id == _PROBAST_AI_TEMPLATE_ID
+            )
         )
-    )
+
+    # ``llm_template_instruction`` is deliberately NOT written here: it is the
+    # manager-customized ✨ text, seeded fill-if-null by
+    # ``backfill_llm_template_instructions``. Converging must not clobber it.
+    template.name = "PROBAST+AI"
+    template.description = _DESCRIPTION
+    template.framework = "CUSTOM"
+    template.version = "2.1.0"
+    template.kind = TemplateKind.QUALITY_ASSESSMENT.value
+    template.schema_ = {
+        "derived_judgments": _PAI_DERIVED_JUDGMENTS,
+        "scope_rules": _PAI_SCOPE_RULES,
+    }
 
     n_fields = 0
     for order, (eid, name, label, description, build) in enumerate(_SECTIONS, start=1):
@@ -670,6 +732,11 @@ async def seed_probast_ai(session: AsyncSession) -> None:
             )
         )
         for field in build(eid):
+            field.id = uuid5(eid, field.name)
+            # NI is the fifth signaling ANSWER here, and the judgment scale
+            # already encodes it (NI → Unclear), so the separate marker button
+            # would duplicate the control on every row of this instrument.
+            field.allows_no_information = False
             session.add(field)
             n_fields += 1
 

@@ -7,26 +7,36 @@ Imported explicitly by the ``test_seed_*`` modules
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class CapturingSession:
     """A fake ``AsyncSession`` that forces the seed build path and records
     every ``add``ed ORM object.
 
-    The seed functions only use ``get`` (returned as ``None`` here so the
-    build path runs instead of the "already exists" short-circuit) and
-    ``add`` — no execute/flush/commit — so this needs no database. That
-    lets the seed's *declared* shape be asserted independently of whatever
-    a previous ``make db-seed`` left in the shared local database.
+    ``get`` returns ``None`` so the build path runs instead of the "already
+    exists" short-circuit, and ``execute`` RECORDS rather than ignoring — the
+    converging seeder takes an advisory lock through it, and a silently
+    swallowed statement here would hide a stray DELETE. That lets the seed's
+    *declared* shape be asserted independently of whatever a previous
+    ``make db-seed`` left in the shared local database.
     """
 
     def __init__(self) -> None:
         self.added: list[object] = []
+        self.executed: list[object] = []
 
     async def get(self, *_a: object, **_k: object) -> None:
         return None
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
+
+    async def execute(self, statement: object, *_a: object, **_k: object) -> None:
+        self.executed.append(statement)
+
+    async def flush(self) -> None:
+        return None
 
 
 class ExistingTemplateSession(CapturingSession):
@@ -35,3 +45,25 @@ class ExistingTemplateSession(CapturingSession):
 
     async def get(self, *_a: object, **_k: object) -> object:
         return object()
+
+
+class ConvergingSession(CapturingSession):
+    """``CapturingSession`` whose ``get`` returns a MUTABLE existing row.
+
+    ``ExistingTemplateSession``'s bare ``object()`` models a seeder that only
+    reads the row to bail out. A converging seeder writes to it, so the double
+    must hold attributes — and the test then asserts the row was UPDATED in
+    place rather than re-``add``ed, which is the invariant that keeps every
+    clone's ``global_template_id`` from being SET NULL.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.existing: Any = _ExistingRow()
+
+    async def get(self, *_a: object, **_k: object) -> object:
+        return self.existing
+
+
+class _ExistingRow:
+    """Attribute bag standing in for a loaded ``ExtractionTemplateGlobal``."""
