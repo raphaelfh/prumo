@@ -213,6 +213,7 @@ export function AddModelDialog({
 
           <DialogFooter>
             <Button
+              size="sm"
               type="button"
               variant="outline"
               onClick={onCancel}
@@ -220,7 +221,7 @@ export function AddModelDialog({
             >
                 {t('common', 'cancel')}
             </Button>
-            <Button type="submit" disabled={loading || !modelName.trim()}>
+            <Button size="sm" type="submit" disabled={loading || !modelName.trim()}>
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

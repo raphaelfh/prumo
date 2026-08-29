@@ -246,8 +246,7 @@ export function AllowedUnitsList({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
+                    size="icon-xs"
                     onClick={() => handleMoveUp(index)}
                     disabled={disabled || index === 0}
                     title={t('extraction', 'unitMoveUp')}
@@ -257,8 +256,7 @@ export function AllowedUnitsList({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
+                    size="icon-xs"
                     onClick={() => handleMoveDown(index)}
                     disabled={disabled || index === values.length - 1}
                     title={t('extraction', 'unitMoveDown')}
@@ -268,8 +266,8 @@ export function AllowedUnitsList({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    size="icon-xs"
+                    className="text-destructive hover:text-destructive"
                     onClick={() => handleRemove(index)}
                     disabled={disabled}
                     title={t('extraction', 'unitRemove')}

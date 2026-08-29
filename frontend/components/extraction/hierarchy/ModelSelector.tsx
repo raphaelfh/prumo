@@ -296,8 +296,8 @@ export function ModelSelector({
                     <TooltipTrigger asChild>
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 shrink-0"
+                        size="icon"
+                        className="p-0 shrink-0"
                         onClick={(e) => {
                           e.stopPropagation();
                           onExtractAllSections();

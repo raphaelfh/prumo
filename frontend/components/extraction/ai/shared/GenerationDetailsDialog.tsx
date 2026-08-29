@@ -91,9 +91,9 @@ function CopyButton({value}: {value: string}) {
   const {copied, copy} = useCopyToClipboard();
   return (
     <Button
-      size="sm"
+      size="icon-xs"
       variant="ghost"
-      className="h-6 w-6 shrink-0 p-0"
+      className="shrink-0 p-0"
       onClick={() => copy(value)}
       aria-label={copied ? t('extraction', 'provenanceCopied') : t('extraction', 'provenanceCopyPrompt')}
     >
@@ -136,9 +136,9 @@ function SystemPromptStep({index, text}: {index: number; text: string}) {
         {text}
       </pre>
       <Button
-        size="sm"
+        size="xs"
         variant="ghost"
-        className="mt-1 h-5 px-1 text-[11px] text-muted-foreground hover:text-foreground"
+        className="mt-1 px-1 text-[11px] text-muted-foreground hover:text-foreground"
         onClick={() => setOpen((prev) => !prev)}
       >
         {open ? t('extraction', 'generationShowLess') : t('extraction', 'generationShowAll')}
@@ -160,9 +160,9 @@ function ArticleTextExpand({articleId}: {articleId: string}) {
   return (
     <div className="mt-2">
       <Button
-        size="sm"
+        size="xs"
         variant="ghost"
-        className="h-6 gap-1 px-1 text-[11px] text-ai hover:text-ai"
+        className="gap-1 px-1 text-[11px] text-ai hover:text-ai"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
       >
@@ -178,9 +178,9 @@ function ArticleTextExpand({articleId}: {articleId: string}) {
             <div className="flex items-center justify-between gap-2 rounded border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
               <span>{t('extraction', 'generationTextError')}</span>
               <Button
-                size="sm"
+                size="xs"
                 variant="ghost"
-                className="h-5 px-1.5 text-[11px]"
+                className="px-1.5 text-[11px]"
                 onClick={() => void refetch()}
               >
                 {t('extraction', 'generationTextRetry')}
@@ -190,9 +190,9 @@ function ArticleTextExpand({articleId}: {articleId: string}) {
           {!isLoading && !isError && data && (
             <div className="relative">
               <Button
-                size="sm"
+                size="icon-xs"
                 variant="ghost"
-                className="absolute right-1 top-1 h-6 w-6 p-0"
+                className="absolute right-1 top-1 p-0"
                 onClick={() => copy(data.contentMarkdown ?? '')}
                 aria-label={
                   copied ? t('extraction', 'provenanceCopied') : t('extraction', 'provenanceCopyPrompt')

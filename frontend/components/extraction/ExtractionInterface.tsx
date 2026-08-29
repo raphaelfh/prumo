@@ -314,8 +314,8 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                   <TooltipTrigger asChild>
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
+                      size="icon"
+                      className="p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
                       onClick={() => setShowExportDialog(true)}
                       disabled={articles.length === 0}
                       data-testid="extraction-export-button"

@@ -32,7 +32,7 @@ export function ActiveFilterChips({
                         </span>
                         <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon"
                             className="h-4 w-4 p-0 shrink-0 hover:bg-muted rounded"
                             onClick={() => onClearField(column)}
                             aria-label={removeFilterAriaLabel?.(label) ?? `Remove filter ${label}`}

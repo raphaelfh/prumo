@@ -95,8 +95,8 @@ function SortableItem({ id, value, index, onRemove, disabled }: SortableItemProp
       <Button
         type="button"
         variant="ghost"
-        size="icon"
-        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+        size="icon-xs"
+        className="opacity-0 group-hover:opacity-100 transition-opacity"
         onClick={onRemove}
         disabled={disabled}
       >
@@ -253,8 +253,8 @@ export function AllowedValuesList({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                    size="icon-xs"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => handleRemove(index)}
                     disabled={disabled}
                   >
