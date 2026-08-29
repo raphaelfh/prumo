@@ -103,12 +103,20 @@ class ExtractionProposalService:
         # Scoped by the field's live domain so a coincidental value is untouched;
         # the candidacy pre-check skips the lookup for real values / markers.
         if is_disposition_candidate(proposed_value):
-            allowed = (
+            domain = (
                 await self.db.execute(
-                    select(ExtractionField.allowed_values).where(ExtractionField.id == field_id)
+                    select(
+                        ExtractionField.allowed_values,
+                        ExtractionField.allows_no_information,
+                    ).where(ExtractionField.id == field_id)
                 )
-            ).scalar_one_or_none()
-            proposed_value = disposition_to_marker(proposed_value, allowed)
+            ).one_or_none()
+            if domain is not None:
+                proposed_value = disposition_to_marker(
+                    proposed_value,
+                    domain.allowed_values,
+                    allows_no_information=domain.allows_no_information,
+                )
 
         # Idempotent re-record: a client replaying an unchanged value (form
         # remount, debounce double-fire, retry) must not append a duplicate

@@ -245,16 +245,16 @@ _MM_DEFINITION = (
 )
 
 # ADR-0016: in-band disposition strings ("No information" / "Not applicable" /
-# "Not evaluated") are retired as select values. "The source is silent" is the
-# universal no_information marker (runtime control on every field); not_applicable
-# / not_evaluated are per-field opt-in flags (allows_not_applicable /
-# allows_not_evaluated). "Unclear" stays a substantive select value.
+# "Not evaluated") are retired as select values. All three are per-field opt-in
+# flags (allows_no_information — default ON, migration 0062 — plus
+# allows_not_applicable / allows_not_evaluated); PROBAST+AI 2.1.0 is the one
+# seed that turns the first off. "Unclear" stays a substantive select value.
 _YES_NO = ["Yes", "No"]
 _YES_NO_UNCLEAR = ["Yes", "No", "Unclear"]
 
 # PROBAST signaling-question answer set (Y / Probably Yes / Probably No / N).
-# The historical "NI" / "NA" options are now coded dispositions: no_information is
-# universal, and not_applicable is the opt-in flag set on these signaling fields.
+# Classic PROBAST keeps "NI"/"NA" as coded dispositions (the marker, and the
+# not_applicable opt-in). PROBAST+AI 2.1.0 has its own five-answer list.
 _PROBAST_SIGNALING = ["Y", "PY", "PN", "N"]
 # PROBAST domain judgment set
 _PROBAST_JUDGMENT = ["Low", "High", "Unclear"]
@@ -1399,12 +1399,12 @@ def _field(
     (judgments, their rationales, Step-4 summaries) are excluded from every
     LLM call and carry no prompt at all.
 
-    ``is_required`` defaults ``True``: a seeded field is answerable with the
-    universal ``no_information`` marker, which the finalize gate counts as
-    *filled*, so marking fields required turns "the source is silent" into
-    an explicitly recorded answer instead of an indistinguishable blank
-    (constitution IX). Optional is for free-text describe/rationale/summary
-    boxes the instrument itself leaves optional. Managers still relax
+    ``is_required`` defaults ``True``: where the ``no_information`` marker is
+    available (0062 made it a flag, default on), required turns "the source is
+    silent" into a recorded answer rather than an indistinguishable blank
+    (constitution IX). Optional is for free text, and for an instrument whose
+    own answer set carries "no information" — PROBAST+AI, where required
+    states what the assessment OWES instead. Managers still relax
     ``is_required`` per project clone when they want a looser gate.
     """
     return ExtractionField(
@@ -3221,9 +3221,9 @@ _LLM_TEMPLATE_INSTRUCTIONS: dict[UUID, str] = {
 async def backfill_llm_template_instructions(session: AsyncSession) -> None:
     """Fill-if-null: seed the framework default on globals that have none.
 
-    Separate from the per-template seeders (which early-return when the
-    template exists), so existing databases receive new defaults while a
-    manager's customized text is never overwritten. Idempotent.
+    Separate from the per-template seeders, which never write this column —
+    whether they early-return or converge — so existing databases receive new
+    defaults while a manager's customized text is never overwritten.
     """
     # Function-local for the same circularity reason as ``main``'s import.
     from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID

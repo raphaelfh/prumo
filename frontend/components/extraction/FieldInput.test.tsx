@@ -76,6 +76,19 @@ describe('FieldInput disposition control', () => {
     expect(screen.queryByRole('button', { name: 'dispositionNotEvaluated' })).toBeNull();
   });
 
+  it('hides No information when the field opts OUT (migration 0062)', () => {
+    // PROBAST+AI 2.1.0 carries "NI" as the fifth signaling ANSWER. Rendering
+    // the marker too would give one answer two encodings on the same control,
+    // which the full-envelope consensus compare reads as a divergence.
+    renderField(makeField({ allows_no_information: false }), '');
+    expect(screen.queryByRole('button', { name: 'dispositionNoInformation' })).toBeNull();
+  });
+
+  it('keeps No information when the flag is absent — it was universal pre-0062', () => {
+    renderField(makeField({}), '');
+    expect(screen.getByRole('button', { name: 'dispositionNoInformation' })).toBeInTheDocument();
+  });
+
   it('renders and writes the opt-in dispositions where enabled', async () => {
     const user = userEvent.setup();
     const onChange = renderField(

@@ -16,6 +16,7 @@ import pytest
 from app.services.derived_judgment_service import (
     DerivedInput,
     DerivedJudgment,
+    _signaling_contribution,
     compute_derived_judgments,
     derived_spec,
     excluded_field_coordinates,
@@ -487,3 +488,51 @@ def test_excluded_field_coordinates_unions_the_assessor_pointers() -> None:
     assert excluded_field_coordinates([]) == set()
     assert excluded_field_coordinates(None) == set()
     assert excluded_field_coordinates(_SPEC) == set()  # v1-shaped: no pointers
+
+
+# --------------------------------------------------------------------------- #
+# PROBAST+AI 2.1.0: NI as the fifth signaling ANSWER
+# --------------------------------------------------------------------------- #
+def test_ni_answer_contributes_unclear_through_both_caller_shapes() -> None:
+    """Screen/workbook parity for the instrument's fifth answer.
+
+    The two callers hand this module different shapes: the run view passes the
+    raw jsonb envelope, the export passes a value_map ``resolve_value`` has
+    already collapsed to a scalar. For a select ANSWER that scalar is the
+    option's value ("NI"), so both paths land on ``_SIGNALING_MAP["ni"]`` —
+    which is what 2.1.0 adds, and which reads NI as Unclear: the instrument's
+    own reading, and the same result the retired marker produced, so nothing
+    downstream needs a branch.
+
+    The bare "No information" case is the MARKER's label, which
+    ``resolve_value`` emits for a coded ``absent_reason``. It already resolved
+    to Unclear before 2.1.0; it is asserted here so the answer and the marker
+    are pinned to the same contribution, which is what makes the NI option's
+    label safe to share with the marker's.
+    """
+    assert _signaling_contribution({"value": "NI"}) == "Unclear"
+    assert _signaling_contribution("NI") == "Unclear"
+    assert _signaling_contribution("No information") == "Unclear"
+    # Case-insensitive, like every other answer in the map.
+    assert _signaling_contribution({"value": "ni"}) == "Unclear"
+
+
+def test_ni_answer_drives_the_derived_default_like_any_other_answer() -> None:
+    """End to end: an NI answer must make a domain default Unclear rather than
+    leave it unjudged — the point of putting it on the scale."""
+    spec = [
+        {
+            "id": "d1",
+            "label": "D1",
+            "rule": "signaling_worst",
+            "target": {"section": "d1", "field": "risk_of_bias"},
+            "inputs": [
+                {"section": "d1", "field": "q1"},
+                {"section": "d1", "field": "q2"},
+            ],
+        }
+    ]
+    [derived] = compute_derived_judgments(
+        spec, {("d1", "q1"): {"value": "Y"}, ("d1", "q2"): {"value": "NI"}}
+    )
+    assert derived.value == "Unclear"

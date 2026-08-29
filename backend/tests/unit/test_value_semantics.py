@@ -204,6 +204,50 @@ def test_disposition_to_marker_converts_in_domain(raw, allowed, expected):
     assert disposition_to_marker(raw, allowed) == expected
 
 
+# --- 0062: a field that opts OUT of the no_information marker owns the string
+# as a substantive answer (PROBAST+AI 2.1.0's fifth signaling answer). Rewriting
+# it would erase the reviewer's answer into a marker the UI then refuses to
+# render — a silent data-loss path, not a normalization.
+_PAI_SIGNALING = ["Y", "PY", "PN", "N", {"value": "NI", "label": "No information"}]
+
+
+@pytest.mark.parametrize(
+    ("raw", "allowed"),
+    [
+        # PROBAST+AI 2.1.0's abbreviated code — the shipped case
+        ({"value": "NI"}, _PAI_SIGNALING),
+        ("NI", _PAI_SIGNALING),
+        # the full-word encoding, so the flag is not accidentally code-specific
+        ({"value": "No information"}, ["Yes", "No", "No information"]),
+    ],
+)
+def test_no_information_is_a_value_when_the_field_opts_out(raw, allowed):
+    # Guards the guard: each case must be IN-domain, or it would return
+    # unchanged at the allowed_values check and never reach the flag.
+    assert disposition_to_marker(raw, allowed) != raw
+    assert disposition_to_marker(raw, allowed, allows_no_information=False) == raw
+
+
+def test_opting_out_does_not_spare_the_other_dispositions():
+    """The flag is scoped to its own disposition: NA on the same field is still
+    the retired in-band string and still normalizes."""
+    allowed = ["Y", "N", "NA", {"value": "NI", "label": "No information"}]
+    assert disposition_to_marker({"value": "NA"}, allowed, allows_no_information=False) == {
+        "value": None,
+        "absent_reason": "not_applicable",
+    }
+
+
+def test_default_keeps_the_pre_0062_rewrite():
+    """Every caller that has not looked the flag up gets today's behaviour, so
+    classic PROBAST clones whose frozen domain still carries "NI" keep
+    normalizing it to the marker."""
+    assert disposition_to_marker({"value": "NI"}, _PROBAST) == {
+        "value": None,
+        "absent_reason": "no_information",
+    }
+
+
 @pytest.mark.parametrize(
     ("raw", "allowed"),
     [

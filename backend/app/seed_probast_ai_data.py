@@ -1,4 +1,4 @@
-"""PROBAST+AI 2.0.0 — the instrument's question banks (data only).
+"""PROBAST+AI 2.1.0 — the instrument’s question banks (data only).
 
 Split from ``seed_probast_ai`` to keep both under the file-size ratchet: this
 module is pure data — the official signaling-question texts (Moons et al.,
@@ -62,7 +62,7 @@ _D2_QUESTIONS: tuple[_Question, ...] = (
         "Were predictor assessments made without knowledge of outcome data?",
         "Assess whether predictors were measured blind to the outcome. This "
         "matters most for subjective predictors and is frequently unreported; "
-        "when unreported, mark no information.",
+        "when unreported, answer NI.",
     ),
     (
         "q4_available_at_intended_use",
@@ -113,7 +113,7 @@ _DEV_D4_QUESTIONS: tuple[_Question, ...] = (
         "Assess whether the development sample is large relative to model "
         "complexity, considering the number of parameters and the event "
         "fraction. Regularisation does not substitute for an adequate sample; "
-        "when no information is given, lean to no information.",
+        "when the article gives no sample-size justification, answer NI.",
     ),
     (
         "q2_continuous_categorical_handling",
@@ -299,6 +299,50 @@ _S_OVERALL = "overall_judgement"
 _F_QUALITY = "quality_concern"
 _F_ROB = "risk_of_bias"
 _F_APPLICABILITY = "applicability_concerns"
+_F_STUDY_TYPE = "study_type"
+
+# The instrument's signaling answer set, v2-local. PROBAST+AI answers each
+# signaling question Y / PY / PN / N / NI, and 2.1.0 carries all five on the
+# ONE select rather than splitting NI onto the separate marker button (the
+# button is turned off per field via ``allows_no_information``). NI keeps its
+# short code as the stored value and spells itself out as the label, which is
+# what lets the export's label path resolve it to the same Unclear the raw
+# path derives — screen and workbook cannot drift.
+#
+# The shared four-answer ``_PROBAST_SIGNALING`` stays untouched: the classic
+# PROBAST seed still uses it, and ``_signaling``'s identity rule keys off it.
+_PAI_SIGNALING: list[Any] = [
+    "Y",
+    "PY",
+    "PN",
+    "N",
+    {"value": "NI", "label": "No information"},
+]
+
+# Step-2 study-type classification, and what each choice takes out of scope.
+# Declared data, sibling of ``derived_judgments``: every layer (progress,
+# derivation, AI calls, export) evaluates the SAME rule where it acts, by set
+# membership — which is what retires the ``dev_``/``eval_`` name-prefix
+# convention the frontend used to hardcode.
+#
+# ``combination`` is deliberately absent: it excludes nothing, and so does an
+# unanswered, marked or unrecognized classifier. Excluding nothing is the
+# conservative default — an unclassified assessment shows the whole form.
+_PAI_SCOPE_RULES: dict[str, Any] = {
+    "classifier": {"section": _S_SCOPE, "field": "study_type"},
+    "excludes": {
+        "development_only": [
+            _S_EVAL_D1,
+            _S_EVAL_D2,
+            _S_EVAL_D3,
+            _S_EVAL_D4_A,
+            _S_EVAL_D4_I,
+            _S_EVAL_D4_E,
+            _S_EVAL_D4_J,
+        ],
+        "evaluation_only": [_S_DEV_D1, _S_DEV_D2, _S_DEV_D3, _S_DEV_D4],
+    },
+}
 
 
 # ---------------------------------------------------------------------------
