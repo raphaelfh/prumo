@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-08-23
+last_reviewed: 2026-08-29
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-08-23 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-08-29 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -135,7 +135,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0058_scope_config_read_rls` (post-squash numbering; run
+`0062_allows_no_information` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -166,8 +166,12 @@ answer (the source is silent / not applicable / not evaluated) and counts as
 **unresolved**. `backend/app/services/value_semantics.py` is the single
 emptiness oracle (enum, labels, write-time normalizer), mirrored 1:1 by
 `frontend/lib/extraction/valueSemantics.ts` via a shared cross-checked test
-vector. `no_information` is available on every field; `not_applicable` /
-`not_evaluated` are opt-in per field. Historical in-band disposition strings
+vector. All three dispositions are opt-in per field; `no_information` was
+universal until `0062_allows_no_information`, so its column defaults `true`
+while its two siblings default `false` — an absent key means "the marker was
+available". It is turned OFF only where the answer set already encodes the
+concept as a value (PROBAST+AI 2.1.0's fifth signaling answer), so one concept
+keeps one control. Historical in-band disposition strings
 (`"No information"`, PROBAST `NI`/`NA`) were rewritten to the marker by
 migration `0039_absent_reason_backfill`. Decision record:
 [ADR-0016](../adr/0016-typed-absent-reason-marker.md).
@@ -194,7 +198,7 @@ migration `0039_absent_reason_backfill`. Decision record:
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
 | `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. Target FKs are `ON DELETE CASCADE` — evidence follows its sole workflow target (0044; SET NULL could never satisfy the CHECK). | 0013 + 0017 + 0044 |
 | `extraction_entity_types` | Write RLS manager-gated (B-7): INSERT/UPDATE policies require `is_project_manager` (was member), both with explicit WITH CHECK, plus `template_id IS NULL` — the RLS floor against writing GLOBAL-catalogue sections (cross-tenant prompt injection via cloned `llm_description`; previously only the `template_xor` CHECK stood in the way). SELECT scoped to project members (0058): the policy is `can_read_entity_type(id, auth.uid())` — global-catalogue rows (`project_template_id IS NULL`) stay world-readable so the import dialog can list them, project-lineage rows require `is_project_member`. It was `USING (true)` with no `TO` clause and a baseline SELECT grant to `anon`, so unauthenticated callers could read every project's sections, fields and authored `llm_description`. Manager DELETE unchanged. Residual: manager JWTs can still write via PostgREST (GRANT survives) — follow-up REVOKE recorded in the 0049 docstring. + `entry_label` TEXT NULL (B-8 group entry noun — meaningful only for `role='model_container'`, backfilled `'model'` via a role-only predicate covering BOTH lineages, with the 0048 mark-draft trigger disabled during the backfill; seed stamps `"model"` on the catalogue containers; migration 0026's embedded snapshot SQL intentionally untouched — column post-dates its slot, `llm_template_instruction` precedent). | 0049 + 0051 + 0058 |
-| `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated` opt-in disposition flags (ADR-0016; copied into `version.schema_` by the snapshot builder); write RLS manager-gated (B-7): INSERT/UPDATE require `is_project_manager` through the et→pet chain (global lineage never joins), UPDATE gains explicit WITH CHECK; per-section name uniqueness enforced by unique index `uq_extraction_fields_entity_type_name (entity_type_id, name)` — preceded by a deterministic first-free-suffix heal of pre-existing duplicates (both lineages, 0048 trigger left ENABLED so healed templates stamp as real drift; downgrade drops the index only). SELECT scoped to project members (0058) through the SAME predicate as its parent — `can_read_entity_type(entity_type_id, auth.uid())`; a field is visible exactly when its entity type is, expressed once so the two policies cannot drift (several frontend reads select fields by `entity_type_id` alone and rely on the id list being pre-filtered). `template_field_service` remaps a 23505 on this index to the typed duplicate error. Promotion runs the duplicate + hybrid-row audit from the 0050 docstring against prod FIRST. | 0038 + 0049 + 0050 + 0058 |
+| `extraction_fields` | + `allows_not_applicable`, `allows_not_evaluated`, `allows_no_information` opt-in disposition flags (ADR-0016, the third added by 0062 with a `true` server_default because the marker was universal before it; copied into `version.schema_` by the snapshot builder); write RLS manager-gated (B-7): INSERT/UPDATE require `is_project_manager` through the et→pet chain (global lineage never joins), UPDATE gains explicit WITH CHECK; per-section name uniqueness enforced by unique index `uq_extraction_fields_entity_type_name (entity_type_id, name)` — preceded by a deterministic first-free-suffix heal of pre-existing duplicates (both lineages, 0048 trigger left ENABLED so healed templates stamp as real drift; downgrade drops the index only). SELECT scoped to project members (0058) through the SAME predicate as its parent — `can_read_entity_type(entity_type_id, auth.uid())`; a field is visible exactly when its entity type is, expressed once so the two policies cannot drift (several frontend reads select fields by `entity_type_id` alone and rely on the id list being pre-filtered). `template_field_service` remaps a 23505 on this index to the typed duplicate error. Promotion runs the duplicate + hybrid-row audit from the 0050 docstring against prod FIRST. | 0038 + 0049 + 0050 + 0058 + 0062 |
 
 ### Legacy tables — fully removed
 
