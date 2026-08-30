@@ -49,7 +49,6 @@ from app.repositories import (
 )
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
-from app.services.derived_judgment_service import derived_spec, excluded_field_coordinates
 from app.services.engine_credentials import EngineCredentials, rekey_for_adopted_engine
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
@@ -59,6 +58,7 @@ from app.services.extraction_snapshot import (
     general_instructions_for_version,
 )
 from app.services.llm_engine_service import resolve_project_engine
+from app.services.llm_field_filter import LlmFieldFilter, build_llm_field_filter
 from app.services.run_engine_freeze import build_proposal_engine, freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.value_semantics import AbsentReason
@@ -183,6 +183,9 @@ class SectionExtractionService(LoggerMixin):
         # Assembly info from the last prompt build (truncation, token estimate,
         # source file) — feeds the per-section prompt_composition provenance.
         self._prompt_input_info: PromptInputInfo | None = None
+        # What the model may see, resolved once per run (see _field_filter).
+        self._llm_field_filter = LlmFieldFilter()
+        self._filter_run_id: UUID | None = None
         # Stashed by _extract_with_llm; _maybe_verify builds _run_provenance.
         self._snapshot_inputs: SectionSnapshotInputs | None = None
         self._run_provenance: dict[str, Any] | None = None
@@ -372,7 +375,7 @@ class SectionExtractionService(LoggerMixin):
                 entity_type=entity_type,
                 fields_override=fields_override,
                 general_instructions=general_instructions,
-                excluded_coordinates=await self._excluded_field_names(run.template_id),
+                field_filter=await self._field_filter(run),
             )
             # 6. Verify pass (mode + kind checks inside the glue) + snapshot.
             verdicts, llm_usage = await self._maybe_verify(
@@ -710,7 +713,7 @@ class SectionExtractionService(LoggerMixin):
             framework=framework,
             fields_override=fields_override,
             general_instructions=general_instructions,
-            excluded_coordinates=await self._excluded_field_names(run.template_id),
+            field_filter=await self._field_filter(run),
         )
         verdicts, llm_usage = await self._maybe_verify(
             run.id, entity_type.id, kind, pdf_text, extracted_data, llm_usage
@@ -765,20 +768,14 @@ class SectionExtractionService(LoggerMixin):
             result.append(field)
         return result
 
-    async def _excluded_field_names(self, template_id: UUID | None) -> set[tuple[str, str]]:
-        """Assessor-owned ``(section, field)`` names the model must never see.
-
-        Declared data on the template's live ``schema_`` (the derived spec's
-        target/rationale/summary pointers) — template-data-driven and
-        kind-agnostic. A template without a spec yields an empty set, so
-        every other template's field list passes through untouched. The
-        session's identity map makes the repeated per-section ``get`` free.
-        """
-        if template_id is None:
-            return set()
-        template = await self.db.get(ProjectExtractionTemplate, template_id)
-        schema = getattr(template, "schema_", None) if template is not None else None
-        return excluded_field_coordinates(derived_spec(schema))
+    async def _field_filter(self, run: ExtractionRun) -> LlmFieldFilter:
+        """What the model may see for *run*, memoised: the scope half costs a
+        pinned-tree read plus a proposal lookup, and extract-all walks ~16
+        sections."""
+        if self._filter_run_id != run.id:
+            self._llm_field_filter = await build_llm_field_filter(self.db, run)
+            self._filter_run_id = run.id
+        return self._llm_field_filter
 
     async def _find_instance_for_entity_type(
         self,
@@ -1168,7 +1165,7 @@ class SectionExtractionService(LoggerMixin):
             memory_context=memory_history,
             fields_override=pinned_fields,
             general_instructions=general_instructions,
-            excluded_coordinates=await self._excluded_field_names(run.template_id),
+            field_filter=await self._field_filter(run),
         )
         verdicts, llm_usage = await self._maybe_verify(
             run.id, entity_type.id, run.kind, pdf_text, extracted_data, llm_usage
@@ -1319,7 +1316,7 @@ class SectionExtractionService(LoggerMixin):
         framework: str | None = None,
         fields_override: list[Any] | None = None,
         general_instructions: str | None = None,
-        excluded_coordinates: set[tuple[str, str]] | None = None,
+        field_filter: LlmFieldFilter | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
         """Run extraction using the typed LLM call layer.
 
@@ -1328,10 +1325,11 @@ class SectionExtractionService(LoggerMixin):
         ``fields_override`` is the exact field list to send (never mutate
         ``entity_type.fields``); ``general_instructions`` comes from the
         run-pinned snapshot, never the live column.
-        ``excluded_coordinates`` are the template spec's assessor-owned
-        ``(section, field)`` names — subtracted HERE, the one seam every
-        extraction path funnels through (including the re-pin fallback that
-        carries no override), so those fields never reach the model.
+        ``field_filter`` carries the template's two exclusion sets —
+        assessor-owned coordinates and out-of-scope sections — subtracted
+        HERE, the one seam every extraction path funnels through (including
+        the re-pin fallback that carries no override), so neither reaches
+        the model.
         Returns ({field_name: {value, confidence, reasoning, evidence}},
         usage) — oversized templates are split into multiple calls and
         merged transparently. Side effect: stashes the section-snapshot
@@ -1363,6 +1361,12 @@ class SectionExtractionService(LoggerMixin):
             if fields_override is not None
             else (getattr(entity_type, "fields", None) or [])
         )
+        if field_filter and entity_name in field_filter.out_of_scope_sections:
+            # The scope rules take this whole section out of play, so there is
+            # nothing to ask about. Empty list -> the existing no-fields skip
+            # below; no new return path, no LLM call, no proposals.
+            effective = []
+        excluded_coordinates = field_filter.excluded_coordinates if field_filter else frozenset()
         if excluded_coordinates:
             excluded_names = {f for s, f in excluded_coordinates if s == str(entity_name)}
             if excluded_names:
