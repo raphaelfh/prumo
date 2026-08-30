@@ -1,6 +1,7 @@
 """Clone a global extraction or quality-assessment template into a project."""
 
 from collections import deque
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
@@ -18,6 +19,7 @@ from app.services.project_template_active_service import (
     deactivate_sibling_extraction_templates,
     flush_activation,
 )
+from app.services.template_diff import TEMPLATE_INSTRUCTION_KEY, normalize_instruction
 
 
 class TemplateNotFoundError(Exception):
@@ -27,9 +29,11 @@ class TemplateNotFoundError(Exception):
 class PendingConfigDraftError(Exception):
     """Publish-adjacent operation refused: unpublished config edits.
 
-    Raised only where the operation would silently PUBLISH a pending
-    draft (the drift heal). Zero-state rebuilds regardless of marker
-    (documented factory recovery); the aligned path publishes nothing.
+    Raised by both heals that would publish one: the DRIFT heal on any
+    marker, and the ZERO-STATE heal on a staged instruction (see
+    ``_refuse_if_instruction_draft_pending`` for why the two conditions
+    differ). The aligned path publishes nothing and never raises.
+
     Defined here (not in template_version_service) because that module
     already imports from this one — this direction adds no new cycle.
     """
@@ -143,6 +147,13 @@ class TemplateCloneService:
                 # advisory locks after that would invert the documented
                 # order against session-open (ABBA).
                 await publisher.acquire_publish_locks(existing.id)
+                # Strictly between the locks and the rebuild: after the
+                # locks so the read is authoritative, and BEFORE the inserts
+                # because they stamp the marker themselves (0048) and would
+                # make the guard's own early-out unreachable.
+                await self._refuse_if_instruction_draft_pending(
+                    existing.id, active_snapshot=version.schema_ or {}
+                )
                 global_entity_types = await self._global_entity_types(global_template_id)
                 field_count = await self._insert_project_structure_from_global(
                     project_template_id=existing.id,
@@ -389,6 +400,50 @@ class TemplateCloneService:
                 field_count += 1
         await self.db.flush()
         return field_count
+
+    async def _refuse_if_instruction_draft_pending(
+        self,
+        project_template_id: UUID,
+        *,
+        active_snapshot: dict[str, Any],
+    ) -> None:
+        """Refuse a zero-state heal that would publish a staged instruction.
+
+        ``republish`` snapshots the LIVE ``llm_template_instruction``, and
+        this branch resets structure from the global but never that column
+        — so healing over a staged draft ships unapproved text into
+        prompts, and session-open reaches it as any project MEMBER.
+        ``fail_if_pending_draft`` cannot guard it: the rebuild's own
+        inserts stamp the marker, so the flag would refuse every heal.
+
+        Hence two conditions, because each alone over-refuses:
+
+        * marker alone — deleting every section stamps it as a byproduct
+          (0048 trigger), and delete-everything + re-import is the
+          documented factory-recovery workflow, which must keep working;
+        * content alone — a legacy clone published before the snapshot
+          carried ``llm_template_instruction`` reads live != pinned with
+          nothing actually pending.
+
+        The LIVE columns are read fresh (not off the identity-mapped row
+        loaded before the locks) so the check is authoritative rather than
+        TOCTOU-racy. The pinned side needs no such read: version rows are
+        append-only, so ``active_snapshot`` cannot have gone stale.
+        """
+        marker, live = (
+            await self.db.execute(
+                select(
+                    ProjectExtractionTemplate.config_draft_since,
+                    ProjectExtractionTemplate.llm_template_instruction,
+                ).where(ProjectExtractionTemplate.id == project_template_id)
+            )
+        ).one()
+        if marker is None:
+            return
+        if normalize_instruction(live) != normalize_instruction(
+            active_snapshot.get(TEMPLATE_INSTRUCTION_KEY)
+        ):
+            raise PendingConfigDraftError()
 
     async def resolve_existing_clone(
         self,

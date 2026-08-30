@@ -177,10 +177,18 @@ class HITLSessionService:
             except PendingConfigDraftError:
                 # B-4: a pending config draft must NEVER gate session-open
                 # (the global constraint that keeps reviewers out of the
-                # manager's edit loop). The refusal only fires on an
-                # EXISTING clone's drift heal — use that clone AS-IS: the
-                # run pins to the current ACTIVE version and the draft
-                # stays unpublished until the manager presses Publish.
+                # manager's edit loop). Either heal of an EXISTING clone can
+                # refuse — use that clone AS-IS: the run pins to the current
+                # ACTIVE version and the draft stays unpublished until the
+                # manager presses Publish.
+                #
+                # What AS-IS means differs by branch. After a drift refusal
+                # the live tree is intact and the form renders. After a
+                # ZERO-STATE refusal it is empty, and ``ensure_instances``
+                # below seeds from live rows — so the reviewer gets an empty
+                # form until the manager publishes. Deliberate: the template
+                # is mid-edit, and healing it would both publish the staged
+                # instruction and resurrect the sections just deleted.
                 existing = await self._clone.resolve_existing_clone(project_id, global_template_id)
                 assert existing is not None, "PendingConfigDraftError implies an existing clone"
                 return existing.id
