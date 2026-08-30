@@ -61,8 +61,10 @@ export type SaveFieldHandler = (
   onSaved: () => void,
 ) => void;
 
+// No `border-l`: docked, the PaneResizer beside it draws that hairline;
+// as a Sheet, the overlay draws its own edge. One hairline per boundary.
 const PANEL_CLASS =
-  'w-[300px] shrink-0 overflow-y-auto border-l bg-muted/20 px-3.5 py-3 text-[13px]';
+  'w-[300px] shrink-0 overflow-y-auto bg-muted/20 px-3.5 py-3 text-[13px]';
 
 interface TemplateInspectorProps {
   /** Section-pane commit context (B-8 T6) — the immediate PATCH needs
@@ -91,6 +93,9 @@ interface TemplateInspectorProps {
   /** Deep-link from the grid; only forwarded when it targets `field`. */
   focusGroup?: InspectorFocusGroup | null;
   className?: string;
+  /** Dragged width (PaneResizer) — docked host only; the Sheet host is
+   * sized by the overlay and passes none. */
+  style?: React.CSSProperties;
 }
 
 /** Compact switch row for the boolean toggles (dispositions, allow-other). */
@@ -543,10 +548,11 @@ export function TemplateInspector({
   moveDisabled,
   focusGroup,
   className,
+  style,
 }: TemplateInspectorProps) {
   if (!field && !section) {
     return (
-      <aside className={cn(PANEL_CLASS, className)}>
+      <aside style={style} className={cn(PANEL_CLASS, className)}>
         <div className="font-medium">{t('extraction', 'inspectorEmptyTitle')}</div>
         <p className="mt-1 text-muted-foreground">
           {t('extraction', 'inspectorEmptyHint')}
@@ -559,6 +565,7 @@ export function TemplateInspector({
     return (
       <aside
         data-testid="template-inspector"
+        style={style}
         className={cn(PANEL_CLASS, className)}
       >
         <FieldInspectorForm
@@ -582,6 +589,7 @@ export function TemplateInspector({
   return (
     <aside
       data-testid="template-inspector"
+      style={style}
       className={cn(PANEL_CLASS, className)}
     >
       <SectionInspectorForm

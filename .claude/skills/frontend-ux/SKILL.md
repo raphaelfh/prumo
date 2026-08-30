@@ -110,6 +110,16 @@ only sees `h-*` overrides. Give a button an explicit size when you touch one.
    shows the success ring (`ring-1 ring-success bg-success/10 text-success`,
    usually with a small `Check`) — never just a shade — plus, where the input
    itself looks blank, an explicit "recorded" hint so the state is unambiguous.
+6. **Selection is not focus — they never share a vocabulary.** Focus owns the
+   outline (`outline-2 outline-ring`); selection owns a tint plus a weight or
+   colour shift (`bg-muted/60` on the row, `font-medium text-foreground` on its
+   label). Paint both on the same element and a row that is selected *and*
+   focused draws two concentric 2px rules — a stray box floating over the row —
+   while a merely selected row lies about having focus. (Shipped once on the
+   template-config grid: `TemplateGridFieldRow` re-used `gridCellFocus`'s
+   `CELL_RING` for its selected state.) The success-ring treatment in the
+   previous bullet is for a *recorded choice*, which is a different thing again
+   from "the row you are pointing at".
 
 ## 5. Responsive Behaviour
 
@@ -143,7 +153,56 @@ The breakpoint scale is the Tailwind default with `2xl` overridden to **1400px**
 the `useIsMobile`/`useIsNarrow` hooks, the priority-track header — live in
 `ui-styling` (§ *Responsive mechanics*).
 
-## 6. Implementation Checklist
+## 6. The Edge Budget (space belongs to content)
+
+A dense tool earns its keep by showing more of the user's data, not more of
+its own frame. Everything between the viewport edge and the first row of
+content is chrome, and chrome is on a budget. Reclaiming the outer margin is
+the cheapest density win available — it costs no legibility, because nothing
+was there.
+
+| Boundary                              | Budget                          | Why                                                                                                                       |
+|---------------------------------------|---------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| Page gutter (viewport → workspace)    | `px-4 py-3`, `lg:px-6`          | 24px is as wide as a page band ever needs. `lg:px-10` spent 80px of a 1340px window painting nothing.                      |
+| Panel / card padding                  | `p-2`–`p-3` dense, `p-4` prose  | The component owns its own inset; the parent owns the gap between components.                                              |
+| Between siblings                      | `gap-3` (12px)                  | Below ~12px adjacent regions start to visually merge and the reader misreads where one ends.                               |
+| Compact row (rail, menu, list item)   | `px-2 py-1`, `space-y-0.5`      | 4px vertical / 8–12px horizontal is the compact tier's floor. Tighter and the rows stop being separable at a glance.       |
+| Row height in a data grid             | 30–32px                         | Already the grid's contract; the edge budget must not be paid for by squeezing rows.                                        |
+
+Three rules follow, and they are the ones that actually get broken:
+
+1. **One hairline per boundary, drawn by its owner.** Two adjacent regions must
+   never each draw the same separator, and a card dropped inside an
+   already-bordered pane must not draw a second frame around itself. Most
+   regions need only a background, one hairline, and intentional spacing —
+   *not* a card. Nested cards are the single most common source of the "why is
+   there a 2px gutter of nothing here" look.
+2. **Do not double padding.** A padded child inside a padded parent adds its
+   inset to the parent's. Decide which one owns the space and zero the other.
+3. **A resizable pane needs three limits, not one.** Its own `min` and `max`,
+   **plus a floor under the pane it steals from** — measured live from that
+   element, because a percentage floor drifts with the window (10% is 180px on
+   an 1800px card and 90px on a 900px one, which is exactly the
+   collapse-to-unusable it was meant to prevent). Growing stops at the floor;
+   shrinking never does, so a window narrowed past it is never a trap. Ship the
+   keyboard path with the drag (`role="separator"`, `aria-valuenow/min/max`,
+   arrows to nudge, `Home`/`End` to the edges), let the divider BE the boundary
+   hairline, and draw its hover/focus state as a pseudo-element — a focus ring
+   around a 1px box renders as a slab, and widening the box shifts both panes
+   every time focus lands. Reference: `template-config/PaneResizer.tsx`.
+4. **Reclaimed outer space is spent inside, not banked.** Tightening a gutter is
+   only a win if what it reveals is still readable: the same pass that cut this
+   surface's page gutter from 40px to 24px spent part of it widening the outline
+   rail and loosening its rows from 1px gaps to 2px with 4/8px padding. Density
+   is *more content legibly*, never *the same content, closer together*.
+
+**Verify by measuring, not by reading the diff.** Getting a gutter wrong is
+invisible in a class string. Run the browser loop from `design-review`, and for
+a density change measure the same session twice (see the density before/after
+recipe): a font census over elements with their own text node, and a target
+census flagging anything under 24×24.
+
+## 7. Implementation Checklist
 
 - [ ] Header height is exactly `h-12`.
 - [ ] Main UI font size is `text-[13px]`.
@@ -156,3 +215,9 @@ the `useIsMobile`/`useIsNarrow` hooks, the priority-track header — live in
 - [ ] Shadows are soft and minimal.
 - [ ] Checked at a narrow width too — degrades cleanly, no overflow, touch
       actions reachable (responsive is part of "done", not a later pass).
+- [ ] Edge budget respected: page gutter ≤ 24px, one hairline per boundary,
+      no card inside a bordered pane, no doubled padding (§6).
+- [ ] Any resizable pane clamps min, max AND the floor of what it steals
+      from, and its divider is keyboard-operable (§6.3).
+- [ ] Selection and focus use different vocabularies — no element paints both
+      an `outline-ring` and a selected state (§4.6).

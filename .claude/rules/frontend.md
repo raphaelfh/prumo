@@ -63,6 +63,18 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   eyes, not the diff: run the `design-review` loop
   (`/design-review <route>`) — render, screenshot, compare to the
   Plane/Linear target, fix, re-screenshot.
+- **Space belongs to content — keep to the edge budget** (`frontend-ux` §6).
+  Page gutter `px-4 py-3 lg:px-6` (never wider); one hairline per boundary,
+  drawn by the region that owns it; no card nested inside an already-bordered
+  pane; no doubled padding. Compact rows (rail, menu, list) sit at `px-2 py-1`
+  with `space-y-0.5` — tighter and they read as one glued block. Space
+  reclaimed from the outside gets spent on the inside, not banked. A
+  **resizable** pane clamps three things — its own min, its own max, and a
+  live floor under the pane it steals from (`template-config/PaneResizer.tsx`).
+- **Selection and focus never share a vocabulary** (`frontend-ux` §4.6). Focus
+  owns `outline-2 outline-ring`; selection owns a tint plus a weight/colour
+  shift. An element painting both draws two concentric rules whenever it is
+  selected *and* focused.
 
 ## Dead code
 

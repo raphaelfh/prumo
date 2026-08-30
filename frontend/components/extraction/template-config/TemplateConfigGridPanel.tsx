@@ -28,6 +28,9 @@ import {
 } from './TemplateGrid';
 import {TemplateConfigToolbar} from './TemplateConfigToolbar';
 import {TemplateInspector, type InspectorFocusGroup} from './TemplateInspector';
+import {PaneResizer} from './PaneResizer';
+import {INSPECTOR_PANE, RAIL_PANE, usePaneWidths} from './paneLayout';
+import {revealSection} from './revealSectionRow';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
 import {MoveToSectionDialog} from './MoveToSectionDialog';
 import {applyRetentionToFilter} from './filterRetention';
@@ -83,6 +86,7 @@ interface PendingInsert {
 /** 40rem — the container breakpoint below which the docked inspector
  * used to be display-hidden (and its properties uneditable). */
 const INSPECTOR_NARROW_PX = 640;
+
 
 // Re-exported (B-6 T7 extraction) so existing import sites keep working.
 export {applyRetentionToFilter};
@@ -155,6 +159,10 @@ export function TemplateConfigGridPanel({
   // narrow-container Sheet is opt-in (an overlay must never auto-cover
   // the grid on mount). ⌘./the toolbar button toggle the ACTIVE host.
   const [dockedOpen, setDockedOpen] = useState(true);
+  // The outline rail's twin of `dockedOpen`. Session state, like the
+  // inspector's: a manager collapsing it is framing THIS editing pass,
+  // not setting a preference.
+  const [railOpen, setRailOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   // ✨/Options deep-link: which inspector group to focus for which field;
   // seq re-triggers the focus on repeated clicks.
@@ -162,7 +170,11 @@ export function TemplateConfigGridPanel({
     (InspectorFocusGroup & {fieldId: string}) | null
   >(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const isNarrow = useContainerNarrow(containerRef, INSPECTOR_NARROW_PX);
+  const {railWidth, setRailWidth, inspectorWidth, setInspectorWidth, gridSlack} =
+    usePaneWidths(scrollerRef);
+
 
   const insertQueue = useInsertTemplateField({
     projectId,
@@ -271,6 +283,18 @@ export function TemplateConfigGridPanel({
     () => collectSectionIds(visibleSections),
     [visibleSections],
   );
+
+  /** Rail click: select the section AND bring it into view. */
+  const selectAndReveal = (sectionId: string) => {
+    setSelection({kind: 'section', id: sectionId});
+    revealSection(
+      scrollerRef.current,
+      sectionId,
+      displayTree,
+      collapsed,
+      setCollapsed,
+    );
+  };
 
   const changeQuery = (value: string) => {
     setQuery(value);
@@ -566,7 +590,12 @@ export function TemplateConfigGridPanel({
 
   return (
     <div
-      className="flex max-h-full min-h-0 flex-col overflow-hidden rounded-md border bg-card"
+      // @container/grid is declared HERE, not on the row below: the toolbar's
+      // rail toggle has to query the same width the rail's own
+      // `@[52rem]/grid` gate reads, and an element cannot query a container it
+      // declares itself. The card and that row are the same width, so the
+      // threshold is unchanged.
+      className="@container/grid flex max-h-full min-h-0 flex-col overflow-hidden rounded-md border bg-card"
       onKeyDown={(event) => {
         if (event.key === 'Escape') handleEscapeEscalate();
         // ⌘. toggles the inspector (Task 5). Panel-scoped on purpose: the
@@ -600,6 +629,8 @@ export function TemplateConfigGridPanel({
         onShowKeyColumn={setShowKeyColumn}
         showOptionsColumn={showOptionsColumn}
         onShowOptionsColumn={setShowOptionsColumn}
+        railPressed={railOpen}
+        onToggleRail={() => setRailOpen((open) => !open)}
         inspectorPressed={isNarrow ? sheetOpen : dockedOpen}
         onToggleInspector={toggleInspector}
       />
@@ -614,19 +645,34 @@ export function TemplateConfigGridPanel({
 
       <div
         ref={containerRef}
-        className="@container/grid flex min-h-0 flex-auto items-stretch"
+        className="flex min-h-0 flex-auto items-stretch"
       >
-          <TemplateOutlineRail
-            className="hidden @[52rem]/grid:block"
-            sections={displayTree}
-            visibleSectionIds={visibleSectionIds}
-            selectedSectionId={selection?.kind === 'section' ? selection.id : null}
-            onSelectSection={(sectionId) => setSelection({kind: 'section', id: sectionId})}
-            onAddSection={onAddSection}
-            isFiltering={filtered.isFiltering}
-          />
+        {railOpen && (
+          <>
+            <TemplateOutlineRail
+              className="hidden @[52rem]/grid:block"
+              style={{width: railWidth}}
+              sections={displayTree}
+              visibleSectionIds={visibleSectionIds}
+              selectedSectionId={selection?.kind === 'section' ? selection.id : null}
+              onSelectSection={selectAndReveal}
+              onAddSection={onAddSection}
+              isFiltering={filtered.isFiltering}
+            />
+            {/* Gated with the rail: a divider for a display:none pane resizes nothing. */}
+            <PaneResizer
+              className="hidden @[52rem]/grid:block"
+              pane="left"
+              width={railWidth}
+              clamp={RAIL_PANE}
+              slack={gridSlack}
+              label={t('extraction', 'gridOutlineResize')}
+              onWidth={setRailWidth}
+            />
+          </>
+        )}
 
-        <div className="min-w-0 flex-1 overflow-auto">
+        <div ref={scrollerRef} className="min-w-0 flex-1 overflow-auto">
           {visibleSections.length === 0 ? (
             <p className="p-6 text-center text-[13px] text-muted-foreground">
               {t(
@@ -710,7 +756,17 @@ export function TemplateConfigGridPanel({
           </Sheet>
         ) : (
           dockedOpen && (
+            <>
+            <PaneResizer
+              pane="right"
+              width={inspectorWidth}
+              clamp={INSPECTOR_PANE}
+              slack={gridSlack}
+              label={t('extraction', 'inspectorResize')}
+              onWidth={setInspectorWidth}
+            />
             <TemplateInspector
+              style={{width: inspectorWidth}}
               projectId={projectId}
               templateId={templateId}
               field={selectedField}
@@ -724,6 +780,7 @@ export function TemplateConfigGridPanel({
               moveDisabled={movePending}
               focusGroup={inspectorFocusGroup}
             />
+            </>
           )
         )}
       </div>
