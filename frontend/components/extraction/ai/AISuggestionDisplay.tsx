@@ -2,11 +2,13 @@
  * AI suggestion display component - Extraction
  *
  * Shows the suggested value + confidence + quick accept/reject below the input.
+ * A proposal with NOTHING to show — a resolved disposition marker, or a bare
+ * null with no marker — takes the quiet strip instead, never "(empty) · 0%".
  * The rich review surface (version history, provenance, cited evidence + locate)
  * lives behind `AISuggestionReviewPopover`. When a `review` binding is supplied,
- * the value/confidence (and the "no information" indicator) become a trigger
- * that opens that SAME popover — so the user can reach version history straight
- * from the inline strip, not only from the History icon in `FieldInput`.
+ * the value/confidence (and the quiet indicator) become a trigger that opens
+ * that SAME popover — so the user can reach version history straight from the
+ * inline strip, not only from the History icon in `FieldInput`.
  *
  * @component
  */
@@ -16,7 +18,7 @@ import {AISuggestionActions} from '@/components/shared/ai-suggestions';
 import {AISuggestionConfidence} from './shared/AISuggestionConfidence';
 import {AISuggestionValue} from './shared/AISuggestionValue';
 import {AISuggestionReviewPopover} from './AISuggestionReviewPopover';
-import {isAbstention, isSuggestionAccepted} from '@/lib/ai-extraction/suggestionUtils';
+import {isSuggestionAccepted, valuelessProposalKind} from '@/lib/ai-extraction/suggestionUtils';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 
@@ -105,13 +107,19 @@ export function AISuggestionDisplay({
   const isAccepted = isSuggestionAccepted(suggestion);
   const isRejected = suggestion.status === 'rejected';
 
-  // A "no information found" outcome is a first-class ACCEPTABLE proposal
-  // (ADR-0016 decision #3): the strip stays quiet and de-emphasized — never a
-  // loud "(empty) · 0%" — but exposes the same one-click accept/reject as a
-  // real suggestion, so accepting writes the marker into the form and
-  // activates the field's "No information" disposition. It still opens the
-  // review popover (history + provenance) when a binding is supplied.
-  if (isAbstention(suggestion.value)) {
+  // A proposal with nothing to show takes the quiet, de-emphasized strip —
+  // never the loud "(empty) · 0%" the value formatter and confidence chip
+  // produce for it. Both kinds (see `valuelessProposalKind`) keep the one-click
+  // accept/reject and still open the review popover when a binding is supplied;
+  // they differ in what accepting MEANS, which is what the copy conveys:
+  // a `'marker'` fills the coordinate (ADR-0016 decision #3 — accepting
+  // activates the field's "No information" disposition), while `'unmarked'`
+  // only records WHY the field is blank (the §IX trace: left empty *because*
+  // the model found nothing, not skipped). The field genuinely stays empty
+  // there, so the accepted state says so rather than showing a bare ✓ over a
+  // blank input.
+  const valueless = valuelessProposalKind(suggestion.value);
+  if (valueless) {
     return (
       <div className="mt-2 animate-in fade-in duration-200 w-full">
         <div className="flex items-center gap-2 w-full">
@@ -120,7 +128,7 @@ export function AISuggestionDisplay({
             className="flex-1 min-w-0 inline-flex px-1.5 py-0.5 -mx-1.5"
           >
             <span className="text-xs italic text-muted-foreground">
-              {t('extraction', 'reviewNoInformation')}
+              {t('extraction', valueless === 'marker' ? 'reviewNoInformation' : 'reviewNoValue')}
             </span>
           </ReviewTrigger>
           <div className="flex items-center gap-2 shrink-0 pr-1">
@@ -132,6 +140,13 @@ export function AISuggestionDisplay({
             />
           </div>
         </div>
+        {/* The trigger above cancels its own px-1.5 with -mx-1.5, so the hint
+            carries no padding — otherwise it sits 6px right of the label. */}
+        {valueless === 'unmarked' && isAccepted ? (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {t('extraction', 'reviewNoValueRecorded')}
+          </p>
+        ) : null}
       </div>
     );
   }

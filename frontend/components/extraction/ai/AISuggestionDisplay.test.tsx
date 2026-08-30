@@ -8,8 +8,14 @@
  * the loud "(empty) · 0%" a real low-confidence suggestion gets — while still
  * exposing the one-click accept/reject actions (decision #3: an abstention is an
  * acceptable proposal; accepting activates the field's disposition). A real value
- * keeps its value + actions. Post-Phase-3 a bare null/'' is UNRESOLVED (not an
- * abstention) — ``isAbstention`` is the pure marker shape.
+ * keeps its value + actions.
+ *
+ * A MARKERLESS abstention — a bare ``null`` with no ``absent_reason`` sibling —
+ * is the shape the backend records when the field opts out of the marker
+ * (``allows_no_information = false``, migration 0062: 94 of 95 PROBAST+AI fields)
+ * or on an ``ambiguous`` verdict. It takes the same quiet strip under DIFFERENT
+ * copy (there is no instrument answer to adopt), and an empty STRING stays a
+ * genuine value on the loud branch so the two can never be confused.
  */
 
 import { render as rtlRender, screen } from '@testing-library/react';
@@ -99,6 +105,87 @@ describe('AISuggestionDisplay — no-information handling', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'suggestionAccepted' })).toBeInTheDocument();
+  });
+});
+
+describe('AISuggestionDisplay — markerless abstention (bare null, migration 0062)', () => {
+  it('renders the quiet "No value proposed" strip, not "(empty) · 0%"', () => {
+    // The backend drops the abstention confidence (null), which the read path
+    // floors to 0 — so the loud branch printed "(empty)" beside a fabricated
+    // "0%". PR #731 made this the routine outcome on every PROBAST+AI signaling
+    // question, where the field opts out of the marker.
+    render(<AISuggestionDisplay suggestion={makeSuggestion({ value: null, confidence: 0 })} />);
+    expect(screen.getByText('reviewNoValue')).toBeInTheDocument();
+    expect(screen.queryByText('(empty)')).not.toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    // And NOT the marker copy: "No information found" would read as the
+    // instrument's fifth answer rather than as the model's silence — the
+    // fabrication migration 0062 exists to prevent.
+    expect(screen.queryByText('reviewNoInformation')).not.toBeInTheDocument();
+  });
+
+  it('a genuine empty-string extraction stays on the LOUD branch, with its confidence', () => {
+    // The anti-regression for widening the quiet branch: '' is a value the
+    // model extracted, so it must stay distinguishable from "proposed nothing".
+    render(<AISuggestionDisplay suggestion={makeSuggestion({ value: '', confidence: 0.9 })} />);
+    expect(screen.getByText('(empty)')).toBeInTheDocument();
+    expect(screen.getByText('90%')).toBeInTheDocument();
+    expect(screen.queryByText('reviewNoValue')).not.toBeInTheDocument();
+    expect(screen.queryByText('reviewNoInformation')).not.toBeInTheDocument();
+  });
+
+  it('keeps one-click accept/reject — accepting records WHY the field is blank', async () => {
+    // The §IX trace worth keeping: "left empty *because* the model found
+    // nothing", as against "nobody got to it". Accepting writes null, which the
+    // autosave normalizes exactly like the '' it used to write.
+    const onAccept = vi.fn();
+    const onReject = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({ value: null, confidence: 0 })}
+        onAccept={onAccept}
+        onReject={onReject}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'acceptSuggestion' }));
+    expect(onAccept).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'rejectSuggestion' }));
+    expect(onReject).toHaveBeenCalledTimes(1);
+  });
+
+  it('spells out that an ACCEPTED markerless abstention leaves the field empty', () => {
+    // frontend-ux §4.5: a recorded choice whose input still looks blank needs an
+    // explicit hint — a bare ✓ over an empty field reads as lost work.
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({ value: null, confidence: 0, status: 'accepted' })}
+        onAccept={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('reviewNoValueRecorded')).toBeInTheDocument();
+  });
+
+  it('does not show the recorded hint while the proposal is still pending', () => {
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({ value: null, confidence: 0 })}
+        onAccept={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('reviewNoValueRecorded')).not.toBeInTheDocument();
+  });
+
+  it('an ACCEPTED marker abstention keeps its own copy — the field reads as answered', () => {
+    // The hint is specific to the markerless shape; the marker path activates
+    // the field's "No information" disposition, so the input is not blank.
+    render(
+      <AISuggestionDisplay
+        suggestion={makeSuggestion({ value: NO_INFO, confidence: 0, status: 'accepted' })}
+        onAccept={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('reviewNoValueRecorded')).not.toBeInTheDocument();
   });
 });
 

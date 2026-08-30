@@ -573,6 +573,12 @@ export const extraction = {
     reviewUseThisVersion: 'Use this version',
     reviewNoInformation: 'No information found',
     reviewNoInformationDesc: 'The model reported no information for this field in the document.',
+    // For a `'unmarked'` valueless proposal (see `valuelessProposalKind`).
+    // Distinct from the marker copy above on purpose — where "NI" is a scale
+    // answer, "No information found" would read as that answer.
+    reviewNoValue: 'No value proposed',
+    reviewNoValueDesc: 'The model returned no value for this field. It stays unanswered until you fill it in.',
+    reviewNoValueRecorded: 'Recorded — the field stays empty.',
     reviewLowConfidence: 'low',
     reviewClear: 'Clear',
     reviewClearHint: 'Each selection is recorded with who chose it and when.',

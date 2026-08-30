@@ -72,16 +72,24 @@ function mapVerification(
   return undefined;
 }
 
+/**
+ * Decode `proposed_value` into the presentation value, PRESERVING which of the
+ * three shapes it was — the discrimination `valuelessProposalKind` reads.
+ *
+ * ADR-0016 Phase 3: a resolved disposition keeps its full marker envelope so
+ * accept/select propagates the marker into the form value, consistent with how
+ * FieldInput writes it. A markerless `{value: null}` stays NULL rather than
+ * collapsing to '': that collapse made an abstention byte-identical to a
+ * genuine empty-string extraction, so the UI could not render one quietly
+ * without swallowing the other. Both emptiness tokens still write
+ * `{value: null}` on the wire (autosave normalizes '' → null), so this is a
+ * rendering distinction, not a persistence one. A real value collapses to its
+ * scalar as before; a missing envelope reads as "no value".
+ */
 function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknown {
-  if (raw === null || raw === undefined) return '';
-  // ADR-0016 Phase 3: preserve a resolved disposition as the full marker
-  // envelope so the narrowed `isAbstention` still recognizes it (the quiet
-  // no-info strip / no-info card) AND the accept/select path propagates the
-  // marker to the form value — consistent with how FieldInput writes it. A real
-  // value collapses to its scalar as before.
   const reason = valueAbsentReason(raw);
   if (reason !== null) return { value: null, absent_reason: reason };
-  return unwrapValueEnvelope(raw) ?? '';
+  return unwrapValueEnvelope(raw) ?? null;
 }
 
 /**

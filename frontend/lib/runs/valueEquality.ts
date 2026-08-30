@@ -35,10 +35,12 @@ export function decisionMatchesVersion(
   versionValue: unknown,
 ): boolean {
   if (decisionEnvelope === null || decisionEnvelope === undefined) return false;
-  // The write path normalizes '' → null before enveloping, while the
-  // suggestion read path coerces a legacy bare-null proposal to '' — treat
-  // the two as the same emptiness so a verbatim adoption of an empty
-  // version never reads "Edited by".
+  // The write path normalizes '' → null before enveloping, so a decision
+  // envelope for an empty coord always holds null while a version value may
+  // hold either token (the suggestion read path keeps a bare-null proposal
+  // null, but '' still arrives from a genuine empty-string extraction) — treat
+  // the two as the same emptiness so a verbatim adoption of an empty version
+  // never reads "Edited by".
   const normalized = versionValue === "" ? null : versionValue;
   const wrapped =
     normalized !== null &&
