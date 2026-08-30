@@ -25,7 +25,10 @@ export const qa = {
 
   // Derived-default recommendation (PROBAST+AI v2): the backend computes a
   // suggested judgment from the signaling answers; the assessor records the
-  // final value, with a rationale required on divergence (UI-level gate).
+  // final value, and owes a rationale when it overrides that default. The
+  // requirement is the SERVER's (`rationale_required` on the run view, the
+  // same rule that refuses the finalize) — the screen renders it, and must
+  // never decide it, or the two can disagree.
   derivedDefaultLabel: 'Derived default',
   derivedDefaultIncomplete: 'Incomplete',
   derivedDefaultIncompleteHint:
@@ -42,9 +45,7 @@ export const qa = {
   derivedInputUnreported: 'Not reported',
   derivedInputInProgress: 'In progress',
   divergenceNeedsRationale:
-    'Differs from the derived default — write the rationale below, then record the judgment.',
-  divergenceConfirm: 'Record judgment',
-  divergenceNote: 'Recorded judgment differs from the derived default.',
+    'Overrides the derived default — write the rationale below to finalize.',
   outOfScopeBadge: 'Out of scope for this study type',
   // The wire's third input state (`state: "out-of-scope"`) OUTRANKS the other
   // two: a section the study type takes out of play is not unfinished work.

@@ -18,7 +18,6 @@
  */
 
 import { ShieldAlert } from "lucide-react";
-import { useState } from "react";
 
 import {
   Accordion,
@@ -27,14 +26,12 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { DerivedDefaultChip } from "@/components/assessment/DerivedDefaultChip";
 import { toneFor } from "@/components/assessment/OverallJudgmentBanner";
 import { isJudgmentOutOfScope } from "@/lib/qa/derivedInputState";
 import { FieldInput } from "@/components/extraction/FieldInput";
 import { useRunEditability } from "@/components/runs/RunEditabilityContext";
 import { isJudgmentField, isSignalingSelect } from "@/lib/extraction/judgmentFields";
-import { unwrapValueEnvelope } from "@/lib/extraction/valueSemantics";
 import { cn } from "@/lib/utils";
 import { qa } from "@/lib/copy/qa";
 import { SectionAIExtractButton } from "@/components/extraction/ai/shared/SectionAIExtractButton";
@@ -75,7 +72,9 @@ interface QASectionAccordionProps {
   /**
    * The run view's computed judgments. Entries with a ``target_field_id``
    * matching a judgment field of THIS domain render the derived-default
-   * recommendation card (chip + Apply + divergence-rationale gate); entries
+   * recommendation card (chip + Apply, plus the server's
+   * `rationale_required` requirement when the stored judgment overrides
+   * that default unsaid — rendered, never recomputed); entries
    * with a ``summary_field_id`` matching a field here render the computed
    * overall beside that Step-4 summary box. The union of
    * target/rationale/summary ids is the assessor-owned (LLM-excluded) set —
@@ -202,69 +201,10 @@ export function QASectionAccordion({
         entryBySummaryId.has(f.id),
     );
 
-  // Divergence gate (spec §6): a judgment pick that differs from a non-null
-  // derived default is HELD here — never written — until the paired
-  // rationale has text and the reviewer confirms. Deliberately volatile
-  // local state: navigating away drops the held pick (the requirement copy
-  // is visible the whole time), so no phantom value ever reaches autosave.
-  const [heldJudgments, setHeldJudgments] = useState<Record<string, string>>({});
-
-  // Field ids are TEMPLATE-level, shared by every article's run — but the
-  // accordion is keyed by entity type and survives in-place article
-  // navigation. Without this reset a pick held on article A would display
-  // (and be confirmable) on article B. Same render-phase adjustment
-  // pattern as the page's hydration.
-  const [prevInstanceId, setPrevInstanceId] = useState(instanceId);
-  if (instanceId !== prevInstanceId) {
-    setPrevInstanceId(instanceId);
-    if (Object.keys(heldJudgments).length > 0) setHeldJudgments({});
-  }
-
   // Read-only surfaces (finalized runs, viewer role): every input is
   // disabled, so Apply must be too — otherwise it silently mutates the
   // displayed values of a published record with nothing persisting.
   const { readOnly } = useRunEditability();
-
-  function rationaleIsEmpty(entry: RunViewDerivedJudgment): boolean {
-    if (entry.rationale_field_id == null) return false;
-    const raw = unwrapValueEnvelope(values[entry.rationale_field_id]);
-    return raw == null || (typeof raw === "string" && raw.trim() === "");
-  }
-
-  function clearHeld(fieldId: string) {
-    setHeldJudgments((prev) => {
-      if (!(fieldId in prev)) return prev;
-      const next = { ...prev };
-      delete next[fieldId];
-      return next;
-    });
-  }
-
-  function handleJudgmentChange(
-    fieldId: string,
-    entry: RunViewDerivedJudgment,
-    next: unknown,
-  ) {
-    const derived = entry.value ?? null;
-    // The gate holds only an EXPLICIT judgment pick (a non-empty string from
-    // the Low/High/Unclear select) that differs from a non-null derived
-    // default. Everything else writes through immediately: a disposition
-    // marker is an object envelope ("No information" IS an answer — the
-    // backend maps it to Unclear), and a clear arrives as ''/null — holding
-    // either turned it into garbage ("[object Object]") or silently lost it.
-    const isExplicitPick = typeof next === "string" && next.trim() !== "";
-    if (
-      derived !== null &&
-      isExplicitPick &&
-      next !== derived &&
-      rationaleIsEmpty(entry)
-    ) {
-      setHeldJudgments((prev) => ({ ...prev, [fieldId]: next }));
-      return;
-    }
-    clearHeld(fieldId);
-    onValueChange(fieldId, next);
-  }
 
   const sectionLabel = entityType.label || entityType.name;
   const itemValue = `qa-domain-${entityType.id}`;
@@ -516,19 +456,13 @@ export function QASectionAccordion({
                   }
 
                   // Recommendation card (spec §6): derived-default chip +
-                  // Apply, the assessor's judgment input (gated on
-                  // divergence), and the paired rationale — one block, no AI
-                  // affordances (these fields never receive suggestions).
+                  // Apply, the assessor's judgment input, the requirement when
+                  // that judgment overrides the default unsaid, and the paired
+                  // rationale — one block, no AI affordances (these fields
+                  // never receive suggestions).
                   const rationaleField = fields.find(
                     (f) => f.id === entry.rationale_field_id,
                   );
-                  const heldValue = heldJudgments[field.id];
-                  const currentRaw = unwrapValueEnvelope(values[field.id]);
-                  const hydratedDivergent =
-                    heldValue === undefined &&
-                    entry.value != null &&
-                    currentRaw != null &&
-                    String(currentRaw) !== entry.value;
                   return (
                     <div
                       key={field.id}
@@ -538,46 +472,21 @@ export function QASectionAccordion({
                       <DerivedDefaultChip
                         judgment={entry}
                         disabled={readOnly}
-                        onApply={(v) => {
-                          clearHeld(field.id);
-                          onValueChange(field.id, v);
-                        }}
+                        onApply={(v) => onValueChange(field.id, v)}
                       />
-                      {renderFieldInput(field, {
-                        withAi: false,
-                        value: heldValue ?? values[field.id],
-                        onChange: (v) => handleJudgmentChange(field.id, entry, v),
-                      })}
-                      {heldValue !== undefined && !readOnly ? (
-                        <div
-                          className="mt-1 flex items-center justify-between gap-3 rounded-sm border border-warning/40 bg-warning/10 px-2 py-1"
+                      {renderFieldInput(field, { withAi: false })}
+                      {/* The SERVER's verdict, not a local one: the same rule
+                          that refuses the finalize. It is a property of the
+                          stored state, so it covers a pick just made, one
+                          hydrated from an earlier session, one written by a
+                          disposition marker, and a rationale deleted after the
+                          fact — none of which a pick-time gate could see. */}
+                      {entry.rationale_required && !readOnly ? (
+                        <p
+                          className="mt-1 rounded-sm border border-warning/40 bg-warning/10 px-2 py-1 text-[11px] text-warning"
                           data-testid={`qa-divergence-${field.id}`}
                         >
-                          <p className="text-[11px] text-warning">
-                            {qa.divergenceNeedsRationale}
-                          </p>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-6 shrink-0 px-2 text-[11px]"
-                            disabled={rationaleIsEmpty(entry)}
-                            onClick={() => {
-                              clearHeld(field.id);
-                              onValueChange(field.id, heldValue);
-                            }}
-                            data-testid={`qa-divergence-confirm-${field.id}`}
-                          >
-                            {qa.divergenceConfirm}
-                          </Button>
-                        </div>
-                      ) : null}
-                      {hydratedDivergent ? (
-                        <p
-                          className="mt-1 text-[11px] text-muted-foreground"
-                          data-testid={`qa-divergence-note-${field.id}`}
-                        >
-                          {qa.divergenceNote}
+                          {qa.divergenceNeedsRationale}
                         </p>
                       ) : null}
                       {rationaleField ? (
