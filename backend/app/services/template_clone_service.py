@@ -179,6 +179,18 @@ class TemplateCloneService:
                     f"Heal republish left project_extraction_template "
                     f"{existing.id} without an active version."
                 )
+            # Re-import refreshes the template-level ``schema_`` from the
+            # global. That column holds declarative RULES which READ the
+            # structure (``derived_judgments``, ``scope_rules``) — never the
+            # structure itself, which lives in the entity-type/field rows and
+            # in the version snapshot. So it can be re-synced without
+            # touching the live rows the heal above deliberately preserves,
+            # and clone creation is otherwise its only writer, so there is no
+            # project customization to clobber. ``version`` is deliberately
+            # NOT refreshed: it names the structure lineage this clone was
+            # built from, and the non-empty heal never rebuilds structure
+            # from the global.
+            existing.schema_ = global_tpl.schema_ or {}
             # Re-importing a template re-activates it (user intent: "use
             # this template now"). For extraction kind, also enforce the
             # single-active invariant by deactivating siblings *before*
