@@ -19,6 +19,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
@@ -38,6 +39,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
@@ -55,6 +57,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         onCancel={() => {}}
         onPublish={onPublish}
@@ -75,6 +78,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         initialValue="High"
         initialRationale="prior"
@@ -91,6 +95,7 @@ describe('ConsensusOverrideEditor', () => {
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled
         initialValue="High"
         onCancel={() => {}}
@@ -102,12 +107,34 @@ describe('ConsensusOverrideEditor', () => {
     expect(screen.getByTestId('consensus-override-submit-i1::f1')).toBeDisabled();
   });
 
+  it('omits the "No information" button when the field opts out (ADR-0016 / 0062)', () => {
+    // Must agree with FieldInput: on an opted-out field a published marker is
+    // invisible AND unclearable on the form, yet still counts as filled.
+    render(
+      <ConsensusOverrideEditor
+        coordKey="i1::f1"
+        field={field}
+        allowsNoInformation={false}
+        disabled={false}
+        onCancel={() => {}}
+        onPublish={() => {}}
+      />,
+    );
+    expect(
+      screen.queryByRole('button', { name: /dispositionNoInformation/i }),
+    ).not.toBeInTheDocument();
+    // The typed editor and submit are untouched — only the marker is gone.
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'NI' } });
+    expect(screen.getByTestId('consensus-override-submit-i1::f1')).toBeEnabled();
+  });
+
   it('Cancel fires onCancel', () => {
     const onCancel = vi.fn();
     render(
       <ConsensusOverrideEditor
         coordKey="i1::f1"
         field={field}
+        allowsNoInformation
         disabled={false}
         onCancel={onCancel}
         onPublish={() => {}}

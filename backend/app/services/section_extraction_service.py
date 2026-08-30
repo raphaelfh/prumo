@@ -1658,7 +1658,13 @@ class SectionExtractionService(LoggerMixin):
                 # null and the coded ``absent_reason`` sibling marks it as an
                 # affirmative "the source is silent" answer (ADR-0016), so the
                 # coordinate counts as filled once a reviewer accepts it.
-                proposed_value["absent_reason"] = AbsentReason.NO_INFORMATION.value
+                # Gated by ``allows_no_information`` (0062) as
+                # ``disposition_to_marker`` gates the human write path: on an
+                # opted-out field a marker here is invisible AND unclearable yet
+                # still counts as filled. Reads the LIVE row while the form reads
+                # the run's frozen snapshot — a mid-run republish can skew them.
+                if field_by_name[field_name].allows_no_information:
+                    proposed_value["absent_reason"] = AbsentReason.NO_INFORMATION.value
             elif verdicts and field_name in verdicts:
                 # Verified mode: the verdict is ANNOTATION, never mutation
                 # (§IX) — the ``absent_reason`` sibling-key precedent. Found
