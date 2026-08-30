@@ -63,14 +63,14 @@ export function TemplateConfigToolbar({
           }}
           placeholder={t('extraction', 'gridSearchPlaceholder')}
           aria-label={t('extraction', 'gridSearchPlaceholder')}
-          className="h-8 pl-7 text-xs"
+          className="h-8 pl-7 text-[13px]"
         />
         {query && (
           <button
             type="button"
             onClick={() => onQueryChange('')}
             aria-label={t('extraction', 'gridSearchClear')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground"
           >
             <X className="size-3.5" aria-hidden />
           </button>
@@ -78,7 +78,7 @@ export function TemplateConfigToolbar({
       </div>
 
       {matchCount !== null && (
-        <span className="tabular-nums text-xs text-muted-foreground">
+        <span className="tabular-nums text-[11px] text-muted-foreground">
           {t('extraction', 'gridSearchCount')
             .replace('{{n}}', String(matchCount))
             .replace('{{total}}', String(totalCount))}

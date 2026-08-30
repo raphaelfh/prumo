@@ -157,7 +157,7 @@ export function SectionHeaderRow({
             data-cell-row={section.id}
             data-cell-cols="label"
             tabIndex={rovingTabIndex(focus, section.id, ['label'])}
-            className="rounded text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className="-m-[5px] rounded p-[5px] text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Chevron className="size-3.5" aria-hidden />
           </button>
@@ -179,7 +179,7 @@ export function SectionHeaderRow({
               data-cell-row={section.id}
               data-cell-cols={spanCols}
               tabIndex={rovingTabIndex(focus, section.id, spanColList)}
-              className="truncate rounded text-left font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-6 truncate rounded text-left font-semibold leading-6 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
               {section.label}
             </button>
@@ -189,7 +189,7 @@ export function SectionHeaderRow({
               ●
             </span>
           )}
-          <span className="truncate text-[10.5px] text-muted-foreground">
+          <span className="truncate text-[11px] text-muted-foreground">
             · {meta.join(' · ')}
           </span>
         </div>
@@ -208,7 +208,7 @@ export function SectionHeaderRow({
                   data-cell-row={section.id}
                   data-cell-cols="actions"
                   tabIndex={rovingTabIndex(focus, section.id, ['actions'])}
-                  className="inline-flex items-center gap-0.5 whitespace-nowrap rounded-md border bg-card px-[7px] py-px text-[10.5px] text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex h-6 items-center gap-0.5 whitespace-nowrap rounded-md border bg-card px-[7px] text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Plus className="size-3" aria-hidden />
                   <ChevronDown className="size-2.5" aria-hidden />
@@ -219,7 +219,6 @@ export function SectionHeaderRow({
           </Tooltip>
           <DropdownMenuContent
             align="end"
-            className="text-xs"
             onCloseAutoFocus={(event) => {
               const claimed = menuClaimedFocus.current;
               menuClaimedFocus.current = null;
