@@ -33,6 +33,7 @@ Carved out of the template-config redesign (`docs/superpowers/specs/2026-08-05-t
 
 ## Recently shipped (2026-Q2)
 
+- ✅ PICOT in the AI context — the project's structured review question (`projects.picots_config_ai_review`) now renders into every LLM call as a `Review question and scope:` block, pinned per run under `results.provenance.review_context`; one editor behind a manager-gated `PUT /projects/:id/ai-context`, plus the AI-instruction editor QA templates never had (migration `0064`) (2026-08-30).
 - ✅ Table-cell + figure citations — native fitz table-cell grid with cell-scoped entailment (migration `0036`); `figure` region blocks + a "Verify manually" badge for ungroundable values (migration `0037`); P3/P4 of the grounded-extraction citation work (2026-06-29).
 - ✅ Stored-markdown ingestion + deterministic citation highlight — `content_markdown` written atomically with blocks (migration `0033`); PyMuPDF free default; highlight anchored by `(page, block_index)`; `pypdf` path removed (2026-06-24).
 - ✅ Extraction data-path consolidation — single API read path (ADR 0007); shipped via #228/#324 (2026-06).

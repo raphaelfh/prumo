@@ -261,7 +261,11 @@ all three extract paths inject `general_instructions_for_version`
 a republish re-pins it). What's missing is any run-screen surface
 showing it, so a manager who never replaced the seeded
 `[customize: state the review's Step-1 PICOTS…]` placeholder finds out
-only by wondering at the AI's applicability judgments.
+only by wondering at the AI's applicability judgments. [Mitigated
+2026-08-30: PICOTS no longer depends on that placeholder being replaced
+— it is stored structurally and prefixed to every call as its own
+block. The placeholder is now redundant rather than load-bearing, and
+the worst case is the model reading the review question twice.]
 
 The run view gains one nullable field, `general_instructions`, read via
 the SAME `general_instructions_for_version` the prompts call — single
