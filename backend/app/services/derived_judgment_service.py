@@ -186,7 +186,7 @@ def _absent_reason(raw: Any) -> str | None:
     return None
 
 
-def _judgment(raw: Any, *, no_information_as_unclear: bool = False) -> str | None:
+def judgment_of(raw: Any, *, no_information_as_unclear: bool = False) -> str | None:
     """The canonical judgment carried by *raw*, or None when it is not one.
 
     A ``no_information`` marker means opposite things at the two levels, and
@@ -225,7 +225,7 @@ def worst_of(values: Iterable[Any]) -> str | None:
     Used for the evaluation-D4 collapse, so a ``no_information`` marker is an
     unreported performance type and drops out rather than becoming Unclear.
     """
-    ranked = [j for j in (_judgment(v) for v in values) if j is not None]
+    ranked = [j for j in (judgment_of(v) for v in values) if j is not None]
     if not ranked:
         return None
     return max(ranked, key=JUDGMENT_SEVERITY.__getitem__)
@@ -241,7 +241,7 @@ def worst_domain(values: Iterable[Any]) -> str | None:
     genuinely missing value yields None, so Low/Unclear are never concluded
     from an unfinished assessment.
     """
-    judgments = [_judgment(v, no_information_as_unclear=True) for v in values]
+    judgments = [judgment_of(v, no_information_as_unclear=True) for v in values]
     if any(j == "High" for j in judgments):
         return "High"
     if not judgments or any(j is None for j in judgments):
@@ -616,7 +616,7 @@ def compute_derived_judgments(
                 DerivedInput(
                     sections=sections,
                     label=label,
-                    value=(judged := _judgment(raw, no_information_as_unclear=True)),
+                    value=(judged := judgment_of(raw, no_information_as_unclear=True)),
                     contribution=judged,
                 )
                 for (sections, label), raw in zip(
