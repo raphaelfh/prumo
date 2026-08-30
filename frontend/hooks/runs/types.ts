@@ -213,11 +213,15 @@ export interface RunViewResponse extends RunDetailResponse {
    * when the inputs are incomplete; `inputs` is the per-input breakdown —
    * `value` is the display (raw answer for signaling rows), `contribution`
    * the Low/High/Unclear the rule consumed (highlight/color by it only), and
-   * `state` — set only on a collapse-group row that contributed nothing —
-   * says which of `"unreported"` (the study never reported that performance
-   * type) or `"in-progress"` (half-answered) it was. A group has no stored
-   * answer, so `value` is null on every group row and `state` is the only
-   * thing separating a finished assessment from an unfinished one. */
+   * `state` — set on a row that contributed nothing — says why. On a
+   * collapse-group row it is `"unreported"` (the study never reported that
+   * performance type) or `"in-progress"` (half-answered); a group has no
+   * stored answer, so `value` is null there and `state` is the only thing
+   * separating a finished assessment from an unfinished one. `"out-of-scope"`
+   * is the third value and the only one a PLAIN row carries: the template's
+   * scope rules took that section out of play for this study type. It
+   * outranks the other two — render it as "Not applicable", never as
+   * unfinished work. */
   derived_judgments?: {
     id: string;
     label: string;
@@ -233,6 +237,10 @@ export interface RunViewResponse extends RunDetailResponse {
     rationale_field_id?: string | null;
     summary_field_id?: string | null;
   }[];
+  /** The template-level ✨ instruction this run is PINNED to, read through the
+   * same helper the AI prompts call — so the screen can never show a text the
+   * model did not get. Null when the pinned version declares none. */
+  general_instructions?: string | null;
 }
 
 export interface ArticleRunRef {

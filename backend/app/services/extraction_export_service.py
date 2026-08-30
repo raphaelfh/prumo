@@ -53,7 +53,10 @@ from app.repositories.project_repository import ProjectMemberRepository, Project
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
     derived_spec,
+    is_out_of_scope,
     is_recommendation,
+    out_of_scope_sections,
+    scope_filtered_values,
     warn_dangling_spec_refs,
 )
 from app.services.exports.extraction_snapshot_reader import (
@@ -355,6 +358,11 @@ class ExportLayout:
 
 
 _FILENAME_SANITISE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+# What a derived overall prints when its every input is out of scope. Taken
+# from the shared marker labels, not written by hand: the banner renders the
+# same words for the same state, and a copy change moves both at once.
+_NOT_APPLICABLE = ABSENT_REASON_LABELS[AbsentReason.NOT_APPLICABLE.value]
 
 
 class ExtractionExportService(LoggerMixin):
@@ -717,8 +725,17 @@ class ExtractionExportService(LoggerMixin):
                         raw = value_map.get(key)
                         if raw is not None:
                             values_by_coord[(section.name, field.name)] = raw
+                # §2a parity: the same filter the run view applies, from the
+                # same helper, so the workbook cannot show a verdict the
+                # banner calls "Not applicable" (or vice versa).
+                out_of_scope = out_of_scope_sections(template_schema, values_by_coord)
                 derived_values = tuple(
-                    d.value for d in compute_derived_judgments(spec, values_by_coord)
+                    _NOT_APPLICABLE
+                    if d.inputs and all(is_out_of_scope(i, out_of_scope) for i in d.inputs)
+                    else d.value
+                    for d in compute_derived_judgments(
+                        spec, scope_filtered_values(values_by_coord, out_of_scope)
+                    )
                 )
 
             rows.append(

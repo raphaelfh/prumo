@@ -356,6 +356,11 @@ class RunViewResponse(RunDetailResponse):
     # templates that declare no derivation spec — i.e. everything except
     # PROBAST+AI today.
     derived_judgments: list[RunViewDerivedJudgment] = Field(default_factory=list)
+    # The template-level instruction this run is PINNED to — read through the
+    # same helper the AI prompts call, so the screen can never show a text the
+    # model did not get. Kind-neutral (extraction runs carry the pin too);
+    # None when the pinned version declares none.
+    general_instructions: str | None = None
 
 
 class RunReviewerProfile(BaseModel):
