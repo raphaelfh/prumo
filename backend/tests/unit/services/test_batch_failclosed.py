@@ -3,11 +3,12 @@ success. Stubs the service collaborators and asserts the all-failed guard
 raises BatchAllSectionsFailed (→ rollback_and_fail) instead of completing."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.schemas.llm_target import LlmTarget
+from app.schemas.run_prompt_context import RunPromptContext
 from app.services.engine_credentials import EngineCredentials
 from app.services.section_extraction_service import (
     BatchAllSectionsFailed,
@@ -16,6 +17,10 @@ from app.services.section_extraction_service import (
 
 
 @pytest.mark.asyncio
+@patch(
+    "app.services.section_extraction_service.resolve_run_prompt_context",
+    AsyncMock(return_value=RunPromptContext()),
+)
 async def test_extract_for_run_raises_when_all_sections_fail():
     # LoggerMixin.logger is a stateless read-only property — leave it real.
     svc = SectionExtractionService.__new__(SectionExtractionService)
@@ -40,8 +45,8 @@ async def test_extract_for_run_raises_when_all_sections_fail():
         version_id="v",
     )
     template = SimpleNamespace(framework="CHARMS")
-    # db.get is called twice: first the run, then the template. db.execute
-    # serves the hoisted general_instructions_for_version fetch (-> None).
+    # db.get is called twice: first the run, then the template. The hoisted
+    # run-constant fetch is stubbed at the decorator (it needs a real run row).
     svc.db = SimpleNamespace(
         get=AsyncMock(side_effect=[run, template]),
         execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: None)),

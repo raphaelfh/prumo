@@ -5074,6 +5074,8 @@ export interface components {
              * @default 0
              */
             ready_count: number;
+            /** Review Context */
+            review_context?: string | null;
             /**
              * Reviewer Count
              * @default 0

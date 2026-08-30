@@ -27,6 +27,7 @@ from app.llm.provider import build_model
 from app.llm.verify import VerifyVerdict, run_verify_pass
 from app.schemas.llm_target import LlmTarget
 from app.schemas.prompt_composition import PromptComposition, PromptCompositionArticleRef
+from app.schemas.run_prompt_context import RunPromptContext
 from app.services.run_engine_freeze import build_run_provenance
 
 if TYPE_CHECKING:
@@ -65,7 +66,7 @@ def render_section_prompts(
     article_text: str,
     article_marker: str,
     memory_context: list[dict[str, str]] | None,
-    general_instructions: str | None,
+    prompt_context: RunPromptContext | None,
 ) -> tuple[str, str, str, str, str]:
     """(prompt_name, prompt_version, system_prompt, user_prompt, section_instruction).
 
@@ -73,7 +74,13 @@ def render_section_prompts(
     the article replaced by *article_marker* — so the persisted composition
     is byte-faithful to what was sent without duplicating the
     (multi-thousand-token) article per section.
+
+    ``prompt_context`` is unpacked HERE rather than by the caller: the prompt
+    modules take plain strings (no schema import), and doing it at the one
+    seam keeps ``section_extraction_service`` — which sits on its file-size
+    ratchet cap — free of the extra lines.
     """
+    context = prompt_context or RunPromptContext()
     if kind == "quality_assessment":
         module: Any = quality_assessment
         system_prompt = quality_assessment.system_prompt(framework)
@@ -84,7 +91,8 @@ def render_section_prompts(
                 article_text=text,
                 framework=framework,
                 memory_context=memory_context,
-                general_instructions=general_instructions,
+                general_instructions=context.general_instructions,
+                review_context=context.review_context,
             )
             for text in (article_text, article_marker)
         )
@@ -97,7 +105,8 @@ def render_section_prompts(
                 entity_description=entity_description,
                 article_text=text,
                 memory_context=memory_context,
-                general_instructions=general_instructions,
+                general_instructions=context.general_instructions,
+                review_context=context.review_context,
             )
             for text in (article_text, article_marker)
         )

@@ -7780,6 +7780,17 @@
             "title": "Ready Count",
             "type": "integer"
           },
+          "review_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Context"
+          },
           "reviewer_count": {
             "default": 0,
             "title": "Reviewer Count",

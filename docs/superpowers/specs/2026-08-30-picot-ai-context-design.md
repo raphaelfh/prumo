@@ -462,3 +462,49 @@ yet.
 `docs/reference/templates/probast-ai-instrument.md:36` documents the workaround
 this replaces — "The project template's ✨ instruction. Fill it with the
 review's PICOTS" — and is updated in the same change.
+
+## Implementation status
+
+Shipped in three slices. Slice 1 (backend spine) is complete; 2 and 3 are queued.
+
+| Slice | Scope | Status |
+| --- | --- | --- |
+| 1 | §2 rendering, §3 pin + prompt, §7 backend tests, §10 docs | shipped |
+| 2 | §1 storage flatten, §4 API, §5a/5b/5d/5e (extraction bar, PICOT dialog, Project Settings) | queued |
+| 3 | §5c QA Configuration tab, §8 amendment, the E2E flow | queued |
+
+Four claims above did not survive contact with the code, and slice 1 deviates
+from the spec accordingly:
+
+1. **§Problem(3) and §1 are wrong: `timing` IS written by the UI.**
+   `ReviewDetailsSection.tsx` renders a hardcoded accordion writing
+   `timing.prediction_moment` / `timing.prediction_horizon` through
+   `updatePICOTSField`'s dotted-path branch. The flatten is therefore NOT
+   "provably lossless" — and its realistic input is a dict beside a string
+   (editing one half spreads the parent), which a naive merge destroys. §1
+   moves to slice 2, where §5d rewrites the editor: the migration and its only
+   writer must land together, and the reader must accept BOTH shapes
+   permanently, because Railway and Vercel deploy independently and a cached
+   SPA keeps the old writer.
+2. **The ORM's string-shaped default has never fired.** No backend code
+   constructs `Project(...)` and the column has no server default. The renderer
+   tolerates the shape; nothing is designed around it.
+3. **§7's "404 on a foreign project id" is unreachable.** `require_project_manager`
+   returns 403 for a non-manager AND for a foreign project — oracle-free either
+   way. Slice 2's tests assert 403/403.
+4. **§3's "re-pinned on a human kickoff" is dropped.** `freeze_engine` may
+   overwrite only because per-proposal provenance (0056) records the engine on
+   every row; nothing records the review context per proposal, so a re-pin would
+   make the run-level field misdescribe sections extracted under the previous
+   text. First-writer-wins is permanent for the run.
+
+Two further changes to §3: the pin payload is `{"text": ...}` alone — `enabled`
+and `reason` had no reader in any of the three slices and are derived — and
+`RunViewResponse` gains a `review_context` field, without which the run view
+would show the template instruction the model got while hiding the review
+question it also got.
+
+Slice 3 is BLOCKED on §9's first follow-up: `TemplateCloneService.clone`'s
+zero-state branch republishes without `fail_if_pending_draft`, and the QA
+session-open path that reaches it is member-gated. Do not ship §5c's publish
+controls before that is closed.
