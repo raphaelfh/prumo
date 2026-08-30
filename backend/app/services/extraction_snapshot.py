@@ -1,12 +1,13 @@
 """Single source of truth for the template-version snapshot shape.
 
-``RunLifecycleService._snapshot_initial_version`` and
-``TemplateCloneService._snapshot`` both freeze the entity_types + fields tree
-into ``extraction_template_versions.schema_``. They used to embed two copies of
-the ``jsonb_build_object`` SQL that drifted — ``role`` was added to the clone
-builder but not the lifecycle one (forcing migration 0017 to retro-patch).
-This module owns the single, widened query so the two builders cannot diverge
-again, and so migration 0026 can backfill old snapshots to the same shape.
+Freezing the entity_types + fields tree into
+``extraction_template_versions.schema_`` was once done by two builders that
+embedded separate copies of the ``jsonb_build_object`` SQL, and they drifted —
+``role`` was added to one but not the other, forcing migration 0017 to
+retro-patch. This module owns the single, widened query so that cannot recur,
+and so migration 0026 can backfill old snapshots to the same shape. Only
+``TemplateVersionService.republish`` writes a version now (the run-creation
+builder was deleted as unreachable), but the reads below share the same shape.
 
 The key set mirrors the data columns of ``ExtractionEntityType`` and
 ``ExtractionField`` that the run-open form renders from (FK/audit columns are

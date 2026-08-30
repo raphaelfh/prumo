@@ -63,6 +63,7 @@ from app.services.extraction_export_service import ExportMode, ExtractionExportS
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
+from app.services.template_version_service import TemplateVersionService
 from tests.integration.conftest import SEED
 from tests.integration.test_run_lifecycle_service import _insert_legacy_human_proposal
 
@@ -218,6 +219,17 @@ async def _seed_finalized_qa_run(
         )
     await db.flush()
 
+    # Publish v1 the way production does. This fixture used to skip it and
+    # lean on run creation to mint a version lazily; that publisher was
+    # unreachable in committed data (migration 0004's DEFERRED trigger makes
+    # a template with no active version uncommittable) and has been deleted,
+    # so the fixture now builds a state that could actually exist.
+    await TemplateVersionService(db).republish(
+        project_id=project_id,
+        project_template_id=qa_template_id,
+        user_id=profile_id,
+    )
+
     # Fresh run owns the FINALIZED state for the QA template (scoped by the
     # QA template id; the surrounding suite never touches it). The closing
     # rollback undoes everything.
@@ -229,7 +241,7 @@ async def _seed_finalized_qa_run(
         {"pid": str(project_id), "aid": str(article_id), "tid": str(qa_template_id)},
     )
 
-    # --- 2. Open the QA session: instances + run + version snapshot. ---
+    # --- 2. Open the QA session: instances + run, pinned to v1 above. ---
     session = await HITLSessionService(db).open_or_resume(
         kind=TemplateKind.QUALITY_ASSESSMENT,
         project_id=project_id,

@@ -6,10 +6,8 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, delete, func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.logging import get_logger
 from app.models.article import Article
 from app.models.extraction import (
     ExtractionInstance,
@@ -34,12 +32,9 @@ from app.services._extraction_run_lock import load_run_for_update
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_review_service import ExtractionReviewService
-from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
 from app.services.qa_divergence_gate import divergence_rationale_failure
 from app.services.value_semantics import is_value_filled, strip_verification
-
-logger = get_logger(__name__)
 
 
 class InvalidStageTransitionError(Exception):
@@ -198,19 +193,7 @@ class RunLifecycleService:
         if template is None or template.project_id != project_id:
             raise TemplateNotFoundError(f"Template {project_template_id} not found")
 
-        # Resolve active TemplateVersion. Templates created directly through
-        # the frontend (Supabase client) skip the backend backfill from
-        # alembic 0010, so lazily snapshot v=1 on first Run.
-        version_stmt = select(ExtractionTemplateVersion).where(
-            ExtractionTemplateVersion.project_template_id == project_template_id,
-            ExtractionTemplateVersion.is_active.is_(True),
-        )
-        version = (await self.db.execute(version_stmt)).scalar_one_or_none()
-        if version is None:
-            version = await self._snapshot_initial_version(
-                project_template_id=project_template_id,
-                user_id=user_id,
-            )
+        version = await self._active_version(project_template_id)
 
         snapshot = await self._hitl.resolve_snapshot(project_id, project_template_id)
 
@@ -718,25 +701,15 @@ class RunLifecycleService:
         if existing_child is not None:
             return existing_child, False
 
-        # 1. Resolve the active version (lazy-create if the template was
-        #    born outside the backfill path). FOR SHARE on the template row
-        #    first, so this serializes with TemplateVersionService.republish
+        # 1. FOR SHARE on the template row first, so the active-version
+        #    resolution serializes with TemplateVersionService.republish
         #    — same rationale as create_run.
         await self.db.execute(
             select(ProjectExtractionTemplate.id)
             .where(ProjectExtractionTemplate.id == old_run.template_id)
             .with_for_update(read=True)
         )
-        version_stmt = select(ExtractionTemplateVersion).where(
-            ExtractionTemplateVersion.project_template_id == old_run.template_id,
-            ExtractionTemplateVersion.is_active.is_(True),
-        )
-        version = (await self.db.execute(version_stmt)).scalar_one_or_none()
-        if version is None:
-            version = await self._snapshot_initial_version(
-                project_template_id=old_run.template_id,
-                user_id=user_id,
-            )
+        version = await self._active_version(old_run.template_id)
 
         snapshot = await self._hitl.resolve_snapshot(old_run.project_id, old_run.template_id)
 
@@ -798,74 +771,24 @@ class RunLifecycleService:
         await self.db.refresh(new_run)
         return new_run, True
 
-    async def _snapshot_initial_version(
-        self,
-        *,
-        project_template_id: UUID,
-        user_id: UUID,
-    ) -> ExtractionTemplateVersion:
-        """The v=1 snapshot (mirrors alembic 0010's backfill for one template).
+    async def _active_version(self, project_template_id: UUID) -> ExtractionTemplateVersion:
+        """The template's active version. Guaranteed to exist, hence ``scalar_one``.
 
-        Live tree, active so later runs reuse it via ``is_active``. The ONE
-        version writer outside ``republish``: no baseline, so no B-9b2b acks.
+        Migration 0004 heals stranded templates and THEN installs a
+        DEFERRED constraint trigger on both tables, so "no active version"
+        is unrepresentable in committed data. This used to lazily publish
+        a v=1 snapshot instead — which built that snapshot from LIVE rows
+        and so published a pending config draft under the run creator's
+        identity, on a path any reviewer reaches by opening a run. Nothing
+        reachable was lost by deleting it: the caller holds the template
+        row FOR SHARE, so a concurrent republish cannot swap the row out
+        between this read and the run INSERT that pins it.
         """
-        snapshot = await build_template_version_snapshot(self.db, project_template_id)
-
-        # B-4: this lazy publish snapshots LIVE rows — including any
-        # pending config draft. It deliberately does NOT clear
-        # ``config_draft_since``: the caller holds the template row FOR
-        # SHARE, and an UPDATE here is an in-place exclusive upgrade —
-        # two concurrent first-runs (the #54/#69 race below) would
-        # deadlock. The marker stays (a no-op Publish clears it); log so
-        # the publish of pending intent is never silent (§IX).
-        pending_draft = (
+        return (
             await self.db.execute(
-                select(ProjectExtractionTemplate.config_draft_since).where(
-                    ProjectExtractionTemplate.id == project_template_id
+                select(ExtractionTemplateVersion).where(
+                    ExtractionTemplateVersion.project_template_id == project_template_id,
+                    ExtractionTemplateVersion.is_active.is_(True),
                 )
             )
-        ).scalar_one_or_none()
-        if pending_draft is not None:
-            logger.warning(
-                "lazy_initial_version_published_pending_draft",
-                project_template_id=str(project_template_id),
-                config_draft_since=str(pending_draft),
-            )
-
-        # Upsert v=1 idempotently. Three races to handle:
-        #
-        # 1. Two concurrent first-run requests (issue #54 / #69) — only one
-        #    INSERT can win the (project_template_id, version) unique
-        #    constraint; the loser must fall through to the SELECT below
-        #    and return the winner's row.
-        # 2. A v=1 row exists but ``is_active = false`` (issue #65) — the
-        #    plain INSERT collides with the same unique constraint; we
-        #    instead reactivate it so the caller has an active version to
-        #    attach to its new Run.
-        # 3. A v=1 row already exists and is active — the upsert leaves it
-        #    untouched and we just re-fetch it.
-        now = datetime.now(UTC)
-        upsert_stmt = (
-            pg_insert(ExtractionTemplateVersion)
-            .values(
-                project_template_id=project_template_id,
-                version=1,
-                schema_=snapshot,
-                published_at=now,
-                published_by=user_id,
-                is_active=True,
-            )
-            .on_conflict_do_update(
-                constraint="uq_extraction_template_versions_template_version",
-                set_={"is_active": True},
-            )
-        )
-        await self.db.execute(upsert_stmt)
-        await self.db.flush()
-
-        version_stmt = select(ExtractionTemplateVersion).where(
-            ExtractionTemplateVersion.project_template_id == project_template_id,
-            ExtractionTemplateVersion.version == 1,
-        )
-        version = (await self.db.execute(version_stmt)).scalar_one()
-        return version
+        ).scalar_one()
