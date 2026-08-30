@@ -138,6 +138,7 @@ export function TemplateConfigEditor({
       other_placeholder: field.otherPlaceholder,
       allows_not_applicable: field.allowsNotApplicable,
       allows_not_evaluated: field.allowsNotEvaluated,
+      allows_no_information: field.allowsNoInformation,
       validation_schema: field.validationSchema ?? {},
       allowed_values: field.allowedValues,
       unit: field.unit,
