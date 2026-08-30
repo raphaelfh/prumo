@@ -40,7 +40,7 @@ Aggregations, deliberately different:
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -131,13 +131,20 @@ class DerivedInput:
     unreported, in-progress). Clients highlight and color by ``contribution``
     only, so no answer-mapping knowledge ever leaves this module.
 
-    ``state`` says WHY a collapse-group row contributed nothing, and is the
-    complement of ``contribution``: exactly one of the two is set on a group
-    row, never both. A group carries no stored answer, so without it
-    ``unreported`` (the study never did this performance type — not a gap in
-    the assessment) and ``in-progress`` (half-answered — a real gap) reach the
-    client as the same blank row, and a finished assessment reads as
-    unfinished. It stays None on plain rows, which need no such marker:
+    ``state`` says WHY a row contributed nothing, and is the complement of
+    ``contribution``: exactly one of the two is set, never both. On a collapse
+    group it separates ``unreported`` (the study never did this performance
+    type — not a gap in the assessment) from ``in-progress`` (half-answered —
+    a real gap), which would otherwise reach the client as the same blank row
+    and make a finished assessment read as unfinished.
+
+    A PLAIN row carries ``state`` only when it is ``"out-of-scope"`` — the
+    scope rules took its section out of play, so it has no stored answer to
+    show and no gap to chase. That stamp is applied by the payload builder,
+    not by a rule, and it WINS over ``unreported``/``in-progress``: a fully
+    excluded group computes ``unreported`` once its values are filtered away,
+    and a reviewer must never be told an inapplicable part is in progress.
+    Otherwise ``state`` stays None on plain rows, which need no marker —
     ``value`` already separates them (a marker label when excluded, None when
     genuinely unanswered).
     """
@@ -331,10 +338,7 @@ def _compute_signaling_entry(
         if _COLLAPSE_KEY in item:
             nested = item.get("inputs")
             subs = [s for s in nested if isinstance(s, dict)] if isinstance(nested, list) else []
-            raws = [
-                values_by_coord.get((str(s.get("section", "")), str(s.get("field", ""))))
-                for s in subs
-            ]
+            raws = [values_by_coord.get(coordinate_of(s)) for s in subs]
             state = _signaling_group_state(raws)
             group_states.append(state)
             judged = state in JUDGMENT_SEVERITY
@@ -350,8 +354,8 @@ def _compute_signaling_entry(
                 )
             )
         else:
-            field_name = str(item.get("field", ""))
-            raw = values_by_coord.get((str(item.get("section", "")), field_name))
+            section_name, field_name = coordinate_of(item)
+            raw = values_by_coord.get((section_name, field_name))
             state = _signaling_contribution(raw)
             plain_states.append(state)
             rows.append(
@@ -386,6 +390,16 @@ def derived_spec(template_schema: Any) -> list[dict[str, Any]]:
     return [item for item in spec if isinstance(item, dict)]
 
 
+def coordinate_of(pointer: Mapping[str, Any]) -> tuple[str, str]:
+    """The ``(section, field)`` a spec pointer names; missing keys read as "".
+
+    One parser for every pointer shape the spec uses — inputs, collapse
+    members, and the assessor-owned target/rationale/summary — so a coordinate
+    can never be keyed one way here and another way at the call site.
+    """
+    return (str(pointer.get("section", "")), str(pointer.get("field", "")))
+
+
 def spec_coordinates(spec: Any) -> list[tuple[str, str]]:
     """Every ``(section, field)`` coordinate a spec references, collapses included.
 
@@ -407,7 +421,7 @@ def spec_coordinates(spec: Any) -> list[tuple[str, str]]:
             if _COLLAPSE_KEY in item:
                 _walk(item.get("inputs"))
             else:
-                found.append((str(item.get("section", "")), str(item.get("field", ""))))
+                found.append(coordinate_of(item))
 
     for derived in spec if isinstance(spec, list) else []:
         if not isinstance(derived, dict):
@@ -440,7 +454,7 @@ def _assessor_pointers(derived: Mapping[str, Any]) -> list[tuple[str, str]]:
     for key in (_RECOMMENDATION_KEY, "rationale", "summary"):
         pointer = derived.get(key)
         if isinstance(pointer, dict):
-            pointers.append((str(pointer.get("section", "")), str(pointer.get("field", ""))))
+            pointers.append(coordinate_of(pointer))
     return pointers
 
 
@@ -459,6 +473,87 @@ def excluded_field_coordinates(spec: Any) -> set[tuple[str, str]]:
     return excluded
 
 
+# ---------------------------------------------------------------------------
+# Scope rules (PROBAST+AI 2.1.0). A study type takes whole SECTIONS out of
+# play — declared as data on the same ``schema`` JSONB as ``derived_judgments``
+# so a checklist with different gating needs no code change here.
+# ---------------------------------------------------------------------------
+
+
+def _scope_rules(template_schema: Any) -> Mapping[str, Any]:
+    """The ``scope_rules`` object on a template's ``schema`` JSONB, or {}."""
+    if not isinstance(template_schema, dict):
+        return {}
+    rules = template_schema.get("scope_rules")
+    return rules if isinstance(rules, dict) else {}
+
+
+def scope_classifier_coordinate(template_schema: Any) -> tuple[str, str] | None:
+    """The ``(section, field)`` whose answer decides scope, or None.
+
+    None for every template without rules — the early exit that keeps a
+    rule-less template's behaviour byte-identical to before.
+    """
+    classifier = _scope_rules(template_schema).get("classifier")
+    if not isinstance(classifier, dict):
+        return None
+    coord = coordinate_of(classifier)
+    return coord if all(coord) else None
+
+
+def out_of_scope_sections(
+    template_schema: Any,
+    values_by_coord: Mapping[tuple[str, str], Any],
+) -> frozenset[str]:
+    """Section names this run's own scope classification takes out of play.
+
+    Empty whenever the answer cannot decide: no rules, unanswered, an
+    absent-reason marker (an article that does not say is not a
+    classification), or a value the rules do not name. Failing open is
+    deliberate — an unclassified run assesses the whole instrument, which is
+    the pre-2.1.0 behaviour.
+    """
+    coord = scope_classifier_coordinate(template_schema)
+    if coord is None:
+        return frozenset()
+    raw = values_by_coord.get(coord)
+    if raw is None or _absent_reason(raw) is not None:
+        return frozenset()
+    excludes = _scope_rules(template_schema).get("excludes")
+    if not isinstance(excludes, dict):
+        return frozenset()
+    names = excludes.get(str(unwrap_value_envelope(raw)).strip())
+    return frozenset(str(n) for n in names) if isinstance(names, list) else frozenset()
+
+
+def scope_filtered_values(
+    values_by_coord: Mapping[tuple[str, str], Any],
+    out_of_scope: Collection[str],
+) -> dict[tuple[str, str], Any]:
+    """*values_by_coord* without the out-of-scope sections' entries.
+
+    Dropping the values, rather than teaching each rule about scope, is what
+    makes the aggregations yield None naturally for an inapplicable part —
+    they already return None for "nothing judged". Stored values are never
+    deleted: reclassify and they come back.
+
+    Takes the RESOLVED set rather than the schema so the caller that filters
+    and the caller that explains WHY (``is_out_of_scope``) can never disagree
+    about which sections were dropped.
+    """
+    return {c: v for c, v in values_by_coord.items() if c[0] not in out_of_scope}
+
+
+def is_out_of_scope(inp: DerivedInput, out_of_scope: Collection[str]) -> bool:
+    """Whether every section behind one derived input is out of scope.
+
+    The empty case is guarded explicitly: a malformed spec item resolves to no
+    sections at all, and a bare ``all(())`` is vacuously True — which would
+    stamp a perfectly good row as inapplicable.
+    """
+    return bool(inp.sections) and all(s in out_of_scope for s in inp.sections)
+
+
 def _resolve_input(
     item: Mapping[str, Any],
     values_by_coord: Mapping[tuple[str, str], Any],
@@ -471,7 +566,7 @@ def _resolve_input(
         return worst_of(
             _resolve_input(sub, values_by_coord) for sub in nested if isinstance(sub, dict)
         )
-    return values_by_coord.get((str(item.get("section", "")), str(item.get("field", ""))))
+    return values_by_coord.get(coordinate_of(item))
 
 
 def _input_identity(item: Mapping[str, Any]) -> tuple[tuple[str, ...], str]:

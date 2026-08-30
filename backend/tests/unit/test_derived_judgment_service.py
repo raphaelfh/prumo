@@ -18,9 +18,14 @@ from app.services.derived_judgment_service import (
     DerivedJudgment,
     _signaling_contribution,
     compute_derived_judgments,
+    coordinate_of,
     derived_spec,
     excluded_field_coordinates,
+    is_out_of_scope,
     is_recommendation,
+    out_of_scope_sections,
+    scope_classifier_coordinate,
+    scope_filtered_values,
     spec_coordinates,
     worst_domain,
     worst_of,
@@ -536,3 +541,139 @@ def test_ni_answer_drives_the_derived_default_like_any_other_answer() -> None:
         spec, {("d1", "q1"): {"value": "Y"}, ("d1", "q2"): {"value": "NI"}}
     )
     assert derived.value == "Unclear"
+
+
+# ---------------------------------------------------------------------------
+# Scope rules (PROBAST+AI 2.1.0). The classifier's answer takes whole sections
+# out of play; the rules never learn about scope — the values simply stop
+# reaching them.
+# ---------------------------------------------------------------------------
+
+_SCOPE_SCHEMA: dict[str, Any] = {
+    "scope_rules": {
+        "classifier": {"section": "assessment_scope", "field": "study_type"},
+        "excludes": {
+            "development_only": ["eval_d1", "eval_d4_a"],
+            "evaluation_only": ["dev_d1"],
+        },
+    }
+}
+
+_CLASSIFIER = ("assessment_scope", "study_type")
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        ("development_only", {"eval_d1", "eval_d4_a"}),
+        ("evaluation_only", {"dev_d1"}),
+        ("development_and_evaluation", set()),  # named by neither rule
+        ("", set()),
+        ("  development_only  ", {"eval_d1", "eval_d4_a"}),  # stored padding
+    ],
+)
+def test_out_of_scope_sections_reads_the_classifier(answer: str, expected: set[str]) -> None:
+    got = out_of_scope_sections(_SCOPE_SCHEMA, {_CLASSIFIER: answer})
+    assert got == expected
+
+
+def test_out_of_scope_sections_accepts_both_caller_shapes() -> None:
+    """The run view passes the raw envelope, the export a resolved label."""
+    envelope = {"value": "development_only", "absent_reason": None}
+    assert out_of_scope_sections(_SCOPE_SCHEMA, {_CLASSIFIER: envelope}) == {
+        "eval_d1",
+        "eval_d4_a",
+    }
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        None,
+        {"value": None, "absent_reason": "not_applicable"},
+        {"value": None, "absent_reason": "no_information"},
+        "No information",  # the export's already-resolved label
+    ],
+)
+def test_out_of_scope_sections_fails_open_when_unclassified(raw: Any) -> None:
+    """Unanswered, or answered with a marker, excludes nothing.
+
+    "The article does not say" is not a classification, so the run keeps
+    assessing the whole instrument — the pre-2.1.0 behaviour.
+    """
+    values = {} if raw is None else {_CLASSIFIER: raw}
+    assert out_of_scope_sections(_SCOPE_SCHEMA, values) == frozenset()
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [None, {}, {"derived_judgments": []}, {"scope_rules": "nonsense"}, {"scope_rules": {}}],
+)
+def test_out_of_scope_sections_is_empty_without_rules(schema: Any) -> None:
+    """A template with no rules must behave exactly as it did before 2.1.0."""
+    assert scope_classifier_coordinate(schema) is None
+    assert out_of_scope_sections(schema, {_CLASSIFIER: "development_only"}) == frozenset()
+
+
+def test_scope_filtered_values_drops_only_the_excluded_sections() -> None:
+    values: dict[tuple[str, str], Any] = {
+        ("dev_d1", "rob"): "Low",
+        ("eval_d1", "rob"): "High",
+        _CLASSIFIER: "development_only",
+    }
+    kept = scope_filtered_values(values, {"eval_d1"})
+    assert kept == {("dev_d1", "rob"): "Low", _CLASSIFIER: "development_only"}
+    # The caller's mapping is never mutated — stored values still exist.
+    assert ("eval_d1", "rob") in values
+
+
+def test_scope_filtered_values_is_identity_when_nothing_is_excluded() -> None:
+    values: dict[tuple[str, str], Any] = {("dev_d1", "rob"): "Low"}
+    assert scope_filtered_values(values, frozenset()) == values
+
+
+def test_the_leak_the_filter_exists_to_close() -> None:
+    """Fill the evaluation part, THEN classify development_only.
+
+    Without the filter the stored High leaks into the evaluation overall and
+    the banner shows a verdict for a part the UI calls "Not applicable".
+    """
+    spec = [
+        {
+            "id": "eval_overall_rob",
+            "label": "Evaluation overall",
+            "rule": "worst_domain",
+            "inputs": [{"section": "eval_d1", "field": "rob"}],
+        }
+    ]
+    values: dict[tuple[str, str], Any] = {
+        ("eval_d1", "rob"): "High",
+        _CLASSIFIER: "development_only",
+    }
+    leaked = compute_derived_judgments(spec, values)
+    assert leaked[0].value == "High", "precondition: unfiltered values do leak"
+
+    excluded = out_of_scope_sections(_SCOPE_SCHEMA, values)
+    filtered = compute_derived_judgments(spec, scope_filtered_values(values, excluded))
+    assert filtered[0].value is None
+    assert is_out_of_scope(filtered[0].inputs[0], excluded)
+
+
+def test_is_out_of_scope_never_stamps_a_sectionless_row() -> None:
+    """A malformed spec item resolves to no sections; ``all(())`` is True."""
+    assert is_out_of_scope(DerivedInput(sections=(), label="x", value=None), {"eval_d1"}) is False
+    assert (
+        is_out_of_scope(DerivedInput(sections=("eval_d1",), label="x", value=None), {"eval_d1"})
+        is True
+    )
+    assert (
+        is_out_of_scope(
+            DerivedInput(sections=("eval_d1", "dev_d1"), label="x", value=None), {"eval_d1"}
+        )
+        is False
+    ), "a collapse group straddling scope is not out of scope"
+
+
+def test_coordinate_of_reads_missing_keys_as_empty() -> None:
+    assert coordinate_of({"section": "s", "field": "f"}) == ("s", "f")
+    assert coordinate_of({}) == ("", "")
