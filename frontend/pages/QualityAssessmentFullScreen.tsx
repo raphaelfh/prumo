@@ -557,7 +557,6 @@ export default function QualityAssessmentFullScreen() {
     });
     setReopening(false);
   };
-  const sortedDomains = domains;
 
   // Step-2 display hint (PROBAST+AI v2): the template's own `scope_rules`
   // name the sections the classified study type takes out of play — the same
@@ -565,7 +564,7 @@ export default function QualityAssessmentFullScreen() {
   // gates input.
   const outOfScope = outOfScopeSectionsOnForm(
     template?.schema,
-    sortedDomains,
+    domains,
     session?.instancesByEntityType,
     values,
     (instanceId, fieldId) => keyOf({ instanceId, fieldId }),
@@ -575,7 +574,7 @@ export default function QualityAssessmentFullScreen() {
   // domain (session.instancesByEntityType), shaped for the shared
   // RunReviewerComparison. ownValues is the form's `_`-keyed map; decisions
   // come in `::`-keyed via reviewerSummary — the component bridges the two.
-  const compareEntityTypes: ComparisonEntityType[] = sortedDomains.map(
+  const compareEntityTypes: ComparisonEntityType[] = domains.map(
     (domain) => ({
       id: domain.entityType.id,
       label: domain.entityType.label,
@@ -586,7 +585,7 @@ export default function QualityAssessmentFullScreen() {
       fields: domain.fields,
     }),
   );
-  const compareInstances: ComparisonInstance[] = sortedDomains
+  const compareInstances: ComparisonInstance[] = domains
     .map((domain): ComparisonInstance | null => {
       const instanceId = session?.instancesByEntityType[domain.entityType.id];
       return instanceId
@@ -797,7 +796,7 @@ export default function QualityAssessmentFullScreen() {
               // holding the first pending suggestion.
               const instanceId = firstPendingInstanceId(aiSuggestions);
               const domain = instanceId
-                ? sortedDomains.find(
+                ? domains.find(
                     (d) => session?.instancesByEntityType[d.entityType.id] === instanceId,
                   )
                 : undefined;
@@ -929,13 +928,13 @@ export default function QualityAssessmentFullScreen() {
             judgments={runDetail?.derived_judgments ?? []}
           />
 
-          {sortedDomains.length === 0 ? (
+          {domains.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               This template has no domains defined.
             </p>
           ) : (
             <div data-testid="qa-domains">
-              {sortedDomains.map((domain, idx) => {
+              {domains.map((domain, idx) => {
                 const instanceId =
                   session.instancesByEntityType[domain.entityType.id];
                 if (!instanceId) return null;
@@ -962,7 +961,6 @@ export default function QualityAssessmentFullScreen() {
                       decisionsByCoord: reviewerSummary.decisionsByCoord,
                       labelById: reviewerProfiles.labelById,
                       avatarById: reviewerProfiles.avatarById,
-                      instanceId,
                     }}
                     instanceId={instanceId}
                     aiSuggestions={aiSuggestions}

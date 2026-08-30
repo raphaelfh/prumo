@@ -24,7 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionInstance, ProjectExtractionTemplate
 from app.models.extraction_workflow import ExtractionPublishedState
-from app.services.derived_judgment_payload import build_derived_judgments_payload
+from app.services.derived_judgment_payload import (
+    build_derived_judgments_payload,
+    first_instance_by_entity_type,
+)
 from app.services.derived_judgment_service import derived_spec, judgment_of
 from app.services.extraction_snapshot import entity_types_for_version
 from app.services.value_semantics import unwrap_value_envelope
@@ -65,12 +68,10 @@ def divergences_without_rationale(
         instances=instances,
         values=published,
     )
-    # Same first-instance-wins resolution the payload uses internally, over the
-    # same sequence: the payload names the target's ENTITY TYPE, and a
-    # published value is keyed by instance.
-    instance_by_entity_type: dict[Any, Any] = {}
-    for inst in instances:
-        instance_by_entity_type.setdefault(inst.entity_type_id, inst.id)
+    # The SAME resolution the payload used, not a copy of it: the payload names
+    # the target's ENTITY TYPE and a published value is keyed by instance, so a
+    # second implementation could silently check a different row.
+    instance_by_entity_type = first_instance_by_entity_type(instances)
     # The payload keeps the target's entity type but drops the rationale's, so
     # the rationale is located through the tree rather than assumed to sit in
     # the target's section. Every seeded pair is co-located today; assuming it
