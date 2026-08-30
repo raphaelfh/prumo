@@ -691,13 +691,14 @@ export const extraction = {
     inspectorTypeChangeHint: 'Changing the type of a field that already holds answers is a destructive change — you will confirm it before publishing.',
     inspectorToggle: 'Show or hide the inspector (⌘./Ctrl+.)',
     inspectorSheetTitle: 'Field inspector',
-    // TemplateInstructionRow (general AI instruction, config row zero)
+    // TemplateInstructionControl (general AI instruction, config bar)
     instructionTitle: 'General AI instruction',
     instructionEmpty:
       'No general instruction — the AI receives only section and field instructions.',
     instructionPlaceholder:
       'Guidance sent to the AI before every section of this template…',
     instructionCustomizeChip: '{{n}} to customize',
+  instructionUnsavedDraft: 'Unsaved instruction draft',
     instructionEditedBadge: 'edited',
     instructionCounter: '{{n}} / 4000',
     instructionSave: 'Save',
