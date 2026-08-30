@@ -11,8 +11,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps.scope import load_run_for_member
 from app.api.deps.security import (
     ensure_project_arbitrator,
     ensure_project_member,
@@ -57,10 +57,8 @@ from app.services.extraction_reviewer_ready_service import (
     ExtractionReviewerReadyService,
 )
 from app.services.extraction_run_read_service import (
-    RunNotFoundError,
     build_run_view,
     caller_can_see_peers,
-    get_run_or_raise,
     get_run_with_workflow_history,
     is_run_arbitrator,
     list_run_participants,
@@ -82,24 +80,6 @@ router = APIRouter()
 
 def _trace(request: Request) -> str | None:
     return getattr(request.state, "trace_id", None)
-
-
-async def _load_run_and_check_member(
-    db: AsyncSession, run_id: UUID, user_sub: UUID
-) -> RunSummaryResponse:
-    """Load a Run by id, 404 when missing, 403 when caller is not a member.
-
-    Returns the Run as a RunSummaryResponse schema (not the ORM type) so
-    the endpoint module avoids importing from app.models.* — see the
-    extraction_run_read_service docstring + the check_layered_arch
-    fitness function.
-    """
-    try:
-        run = await get_run_or_raise(db, run_id)
-    except RunNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    await ensure_project_member(db, run.project_id, user_sub)
-    return run
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -196,7 +176,7 @@ async def get_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunDetailResponse]:
-    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    run = await load_run_for_member(db, run_id, current_user_sub)
     can_see_peers = await caller_can_see_peers(
         db, project_id=run.project_id, user_id=current_user_sub, kind=run.kind
     )
@@ -223,7 +203,7 @@ async def get_run_view(
 ) -> ApiResponse[RunViewResponse]:
     """One-round-trip run-open view: blind-filtered run detail + the frozen
     entity_types tree + the caller's current_values."""
-    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    run = await load_run_for_member(db, run_id, current_user_sub)
     can_see_peers = await caller_can_see_peers(
         db, project_id=run.project_id, user_id=current_user_sub, kind=run.kind
     )
@@ -246,7 +226,7 @@ async def create_decision(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ReviewerDecisionResponse]:
-    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    run = await load_run_for_member(db, run_id, current_user_sub)
     # Writes are reviewer-role-gated (mirrors mark_ready): a read-only viewer
     # is a member but must not author decisions — these rows are the
     # append-only audit trail the consensus trace renders.
@@ -308,7 +288,7 @@ async def mark_run_ready(
     ``reviewers_ready`` scoped to the caller's own entry (this response is the
     caller's toggle echo; an unblinded caller reads the full list via /view).
     """
-    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    run = await load_run_for_member(db, run_id, current_user_sub)
     await ensure_project_reviewer(db, run.project_id, current_user_sub)
     service = ExtractionReviewerReadyService(db)
     await service.mark_ready(run_id=run_id, reviewer_id=current_user_sub, is_ready=body.ready)
@@ -337,7 +317,7 @@ async def create_consensus(
     # gate lives at the API layer because the service-role session bypasses RLS;
     # without it any project member — including a read-only viewer — could
     # publish consensus + canonical values.
-    run_summary = await _load_run_and_check_member(db, run_id, current_user_sub)
+    run_summary = await load_run_for_member(db, run_id, current_user_sub)
     await ensure_project_arbitrator(db, run_summary.project_id, current_user_sub)
     service = ExtractionConsensusService(db)
     trace_id = _trace(request)
@@ -408,7 +388,7 @@ async def advance_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
-    member_run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    member_run = await load_run_for_member(db, run_id, current_user_sub)
     # Reviewer-role gate (mirrors the write endpoints): a stage transition is
     # a write — and since D8-c a QA extract->consensus advance also
     # materializes reviewer decision rows. Viewers 403; manager/reviewer/
@@ -484,7 +464,7 @@ async def approve_and_finalize_run(
     Manager / consensus only — this publishes canonical values and finalizes; the
     gate lives at the API layer because the service-role session bypasses RLS.
     """
-    run_summary = await _load_run_and_check_member(db, run_id, current_user_sub)
+    run_summary = await load_run_for_member(db, run_id, current_user_sub)
     await ensure_project_arbitrator(db, run_summary.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
@@ -542,7 +522,7 @@ async def list_run_reviewers(
     consensus panel and divergence indicators consume this to render
     real names / avatars instead of bare UUIDs.
     """
-    await _load_run_and_check_member(db, run_id, current_user_sub)
+    await load_run_for_member(db, run_id, current_user_sub)
     reviewers = await list_run_participants(db, run_id)
     return ApiResponse.success(
         RunReviewersResponse(reviewers=reviewers),
@@ -565,7 +545,7 @@ async def reopen_run(
     new Run lands in stage=EXTRACT so the form picks up where the old
     one left off. Old Run is untouched (audit trail).
     """
-    source_run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    source_run = await load_run_for_member(db, run_id, current_user_sub)
     # Reopening forks a new extract-stage run with seeded proposals — a
     # write; read-only viewers 403.
     await ensure_project_reviewer(db, source_run.project_id, current_user_sub)
@@ -638,7 +618,7 @@ async def reopen_run_to_extract(
     decisions + published values so reviewers can edit again. The gate lives at the
     API layer because the service-role session bypasses RLS. See ADR-0017.
     """
-    member_run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    member_run = await load_run_for_member(db, run_id, current_user_sub)
     await ensure_project_arbitrator(db, member_run.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)

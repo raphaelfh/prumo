@@ -3,7 +3,7 @@
 Owns the queries the API layer was doing inline (3 repository
 instantiations in `get_run`, 4 raw `select(Model).where(...)` in
 `list_run_reviewers`, the `db.get(ExtractionRun, run_id)` in
-`_load_run_and_check_member`). The endpoint module now imports from
+`load_run_for_member`, now in `api/deps/scope.py`). The endpoint module now imports from
 this service only — never directly from models or repositories.
 
 Errors are domain exceptions; HTTP translation happens in the router.

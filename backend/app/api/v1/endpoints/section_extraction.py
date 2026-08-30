@@ -19,7 +19,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from redis import Redis
 
-from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.api.deps.scope import assert_kickoff_scope
+from app.api.deps.security import get_current_user_sub
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.llm.catalog import canonical_pair
@@ -31,8 +32,12 @@ from app.schemas.extraction import (
     ExtractionJobStatusResponse,
     SectionExtractionRequest,
 )
-from app.services.extraction_run_read_service import RunNotFoundError, get_run_or_raise
+from app.services.coordinate_coherence import (
+    CoordinateMismatchError,
+    assert_instance_in_coordinate,
+)
 from app.services.llm_engine_service import resolve_project_engine
+from app.services.template_section_service import SectionNotFoundError, owned_section
 from app.utils.rate_limiter import limiter
 from app.worker.celery_app import REDIS_URL
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
@@ -109,7 +114,7 @@ def _failure_error_code(exc: object) -> ExtractionErrorCode:
 
 
 # ----------------------------------------------------------------------
-# BOLA scope helper (unchanged from sync version)
+# BOLA scope helper
 # ----------------------------------------------------------------------
 
 
@@ -118,25 +123,57 @@ async def _check_request_scope(
     payload: SectionExtractionRequest,
     current_user_sub: UUID,
 ) -> None:
-    if payload.run_id is None:
-        await ensure_project_member(db, payload.project_id, current_user_sub)
-        return
+    """Bind every client-supplied id to the caller's project + template.
 
-    try:
-        run = await get_run_or_raise(db, payload.run_id)
-    except RunNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    The coordinate binding is shared with ``/extraction/models``; the two
+    leaf ids below exist only on this endpoint.
+    """
+    await assert_kickoff_scope(
+        db,
+        project_id=payload.project_id,
+        article_id=payload.article_id,
+        template_id=payload.template_id,
+        run_id=payload.run_id,
+        current_user_sub=current_user_sub,
+    )
 
-    await ensure_project_member(db, run.project_id, current_user_sub)
-    if (
-        payload.project_id != run.project_id
-        or payload.article_id != run.article_id
-        or payload.template_id != run.template_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="runId does not match projectId, articleId, and templateId",
-        )
+    # ``entity_type_id`` is client-supplied too, and the checks above never
+    # bound it: without this, a member could name a GLOBAL-catalogue section
+    # (deterministic, public uuid5 ids) and have the run record an
+    # ``ExtractionInstance`` against it. That FK is ON DELETE RESTRICT, so
+    # the row silently stops the boot-time catalogue replace from
+    # converging. Missing and foreign ids answer identically — existence
+    # never leaks. ``section_extraction_service`` re-scopes its own live
+    # lookup: this gate spares the caller a job that would die in the worker.
+    if payload.entity_type_id is not None:
+        try:
+            await owned_section(
+                db, template_id=payload.template_id, section_id=payload.entity_type_id
+            )
+        except SectionNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="entityTypeId does not belong to templateId",
+            ) from exc
+
+    # Same story for ``parent_instance_id``, which also selects the BATCH
+    # dispatch branch on its own: unbound, a member of project A could name
+    # an instance from project B, and the auto-create branch would file a row
+    # in A's article carrying B's template and a parent FK into B's data.
+    if payload.parent_instance_id is not None:
+        try:
+            await assert_instance_in_coordinate(
+                db,
+                instance_id=payload.parent_instance_id,
+                project_id=payload.project_id,
+                article_id=payload.article_id,
+                template_id=payload.template_id,
+            )
+        except CoordinateMismatchError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="parentInstanceId does not belong to this coordinate",
+            ) from exc
 
 
 # ======================================================================

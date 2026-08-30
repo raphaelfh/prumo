@@ -354,7 +354,9 @@ class SectionExtractionService(LoggerMixin):
             entity_type: Any = next((et for et in pinned_tree if et.id == entity_type_id), None)
             fields_override: list[Any] | None = None
             if entity_type is None:
-                entity_type = await self._get_entity_type(entity_type_id)
+                entity_type = await self._get_entity_type(
+                    entity_type_id, project_template_id=run.template_id
+                )
             else:
                 fields_override = await self._live_field_intersection(entity_type)
                 if fields_override is None:
@@ -1245,13 +1247,11 @@ class SectionExtractionService(LoggerMixin):
 
         return summary
 
-    async def _get_entity_type(self, entity_type_id: UUID) -> Any:
-        """Fetch entity type with fields."""
+    async def _get_entity_type(self, entity_type_id: UUID, *, project_template_id: UUID) -> Any:
+        """Fetch entity type with fields, scoped to the run's own template."""
         entity_type = await self._entity_types.get_with_fields(entity_type_id)
-
-        if not entity_type:
+        if not entity_type or entity_type.project_template_id != project_template_id:
             raise ValueError(f"Entity type not found: {entity_type_id}")
-
         return entity_type
 
     async def _get_child_entity_types(
@@ -1270,8 +1270,8 @@ class SectionExtractionService(LoggerMixin):
         coherence is enforced at the write layer (``_create_suggestions``
         resolves field names against live rows).
         """
-        # 1. Fetch parent instance (runtime data — live) to get its entity_type_id
-        parent_instance = await self._instances.get_by_id(parent_instance_id)
+        # 1. Parent instance (live) for its entity_type_id — run-scoped (BOLA).
+        parent_instance = await self._instances.get_on_run(parent_instance_id, run)
 
         if not parent_instance:
             self.logger.warning(
@@ -1538,18 +1538,13 @@ class SectionExtractionService(LoggerMixin):
                 instance_id=str(instance.id),
             )
         else:
-            # Auto-create a new instance
-            # Resolve parent template_id when available
-            template_id = None
-            if parent_instance_id:
-                parent_instance = await self._instances.get_by_id(parent_instance_id)
-                if parent_instance:
-                    template_id = parent_instance.template_id
-
+            # Auto-create. Re-verified here too: last line before a foreign FK.
+            if parent_instance_id and not await self._instances.get_on_run(parent_instance_id, run):
+                raise ValueError(f"Parent instance not found: {parent_instance_id}")
             new_instance = ExtractionInstance(
                 project_id=project_id,
                 article_id=article_id,
-                template_id=template_id or run.template_id,
+                template_id=run.template_id,
                 entity_type_id=entity_type_id,
                 parent_instance_id=parent_instance_id,
                 label=entity_type.label if hasattr(entity_type, "label") else entity_type.name,

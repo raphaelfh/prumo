@@ -89,29 +89,34 @@ async def client_as_outsider(db_session: AsyncSession) -> AsyncGenerator[AsyncCl
         app.dependency_overrides.clear()
 
 
-async def run_in_extract(db: AsyncSession) -> ExtractionRun:
-    """A fresh run at the seeded coordinate, advanced to EXTRACT.
+async def run_in_extract_at(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    article_id: UUID,
+    template_id: UUID,
+) -> ExtractionRun:
+    """A fresh run at ANY coordinate, advanced to EXTRACT.
 
     The coordinate is cleared first: one live run per coordinate is a DB
     invariant (partial unique index), so a leftover from an earlier test
     would break the create instead of failing the assertion under test.
+
+    Scope suites need a run in a project the caller does not belong to, so
+    the coordinate is a parameter rather than the seed's.
     """
     await db.execute(
         text(
             "DELETE FROM public.extraction_runs WHERE project_id = :pid "
             "AND article_id = :aid AND template_id = :tid"
         ),
-        {
-            "pid": str(SEED.primary_project),
-            "aid": str(SEED.primary_article),
-            "tid": str(SEED.primary_template),
-        },
+        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
     )
     lifecycle = RunLifecycleService(db)
     run = await lifecycle.create_run(
-        project_id=SEED.primary_project,
-        article_id=SEED.primary_article,
-        project_template_id=SEED.primary_template,
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
         user_id=SEED.primary_profile,
     )
     run = await lifecycle.advance_stage(
@@ -121,6 +126,16 @@ async def run_in_extract(db: AsyncSession) -> ExtractionRun:
     )
     await db.flush()
     return run
+
+
+async def run_in_extract(db: AsyncSession) -> ExtractionRun:
+    """A fresh run at the SEEDED coordinate, advanced to EXTRACT."""
+    return await run_in_extract_at(
+        db,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        template_id=SEED.primary_template,
+    )
 
 
 async def pin_run(

@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
+from app.api.deps.scope import assert_kickoff_scope
 from app.api.deps.security import (
     ensure_project_member,
     ensure_project_reviewer,
@@ -163,7 +164,18 @@ async def extract_models(
         template_id=str(payload.template_id),
     )
 
-    await ensure_project_member(db, payload.project_id, current_user_sub)
+    # The SAME coordinate binding /extraction/sections uses — one
+    # implementation, so the two kickoff endpoints cannot drift. Without it
+    # a foreign ``runId`` in stage extract skipped ``create_run``, the only
+    # place article/template are bound to the project.
+    await assert_kickoff_scope(
+        db,
+        project_id=payload.project_id,
+        article_id=payload.article_id,
+        template_id=payload.template_id,
+        run_id=payload.run_id,
+        current_user_sub=current_user_sub,
+    )
 
     # This route is only ever entered by a human click — it EXECUTES in the
     # request, so no retry path reaches it — and a human click gets the
