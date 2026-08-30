@@ -48,7 +48,7 @@ export function TextCellEditor({
         }
       }}
       onBlur={() => onCommit(draft, 'blur')}
-      className="h-6 text-xs"
+      className="h-6 text-[13px]"
     />
   );
 }
@@ -99,7 +99,7 @@ export function SectionRenameEditor({
         }
       }}
       onBlur={() => onCommit(draft, 'blur')}
-      className="h-6 max-w-[220px] text-xs"
+      className="h-6 max-w-[220px] text-[13px]"
     />
   );
 }

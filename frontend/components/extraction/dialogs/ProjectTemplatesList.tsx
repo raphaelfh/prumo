@@ -10,7 +10,7 @@
  * from one fetch.
  */
 
-import {useId, useState} from 'react';
+import {useState} from 'react';
 import {Loader2, Trash2} from 'lucide-react';
 
 import {
@@ -47,7 +47,6 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
   } = useProjectTemplates({projectId, kind: 'extraction', includeInactive: true});
   const switchTemplate = useSetProjectTemplateActive(projectId);
   const deleteProjectTemplate = useDeleteProjectTemplate(projectId);
-  const headingId = useId();
   const [pendingDelete, setPendingDelete] = useState<ProjectTemplate | null>(null);
 
   const templates = data ?? [];
@@ -73,11 +72,10 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
     deleteProjectTemplate.mutate(target.id);
   };
 
+  // The enclosing tab is labelled "This project"; a visible heading would
+  // repeat it, so the accessible name lives on the section instead.
   return (
-    <section aria-labelledby={headingId} className="space-y-2">
-      <h3 id={headingId} className="text-[13px] font-medium text-foreground">
-        {t('templateConfig', 'projectTemplatesHeading')}
-      </h3>
+    <section aria-label={t('templateConfig', 'projectTemplatesHeading')} className="space-y-2">
       {isLoading ? (
         <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

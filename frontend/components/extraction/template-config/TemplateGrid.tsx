@@ -579,14 +579,14 @@ export function TemplateGrid({
       ref={tableRef}
       role="grid"
       aria-label={t('extraction', 'gridAria')}
-      className="w-full table-fixed border-collapse text-xs"
+      className="w-full table-fixed border-collapse text-[13px]"
       onKeyDown={handleKeyDown}
       onFocus={handleFocusIn}
       onBlur={handleFocusOut}
       onMouseDown={handleMouseDown}
     >
       <thead>
-        <tr className="h-[26px] border-b border-border/50 text-[9.5px] uppercase tracking-[0.04em] text-muted-foreground">
+        <tr className="h-[28px] border-b border-border/50 text-[11px] uppercase tracking-[0.04em] text-muted-foreground">
           <th className="w-3.5" />
           <th className="px-2 text-left font-semibold">{t('extraction', 'gridColLabel')}</th>
           {showKeyColumn && (
@@ -603,7 +603,7 @@ export function TemplateGrid({
           <th className="w-10 px-2 text-left font-semibold">
             {t('extraction', 'gridColRequired')}
           </th>
-          <th className="w-[26px] px-2" aria-label={t('extraction', 'gridColAi')} />
+          <th className="w-[28px] px-0.5" aria-label={t('extraction', 'gridColAi')} />
           <th className="w-[34px]" aria-label={t('extraction', 'gridRowActions')} />
         </tr>
       </thead>
