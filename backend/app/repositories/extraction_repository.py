@@ -228,6 +228,50 @@ class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
         )
         return list(result.scalars().all())
 
+    async def get_in_coordinate(
+        self,
+        instance_id: UUID | str,
+        *,
+        project_id: UUID,
+        article_id: UUID,
+        template_id: UUID,
+    ) -> ExtractionInstance | None:
+        """Fetch an instance only when it sits on the given coordinate.
+
+        The BOLA guard for a client-supplied ``parent_instance_id``. The
+        scope is IN the query rather than a comparison after a bare
+        ``get_by_id``, so a caller cannot forget it: a foreign row returns
+        ``None``, exactly like a missing one, and existence never leaks.
+
+        Args:
+            instance_id: Instance ID.
+            project_id: Project the instance must belong to.
+            article_id: Article the instance must belong to.
+            template_id: Project template the instance must belong to.
+
+        Returns:
+            The instance, or None when it is missing or out of scope.
+        """
+        if isinstance(instance_id, str):
+            instance_id = UUID(instance_id)
+
+        query_start = perf_counter()
+        result = await self.db.execute(
+            select(ExtractionInstance).where(
+                ExtractionInstance.id == instance_id,
+                ExtractionInstance.project_id == project_id,
+                ExtractionInstance.article_id == article_id,
+                ExtractionInstance.template_id == template_id,
+            )
+        )
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_in_coordinate",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
+        )
+        return result.scalar_one_or_none()
+
     async def get_children(
         self,
         parent_instance_id: UUID | str,

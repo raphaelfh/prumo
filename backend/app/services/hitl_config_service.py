@@ -212,17 +212,15 @@ class HitlConfigService:
         project_id: UUID,
         arbitrator_id: UUID,
     ) -> None:
+        # ``public.is_project_member`` is the SAME function the RLS policies
+        # call, so this check cannot drift from the database's own answer.
+        # A hand-rolled copy of that query here was drift waiting to
+        # happen (fitness: check_scope_guards, rule membership-sql).
         result = await self._db.execute(
-            text(
-                """
-                SELECT 1
-                FROM public.project_members
-                WHERE project_id = :pid AND user_id = :uid
-                """
-            ),
+            text("SELECT public.is_project_member(:pid, :uid) AS ok"),
             {"pid": str(project_id), "uid": str(arbitrator_id)},
         )
-        if result.first() is None:
+        if not result.scalar():
             raise ArbitratorNotProjectMemberError(
                 f"Arbitrator {arbitrator_id} is not a member of project {project_id}"
             )
