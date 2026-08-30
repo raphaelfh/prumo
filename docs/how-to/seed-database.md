@@ -25,7 +25,7 @@ This guide explains how to load seed data after the schema migrations run.
   studies. 5 domains + Overall, 11 signaling questions + summary fields with
   `allowed_values=['Y','N','Unclear']`. Deterministic UUID. Helper:
   `seed_quadas2()`.
-- **PROBAST+AI 2.0.0** — instrument-exact global quality-assessment template
+- **PROBAST+AI 2.2.0** — instrument-exact global quality-assessment template
   (Moons et al., BMJ 2025) covering regression- and AI/ML-based prediction
   models. 13 sections / 95 fields in the form's page order (describes →
   signaling questions → judgment → rationale → applicability), including
@@ -159,7 +159,7 @@ Expected:
 | --- | --- | --- | --- |
 | CHARMS | 1.1.0 | 14 | ~80 |
 | PROBAST | 1.0.0 | 5 | 29 |
-| PROBAST+AI | 2.0.0 | 13 | 95 |
+| PROBAST+AI | 2.2.0 | 13 | 95 |
 | QUADAS-2 | 1.0.0 | 5 | 20 |
 
 A database seeded before v2 additionally shows the legacy

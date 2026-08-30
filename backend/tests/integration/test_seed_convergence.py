@@ -128,7 +128,7 @@ async def test_the_manager_instruction_survives_convergence(db_session: AsyncSes
 
     row, _ = await _catalogue(db_session)
     assert row.llm_template_instruction == "PICOTS the manager wrote"
-    assert row.version == "2.1.0"
+    assert row.version == "2.2.0"
 
 
 @pytest.mark.asyncio

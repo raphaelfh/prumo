@@ -1,4 +1,4 @@
-"""PROBAST+AI 2.1.0 — instrument-exact quality-assessment template.
+"""PROBAST+AI 2.2.0 — instrument-exact quality-assessment template.
 
 Moons et al., BMJ 2025 (Suppl. Table 3 fillable tool + E&E Light), mapped
 item-by-item in ``docs/reference/templates/probast-ai-instrument.md``; design
@@ -11,7 +11,10 @@ shape cannot drift.
 
 Structure — 13 sections, 95 fields, mirroring the form's page order inside
 each domain (describes → signaling questions → judgment → rationale →
-applicability describe → applicability → rationale):
+applicability describe → applicability → rationale), with the two layout
+deviations published in the item map (the A/I/E columns render as sections,
+and evaluation D4's describe boxes render beside the domain judgment instead
+of above item 4.1 — the value entering Step 4 is identical):
 
 * ``assessment_scope`` — Step 2 study-type classification + the Step-3
   models/outcome of interest.
@@ -19,8 +22,10 @@ applicability describe → applicability → rationale):
   Risk of Bias, each with the official describe boxes and per-judgment
   rationale fields.
 * Evaluation D4 splits its signaling questions across the three performance
-  types (apparent / internal / external) but records ONE domain judgment, in
-  ``eval_d4_judgment`` beside the D4 describe boxes — exactly as the form.
+  types (apparent / internal / external) but records ONE domain judgment, as
+  the form does. Its four describe boxes sit with that judgment in
+  ``eval_d4_judgment``, which is the published layout deviation above: on the
+  form they head the domain, here they follow the signaling sections.
 * ``overall_judgement`` — the four Step-4 summary boxes. The overall VALUES
   are computed (``worst_domain``), never entered.
 
@@ -86,10 +91,13 @@ from app.seed_probast_ai_data import (
     _DESC_DATA_SOURCES,
     _DESC_OUTCOME,
     _DESC_OUTCOME_TIMING,
-    _DESC_PREDICTORS,
+    _DESC_PREDICTORS_DEV,
+    _DESC_PREDICTORS_EVAL,
     _DESC_SETTING_DATES,
+    _DEV_D4_DESCRIBES,
     _DEV_D4_QUESTIONS,
     _EVAL_D4_CORE,
+    _EVAL_D4_DESCRIBES,
     _EVAL_D4_GATE,
     _EVAL_D4_INTERNAL_ONLY,
     _EVAL_D4_PERFORMANCE,
@@ -349,26 +357,7 @@ def _scope_fields(eid: UUID) -> list[ExtractionField]:
 def _dev_d4_fields(eid: UUID) -> list[ExtractionField]:
     rows: list[ExtractionField] = []
     sort = 0
-    for name, prompt in (
-        (
-            "desc_sample_numbers",
-            "Describe the number of participants and the number of outcome "
-            "events available for the model development",
-        ),
-        (
-            "desc_model_development",
-            "Describe how the model was developed, including the modelling "
-            "technique, predictor selection, and hyperparameter tuning",
-        ),
-        (
-            "desc_performance_measures",
-            "Describe the performance measures of the model as reported for the development data",
-        ),
-        (
-            "desc_missing_data",
-            "Describe how missing data were handled in the model development",
-        ),
-    ):
+    for name, prompt in _DEV_D4_DESCRIBES:
         rows.append(_describe(eid, name, prompt, sort))
         sort += 1
     for question in _DEV_D4_QUESTIONS:
@@ -395,25 +384,7 @@ def _eval_d4_type_fields(eid: UUID, questions: tuple[_Question, ...]) -> list[Ex
 def _eval_d4_judgment_fields(eid: UUID) -> list[ExtractionField]:
     rows: list[ExtractionField] = []
     sort = 0
-    for name, prompt in (
-        (
-            "desc_sample_numbers",
-            "Describe the number of participants and outcome events available "
-            "for the model evaluation",
-        ),
-        (
-            "desc_performance_measures",
-            "Describe the performance measures of the model as reported for the evaluation",
-        ),
-        (
-            "desc_excluded_participants",
-            "Describe any participants who were excluded from the evaluation analysis",
-        ),
-        (
-            "desc_missing_data",
-            "Describe how missing data were handled in the evaluation analysis",
-        ),
-    ):
+    for name, prompt in _EVAL_D4_DESCRIBES:
         rows.append(_describe(eid, name, prompt, sort))
         sort += 1
     rows.append(
@@ -490,7 +461,7 @@ _SECTIONS: tuple[tuple[UUID, str, str, str, Any], ...] = (
         "PROBAST+AI model-development domain 2 — quality of the predictors and their assessment.",
         lambda eid: _d123_fields(
             eid,
-            lead_describes=(_DESC_PREDICTORS,),
+            lead_describes=(_DESC_PREDICTORS_DEV,),
             questions=_D2_QUESTIONS,
             judgment_name=_F_QUALITY,
             judgment_label="Quality",
@@ -558,7 +529,7 @@ _SECTIONS: tuple[tuple[UUID, str, str, str, Any], ...] = (
         "predictors or their assessment.",
         lambda eid: _d123_fields(
             eid,
-            lead_describes=(_DESC_PREDICTORS,),
+            lead_describes=(_DESC_PREDICTORS_EVAL,),
             questions=_D2_QUESTIONS,
             judgment_name=_F_ROB,
             judgment_label="Risk of bias",
@@ -749,7 +720,7 @@ async def seed_probast_ai(session: AsyncSession) -> None:
     template.name = "PROBAST+AI"
     template.description = _DESCRIPTION
     template.framework = "CUSTOM"
-    template.version = "2.1.0"
+    template.version = "2.2.0"
     template.kind = TemplateKind.QUALITY_ASSESSMENT.value
     template.schema_ = {
         "derived_judgments": _PAI_DERIVED_JUDGMENTS,
