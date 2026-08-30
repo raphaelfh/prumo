@@ -400,8 +400,12 @@ transaction, after its publishes):
   NA-marker target skips the check), the judgment differs from the
   default, and the published rationale is empty → collect.
 - Any collected coordinate raises `DivergenceRationaleError`
-  (a new `InvalidStageTransitionError` subclass → the existing 422
+  (a new `InvalidStageTransitionError` subclass → the existing error
   envelope), naming the domains.
+  <!-- Shipped correction: that envelope is 400, not 422 — 422 in this
+  router belongs to CoordinateMismatchError alone, and both existing
+  finalize gates are 400. See the plan's PR4 departure D6. -->
+
 
 Data-driven and kind-neutral: extraction templates carry no
 recommendations, so the gate is a no-op there — no `kind ==` branch,

@@ -36,6 +36,7 @@ from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
+from app.services.qa_divergence_gate import divergence_rationale_failure
 from app.services.value_semantics import is_value_filled, strip_verification
 
 logger = get_logger(__name__)
@@ -89,6 +90,10 @@ class IncompleteFinalizeError(InvalidStageTransitionError):
     type with zero instances — e.g. CHARMS ``prediction_models`` with no
     models — does not block. See ADR 0009.
     """
+
+
+class DivergenceRationaleError(InvalidStageTransitionError):
+    """A published judgment overrides its derived default with no rationale."""
 
 
 # Stages during which a run is "live": the one-live-run invariant (partial
@@ -313,11 +318,7 @@ class RunLifecycleService:
         # Lock the row for the duration of the transaction so two concurrent
         # callers cannot both pass the precondition check and silently
         # overwrite each other's transition.
-        run = (
-            await self.db.execute(
-                select(ExtractionRun).where(ExtractionRun.id == run_id).with_for_update()
-            )
-        ).scalar_one_or_none()
+        run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise ValueError(f"Run {run_id} not found")
         allowed = _ALLOWED_TRANSITIONS.get(run.stage, set())
@@ -368,6 +369,9 @@ class RunLifecycleService:
                         "field(s) have no resolved value. Fill every required "
                         "field before finalizing."
                     )
+            # Kind-neutral by construction: a template with no derived spec exits first.
+            if blocked := await divergence_rationale_failure(self.db, run):
+                raise DivergenceRationaleError(blocked)
         run.stage = target
         if target == ExtractionRunStage.CANCELLED.value:
             run.status = ExtractionRunStatus.FAILED.value
@@ -676,11 +680,7 @@ class RunLifecycleService:
         # caller — once it wakes up, ``old_run.stage`` is still FINALIZED
         # (the reopen does not mutate the parent), so it would happily
         # create another child run.
-        old_run = (
-            await self.db.execute(
-                select(ExtractionRun).where(ExtractionRun.id == run_id).with_for_update()
-            )
-        ).scalar_one_or_none()
+        old_run = await load_run_for_update(self.db, run_id)
         if old_run is None:
             raise ValueError(f"Run {run_id} not found")
         if old_run.stage != ExtractionRunStage.FINALIZED.value:

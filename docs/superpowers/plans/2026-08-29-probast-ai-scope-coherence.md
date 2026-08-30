@@ -47,7 +47,7 @@ an existing database.
 | PR1 | model + seed: the migration, `scope_rules` data, the NI answer, optionality, unconditional convergence, `2.1.0` | **shipped** |
 | PR2 | backend consumers: scope helper, AI-path guard, payload state, export parity, run-view `general_instructions` | **shipped** |
 | PR3 | frontend: `schema` in the selects, data-driven `studyTypeScope`, progress filtering, the out-of-scope render across its three sites, AI button and muted title | **shipped** |
-| PR4 | finalize backstop for divergence-without-rationale | queued |
+| PR4 | finalize backstop for divergence-without-rationale | **shipped** |
 | PR5 | `useProjectQATemplate` to TanStack Query | dropped — see below |
 
 ---
@@ -179,29 +179,74 @@ the sentences that state them should be read as pre-PR1 artifacts:
   three sibling hand-rolled hooks in `hooks/qa/` is half a cleanup. Pay the
   pattern debt for the directory at once, when something needs cache sharing.
 
-### Still queued
+## PR4 — finalize backstop (shipped)
 
-- **PR4 — finalize backstop.** `DivergenceRationaleError` raised in
-  `RunLifecycleService.advance` at `target == FINALIZED`, from
-  `build_derived_judgments_payload` over the published states.
+`DivergenceRationaleError` raised in `RunLifecycleService.advance_stage` at
+`target == FINALIZED`, from `build_derived_judgments_payload` over the
+published states. The rule lives in its own module,
+`app/services/qa_divergence_gate.py`; the error class sits beside its siblings
+`EmptyFinalizeError` / `IncompleteFinalizeError`, because subclassing
+`InvalidStageTransitionError` from inside the gate module would close an import
+cycle. The gate is kind-neutral as designed — a template with no
+`derived_judgments` exits after one `db.get`, so extraction runs need no
+`kind ==` branch.
 
-  Its value was underrated, not overrated: the client-side gate lives only in
-  `QASectionAccordion.handleJudgmentChange`, and the surface where a manager
-  actually resolves divergence — `ConsensusResolutionPanel` — has **no
-  divergence gate at all**. Two further bypasses are reachable through the
-  reviewer's own form with no HTTP: the paired rationale renders through
-  `renderFieldInput` ungated, and the gate never re-runs when the derived
-  default moves after the pick. So the unguarded path is not "someone crafting
-  a POST", it is normal use.
+Its value was underrated, not overrated: the client-side gate lives only in
+`QASectionAccordion.handleJudgmentChange`, and the surface where a manager
+actually resolves divergence — `ConsensusResolutionPanel` — has **no
+divergence gate at all**. So the unguarded path is not "someone crafting a
+POST", it is normal use. Closing the client gaps is a separate slice (below).
 
-  Two things to design for before shipping it: count production runs at
-  CONSENSUS already carrying a diverged-no-rationale coordinate (there is no
-  backfill, so the gate can strand them), and make the 422 name the coordinate
-  and the compare-table route rather than only the domain — a 422 at the last
-  action of a long workflow that does not say where to type the rationale is a
-  dead end.
+### Departures from the design
+
+**D6 — the status is 400, not 422.** §5 says the new subclass reaches "the
+existing 422 envelope". It does not: `InvalidStageTransitionError` maps to
+**400** at both finalize entry points (`extraction_runs.py:413` on `/advance`,
+`:481` on `/approve-finalize`), and 422 in that router belongs to
+`CoordinateMismatchError` alone. The two existing finalize gates are 400 for
+the same reason. Shipped as 400 — consistent with its siblings and requiring
+no endpoint change, which is what "reuse the existing envelope" was actually
+asking for. Getting 422 would mean a new `except` ahead of the base one at two
+call sites and a contract split between sibling gates.
+
+**D7 — the emptiness predicate is bespoke, not `is_value_filled`.** The shared
+predicate calls `"  "` filled and calls any disposition marker filled, both
+pinned by tests. The client's `rationaleIsEmpty` trims and treats a marker as
+empty. `is_value_filled` diverges in the lenient direction, so it would have
+been safe but wrong; `qa_divergence_gate._rationale_is_empty` mirrors the
+client instead, which is the invariant that matters (the backstop must never
+be stricter than the form that fed it).
+
+**D8 — no database reset, and none was needed.** Zero QA runs are at
+`consensus` and every non-finalized run has zero published states, so the gate
+can strand nothing. The refusal names the coordinate (the recommendation's own
+label, e.g. "Development D1: quality") and the surface that fixes it
+("Resolve divergence", the panel's own title) — a 400 at the last action of a
+long workflow that does not say where to type the rationale is a dead end.
+
+**D9 — the line budget.** `run_lifecycle_service.py` sits exactly at its
+`check_file_size.baseline` cap and may not grow. The call site was paid for by
+collapsing two byte-identical inline `SELECT … FOR UPDATE` blocks onto
+`load_run_for_update`, the helper the file already imports and already uses
+twice — the house pattern in four sibling services. `_judgment` became public
+as `judgment_of` in the same pass: PR4 makes it a cross-module contract, and
+this repo imports a private name across modules exactly once.
 
 ### Recorded for their own work
+
+- **Close the client-side divergence gaps (UX slice).** PR4 makes the data
+  integrity real; it does not make the experience good, because every gap
+  below now surfaces as a 400 at finalize instead of a prompt at the moment of
+  the pick. In rough order of exposure: `ConsensusResolutionPanel` /
+  `ConsensusOverrideEditor` publish any judgment with an empty rationale and
+  label the box "Rationale (optional)" — the very control the 400 demands; the
+  paired rationale on the reviewer's form renders through an ungated
+  `renderFieldInput`, so it can be cleared after the divergence was confirmed;
+  a divergence hydrated from an earlier session is annotated but never
+  blocked; and a "No information" marker bypasses the pick gate as an object
+  envelope while the backend reads it as a judgment (unreachable on
+  PROBAST+AI today, which seeds `allows_no_information` false, but live for
+  any other v2-shaped template).
 
 - **QA templates have no AI-instruction surface.** `TemplateInstructionControl`
   is mounted only inside the extraction-only editor, and the QA Configuration
