@@ -44,8 +44,11 @@ mapped item-by-item in
    scope fields, describe boxes, signaling questions, applicability (+
    its rationale). Quality/RoB judgments, their rationales, and the
    Step-4 summaries are assessor-owned and excluded from the LLM call.
-6. **The full form ships** (user decisions on the deep-read): the 18
-   official describe boxes as optional AI-prefilled text fields; an
+6. **The full form ships** (user decisions on the deep-read): the
+   official describe boxes as optional AI-prefilled text fields — 18
+   fields for the form's 20 boxes, since the D3-applicability pair
+   (time point + composite-outcome distribution) is deliberately merged
+   into one field per part, per the item map; an
    `assessment_scope` section for Steps 2–3 (study-type classification +
    models/outcome of interest); the four Step-4 summary boxes beside the
    computed overalls. Step 1 (PICOTS, once per review) maps to the

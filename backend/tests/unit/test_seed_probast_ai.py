@@ -83,7 +83,7 @@ async def test_template_row() -> None:
     [tpl] = _of(session, ExtractionTemplateGlobal)
     assert tpl.id == UUID("00ba0000-0000-0000-0000-000000000002")
     assert tpl.name == "PROBAST+AI"
-    assert tpl.version == "2.1.0"
+    assert tpl.version == "2.2.0"
     assert tpl.kind == "quality_assessment"
     assert tpl.framework == "CUSTOM"
 
@@ -507,7 +507,7 @@ async def test_converges_onto_an_existing_row_instead_of_skipping() -> None:
     # The row is mutated, never re-added: deleting and re-inserting it would
     # SET NULL every clone's global_template_id and break clone dedupe.
     assert _of(session, ExtractionTemplateGlobal) == []
-    assert session.existing.version == "2.1.0"
+    assert session.existing.version == "2.2.0"
     assert "scope_rules" in session.existing.schema_
     assert "derived_judgments" in session.existing.schema_
     # ...and the manager-customized ✨ instruction is never written here.
@@ -562,7 +562,7 @@ async def test_a_referenced_catalogue_skips_the_replace_instead_of_wedging() -> 
     assert _of(session, ExtractionEntityType) == []
     assert _of(session, ExtractionField) == []
     # The row's own columns still converge — only the tree is left alone.
-    assert session.existing.version == "2.1.0"
+    assert session.existing.version == "2.2.0"
     assert "scope_rules" in session.existing.schema_
 
 
@@ -574,3 +574,92 @@ async def test_convergence_is_serialized_by_an_advisory_lock() -> None:
     session = ConvergingSession()
     await seed_probast_ai(session)
     assert "pg_advisory_xact_lock" in str(session.executed[0])
+
+
+#: Facts the official form names inside a describe box, by (section, field).
+#:
+#: These boxes are not captions. ``_describe`` interpolates the prompt straight
+#: into ``llm_description`` ("Descriptive extraction — … : {prompt}"), and
+#: PROBAST+AI defines the describe boxes as the general information that
+#: supports answering that domain's signaling questions (Moons et al., BMJ 2025,
+#: Suppl. Table 3). So a phrase dropped from a prompt is a fact the model is
+#: never asked to extract, and the item judged on it loses its evidence — which
+#: is exactly how seven of the eight Domain-4 prompts silently lost the
+#: candidate-predictor counts, the events-per-predictor ratio, the
+#: optimism-adjustment question, risk-group definition and the extent of
+#: missing data. Nothing else in the suite pins a describe prompt's text.
+#:
+#: Substrings, not whole captions: rewording stays free, dropping a fact does not.
+_INSTRUMENT_FACTS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("dev_d2_predictors", "desc_predictors"): (
+        "final prediction model",
+        "assessed",
+        "timing",
+    ),
+    ("eval_d2_predictors", "desc_predictors"): ("evaluated model", "timing"),
+    ("dev_d3_outcome", "desc_outcome_timing"): ("time point", "each contributing outcome"),
+    ("eval_d3_outcome", "desc_outcome_timing"): ("time point", "each contributing outcome"),
+    ("dev_d4_analysis", "desc_sample_numbers"): (
+        "candidate predictors",
+        "outcome events",
+    ),
+    ("eval_d4_judgment", "desc_sample_numbers"): (
+        "predictors",
+        "outcome events",
+        "events per predictor",
+    ),
+    ("dev_d4_analysis", "desc_model_development"): (
+        "modelling technique",
+        "predictor selection",
+        "risk group",
+    ),
+    ("dev_d4_analysis", "desc_performance_measures"): (
+        "calibration",
+        "discrimination",
+        "net benefit",
+        "optimism",
+    ),
+    ("eval_d4_judgment", "desc_performance_measures"): (
+        "calibration",
+        "discrimination",
+        "net benefit",
+        "optimism",
+    ),
+    ("dev_d4_analysis", "desc_missing_data"): (
+        "missing data on predictors and outcomes",
+        "handling",
+    ),
+    ("eval_d4_judgment", "desc_missing_data"): (
+        "missing data on predictors and outcomes",
+        "handling",
+    ),
+}
+
+
+@pytest.mark.asyncio
+async def test_describe_prompts_carry_the_instrument_facts() -> None:
+    """Every fact the form names in a describe box survives into the prompt.
+
+    Asserted on ``llm_description`` because that is what actually reaches the
+    model; the label and description carry the same prompt by construction.
+    """
+    by_section = _fields_by_section(await _seed())
+    missing: list[str] = []
+    for (section, name), facts in _INSTRUMENT_FACTS.items():
+        field = next(f for f in by_section[section] if f.name == name)
+        assert field.llm_description, (section, name)
+        for fact in facts:
+            if fact.lower() not in field.llm_description.lower():
+                missing.append(f"{section}.{name} does not ask for {fact!r}")
+    assert not missing, "\n".join(missing)
+
+
+@pytest.mark.asyncio
+async def test_development_and_evaluation_predictor_prompts_differ() -> None:
+    """The form words the two D2 describe boxes differently, and the difference
+    is substantive: the evaluation box is about the model AS EVALUATED, not the
+    one that was developed. One shared constant flattened both."""
+    by_section = _fields_by_section(await _seed())
+    dev = next(f for f in by_section["dev_d2_predictors"] if f.name == "desc_predictors")
+    ev = next(f for f in by_section["eval_d2_predictors"] if f.name == "desc_predictors")
+    assert dev.description != ev.description
