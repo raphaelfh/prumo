@@ -77,6 +77,9 @@ run_check "check_api_response_envelope.py" \
 run_check "check_layered_arch.py" \
   python3 "${SCRIPT_DIR}/check_layered_arch.py"
 
+run_check "check_scope_guards.py" \
+  python3 "${SCRIPT_DIR}/check_scope_guards.py"
+
 run_check "check_react_query_keys.py" \
   python3 "${SCRIPT_DIR}/check_react_query_keys.py"
 

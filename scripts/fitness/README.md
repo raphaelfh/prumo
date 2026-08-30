@@ -30,6 +30,7 @@ Conventions that exist only as "code review will catch it" rot. Each invariant w
 | --- | --- |
 | `check_migration_split.sh` | Alembic edits only `public.*`; Supabase CLI owns `auth.*` and `storage.*`. Wraps `scripts/validate_migration_boundaries.sh`. |
 | `check_legacy_concepts.py` | 4 hard-tier banned patterns (`name == 'prediction_models'`, `extracted_values` SQL identifier, `ai_suggestions` SQL identifier, `===` variants) cannot return. 12 warn-tier patterns (`qa_assessments` endpoint, `@react-pdf-viewer/*`, etc.) are reported but do not fail. |
+| `check_scope_guards.py` | An ownership predicate is written ONCE. `duplicate-predicate`: the same `(model, {id, scope columns})` filtered in two functions (shrink-only baseline; mutating statements carry the scope inline and are grandfathered with a reason). `membership-sql`: raw `public.project_members` SQL outside `api/deps/security.py` — hard ban, empty baseline. |
 
 ## Adding a new check
 

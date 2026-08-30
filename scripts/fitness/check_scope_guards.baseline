@@ -1,0 +1,19 @@
+# scope-guard ratchet baseline — ownership predicates implemented more
+# than once, frozen at today's set. May shrink, never grow.
+# Each line is rule::predicate::file::function, optionally followed by
+#   # why it is grandfathered
+# Consolidating a group onto one guard removes its lines; see
+# .claude/rules/backend.md.
+duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/extraction_export_service.py::_load_active_template_version
+duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/extraction_export_service.py::list_eligible_reviewers_for_picker
+duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/project_template_active_service.py::owned_template  # THE canonical guard — the one the other lines should collapse onto
+duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_draft_lock_service.py::claim_draft_lock  # UPDATE: scope must be inline in the mutating WHERE, cannot delegate
+duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_draft_lock_service.py::take_over_draft_lock  # UPDATE: scope must be inline in the mutating WHERE, cannot delegate
+duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_restore_service.py::restore_snapshot
+duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_version_service.py::republish
+duplicate-predicate::ProjectLlmEndpoint{id,project_id}::backend/app/services/llm_endpoint_service.py::get
+duplicate-predicate::ProjectLlmEndpoint{id,project_id}::backend/app/services/llm_engine_service.py::_endpoint_row
+duplicate-predicate::UserAPIKey{id,user_id}::backend/app/repositories/user_api_key_repository.py::deactivate  # UPDATE: scope inline in the mutating WHERE
+duplicate-predicate::UserAPIKey{id,user_id}::backend/app/repositories/user_api_key_repository.py::get_by_id_and_user  # the SELECT the three writers above mirror; one class, four statement types
+duplicate-predicate::UserAPIKey{id,user_id}::backend/app/repositories/user_api_key_repository.py::hard_delete  # DELETE: scope inline in the mutating WHERE
+duplicate-predicate::UserAPIKey{id,user_id}::backend/app/repositories/user_api_key_repository.py::update_key_name  # UPDATE: scope inline in the mutating WHERE
