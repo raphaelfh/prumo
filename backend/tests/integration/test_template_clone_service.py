@@ -32,7 +32,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionTemplateGlobal,
-    ProjectExtractionTemplate,
     TemplateKind,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
@@ -308,6 +307,12 @@ async def test_reclone_selfheals_unsnapshotted_edit_without_wiping(
     # simulate the lost-republish shape (marker-set drift 409s instead).
     await set_config_draft_marker(db_session, initial.project_template_id, None)
 
+    # The global gains a rule key while the clone is drifted.
+    global_tpl = await db_session.get(ExtractionTemplateGlobal, CHARMS_GLOBAL_ID)
+    assert global_tpl is not None
+    global_tpl.schema_ = {"scope_rules": {}}
+    await db_session.flush()
+
     recloned = await service.clone(
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
@@ -340,6 +345,17 @@ async def test_reclone_selfheals_unsnapshotted_edit_without_wiping(
     assert "orphan_edit" in snapshot_field_names, (
         "heal must publish the live structure so the drift is repaired"
     )
+
+    # The schema_ refresh sits after the republish block precisely so every
+    # heal path reaches it. Moving it into the aligned-only path would leave
+    # a drifted clone stuck on the rules it was cloned with.
+    persisted = (
+        await db_session.execute(
+            text('SELECT "schema" FROM public.project_extraction_templates WHERE id = :id'),
+            {"id": str(initial.project_template_id)},
+        )
+    ).scalar_one()
+    assert persisted == {"scope_rules": {}}, "drift heal must refresh schema_ too"
 
     await db_session.rollback()
 
@@ -640,9 +656,15 @@ async def test_reimport_refreshes_schema_from_global(db_session: AsyncSession) -
     )
 
     assert second.project_template_id == first.project_template_id
-    clone = await db_session.get(ProjectExtractionTemplate, first.project_template_id)
-    assert clone is not None
-    assert clone.schema_ == global_tpl.schema_
+    # Read back through SQL, not the identity map: the ORM attribute would
+    # look right even if the assignment never reached the row.
+    persisted = (
+        await db_session.execute(
+            text('SELECT "schema" FROM public.project_extraction_templates WHERE id = :id'),
+            {"id": str(first.project_template_id)},
+        )
+    ).scalar_one()
+    assert persisted == {"scope_rules": {"classifier": {"section": "s", "field": "f"}}}
 
     # Rules only. Structure is untouched and the version does not roll.
     assert second.entity_type_count == first.entity_type_count

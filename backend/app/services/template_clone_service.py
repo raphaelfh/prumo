@@ -190,7 +190,7 @@ class TemplateCloneService:
             # NOT refreshed: it names the structure lineage this clone was
             # built from, and the non-empty heal never rebuilds structure
             # from the global.
-            existing.schema_ = global_tpl.schema_ or {}
+            existing.schema_ = dict(global_tpl.schema_ or {})
             # Re-importing a template re-activates it (user intent: "use
             # this template now"). For extraction kind, also enforce the
             # single-active invariant by deactivating siblings *before*
@@ -235,7 +235,7 @@ class TemplateCloneService:
             framework=global_tpl.framework,
             version=global_tpl.version,
             kind=global_tpl.kind,
-            schema_=global_tpl.schema_ or {},
+            schema_=dict(global_tpl.schema_ or {}),
             llm_template_instruction=global_tpl.llm_template_instruction,
             is_active=True,
             created_by=user_id,
