@@ -20,6 +20,25 @@ Bans reintroduction of the 16-entry legacy patterns blacklist (see `legacy-patte
 
 The allowlist is a literal constant inside the script (not a separate file) so the contract stays single-file; covers historical-comment files (`seed.py`, `models/extraction.py`), the canary test dir (`backend/tests/unit/scripts/`), and archived migrations (`backend/alembic/versions/archive/`). Comment lines (Python `#`, JS/TS `//`, JSDoc `*`, Python docstring `"""`) are universally skipped — documentation referencing the legacy pattern is allowed. Wall-clock budget: < 1 s for full-repo scan.
 
+### `check_copy_keys.py`
+
+Asserts every key in a `frontend/lib/copy/*.ts` namespace is referenced from
+`frontend/**/*.{ts,tsx}` — the gap knip structurally cannot close, since a copy
+key is a *member* of an exported object literal rather than an export. A key is
+live when its name appears quoted (`t(ns, 'key')`, and map values like
+`labelKey: 'key'`) or dotted (`qa.someKey`); the catalogue directory itself is
+excluded, so a key's definition is never its own reference. Deliberately a
+brace-depth tokenizer rather than a line regex, and it raises exit 2 on any
+shape it cannot classify: this gate's worst failure is silence, because an
+unparsed namespace reports zero dead keys and stays green forever. Maintains a
+`.baseline` of `path:key` (with optional `# reason`): may shrink, never grow.
+Wall-clock budget: < 250 ms.
+
+The matcher's leniency and the deletion oracle a baseline-shrinking PR must run
+are documented at length in the module docstring — read it before clearing an
+entry, because `t()` returns `''` for a missing key and a wrong deletion ships
+as a blank string rather than an error.
+
 ## Planned (Phase 4)
 
 ### `check_rls_coverage.py`

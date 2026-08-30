@@ -95,6 +95,9 @@ run_check "check_file_size.py" \
 run_check "check_button_scale.py" \
   python3 "${SCRIPT_DIR}/check_button_scale.py"
 
+run_check "check_copy_keys.py" \
+  python3 "${SCRIPT_DIR}/check_copy_keys.py"
+
 echo ""
 echo "Summary:"
 for line in "${results[@]}"; do
