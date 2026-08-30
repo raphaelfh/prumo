@@ -284,6 +284,78 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
     expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-real', 'Y');
   });
 
+  it('batchAccept never accepts a MARKERLESS abstention either (bare null)', async () => {
+    // Migration 0062 makes this the routine abstention shape, and an
+    // `ambiguous` proposal keeps a real, possibly high confidence — so the
+    // threshold alone would sweep it in. Accepting it is a deliberate,
+    // one-at-a-time act of recording a non-answer.
+    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
+      suggestions: {
+        [getSuggestionKey('inst-1', 'f-real')]: makeSuggestion('inst-1', 'f-real', {
+          confidence: 0.95,
+          value: 'Y',
+        }),
+        [getSuggestionKey('inst-1', 'f-null')]: makeSuggestion('inst-1', 'f-null', {
+          confidence: 0.95,
+          value: null,
+        }),
+      },
+      count: 2,
+    });
+    const onAccepted = vi.fn();
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        instanceIds: ['inst-1'],
+        runId: 'run-active',
+        onSuggestionAccepted: onAccepted,
+      }),
+    );
+    await waitFor(() =>
+      expect(Object.keys(result.current.suggestions)).toHaveLength(2),
+    );
+
+    await act(async () => {
+      await result.current.batchAccept(0.8);
+    });
+
+    await waitFor(() => expect(onAccepted).toHaveBeenCalledTimes(1));
+    expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-real', 'Y');
+  });
+
+  it('batchAccept still accepts a genuine empty-string extraction', async () => {
+    // The counterpart guard: '' is a value, so excluding null must not also
+    // exclude it.
+    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
+      suggestions: {
+        [getSuggestionKey('inst-1', 'f-empty')]: makeSuggestion('inst-1', 'f-empty', {
+          confidence: 0.95,
+          value: '',
+        }),
+      },
+      count: 1,
+    });
+    const onAccepted = vi.fn();
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        instanceIds: ['inst-1'],
+        runId: 'run-active',
+        onSuggestionAccepted: onAccepted,
+      }),
+    );
+    await waitFor(() =>
+      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
+    );
+
+    await act(async () => {
+      await result.current.batchAccept(0.8);
+    });
+
+    await waitFor(() => expect(onAccepted).toHaveBeenCalledTimes(1));
+    expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-empty', '');
+  });
+
   it('batchAccept fires ONE success toast, not one per item (#160)', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValue({
       suggestions: {
