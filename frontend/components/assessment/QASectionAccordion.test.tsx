@@ -12,6 +12,7 @@ vi.mock("@/lib/copy", () => ({ t: (_ns: string, key: string) => key }));
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { qa } from "@/lib/copy/qa";
 
 // Radix Select needs the pointer-capture surface jsdom lacks.
 beforeAll(() => {
@@ -274,6 +275,19 @@ describe("QASectionAccordion — recommendation card (v2)", () => {
     renderV2({ outOfScope: true });
     expect(screen.getByTestId("qa-out-of-scope-qa_domain_one")).toBeInTheDocument();
   });
+
+  it("offers the AI extract button while the section is in scope", () => {
+    renderV2();
+    expect(screen.getByTestId("section-ai-extract-qa-dom")).toBeInTheDocument();
+  });
+
+  it("hides the AI extract button on an out-of-scope section", () => {
+    // The backend refuses the fields anyway (llm_field_filter), so the button
+    // would spin and return nothing — the dead affordance the same guard
+    // already rejects for a fully assessor-owned section.
+    renderV2({ outOfScope: true });
+    expect(screen.queryByTestId("section-ai-extract-qa-dom")).not.toBeInTheDocument();
+  });
 });
 
 describe("QASectionAccordion — exclusions and summaries (v2)", () => {
@@ -315,6 +329,36 @@ describe("QASectionAccordion — exclusions and summaries (v2)", () => {
     expect(
       screen.queryByTestId("section-ai-extract-overall-et"),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders an out-of-scope overall as Not applicable, not as a dash", () => {
+    // Third render site of the same wire state: the summary badge inside the
+    // overall_judgement section, which the banner and the chip both mirror.
+    render(
+      <TooltipProvider>
+      <QASectionAccordion
+        domain={OVERALL_DOMAIN}
+        values={{}}
+        onValueChange={() => {}}
+        projectId="p1"
+        articleId="a1"
+        templateId="t1"
+        runId="r1"
+        instanceId="i2"
+        defaultOpen
+        derivedJudgments={[
+          {
+            ...OVERALL_ENTRY,
+            value: null,
+            inputs: [{ label: "Evaluation D1", value: null, state: "out-of-scope" }],
+          },
+        ]}
+      />
+      </TooltipProvider>,
+    );
+    const badge = screen.getByTestId("qa-summary-overall-eval_overall_rob");
+    expect(badge).toHaveTextContent(qa.outOfScopeValue);
+    expect(badge).not.toHaveTextContent(qa.overallIncomplete);
   });
 
   it("renders the computed overall beside its paired summary field", () => {

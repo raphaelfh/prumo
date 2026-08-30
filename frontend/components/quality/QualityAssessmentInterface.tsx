@@ -220,6 +220,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
             kind="quality_assessment"
             projectId={projectId}
             templateId={activeTemplate.id}
+            templateSchema={activeTemplate.schema}
             rowActionHref={(articleId, templateId) =>
               `/projects/${projectId}/articles/${articleId}/quality-assessment/${templateId}`
             }

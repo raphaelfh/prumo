@@ -31,6 +31,8 @@ interface DerivedJudgmentInputView {
   value: string | null;
   /** The Low/High/Unclear the rule consumed from this row (null = nothing). */
   contribution?: string | null;
+  /** Why the row contributed nothing; `"out-of-scope"` outranks the rest. */
+  state?: string | null;
 }
 
 export interface DerivedJudgmentView {
@@ -48,6 +50,22 @@ export interface DerivedJudgmentView {
 
 interface OverallJudgmentBannerProps {
   judgments: DerivedJudgmentView[];
+}
+
+/** The wire literal for a row the template's scope rules took out of play. */
+export const OUT_OF_SCOPE = "out-of-scope";
+
+/**
+ * A judgment the scope rules took out of play ENTIRELY. Shared with the
+ * derived-default chip, like `toneFor` below, so the two surfaces cannot
+ * drift. Every input must be excluded: the rules exclude whole parts, so a
+ * mixed judgment should not arise — and if one ever does, it is unfinished
+ * work, never "nothing to do".
+ */
+export function isOutOfScope(
+  inputs: ReadonlyArray<{ state?: string | null }> | null | undefined,
+): boolean {
+  return !!inputs?.length && inputs.every((input) => input.state === OUT_OF_SCOPE);
 }
 
 /**
@@ -76,22 +94,28 @@ function InputBreakdown({ judgment }: { judgment: DerivedJudgmentView }) {
     <div className="min-w-0">
       <p className="mb-1 text-[11px] font-medium text-foreground">{judgment.label}</p>
       <ul className="space-y-0.5">
-        {inputs.map((input) => (
-          <li
-            key={input.label}
-            className="flex items-baseline justify-between gap-3 text-[11px] leading-5"
-          >
-            <span className="min-w-0 truncate text-muted-foreground">{input.label}</span>
-            <span
-              className={cn(
-                "shrink-0 font-medium",
-                input.value === null ? "text-warning" : "text-foreground",
-              )}
+        {inputs.map((input) => {
+          // Muted, not warning: an excluded domain is not a gap to chase.
+          const excluded = input.state === OUT_OF_SCOPE;
+          const tone = excluded
+            ? "text-muted-foreground"
+            : input.value === null
+              ? "text-warning"
+              : "text-foreground";
+          return (
+            <li
+              key={input.label}
+              className="flex items-baseline justify-between gap-3 text-[11px] leading-5"
             >
-              {input.value ?? qa.overallExplainInputNotJudged}
-            </span>
-          </li>
-        ))}
+              <span className="min-w-0 truncate text-muted-foreground">{input.label}</span>
+              <span className={cn("shrink-0 font-medium", tone)}>
+                {excluded
+                  ? qa.outOfScopeValue
+                  : (input.value ?? qa.overallExplainInputNotJudged)}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -105,7 +129,11 @@ export function OverallJudgmentBanner({ judgments: allJudgments }: OverallJudgme
 
   if (judgments.length === 0) return null;
 
-  const anyIncomplete = judgments.some((judgment) => judgment.value === null);
+  // An out-of-scope overall is blank because nothing applies, so it must not
+  // trigger the "go judge the domains marked Not judged" remediation.
+  const anyIncomplete = judgments.some(
+    (judgment) => judgment.value === null && !isOutOfScope(judgment.inputs),
+  );
   const explainable = judgments.some((judgment) => (judgment.inputs?.length ?? 0) > 0);
 
   return (
@@ -121,25 +149,30 @@ export function OverallJudgmentBanner({ judgments: allJudgments }: OverallJudgme
         <span className="text-[11px] text-muted-foreground">{qa.overallBannerHint}</span>
       </div>
       <ul className="flex flex-wrap gap-2">
-        {judgments.map((judgment) => (
-          <li key={judgment.id}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge
-                  variant="outline"
-                  className={cn("gap-2 font-normal", toneFor(judgment.value))}
-                  data-testid={`qa-overall-${judgment.id}`}
-                >
-                  <span className="text-muted-foreground">{judgment.label}</span>
-                  <span className="font-semibold">{judgment.value ?? qa.overallIncomplete}</span>
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                {judgment.value ? qa.overallBannerHint : qa.overallIncompleteHint}
-              </TooltipContent>
-            </Tooltip>
-          </li>
-        ))}
+        {judgments.map((judgment) => {
+          const blank = isOutOfScope(judgment.inputs)
+            ? { text: qa.outOfScopeValue, hint: qa.outOfScopeHint }
+            : { text: qa.overallIncomplete, hint: qa.overallIncompleteHint };
+          return (
+            <li key={judgment.id}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className={cn("gap-2 font-normal", toneFor(judgment.value))}
+                    data-testid={`qa-overall-${judgment.id}`}
+                  >
+                    <span className="text-muted-foreground">{judgment.label}</span>
+                    <span className="font-semibold">{judgment.value ?? blank.text}</span>
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {judgment.value ? qa.overallBannerHint : blank.hint}
+                </TooltipContent>
+              </Tooltip>
+            </li>
+          );
+        })}
       </ul>
 
       {explainable && (
