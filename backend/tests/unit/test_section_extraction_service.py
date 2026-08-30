@@ -10,6 +10,7 @@ tests/unit/llm/test_prompts.py.
 """
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -20,6 +21,7 @@ from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
 from app.schemas.llm_target import LlmTarget
 from app.services.extraction_prompt_input import PromptInputInfo
+from app.services.llm_field_filter import LlmFieldFilter
 from app.services.run_engine_freeze import build_run_provenance
 from app.services.section_extraction_service import SectionExtractionService
 
@@ -2744,7 +2746,7 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=list(fields),
-                excluded_coordinates=excluded,
+                field_filter=LlmFieldFilter(excluded_coordinates=frozenset(excluded)),
             )
         sent = [f.name for f in bom.call_args.kwargs["fields"]]
         assert sent == [
@@ -2771,11 +2773,56 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=list(fields),
-                excluded_coordinates=excluded,
+                field_filter=LlmFieldFilter(excluded_coordinates=frozenset(excluded)),
             )
         assert bom.call_args.kwargs["fields"] == []
         assert extracted == {}
         assert usage.prompt_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_out_of_scope_section_skips_the_llm_call(self, service):
+        """A section the scope rules exclude is never asked about at all.
+
+        Reuses the same no-fields skip the assessor-owned exclusion reaches,
+        so there is no second "do not call the model" path to keep in step.
+        """
+        fields = self._fields("q1_appropriate_data_sources", "risk_of_bias")
+        et = self._entity("eval_d1_participants", fields)
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            extracted, usage = await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                field_filter=LlmFieldFilter(
+                    out_of_scope_sections=frozenset({"eval_d1_participants"})
+                ),
+            )
+        assert bom.call_args.kwargs["fields"] == []
+        assert extracted == {}
+        assert usage.prompt_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_an_in_scope_section_is_untouched_by_the_scope_set(self, service):
+        """Anti-over-exclusion control: a non-empty scope set must not leak."""
+        fields = self._fields("q1_appropriate_data_sources", "risk_of_bias")
+        et = self._entity("dev_d1_participants", fields)
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                field_filter=LlmFieldFilter(
+                    out_of_scope_sections=frozenset({"eval_d1_participants"})
+                ),
+            )
+        assert [f.name for f in bom.call_args.kwargs["fields"]] == [
+            "q1_appropriate_data_sources",
+            "risk_of_bias",
+        ]
 
     @pytest.mark.asyncio
     async def test_fallback_path_without_override_is_still_filtered(self, service):
@@ -2794,7 +2841,7 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=None,
-                excluded_coordinates=excluded,
+                field_filter=LlmFieldFilter(excluded_coordinates=frozenset(excluded)),
             )
         sent = [f.name for f in bom.call_args.kwargs["fields"]]
         assert sent == ["q1"]
@@ -2813,7 +2860,7 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=override,
-                excluded_coordinates=set(),
+                field_filter=LlmFieldFilter(),
             )
         assert bom.call_args.kwargs["fields"] is override
 
@@ -2835,7 +2882,7 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=list(fields),
-                excluded_coordinates=excluded,
+                field_filter=LlmFieldFilter(excluded_coordinates=frozenset(excluded)),
             )
         sent = [f.name for f in bom.call_args.kwargs["fields"]]
         assert sent == ["q1", "quality_score"]  # fails open...
@@ -2879,7 +2926,7 @@ class TestLlmExclusionWiring:
     assessor-owned fields subtracted on the REAL call path
     (run.template_id → _excluded_field_names → _extract_with_llm), with only
     the model-facing leaf mocked. The TestLlmExclusion suite passes
-    excluded_coordinates by hand and proves the filter; this proves the
+    the filter by hand and proves the subtraction; this proves the
     plumbing that feeds it (adversarial-review finding: the suite alone
     would stay green if no call site threaded the template at all)."""
 
@@ -2962,3 +3009,111 @@ class TestLlmExclusionWiring:
 
         sent = [f.name for f in bom.call_args.kwargs["fields"]]
         assert sent == ["q1_appropriate_data_sources"]
+
+
+class TestScopeGuardWiring:
+    """The scope half of the same wiring claim.
+
+    ``TestLlmExclusion`` hands the filter in by hand; this proves the real
+    path builds it — run.template_id → live schema → pinned tree → the run's
+    newest proposal on the classifier coordinate → the section is skipped.
+    Without this, every hand-fed test stays green while no call site threads
+    the rules at all.
+    """
+
+    @staticmethod
+    def _run() -> Any:
+        from app.models.extraction import ExtractionRunStage
+
+        run = MagicMock()
+        run.id = uuid4()
+        run.project_id = uuid4()
+        run.article_id = uuid4()
+        run.template_id = uuid4()
+        run.version_id = uuid4()
+        run.stage = ExtractionRunStage.EXTRACT.value
+        run.kind = "quality_assessment"
+        return run
+
+    @staticmethod
+    def _tree() -> tuple[Any, Any]:
+        study_type = MagicMock()
+        study_type.id = uuid4()
+        study_type.name = "study_type"
+        scope = MagicMock()
+        scope.id = uuid4()
+        scope.name = "assessment_scope"
+        scope.description = "desc"
+        scope.fields = [study_type]
+
+        rob = MagicMock()
+        rob.id = uuid4()
+        rob.name = "risk_of_bias"
+        evaluation = MagicMock()
+        evaluation.id = uuid4()
+        evaluation.name = "eval_d1_participants"
+        evaluation.description = "desc"
+        evaluation.fields = [rob]
+        return scope, evaluation
+
+    _SCHEMA = {
+        "scope_rules": {
+            "classifier": {"section": "assessment_scope", "field": "study_type"},
+            "excludes": {"development_only": ["eval_d1_participants"]},
+        }
+    }
+
+    async def _sent_fields(self, service: Any, classifier_answer: Any) -> list[str]:
+        run = self._run()
+        scope, evaluation = self._tree()
+        template = MagicMock()
+        template.schema_ = self._SCHEMA
+
+        service.db.get = AsyncMock(return_value=template)
+        # The stored answer on the classifier coordinate.
+        result = MagicMock()
+        result.scalars.return_value.first.return_value = classifier_answer
+        service.db.execute = AsyncMock(return_value=result)
+        service._entity_types.get_with_fields = AsyncMock(return_value=evaluation)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+        service._create_suggestions = AsyncMock(return_value=0)
+        service._maybe_verify = AsyncMock(side_effect=lambda *_a, **_k: (None, LlmUsage()))
+
+        with (
+            patch(
+                "app.services.llm_field_filter.entity_types_for_version",
+                AsyncMock(return_value=[scope, evaluation]),
+            ),
+            patch(
+                "app.services.section_extraction_service.build_output_models",
+                return_value=[],
+            ) as bom,
+        ):
+            await service._extract_one_entity_type_for_run(
+                run=run,
+                entity_type=evaluation,
+                pdf_text="text",
+                framework=None,
+                kind="quality_assessment",
+                skip_fields_with_human_proposals=False,
+            )
+        return [f.name for f in bom.call_args.kwargs["fields"]]
+
+    @pytest.mark.asyncio
+    async def test_a_development_only_run_never_asks_about_the_evaluation_part(
+        self, service
+    ) -> None:
+        assert await self._sent_fields(service, {"value": "development_only"}) == []
+
+    @pytest.mark.asyncio
+    async def test_an_unclassified_run_still_asks_about_everything(self, service) -> None:
+        """Fails open: no classification excludes nothing (pre-2.1.0 behaviour)."""
+        assert await self._sent_fields(service, None) == ["risk_of_bias"]
+
+    @pytest.mark.asyncio
+    async def test_a_run_classified_as_both_asks_about_everything(self, service) -> None:
+        assert await self._sent_fields(service, {"value": "development_and_evaluation"}) == [
+            "risk_of_bias"
+        ]

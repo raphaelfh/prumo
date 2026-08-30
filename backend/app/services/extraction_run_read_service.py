@@ -66,7 +66,10 @@ from app.services.derived_judgment_payload import (
     values_for_derivation,
 )
 from app.services.extraction_reviewer_ready_service import ExtractionReviewerReadyService
-from app.services.extraction_snapshot import entity_types_for_version
+from app.services.extraction_snapshot import (
+    entity_types_for_version,
+    general_instructions_for_version,
+)
 
 logger = get_logger(__name__)
 
@@ -442,6 +445,10 @@ async def build_run_view(
             ),
         )
 
+    # Kind-neutral on purpose: nesting this in the quality-assessment branch
+    # above would silently null the pin for extraction runs, which carry it too.
+    general_instructions = await general_instructions_for_version(db, detail.run.version_id)
+
     if detail.run.stage in _READY_HINT_STAGES:
         # include_peers reuses detail.peers_revealed (the single blind source),
         # so the reviewers_ready scrub cannot drift from the row filter.
@@ -467,6 +474,7 @@ async def build_run_view(
         reviewer_count=ready["reviewer_count"],
         reviewers_ready=ready["reviewers_ready"],
         derived_judgments=derived_judgments,
+        general_instructions=general_instructions,
         peers_revealed=detail.peers_revealed,
     )
 

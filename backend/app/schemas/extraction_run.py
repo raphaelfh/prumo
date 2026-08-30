@@ -293,13 +293,18 @@ class RunViewDerivedInput(BaseModel):
     contributed nothing) — clients highlight and color by it with zero
     answer-mapping knowledge.
 
-    ``state`` is set only on a collapse-group row that contributed nothing,
-    and is the complement of ``contribution`` (never both). It is
+    ``state`` is set on a row that contributed nothing, and is the complement
+    of ``contribution`` (never both). On a collapse-group row it is
     ``"unreported"`` when the study did not report that performance type — a
     legitimate outcome, not a gap — and ``"in-progress"`` when the group is
     only half-answered. A group has no stored answer, so ``value`` is always
     None there and this is the only thing telling the two apart: render them
     with different copy and tone, or a complete assessment looks unfinished.
+
+    ``"out-of-scope"`` is the third value and the only one a PLAIN row carries:
+    the template's scope rules took that section out of play for this study
+    type, so there is nothing to answer and nothing to chase. It outranks the
+    other two — render it as "Not applicable", never as unfinished work.
     """
 
     label: str
@@ -351,6 +356,11 @@ class RunViewResponse(RunDetailResponse):
     # templates that declare no derivation spec — i.e. everything except
     # PROBAST+AI today.
     derived_judgments: list[RunViewDerivedJudgment] = Field(default_factory=list)
+    # The template-level instruction this run is PINNED to — read through the
+    # same helper the AI prompts call, so the screen can never show a text the
+    # model did not get. Kind-neutral (extraction runs carry the pin too);
+    # None when the pinned version declares none.
+    general_instructions: str | None = None
 
 
 class RunReviewerProfile(BaseModel):

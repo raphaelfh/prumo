@@ -57,6 +57,12 @@ interface TemplateConfigEditorProps {
   onActiveTemplateChanged?: (templateId: string) => void;
 }
 
+/** Hairline between two regimes on the config bar — project-scoped
+ * settings, then the versioned-template commands Publish actually ships. */
+function BarDivider() {
+  return <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />;
+}
+
 export function TemplateConfigEditor({
   projectId,
   templateId,
@@ -344,7 +350,7 @@ export function TemplateConfigEditor({
             <div className="shrink-0">{engineSlot}</div>
             {/* Hairline between project regime and versioned-template regime:
                 the engine is not part of what Publish ships. */}
-            <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />
+            <BarDivider />
           </>
         )}
         <div className="flex shrink-0 items-center gap-1">
@@ -381,7 +387,7 @@ export function TemplateConfigEditor({
               {t("extraction", "configImportTemplateButton")}
             </TooltipContent>
           </Tooltip>
-          <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />
+          <BarDivider />
           <TemplateConfigPublishControls
             projectId={projectId}
             templateId={templateId}

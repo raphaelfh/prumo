@@ -16,10 +16,18 @@ from typing import Any
 from app.schemas.extraction_run import RunViewDerivedInput, RunViewDerivedJudgment
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
+    coordinate_of,
     derived_spec,
+    is_out_of_scope,
     is_recommendation,
+    out_of_scope_sections,
+    scope_filtered_values,
     warn_dangling_spec_refs,
 )
+
+# Wire contract, alongside the rules' own "unreported"/"in-progress": clients
+# switch on the STRING. Named here because the payload — not a rule — stamps it.
+_OUT_OF_SCOPE = "out-of-scope"
 
 
 def _group_label(sections: tuple[str, ...], label_by_section: dict[str, str]) -> str:
@@ -95,6 +103,13 @@ def build_derived_judgments_payload(
             if raw is not None:
                 values_by_coord[(et.name, field.name)] = raw
 
+    # §2a — scope. Resolve the excluded sections from the UNFILTERED values
+    # (the classifier's own section is never excluded), then drop their values
+    # before the rules run. The aggregations need no scope knowledge: with
+    # nothing to judge they already yield None. Stored values are untouched.
+    out_of_scope = out_of_scope_sections(template_schema, values_by_coord)
+    values_by_coord = scope_filtered_values(values_by_coord, out_of_scope)
+
     # A coordinate the template no longer carries is a definition bug that
     # would otherwise null an overall (or unpair a recommendation) in silence.
     warn_dangling_spec_refs(spec, set(ids_by_coord))
@@ -103,7 +118,7 @@ def build_derived_judgments_payload(
         pointer = entry.get(key) if isinstance(entry, dict) else None
         if not isinstance(pointer, dict):
             return None, None
-        coord = (str(pointer.get("section", "")), str(pointer.get("field", "")))
+        coord = coordinate_of(pointer)
         return ids_by_coord.get(coord, (None, None))
 
     # Pointer resolution is keyed by entry id: compute_derived_judgments skips
@@ -141,8 +156,13 @@ def build_derived_judgments_payload(
                     RunViewDerivedInput(
                         label=_input_label(inp, recommendation=recommendation),
                         value=inp.value,
-                        contribution=inp.contribution,
-                        state=inp.state,
+                        # An excluded row contributed nothing by construction —
+                        # §2a already dropped its value — so the stamp replaces
+                        # whatever the rule inferred from the resulting silence.
+                        contribution=None
+                        if (excluded := is_out_of_scope(inp, out_of_scope))
+                        else inp.contribution,
+                        state=_OUT_OF_SCOPE if excluded else inp.state,
                     )
                     for inp in d.inputs
                 ],

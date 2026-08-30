@@ -433,3 +433,54 @@ def test_signaling_worst_agrees_across_caller_shapes() -> None:
     b = compute_derived_judgments(spec, resolved)[0]
     assert a.value == b.value == "High"
     assert [i.contribution for i in a.inputs] == [i.contribution for i in b.inputs]
+
+
+# --- scope: the one case where the two surfaces deliberately DIFFER ---------
+#
+# Everywhere above, parity means "same string". For an out-of-scope overall it
+# means "same meaning": the screen sends value=None plus state="out-of-scope"
+# so the banner can render its own copy, while the workbook has no second
+# channel and must print the words. Asserting raw equality here would force one
+# surface to lie.
+
+_SCOPED_SPEC: dict[str, Any] = {
+    **_SPEC,
+    "scope_rules": {
+        # Reuses the shared `_ROB` field name so both path helpers build this
+        # section exactly like the domains they already know how to build.
+        "classifier": {"section": "assessment_scope", "field": _ROB},
+        "excludes": {"development_only": list(_SECTIONS)},
+    },
+}
+_SCOPED_SECTIONS = (*_SECTIONS, "assessment_scope")
+
+
+def test_out_of_scope_overall_is_blank_on_screen_and_named_in_the_workbook() -> None:
+    values: dict[str, Any] = {
+        "eval_d1": {"value": "High"},
+        "eval_d2": {"value": "Low"},
+        "assessment_scope": {"value": "development_only"},
+    }
+    screen = _screen_overall(dict(values), _SCOPED_SPEC, _SCOPED_SECTIONS)
+    workbook = _workbook_overall(dict(values), _SCOPED_SPEC, _SCOPED_SECTIONS)
+
+    assert screen is None, "the banner must not print a verdict for an inapplicable part"
+    assert workbook == "Not applicable", (
+        "the workbook has no state channel, so a blank cell would be "
+        "indistinguishable from an unfinished assessment"
+    )
+
+
+def test_in_scope_overall_keeps_strict_equality() -> None:
+    """The classifier being present must not change anything else."""
+    values: dict[str, Any] = {
+        "eval_d1": {"value": "Low"},
+        "eval_d2": {"value": "Low"},
+        "eval_d3": {"value": "Low"},
+        "eval_d4_apparent": {"value": "Low"},
+        "assessment_scope": {"value": "development_and_evaluation"},
+    }
+    screen = _screen_overall(dict(values), _SCOPED_SPEC, _SCOPED_SECTIONS)
+    workbook = _workbook_overall(dict(values), _SCOPED_SPEC, _SCOPED_SECTIONS)
+    assert screen == "Low"
+    assert workbook == screen
