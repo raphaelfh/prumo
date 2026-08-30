@@ -25,8 +25,10 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.project import Project
 from app.repositories.project_repository import ProjectRepository
 
 #: Ceiling on the rendered block. Mirrors ``llm_template_instruction``'s
@@ -68,15 +70,16 @@ _IC_LABELS = {
     "other": ("Intervention", "Comparator"),
 }
 
-#: ``timing`` is stored one level deeper than its siblings and IS written by
-#: the settings UI (a hardcoded accordion writing ``timing.prediction_moment``
-#: / ``timing.prediction_horizon`` through the dotted-path branch of
-#: ``updatePICOTSField``). Flattening the column is a separate slice that lands
-#: with the editor rewrite; until then the two halves merge into one line.
+#: Migration 0063 flattened ``timing`` to match its five siblings, and the PICOT
+#: editor writes the flat shape. The nested pair is still read, PERMANENTLY, not
+#: as a leftover: Railway and Vercel deploy independently, so a browser holding
+#: the pre-0063 bundle keeps writing ``timing.prediction_moment`` after the
+#: migration has run, and a reader that only understood flat would silently drop
+#: what that manager typed.
 _TIMING_PARTS = ("prediction_moment", "prediction_horizon")
 
 
-def _labels_for(review_type: str | None) -> dict[str, str]:
+def labels_for(review_type: str | None) -> dict[str, str]:
     index_label, comparator_label = _IC_LABELS.get(review_type or "", _IC_LABELS["other"])
     return {**_FIXED_LABELS, "index_models": index_label, "comparator_models": comparator_label}
 
@@ -108,17 +111,21 @@ def _string_list(raw: Any) -> list[str]:
 
 
 def _timing_texts(raw: Any) -> tuple[str, list[str], list[str]]:
-    """The nested moment/horizon pair merged into one slot.
+    """One timing slot, flat (canonical) or nested (pre-0063, still reachable).
 
-    Each half is read independently, so the realistic half-filled shape — a
-    dict beside the string ``""``, produced by editing only one of the two —
-    keeps the filled half instead of collapsing to nothing.
+    Each half of the nested pair is read independently, so the realistic
+    half-filled shape — a dict beside the string ``""``, produced by editing only
+    one of the two — keeps the filled half instead of collapsing to nothing.
     """
     if not isinstance(raw, Mapping):
         return _texts(raw)
     if not any(part in raw for part in _TIMING_PARTS):
-        return _texts(raw)  # already flat, or an unrecognised object
-    parts = [_texts(raw.get(part)) for part in _TIMING_PARTS]
+        return _texts(raw)  # flat only — the canonical shape
+    # A HYBRID row carries both, so read the slot's own flat values FIRST and the
+    # nested halves after. Branching either/or would drop whichever half the
+    # branch did not take — and a hybrid is exactly what a cached pre-0063 bundle
+    # creates when it edits one timing box on an already-flattened row.
+    parts = [_texts(raw)] + [_texts(raw.get(part)) for part in _TIMING_PARTS]
     return (
         "; ".join(description for description, _, _ in parts if description),
         [item for _, inclusion, _ in parts for item in inclusion],
@@ -139,7 +146,7 @@ def render_picots_block(picots: Any, review_type: str | None) -> str | None:
     """
     if not isinstance(picots, Mapping):
         return None
-    labels = _labels_for(review_type)
+    labels = labels_for(review_type)
     lines: list[str] = []
     for key in _SLOT_KEYS:
         reader = _timing_texts if key == "timing" else _texts
@@ -159,6 +166,12 @@ def render_picots_block(picots: Any, review_type: str | None) -> str | None:
     return block
 
 
+def _picots_enabled(settings: Any) -> bool:
+    """``settings.ai_context.picots`` — an absent key is the default, ON."""
+    ai_context = (settings or {}).get("ai_context") if isinstance(settings, Mapping) else None
+    return bool((ai_context or {}).get("picots", True)) if isinstance(ai_context, Mapping) else True
+
+
 async def build_review_context(db: AsyncSession, project_id: UUID) -> str | None:
     """The project's review question, or ``None`` when it says nothing.
 
@@ -169,8 +182,87 @@ async def build_review_context(db: AsyncSession, project_id: UUID) -> str | None
     project = await ProjectRepository(db).get_by_id(project_id)
     if project is None:
         return None
-    ai_context = (project.settings or {}).get("ai_context")
-    enabled = (ai_context or {}).get("picots", True) if isinstance(ai_context, Mapping) else True
-    if not enabled:
+    if not _picots_enabled(project.settings):
         return None
     return render_picots_block(project.picots_config_ai_review, project.review_type)
+
+
+class ProjectNotFoundError(Exception):
+    """Raised when the project row is missing. HTTP translation in the router."""
+
+
+def _slots_payload(raw: Any) -> dict[str, dict[str, Any]]:
+    """Every slot in canonical flat form, for the editor.
+
+    Reuses the SAME readers the prompt uses, so what the editor shows and what
+    the model gets cannot describe the stored value differently — including for
+    a legacy nested or hybrid ``timing``.
+    """
+    picots = raw if isinstance(raw, Mapping) else {}
+    out: dict[str, dict[str, Any]] = {}
+    for key in _SLOT_KEYS:
+        reader = _timing_texts if key == "timing" else _texts
+        description, inclusion, exclusion = reader(picots.get(key))
+        out[key] = {
+            "description": description,
+            "inclusion": inclusion,
+            "exclusion": exclusion,
+        }
+    return out
+
+
+async def get_ai_context(db: AsyncSession, project_id: UUID) -> dict[str, Any]:
+    """The editor's read model. Raises ``ProjectNotFoundError`` if the row is gone."""
+    project = await ProjectRepository(db).get_by_id(project_id)
+    if project is None:
+        raise ProjectNotFoundError(f"Project {project_id} not found")
+    enabled = _picots_enabled(project.settings)
+    return {
+        "picots": _slots_payload(project.picots_config_ai_review),
+        "labels": labels_for(project.review_type),
+        "review_type": project.review_type,
+        "picots_enabled": enabled,
+        "preview": render_picots_block(project.picots_config_ai_review, project.review_type)
+        if enabled
+        else None,
+    }
+
+
+async def set_ai_context(
+    db: AsyncSession,
+    project_id: UUID,
+    *,
+    picots: dict[str, Any] | None,
+    picots_enabled: bool | None,
+) -> dict[str, Any]:
+    """Write either half (or both) under one row lock.
+
+    The lock mirrors ``LlmEngineService``: ``projects.settings`` is plain JSONB
+    read-modify-written by several services, so an unlocked write can drop a
+    concurrent sibling key — and ``managers_see_reviewers`` living in that same
+    column means the dropped key could be a blind-review control silently
+    flipping back on.
+    """
+    project = (
+        await db.execute(
+            select(Project)
+            .where(Project.id == project_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if project is None:
+        raise ProjectNotFoundError(f"Project {project_id} not found")
+
+    if picots is not None:
+        project.picots_config_ai_review = picots
+    if picots_enabled is not None:
+        # Plain JSONB (NOT MutableDict): build a new dict and REASSIGN, or the
+        # change is not tracked and never persists. Only our sub-key is written.
+        settings = dict(project.settings or {})
+        ai_context = dict(settings.get("ai_context") or {})
+        ai_context["picots"] = picots_enabled
+        settings["ai_context"] = ai_context
+        project.settings = settings
+    await db.flush()
+    return await get_ai_context(db, project_id)

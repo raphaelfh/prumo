@@ -261,7 +261,11 @@ all three extract paths inject `general_instructions_for_version`
 a republish re-pins it). What's missing is any run-screen surface
 showing it, so a manager who never replaced the seeded
 `[customize: state the review's Step-1 PICOTS…]` placeholder finds out
-only by wondering at the AI's applicability judgments.
+only by wondering at the AI's applicability judgments. [Mitigated
+2026-08-30: PICOTS no longer depends on that placeholder being replaced
+— it is stored structurally and prefixed to every call as its own
+block. The placeholder is now redundant rather than load-bearing, and
+the worst case is the model reading the review question twice.]
 
 The run view gains one nullable field, `general_instructions`, read via
 the SAME `general_instructions_for_version` the prompts call — single
@@ -320,9 +324,9 @@ API consolidation remains extraction-only per the roadmap).
   Configuration tab** (amended 2026-08-30: this line originally named
   "the template's ✨ instruction", which was reachable only from the
   extraction Configuration tab, a screen QA cannot open. The
-  2026-08-30 PICOT-AI-context spec §5c mounts the instruction control
-  and its publish cluster on the QA Configuration tab, making the
-  pointer real). A still-unedited seeded placeholder renders as-is —
+  2026-08-30 PICOT-AI-context spec §5c mounted the instruction control
+  and its publish cluster on the QA Configuration tab — SHIPPED, so the
+  pointer is now real). A still-unedited seeded placeholder renders as-is —
   the `[customize: …]` text is its own call to action, no detection
   logic. Rejected placements: the run header (declutter, #475/#476), a
   per-applicability-row popover (×6 noise), a side sheet (weight).
@@ -333,7 +337,8 @@ API consolidation remains extraction-only per the roadmap).
   the plan's "Recorded for their own work"). The blocker chain, in
   order: (1) the amended null-state copy above names the QA
   Configuration tab, which only becomes reachable when the 2026-08-30
-  PICOT-AI-context spec's §5c ships — its slice 3, still queued; (2)
+  PICOT-AI-context spec's §5c ships — SHIPPED in its slice 3, so this
+  blocker is cleared; (2)
   the disclosure's test would land in
   `frontend/test/QualityAssessmentFullScreen.test.tsx`, still 1594
   lines, EXACTLY at its `scripts/fitness/check_file_size.baseline` cap,

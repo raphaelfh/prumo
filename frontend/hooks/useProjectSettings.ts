@@ -50,7 +50,6 @@ export function useProjectSettings(projectId: string) {
             condition_studied: project.condition_studied,
             review_rationale: project.review_rationale,
             search_strategy: project.search_strategy,
-            picots_config_ai_review: project.picots_config_ai_review,
             // NOTE: `settings` is intentionally NOT written here. Its only live
             // sub-key, `managers_see_reviewers`, is owned exclusively by the
             // typed PUT /manager-review-visibility endpoint

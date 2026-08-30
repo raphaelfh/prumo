@@ -448,6 +448,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/ai-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Ai Context
+         * @description The stored PICOTS, the labels the prompt will use, the switch, the preview.
+         */
+        get: operations["read_ai_context_api_v1_projects__project_id__ai_context_get"];
+        /**
+         * Update Ai Context
+         * @description Persist the review question and/or its switch, and return the new preview.
+         *
+         *     Returning the re-read model (rather than echoing the request) is what makes
+         *     the preview trustworthy: it is rendered from what was actually stored.
+         */
+        put: operations["update_ai_context_api_v1_projects__project_id__ai_context_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/extraction-export": {
         parameters: {
             query?: never;
@@ -2289,6 +2316,23 @@ export interface components {
         ApiResponse_PortableTemplate_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["PortableTemplate"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ProjectAiContextRead] */
+        ApiResponse_ProjectAiContextRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ProjectAiContextRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4349,6 +4393,33 @@ export interface components {
             type: "auto" | "standard" | "llamaparse" | "docling";
         };
         /**
+         * PicotsSlot
+         * @description One PICOTS slot. Flat since migration 0063 — ``timing`` included.
+         */
+        PicotsSlot: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Exclusion */
+            exclusion?: string[];
+            /** Inclusion */
+            inclusion?: string[];
+        };
+        /**
+         * PicotsSlots
+         * @description The six slots, in the instrument's P-I-C-O-T-S order.
+         */
+        PicotsSlots: {
+            comparator_models?: components["schemas"]["PicotsSlot"];
+            index_models?: components["schemas"]["PicotsSlot"];
+            outcomes?: components["schemas"]["PicotsSlot"];
+            population?: components["schemas"]["PicotsSlot"];
+            setting_and_intended_use?: components["schemas"]["PicotsSlot"];
+            timing?: components["schemas"]["PicotsSlot"];
+        };
+        /**
          * PortableField
          * @description One ``extraction_fields`` row. ``type``/``required`` are the file keys
          *     (JSON Schema convention); the attributes keep the column names.
@@ -4479,6 +4550,39 @@ export interface components {
              * @default 1.0.0
              */
             version: string;
+        };
+        /**
+         * ProjectAiContextRead
+         * @description What the editor renders: the slots, their labels, the switch, the preview.
+         */
+        ProjectAiContextRead: {
+            /** Labels */
+            labels: {
+                [key: string]: string;
+            };
+            picots: components["schemas"]["PicotsSlots"];
+            /**
+             * Picots Enabled
+             * @default true
+             */
+            picots_enabled: boolean;
+            /** Preview */
+            preview?: string | null;
+            /** Review Type */
+            review_type?: string | null;
+        };
+        /**
+         * ProjectAiContextUpdate
+         * @description Both halves ride one write so they cannot disagree.
+         *
+         *     Each field is optional: omitting ``picots`` changes only the switch and vice
+         *     versa, which is what lets the toggle and the editor share one endpoint
+         *     without either clobbering the other's value.
+         */
+        ProjectAiContextUpdate: {
+            picots?: components["schemas"]["PicotsSlots"] | null;
+            /** Picots Enabled */
+            picots_enabled?: boolean | null;
         };
         /** ProposalRecordResponse */
         ProposalRecordResponse: {
@@ -6923,6 +7027,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_OpenHITLSessionResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_ai_context_api_v1_projects__project_id__ai_context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProjectAiContextRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_ai_context_api_v1_projects__project_id__ai_context_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectAiContextUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProjectAiContextRead_"];
                 };
             };
             /** @description Validation Error */
