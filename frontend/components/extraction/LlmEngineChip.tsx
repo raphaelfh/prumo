@@ -24,13 +24,20 @@
  * unaffected — the deploy-race window where a new frontend hits an old
  * backend without the route.
  */
-import {useState} from 'react';
-import {Link, useNavigate} from 'react-router';
-import {AlertTriangle, Check, KeyRound, Lock, Settings, SlidersHorizontal} from 'lucide-react';
-import {toast} from 'sonner';
+import { useState } from "react";
+import { Link, useNavigate } from "react-router";
+import {
+  AlertTriangle,
+  Check,
+  KeyRound,
+  Lock,
+  Settings,
+  SlidersHorizontal,
+} from "lucide-react";
+import { toast } from "sonner";
 
-import {Button} from '@/components/ui/button';
-import {LlmEngineSettingsDialog} from '@/components/extraction/LlmEngineSettingsDialog';
+import { Button } from "@/components/ui/button";
+import { LlmEngineSettingsDialog } from "@/components/extraction/LlmEngineSettingsDialog";
 import {
   Command,
   CommandEmpty,
@@ -38,28 +45,32 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command';
-import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
-import {useLlmEndpoints} from '@/hooks/extraction/useLlmEndpoints';
-import {t} from '@/lib/copy';
-import {endpointHost} from '@/lib/llmEndpointHost';
-import {toUpdateBody} from '@/lib/llmEngineUpdateBody';
-import {cn} from '@/lib/utils';
-import type {LlmEngineCatalogEntry} from '@/services/llmEngineService';
+} from "@/components/ui/tooltip";
+import { useLlmEngine, useSetLlmEngine } from "@/hooks/extraction/useLlmEngine";
+import { useLlmEndpoints } from "@/hooks/extraction/useLlmEndpoints";
+import { t } from "@/lib/copy";
+import { endpointHost } from "@/lib/llmEndpointHost";
+import { toUpdateBody } from "@/lib/llmEngineUpdateBody";
+import { cn } from "@/lib/utils";
+import type { LlmEngineCatalogEntry } from "@/services/llmEngineService";
 
 /** The existing key-settings surface (UserSettings → Integrations → API keys). */
-const KEY_SETTINGS_ROUTE = '/settings?tab=integrations';
+const KEY_SETTINGS_ROUTE = "/settings?tab=integrations";
 
 const PROVIDER_LABELS: Record<string, string> = {
-  openai: t('llmEngine', 'providerOpenai'),
-  anthropic: t('llmEngine', 'providerAnthropic'),
+  openai: t("llmEngine", "providerOpenai"),
+  anthropic: t("llmEngine", "providerAnthropic"),
 };
 
 const providerLabel = (provider: string): string =>
@@ -85,13 +96,17 @@ function groupByProvider(catalog: LlmEngineCatalogEntry[]): ProviderGroup[] {
       group.entries.push(entry);
       group.byokOnly = group.byokOnly && entry.byok_only;
     } else {
-      groups.push({provider: entry.provider, entries: [entry], byokOnly: entry.byok_only});
+      groups.push({
+        provider: entry.provider,
+        entries: [entry],
+        byokOnly: entry.byok_only,
+      });
     }
   }
   return groups;
 }
 
-export function LlmEngineChip({projectId}: {projectId: string}) {
+export function LlmEngineChip({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const navigate = useNavigate();
@@ -124,16 +139,16 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
   // models the endpoint does not offer.
   const runnableEndpoints = (endpointsQuery.data ?? []).filter(
     (endpoint) =>
-      endpoint.validation_status === 'ok' && endpoint.allowed_models.length > 0,
+      endpoint.validation_status === "ok" && endpoint.allowed_models.length > 0,
   );
 
   const mutationCallbacks = {
-    onSuccess: () => toast.success(t('llmEngine', 'saveSuccess')),
+    onSuccess: () => toast.success(t("llmEngine", "saveSuccess")),
     // A 422 from an old backend (deploy window, panel B3) surfaces the
     // client's generic message here; no optimistic update means the picker
     // re-derives from the cached read and is never stuck.
     onError: (error: Error) =>
-      toast.error(`${t('llmEngine', 'saveError')}: ${error.message}`),
+      toast.error(`${t("llmEngine", "saveError")}: ${error.message}`),
   };
 
   const handleSelect = (entry: LlmEngineCatalogEntry) => {
@@ -149,7 +164,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
         // catalogue pair carrying a live endpoint pointer would keep routing
         // runs at the endpoint. A project that never had one keeps sending
         // the pre-endpoints body.
-        ...(engine.endpoint_id ? {endpoint_id: null} : {}),
+        ...(engine.endpoint_id ? { endpoint_id: null } : {}),
       }),
       mutationCallbacks,
     );
@@ -159,7 +174,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
     setOpen(false);
     setEngine.mutate(
       toUpdateBody(engine, {
-        provider: 'openai_compatible',
+        provider: "openai_compatible",
         model,
         endpoint_id: endpointId,
       }),
@@ -182,30 +197,44 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                   variant="outline"
                   size="sm"
                   className="gap-1.5 text-[13px] font-normal text-muted-foreground hover:text-foreground"
-                  aria-label={t('llmEngine', 'chipAria')}
+                  aria-label={t("llmEngine", "chipAria")}
                   data-testid="llm-engine-chip"
                 >
-                  <Settings className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-                  <span className="max-w-[16rem] truncate font-medium text-foreground">
+                  <Settings
+                    className="h-3.5 w-3.5 shrink-0"
+                    strokeWidth={1.5}
+                  />
+                  {/* Container queries against the config bar this chip is
+                      composed into (2026-08-29). They are MAX-width, so they
+                      are inert wherever no `configbar` container exists — the
+                      standalone no-template placement keeps the full label.
+                      The gear, the aria-label and the tooltip survive every
+                      rung, so nothing becomes unidentifiable. */}
+                  <span className="max-w-[16rem] truncate font-medium text-foreground @max-[40rem]/configbar:hidden">
                     {chipLabel}
                   </span>
-                  <span aria-hidden="true">·</span>
-                  <span>
+                  <span
+                    aria-hidden="true"
+                    className="@max-[52rem]/configbar:hidden"
+                  >
+                    ·
+                  </span>
+                  <span className="@max-[52rem]/configbar:hidden">
                     {t(
-                      'llmEngine',
-                      engine.mode === 'verified' ? 'modeVerified' : 'modeFast',
+                      "llmEngine",
+                      engine.mode === "verified" ? "modeVerified" : "modeFast",
                     )}
                   </span>
                 </Button>
               </PopoverTrigger>
             </TooltipTrigger>
-            <TooltipContent>{t('llmEngine', 'chipTooltip')}</TooltipContent>
+            <TooltipContent>{t("llmEngine", "chipTooltip")}</TooltipContent>
           </Tooltip>
           <PopoverContent align="end" className="w-[22rem] p-0">
             <Command>
-              <CommandInput placeholder={t('llmEngine', 'searchPlaceholder')} />
+              <CommandInput placeholder={t("llmEngine", "searchPlaceholder")} />
               <CommandList>
-                <CommandEmpty>{t('llmEngine', 'emptyResults')}</CommandEmpty>
+                <CommandEmpty>{t("llmEngine", "emptyResults")}</CommandEmpty>
                 {groupByProvider(engine.catalog).map((group) => (
                   <CommandGroup
                     key={group.provider}
@@ -214,7 +243,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                         <span className="flex items-baseline gap-2">
                           {providerLabel(group.provider)}
                           <span className="font-normal text-muted-foreground/80">
-                            {t('llmEngine', 'byokGroupNote')}
+                            {t("llmEngine", "byokGroupNote")}
                           </span>
                         </span>
                       ) : (
@@ -223,72 +252,74 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                     }
                   >
                     {group.entries.map((entry) => {
-                      const runnable = engine.availability[entry.provider] === true;
+                      const runnable =
+                        engine.availability[entry.provider] === true;
                       const isCurrent =
                         entry.provider === engine.provider &&
                         entry.model === engine.model;
                       return (
-                            <CommandItem
-                              key={entry.canonical}
-                              value={`${entry.label} ${entry.canonical}`}
-                              disabled={!runnable}
-                              onSelect={() => handleSelect(entry)}
-                              className={cn(
-                                'group flex-col items-stretch gap-0.5 px-2 py-1.5',
-                                isCurrent && 'bg-primary/5',
-                              )}
-                              data-testid={`llm-engine-option-${entry.canonical}`}
-                            >
-                              <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                                {!runnable && (
-                                  <Lock
-                                    className="h-3 w-3 shrink-0 text-muted-foreground"
-                                    strokeWidth={1.5}
-                                    aria-hidden="true"
-                                  />
+                        <CommandItem
+                          key={entry.canonical}
+                          value={`${entry.label} ${entry.canonical}`}
+                          disabled={!runnable}
+                          onSelect={() => handleSelect(entry)}
+                          className={cn(
+                            "group flex-col items-stretch gap-0.5 px-2 py-1.5",
+                            isCurrent && "bg-primary/5",
+                          )}
+                          data-testid={`llm-engine-option-${entry.canonical}`}
+                        >
+                          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                            {!runnable && (
+                              <Lock
+                                className="h-3 w-3 shrink-0 text-muted-foreground"
+                                strokeWidth={1.5}
+                                aria-hidden="true"
+                              />
+                            )}
+                            <span className="truncate text-[13px] font-medium">
+                              {entry.label}
+                            </span>
+                            {isCurrent && (
+                              <Check
+                                className="h-3.5 w-3.5 shrink-0 text-primary"
+                                strokeWidth={1.5}
+                                aria-label={t("llmEngine", "currentModelAria")}
+                              />
+                            )}
+                            {!runnable && (
+                              <Link
+                                to={KEY_SETTINGS_ROUTE}
+                                onClick={() => setOpen(false)}
+                                // The parent item is pointer-events-none
+                                // while disabled; the CTA opts back in and
+                                // keeps a visible focus ring of its own.
+                                className={cn(
+                                  "pointer-events-auto shrink-0 text-[11px] font-medium text-primary underline-offset-2 hover:underline",
+                                  "rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                                 )}
-                                <span className="truncate text-[13px] font-medium">
-                                  {entry.label}
-                                </span>
-                                {isCurrent && (
-                                  <Check
-                                    className="h-3.5 w-3.5 shrink-0 text-primary"
-                                    strokeWidth={1.5}
-                                    aria-label={t('llmEngine', 'currentModelAria')}
-                                  />
-                                )}
-                                {!runnable && (
-                                  <Link
-                                    to={KEY_SETTINGS_ROUTE}
-                                    onClick={() => setOpen(false)}
-                                    // The parent item is pointer-events-none
-                                    // while disabled; the CTA opts back in and
-                                    // keeps a visible focus ring of its own.
-                                    className={cn(
-                                      'pointer-events-auto shrink-0 text-[11px] font-medium text-primary underline-offset-2 hover:underline',
-                                      'rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-                                    )}
-                                  >
-                                    {t('llmEngine', 'lockedAddKeyCta')}
-                                  </Link>
-                                )}
-                                <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                                  {formatContextWindow(entry.context_window)} · {entry.cost_tier}
-                                </span>
-                              </span>
-                              {/* `best_for` and the canonical id left the row
+                              >
+                                {t("llmEngine", "lockedAddKeyCta")}
+                              </Link>
+                            )}
+                            <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                              {formatContextWindow(entry.context_window)} ·{" "}
+                              {entry.cost_tier}
+                            </span>
+                          </span>
+                          {/* `best_for` and the canonical id left the row
                                   so the list reads as one line per model. They
                                   reveal on the ACTIVE row — cmdk sets
                                   data-selected on hover AND on arrow-key
                                   navigation, so unlike a tooltip this also
                                   reaches keyboard users. */}
-                              <span className="hidden pl-0.5 text-xs text-muted-foreground group-data-[selected=true]:block">
-                                {entry.best_for}
-                                <span className="ml-1.5 font-mono text-[11px] text-muted-foreground/80">
-                                  {entry.canonical}
-                                </span>
-                              </span>
-                            </CommandItem>
+                          <span className="hidden pl-0.5 text-xs text-muted-foreground group-data-[selected=true]:block">
+                            {entry.best_for}
+                            <span className="ml-1.5 font-mono text-[11px] text-muted-foreground/80">
+                              {entry.canonical}
+                            </span>
+                          </span>
+                        </CommandItem>
                       );
                     })}
                     {engine.availability[group.provider] !== true && (
@@ -297,7 +328,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                       // mouse-only. One ENABLED item per locked group keeps the
                       // CTA reachable the way the combobox teaches.
                       <CommandItem
-                        value={`${providerLabel(group.provider)} ${t('llmEngine', 'lockedAddKeyItem')}`}
+                        value={`${providerLabel(group.provider)} ${t("llmEngine", "lockedAddKeyItem")}`}
                         onSelect={() => {
                           setOpen(false);
                           navigate(KEY_SETTINGS_ROUTE);
@@ -310,7 +341,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                           strokeWidth={1.5}
                           aria-hidden="true"
                         />
-                        {t('llmEngine', 'lockedAddKeyItem')}
+                        {t("llmEngine", "lockedAddKeyItem")}
                       </CommandItem>
                     )}
                   </CommandGroup>
@@ -323,8 +354,8 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                   // (`endpointPromptedBlocked`), never a dead click into a
                   // generic save-error toast.
                   const promptedOnly =
-                    endpoint.capabilities.output_mode === 'prompted';
-                  const blocked = promptedOnly && engine.mode === 'verified';
+                    endpoint.capabilities.output_mode === "prompted";
+                  const blocked = promptedOnly && engine.mode === "verified";
                   return (
                     <CommandGroup
                       key={endpoint.id}
@@ -337,7 +368,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                             </span>
                           </span>
                           <span className="font-normal text-muted-foreground/80">
-                            {t('llmEngine', 'endpointGroupNote')}
+                            {t("llmEngine", "endpointGroupNote")}
                           </span>
                           {promptedOnly && (
                             <span className="flex items-start gap-1.5 font-normal text-warning">
@@ -347,7 +378,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                                 aria-hidden="true"
                               />
                               <span className="min-w-0">
-                                {t('llmEngine', 'endpointPromptedGroupNote')}
+                                {t("llmEngine", "endpointPromptedGroupNote")}
                               </span>
                             </span>
                           )}
@@ -367,8 +398,8 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                               handleSelectEndpointModel(endpoint.id, model)
                             }
                             className={cn(
-                              'items-start gap-2 px-2 py-1.5',
-                              isCurrent && 'bg-primary/5',
+                              "items-start gap-2 px-2 py-1.5",
+                              isCurrent && "bg-primary/5",
                             )}
                             data-testid={`llm-engine-endpoint-option-${endpoint.id}-${model}`}
                           >
@@ -381,13 +412,16 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                                   <Check
                                     className="h-3.5 w-3.5 shrink-0 text-primary"
                                     strokeWidth={1.5}
-                                    aria-label={t('llmEngine', 'currentModelAria')}
+                                    aria-label={t(
+                                      "llmEngine",
+                                      "currentModelAria",
+                                    )}
                                   />
                                 )}
                               </span>
                               {blocked && (
                                 <span className="text-[11px] text-muted-foreground">
-                                  {t('llmEngine', 'endpointPromptedBlocked')}
+                                  {t("llmEngine", "endpointPromptedBlocked")}
                                 </span>
                               )}
                             </span>
@@ -417,7 +451,7 @@ export function LlmEngineChip({projectId}: {projectId: string}) {
                   strokeWidth={1.5}
                   aria-hidden="true"
                 />
-                {t('llmEngine', 'settingsLink')}
+                {t("llmEngine", "settingsLink")}
               </Button>
             </div>
           </PopoverContent>

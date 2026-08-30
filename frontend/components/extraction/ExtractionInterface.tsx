@@ -352,7 +352,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                 the versioned template card — choosing an engine never arms
                 the Draft chip and never enters the Publish diff. The chip
                 OWNS its flex row, so a failed read renders no empty strip. */}
-            <LlmEngineChip projectId={projectId} />
+            {/* With a template on screen the chip rides IN the config bar
+                (2026-08-29 consolidation) — it only owns a row of its own
+                when there is no bar to ride in. */}
+            {!activeTemplate && <LlmEngineChip projectId={projectId} />}
             {activeTemplate ? (
               // Dashboard regime: the page never scrolls — the grid card
               // absorbs the leftover height and scrolls internally. The
@@ -416,6 +419,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           <TemplateConfigEditor
             projectId={projectId}
             templateId={activeTemplate.id}
+            engineSlot={<LlmEngineChip projectId={projectId} />}
             onActiveTemplateChanged={handleActiveTemplateChanged}
           />
         ) : (
