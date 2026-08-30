@@ -39,6 +39,33 @@ are documented at length in the module docstring — read it before clearing an
 entry, because `t()` returns `''` for a missing key and a wrong deletion ships
 as a blank string rather than an error.
 
+### `check_diff_attribute_copy.py`
+
+Asserts every attribute the publish-diff backend can put on the wire has a
+human label in the frontend. `TemplateConfigDiffSheet.tsx` maps
+`row.attribute` through `ATTRIBUTE_COPY` and falls back to rendering the RAW
+WIRE KEY when the map has no entry — a deliberate degradation (the wire type
+is an open string, so a stale frontend never blanks) that also means a new
+backend attribute reaches users as `allows_no_information` rather than
+`"No information" option`, silently, with every test green. That shipped once.
+
+Source of truth is `ATTRIBUTE_TIERS` in `backend/app/services/template_diff.py`,
+which the backend's own `test_tier_map_is_exhaustive_over_the_snapshot_key_set`
+already pins to the union of the entity + field attribute-default maps — so
+this gate inherits that guarantee instead of duplicating the list. Two keys are
+emitted as bare constants rather than through those maps (`OPTION_KEY`,
+`TEMPLATE_INSTRUCTION_KEY`) and are added explicitly: a check reading only the
+tier dict would let `allowed_values` through unlabelled. Dict keys may be
+`ast.Name` (`ENTRY_LABEL_KEY:`), so module-level string constants are resolved
+first. It also catches the failure one step later — an attribute mapped to a
+copy key that `lib/copy/templateConfig.ts` does not define renders the key name
+itself.
+
+Read by AST, never by import: `app.services.*` constructs `Settings` on import
+and the Architectural Fitness job runs on bare `setup-python` with no backend
+env. No baseline — the two sides must always agree. Standard library only;
+wall-clock budget: < 50 ms.
+
 ## Planned (Phase 4)
 
 ### `check_rls_coverage.py`
