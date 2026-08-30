@@ -41,6 +41,7 @@ from app.core.error_handler import AppError
 from app.models.extraction import ProjectExtractionTemplate
 from app.models.user import Profile
 from app.schemas.hitl_session import TemplateDraftLockRefusalCode
+from app.services.project_template_active_service import owned_template
 from app.services.template_clone_service import TemplateNotFoundError
 
 __all__ = [
@@ -77,7 +78,9 @@ class TakeOverResult:
     previous_holder_name: str | None
 
 
-async def claim_draft_lock(db: AsyncSession, *, template_id: UUID, user_id: UUID) -> None:
+async def claim_draft_lock(
+    db: AsyncSession, *, project_id: UUID, template_id: UUID, user_id: UUID
+) -> None:
     """Claim the lock, or refuse naming the holder.
 
     ONE conditional UPDATE, not read-then-write: two managers racing their
@@ -87,11 +90,19 @@ async def claim_draft_lock(db: AsyncSession, *, template_id: UUID, user_id: UUID
 
     Idempotent for the holder — every config write re-claims, and the
     holder's own writes must never refuse.
+
+    ``project_id`` is part of the WHERE, not a check around it. This is the
+    first DB statement on all 8 config-write endpoints, ahead of the
+    service's own ownership guard, so an unscoped claim reached a foreign
+    template: the refusal then named its holder, and the UPDATE briefly
+    locked a row in another project. Scoped, a foreign template matches
+    nothing and 404s below like a missing one.
     """
     result = await db.execute(
         update(ProjectExtractionTemplate)
         .where(
             ProjectExtractionTemplate.id == template_id,
+            ProjectExtractionTemplate.project_id == project_id,
             # NULL is claimable: an unattributed draft must not strand.
             (ProjectExtractionTemplate.config_draft_by.is_(None))
             | (ProjectExtractionTemplate.config_draft_by == user_id),
@@ -101,9 +112,13 @@ async def claim_draft_lock(db: AsyncSession, *, template_id: UUID, user_id: UUID
     if _rowcount(result) == 1:
         return
 
-    # Zero rows means held by someone else — OR the template does not
-    # exist. Both must refuse: treating "matched nothing" as success is how
-    # a lock silently stops locking.
+    # Zero rows means held by someone else — OR the template is not in this
+    # project (incl. does not exist). Both must refuse: treating "matched
+    # nothing" as success is how a lock silently stops locking. The
+    # canonical ownership guard separates the two, and raises the same
+    # 404-class error every one of the 8 endpoints already translates.
+    await owned_template(db, project_id=project_id, template_id=template_id)
+
     holder_id, holder_name = await _holder(db, template_id)
     raise DraftLockHeldError(
         "Another manager is editing this template's configuration.",
@@ -115,7 +130,7 @@ async def claim_draft_lock(db: AsyncSession, *, template_id: UUID, user_id: UUID
 
 
 async def take_over_draft_lock(
-    db: AsyncSession, *, template_id: UUID, user_id: UUID, project_id: UUID | None = None
+    db: AsyncSession, *, project_id: UUID, template_id: UUID, user_id: UUID
 ) -> TakeOverResult:
     """Seize the lock unconditionally, reporting who was displaced.
 
@@ -124,26 +139,22 @@ async def take_over_draft_lock(
     takeover, which costs a round trip to guard a case where both parties
     already decided to seize it. The last click wins, which is what a
     human-arbitrated release valve should do.
+
+    Unconditional about the HOLDER, never about the project: ``project_id``
+    is required and scopes the UPDATE itself, matching ``claim_draft_lock``
+    above. It used to be optional with a hand-rolled ownership SELECT, which
+    is the same predicate ``owned_template`` already owns — and an optional
+    scope is one a caller can forget.
     """
-    if project_id is not None:
-        # BOLA, in the service: endpoints never touch models directly
-        # (api -> services -> repositories -> models). A template owned
-        # elsewhere 404s rather than confirming it exists.
-        owned = (
-            await db.execute(
-                select(ProjectExtractionTemplate.id).where(
-                    ProjectExtractionTemplate.id == template_id,
-                    ProjectExtractionTemplate.project_id == project_id,
-                )
-            )
-        ).scalar_one_or_none()
-        if owned is None:
-            raise TemplateNotFoundError(f"Template {template_id} not found")
+    await owned_template(db, project_id=project_id, template_id=template_id)
 
     previous_id, previous_name = await _holder(db, template_id)
     await db.execute(
         update(ProjectExtractionTemplate)
-        .where(ProjectExtractionTemplate.id == template_id)
+        .where(
+            ProjectExtractionTemplate.id == template_id,
+            ProjectExtractionTemplate.project_id == project_id,
+        )
         .values(config_draft_by=user_id)
     )
     return TakeOverResult(

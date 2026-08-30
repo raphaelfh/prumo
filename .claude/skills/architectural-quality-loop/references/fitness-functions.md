@@ -65,3 +65,26 @@ After the `frontend/lib/query-keys/` convention is introduced, this check parses
 - Each Python check accepts `--emit-telemetry <path>` to append a JSON line `{ts, phase: "fitness", gate, duration_ms, exit_code, finding_count?, ...}`.
 - Each Python check accepts `--jsonl-out <path>` to write per-finding JSON conforming to the scanner schema. The orchestrator concatenates these into the run-dir's `findings.jsonl`.
 - The scanner skill's SCAN phase invokes `bash scripts/fitness/run_all.sh --scope "<scope>"` (when a `--scope` arg is supported by the check) in parallel with the 5 Explore subagents.
+
+## `check_scope_guards.py`
+
+Enforces the ownership-guard invariant from `.claude/rules/backend.md`: a
+predicate binding a client-supplied id to the caller's scope is written once
+and imported, never re-typed, and it lives in the WHERE clause.
+
+Two rules. `duplicate-predicate` walks the AST for `.where()` calls whose
+equality terms pin a row by `id` and narrow it by at least one scope column
+(`project_id`, `article_id`, `template_id`, `project_template_id`, `user_id`,
+…); the signature ignores non-scope columns, so an unrelated extra clause
+cannot disguise a copy. Two functions sharing a signature is a finding.
+`membership-sql` bans raw `public.project_members` SQL outside
+`api/deps/security.py`, because the `is_project_*` helpers are what the RLS
+policies call and a hand-rolled copy lets the API and the database drift.
+
+Shrink-only baseline at `check_scope_guards.baseline`; entries may carry a
+`# reason`, which `--update-baseline` preserves. Findings reach this scanner
+via `--jsonl-out` as `source: fitness:check_scope_guards:<rule>`.
+
+Known limits, stated so nobody over-trusts it: it detects DUPLICATION, not
+ABSENCE — a missing guard produces no finding — and it cannot see raw `text()`
+SQL, `.in_()` predicates, or chained `stmt = stmt.where(...)` rebinding.

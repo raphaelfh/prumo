@@ -327,7 +327,7 @@ async def test_reopen_run_maps_one_live_run_to_409() -> None:
     source_run.project_id = uuid4()
 
     with (
-        patch(f"{_RUNS_EP}._load_run_and_check_member", AsyncMock(return_value=source_run)),
+        patch(f"{_RUNS_EP}.load_run_for_member", AsyncMock(return_value=source_run)),
         patch(f"{_RUNS_EP}.ensure_project_reviewer", AsyncMock()),
         patch(f"{_RUNS_EP}.RunLifecycleService", return_value=service),
         patch(f"{_RUNS_EP}._trace", return_value=None),
@@ -361,7 +361,7 @@ async def test_reopen_run_reraises_other_integrity_error() -> None:
     source_run.project_id = uuid4()
 
     with (
-        patch(f"{_RUNS_EP}._load_run_and_check_member", AsyncMock(return_value=source_run)),
+        patch(f"{_RUNS_EP}.load_run_for_member", AsyncMock(return_value=source_run)),
         patch(f"{_RUNS_EP}.ensure_project_reviewer", AsyncMock()),
         patch(f"{_RUNS_EP}.RunLifecycleService", return_value=service),
         patch(f"{_RUNS_EP}._trace", return_value=None),

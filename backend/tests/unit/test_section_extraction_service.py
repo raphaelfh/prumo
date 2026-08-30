@@ -10,6 +10,7 @@ tests/unit/llm/test_prompts.py.
 """
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -20,6 +21,7 @@ from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
 from app.schemas.llm_target import LlmTarget
 from app.services.extraction_prompt_input import PromptInputInfo
+from app.services.llm_field_filter import LlmFieldFilter
 from app.services.run_engine_freeze import build_run_provenance
 from app.services.section_extraction_service import SectionExtractionService
 
@@ -132,6 +134,7 @@ class TestSectionExtractionEntityTypes:
     async def test_get_entity_type_success(self, service):
         """Testa busca de entity type com sucesso."""
         entity_type_id = uuid4()
+        template_id = uuid4()
 
         # Mock entity type com fields
         mock_field = MagicMock()
@@ -142,10 +145,11 @@ class TestSectionExtractionEntityTypes:
         mock_entity.id = entity_type_id
         mock_entity.name = "Study Characteristics"
         mock_entity.fields = [mock_field]
+        mock_entity.project_template_id = template_id
 
         service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
 
-        result = await service._get_entity_type(entity_type_id)
+        result = await service._get_entity_type(entity_type_id, project_template_id=template_id)
 
         # Returns the entity type object directly
         assert result.name == "Study Characteristics"
@@ -160,7 +164,25 @@ class TestSectionExtractionEntityTypes:
         service._entity_types.get_with_fields = AsyncMock(return_value=None)
 
         with pytest.raises(ValueError, match="Entity type not found"):
-            await service._get_entity_type(entity_type_id)
+            await service._get_entity_type(entity_type_id, project_template_id=uuid4())
+
+    @pytest.mark.asyncio
+    async def test_get_entity_type_from_another_template_is_not_found(self, service):
+        """BOLA: the live fallback may only resolve the run template's own
+        sections. A global-lineage row (``project_template_id is None``) and
+        a foreign project template both fail like a missing id — an
+        ``ExtractionInstance`` on a catalogue entity type is ON DELETE
+        RESTRICT and wedges the boot-time catalogue replace."""
+        entity_type_id = uuid4()
+
+        for foreign in (None, uuid4()):
+            mock_entity = MagicMock()
+            mock_entity.id = entity_type_id
+            mock_entity.project_template_id = foreign
+            service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
+
+            with pytest.raises(ValueError, match="Entity type not found"):
+                await service._get_entity_type(entity_type_id, project_template_id=uuid4())
 
     @pytest.mark.asyncio
     async def test_get_child_entity_types(self, service):
@@ -175,7 +197,7 @@ class TestSectionExtractionEntityTypes:
         # Mock parent instance
         mock_parent = MagicMock()
         mock_parent.entity_type_id = parent_entity_type_id
-        service._instances.get_by_id = AsyncMock(return_value=mock_parent)
+        service._instances.get_on_run = AsyncMock(return_value=mock_parent)
 
         # B-2: children come from the run-pinned tree, filtered by parent id.
         mock_child1 = MagicMock()
@@ -340,6 +362,11 @@ class TestExtractSectionWithExistingRun:
         mock_entity.name = "EntityX"
         mock_entity.description = "d"
         mock_entity.fields = [mock_field]
+        # The live fallback is template-scoped: this row belongs to the run's
+        # own template (the legitimate re-pin race the fallback exists for).
+        mock_entity.project_template_id = (
+            existing_run.template_id if existing_run is not None else None
+        )
         service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
 
         # ``service.db.get(ExtractionRun, run_id)`` returns the existing run.
@@ -1065,7 +1092,7 @@ class TestGetChildEntityTypesEdgeCases:
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_parent_instance_not_found(self, service):
-        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         result = await service._get_child_entity_types(
             run=self._make_run(),
             parent_instance_id=uuid4(),
@@ -1076,7 +1103,7 @@ class TestGetChildEntityTypesEdgeCases:
     async def test_returns_empty_when_no_child_entity_types(self, service):
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
         service._pinned_entity_types = AsyncMock(return_value=[])
         result = await service._get_child_entity_types(
             run=self._make_run(),
@@ -1088,7 +1115,7 @@ class TestGetChildEntityTypesEdgeCases:
     async def test_filters_by_section_ids(self, service):
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         id1 = uuid4()
         id2 = uuid4()
@@ -1700,9 +1727,13 @@ class TestCreateSuggestions:
         service._instances.create.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_parent_instance_used_to_resolve_template_id(self, service):
-        """When parent_instance_id is provided and no instance exists,
-        the parent's template_id is inherited."""
+    async def test_parent_instance_is_scoped_to_the_run_coordinate(self, service):
+        """A client-supplied parent is re-verified at the write choke-point.
+
+        The endpoint gate rejects a foreign ``parentInstanceId`` first; this
+        is the durable half, so a caller reaching the service directly still
+        cannot plant a cross-tenant ``parent_instance_id`` FK. The new row's
+        ``template_id`` is the RUN's, never the parent's column."""
         field_id = uuid4()
         field = MagicMock()
         field.id = field_id
@@ -1718,7 +1749,7 @@ class TestCreateSuggestions:
         parent = MagicMock()
         parent_template_id = uuid4()
         parent.template_id = parent_template_id
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         new_instance = MagicMock()
         new_instance.id = uuid4()
@@ -1747,8 +1778,37 @@ class TestCreateSuggestions:
                 run=run,
             )
 
-        # Verify the parent was looked up
-        service._instances.get_by_id.assert_awaited_once_with(parent_instance_id)
+        # Looked up through the SCOPED reader, on the run's coordinate.
+        service._instances.get_on_run.assert_awaited_once_with(parent_instance_id, run)
+        assert mock_instance_class.call_args.kwargs["template_id"] == run.template_id
+
+    @pytest.mark.asyncio
+    async def test_out_of_coordinate_parent_instance_is_refused(self, service):
+        """A parent the scoped reader cannot see fails like a missing one."""
+        field = MagicMock()
+        field.id = uuid4()
+        field.name = "f"
+        et = MagicMock()
+        et.label = None
+        et.name = "S"
+        et.sort_order = 0
+        et.fields = [field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        service._instances.get_by_article = AsyncMock(return_value=[])
+        service._instances.get_on_run = AsyncMock(return_value=None)
+        service._instances.create = AsyncMock()
+
+        with pytest.raises(ValueError, match="Parent instance not found"):
+            await service._create_suggestions(
+                project_id=uuid4(),
+                article_id=uuid4(),
+                entity_type_id=uuid4(),
+                parent_instance_id=uuid4(),
+                extracted_data={"f": "v"},
+                run=self._make_run(),
+            )
+
+        service._instances.create.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_evidence_without_text_not_added(self, service):
@@ -1853,6 +1913,8 @@ class TestExtractSectionLlmFailure:
 
         run = MagicMock()
         run.id = uuid4()
+        # The live fallback is template-scoped (see above).
+        mock_entity.project_template_id = run.template_id
         # Standalone path resolves through the one-live-run gate; created=True
         # keeps the standalone lifecycle semantics.
         service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(run, True))
@@ -1920,7 +1982,7 @@ class TestExtractAllSections:
         run = self._make_run()
         self._minimal_lifecycle_wire(service, run)
 
-        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
 
         result = await service.extract_all_sections(
             project_id=uuid4(),
@@ -1941,7 +2003,7 @@ class TestExtractAllSections:
         run = self._make_run()
         self._minimal_lifecycle_wire(service, run)
 
-        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         service._assemble_prompt_text = AsyncMock(return_value="pdf text")
 
         await service.extract_all_sections(
@@ -1963,7 +2025,7 @@ class TestExtractAllSections:
         run = self._make_run()
         self._minimal_lifecycle_wire(service, run)
 
-        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         service._assemble_prompt_text = AsyncMock(return_value="ignored")
         assert service._run_anchor_blocks == []  # empty stash at the start of the run
 
@@ -1985,7 +2047,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child_ok = MagicMock()
         child_ok.id = uuid4()
@@ -2029,7 +2091,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child1 = MagicMock()
         child1.id = uuid4()
@@ -2069,7 +2131,7 @@ class TestExtractAllSections:
         service._assemble_prompt_text = AsyncMock(return_value="text")
 
         # Make the instance fetch explode unexpectedly (after assembly, before loops)
-        service._instances.get_by_id = AsyncMock(side_effect=RuntimeError("db exploded"))
+        service._instances.get_on_run = AsyncMock(side_effect=RuntimeError("db exploded"))
 
         with pytest.raises(RuntimeError, match="db exploded"):
             await service.extract_all_sections(
@@ -2097,7 +2159,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child1 = MagicMock()
         child1.id = uuid4()
@@ -2178,7 +2240,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child = MagicMock()
         child.id = uuid4()
@@ -2684,7 +2746,7 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=list(fields),
-                excluded_coordinates=excluded,
+                field_filter=LlmFieldFilter(excluded_coordinates=frozenset(excluded)),
             )
         sent = [f.name for f in bom.call_args.kwargs["fields"]]
         assert sent == [
@@ -2711,11 +2773,56 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=list(fields),
-                excluded_coordinates=excluded,
+                field_filter=LlmFieldFilter(excluded_coordinates=frozenset(excluded)),
             )
         assert bom.call_args.kwargs["fields"] == []
         assert extracted == {}
         assert usage.prompt_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_out_of_scope_section_skips_the_llm_call(self, service):
+        """A section the scope rules exclude is never asked about at all.
+
+        Reuses the same no-fields skip the assessor-owned exclusion reaches,
+        so there is no second "do not call the model" path to keep in step.
+        """
+        fields = self._fields("q1_appropriate_data_sources", "risk_of_bias")
+        et = self._entity("eval_d1_participants", fields)
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            extracted, usage = await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                field_filter=LlmFieldFilter(
+                    out_of_scope_sections=frozenset({"eval_d1_participants"})
+                ),
+            )
+        assert bom.call_args.kwargs["fields"] == []
+        assert extracted == {}
+        assert usage.prompt_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_an_in_scope_section_is_untouched_by_the_scope_set(self, service):
+        """Anti-over-exclusion control: a non-empty scope set must not leak."""
+        fields = self._fields("q1_appropriate_data_sources", "risk_of_bias")
+        et = self._entity("dev_d1_participants", fields)
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=et,
+                fields_override=list(fields),
+                field_filter=LlmFieldFilter(
+                    out_of_scope_sections=frozenset({"eval_d1_participants"})
+                ),
+            )
+        assert [f.name for f in bom.call_args.kwargs["fields"]] == [
+            "q1_appropriate_data_sources",
+            "risk_of_bias",
+        ]
 
     @pytest.mark.asyncio
     async def test_fallback_path_without_override_is_still_filtered(self, service):
@@ -2734,7 +2841,7 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=None,
-                excluded_coordinates=excluded,
+                field_filter=LlmFieldFilter(excluded_coordinates=frozenset(excluded)),
             )
         sent = [f.name for f in bom.call_args.kwargs["fields"]]
         assert sent == ["q1"]
@@ -2753,7 +2860,7 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=override,
-                excluded_coordinates=set(),
+                field_filter=LlmFieldFilter(),
             )
         assert bom.call_args.kwargs["fields"] is override
 
@@ -2775,7 +2882,7 @@ class TestLlmExclusion:
                 pdf_text="text",
                 entity_type=et,
                 fields_override=list(fields),
-                excluded_coordinates=excluded,
+                field_filter=LlmFieldFilter(excluded_coordinates=frozenset(excluded)),
             )
         sent = [f.name for f in bom.call_args.kwargs["fields"]]
         assert sent == ["q1", "quality_score"]  # fails open...
@@ -2819,7 +2926,7 @@ class TestLlmExclusionWiring:
     assessor-owned fields subtracted on the REAL call path
     (run.template_id → _excluded_field_names → _extract_with_llm), with only
     the model-facing leaf mocked. The TestLlmExclusion suite passes
-    excluded_coordinates by hand and proves the filter; this proves the
+    the filter by hand and proves the subtraction; this proves the
     plumbing that feeds it (adversarial-review finding: the suite alone
     would stay green if no call site threaded the template at all)."""
 
@@ -2902,3 +3009,111 @@ class TestLlmExclusionWiring:
 
         sent = [f.name for f in bom.call_args.kwargs["fields"]]
         assert sent == ["q1_appropriate_data_sources"]
+
+
+class TestScopeGuardWiring:
+    """The scope half of the same wiring claim.
+
+    ``TestLlmExclusion`` hands the filter in by hand; this proves the real
+    path builds it — run.template_id → live schema → pinned tree → the run's
+    newest proposal on the classifier coordinate → the section is skipped.
+    Without this, every hand-fed test stays green while no call site threads
+    the rules at all.
+    """
+
+    @staticmethod
+    def _run() -> Any:
+        from app.models.extraction import ExtractionRunStage
+
+        run = MagicMock()
+        run.id = uuid4()
+        run.project_id = uuid4()
+        run.article_id = uuid4()
+        run.template_id = uuid4()
+        run.version_id = uuid4()
+        run.stage = ExtractionRunStage.EXTRACT.value
+        run.kind = "quality_assessment"
+        return run
+
+    @staticmethod
+    def _tree() -> tuple[Any, Any]:
+        study_type = MagicMock()
+        study_type.id = uuid4()
+        study_type.name = "study_type"
+        scope = MagicMock()
+        scope.id = uuid4()
+        scope.name = "assessment_scope"
+        scope.description = "desc"
+        scope.fields = [study_type]
+
+        rob = MagicMock()
+        rob.id = uuid4()
+        rob.name = "risk_of_bias"
+        evaluation = MagicMock()
+        evaluation.id = uuid4()
+        evaluation.name = "eval_d1_participants"
+        evaluation.description = "desc"
+        evaluation.fields = [rob]
+        return scope, evaluation
+
+    _SCHEMA = {
+        "scope_rules": {
+            "classifier": {"section": "assessment_scope", "field": "study_type"},
+            "excludes": {"development_only": ["eval_d1_participants"]},
+        }
+    }
+
+    async def _sent_fields(self, service: Any, classifier_answer: Any) -> list[str]:
+        run = self._run()
+        scope, evaluation = self._tree()
+        template = MagicMock()
+        template.schema_ = self._SCHEMA
+
+        service.db.get = AsyncMock(return_value=template)
+        # The stored answer on the classifier coordinate.
+        result = MagicMock()
+        result.scalars.return_value.first.return_value = classifier_answer
+        service.db.execute = AsyncMock(return_value=result)
+        service._entity_types.get_with_fields = AsyncMock(return_value=evaluation)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+        service._create_suggestions = AsyncMock(return_value=0)
+        service._maybe_verify = AsyncMock(side_effect=lambda *_a, **_k: (None, LlmUsage()))
+
+        with (
+            patch(
+                "app.services.llm_field_filter.entity_types_for_version",
+                AsyncMock(return_value=[scope, evaluation]),
+            ),
+            patch(
+                "app.services.section_extraction_service.build_output_models",
+                return_value=[],
+            ) as bom,
+        ):
+            await service._extract_one_entity_type_for_run(
+                run=run,
+                entity_type=evaluation,
+                pdf_text="text",
+                framework=None,
+                kind="quality_assessment",
+                skip_fields_with_human_proposals=False,
+            )
+        return [f.name for f in bom.call_args.kwargs["fields"]]
+
+    @pytest.mark.asyncio
+    async def test_a_development_only_run_never_asks_about_the_evaluation_part(
+        self, service
+    ) -> None:
+        assert await self._sent_fields(service, {"value": "development_only"}) == []
+
+    @pytest.mark.asyncio
+    async def test_an_unclassified_run_still_asks_about_everything(self, service) -> None:
+        """Fails open: no classification excludes nothing (pre-2.1.0 behaviour)."""
+        assert await self._sent_fields(service, None) == ["risk_of_bias"]
+
+    @pytest.mark.asyncio
+    async def test_a_run_classified_as_both_asks_about_everything(self, service) -> None:
+        assert await self._sent_fields(service, {"value": "development_and_evaluation"}) == [
+            "risk_of_bias"
+        ]

@@ -314,3 +314,13 @@ async def option_orphan_setup(
         value=options[0],
     )
     return project_id, template_id, target
+
+
+async def draft_lock_holder(db: AsyncSession, template_id: UUID) -> UUID | None:
+    """Who currently holds a template's config draft lock, if anyone."""
+    return (
+        await db.execute(
+            text("SELECT config_draft_by FROM public.project_extraction_templates WHERE id = :t"),
+            {"t": str(template_id)},
+        )
+    ).scalar_one()

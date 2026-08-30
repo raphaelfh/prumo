@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
     ExtractionEntityType,
+    ExtractionTemplateGlobal,
     TemplateKind,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
@@ -306,6 +307,12 @@ async def test_reclone_selfheals_unsnapshotted_edit_without_wiping(
     # simulate the lost-republish shape (marker-set drift 409s instead).
     await set_config_draft_marker(db_session, initial.project_template_id, None)
 
+    # The global gains a rule key while the clone is drifted.
+    global_tpl = await db_session.get(ExtractionTemplateGlobal, CHARMS_GLOBAL_ID)
+    assert global_tpl is not None
+    global_tpl.schema_ = {"scope_rules": {}}
+    await db_session.flush()
+
     recloned = await service.clone(
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
@@ -338,6 +345,17 @@ async def test_reclone_selfheals_unsnapshotted_edit_without_wiping(
     assert "orphan_edit" in snapshot_field_names, (
         "heal must publish the live structure so the drift is repaired"
     )
+
+    # The schema_ refresh sits after the republish block precisely so every
+    # heal path reaches it. Moving it into the aligned-only path would leave
+    # a drifted clone stuck on the rules it was cloned with.
+    persisted = (
+        await db_session.execute(
+            text('SELECT "schema" FROM public.project_extraction_templates WHERE id = :id'),
+            {"id": str(initial.project_template_id)},
+        )
+    ).scalar_one()
+    assert persisted == {"scope_rules": {}}, "drift heal must refresh schema_ too"
 
     await db_session.rollback()
 
@@ -590,5 +608,67 @@ async def test_locked_recheck_catches_stamp_after_precheck(
             user_id=user_id,
             fail_if_pending_draft=True,
         )
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_reimport_refreshes_schema_from_global(db_session: AsyncSession) -> None:
+    """Re-import re-syncs the template-level ``schema_`` from the global.
+
+    Clone creation copies ``schema_`` by value, so a clone made before the
+    global gained a rule key (PROBAST+AI 2.1.0's ``scope_rules``) could
+    never receive it — the heal republishes structure but historically
+    left ``schema_`` alone. The rules READ the structure rather than being
+    it, so the refresh must NOT rebuild or roll the live structure.
+    """
+    if (
+        await db_session.execute(
+            text("SELECT 1 FROM public.profiles WHERE id = :id"),
+            {"id": str(SEED.primary_profile)},
+        )
+    ).scalar() is None:
+        pytest.skip("Missing fixtures.")
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+
+    await clean_project_clones(db_session, project_id)
+    service = TemplateCloneService(db_session)
+
+    first = await service.clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+    # The global gains a rule key after the clone already exists.
+    global_tpl = await db_session.get(ExtractionTemplateGlobal, CHARMS_GLOBAL_ID)
+    assert global_tpl is not None
+    global_tpl.schema_ = {"scope_rules": {"classifier": {"section": "s", "field": "f"}}}
+    await db_session.flush()
+
+    second = await service.clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+    assert second.project_template_id == first.project_template_id
+    # Read back through SQL, not the identity map: the ORM attribute would
+    # look right even if the assignment never reached the row.
+    persisted = (
+        await db_session.execute(
+            text('SELECT "schema" FROM public.project_extraction_templates WHERE id = :id'),
+            {"id": str(first.project_template_id)},
+        )
+    ).scalar_one()
+    assert persisted == {"scope_rules": {"classifier": {"section": "s", "field": "f"}}}
+
+    # Rules only. Structure is untouched and the version does not roll.
+    assert second.entity_type_count == first.entity_type_count
+    assert second.field_count == first.field_count
+    assert second.version_id == first.version_id
 
     await db_session.rollback()

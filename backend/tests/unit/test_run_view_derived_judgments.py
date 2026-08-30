@@ -480,3 +480,110 @@ def test_recommendation_rows_are_named_after_the_question() -> None:
         "Were appropriate data sources used?",
         "Was an appropriate study design used?",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Scope (§2a + §2c). The classifier's answer takes whole sections out of play:
+# their values stop reaching the rules, and each excluded row says WHY.
+# ---------------------------------------------------------------------------
+
+_SCOPED_SPEC: dict[str, Any] = {
+    "derived_judgments": [
+        {
+            "id": "eval_overall_rob",
+            "label": "Overall ROB (evaluation)",
+            "rule": "worst_domain",
+            "inputs": [{"section": "eval_d1", "field": "rob"}],
+        }
+    ],
+    "scope_rules": {
+        "classifier": {"section": "assessment_scope", "field": "study_type"},
+        "excludes": {"development_only": ["eval_d1"]},
+    },
+}
+
+
+def _scoped_payload(study_type: Any) -> list[RunViewDerivedJudgment]:
+    """One evaluation domain plus the scope classifier, both answered."""
+    rob_id, scope_id, eval_iid, scope_iid = uuid4(), uuid4(), uuid4(), uuid4()
+    eval_et = _EntityType("eval_d1", [_Field(rob_id, "rob")], label="D1 — Participants")
+    scope_et = _EntityType("assessment_scope", [_Field(scope_id, "study_type")], label="Scope")
+    values = [_Value(eval_iid, rob_id, {"value": "High"})]
+    if study_type is not None:
+        values.append(_Value(scope_iid, scope_id, {"value": study_type}))
+    return build_derived_judgments_payload(
+        template_schema=_SCOPED_SPEC,
+        entity_types=[eval_et, scope_et],
+        instances=[_Instance(eval_et.id, eval_iid), _Instance(scope_et.id, scope_iid)],
+        values=values,
+    )
+
+
+def test_unclassified_run_still_sees_every_domain() -> None:
+    """Precondition, and the pre-2.1.0 behaviour: no classification excludes nothing."""
+    [judgment] = _scoped_payload(None)
+    assert judgment.value == "High"
+    assert judgment.inputs == [
+        RunViewDerivedInput(label="D1 — Participants", value="High", contribution="High")
+    ]
+
+
+def test_out_of_scope_domain_stops_reaching_the_overall() -> None:
+    """The leak §2a closes: fill the evaluation part, THEN classify as development.
+
+    The stored High must not surface as a verdict for a part the UI calls
+    "Not applicable" — and the row must say why it is blank.
+    """
+    [judgment] = _scoped_payload("development_only")
+    assert judgment.value is None
+    # The literal is wire contract — clients switch on the string.
+    assert judgment.inputs == [
+        RunViewDerivedInput(label="D1 — Participants", value=None, state="out-of-scope")
+    ]
+    assert judgment.inputs[0].contribution is None
+
+
+def test_out_of_scope_outranks_unreported_on_a_collapse_group() -> None:
+    """A fully excluded group computes ``unreported`` once its values are gone.
+
+    The stamp must overwrite it: an inapplicable part is never "the study did
+    not report this".
+    """
+    schema = copy.deepcopy(_SCOPED_SPEC)
+    schema["derived_judgments"] = [
+        {
+            "id": "eval_d4_rob",
+            "label": "D4 — Analysis",
+            "rule": "signaling_worst",
+            "inputs": [
+                {
+                    "collapse": "performance",
+                    "label": "Performance",
+                    "inputs": [{"section": "eval_d4_a", "field": "sq1"}],
+                }
+            ],
+        }
+    ]
+    schema["scope_rules"]["excludes"]["development_only"] = ["eval_d4_a"]
+
+    sq_id, scope_id, iid, scope_iid = uuid4(), uuid4(), uuid4(), uuid4()
+    d4 = _EntityType("eval_d4_a", [_Field(sq_id, "sq1")], label="D4a")
+    scope_et = _EntityType("assessment_scope", [_Field(scope_id, "study_type")], label="Scope")
+
+    [judgment] = build_derived_judgments_payload(
+        template_schema=schema,
+        entity_types=[d4, scope_et],
+        instances=[_Instance(d4.id, iid), _Instance(scope_et.id, scope_iid)],
+        values=[
+            _Value(iid, sq_id, {"value": "N"}),
+            _Value(scope_iid, scope_id, {"value": "development_only"}),
+        ],
+    )
+    assert judgment.value is None
+    assert judgment.inputs[0].state == "out-of-scope"
+    assert judgment.inputs[0].contribution is None
+
+
+def test_reclassifying_back_restores_the_domain() -> None:
+    """Values are filtered, never deleted."""
+    assert _scoped_payload("development_and_evaluation")[0].value == "High"
