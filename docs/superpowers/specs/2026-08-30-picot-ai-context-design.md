@@ -471,7 +471,7 @@ Shipped in three slices. Slice 1 (backend spine) is complete; 2 and 3 are queued
 | --- | --- | --- |
 | 1 | §2 rendering, §3 pin + prompt, §7 backend tests, §10 docs | shipped |
 | 2 | §1 storage flatten, §4 API, §5a/5d/5e (PICOT dialog, Project Settings, gating) | shipped |
-| 3 | §5b extraction-bar chip, §5c QA Configuration tab | queued |
+| 3 | §5b extraction-bar chip, §5c QA Configuration tab | shipped |
 
 §8's amendment is no longer part of slice 3: its text was applied to
 `2026-08-26-probast-ai-scope-coherence-design.md` in `cc7aa3bc`, ahead of the

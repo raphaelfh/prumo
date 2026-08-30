@@ -220,7 +220,13 @@ pair and both prompts share one response shape. Everything else is
 inherited: field-schema builder, proposal writes, evidence, engine
 pinning, per-section repeat/model choice, per-proposal engine
 provenance, ✨ template instruction (`general_instructions_for_version`
-— where the Step-1 PICOTS lives, shared by every call). This design
+— where the Step-1 PICOTS USED to live, shared by every call).
+[SUPERSEDED 2026-08-30: PICOTS no longer lives there. It is stored
+structurally in `projects.picots_config_ai_review` and reaches every
+prompt as its own `Review question and scope:` block ahead of the
+template instruction, resolved by `resolve_run_prompt_context` and
+pinned per run. The instruction remains, and remains version-pinned;
+it just is not where the review question lives any more.] This design
 must keep it that way:
 
 - The exclusion filter is a pure helper over spec data (the
@@ -509,6 +515,9 @@ Deliberately NOT dead — do not "clean" these:
   studies (instrument-sanctioned; recorded follow-up).
 - Structured per-review PICOTS storage (Step 1 lives in the project
   template's ✨ instruction, documented in the instrument mapping doc).
+  [SUPERSEDED 2026-08-30: this non-goal was taken up by
+  `2026-08-30-picot-ai-context-design.md` and shipped —
+  `projects.picots_config_ai_review` now feeds the prompts directly.]
 - Migrating classic PROBAST / QUADAS-2 seeds now (§11 is the recipe).
 - Per-reviewer derived columns in the export.
 - User-visible dangling-spec indicator (§9, logs only).

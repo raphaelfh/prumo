@@ -17,6 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Import, Loader2, Plus } from "lucide-react";
 import { TemplateInstructionControl } from "@/components/extraction/TemplateInstructionControl";
+import { ProjectContextChip } from "@/components/project/ProjectContextChip";
 import { TemplateConfigGridPanel } from "@/components/extraction/template-config/TemplateConfigGridPanel";
 import { TemplateConfigPublishControls } from "@/components/extraction/template-config/TemplateConfigPublishControls";
 import { TemplateExportButton } from "@/components/extraction/template-config/TemplateExportButton";
@@ -349,8 +350,14 @@ export function TemplateConfigEditor({
                 LEFT edge ("GPT-" clipped) instead of ellipsing. It sheds parts
                 of itself by container query instead — see LlmEngineChip. */}
             <div className="shrink-0">{engineSlot}</div>
+            {/* Same regime as the engine: both are project-scoped and both
+                apply to the NEXT run, so the chip sits before the divider. */}
+            <div className="shrink-0">
+              <ProjectContextChip projectId={projectId} />
+            </div>
             {/* Hairline between project regime and versioned-template regime:
-                the engine is not part of what Publish ships. */}
+                neither the engine nor the review question is part of what
+                Publish ships. */}
             <BarDivider />
           </>
         )}

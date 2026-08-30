@@ -36,6 +36,8 @@ import {
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { ManagerReviewVisibilityToggle } from "@/components/runs/ManagerReviewVisibilityToggle";
+import { TemplateInstructionControl } from "@/components/extraction/TemplateInstructionControl";
+import { TemplateConfigPublishControls } from "@/components/extraction/template-config/TemplateConfigPublishControls";
 
 interface Props {
   projectId: string;
@@ -57,6 +59,9 @@ export function QualityAssessmentConfiguration({ projectId }: Props) {
   });
 
   const [pendingId, setPendingId] = useState<string | null>(null);
+  // Keyed by template id and owned HERE, not per row: N enabled tools could
+  // each open a diff sheet, and two stacked modal sheets trap focus.
+  const [diffSheetFor, setDiffSheetFor] = useState<string | null>(null);
 
   // Per-kind manager review-visibility (blind toggle). Manager-only; for a
   // manager `canSeeOthers` mirrors the persisted
@@ -78,6 +83,17 @@ export function QualityAssessmentConfiguration({ projectId }: Props) {
         tpl.global_template_id === globalTemplateId && tpl.is_active === false,
     );
 
+  // Hoisted out of `toggle`, which used to compute it inline: the row now needs
+  // the same id to mount the instruction and publish controls, and two copies
+  // of an "active clone" predicate is how they drift.
+  const findActiveClone = (
+    globalTemplateId: string,
+  ): ProjectTemplate | undefined =>
+    templates.find(
+      (tpl) =>
+        tpl.global_template_id === globalTemplateId && tpl.is_active === true,
+    );
+
   const toggle = (global: GlobalTemplate, nextEnabled: boolean) => {
     setPendingId(global.id);
     const doToggle = async () => {
@@ -89,10 +105,7 @@ export function QualityAssessmentConfiguration({ projectId }: Props) {
           await cloneTemplate(global.id);
         }
       } else {
-        const active = templates.find(
-          (tpl) =>
-            tpl.global_template_id === global.id && tpl.is_active === true,
-        );
+        const active = findActiveClone(global.id);
         if (active) {
           await setTemplateActive(active.id, false);
         }
@@ -147,12 +160,14 @@ export function QualityAssessmentConfiguration({ projectId }: Props) {
             {globalTemplates.map((global) => {
               const enabled = isTemplateImported(global.id);
               const isPending = pendingId === global.id;
+              const activeClone = findActiveClone(global.id);
               return (
                 <li
                   key={global.id}
-                  className="flex items-center justify-between gap-3 py-3"
+                  className="py-3"
                   data-testid={`hitl-quality_assessment-config-row-${global.id}`}
                 >
+                  <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <ShieldCheck className="mt-0.5 h-4 w-4 text-warning" />
                     <div>
@@ -183,6 +198,38 @@ export function QualityAssessmentConfiguration({ projectId }: Props) {
                       data-testid={`hitl-quality_assessment-config-toggle-${global.id}`}
                     />
                   </div>
+                  </div>
+                  {enabled && activeClone ? (
+                    // The instruction is what PROBAST+AI's applicability items
+                    // are judged against, and until now QA had no editor for it
+                    // anywhere — the ✨ control mounts inside the extraction
+                    // Configuration tab, whose template list filters to
+                    // `kind: 'extraction'`. Both controls are kind-agnostic
+                    // (`{projectId, templateId}` and no kind predicate behind
+                    // them), so they mount here unchanged.
+                    //
+                    // Export/Import are deliberately NOT mounted: they are the
+                    // only publish-family endpoints hard-gated to extraction
+                    // (`to_portable` 404s on a QA id, `parse_portable_document`
+                    // 422s).
+                    <div
+                      className="mt-2 flex flex-wrap items-center gap-2 pl-7"
+                      data-testid={`hitl-quality_assessment-config-controls-${global.id}`}
+                    >
+                      <TemplateInstructionControl
+                        projectId={projectId}
+                        templateId={activeClone.id}
+                      />
+                      <TemplateConfigPublishControls
+                        projectId={projectId}
+                        templateId={activeClone.id}
+                        diffSheetOpen={diffSheetFor === activeClone.id}
+                        onDiffSheetOpenChange={(open) =>
+                          setDiffSheetFor(open ? activeClone.id : null)
+                        }
+                      />
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
