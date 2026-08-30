@@ -58,6 +58,8 @@ export interface ComparisonField {
   allow_other?: boolean;
   other_label?: string | null;
   other_placeholder?: string | null;
+  /** ADR-0016 disposition flag (migration 0062). Absent ⇒ ON (pre-flag behaviour). */
+  allows_no_information?: boolean;
 }
 
 export interface ComparisonEntityType {
@@ -756,6 +758,7 @@ function ResolveRow({
             <ConsensusOverrideEditor
               coordKey={row.coordKey}
               field={toEditorField(row.field)}
+              allowsNoInformation={row.field.allows_no_information !== false}
               disabled={disabled}
               initialValue={overrideSeed}
               initialRationale={resolved?.rationale ?? undefined}
