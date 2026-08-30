@@ -10,8 +10,13 @@ const REMOVED = [
   'exportIncludeEvidence','exportIncludeMetadata','exportOnlyComplete','exportNoTemplate',
   'exportNoTemplateHint','dataPreviewTitle','dataPreviewDesc','valuesLabelShort',
   'moreExportData','moreExportDialogTitle','moreExportDialogDesc',
+  // Retired with the catalogue table (spec 2026-08-27, slice A) — the
+  // last three were already unreferenced before it.
+  'configImportSectionTitle','configAvailableTemplates','configNoTemplatesAvailable',
+  'configImportThisTemplate','configSeeDetails','configImportCharmsTitle',
+  'configImportCharmsFullDesc','configImportButton',
 ] as const;
-const KEPT = ['exportButton', 'instancesCardTitle'] as const;
+const KEPT = ['exportButton', 'instancesCardTitle', 'configImportTemplateButton'] as const;
 
 describe('extraction copy — legacy export keys removed', () => {
   it.each(REMOVED)('removed: %s', (k) => {

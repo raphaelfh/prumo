@@ -72,8 +72,8 @@ vi.mock('@/hooks/shared/useContainerNarrow', () => ({
   useContainerNarrow: vi.fn(() => false),
 }));
 // Heavy siblings with their own data paths — not under test here.
-vi.mock('@/components/extraction/TemplateInstructionRow', () => ({
-  TemplateInstructionRow: () => null,
+vi.mock('@/components/extraction/TemplateInstructionControl', () => ({
+  TemplateInstructionControl: () => null,
 }));
 // A text marker, NOT `null`: the Discard dialog is mounted inside these
 // controls, so "did the controls survive this re-render" is the observable

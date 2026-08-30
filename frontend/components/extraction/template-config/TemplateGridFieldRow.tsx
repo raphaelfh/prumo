@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 
+import {Button} from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,7 +82,7 @@ function TypePill({field}: {field: GridField}) {
   const label =
     field.optionCount > 0 ? `${field.fieldType} · ${field.optionCount}` : field.fieldType;
   return (
-    <span className="inline-block truncate rounded-full border bg-muted/50 px-[7px] py-px text-[10.5px] capitalize text-muted-foreground">
+    <span className="inline-block h-6 max-w-full truncate rounded-full border bg-muted/50 px-[7px] text-[11px] capitalize leading-[22px] text-muted-foreground">
       {label}
     </span>
   );
@@ -221,7 +222,7 @@ export function FieldRow({
             data-cell-cols="label"
             tabIndex={rovingTabIndex(focus, rowId, ['label'])}
             className={cn(
-              'flex w-full max-w-full items-baseline gap-1.5 rounded text-left',
+              'flex min-h-6 w-full max-w-full items-center gap-1.5 rounded text-left',
               'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
               selected && 'outline outline-2 -outline-offset-2 outline-ring',
             )}
@@ -230,7 +231,7 @@ export function FieldRow({
               {field.label}
             </span>
             {hintKey && (
-              <span className="shrink-0 text-[10.5px] text-muted-foreground">
+              <span className="shrink-0 text-[11px] text-muted-foreground">
                 · {t('extraction', hintKey)}
               </span>
             )}
@@ -248,7 +249,7 @@ export function FieldRow({
             editing?.column === 'key' ? -1 : rovingTabIndex(focus, rowId, ['key'])
           }
           className={cn(
-            'max-w-[160px] truncate px-2 font-mono text-[10px] text-muted-foreground',
+            'max-w-[160px] truncate px-2 font-mono text-[11px] text-muted-foreground',
             ringClass(focus, rowId, ['key']),
           )}
         >
@@ -288,7 +289,7 @@ export function FieldRow({
               <TypePill field={field} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="text-xs">
+          <DropdownMenuContent align="start">
             <DropdownMenuRadioGroup
               value={field.fieldType}
               onValueChange={(value) => {
@@ -322,9 +323,9 @@ export function FieldRow({
             data-cell-row={rowId}
             data-cell-cols="options"
             tabIndex={rovingTabIndex(focus, rowId, ['options'])}
-            className="block min-h-[18px] w-full truncate rounded text-left text-[10.5px] text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex min-h-6 w-full items-center rounded text-left text-[11px] text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {(field.allowedValues ?? []).join(', ')}
+            <span className="truncate">{(field.allowedValues ?? []).join(', ')}</span>
           </button>
         </td>
       )}
@@ -340,7 +341,7 @@ export function FieldRow({
             ancestor its static position resolves against BODY, escaping the
             grid's overflow clip and stretching the page scroll area by the
             table's full height (the phantom page scroll below the card). */}
-        <label className="relative inline-flex cursor-pointer items-center align-middle">
+        <label className="relative inline-flex size-6 cursor-pointer items-center justify-center align-middle">
           <input
             type="checkbox"
             checked={field.isRequired}
@@ -359,12 +360,14 @@ export function FieldRow({
       </td>
       <td
         role="gridcell"
-        className={cn('w-[26px] px-1', ringClass(focus, rowId, ['sparkle']))}
+        className={cn('w-[28px] px-0.5', ringClass(focus, rowId, ['sparkle']))}
       >
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
               onClick={() => onDeepLink('ai')}
               aria-label={t('extraction', 'gridAiCellAria').replace(
                 '{{label}}',
@@ -373,12 +376,11 @@ export function FieldRow({
               data-cell-row={rowId}
               data-cell-cols="sparkle"
               tabIndex={rovingTabIndex(focus, rowId, ['sparkle'])}
-              className="flex h-[18px] w-full items-center justify-center rounded focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
               {field.hasAiInstruction && (
-                <Sparkles className="size-3 text-primary" aria-hidden />
+                <Sparkles className="text-primary" aria-hidden />
               )}
-            </button>
+            </Button>
           </TooltipTrigger>
           <TooltipContent>
             {t('extraction', 'gridAiCellAria').replace('{{label}}', field.label)}
@@ -393,8 +395,10 @@ export function FieldRow({
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-xs"
                   aria-label={t('extraction', 'actionsForFieldAria').replace(
                     '{{label}}',
                     field.label,
@@ -402,17 +406,16 @@ export function FieldRow({
                   data-cell-row={rowId}
                   data-cell-cols="actions"
                   tabIndex={rovingTabIndex(focus, rowId, ['actions'])}
-                  className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring group-hover/row:opacity-100 data-[state=open]:opacity-100"
+                  className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
                 >
-                  <MoreHorizontal className="size-3.5" aria-hidden />
-                </button>
+                  <MoreHorizontal aria-hidden />
+                </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
             <TooltipContent>{t('extraction', 'gridRowActions')}</TooltipContent>
           </Tooltip>
           <DropdownMenuContent
             align="end"
-            className="text-xs"
             onCloseAutoFocus={(event) => {
               const claimed = menuClaimedFocus.current;
               menuClaimedFocus.current = null;

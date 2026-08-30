@@ -1,10 +1,12 @@
 /**
- * FieldInput — the ADR-0016 runtime disposition control.
+ * FieldInput ⇄ DispositionRow wiring (ADR-0016).
  *
- * Every field type gets a "No information" affordance (number/date/text had none
- * before); the opt-in Not applicable / Not evaluated render only where the field
- * enables them. Activating writes the coded marker {value:null, absent_reason};
- * toggling the active one clears back to unresolved.
+ * The row's own behaviour — which codes render, the marker envelope, the active
+ * ring, the tooltips — is covered once in DispositionRow.test.tsx. What is
+ * FieldInput's alone lives here: that every field type gets the control
+ * (number/date/text had none before), that the per-field flag reaches it, that a
+ * marker never leaks into the typed input, and that setting one clears a
+ * standing validation error.
  */
 
 import { render as rtlRender, screen } from '@testing-library/react';
@@ -55,7 +57,7 @@ function renderField(field: ExtractionField, value: unknown, onChange = vi.fn())
 
 const NO_INFO = { value: null, absent_reason: 'no_information' };
 
-describe('FieldInput disposition control', () => {
+describe('FieldInput disposition wiring', () => {
   it.each(['text', 'number', 'date', 'select'] as const)(
     'offers "No information" on a %s field and writes the marker',
     async (fieldType) => {
@@ -69,45 +71,13 @@ describe('FieldInput disposition control', () => {
     },
   );
 
-  it('does NOT render Not applicable / Not evaluated unless the field opts in', () => {
-    renderField(makeField({}), '');
-    expect(screen.getByRole('button', { name: 'dispositionNoInformation' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'dispositionNotApplicable' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'dispositionNotEvaluated' })).toBeNull();
-  });
-
-  it('hides No information when the field opts OUT (migration 0062)', () => {
-    // PROBAST+AI 2.1.0 carries "NI" as the fifth signaling ANSWER. Rendering
-    // the marker too would give one answer two encodings on the same control,
-    // which the full-envelope consensus compare reads as a divergence.
-    renderField(makeField({ allows_no_information: false }), '');
+  it('threads the per-field flags through to the row', () => {
+    // The gate must reach the row from FieldInput's own `field` prop — PR #729
+    // wired exactly this, and the consensus copy went ungated because it had no
+    // equivalent. Both now read the same flags off the same object.
+    renderField(makeField({ allows_no_information: false, allows_not_applicable: true }), '');
     expect(screen.queryByRole('button', { name: 'dispositionNoInformation' })).toBeNull();
-  });
-
-  it('keeps No information when the flag is absent — it was universal pre-0062', () => {
-    renderField(makeField({}), '');
-    expect(screen.getByRole('button', { name: 'dispositionNoInformation' })).toBeInTheDocument();
-  });
-
-  it('renders and writes the opt-in dispositions where enabled', async () => {
-    const user = userEvent.setup();
-    const onChange = renderField(
-      makeField({ allows_not_applicable: true, allows_not_evaluated: true }),
-      '',
-    );
-    await user.click(screen.getByRole('button', { name: 'dispositionNotApplicable' }));
-    expect(onChange).toHaveBeenCalledWith({ value: null, absent_reason: 'not_applicable' });
-    await user.click(screen.getByRole('button', { name: 'dispositionNotEvaluated' }));
-    expect(onChange).toHaveBeenCalledWith({ value: null, absent_reason: 'not_evaluated' });
-  });
-
-  it('marks the active disposition and toggling it clears back to unresolved', async () => {
-    const user = userEvent.setup();
-    const onChange = renderField(makeField({}), NO_INFO);
-    const btn = screen.getByRole('button', { name: 'dispositionNoInformation' });
-    expect(btn).toHaveAttribute('aria-pressed', 'true');
-    await user.click(btn);
-    expect(onChange).toHaveBeenCalledWith('');
+    expect(screen.getByRole('button', { name: 'dispositionNotApplicable' })).toBeInTheDocument();
   });
 
   it('a marker value does not leak into the typed input (no [object Object])', () => {
@@ -116,35 +86,15 @@ describe('FieldInput disposition control', () => {
     expect(input.value).toBe('');
   });
 
-  it('the active disposition gets the accepted-style success ring, not just a shade', () => {
-    // Consistency with the accepted-suggestion affordance (ring-success +
-    // bg-success/10) so "selected" is unmistakable even though the input is blank.
-    renderField(makeField({}), NO_INFO);
-    const btn = screen.getByRole('button', { name: /dispositionNoInformation/ });
-    expect(btn.className).toContain('ring-success');
-    expect(btn.className).toContain('bg-success/10');
-  });
-
-  it('renders the "recorded as a resolved answer" hint only while a disposition is active', () => {
-    renderField(makeField({}), NO_INFO);
-    expect(screen.getByText('dispositionActiveHint')).toBeInTheDocument();
-  });
-
-  it('shows no active hint when the field is unresolved', () => {
-    renderField(makeField({}), '');
-    expect(screen.queryByText('dispositionActiveHint')).toBeNull();
-  });
-
-  // Radix mirrors tooltip content into an a11y node (assert with *AllBy*) and
-  // debounces consecutive open/close in one render — so one fresh render per button.
-  it.each([
-    ['dispositionNoInformation', 'dispositionNoInformationHint'],
-    ['dispositionNotApplicable', 'dispositionNotApplicableHint'],
-    ['dispositionNotEvaluated', 'dispositionNotEvaluatedHint'],
-  ] as const)('%s describes itself on hover (tooltip)', async (label, hint) => {
+  it('setting a disposition clears a standing validation error', async () => {
+    // FieldInput-only behaviour: the marker IS a resolved answer, so the
+    // "required" complaint it just raised must not survive it.
     const user = userEvent.setup();
-    renderField(makeField({ allows_not_applicable: true, allows_not_evaluated: true }), '');
-    await user.hover(screen.getByRole('button', { name: label }));
-    expect((await screen.findAllByText(hint)).length).toBeGreaterThan(0);
+    renderField(makeField({ is_required: true, field_type: 'text' }), 'seed');
+    await user.clear(screen.getByRole('textbox'));
+    expect(screen.getByText('fieldRequired')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'dispositionNoInformation' }));
+    expect(screen.queryByText('fieldRequired')).toBeNull();
   });
 });
