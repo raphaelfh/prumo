@@ -5,7 +5,10 @@ templates became user-editable):
 
 * **Zero-state** (live structure empty) → rebuild from the global
   template. A clone born empty is unusable; factory state is strictly
-  better.
+  better. Refused only when the live ``llm_template_instruction`` differs
+  from the pinned one: the rebuild never resets that column and republish
+  snapshots it live, so healing would publish unapproved prompt text —
+  and session-open reaches this branch as any project MEMBER.
 * **Non-empty drift** (live counts != active snapshot counts) → publish
   the LIVE structure as a new active version (self-heal the snapshot).
   Never wipe: with editable templates, a count mismatch is
@@ -670,5 +673,180 @@ async def test_reimport_refreshes_schema_from_global(db_session: AsyncSession) -
     assert second.entity_type_count == first.entity_type_count
     assert second.field_count == first.field_count
     assert second.version_id == first.version_id
+
+    await db_session.rollback()
+
+
+async def _zero_state_with_instruction_draft(
+    db: AsyncSession, instruction: str
+) -> tuple[TemplateCloneService, object]:
+    """A CHARMS clone driven to zero state with ``instruction`` staged but
+    unpublished — the exact shape the zero-state guard discriminates on.
+    Structure is emptied through the live table so the 0048 trigger stamps
+    the marker, as delete-every-section does in production."""
+    from app.services.template_instruction_service import set_template_instruction
+
+    project_id = SEED.secondary_project
+    await clean_project_clones(db, project_id)
+    service = TemplateCloneService(db)
+    initial = await service.clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=SEED.primary_profile,
+        kind=TemplateKind.EXTRACTION,
+    )
+    await db.execute(
+        text("DELETE FROM public.extraction_entity_types WHERE project_template_id = :tid"),
+        {"tid": str(initial.project_template_id)},
+    )
+    await set_template_instruction(
+        db,
+        project_id=project_id,
+        template_id=initial.project_template_id,
+        llm_template_instruction=instruction,
+    )
+    await db.flush()
+    return service, initial
+
+
+@pytest.mark.asyncio
+async def test_reimport_zero_state_with_instruction_draft_refuses(
+    db_session: AsyncSession,
+) -> None:
+    """Zero state + an UNPUBLISHED instruction draft → refuse.
+
+    The rebuild resets structure from the global but never the
+    ``llm_template_instruction`` column, and ``republish`` snapshots that
+    column LIVE — so healing here publishes prompt text no one approved.
+    Sibling of the drift-branch refusal above; the clone endpoint renders
+    both as 409. Distinct from ``..._with_marker_still_heals``: there the
+    marker is a delete-trigger byproduct with the instruction untouched.
+    """
+    from app.services.template_clone_service import PendingConfigDraftError
+
+    draft_text = "UNPUBLISHED DRAFT — must never reach a prompt"
+    service, initial = await _zero_state_with_instruction_draft(db_session, draft_text)
+
+    with pytest.raises(PendingConfigDraftError):
+        await service.clone(
+            project_id=SEED.secondary_project,
+            global_template_id=CHARMS_GLOBAL_ID,
+            user_id=SEED.primary_profile,
+            kind=TemplateKind.EXTRACTION,
+        )
+
+    assert await get_config_draft_marker(db_session, initial.project_template_id) is not None, (
+        "a refusal must leave the draft marker standing (the Draft chip is the manager's signal)"
+    )
+    active_id, active_schema = (
+        await db_session.execute(
+            select(ExtractionTemplateVersion.id, ExtractionTemplateVersion.schema_).where(
+                ExtractionTemplateVersion.project_template_id == initial.project_template_id,
+                ExtractionTemplateVersion.is_active.is_(True),
+            )
+        )
+    ).one()
+    assert active_id == initial.version_id, "no publish may happen on refusal"
+    assert draft_text not in str(active_schema), "the draft must not reach the active snapshot"
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_zero_state_heal_resumes_once_the_draft_is_published(
+    db_session: AsyncSession,
+) -> None:
+    """The refusal is recoverable, so the 409's advice is actionable:
+    once the manager publishes, the zero-state heal runs as before."""
+    from app.services.template_version_service import TemplateVersionService
+
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    service, initial = await _zero_state_with_instruction_draft(
+        db_session, "now deliberately published"
+    )
+
+    # The documented exit: Publish, then re-import.
+    await TemplateVersionService(db_session).republish(
+        project_id=project_id,
+        project_template_id=initial.project_template_id,
+        user_id=user_id,
+    )
+
+    healed = await service.clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+    assert healed.entity_type_count > 0, "factory restore must rebuild structure once published"
+    assert await get_config_draft_marker(db_session, initial.project_template_id) is None
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_zero_state_heals_when_only_the_pinned_instruction_is_missing(
+    db_session: AsyncSession,
+) -> None:
+    """live != pinned but NO marker → heal anyway.
+
+    The legacy shape the two-condition guard exists for: a clone published
+    before snapshots carried ``llm_template_instruction`` reads live !=
+    pinned forever, with nothing actually staged. Content alone would
+    refuse it permanently and strand the template in zero state.
+
+    This is also what pins the guard's POSITION: it only survives because
+    the check runs before the rebuild's inserts stamp the marker. Move it
+    after them and the ``marker is None`` early-out becomes unreachable,
+    and this test goes red.
+    """
+    project_id = SEED.secondary_project
+    user_id = SEED.primary_profile
+    await clean_project_clones(db_session, project_id)
+    service = TemplateCloneService(db_session)
+    initial = await service.clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+
+    # Pre-key baseline: the active snapshot never carried the instruction,
+    # while the live column does (the clone copied it from the global).
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_template_versions "
+            "SET schema = schema - 'llm_template_instruction' WHERE id = :vid"
+        ),
+        {"vid": str(initial.version_id)},
+    )
+    live = (
+        await db_session.execute(
+            text(
+                "SELECT llm_template_instruction "
+                "FROM public.project_extraction_templates WHERE id = :tid"
+            ),
+            {"tid": str(initial.project_template_id)},
+        )
+    ).scalar_one()
+    assert live, "CHARMS clones carry an instruction — otherwise this proves nothing"
+
+    await db_session.execute(
+        text("DELETE FROM public.extraction_entity_types WHERE project_template_id = :tid"),
+        {"tid": str(initial.project_template_id)},
+    )
+    # Clear AFTER emptying: the delete stamps the marker via the 0048 trigger.
+    await set_config_draft_marker(db_session, initial.project_template_id, None)
+
+    healed = await service.clone(
+        project_id=project_id,
+        global_template_id=CHARMS_GLOBAL_ID,
+        user_id=user_id,
+        kind=TemplateKind.EXTRACTION,
+    )
+    assert healed.entity_type_count > 0, (
+        "no marker means nothing is staged — a content-only guard would strand this template"
+    )
 
     await db_session.rollback()
