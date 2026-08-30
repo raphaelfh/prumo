@@ -812,8 +812,22 @@ async def test_zero_state_heals_when_only_the_pinned_instruction_is_missing(
         kind=TemplateKind.EXTRACTION,
     )
 
-    # Pre-key baseline: the active snapshot never carried the instruction,
-    # while the live column does (the clone copied it from the global).
+    # Pre-key baseline: a live instruction that the active snapshot never
+    # carried. Both sides are set explicitly — whether the seeded global
+    # happens to ship an instruction is not this test's subject, and
+    # depending on it made the test vacuous wherever it does not.
+    # This UPDATE does not stamp the marker: the 0048 trigger fires on
+    # extraction_entity_types / extraction_fields, not on this table.
+    await db_session.execute(
+        text(
+            "UPDATE public.project_extraction_templates "
+            "SET llm_template_instruction = :txt WHERE id = :tid"
+        ),
+        {
+            "txt": "legacy text that predates the snapshot key",
+            "tid": str(initial.project_template_id),
+        },
+    )
     await db_session.execute(
         text(
             "UPDATE public.extraction_template_versions "
@@ -821,16 +835,22 @@ async def test_zero_state_heals_when_only_the_pinned_instruction_is_missing(
         ),
         {"vid": str(initial.version_id)},
     )
-    live = (
+    await db_session.flush()
+    live, pinned = (
         await db_session.execute(
             text(
-                "SELECT llm_template_instruction "
-                "FROM public.project_extraction_templates WHERE id = :tid"
+                "SELECT t.llm_template_instruction, "
+                "       v.schema ->> 'llm_template_instruction' "
+                "FROM public.project_extraction_templates t "
+                "JOIN public.extraction_template_versions v ON v.id = :vid "
+                "WHERE t.id = :tid"
             ),
-            {"tid": str(initial.project_template_id)},
+            {"vid": str(initial.version_id), "tid": str(initial.project_template_id)},
         )
-    ).scalar_one()
-    assert live, "CHARMS clones carry an instruction — otherwise this proves nothing"
+    ).one()
+    assert live is not None and pinned is None, (
+        "the precondition IS live != pinned; without it this test proves nothing"
+    )
 
     await db_session.execute(
         text("DELETE FROM public.extraction_entity_types WHERE project_template_id = :tid"),
