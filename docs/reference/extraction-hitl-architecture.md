@@ -170,7 +170,7 @@ vector. All three dispositions are opt-in per field; `no_information` was
 universal until `0062_allows_no_information`, so its column defaults `true`
 while its two siblings default `false` — an absent key means "the marker was
 available". It is turned OFF only where the answer set already encodes the
-concept as a value (PROBAST+AI 2.1.0's fifth signaling answer), so one concept
+concept as a value (PROBAST+AI's fifth signaling answer), so one concept
 keeps one control. Historical in-band disposition strings
 (`"No information"`, PROBAST `NI`/`NA`) were rewritten to the marker by
 migration `0039_absent_reason_backfill`. Decision record:
@@ -438,8 +438,8 @@ QUADAS-2 are seeded as `extraction_templates_global` rows with
   `not_applicable` is the per-field opt-in flag, ADR-0016) or
   `['Y','N','Unclear']` (QUADAS-2).
 - **Risk of Bias / Applicability concerns** = two summary `select`
-  fields per domain, `allowed_values=['Low','High','Unclear']`. Manual in
-  V1; auto-rollup is v2.
+  fields per domain, `allowed_values=['Low','High','Unclear']`. Manual for
+  these two; PROBAST+AI derives them (below).
 - **Overall** = a special domain (`cardinality='one'`) with
   `overall_risk_of_bias` + `overall_applicability` summary fields.
 
@@ -463,6 +463,42 @@ panel, and **Approve & finalize** publishes every agreed value then advances to
 flipping a run to `finalized` (via `approve-finalize` or `advance`) are
 arbitrator-only for **both** kinds; the earlier reviewer-level, single-click QA
 "Publish assessment" is retired.
+
+### PROBAST+AI — the third QA global
+
+PROBAST+AI is a third `kind='quality_assessment'` catalogue row, seeded from
+its own modules (`backend/app/seed_probast_ai.py` +
+`backend/app/seed_probast_ai_data.py`, split off because `app.seed` sits at
+its file-size ratchet cap). The seeder **converges unconditionally on every
+boot**: the row is UPDATEd in place and its entity types replaced under
+deterministic ids, never gated on a version compare — so a corrected spec
+reaches a database that already has the row (the one skip is a loud safety
+valve when recorded work references the catalogue's own entity types).
+`version` is decorative display metadata, never a gate. Its signaling
+questions answer Y/PY/PN/N/NI, so `allows_no_information` is off per field —
+the answer set already encodes the concept, and one concept keeps one control.
+The Step-2 study-type classifier is the single field that keeps the marker:
+none of its three options means "the article does not say".
+
+`project_extraction_templates.schema` (JSONB, `schema_` on the model) is a
+live contract, not decoration. It carries two sibling keys:
+
+- **`derived_judgments`** — the rollup spec. Each domain judgment gets a
+  derived DEFAULT (`signaling_worst`) that the assessor may override, and the
+  Step-4 overall values are computed (`worst_domain`) and never entered.
+  Overriding a default with an empty rationale blocks finalize — see the
+  third gate under **ConsensusRule** in §6.
+- **`scope_rules`** — which sections each Step-2 study-type classification
+  takes out of play, retiring the earlier `dev_`/`eval_` name-prefix
+  convention.
+
+Both are read **live** off the project template by every consumer — the
+AI-path guard (`app/services/llm_field_filter.py`), progress
+(`frontend/lib/qa/scopedProgress.ts` via `studyTypeScope`), export parity
+(`app/services/extraction_export_service.py`) and the finalize backstop
+(`app/services/qa_divergence_gate.py`) — while the entity-types tree those
+same consumers walk comes from the run's FROZEN `version_id`. That
+live-vs-frozen split is the non-obvious invariant to preserve here.
 
 ### QA / Data-extraction code reuse boundary
 
@@ -489,8 +525,8 @@ publish, AI), keep it in the page-specific component.
 
 - **Template** — Canonical structure defining what to extract or assess.
   Lives in `extraction_templates_global` (shared catalogue, e.g. CHARMS,
-  PROBAST, QUADAS-2) or `project_extraction_templates` (clone per project,
-  customizable).
+  PROBAST, PROBAST+AI, QUADAS-2) or `project_extraction_templates` (clone
+  per project, customizable).
 - **TemplateVersion** — Immutable snapshot of an `entity_types` + `fields`
   tree at a point in time. Every Run references a version, so editing the
   template never mutates past assessments.
@@ -542,12 +578,21 @@ publish, AI), keep it in the page-specific component.
   effect when this decision was made?" is always answerable.
 - **ConsensusRule** — `unanimous` / `majority` / `arbitrator`. Stored/frozen
   per-run config (display + CRUD only); the backend finalize path does **not**
-  read it. Finalize gates are (1) `consensus_count > 0` (`EmptyFinalizeError`)
-  and (2) the extraction-only required-field completeness gate (ADR-0009) — see
-  `run_lifecycle_service.py`. Both remain invariants but are no longer a dead-end:
-  `approve_and_finalize` (ADR-0015) publishes every agreed coord then advances in
-  one transaction, so a complete run always satisfies them. `majority` has no vote
-  math; `arbitrator_id` is consumed only for unblinding visibility.
+  read it. Finalize gates are (1) `consensus_count > 0` (`EmptyFinalizeError`),
+  (2) the extraction-only required-field completeness gate (ADR-0009), and (3)
+  the derived-judgment rationale backstop (`DivergenceRationaleError`, via
+  `qa_divergence_gate.divergence_rationale_failure`) — see
+  `run_lifecycle_service.py`; all three answer 400. (1) and (2) are no longer a
+  dead-end: `approve_and_finalize` (ADR-0015) publishes every agreed coord then
+  advances in one transaction, so a complete run always satisfies them. (3) is
+  not auto-satisfiable — it reads the run's PUBLISHED states against the
+  template's `derived_judgments` spec and refuses a judgment that overrides its
+  derived default with an empty rationale, so "Approve & finalize" can still
+  refuse an otherwise-complete run until a manager records the rationale in
+  Resolve divergence. It is data-driven and kind-neutral: a template declaring
+  no `derived_judgments` exits on the first lookup, so it is inert for
+  extraction. `majority` has no vote math; `arbitrator_id` is consumed only for
+  unblinding visibility.
 - **ReviewerReady** — advisory per-`(run, reviewer)` "I'm done extracting" flag
   (`extraction_reviewer_ready`, ADR-0015). Toggled via `POST /runs/{id}/ready`
   (membership + reviewer-role gated); does **not** gate any transition. The run
@@ -607,7 +652,9 @@ publish, AI), keep it in the page-specific component.
   `docs/superpowers/specs/archive/2026-06-20-governance-sweep/2026-04-27-extraction-hitl-and-qa-design.md`
 - **Execution plans (archived):**
   `docs/superpowers/plans/archive/2026-04-27-hitl-unification/`
-- **Seeds:** `backend/app/seed.py` (`seed_probast`, `seed_quadas2`)
+- **Seeds:** `backend/app/seed.py` (`seed_probast`, `seed_quadas2`) and
+  `backend/app/seed_probast_ai.py` + `backend/app/seed_probast_ai_data.py`
+  (PROBAST+AI — own modules, see §5)
 - **Reusable services:**
   - `app/services/run_lifecycle_service.py` — Run create + advance_stage
     with precondition matrix; lazy v=1 TemplateVersion creation.
@@ -621,6 +668,12 @@ publish, AI), keep it in the page-specific component.
     global → project clone (idempotent on
     `(project_id, global_template_id)`). Validates the global template's
     `kind` matches what the caller asked for.
+  - `app/services/qa_divergence_gate.py` — the finalize-time derived-judgment
+    rationale rule; a rule module (pure `divergences_without_rationale` plus
+    its async loader), not a service class like the others in this list. Its
+    `_rationale_is_empty` deliberately mirrors the client's `rationaleIsEmpty`
+    rather than `value_semantics.is_value_filled`, so the backstop is never
+    stricter than the form that fed it.
   - `app/services/template_version_service.py` — `republish`: freezes the
     live structure into a new active `ExtractionTemplateVersion` (v+1;
     prior rows untouched) and re-pins `pending`/`extract` runs to it.

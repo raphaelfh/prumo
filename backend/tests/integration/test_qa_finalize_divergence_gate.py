@@ -1,9 +1,14 @@
 """The finalize backstop, end to end against a real run.
 
 The rule itself is unit-tested (``tests/unit/test_qa_divergence_gate.py``).
-What only a real run can prove is the ASSEMBLY: that the gate reads the run's
-FROZEN entity-types tree, resolves the target's instance, and sees the
-PUBLISHED states — the four inputs the unit tests hand it ready-made.
+What only a real run can prove is the ASSEMBLY: that the gate resolves the
+target's instance and sees the PUBLISHED states — inputs the unit tests hand
+it ready-made.
+
+It does NOT prove the tree is read frozen rather than live: the factory's
+version carries an empty snapshot, so ``entity_types_for_version`` takes its
+live fallback and the two are the same rows here. That split is covered in
+``test_pinned_entity_types_provider.py``.
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ from app.models.extraction_workflow import ExtractionConsensusMode
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.run_lifecycle_service import (
     DivergenceRationaleError,
+    InvalidStageTransitionError,
     RunLifecycleService,
 )
 from tests.factories.template_factory import TemplateFactory
@@ -51,12 +57,7 @@ class _Built:
 
 
 async def _qa_run_with_derived_spec(db: AsyncSession) -> _Built | None:
-    """A QA run at CONSENSUS whose template declares one recommendation.
-
-    Fields are inserted BEFORE ``create_run`` on purpose: the run pins a
-    version snapshot at creation, and the gate resolves the spec's coordinates
-    against that frozen tree.
-    """
+    """A QA run at CONSENSUS whose template declares one recommendation."""
     project_id = (
         await db.execute(
             text("SELECT id FROM public.projects WHERE id = :pid"),
@@ -173,6 +174,10 @@ async def test_diverged_judgment_without_rationale_blocks_finalize(
     # at the last action of the workflow has nowhere to go.
     assert _LABEL in str(excinfo.value)
     assert "Resolve divergence" in str(excinfo.value)
+    # The 400 rests on this inheritance: the endpoint handler catches the base
+    # class (proven at test_extraction_runs_endpoints.py), so reparenting this
+    # subclass would silently turn the refusal into an unhandled 500.
+    assert issubclass(DivergenceRationaleError, InvalidStageTransitionError)
 
     stage = (
         await db_session.execute(
