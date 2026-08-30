@@ -174,9 +174,15 @@ def _workbook_overall(
     return model.rows[0].derived_values[0]
 
 
-def _assert_agree(label: str, values_by_section: dict[str, Any], expected: str | None) -> None:
-    screen = _screen_overall(dict(values_by_section))
-    workbook = _workbook_overall(dict(values_by_section))
+def _assert_agree(
+    label: str,
+    values_by_section: dict[str, Any],
+    expected: str | None,
+    spec: dict[str, Any] | None = None,
+    section_names: tuple[str, ...] = _SECTIONS,
+) -> None:
+    screen = _screen_overall(dict(values_by_section), spec, section_names)
+    workbook = _workbook_overall(dict(values_by_section), spec, section_names)
     assert screen == expected, f"{label}: banner said {screen!r}, expected {expected!r}"
     assert workbook == screen, f"{label}: workbook said {workbook!r}, banner said {screen!r}"
 
@@ -384,27 +390,24 @@ _V2_SPEC: dict[str, Any] = {
 }
 
 
-def _assert_v2_agree(label: str, values: dict[str, Any], expected: str | None) -> None:
-    screen = _screen_overall(dict(values), spec=_V2_SPEC, section_names=_V2_SECTIONS)
-    workbook = _workbook_overall(dict(values), spec=_V2_SPEC, section_names=_V2_SECTIONS)
-    assert screen == expected, f"{label}: banner said {screen!r}, expected {expected!r}"
-    assert workbook == screen, f"{label}: workbook said {workbook!r}, banner said {screen!r}"
-
-
 def test_v2_all_low_agrees() -> None:
-    _assert_v2_agree("v2 all-Low", {s: {"value": "Low"} for s in _V2_SECTIONS}, "Low")
+    _assert_agree(
+        "v2 all-Low", {s: {"value": "Low"} for s in _V2_SECTIONS}, "Low", _V2_SPEC, _V2_SECTIONS
+    )
 
 
 def test_v2_high_propagates_through_unrated_domains_on_both_paths() -> None:
     """The single stored eval-D4 judgment fires the overall even while the
     other domains are unrated — on the banner AND in the workbook."""
-    _assert_v2_agree("v2 lone High", {"eval_d4_judgment": {"value": "High"}}, "High")
+    _assert_agree(
+        "v2 lone High", {"eval_d4_judgment": {"value": "High"}}, "High", _V2_SPEC, _V2_SECTIONS
+    )
 
 
 def test_v2_ni_on_the_stored_judgment_is_unclear() -> None:
     values: dict[str, Any] = {s: {"value": "Low"} for s in ("eval_d1", "eval_d2", "eval_d3")}
     values["eval_d4_judgment"] = _NI
-    _assert_v2_agree("v2 NI judgment", values, "Unclear")
+    _assert_agree("v2 NI judgment", values, "Unclear", _V2_SPEC, _V2_SECTIONS)
 
 
 def test_signaling_worst_agrees_across_caller_shapes() -> None:
