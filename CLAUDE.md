@@ -141,6 +141,9 @@ Design rationale (the *why*):
   orphaned behind a still-green test). Legitimate exceptions go in
   `knip.jsonc`, each with a reason. A `--production` finding is not
   automatically "delete it" — triage per `.claude/rules/frontend.md`.
+  UI copy: `scripts/fitness/check_copy_keys.py` shrink-only ratchet —
+  knip cannot see unused *members* of an exported object literal, so a
+  `frontend/lib/copy/*.ts` key with no reference fails the fitness gate.
   Backend: vulture shrink-only ratchet
   (`backend/.vulture_baseline` + `scripts/vulture_baseline.py`; config
   in `[tool.vulture]`). Delete dead code in files you touch and tighten

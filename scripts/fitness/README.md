@@ -30,12 +30,13 @@ Conventions that exist only as "code review will catch it" rot. Each invariant w
 | --- | --- |
 | `check_migration_split.sh` | Alembic edits only `public.*`; Supabase CLI owns `auth.*` and `storage.*`. Wraps `scripts/validate_migration_boundaries.sh`. |
 | `check_legacy_concepts.py` | 4 hard-tier banned patterns (`name == 'prediction_models'`, `extracted_values` SQL identifier, `ai_suggestions` SQL identifier, `===` variants) cannot return. 12 warn-tier patterns (`qa_assessments` endpoint, `@react-pdf-viewer/*`, etc.) are reported but do not fail. |
+| `check_copy_keys.py` | Every key in a `frontend/lib/copy/*.ts` namespace is referenced from `frontend/**/*.{ts,tsx}`, quoted (`t(ns,'key')`, map values) or as `.key`. knip sees unused *exports*, never unused *members* of an exported object literal, so copy catalogues rot silently (shrink-only baseline). |
 | `check_scope_guards.py` | An ownership predicate is written ONCE. `duplicate-predicate`: the same `(model, {id, scope columns})` filtered in two functions (shrink-only baseline; mutating statements carry the scope inline and are grandfathered with a reason). `membership-sql`: raw `public.project_members` SQL outside `api/deps/security.py` — hard ban, empty baseline. |
 
 ## Adding a new check
 
 1. Write the script under `scripts/fitness/`. Follow the argument convention above.
-2. Add a baseline file `<check>.baseline` if existing violations are too many to fix in one go. Format: one violation per line, exact stable shape (path, identifier, whatever the script naturally emits). Script exits 0 iff violations match the baseline exactly (no fewer, no more — fewer is a baseline tightening that must be committed; more is a regression).
+2. Add a baseline file `<check>.baseline` if existing violations are too many to fix in one go. Format: one violation per line, exact stable shape (path, identifier, whatever the script naturally emits). Script exits 0 iff every violation found is in the baseline. Fewer is fine — a baselined violation that is gone passes, and is reported so the baseline can be tightened (`--update-baseline`); more is a regression. (This is what all baselined checks actually do; the stricter "no fewer" reading was never implemented.)
 3. Add the green-path test (`backend/tests/unit/scripts/test_<check>.py`) — assert exit 0 on the current tree.
 4. **Add the canary test** (`backend/tests/unit/scripts/test_<check>_canary.py`). Create the smallest possible fixture under `tmp_path` that *should* trigger the check (a forbidden pattern in a non-allowlisted file), run the script with `--repo-root <tmp_path>`, assert exit 1. This is non-negotiable: without it, the check could silently break and the gate would lie green.
 5. Append the check to `run_all.sh`.

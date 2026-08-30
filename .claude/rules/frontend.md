@@ -78,6 +78,15 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   (`frontend/types/api/schema.d.ts`,
   `frontend/integrations/supabase/types.ts`) are knip-ignored — never
   hand-edit them to silence a finding.
+- **UI copy has its own gate**, because knip cannot see it: a copy key is a
+  *member* of an exported object literal, not an export, so an orphaned one is
+  invisible to both knip modes. `scripts/fitness/check_copy_keys.py` fails on
+  any `frontend/lib/copy/*.ts` key with no reference in
+  `frontend/**/*.{ts,tsx}` (shrink-only baseline). Clearing a baseline entry
+  DELETES user-facing copy — `t()` returns `''` for a missing key, so a wrong
+  deletion ships as a blank string, not an error. Run `npm run typecheck` AND
+  `npm run test:run`: typecheck catches the three reference forms, but only the
+  suite catches the tests that assert a key's *presence* at runtime.
 - **A production-mode finding is not automatically "delete it."** It means
   no production file imports the export; the code behind it may still be
   live. Check, in order: (1) is the symbol called inside its own module?
