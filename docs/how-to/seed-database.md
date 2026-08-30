@@ -162,8 +162,17 @@ Expected:
 | PROBAST+AI | 2.2.0 | 13 | 95 |
 | QUADAS-2 | 1.0.0 | 5 | 20 |
 
-A database seeded before v2 additionally shows the legacy
-`PROBAST+AI 1.0.0 | 10 | 58` row — the seed never removes it.
+A database seeded before v2 carried a legacy `PROBAST+AI 1.0.0 | 10 | 58` row
+alongside it — #693 moved the catalogue to a new primary key and left the old
+one behind, and the seed never removes a row. Migration
+`0063_drop_probast_ai_v1` deletes it, so the table above is now the whole
+quality-assessment catalogue. The migration is a no-op on a database seeded
+after #693, and skips itself (rather than aborting the deploy) if any recorded
+instance still points at that row's catalogue sections.
+
+Note `PROBAST 1.0.0` is NOT an older version of PROBAST+AI: it is classic
+PROBAST (Wolff et al. 2019), a different instrument, and the template the E2E
+QA suite is pinned to. It stays.
 
 ## Troubleshooting
 

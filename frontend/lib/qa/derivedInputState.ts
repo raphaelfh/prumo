@@ -19,11 +19,6 @@ import { qa } from "@/lib/copy/qa";
 /** The wire literal for a row the template's scope rules took out of play. */
 export const OUT_OF_SCOPE = "out-of-scope";
 
-export interface StateDisplay {
-  text: string;
-  tone: string;
-}
-
 /**
  * Display for a row's `state`, or null when it carries none.
  *
@@ -34,7 +29,7 @@ export interface StateDisplay {
  */
 export function derivedInputStateDisplay(
   state: string | null | undefined,
-): StateDisplay | null {
+): { text: string; tone: string } | null {
   switch (state) {
     case OUT_OF_SCOPE:
       return { text: qa.outOfScopeValue, tone: "text-muted-foreground" };
@@ -55,12 +50,7 @@ export function derivedInputStateDisplay(
  * entry whose inputs never resolved must not read as inapplicable.
  */
 export function isJudgmentOutOfScope(
-  inputs: ReadonlyArray<{ state?: string | null }> | null | undefined,
+  inputs: ReadonlyArray<{ state?: string | null }> | undefined,
 ): boolean {
-  return (
-    inputs !== null &&
-    inputs !== undefined &&
-    inputs.length > 0 &&
-    inputs.every((input) => input.state === OUT_OF_SCOPE)
-  );
+  return !!inputs?.length && inputs.every((input) => input.state === OUT_OF_SCOPE);
 }

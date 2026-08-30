@@ -21,11 +21,6 @@
  */
 import { unwrapValueEnvelope } from "@/lib/extraction/valueSemantics";
 
-interface ScopeClassifier {
-  section: string;
-  field: string;
-}
-
 function scopeRules(templateSchema: unknown): Record<string, unknown> {
   if (typeof templateSchema !== "object" || templateSchema === null) return {};
   const rules = (templateSchema as Record<string, unknown>).scope_rules;
@@ -37,7 +32,7 @@ function scopeRules(templateSchema: unknown): Record<string, unknown> {
 /** The `(section, field)` whose answer decides scope, or null. */
 function scopeClassifierCoordinate(
   templateSchema: unknown,
-): ScopeClassifier | null {
+): { section: string; field: string } | null {
   const classifier = scopeRules(templateSchema).classifier;
   if (typeof classifier !== "object" || classifier === null) return null;
   const { section, field } = classifier as { section?: unknown; field?: unknown };
@@ -78,7 +73,7 @@ function resolveStudyType(
   const field = section?.fields.find((f) => f.name === coord.field);
   const instanceId = section && instancesByEntityType?.[section.entityType.id];
   if (!section || !field || !instanceId) return null;
-  return unwrapValueEnvelope(values[keyOf(instanceId, field.id)]) ?? null;
+  return unwrapValueEnvelope(values[keyOf(instanceId, field.id)]);
 }
 
 /**
@@ -108,7 +103,7 @@ function resolveStudyTypeFromRows(
   const row = values.find(
     (v) => v.field_id === field.id && ownInstances.has(v.instance_id),
   );
-  return row ? (unwrapValueEnvelope(row.value) ?? null) : null;
+  return unwrapValueEnvelope(row?.value);
 }
 
 /** Sections out of play on the QA run form, from its own live form state. */

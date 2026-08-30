@@ -42,7 +42,7 @@ import {
   ReviewerAvatarStack,
   type ReviewerAvatarEntry,
 } from "@/components/runs/ReviewerAvatarStack";
-import type { QADomain } from "@/hooks/qa/useQATemplate";
+import type { QADomain } from "@/types/qa";
 import {
   getSuggestionKey,
   type AISuggestion,
@@ -114,13 +114,14 @@ interface QASectionAccordionProps {
    * domain. When provided, the accordion header surfaces a stacked
    * avatar of reviewers who have written at least one decision in any
    * field of the domain, and each FieldInput row shows a small stack
-   * of the reviewers active on that specific field.
+   * of the reviewers active on that specific field. Coordinates are keyed
+   * off the top-level ``instanceId`` prop — the same instance the value
+   * writes use — so the two can never name different instances.
    */
   reviewerActivity?: {
     decisionsByCoord: Map<string, { reviewer_id: string }[]>;
     labelById: Record<string, string>;
     avatarById: Record<string, string | null>;
-    instanceId: string;
   };
 }
 
@@ -158,14 +159,6 @@ export function QASectionAccordion({
   const rationaleFieldIds = new Set(
     entries.map((d) => d.rationale_field_id).filter((id): id is string => id != null),
   );
-  // The assessor-owned (LLM-excluded) set is exactly the union of the three
-  // pointer maps above — one encoding of the rule, not a fourth pass.
-  const excludedFieldIds = new Set<string>([
-    ...(entryByTargetId.keys() as Iterable<string>),
-    ...rationaleFieldIds,
-    ...(entryBySummaryId.keys() as Iterable<string>),
-  ]);
-
   const summary = fields.filter((f) => isJudgmentField(f));
   // Judgment-vocabulary judgments WITHOUT a recommendation entry
   // (applicability; every v1/classic judgment) pull their name-paired
@@ -197,8 +190,17 @@ export function QASectionAccordion({
   // Scope-like sections (no signaling questions, no judgments) drop the
   // warning icon too: nothing in them is a risk assessment.
   const sectionAssesses = signalingQuestionCount > 0 || summary.length > 0;
+  // Every field is assessor-owned (LLM-excluded) — the union of the three
+  // pointer maps above, tested directly rather than materialised into a
+  // fourth Set that nothing else reads.
   const allFieldsExcluded =
-    fields.length > 0 && fields.every((f) => excludedFieldIds.has(f.id));
+    fields.length > 0 &&
+    fields.every(
+      (f) =>
+        entryByTargetId.has(f.id) ||
+        rationaleFieldIds.has(f.id) ||
+        entryBySummaryId.has(f.id),
+    );
 
   // Divergence gate (spec §6): a judgment pick that differs from a non-null
   // derived default is HELD here — never written — until the paired
@@ -272,7 +274,7 @@ export function QASectionAccordion({
   // (renders nothing) when no activity data was provided.
   function fieldStack(fieldId: string): ReviewerAvatarEntry[] {
     if (!reviewerActivity) return [];
-    const coordKey = `${reviewerActivity.instanceId}::${fieldId}`;
+    const coordKey = `${instanceId}::${fieldId}`;
     const decisions = reviewerActivity.decisionsByCoord.get(coordKey) ?? [];
     const seen = new Set<string>();
     const stack: ReviewerAvatarEntry[] = [];

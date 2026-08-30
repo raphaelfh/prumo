@@ -30,7 +30,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionInstance, ProjectExtractionTemplate
+from app.core.logging import get_logger
+from app.models.extraction import (
+    ExtractionEntityType,
+    ExtractionField,
+    ExtractionInstance,
+    ProjectExtractionTemplate,
+)
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.services.derived_judgment_service import (
     derived_spec,
@@ -39,6 +45,8 @@ from app.services.derived_judgment_service import (
     scope_classifier_coordinate,
 )
 from app.services.extraction_snapshot import entity_types_for_version
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -51,16 +59,42 @@ class LlmFieldFilter:
 
 async def build_llm_field_filter(db: AsyncSession, run: Any) -> LlmFieldFilter:
     """Resolve both exclusion sets for *run* from its template's live schema."""
-    template = (
-        await db.get(ProjectExtractionTemplate, run.template_id)
-        if run.template_id is not None
-        else None
-    )
-    schema = getattr(template, "schema_", None) if template is not None else None
+    # `template_id` is Mapped[UUID], NOT NULL, FK ON DELETE RESTRICT — it
+    # cannot be None and cannot dangle. The getattr default still covers the
+    # row being absent, which only a hand-deleted template could produce.
+    template = await db.get(ProjectExtractionTemplate, run.template_id)
+    schema = getattr(template, "schema_", None)
+    excluded = frozenset(excluded_field_coordinates(derived_spec(schema)))
+    if excluded:
+        await _warn_orphaned_exclusions(db, run, excluded)
     return LlmFieldFilter(
-        excluded_coordinates=frozenset(excluded_field_coordinates(derived_spec(schema))),
+        excluded_coordinates=excluded,
         out_of_scope_sections=await _out_of_scope_for_run(db, run, schema),
     )
+
+
+async def _warn_orphaned_exclusions(
+    db: AsyncSession, run: Any, excluded: frozenset[tuple[str, str]]
+) -> None:
+    """Warn for an exclusion coordinate that no LIVE field answers to.
+
+    A live rename orphans the spec's pointer, which would quietly re-open an
+    assessor-owned field to the model — fail open (the spec is advisory data)
+    but never silently. Asked ONCE per run against the whole live tree, which
+    is the only place the question has an answer: the consumer sees one
+    section at a time, already narrowed by scope and by the human-proposal
+    skip, so there it read every legitimately absent field as a rename.
+    """
+    rows = (
+        await db.execute(
+            select(ExtractionEntityType.name, ExtractionField.name)
+            .join(ExtractionField, ExtractionField.entity_type_id == ExtractionEntityType.id)
+            .where(ExtractionEntityType.project_template_id == run.template_id)
+        )
+    ).all()
+    dangling = sorted(excluded - {(str(s), str(f)) for s, f in rows})
+    if dangling:
+        logger.warning("qa_derived_spec_dangling_ref", run_id=str(run.id), coordinates=dangling)
 
 
 async def _out_of_scope_for_run(db: AsyncSession, run: Any, schema: Any) -> frozenset[str]:
