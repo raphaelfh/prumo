@@ -1,15 +1,19 @@
-import {useState} from 'react';
-import {RotateCcw, UploadCloud} from 'lucide-react';
+import { useState } from "react";
+import { RotateCcw, UploadCloud } from "lucide-react";
 
-import {TemplateConfigDiffSheet} from '@/components/extraction/template-config/TemplateConfigDiffSheet';
-import {TemplateDiscardDialog} from '@/components/extraction/template-config/TemplateDiscardDialog';
-import {TemplateVersionHistorySheet} from '@/components/extraction/template-config/TemplateVersionHistorySheet';
-import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
-import {useTakeOverDraftLock} from '@/hooks/extraction/useTakeOverDraftLock';
-import {useTemplateConfigStatus} from '@/hooks/extraction/useTemplateConfigStatus';
-import {useTemplateInstruction} from '@/hooks/extraction/useTemplateInstruction';
-import {t} from '@/lib/copy';
+import { TemplateConfigDiffSheet } from "@/components/extraction/template-config/TemplateConfigDiffSheet";
+import { TemplateDiscardDialog } from "@/components/extraction/template-config/TemplateDiscardDialog";
+import { TemplateVersionHistorySheet } from "@/components/extraction/template-config/TemplateVersionHistorySheet";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useTakeOverDraftLock } from "@/hooks/extraction/useTakeOverDraftLock";
+import { useTemplateConfigStatus } from "@/hooks/extraction/useTemplateConfigStatus";
+import { useTemplateInstruction } from "@/hooks/extraction/useTemplateInstruction";
+import { t } from "@/lib/copy";
 
 /**
  * The B-4 Draft chip + explicit Publish button (command-bar cluster),
@@ -43,12 +47,12 @@ export function TemplateConfigPublishControls({
   diffSheetOpen,
   onDiffSheetOpenChange,
 }: TemplateConfigPublishControlsProps) {
-  const {data: configStatus} = useTemplateConfigStatus(projectId, templateId);
+  const { data: configStatus } = useTemplateConfigStatus(projectId, templateId);
   // D10 — the Discard confirm pane warns about the AI instruction only when
-  // there IS one. TemplateInstructionRow mounts this same key alongside us,
+  // there IS one. TemplateInstructionControl mounts this same key alongside us,
   // so the two observers dedupe into one request.
-  const {data: instruction} = useTemplateInstruction(projectId, templateId);
-  const {takeOver, takingOver} = useTakeOverDraftLock(projectId, templateId);
+  const { data: instruction } = useTemplateInstruction(projectId, templateId);
+  const { takeOver, takingOver } = useTakeOverDraftLock(projectId, templateId);
   const [discardOpen, setDiscardOpen] = useState(false);
   // B-9e History. Local, unlike diffSheetOpen: the History sheet does
   // not collide with the grid's inspector — the editor hoists only the
@@ -64,7 +68,7 @@ export function TemplateConfigPublishControls({
   // the marker in the zero case too.
   const rawCount = configStatus?.pending_change_count;
   const draftChangeCount =
-    typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount > 0
+    typeof rawCount === "number" && Number.isInteger(rawCount) && rawCount > 0
       ? rawCount
       : null;
 
@@ -75,23 +79,23 @@ export function TemplateConfigPublishControls({
   const discardAvailable = configStatus?.discard_available === true;
   const canDiscard = discardAvailable && hasPendingChanges;
   let discardReason:
-    | 'discardTooltipNothing'
-    | 'discardTooltipNeverPublished'
-    | 'discardTooltipBaselineTooOld'
+    | "discardTooltipNothing"
+    | "discardTooltipNeverPublished"
+    | "discardTooltipBaselineTooOld"
     | null = null;
   if (configStatus != null) {
     if (!hasPendingChanges) {
-      discardReason = 'discardTooltipNothing';
+      discardReason = "discardTooltipNothing";
     } else if (!discardAvailable) {
       discardReason =
         configStatus.active_version == null
-          ? 'discardTooltipNeverPublished'
-          : 'discardTooltipBaselineTooOld';
+          ? "discardTooltipNeverPublished"
+          : "discardTooltipBaselineTooOld";
     }
   }
   const discardTooltip = t(
-    'templateConfig',
-    discardReason ?? 'discardTooltipAction',
+    "templateConfig",
+    discardReason ?? "discardTooltipAction",
   );
 
   // B-9b2b: Publish no longer publishes. It opens the diff sheet, which
@@ -107,7 +111,8 @@ export function TemplateConfigPublishControls({
   // no owner and offers no takeover, because there is nobody to take it
   // from.
   const heldByOther =
-    configStatus?.draft_holder_id != null && configStatus.is_draft_holder !== true;
+    configStatus?.draft_holder_id != null &&
+    configStatus.is_draft_holder !== true;
 
   let chip = null;
   if (hasPendingChanges) {
@@ -127,15 +132,15 @@ export function TemplateConfigPublishControls({
             onClick={() => onDiffSheetOpenChange(true)}
           >
             {draftChangeCount == null
-              ? t('extraction', 'configUnpublishedChanges')
+              ? t("extraction", "configUnpublishedChanges")
               : (draftChangeCount === 1
-                  ? t('templateConfig', 'draftChangeCountOne')
-                  : t('templateConfig', 'draftChangeCountOther')
-                ).replace('{{n}}', String(draftChangeCount))}
+                  ? t("templateConfig", "draftChangeCountOne")
+                  : t("templateConfig", "draftChangeCountOther")
+                ).replace("{{n}}", String(draftChangeCount))}
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {t('templateConfig', 'diffTriggerTooltip')}
+          {t("templateConfig", "diffTriggerTooltip")}
         </TooltipContent>
       </Tooltip>
     );
@@ -154,14 +159,14 @@ export function TemplateConfigPublishControls({
             className="rounded-full border border-border px-2.5 text-xs font-normal text-muted-foreground"
             onClick={() => setHistoryOpen(true)}
           >
-            {t('extraction', 'configPublishedVersion').replace(
-              '{{n}}',
+            {t("extraction", "configPublishedVersion").replace(
+              "{{n}}",
               String(configStatus.active_version),
             )}
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {t('templateConfig', 'historyTriggerTooltip')}
+          {t("templateConfig", "historyTriggerTooltip")}
         </TooltipContent>
       </Tooltip>
     );
@@ -173,10 +178,10 @@ export function TemplateConfigPublishControls({
       {heldByOther && (
         <>
           <span className="text-xs text-muted-foreground">
-            {t('templateConfig', 'draftHeldBy').replace(
-              '{{who}}',
+            {t("templateConfig", "draftHeldBy").replace(
+              "{{who}}",
               configStatus?.draft_holder_name ??
-                t('templateConfig', 'historyUnknownAuthor'),
+                t("templateConfig", "historyUnknownAuthor"),
             )}
           </span>
           <Tooltip>
@@ -188,11 +193,11 @@ export function TemplateConfigPublishControls({
                 disabled={takingOver}
                 onClick={() => void takeOver()}
               >
-                {t('templateConfig', 'draftTakeOver')}
+                {t("templateConfig", "draftTakeOver")}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {t('templateConfig', 'draftTakeOverTooltip')}
+              {t("templateConfig", "draftTakeOverTooltip")}
             </TooltipContent>
           </Tooltip>
         </>
@@ -206,10 +211,19 @@ export function TemplateConfigPublishControls({
               size="sm"
               onClick={() => setDiscardOpen(true)}
               disabled={!canDiscard}
-              aria-label={t('templateConfig', 'discardButtonAria')}
+              aria-label={t("templateConfig", "discardButtonAria")}
             >
-              <RotateCcw className="mr-2 h-4 w-4" aria-hidden />
-              {t('templateConfig', 'discardButton')}
+              {/* Last rung before the bar would overflow. The label folds,
+                  never the control: `discardButtonAria` already names it and
+                  its tooltip already explains WHY it is disabled, so the
+                  meaning survives for keyboard and screen-reader users. */}
+              <RotateCcw
+                className="h-4 w-4 @[44rem]/configbar:mr-2"
+                aria-hidden
+              />
+              <span className="sr-only @[44rem]/configbar:not-sr-only">
+                {t("templateConfig", "discardButton")}
+              </span>
             </Button>
           </span>
         </TooltipTrigger>
@@ -223,14 +237,16 @@ export function TemplateConfigPublishControls({
               size="sm"
               onClick={() => void handlePublish()}
               disabled={!hasPendingChanges}
-              aria-label={t('extraction', 'configPublishTooltip')}
+              aria-label={t("extraction", "configPublishTooltip")}
             >
               <UploadCloud className="mr-2 h-4 w-4" aria-hidden />
-              {t('extraction', 'configPublishButton')}
+              {t("extraction", "configPublishButton")}
             </Button>
           </span>
         </TooltipTrigger>
-        <TooltipContent>{t('extraction', 'configPublishTooltip')}</TooltipContent>
+        <TooltipContent>
+          {t("extraction", "configPublishTooltip")}
+        </TooltipContent>
       </Tooltip>
       {/* D4 — mounted per open (portalled, so it adds nothing to the
           command-bar cluster): the phase and every server payload die with
@@ -242,7 +258,7 @@ export function TemplateConfigPublishControls({
           activeVersion={configStatus?.active_version ?? null}
           draftChangeCount={draftChangeCount}
           instructionPresent={
-            (instruction?.llm_template_instruction ?? '').trim() !== ''
+            (instruction?.llm_template_instruction ?? "").trim() !== ""
           }
           onClose={() => setDiscardOpen(false)}
         />

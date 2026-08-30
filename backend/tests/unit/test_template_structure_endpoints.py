@@ -63,7 +63,7 @@ def _stub_draft_lock(monkeypatch):
     endpoint still CALLS it is covered by
     test_every_write_endpoint_claims_the_draft_lock below.
     """
-    monkeypatch.setattr(endpoint_module, "claim_draft_lock", AsyncMock())
+    monkeypatch.setattr(endpoint_module, "_claim_lock", AsyncMock())
 
 
 def _request() -> MagicMock:
@@ -502,9 +502,12 @@ def test_every_write_endpoint_claims_the_draft_lock() -> None:
     unclaimed = []
     for name in write_endpoints:
         body = source.split(f"async def {name}(", 1)[1].split("\nasync def ", 1)[0]
-        if "claim_draft_lock(" not in body:
+        if "_claim_lock(" not in body:
             unclaimed.append(name)
 
     assert not unclaimed, f"these write endpoints do not claim the draft lock: {unclaimed}"
+    # The claim + its HTTP mapping live in ONE helper; eight copies is how a
+    # 404 mapping went missing when the claim became project-scoped.
+    assert source.count("async def _claim_lock(") == 1
     missing = [name for name in write_endpoints if name not in declared]
     assert not missing, f"the roster names endpoints that no longer exist: {missing}"

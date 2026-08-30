@@ -132,6 +132,7 @@ class TestSectionExtractionEntityTypes:
     async def test_get_entity_type_success(self, service):
         """Testa busca de entity type com sucesso."""
         entity_type_id = uuid4()
+        template_id = uuid4()
 
         # Mock entity type com fields
         mock_field = MagicMock()
@@ -142,10 +143,11 @@ class TestSectionExtractionEntityTypes:
         mock_entity.id = entity_type_id
         mock_entity.name = "Study Characteristics"
         mock_entity.fields = [mock_field]
+        mock_entity.project_template_id = template_id
 
         service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
 
-        result = await service._get_entity_type(entity_type_id)
+        result = await service._get_entity_type(entity_type_id, project_template_id=template_id)
 
         # Returns the entity type object directly
         assert result.name == "Study Characteristics"
@@ -160,7 +162,25 @@ class TestSectionExtractionEntityTypes:
         service._entity_types.get_with_fields = AsyncMock(return_value=None)
 
         with pytest.raises(ValueError, match="Entity type not found"):
-            await service._get_entity_type(entity_type_id)
+            await service._get_entity_type(entity_type_id, project_template_id=uuid4())
+
+    @pytest.mark.asyncio
+    async def test_get_entity_type_from_another_template_is_not_found(self, service):
+        """BOLA: the live fallback may only resolve the run template's own
+        sections. A global-lineage row (``project_template_id is None``) and
+        a foreign project template both fail like a missing id — an
+        ``ExtractionInstance`` on a catalogue entity type is ON DELETE
+        RESTRICT and wedges the boot-time catalogue replace."""
+        entity_type_id = uuid4()
+
+        for foreign in (None, uuid4()):
+            mock_entity = MagicMock()
+            mock_entity.id = entity_type_id
+            mock_entity.project_template_id = foreign
+            service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
+
+            with pytest.raises(ValueError, match="Entity type not found"):
+                await service._get_entity_type(entity_type_id, project_template_id=uuid4())
 
     @pytest.mark.asyncio
     async def test_get_child_entity_types(self, service):
@@ -175,7 +195,7 @@ class TestSectionExtractionEntityTypes:
         # Mock parent instance
         mock_parent = MagicMock()
         mock_parent.entity_type_id = parent_entity_type_id
-        service._instances.get_by_id = AsyncMock(return_value=mock_parent)
+        service._instances.get_on_run = AsyncMock(return_value=mock_parent)
 
         # B-2: children come from the run-pinned tree, filtered by parent id.
         mock_child1 = MagicMock()
@@ -340,6 +360,11 @@ class TestExtractSectionWithExistingRun:
         mock_entity.name = "EntityX"
         mock_entity.description = "d"
         mock_entity.fields = [mock_field]
+        # The live fallback is template-scoped: this row belongs to the run's
+        # own template (the legitimate re-pin race the fallback exists for).
+        mock_entity.project_template_id = (
+            existing_run.template_id if existing_run is not None else None
+        )
         service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
 
         # ``service.db.get(ExtractionRun, run_id)`` returns the existing run.
@@ -1065,7 +1090,7 @@ class TestGetChildEntityTypesEdgeCases:
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_parent_instance_not_found(self, service):
-        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         result = await service._get_child_entity_types(
             run=self._make_run(),
             parent_instance_id=uuid4(),
@@ -1076,7 +1101,7 @@ class TestGetChildEntityTypesEdgeCases:
     async def test_returns_empty_when_no_child_entity_types(self, service):
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
         service._pinned_entity_types = AsyncMock(return_value=[])
         result = await service._get_child_entity_types(
             run=self._make_run(),
@@ -1088,7 +1113,7 @@ class TestGetChildEntityTypesEdgeCases:
     async def test_filters_by_section_ids(self, service):
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         id1 = uuid4()
         id2 = uuid4()
@@ -1334,6 +1359,67 @@ class TestCreateSuggestions:
         }
         assert by_field[f2]["confidence_score"] is None  # no misleading 0% on a no-info card
         assert by_field[f2]["rationale"] == "not stated in the article"
+
+    @pytest.mark.asyncio
+    async def test_abstention_writes_no_marker_when_field_opts_out(self, service):
+        # The AI abstention writer is gated by ``allows_no_information``
+        # (migration 0062) exactly like ``disposition_to_marker`` gates the human
+        # write path. On a field that opts OUT — PROBAST+AI 2.1.0's signaling
+        # questions, where "NI" is the fifth answer of the scale rather than a
+        # marker — ``FieldInput`` renders no marker button, so a marker written
+        # here would be invisible AND unclearable on the form while still
+        # counting as filled. The abstention is still a recorded proposal: value
+        # ``None`` carrying its rationale, with NO ``absent_reason`` sibling.
+        f_off, f_on = uuid4(), uuid4()
+        field_off, field_on = MagicMock(), MagicMock()
+        field_off.id, field_off.name = f_off, "sq_off"
+        field_off.allows_no_information = False
+        field_on.id, field_on.name = f_on, "sq_on"
+        field_on.allows_no_information = True
+        et = MagicMock()
+        et.fields = [field_off, field_on]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        instance = MagicMock()
+        instance.id = uuid4()
+        instance.parent_instance_id = None
+        service._instances.get_by_article = AsyncMock(return_value=[instance])
+        recorded: list[dict] = []
+
+        async def _rec(**kwargs):
+            recorded.append(kwargs)
+            return MagicMock(id=uuid4())
+
+        service._proposals.record_proposal = AsyncMock(side_effect=_rec)
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={
+                "sq_off": {
+                    "status": "not_found",
+                    "value": None,
+                    "reasoning": "not stated in the article",
+                },
+                "sq_on": {"status": "not_found", "value": None},
+            },
+            run=run,
+        )
+
+        assert result == 2
+        by_field = {k["field_id"]: k for k in recorded}
+        # Opted out: recorded, but no marker — and the rationale survives.
+        assert by_field[f_off]["proposed_value"] == {"value": None}
+        assert "absent_reason" not in by_field[f_off]["proposed_value"]
+        assert by_field[f_off]["rationale"] == "not stated in the article"
+        # The sibling field on the same run still gets the marker.
+        assert by_field[f_on]["proposed_value"] == {
+            "value": None,
+            "absent_reason": "no_information",
+        }
 
     @pytest.mark.asyncio
     async def test_ambiguous_status_records_no_marker(self, service):
@@ -1639,9 +1725,13 @@ class TestCreateSuggestions:
         service._instances.create.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_parent_instance_used_to_resolve_template_id(self, service):
-        """When parent_instance_id is provided and no instance exists,
-        the parent's template_id is inherited."""
+    async def test_parent_instance_is_scoped_to_the_run_coordinate(self, service):
+        """A client-supplied parent is re-verified at the write choke-point.
+
+        The endpoint gate rejects a foreign ``parentInstanceId`` first; this
+        is the durable half, so a caller reaching the service directly still
+        cannot plant a cross-tenant ``parent_instance_id`` FK. The new row's
+        ``template_id`` is the RUN's, never the parent's column."""
         field_id = uuid4()
         field = MagicMock()
         field.id = field_id
@@ -1657,7 +1747,7 @@ class TestCreateSuggestions:
         parent = MagicMock()
         parent_template_id = uuid4()
         parent.template_id = parent_template_id
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         new_instance = MagicMock()
         new_instance.id = uuid4()
@@ -1686,8 +1776,37 @@ class TestCreateSuggestions:
                 run=run,
             )
 
-        # Verify the parent was looked up
-        service._instances.get_by_id.assert_awaited_once_with(parent_instance_id)
+        # Looked up through the SCOPED reader, on the run's coordinate.
+        service._instances.get_on_run.assert_awaited_once_with(parent_instance_id, run)
+        assert mock_instance_class.call_args.kwargs["template_id"] == run.template_id
+
+    @pytest.mark.asyncio
+    async def test_out_of_coordinate_parent_instance_is_refused(self, service):
+        """A parent the scoped reader cannot see fails like a missing one."""
+        field = MagicMock()
+        field.id = uuid4()
+        field.name = "f"
+        et = MagicMock()
+        et.label = None
+        et.name = "S"
+        et.sort_order = 0
+        et.fields = [field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        service._instances.get_by_article = AsyncMock(return_value=[])
+        service._instances.get_on_run = AsyncMock(return_value=None)
+        service._instances.create = AsyncMock()
+
+        with pytest.raises(ValueError, match="Parent instance not found"):
+            await service._create_suggestions(
+                project_id=uuid4(),
+                article_id=uuid4(),
+                entity_type_id=uuid4(),
+                parent_instance_id=uuid4(),
+                extracted_data={"f": "v"},
+                run=self._make_run(),
+            )
+
+        service._instances.create.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_evidence_without_text_not_added(self, service):
@@ -1792,6 +1911,8 @@ class TestExtractSectionLlmFailure:
 
         run = MagicMock()
         run.id = uuid4()
+        # The live fallback is template-scoped (see above).
+        mock_entity.project_template_id = run.template_id
         # Standalone path resolves through the one-live-run gate; created=True
         # keeps the standalone lifecycle semantics.
         service._lifecycle.resolve_or_create_extract_run = AsyncMock(return_value=(run, True))
@@ -1859,7 +1980,7 @@ class TestExtractAllSections:
         run = self._make_run()
         self._minimal_lifecycle_wire(service, run)
 
-        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
 
         result = await service.extract_all_sections(
             project_id=uuid4(),
@@ -1880,7 +2001,7 @@ class TestExtractAllSections:
         run = self._make_run()
         self._minimal_lifecycle_wire(service, run)
 
-        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         service._assemble_prompt_text = AsyncMock(return_value="pdf text")
 
         await service.extract_all_sections(
@@ -1902,7 +2023,7 @@ class TestExtractAllSections:
         run = self._make_run()
         self._minimal_lifecycle_wire(service, run)
 
-        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         service._assemble_prompt_text = AsyncMock(return_value="ignored")
         assert service._run_anchor_blocks == []  # empty stash at the start of the run
 
@@ -1924,7 +2045,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child_ok = MagicMock()
         child_ok.id = uuid4()
@@ -1968,7 +2089,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child1 = MagicMock()
         child1.id = uuid4()
@@ -2008,7 +2129,7 @@ class TestExtractAllSections:
         service._assemble_prompt_text = AsyncMock(return_value="text")
 
         # Make the instance fetch explode unexpectedly (after assembly, before loops)
-        service._instances.get_by_id = AsyncMock(side_effect=RuntimeError("db exploded"))
+        service._instances.get_on_run = AsyncMock(side_effect=RuntimeError("db exploded"))
 
         with pytest.raises(RuntimeError, match="db exploded"):
             await service.extract_all_sections(
@@ -2036,7 +2157,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child1 = MagicMock()
         child1.id = uuid4()
@@ -2117,7 +2238,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child = MagicMock()
         child.id = uuid4()

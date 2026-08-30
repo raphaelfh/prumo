@@ -123,9 +123,11 @@ export interface ExtractionField {
   allow_other?: boolean;
   other_label?: string | null;
   other_placeholder?: string | null;
-    // ADR-0016 opt-in dispositions (no_information is universal, needs no flag)
+  // ADR-0016 per-field disposition flags. `allows_no_information` defaults ON
+  // (migration 0062) — absent means the marker was available.
   allows_not_applicable?: boolean;
   allows_not_evaluated?: boolean;
+  allows_no_information?: boolean;
 }
 
 // =================== INSTANCES AND VALUES ===================
@@ -224,9 +226,12 @@ export const ExtractionFieldSchema = z.object({
     .optional()
     .nullable(),
 
-  // ADR-0016 opt-in disposition flags (no_information is universal, needs none)
+  // ADR-0016 per-field disposition flags. `allows_no_information` defaults
+  // TRUE, unlike its two siblings: it was universal before migration 0062,
+  // so an absent key means the marker was available.
   allows_not_applicable: z.boolean().default(false).optional(),
   allows_not_evaluated: z.boolean().default(false).optional(),
+  allows_no_information: z.boolean().default(true).optional(),
 
   // 0059: this field's value identifies an instance of a repeating
   // section. At most one per section — the API refuses a second with a

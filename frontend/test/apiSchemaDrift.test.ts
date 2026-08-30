@@ -102,7 +102,7 @@ describe('create-field contract — server literals (openapi.json)', () => {
     expect(shapeOf('other_placeholder').maxLength).toBe(200);
   });
 
-  it('sort_order ≥0 defaulting 0; the three disposition booleans default false', () => {
+  it('sort_order ≥0 defaulting 0; the opt-in booleans default false', () => {
     expect(createRequest.properties.sort_order).toMatchObject({
       minimum: 0,
       default: 0,
@@ -113,6 +113,16 @@ describe('create-field contract — server literals (openapi.json)', () => {
         default: false,
       });
     }
+  });
+
+  it('allows_no_information defaults TRUE, unlike its two siblings (migration 0062)', () => {
+    // The marker was universal before the column existed, so an omitting
+    // client must keep it. A copy-paste of the `false` above would silently
+    // retire the affordance on every field created through this API.
+    expect(createRequest.properties.allows_no_information).toMatchObject({
+      type: 'boolean',
+      default: true,
+    });
   });
 });
 

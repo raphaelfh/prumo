@@ -95,6 +95,13 @@ _SIGNALING_MAP: dict[str, Contribution] = {
     "py": "Low",
     "pn": "High",
     "n": "High",
+    # PROBAST+AI 2.1.0's fifth answer. The instrument reads NI as Unclear, which
+    # is also what the retired ``no_information`` MARKER already contributed —
+    # so putting NI on the scale needs no branch anywhere downstream. The
+    # export's label path reaches the same result through the marker-label
+    # table (the option's label is "No information"); this entry is the raw
+    # run-view path, and the pair is the screen/workbook parity.
+    "ni": "Unclear",
     # QUADAS-2's third answer (§11 adoption) — same casefolded lookup.
     "unclear": "Unclear",
 }

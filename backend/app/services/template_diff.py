@@ -119,6 +119,10 @@ FIELD_ATTRIBUTE_DEFAULTS: dict[str, Any] = {
     "other_placeholder": None,
     "allows_not_applicable": False,
     "allows_not_evaluated": False,
+    # Mirrors the ORM column, which defaults TRUE (migration 0062) because the
+    # marker was universal before it existed: a pre-0062 baseline carrying no
+    # key must not diff as "the marker was turned off".
+    "allows_no_information": True,
 }
 
 #: D2, exhaustive over the comparable keys of both node kinds. Two entries are
@@ -144,6 +148,7 @@ ATTRIBUTE_TIERS: dict[str, ChangeTier] = {
     "validation_schema": ChangeTier.SEMANTIC,
     "allows_not_applicable": ChangeTier.SEMANTIC,
     "allows_not_evaluated": ChangeTier.SEMANTIC,
+    "allows_no_information": ChangeTier.SEMANTIC,
     "allow_other": ChangeTier.SEMANTIC,
     # B-8 made entry_label the export record stem + the AI instance-label
     # fallback: changing it silently relabels exported model rows.

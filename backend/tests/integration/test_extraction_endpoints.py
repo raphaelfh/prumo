@@ -233,7 +233,7 @@ class TestModelExtractionEndpoints:
                 "app.api.v1.endpoints.model_extraction.ModelExtractionService"
             ) as mock_service_class,
             patch(
-                "app.api.v1.endpoints.model_extraction.ensure_project_member",
+                "app.api.v1.endpoints.model_extraction.assert_kickoff_scope",
                 new_callable=AsyncMock,
             ) as guard,
         ):

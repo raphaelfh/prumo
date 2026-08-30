@@ -76,11 +76,14 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 # Run migrations, converge the seed catalogue, then start the application.
 #
-# `python -m app.seed` is idempotent end to end (every template seeder
-# early-returns on an existing row; the instruction backfill is
-# fill-if-null), so running it on every boot makes a deploy converge the
-# global template catalogue instead of relying on a human remembering to
-# seed after promoting. A seed failure aborts the boot LOUDLY: Railway
+# `python -m app.seed` is idempotent end to end, so running it on every boot
+# makes a deploy converge the global template catalogue instead of relying on
+# a human remembering to seed after promoting. Two idempotence shapes now
+# coexist: most seeders early-return on an existing row (and the instruction
+# backfill is fill-if-null), while `seed_probast_ai` CONVERGES — it updates
+# the row and replaces its children under deterministic ids every boot, which
+# is what lets a corrected template spec reach a database that already has it.
+# A seed failure aborts the boot LOUDLY: Railway
 # marks the deploy failed and keeps the previous build live, which is the
 # correct failure mode — never serve code whose catalogue is missing.
 # The worker overrides this CMD (Celery start command), so the seed runs

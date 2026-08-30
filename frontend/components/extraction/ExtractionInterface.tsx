@@ -7,18 +7,18 @@
 
 import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router';
-import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
+import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {Skeleton} from '@/components/ui/skeleton';
-import {AlertCircle, FileUp, Import, PlusCircle, Settings} from 'lucide-react';
-import {useHITLProjectTemplates} from '@/hooks/hitl/useHITLProjectTemplates';
-import {useInvalidateProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
+import {AlertCircle, FileUp, Settings} from 'lucide-react';
+import {useInvalidateProjectTemplates, useProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractionValues';
 import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
 import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
+import {ConfigureTemplateCards} from './config/ConfigureTemplateCards';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {ExtractionExportDialog} from './ExtractionExportDialog';
 import {LlmEngineChip} from './LlmEngineChip';
@@ -54,12 +54,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
     // The project's templates: one cached query, shared with the "switch
     // template" list inside the import dialog. Every write invalidates it.
-  const {
-    templates,
-      globalTemplates,
-    loading: templatesLoading,
-    error: templatesError,
-  } = useHITLProjectTemplates({ projectId, kind: 'extraction' });
+    // Deliberately NOT useHITLProjectTemplates — the catalogue moved into the
+    // import dialog, and that hook ORs the two loading flags, so taking it
+    // here would block this panel's first paint on a fetch nothing renders.
+  const projectTemplatesQuery = useProjectTemplates({projectId, kind: 'extraction'});
+  const templates = projectTemplatesQuery.data ?? [];
+  const templatesLoading = projectTemplatesQuery.isLoading;
+  const templatesError = projectTemplatesQuery.error?.message ?? null;
   const invalidateProjectTemplates = useInvalidateProjectTemplates();
 
     // `activeTemplateId` holds UI intent only — what the user last picked or
@@ -145,7 +146,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   })();
 
     // Pre-select template when opening import dialog from config list
-    const [importInitialTemplateId, setImportInitialTemplateId] = useState<string | null>(null);
 
     const {isManager, loading: roleLoading} = useProjectMemberRole(projectId);
 
@@ -352,7 +352,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                 the versioned template card — choosing an engine never arms
                 the Draft chip and never enters the Publish diff. The chip
                 OWNS its flex row, so a failed read renders no empty strip. */}
-            <LlmEngineChip projectId={projectId} />
+            {/* With a template on screen the chip rides IN the config bar
+                (2026-08-29 consolidation) — it only owns a row of its own
+                when there is no bar to ride in. */}
+            {!activeTemplate && <LlmEngineChip projectId={projectId} />}
             {activeTemplate ? (
               // Dashboard regime: the page never scrolls — the grid card
               // absorbs the leftover height and scrolls internally. The
@@ -416,119 +419,14 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           <TemplateConfigEditor
             projectId={projectId}
             templateId={activeTemplate.id}
+            engineSlot={<LlmEngineChip projectId={projectId} />}
             onActiveTemplateChanged={handleActiveTemplateChanged}
           />
         ) : (
-            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
-                <CardHeader className="pb-2">
-                    <CardTitle
-                        className="text-[13px] font-medium text-foreground">{t('extraction', 'configPanelTitle')}</CardTitle>
-                    <CardDescription className="text-[13px] text-muted-foreground">
-                        {t('extraction', 'configPanelDesc')}
-              </CardDescription>
-            </CardHeader>
-                <CardContent className="space-y-4">
-                    {/* 1. Create Custom Template (primary action first) */}
-                    <div
-                        className="border border-border/40 rounded-lg p-4 hover:bg-muted/50 transition-colors duration-75">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="space-y-2 flex-1 min-w-0">
-                    <div className="flex items-center space-x-2">
-                        <PlusCircle className="h-4 w-4 text-primary" strokeWidth={1.5}/>
-                        <h3 className="text-[13px] font-semibold">{t('extraction', 'configCreateCustomTitle')}</h3>
-                    </div>
-                      <p className="text-[13px] text-muted-foreground">
-                          {t('extraction', 'configCreateCustomFullDesc')}
-                    </p>
-                  </div>
-                    <Button
-                        variant="outline"
-                        className="w-full sm:w-auto sm:ml-4"
-                    onClick={() => setShowCreateCustomDialog(true)}
-                  >
-                        <PlusCircle className="h-4 w-4 mr-2" strokeWidth={1.5}/>
-                        {t('extraction', 'configCreateTemplateButton')}
-                  </Button>
-                </div>
-              </div>
-
-                    {/* 2. Manager info */}
-                    <div className="bg-info/5 border border-info/30 rounded-lg p-4">
-                <div className="flex items-start space-x-3">
-                    <AlertCircle className="h-4 w-4 text-info mt-0.5 shrink-0" strokeWidth={1.5}/>
-                    <div className="text-[13px] text-foreground">
-                        <p className="font-medium mb-1">{t('extraction', 'configManagersNote')}</p>
-                    <p className="text-muted-foreground">
-                        {t('extraction', 'configManagersNoteDesc')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-                    {/* 3. Import template (at bottom) */}
-                    <div className="space-y-2" role="region" aria-labelledby="config-import-section-heading">
-                        <h3 id="config-import-section-heading"
-                            className="text-[13px] font-medium text-foreground">{t('extraction', 'configImportSectionTitle')}</h3>
-                        {globalTemplates.length > 0 ? (
-                            <div className="rounded-md border border-border/40 overflow-hidden min-w-0">
-                                <div className="max-h-[280px] overflow-y-auto overflow-x-auto min-w-0"
-                                     aria-label={t('extraction', 'configAvailableTemplates')}>
-                                    <table className="w-full text-[13px] border-collapse">
-                                        <thead className="sticky top-0 bg-muted/30 border-b border-border/40 z-10">
-                                        <tr>
-                                            <th className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground text-left py-2 px-3 w-[20%]">Name</th>
-                                            <th className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground text-left py-2 px-3">Description</th>
-                                            <th className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground text-left py-2 px-3 w-[12%]">Framework</th>
-                                            <th className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground text-right py-2 px-3 w-[80px]">Action</th>
-                                        </tr>
-                                        </thead>
-                                        <tbody>
-                                        {globalTemplates.map((gt) => (
-                                            <tr
-                                                key={gt.id}
-                                                className="group border-b border-border/40 last:border-b-0 hover:bg-muted/50 transition-colors duration-75"
-                                            >
-                                                <td className="py-2 px-3 font-medium text-foreground">{gt.name}</td>
-                                                <td className="py-2 px-3 text-muted-foreground line-clamp-2 max-w-[40ch]">{gt.description ?? '—'}</td>
-                                                <td className="py-2 px-3">
-                                <span
-                                    className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide px-1.5 py-0.5 rounded border border-border/40"
-                                    aria-hidden="true">
-                                  {gt.framework}
-                                </span>
-                                                </td>
-                                                <td className="py-2 px-3 text-right">
-                                                    <Button
-                                                        size="sm"
-                                                        className="opacity-90 group-hover:opacity-100"
-                                                        data-testid={`extraction-import-global-${gt.id}`}
-                                                        aria-label={`${t('extraction', 'configImportThisTemplate')} ${gt.name}`}
-                                                        onClick={() => {
-                                                            setImportInitialTemplateId(gt.id);
-                                                            setShowImportDialog(true);
-                                                        }}
-                                                    >
-                                                        <Import className="h-4 w-4 mr-1.5" strokeWidth={1.5}/>
-                                                        {t('extraction', 'configImportThisTemplate')}
-                                                    </Button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="rounded-md border border-border/40 p-4 text-center">
-                                <p className="text-[13px] text-muted-foreground mb-2">{t('extraction', 'configNoTemplatesAvailable')}</p>
-                                <Button variant="outline" size="sm" onClick={() => setShowImportDialog(true)}>
-                                    {t('extraction', 'configSeeDetails')}
-                                </Button>
-                            </div>
-                        )}
-                    </div>
-            </CardContent>
-          </Card>
+            <ConfigureTemplateCards
+                onCreateTemplate={() => setShowCreateCustomDialog(true)}
+                onImportTemplate={() => setShowImportDialog(true)}
+            />
         );
   };
 
@@ -588,11 +486,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       <ImportTemplateDialog
         projectId={projectId}
         open={showImportDialog}
-        onOpenChange={(open) => {
-            if (!open) setImportInitialTemplateId(null);
-            setShowImportDialog(open);
-        }}
-        initialTemplateId={importInitialTemplateId}
+        onOpenChange={setShowImportDialog}
         onActiveTemplateChanged={handleActiveTemplateChanged}
       />
 

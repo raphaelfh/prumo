@@ -1,0 +1,42 @@
+{
+  "prumo_template": 1,
+  "kind": "extraction",
+  "name": "Minimal example",
+  "framework": "CUSTOM",
+  "version": "1.0.0",
+  "sections": [
+    {
+      "name": "study_details",
+      "label": "Study details",
+      "required": true,
+      "fields": [
+        {"name": "author", "label": "First author", "type": "text", "required": true},
+        {"name": "year", "label": "Publication year", "type": "number"},
+        {
+          "name": "design",
+          "label": "Study design",
+          "type": "select",
+          "allowed_values": ["Cohort", "Case-control", "RCT"],
+          "allow_other": true
+        }
+      ]
+    },
+    {
+      "name": "prediction_models",
+      "label": "Prediction models",
+      "group": true,
+      "entry_label": "model",
+      "repeats": true,
+      "sections": [
+        {
+          "name": "model_performance",
+          "label": "Model performance",
+          "fields": [
+            {"name": "c_statistic", "label": "C-statistic", "type": "number"},
+            {"name": "notes", "label": "Notes", "type": "text", "allows_not_applicable": true}
+          ]
+        }
+      ]
+    }
+  ]
+}

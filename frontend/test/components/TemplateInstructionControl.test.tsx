@@ -12,15 +12,18 @@ vi.mock('@/services/templateInstructionService', () => ({
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 
-import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
+import {TooltipProvider} from '@/components/ui/tooltip';
+import {TemplateInstructionControl} from '@/components/extraction/TemplateInstructionControl';
 
-function renderRow() {
+function renderControl() {
   const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: false}, mutations: {retry: false}},
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <TemplateInstructionRow projectId="p1" templateId="t1" />
+      <TooltipProvider>
+        <TemplateInstructionControl projectId="p1" templateId="t1" />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
@@ -29,14 +32,16 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('TemplateInstructionRow', () => {
+describe('TemplateInstructionControl', () => {
   it('shows the empty ghost state when no instruction is set', async () => {
     getTemplateInstruction.mockResolvedValue({
       project_template_id: 't1',
       llm_template_instruction: null,
       default_instruction: null,
     });
-    renderRow();
+    renderControl();
+    // No preview on the bar any more — "nothing set yet" reaches a screen
+    // reader through the trigger's own accessible name.
     expect(await screen.findByText('instructionEmpty')).toBeInTheDocument();
   });
 
@@ -46,7 +51,7 @@ describe('TemplateInstructionRow', () => {
       llm_template_instruction: 'Do X. [customize: scope] Do Y. [customize: cohort]',
       default_instruction: null,
     });
-    renderRow();
+    renderControl();
     expect(
       await screen.findByTestId('instruction-customize-chip'),
     ).toBeInTheDocument();
@@ -58,8 +63,8 @@ describe('TemplateInstructionRow', () => {
       llm_template_instruction: 'All resolved.',
       default_instruction: null,
     });
-    renderRow();
-    await screen.findByText(/All resolved/);
+    renderControl();
+    await screen.findByRole('button', {name: /instructionTitle/});
     expect(screen.queryByTestId('instruction-customize-chip')).toBeNull();
   });
 
@@ -74,7 +79,7 @@ describe('TemplateInstructionRow', () => {
       project_template_id: 't1',
       llm_template_instruction: 'New text',
     });
-    renderRow();
+    renderControl();
     await userEvent.click(
       await screen.findByRole('button', {name: /instructionTitle/}),
     );
@@ -93,7 +98,7 @@ describe('TemplateInstructionRow', () => {
       llm_template_instruction: 'Customized',
       default_instruction: 'Origin default',
     });
-    renderRow();
+    renderControl();
     await userEvent.click(
       await screen.findByRole('button', {name: /instructionTitle/}),
     );
@@ -101,5 +106,40 @@ describe('TemplateInstructionRow', () => {
       screen.getByRole('button', {name: 'instructionResetDefault'}),
     );
     expect(screen.getByRole('textbox')).toHaveValue('Origin default');
+  });
+
+  it('keeps the unresolved-slot warning readable without opening anything', async () => {
+    getTemplateInstruction.mockResolvedValue({
+      project_template_id: 't1',
+      llm_template_instruction: 'Fill [customize: cohort] here.',
+      default_instruction: null,
+    });
+    renderControl();
+    // The chip is the one instruction signal that must survive the collapse:
+    // unfilled slots ship straight into prompts. It has to be IN the trigger's
+    // accessible name, so an aria-label that replaces the content is a defect.
+    const trigger = await screen.findByRole('button', {name: /instructionTitle/});
+    expect(trigger).toHaveAccessibleName(
+      expect.stringContaining('instructionCustomizeChip'),
+    );
+    expect(screen.getByTestId('instruction-customize-chip')).toBeInTheDocument();
+  });
+
+  it('preserves an unsaved draft when the popover is dismissed', async () => {
+    getTemplateInstruction.mockResolvedValue({
+      project_template_id: 't1',
+      llm_template_instruction: 'Old text',
+      default_instruction: null,
+    });
+    renderControl();
+    const trigger = await screen.findByRole('button', {name: /instructionTitle/});
+    await userEvent.click(trigger);
+    await userEvent.type(screen.getByRole('textbox'), ' plus mine');
+    // Dismissing a popover must not silently destroy prose the manager typed —
+    // the draft outlives the surface that edits it.
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
+    await userEvent.click(screen.getByRole('button', {name: /instructionTitle/}));
+    expect(screen.getByRole('textbox')).toHaveValue('Old text plus mine');
   });
 });

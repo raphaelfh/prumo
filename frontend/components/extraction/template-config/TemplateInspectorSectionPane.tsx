@@ -129,7 +129,7 @@ export function SectionInspectorForm({
     <>
       <div className="flex items-center gap-1.5">
         <strong className="min-w-0 flex-1 truncate">{section.label}</strong>
-        <Badge variant="secondary" className="shrink-0 text-[10px]">
+        <Badge variant="secondary" className="shrink-0 text-[11px]">
           {t('extraction', KIND_COPY[section.kind]).replace(
             '{{noun}}',
             section.entryNoun,
@@ -147,7 +147,7 @@ export function SectionInspectorForm({
 
       <Label>{t('extraction', 'inspectorKeyLabel')}</Label>
       <ReadOnlyValue muted>
-        <span className="font-mono text-[10px]">{section.key}</span>
+        <span className="font-mono text-[11px]">{section.key}</span>
       </ReadOnlyValue>
 
       {section.kind === 'groupChild' && (
@@ -177,9 +177,9 @@ export function SectionInspectorForm({
               if (e.key === 'Enter') e.currentTarget.blur();
             }}
             disabled={saving}
-            className="h-7 text-xs"
+            className="h-7 text-[13px]"
           />
-          <p className="mt-[3px] text-[10.5px] text-muted-foreground">
+          <p className="mt-[3px] text-[11px] text-muted-foreground">
             {t('templateConfig', 'entryLabelHint')}
           </p>
         </>
@@ -197,7 +197,7 @@ export function SectionInspectorForm({
             value={cardinality}
             onChange={(e) => commitCardinality(e.target.value)}
             disabled={saving}
-            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-7 w-full rounded-md border border-input bg-background px-2 text-[13px] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
             <option value="one">
               {t('templateConfig', 'cardinalityOncePerModel').replace(
@@ -245,7 +245,7 @@ export function SectionInspectorForm({
               value={entryKeyFieldId}
               onChange={(e) => commitEntryKey(e.target.value)}
               disabled={updateFieldMutation.isPending || section.fields.length === 0}
-              className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-7 w-full rounded-md border border-input bg-background px-2 text-[13px] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="">{t('templateConfig', 'inspectorEntryKeyNone')}</option>
               {section.fields.map((field) => (

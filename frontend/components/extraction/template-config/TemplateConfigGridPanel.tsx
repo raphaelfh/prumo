@@ -628,7 +628,7 @@ export function TemplateConfigGridPanel({
 
         <div className="min-w-0 flex-1 overflow-auto">
           {visibleSections.length === 0 ? (
-            <p className="p-6 text-center text-xs text-muted-foreground">
+            <p className="p-6 text-center text-[13px] text-muted-foreground">
               {t(
                 'extraction',
                 filtered.isFiltering ? 'gridNoMatches' : 'gridEmptyTemplate',

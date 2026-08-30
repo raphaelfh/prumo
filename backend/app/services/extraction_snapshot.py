@@ -78,7 +78,8 @@ SNAPSHOT_SQL = text(
                                     'other_label', f.other_label,
                                     'other_placeholder', f.other_placeholder,
                                     'allows_not_applicable', f.allows_not_applicable,
-                                    'allows_not_evaluated', f.allows_not_evaluated
+                                    'allows_not_evaluated', f.allows_not_evaluated,
+                                    'allows_no_information', f.allows_no_information
                                 ) ORDER BY f.sort_order)
                                 FROM public.extraction_fields f
                                 WHERE f.entity_type_id = et.id

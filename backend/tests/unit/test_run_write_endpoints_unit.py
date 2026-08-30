@@ -49,7 +49,7 @@ async def test_create_decision_awaits_reviewer_role_gate() -> None:
     service.record_decision = AsyncMock(return_value=record)
 
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run(project_id))),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run(project_id))),
         patch(f"{_EP}.ensure_project_reviewer", AsyncMock()) as gate,
         patch(f"{_EP}.ExtractionReviewService", return_value=service),
         patch(f"{_EP}._trace", return_value=None),
@@ -92,7 +92,7 @@ async def test_advance_run_awaits_reviewer_role_gate() -> None:
     service.advance_stage = AsyncMock(return_value=advanced)
 
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run(project_id))),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run(project_id))),
         patch(f"{_EP}.ensure_project_reviewer", AsyncMock()) as gate,
         patch(f"{_EP}.RunLifecycleService", return_value=service),
         patch(f"{_EP}._trace", return_value=None),
@@ -185,7 +185,7 @@ async def test_reopen_run_awaits_reviewer_role_gate() -> None:
     service.reopen_run = AsyncMock(return_value=(new_run, True))
 
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run(project_id))),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run(project_id))),
         patch(f"{_EP}.ensure_project_reviewer", AsyncMock()) as gate,
         patch(f"{_EP}.RunLifecycleService", return_value=service),
         patch(f"{_EP}._trace", return_value=None),
@@ -229,7 +229,7 @@ async def test_reopen_run_to_extract_awaits_arbitrator_gate() -> None:
     service.reopen_to_extract = AsyncMock(return_value=(run, 2, 1))
 
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run(project_id))),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run(project_id))),
         patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()) as gate,
         patch(f"{_EP}.RunLifecycleService", return_value=service),
         patch(f"{_EP}._trace", return_value=None),
