@@ -2,9 +2,17 @@
 
 One paragraph per deterministic check under `scripts/fitness/`. Each check:
 - exits 0 on clean, 1 on violation, 2 on internal error
-- supports `--scope GLOB`, `--repo-root PATH` (where applicable)
-- supports `--emit-telemetry PATH` and `--jsonl-out PATH` (Python checks)
+- accepts `--repo-root PATH` (all 14); `--scope GLOB` only where a narrowed
+  scan is meaningful — today `check_legacy_concepts.py` alone, which is what
+  `run_all.sh --scope` forwards it to
+- accepts `--emit-telemetry PATH` / `--jsonl-out PATH` where the check has
+  per-finding output to emit. `run_all.sh` writes its own telemetry line per
+  gate, so nothing invokes these today; `check_file_size.py`,
+  `check_skill_router_sync.py` and `check_diff_attribute_copy.py` omit them
+  rather than ship an unused flag
 - ships with a green-path pytest AND a **canary** (negative test) in `backend/tests/unit/scripts/`
+
+All 14 checks below are ACTIVE and required in CI (`Architectural Fitness`).
 
 ## Active checks
 
@@ -20,7 +28,51 @@ Bans reintroduction of the 16-entry legacy patterns blacklist (see `legacy-patte
 
 The allowlist is a literal constant inside the script (not a separate file) so the contract stays single-file; covers historical-comment files (`seed.py`, `models/extraction.py`), the canary test dir (`backend/tests/unit/scripts/`), and archived migrations (`backend/alembic/versions/archive/`). Comment lines (Python `#`, JS/TS `//`, JSDoc `*`, Python docstring `"""`) are universally skipped — documentation referencing the legacy pattern is allowed. Wall-clock budget: < 1 s for full-repo scan.
 
-## Planned (Phase 4)
+### `check_copy_keys.py`
+
+Asserts every key in a `frontend/lib/copy/*.ts` namespace is referenced from
+`frontend/**/*.{ts,tsx}` — the gap knip structurally cannot close, since a copy
+key is a *member* of an exported object literal rather than an export. A key is
+live when its name appears quoted (`t(ns, 'key')`, and map values like
+`labelKey: 'key'`) or dotted (`qa.someKey`); the catalogue directory itself is
+excluded, so a key's definition is never its own reference. Deliberately a
+brace-depth tokenizer rather than a line regex, and it raises exit 2 on any
+shape it cannot classify: this gate's worst failure is silence, because an
+unparsed namespace reports zero dead keys and stays green forever. Maintains a
+`.baseline` of `path:key` (with optional `# reason`): may shrink, never grow.
+Wall-clock budget: < 250 ms.
+
+The matcher's leniency and the deletion oracle a baseline-shrinking PR must run
+are documented at length in the module docstring — read it before clearing an
+entry, because `t()` returns `''` for a missing key and a wrong deletion ships
+as a blank string rather than an error.
+
+### `check_diff_attribute_copy.py`
+
+Asserts every attribute the publish-diff backend can put on the wire has a
+human label in the frontend. `TemplateConfigDiffSheet.tsx` maps
+`row.attribute` through `ATTRIBUTE_COPY` and falls back to rendering the RAW
+WIRE KEY when the map has no entry — a deliberate degradation (the wire type
+is an open string, so a stale frontend never blanks) that also means a new
+backend attribute reaches users as `allows_no_information` rather than
+`"No information" option`, silently, with every test green. That shipped once.
+
+Source of truth is `ATTRIBUTE_TIERS` in `backend/app/services/template_diff.py`,
+which the backend's own `test_tier_map_is_exhaustive_over_the_snapshot_key_set`
+already pins to the union of the entity + field attribute-default maps — so
+this gate inherits that guarantee instead of duplicating the list. Two keys are
+emitted as bare constants rather than through those maps (`OPTION_KEY`,
+`TEMPLATE_INSTRUCTION_KEY`) and are added explicitly: a check reading only the
+tier dict would let `allowed_values` through unlabelled. Dict keys may be
+`ast.Name` (`ENTRY_LABEL_KEY:`), so module-level string constants are resolved
+first. It also catches the failure one step later — an attribute mapped to a
+copy key that `lib/copy/templateConfig.ts` does not define renders the key name
+itself.
+
+Read by AST, never by import: `app.services.*` constructs `Settings` on import
+and the Architectural Fitness job runs on bare `setup-python` with no backend
+env. No baseline — the two sides must always agree. Standard library only;
+wall-clock budget: < 50 ms.
 
 ### `check_rls_coverage.py`
 
@@ -52,21 +104,38 @@ and `max-h-*` are not overrides; `[&_svg]:h-3.5` targets a descendant, not the
 button box; `sm:h-8` is an override. Maintains a `.baseline` of `path:count`
 for grandfathered files: may shrink, never grow.
 
-## Planned (Phase 5)
-
 ### `check_react_query_keys.py`
 
 After the `frontend/lib/query-keys/` convention is introduced, this check parses every `**/*.ts(x)` for `useQuery({ queryKey: [...] })` literal arrays. A literal array is a violation unless its first element is a re-export from `frontend/lib/query-keys/<namespace>.ts`. Maintains a `.baseline` of grandfathered call sites.
 
-## Harness invariants
+### `check_frontend_data_path.py`
 
-- `run_all.sh` invokes each check, aggregates exit codes, returns 0 iff every check returns 0.
-- Each Python check emits structured stdout: `<check_name>: OK|FAIL (<duration> ms; <details>)`.
-- Each Python check accepts `--emit-telemetry <path>` to append a JSON line `{ts, phase: "fitness", gate, duration_ms, exit_code, finding_count?, ...}`.
-- Each Python check accepts `--jsonl-out <path>` to write per-finding JSON conforming to the scanner schema. The orchestrator concatenates these into the run-dir's `findings.jsonl`.
-- The scanner skill's SCAN phase invokes `bash scripts/fitness/run_all.sh --scope "<scope>"` (when a `--scope` arg is supported by the check) in parallel with the 5 Explore subagents.
+Enforces the single read path (constitution §VI): all backend data flows
+through the typed `apiClient`. Outside `frontend/integrations/`, flags
+`supabase.from(` (direct table reads — `supabase.auth` / `.storage` are
+legitimate and do not match) and `import.meta.env.VITE_API_URL` (ad-hoc
+base-URL wiring around the client). Regex, not a TS parse, and comments are
+NOT exempt: an intentional mention must be baselined like any other site.
+Shrink-only `.baseline`.
 
-## `check_scope_guards.py`
+### `check_file_size.py`
+
+A ratchet, not a ceiling: a baselined oversized file may not GROW and no new
+file may cross the soft limit, but shrinking is always allowed and lets you
+tighten the baseline with `--update-baseline`. Splitting the existing god
+files is a separate effort this gate deliberately does not force. Baseline
+format: one `path:max_lines` per currently-oversized file.
+
+### `check_skill_router_sync.py`
+
+Asserts every skill named in CLAUDE.md's `## Which skill to load` router
+resolves to a real `.claude/skills/<name>/` directory. A dead router entry
+sends agents to a skill that does not exist, which fails silently — the agent
+just proceeds unskilled. No baseline; the router and the skills tree must
+always agree. Exit 2 if the router section itself goes missing, because an
+unparsed router reports zero dead entries and stays green forever.
+
+### `check_scope_guards.py`
 
 Enforces the ownership-guard invariant from `.claude/rules/backend.md`: a
 predicate binding a client-supplied id to the caller's scope is written once
@@ -88,3 +157,10 @@ via `--jsonl-out` as `source: fitness:check_scope_guards:<rule>`.
 Known limits, stated so nobody over-trusts it: it detects DUPLICATION, not
 ABSENCE — a missing guard produces no finding — and it cannot see raw `text()`
 SQL, `.in_()` predicates, or chained `stmt = stmt.where(...)` rebinding.
+
+## Harness invariants
+
+- `run_all.sh` invokes each check, aggregates exit codes, returns 0 iff every check returns 0.
+- Each Python check emits structured stdout: `<check_name>: OK|FAIL (<duration> ms; <details>)`.
+- `run_all.sh` writes one telemetry line per gate itself, so a check's own `--emit-telemetry` is a direct-invocation convenience, not something the harness relies on. Checks with per-finding output also accept `--jsonl-out <path>` (scanner schema, `source: fitness:<script>[:<rule>]`); the three that emit only a pass/fail verdict omit both flags.
+- The scanner skill's SCAN phase invokes `bash scripts/fitness/run_all.sh --scope "<scope>"` in parallel with the 5 Explore subagents. `run_all.sh` forwards `--scope` only to the checks that accept it (today: `check_legacy_concepts.py`); every other gate always scans the full tree.

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, get_config_draft_marker
 
 _SESSION_URL = "/api/v1/hitl/sessions"
 
@@ -1329,3 +1329,123 @@ async def test_session_backfill_is_idempotent(
     assert duplicates == [], (
         "Backfill must not duplicate child singletons under the same parent instance"
     )
+
+
+# =================== QA: a member must not publish a manager's draft ===================
+
+
+@pytest.mark.asyncio
+async def test_member_qa_session_open_cannot_publish_pending_instruction_draft(
+    db_session: AsyncSession,
+) -> None:
+    """A project MEMBER opening a QA session must never publish a manager's
+    unpublished ``llm_template_instruction`` draft.
+
+    Reachability: ``POST /api/v1/hitl/sessions`` is gated by
+    ``ensure_project_member`` — NOT ``require_project_manager`` — and
+    ``HITLSessionService._resolve_project_template`` calls
+    ``TemplateCloneService.clone`` on every QA open. When the project
+    template sits in zero state, the heal republishes, and
+    ``build_template_version_snapshot`` reads the LIVE instruction column.
+    So before the fix a reviewer's page load pushed the manager's staged
+    text into prompts, cleared ``config_draft_since`` and took the Draft
+    chip with it — the only signal the manager had that it happened.
+
+    B-4 still holds on the other side: the refusal must not GATE the open.
+    The session is expected to succeed, publishing nothing.
+    """
+    from app.models.extraction import TemplateKind
+    from app.services.hitl_session_service import HITLSessionService
+    from app.services.template_clone_service import TemplateCloneService
+    from app.services.template_instruction_service import set_template_instruction
+
+    manager = SEED.primary_profile
+    member = SEED.reviewer_profile
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+
+    qa_global = await _pick_qa_global_template(db_session)
+    if qa_global is None:
+        pytest.skip("Need a seeded QA global template")
+
+    # The two facts that make this reachable at all: passes the endpoint's
+    # ``ensure_project_member`` gate, yet may not publish config.
+    is_member, is_manager = (
+        await db_session.execute(
+            text(
+                "SELECT public.is_project_member(:pid, :uid), public.is_project_manager(:pid, :uid)"
+            ),
+            {"pid": str(project_id), "uid": str(member)},
+        )
+    ).one()
+    assert (is_member, is_manager) == (True, False), (
+        "the path needs a genuine member who is not a manager"
+    )
+
+    await _wipe_qa_state(db_session, project_id=project_id, global_template_id=qa_global)
+
+    # Manager sets the template up, then leaves it mid-edit: every section
+    # deleted (zero state) with instruction text staged but not published.
+    initial = await TemplateCloneService(db_session).clone(
+        project_id=project_id,
+        global_template_id=qa_global,
+        user_id=manager,
+        kind=TemplateKind.QUALITY_ASSESSMENT,
+    )
+    await db_session.execute(
+        text("DELETE FROM public.extraction_entity_types WHERE project_template_id = :tid"),
+        {"tid": str(initial.project_template_id)},
+    )
+    draft_text = "UNPUBLISHED DRAFT — a member's page load must not ship this"
+    await set_template_instruction(
+        db_session,
+        project_id=project_id,
+        template_id=initial.project_template_id,
+        llm_template_instruction=draft_text,
+    )
+    await db_session.flush()
+
+    # The member opens a QA session. This must SUCCEED (B-4: a pending
+    # draft never gates session-open) while publishing nothing.
+    session = await HITLSessionService(db_session).open_or_resume(
+        kind=TemplateKind.QUALITY_ASSESSMENT,
+        project_id=project_id,
+        article_id=article_id,
+        global_template_id=qa_global,
+        user_id=member,
+    )
+    assert session.run_id is not None, "a pending draft must never gate session-open"
+    assert session.project_template_id == initial.project_template_id
+
+    assert await get_config_draft_marker(db_session, initial.project_template_id) is not None, (
+        "the Draft chip is the manager's only signal — a member's open must not clear it"
+    )
+
+    active_id, active_schema = (
+        await db_session.execute(
+            text(
+                "SELECT id, schema FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active IS TRUE"
+            ),
+            {"tid": str(initial.project_template_id)},
+        )
+    ).one()
+    assert UUID(str(active_id)) == initial.version_id, (
+        "a member's session open must not publish a new template version"
+    )
+    assert draft_text not in str(active_schema), (
+        "the staged instruction must never reach the published snapshot (prompts read it)"
+    )
+
+    live = (
+        await db_session.execute(
+            text(
+                "SELECT llm_template_instruction "
+                "FROM public.project_extraction_templates WHERE id = :tid"
+            ),
+            {"tid": str(initial.project_template_id)},
+        )
+    ).scalar_one()
+    assert live == draft_text, "the draft itself must survive, still unpublished"
+
+    await db_session.rollback()

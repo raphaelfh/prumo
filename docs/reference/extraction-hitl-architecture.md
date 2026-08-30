@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-08-29
+last_reviewed: 2026-08-30
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-08-29 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-08-30 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -389,7 +389,7 @@ The extraction **Import template** dialog reads `extraction_templates_global` th
 | ------ | ---------------- |
 | **UI** | Calls `POST /api/v1/projects/{project_id}/templates/clone` with `global_template_id` and `kind=extraction` (JWT via `apiClient`). The UI may still load the global row first to validate that the id exists in the catalogue. |
 | **Service** | `TemplateCloneService.clone` is **idempotent** on `(project_id, global_template_id)`: first call creates the project row, `extraction_entity_types`, `extraction_fields`, and exactly one active version; later calls return the existing clone and current counts. |
-| **Heal** | Drift is measured against the **active version snapshot**, never the global template. Zero-state clones (empty live structure) rebuild from the global. Non-empty drift (e.g. an edit whose republish call was lost) **self-heals by publishing the live structure** as a new version (`TemplateVersionService.republish`) — never wipe-and-rebuild: with user-editable templates a count mismatch is indistinguishable from a deliberate edit, and the historical wipe destroyed customizations. Factory recovery = delete the template and re-import. |
+| **Heal** | Drift is measured against the **active version snapshot**, never the global template. Zero-state clones (empty live structure) rebuild from the global — **except** when the live `llm_template_instruction` differs from the one pinned in the active version, which raises `PendingConfigDraftError` (409). The rebuild resets structure but never that column, and `republish` snapshots it live, so healing would publish prompt text nobody approved — and session-open reaches this branch as any project **member**. `fail_if_pending_draft` cannot guard it: the rebuild's own inserts stamp the marker (0048, `COALESCE` with no `IS NULL` predicate), so the flag would refuse every heal; the marker alone would refuse the documented delete-everything factory recovery, whose marker is a trigger byproduct. Exit = Publish, then re-import. Non-empty drift (e.g. an edit whose republish call was lost) **self-heals by publishing the live structure** as a new version (`TemplateVersionService.republish`) — never wipe-and-rebuild: with user-editable templates a count mismatch is indistinguishable from a deliberate edit, and the historical wipe destroyed customizations. Factory recovery = delete the template and re-import. |
 
 **File import/export (2026-08-23).** The same dialog (now "Switch template")
 also lists the project's own templates — active and inactive — with *Switch

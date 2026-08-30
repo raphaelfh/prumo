@@ -46,6 +46,13 @@ export const qa = {
   divergenceConfirm: 'Record judgment',
   divergenceNote: 'Recorded judgment differs from the derived default.',
   outOfScopeBadge: 'Out of scope for this study type',
+  // The wire's third input state (`state: "out-of-scope"`) OUTRANKS the other
+  // two: a section the study type takes out of play is not unfinished work.
+  // ONE string, shared by the derived chip and the overall banner, because the
+  // defect it fixes was those two surfaces contradicting the badge above them.
+  outOfScopeValue: 'Not applicable',
+  outOfScopeHint:
+    'Not applicable — this study type takes the contributing sections out of scope, so there is nothing to judge here.',
 
   // Computed overall judgments (worst-domain; never entered by a reviewer)
   overallBannerTitle: 'Overall judgments',

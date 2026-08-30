@@ -25,7 +25,7 @@ import {Separator} from '@/components/ui/separator';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
-import {formatFullSuggestionValue, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
+import {formatFullSuggestionValue, valuelessProposalKind} from '@/lib/ai-extraction/suggestionUtils';
 import {adoptionWording, type PeerAdoptionMark} from '@/lib/runs/adoption';
 import {initials} from '@/components/runs/ReviewerAvatarStack';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
@@ -179,7 +179,9 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
     bucket.push(m.reviewerLabel);
   }
 
-  const noInfo = isAbstention(version.value);
+  // Both valueless kinds suppress the confidence badge; only a `'marker'`
+  // claims a recorded "No information" answer (see `valuelessProposalKind`).
+  const valueless = valuelessProposalKind(version.value);
   const hasReasoning = !!version.reasoning?.trim();
   const evidence = version.evidence ?? [];
   const hasEvidence = evidence.length > 0 && !!evidence[0]?.text?.trim();
@@ -196,13 +198,13 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          {noInfo ? (
+          {valueless ? (
             <div>
               <p className="text-sm font-medium text-foreground/90">
-                {t('extraction', 'reviewNoInformation')}
+                {t('extraction', valueless === 'marker' ? 'reviewNoInformation' : 'reviewNoValue')}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('extraction', 'reviewNoInformationDesc')}
+                {t('extraction', valueless === 'marker' ? 'reviewNoInformationDesc' : 'reviewNoValueDesc')}
               </p>
             </div>
           ) : (
@@ -216,9 +218,11 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {/* A no-info card never shows a confidence % (a not_found 0% reads as
-              misleading). Real values show their confidence + a low flag. */}
-          {!noInfo && (
+          {/* A valueless card never shows a confidence % — the backend drops the
+              abstention confidence and the read path floors the missing score to
+              0, so a badge here would invent "the model was 0% sure" out of "the
+              model said nothing". Real values show confidence + a low flag. */}
+          {!valueless && (
             <Badge variant="outline" className="bg-ai/10 text-xs text-ai border-ai/30">
               {confidencePercent}%{isLow ? ` · ${t('extraction', 'reviewLowConfidence')}` : ''}
             </Badge>

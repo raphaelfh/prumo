@@ -54,7 +54,7 @@ import { TABLE_CELL_CLASS } from "@/lib/table-constants";
 import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
 import { useActiveTemplateStructure } from "@/hooks/extraction/useActiveTemplateStructure";
 import { useArticleExtractionValues } from "@/hooks/extraction/useArticleExtractionValues";
-import { computeRowProgress } from "@/lib/extraction/progress";
+import { scopedRowProgress } from "@/lib/qa/scopedProgress";
 
 type Article = ArticleListItem;
 
@@ -110,6 +110,12 @@ interface Props {
   projectId: string;
   templateId: string;
   rowActionHref: (articleId: string, templateId: string) => string;
+  /**
+   * The active template's declared data. Only `scope_rules` is read, to drop
+   * the sections an article's own study-type classification takes out of
+   * play before the metric runs. Absent (extraction) = nothing excluded.
+   */
+  templateSchema?: Record<string, unknown> | null;
   emptyTitle?: string;
   emptyDescription?: string;
 }
@@ -119,6 +125,7 @@ export function HITLArticleTable({
   projectId,
   templateId,
   rowActionHref,
+  templateSchema,
   emptyTitle,
   emptyDescription,
 }: Props) {
@@ -208,7 +215,9 @@ export function HITLArticleTable({
       const d = valuesByArticle.get(article.id);
       map.set(
         article.id,
-        d ? computeRowProgress(d.instances, d.values, entityTypes) : 0,
+        d
+          ? scopedRowProgress(templateSchema, entityTypes, d.instances, d.values)
+          : 0,
       );
     }
     return map;

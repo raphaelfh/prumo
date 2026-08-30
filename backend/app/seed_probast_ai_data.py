@@ -264,19 +264,92 @@ _DESC_SETTING_DATES = (
     "desc_setting_dates",
     "Describe the sources of data, the included participants, the setting, and the dates",
 )
-_DESC_PREDICTORS = (
+# The form words the two D2 boxes differently, and the difference is
+# substantive: the evaluation box asks about the model AS EVALUATED, not the
+# one that was developed. One shared constant used to flatten both.
+_DESC_PREDICTORS_DEV = (
     "desc_predictors",
-    "Describe the predictors in the model, their definitions, and the timing of their assessment",
+    "List and describe the predictors included in the final prediction model, "
+    "how they were defined and assessed, and the timing of their assessment",
+)
+_DESC_PREDICTORS_EVAL = (
+    "desc_predictors",
+    "List and describe the predictors included in the evaluated model, including "
+    "their definition and the timing of their assessment",
 )
 _DESC_OUTCOME = (
     "desc_outcome",
     "Describe the outcome, how it was defined and determined, and the time "
     "interval between predictor assessment and outcome determination",
 )
+# The form's two D3-applicability boxes, deliberately merged into one field
+# (item map, docs/reference/templates/probast-ai-instrument.md). The composite
+# half asks for the per-component NUMBERS, not for the method used to get them.
 _DESC_OUTCOME_TIMING = (
     "desc_outcome_timing",
-    "Describe at what time point the outcome was determined, and whether a "
-    "composite outcome was used and how its distribution was assessed",
+    "Describe at what time point the outcome was determined and, if a composite "
+    "outcome was used, the relative frequency or distribution of each "
+    "contributing outcome",
+)
+
+
+# Domain-4 describe boxes. The prompt IS the AI extraction instruction
+# (``_describe`` interpolates it into ``llm_description``) and PROBAST+AI makes
+# these boxes the evidence the domain's signaling questions are answered on, so
+# each one carries every fact the form names — the predictor counts item 4.1 /
+# 4.2 turn on, the optimism adjustment, and the extent of missing data, not only
+# how it was handled. ``hyperparameter tuning`` is an addition the instrument
+# supports (Box 1 glossary; E&E "all model development steps including …
+# hyperparameter tuning"), kept ALONGSIDE the form's own
+# "classification or risk group definition" rather than in place of it.
+_DEV_D4_DESCRIBES: tuple[tuple[str, str], ...] = (
+    (
+        "desc_sample_numbers",
+        "Describe the number of participants, the number of candidate predictors, "
+        "and the number of outcome events available for the model development",
+    ),
+    (
+        "desc_model_development",
+        "Describe how the prediction model was developed, including the modelling "
+        "technique, predictor selection, hyperparameter tuning, and classification "
+        "or risk group definition",
+    ),
+    (
+        "desc_performance_measures",
+        "Describe the performance measures of the prediction model as reported for "
+        "the development data, for example (re)calibration, discrimination, "
+        "(re)classification and net benefit, and whether they were adjusted for "
+        "optimism",
+    ),
+    (
+        "desc_missing_data",
+        "Describe the missing data on predictors and outcomes in the model "
+        "development, as well as the methods used for handling these missing data",
+    ),
+)
+_EVAL_D4_DESCRIBES: tuple[tuple[str, str], ...] = (
+    (
+        "desc_sample_numbers",
+        "Describe the number of participants, the number of predictors, the number "
+        "of outcome events, and the events per predictor available for the model "
+        "evaluation",
+    ),
+    (
+        "desc_performance_measures",
+        "Describe the performance measures of the evaluated model as reported for "
+        "the evaluation, for example (re)calibration, discrimination, "
+        "(re)classification and net benefit, and whether they were adjusted for "
+        "optimism",
+    ),
+    (
+        "desc_excluded_participants",
+        "Describe any participants who were excluded from the evaluation analysis",
+    ),
+    (
+        "desc_missing_data",
+        "Describe the missing data on predictors and outcomes in the evaluation "
+        "analysis, as well as the methods used for handling these missing data",
+    ),
 )
 
 

@@ -24,27 +24,24 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { qa } from "@/lib/copy/qa";
+import {
+  derivedInputStateDisplay,
+  isJudgmentOutOfScope,
+} from "@/lib/qa/derivedInputState";
 import { cn } from "@/lib/utils";
+import type { components } from "@/types/api/schema";
 
-interface DerivedJudgmentInputView {
-  label: string;
-  value: string | null;
-  /** The Low/High/Unclear the rule consumed from this row (null = nothing). */
-  contribution?: string | null;
-}
-
-export interface DerivedJudgmentView {
-  id: string;
-  label: string;
-  value: string | null;
-  inputs?: DerivedJudgmentInputView[];
-  /**
-   * Present on RECOMMENDATION entries (the derived default for a stored
-   * judgment field). The banner renders OVERALLS only — entries whose
-   * target is null or absent (loose check: older payloads omit the key).
-   */
-  target_field_id?: string | null;
-}
+/**
+ * The generated contract, not a hand mirror. The local copy this replaced had
+ * never learned `state`, which is the documented root cause of the
+ * envelope-drift incident class (`.claude/rules/frontend.md`): the payload
+ * gained a field, the type did not, and the omission was invisible to tsc.
+ *
+ * `target_field_id` is present on RECOMMENDATION entries (the derived default
+ * for a stored judgment field). The banner renders OVERALLS only — entries
+ * whose target is null or absent (loose check: older payloads omit the key).
+ */
+export type DerivedJudgmentView = components["schemas"]["RunViewDerivedJudgment"];
 
 interface OverallJudgmentBannerProps {
   judgments: DerivedJudgmentView[];
@@ -76,22 +73,25 @@ function InputBreakdown({ judgment }: { judgment: DerivedJudgmentView }) {
     <div className="min-w-0">
       <p className="mb-1 text-[11px] font-medium text-foreground">{judgment.label}</p>
       <ul className="space-y-0.5">
-        {inputs.map((input) => (
-          <li
-            key={input.label}
-            className="flex items-baseline justify-between gap-3 text-[11px] leading-5"
-          >
-            <span className="min-w-0 truncate text-muted-foreground">{input.label}</span>
-            <span
-              className={cn(
-                "shrink-0 font-medium",
-                input.value === null ? "text-warning" : "text-foreground",
-              )}
+        {inputs.map((input) => {
+          // A stated reason wins: an excluded or unreported domain is not a
+          // gap to chase, so it is muted rather than warning-toned. Only the
+          // stateless blank means the domain is genuinely still owed.
+          const stated = derivedInputStateDisplay(input.state);
+          const tone =
+            stated?.tone ?? (input.value === null ? "text-warning" : "text-foreground");
+          return (
+            <li
+              key={input.label}
+              className="flex items-baseline justify-between gap-3 text-[11px] leading-5"
             >
-              {input.value ?? qa.overallExplainInputNotJudged}
-            </span>
-          </li>
-        ))}
+              <span className="min-w-0 truncate text-muted-foreground">{input.label}</span>
+              <span className={cn("shrink-0 font-medium", tone)}>
+                {stated?.text ?? input.value ?? qa.overallExplainInputNotJudged}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -105,7 +105,11 @@ export function OverallJudgmentBanner({ judgments: allJudgments }: OverallJudgme
 
   if (judgments.length === 0) return null;
 
-  const anyIncomplete = judgments.some((judgment) => judgment.value === null);
+  // An out-of-scope overall is blank because nothing applies, so it must not
+  // trigger the "go judge the domains marked Not judged" remediation.
+  const anyIncomplete = judgments.some(
+    (judgment) => judgment.value === null && !isJudgmentOutOfScope(judgment.inputs),
+  );
   const explainable = judgments.some((judgment) => (judgment.inputs?.length ?? 0) > 0);
 
   return (
@@ -121,25 +125,30 @@ export function OverallJudgmentBanner({ judgments: allJudgments }: OverallJudgme
         <span className="text-[11px] text-muted-foreground">{qa.overallBannerHint}</span>
       </div>
       <ul className="flex flex-wrap gap-2">
-        {judgments.map((judgment) => (
-          <li key={judgment.id}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge
-                  variant="outline"
-                  className={cn("gap-2 font-normal", toneFor(judgment.value))}
-                  data-testid={`qa-overall-${judgment.id}`}
-                >
-                  <span className="text-muted-foreground">{judgment.label}</span>
-                  <span className="font-semibold">{judgment.value ?? qa.overallIncomplete}</span>
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                {judgment.value ? qa.overallBannerHint : qa.overallIncompleteHint}
-              </TooltipContent>
-            </Tooltip>
-          </li>
-        ))}
+        {judgments.map((judgment) => {
+          const blank = isJudgmentOutOfScope(judgment.inputs)
+            ? { text: qa.outOfScopeValue, hint: qa.outOfScopeHint }
+            : { text: qa.overallIncomplete, hint: qa.overallIncompleteHint };
+          return (
+            <li key={judgment.id}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className={cn("gap-2 font-normal", toneFor(judgment.value))}
+                    data-testid={`qa-overall-${judgment.id}`}
+                  >
+                    <span className="text-muted-foreground">{judgment.label}</span>
+                    <span className="font-semibold">{judgment.value ?? blank.text}</span>
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {judgment.value ? qa.overallBannerHint : blank.hint}
+                </TooltipContent>
+              </Tooltip>
+            </li>
+          );
+        })}
       </ul>
 
       {explainable && (

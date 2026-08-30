@@ -135,6 +135,10 @@ const FIELDS = [
     other_placeholder: 'Describe the design',
     allows_not_applicable: true,
     allows_not_evaluated: true,
+    // OFF is the non-default here (0062 defaults it ON), and the create
+    // endpoint defaults it to TRUE — so a restore that omits the key
+    // silently re-enables the NI marker on a field that had it off.
+    allows_no_information: false,
     validation_schema: {maxLength: 80},
     sort_order: 1,
   },
@@ -282,6 +286,7 @@ describe('TemplateConfigEditor — delete-field hosting (B-9d)', () => {
         other_placeholder: 'Describe the design',
         allows_not_applicable: true,
         allows_not_evaluated: true,
+        allows_no_information: false,
         validation_schema: {maxLength: 80},
       }),
     );

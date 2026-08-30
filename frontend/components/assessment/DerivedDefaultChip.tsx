@@ -23,6 +23,10 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toneFor } from "@/components/assessment/OverallJudgmentBanner";
 import { qa } from "@/lib/copy/qa";
+import {
+  derivedInputStateDisplay,
+  isJudgmentOutOfScope,
+} from "@/lib/qa/derivedInputState";
 import { cn } from "@/lib/utils";
 import type { components } from "@/types/api/schema";
 
@@ -43,12 +47,12 @@ type RunViewDerivedInput = components["schemas"]["RunViewDerivedInput"];
  * to act on.
  */
 function rowDisplay(input: RunViewDerivedInput): { text: string; tone: string } {
-  if (input.state === "unreported") {
-    return { text: qa.derivedInputUnreported, tone: "text-muted-foreground" };
-  }
-  if (input.state === "in-progress") {
-    return { text: qa.derivedInputInProgress, tone: "text-warning" };
-  }
+  // A stated reason wins over the raw answer: out-of-scope outranks the other
+  // two by wire contract, and none of the three is work still owed except
+  // "in-progress". The literals and tones live in one place, shared with the
+  // overall banner, so the two surfaces cannot drift.
+  const stated = derivedInputStateDisplay(input.state);
+  if (stated) return stated;
   const display = input.value ?? input.contribution;
   if (display != null) return { text: display, tone: "text-foreground" };
   return { text: qa.derivedInputNotAnswered, tone: "text-warning" };
@@ -69,6 +73,11 @@ export function DerivedDefaultChip({
   const [open, setOpen] = useState(false);
   const derived = judgment.value ?? null;
   const inputs = judgment.inputs ?? [];
+  // A domain with no applicable signaling questions has no default to derive,
+  // which is not the same as "not every question has been answered yet".
+  const blank = isJudgmentOutOfScope(inputs)
+    ? { text: qa.outOfScopeValue, hint: qa.outOfScopeHint }
+    : { text: qa.derivedDefaultIncomplete, hint: qa.derivedDefaultIncompleteHint };
 
   return (
     <div className="mb-2" data-testid={`qa-derived-${judgment.id}`}>
@@ -83,13 +92,11 @@ export function DerivedDefaultChip({
               className={cn("gap-1 font-normal", toneFor(derived))}
               data-testid={`qa-derived-chip-${judgment.id}`}
             >
-              <span className="font-semibold">
-                {derived ?? qa.derivedDefaultIncomplete}
-              </span>
+              <span className="font-semibold">{derived ?? blank.text}</span>
             </Badge>
           </TooltipTrigger>
           <TooltipContent>
-            {derived ? qa.derivedExplainShow : qa.derivedDefaultIncompleteHint}
+            {derived ? qa.derivedExplainShow : blank.hint}
           </TooltipContent>
         </Tooltip>
         {derived !== null && !disabled ? (

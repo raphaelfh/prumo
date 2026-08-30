@@ -16,7 +16,7 @@ const REMOVED = [
   'configImportThisTemplate','configSeeDetails','configImportCharmsTitle',
   'configImportCharmsFullDesc','configImportButton',
 ] as const;
-const KEPT = ['exportButton', 'instancesCardTitle', 'configImportTemplateButton'] as const;
+const KEPT = ['exportButton', 'configImportTemplateButton'] as const;
 
 describe('extraction copy — legacy export keys removed', () => {
   it.each(REMOVED)('removed: %s', (k) => {

@@ -77,10 +77,10 @@ jobs:
   # legacy concept blacklist, glossary sync, RLS coverage, ApiResponse
   # envelope, layered-architecture DAG, TanStack-Query key factories).
   #
-  # Four checks are shrink-only RATCHETS whose .baseline grandfathers what
+  # Five checks are shrink-only RATCHETS whose .baseline grandfathers what
   # already exists: button scale, file sizes, frontend data path, scope
-  # guards. The other baselines are EMPTY and must stay that way. Any NEW
-  # violation fails CI immediately; the baselines only shrink. To
+  # guards, copy keys. The other baselines are EMPTY and must stay that way.
+  # Any NEW violation fails CI immediately; the baselines only shrink. To
   # intentionally accept a regression, add a baseline entry in the same PR
   # with a `# reason` on the line.
   fitness:

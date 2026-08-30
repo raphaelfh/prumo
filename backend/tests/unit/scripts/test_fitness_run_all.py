@@ -11,6 +11,7 @@ file's purpose is to confirm the *current* tree is clean.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -35,3 +36,20 @@ def test_run_all_exits_zero_on_current_tree() -> None:
     # Sanity: each check should have reported in stdout.
     assert "check_migration_split.sh" in proc.stdout
     assert "check_legacy_concepts.py" in proc.stdout
+
+
+def test_every_check_on_disk_is_wired_into_run_all() -> None:
+    """A check that is not in run_all.sh does not run, and nothing else notices.
+
+    `test_verify_all_gates.py::test_gate_roster_is_pinned` gives `verify_all.sh`
+    this protection one level up; without the same here, deleting a `run_check`
+    block silently disarms an architectural gate with a green suite.
+    """
+    fitness_dir = REPO_ROOT / "scripts" / "fitness"
+    on_disk = {
+        p.name
+        for p in fitness_dir.iterdir()
+        if p.name.startswith("check_") and p.suffix in {".py", ".sh"}
+    }
+    wired = set(re.findall(r"check_[a-z_]+\.(?:py|sh)", RUN_ALL.read_text(encoding="utf-8")))
+    assert on_disk - wired == set(), f"checks not wired into run_all.sh: {sorted(on_disk - wired)}"

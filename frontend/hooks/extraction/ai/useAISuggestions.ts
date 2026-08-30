@@ -23,7 +23,7 @@ import type {
 } from '@/types/ai-extraction';
 import {getSuggestionKey} from '@/types/ai-extraction';
 import {AISuggestionService} from '@/services/aiSuggestionService';
-import {filterSuggestionsByConfidence, isAbstention} from '@/lib/ai-extraction/suggestionUtils';
+import {filterSuggestionsByConfidence, valuelessProposalKind} from '@/lib/ai-extraction/suggestionUtils';
 import {getErrorMessage} from '@/lib/ai-extraction/errors';
 import {EMPTY_SESSION_ADOPTION} from '@/lib/runs/aiLink';
 
@@ -297,11 +297,13 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       return;
     }
 
-    // ADR-0016 decision #3: an AI abstention ("no information") must never be
-    // silently bulk-accepted — a reviewer accepts it deliberately, one at a time.
-    // Exclude markers so no confidence threshold can sweep them into accept-all
-    // (an abstention normally has ~0 confidence, but this holds even if it didn't).
-    const actionable = filtered.filter(([, suggestion]) => !isAbstention(suggestion.value));
+    // ADR-0016 decision #3: a valueless proposal must never be silently
+    // bulk-accepted — a reviewer accepts it deliberately, one at a time. The
+    // confidence threshold alone would not hold one back: an `ambiguous`
+    // proposal is valueless yet keeps a real, possibly high confidence.
+    const actionable = filtered.filter(
+      ([, suggestion]) => valuelessProposalKind(suggestion.value) === null,
+    );
     if (actionable.length === 0) {
         toast.info(t('extraction', 'noSuggestionConfidenceToast').replace('{{pct}}', String(Math.round(threshold * 100))));
       return;

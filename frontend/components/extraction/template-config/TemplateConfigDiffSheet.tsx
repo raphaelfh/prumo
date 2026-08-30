@@ -80,6 +80,7 @@ const ATTRIBUTE_COPY: Record<string, CopyKey> = {
   allow_other: 'diffAttrAllowOther',
   allowed_units: 'diffAttrAllowedUnits',
   allowed_values: 'diffAttrAllowedValues',
+  allows_no_information: 'diffAttrAllowsNoInformation',
   allows_not_applicable: 'diffAttrAllowsNotApplicable',
   allows_not_evaluated: 'diffAttrAllowsNotEvaluated',
   cardinality: 'diffAttrCardinality',
