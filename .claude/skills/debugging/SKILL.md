@@ -44,7 +44,7 @@ Each has a known shape. Run the framework first; pattern-matching by gut is what
 1. **Bug arrives** → `systematic-debugging` Phase 1 (reproduce, gather evidence at *every* layer, do not theorise yet).
 2. **Symptom is downstream of trigger** → switch to `root-cause-tracing` to walk back.
 3. **Root cause confirmed, fix ready** → before writing the fix, apply `defense-in-depth` so the class is closed, not just this instance.
-4. **About to claim it's done** → `verification-before-completion` to actually run `make test-backend`, `pytest -k <name>`, `vitest run <path>`, `ruff check`, `tsc --noEmit`, and read the output.
+4. **About to claim it's done** → `verification-before-completion` to actually run `make test-backend`, `pytest -k <name>`, `vitest run <path>`, `ruff check`, `npm run typecheck`, and read the output.
 
 Skipping any step is how the same bug keeps coming back.
 
