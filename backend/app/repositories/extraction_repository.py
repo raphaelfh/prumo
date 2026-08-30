@@ -15,6 +15,7 @@ from app.core.logging import get_logger
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionInstance,
+    ExtractionRun,
     ExtractionTemplateGlobal,
     ProjectExtractionTemplate,
 )
@@ -271,6 +272,24 @@ class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
             db_duration_ms=(perf_counter() - query_start) * 1000,
         )
         return result.scalar_one_or_none()
+
+    async def get_on_run(
+        self,
+        instance_id: UUID | str,
+        run: ExtractionRun,
+    ) -> ExtractionInstance | None:
+        """The same guard, keyed by the run whose coordinate it must sit on.
+
+        A run already carries a project-bound article and template, so
+        passing it whole makes a mismatched trio unrepresentable at the call
+        site — the shape every in-run caller wants.
+        """
+        return await self.get_in_coordinate(
+            instance_id,
+            project_id=run.project_id,
+            article_id=run.article_id,
+            template_id=run.template_id,
+        )
 
     async def get_children(
         self,

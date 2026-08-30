@@ -195,7 +195,7 @@ class TestSectionExtractionEntityTypes:
         # Mock parent instance
         mock_parent = MagicMock()
         mock_parent.entity_type_id = parent_entity_type_id
-        service._instances.get_in_coordinate = AsyncMock(return_value=mock_parent)
+        service._instances.get_on_run = AsyncMock(return_value=mock_parent)
 
         # B-2: children come from the run-pinned tree, filtered by parent id.
         mock_child1 = MagicMock()
@@ -1090,7 +1090,7 @@ class TestGetChildEntityTypesEdgeCases:
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_parent_instance_not_found(self, service):
-        service._instances.get_in_coordinate = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         result = await service._get_child_entity_types(
             run=self._make_run(),
             parent_instance_id=uuid4(),
@@ -1101,7 +1101,7 @@ class TestGetChildEntityTypesEdgeCases:
     async def test_returns_empty_when_no_child_entity_types(self, service):
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_in_coordinate = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
         service._pinned_entity_types = AsyncMock(return_value=[])
         result = await service._get_child_entity_types(
             run=self._make_run(),
@@ -1113,7 +1113,7 @@ class TestGetChildEntityTypesEdgeCases:
     async def test_filters_by_section_ids(self, service):
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_in_coordinate = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         id1 = uuid4()
         id2 = uuid4()
@@ -1747,7 +1747,7 @@ class TestCreateSuggestions:
         parent = MagicMock()
         parent_template_id = uuid4()
         parent.template_id = parent_template_id
-        service._instances.get_in_coordinate = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         new_instance = MagicMock()
         new_instance.id = uuid4()
@@ -1777,12 +1777,7 @@ class TestCreateSuggestions:
             )
 
         # Looked up through the SCOPED reader, on the run's coordinate.
-        service._instances.get_in_coordinate.assert_awaited_once_with(
-            parent_instance_id,
-            project_id=run.project_id,
-            article_id=run.article_id,
-            template_id=run.template_id,
-        )
+        service._instances.get_on_run.assert_awaited_once_with(parent_instance_id, run)
         assert mock_instance_class.call_args.kwargs["template_id"] == run.template_id
 
     @pytest.mark.asyncio
@@ -1798,7 +1793,7 @@ class TestCreateSuggestions:
         et.fields = [field]
         service._entity_types.get_with_fields = AsyncMock(return_value=et)
         service._instances.get_by_article = AsyncMock(return_value=[])
-        service._instances.get_in_coordinate = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         service._instances.create = AsyncMock()
 
         with pytest.raises(ValueError, match="Parent instance not found"):
@@ -1985,7 +1980,7 @@ class TestExtractAllSections:
         run = self._make_run()
         self._minimal_lifecycle_wire(service, run)
 
-        service._instances.get_in_coordinate = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
 
         result = await service.extract_all_sections(
             project_id=uuid4(),
@@ -2006,7 +2001,7 @@ class TestExtractAllSections:
         run = self._make_run()
         self._minimal_lifecycle_wire(service, run)
 
-        service._instances.get_in_coordinate = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         service._assemble_prompt_text = AsyncMock(return_value="pdf text")
 
         await service.extract_all_sections(
@@ -2028,7 +2023,7 @@ class TestExtractAllSections:
         run = self._make_run()
         self._minimal_lifecycle_wire(service, run)
 
-        service._instances.get_in_coordinate = AsyncMock(return_value=None)
+        service._instances.get_on_run = AsyncMock(return_value=None)
         service._assemble_prompt_text = AsyncMock(return_value="ignored")
         assert service._run_anchor_blocks == []  # empty stash at the start of the run
 
@@ -2050,7 +2045,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_in_coordinate = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child_ok = MagicMock()
         child_ok.id = uuid4()
@@ -2094,7 +2089,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_in_coordinate = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child1 = MagicMock()
         child1.id = uuid4()
@@ -2134,7 +2129,7 @@ class TestExtractAllSections:
         service._assemble_prompt_text = AsyncMock(return_value="text")
 
         # Make the instance fetch explode unexpectedly (after assembly, before loops)
-        service._instances.get_in_coordinate = AsyncMock(side_effect=RuntimeError("db exploded"))
+        service._instances.get_on_run = AsyncMock(side_effect=RuntimeError("db exploded"))
 
         with pytest.raises(RuntimeError, match="db exploded"):
             await service.extract_all_sections(
@@ -2162,7 +2157,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_in_coordinate = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child1 = MagicMock()
         child1.id = uuid4()
@@ -2243,7 +2238,7 @@ class TestExtractAllSections:
 
         parent = MagicMock()
         parent.entity_type_id = uuid4()
-        service._instances.get_in_coordinate = AsyncMock(return_value=parent)
+        service._instances.get_on_run = AsyncMock(return_value=parent)
 
         child = MagicMock()
         child.id = uuid4()

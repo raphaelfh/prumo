@@ -1254,15 +1254,6 @@ class SectionExtractionService(LoggerMixin):
             raise ValueError(f"Entity type not found: {entity_type_id}")
         return entity_type
 
-    async def _parent_in_scope(self, run: ExtractionRun, parent_instance_id: UUID) -> Any:
-        """The parent instance — None unless it sits on the run's coordinate."""
-        return await self._instances.get_in_coordinate(
-            parent_instance_id,
-            project_id=run.project_id,
-            article_id=run.article_id,
-            template_id=run.template_id,
-        )
-
     async def _get_child_entity_types(
         self,
         run: ExtractionRun,
@@ -1280,7 +1271,7 @@ class SectionExtractionService(LoggerMixin):
         resolves field names against live rows).
         """
         # 1. Parent instance (live) for its entity_type_id — run-scoped (BOLA).
-        parent_instance = await self._parent_in_scope(run, parent_instance_id)
+        parent_instance = await self._instances.get_on_run(parent_instance_id, run)
 
         if not parent_instance:
             self.logger.warning(
@@ -1548,7 +1539,7 @@ class SectionExtractionService(LoggerMixin):
             )
         else:
             # Auto-create. Re-verified here too: last line before a foreign FK.
-            if parent_instance_id and not await self._parent_in_scope(run, parent_instance_id):
+            if parent_instance_id and not await self._instances.get_on_run(parent_instance_id, run):
                 raise ValueError(f"Parent instance not found: {parent_instance_id}")
             new_instance = ExtractionInstance(
                 project_id=project_id,
