@@ -316,12 +316,26 @@ API consolidation remains extraction-only per the roadmap).
   (PICOTS)", one muted line collapsed, the run's PINNED
   `general_instructions` read-only when expanded (§2d — never the live
   template column, which can differ until republish). Null renders one
-  muted "not configured" line naming where to set it (the template's ✨
-  instruction); a still-unedited seeded placeholder renders as-is — the
-  `[customize: …]` text is its own call to action, no detection logic.
-  Rejected placements: the run header (declutter, #475/#476), a
+  muted "not configured" line naming where to set it — **the QA
+  Configuration tab** (amended 2026-08-30: this line originally named
+  "the template's ✨ instruction", which was reachable only from the
+  extraction Configuration tab, a screen QA cannot open. The
+  2026-08-30 PICOT-AI-context spec §5c mounts the instruction control
+  and its publish cluster on the QA Configuration tab, making the
+  pointer real). A still-unedited seeded placeholder renders as-is —
+  the `[customize: …]` text is its own call to action, no detection
+  logic. Rejected placements: the run header (declutter, #475/#476), a
   per-applicability-row popover (×6 noise), a side sheet (weight).
   Copy via `lib/copy/qa.ts`.
+  **Precondition for this item** (recorded 2026-08-30): the disclosure
+  mounts in `frontend/pages/QualityAssessmentFullScreen.tsx` (1012
+  lines, EXACTLY at its `scripts/fitness/check_file_size.baseline` cap)
+  and its test in `frontend/test/QualityAssessmentFullScreen.test.tsx`
+  (1594, likewise at cap). Both have ZERO headroom — a single added
+  line fails the fitness gate — so PR3 must split them before it can
+  render anything. PR2 already put `general_instructions` on the wire
+  (`schema.d.ts:5060`, `hooks/runs/types.ts:243`); no frontend
+  component reads it yet.
 - **`useProjectQATemplate` → TanStack Query** while touched: wrap
   `loadProjectQATemplate` in `useQuery` with a key-factory entry,
   mirroring #677. Behavior-preserving otherwise.

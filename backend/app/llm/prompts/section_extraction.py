@@ -4,6 +4,7 @@ from app.llm.prompts import (
     content_version,
     render_general_instructions_section,
     render_memory_section,
+    render_review_context_section,
 )
 
 NAME = "section_extraction"
@@ -18,7 +19,7 @@ SYSTEM_PROMPT = (
     " the value."
 )
 
-_USER_TEMPLATE = """{general_instructions_section}Extract the following information from the scientific article:
+_USER_TEMPLATE = """{review_context_section}{general_instructions_section}Extract the following information from the scientific article:
 
 Section: {entity_name}
 Description: {entity_description}
@@ -33,10 +34,16 @@ For EACH field in the response schema, return an object with:
 - "evidence": an object with "text" (short quoted passage from the article supporting the value) and "page_number" (integer, if known), or null
 """
 
-# The canary argument hashes the shared block renderer's literal prefix:
-# editing render_general_instructions_section changes production prompts,
-# so it must bump VERSION too (§IX traceability).
-VERSION = content_version(SYSTEM_PROMPT, _USER_TEMPLATE, render_general_instructions_section("x"))
+# The canary arguments hash each shared block renderer's literal prefix:
+# editing either one changes production prompts, so it must bump VERSION
+# too (§IX traceability). tests/unit/llm/test_review_context_prompt.py
+# mutates the renderers to prove the canaries are live.
+VERSION = content_version(
+    SYSTEM_PROMPT,
+    _USER_TEMPLATE,
+    render_review_context_section("x"),
+    render_general_instructions_section("x"),
+)
 
 
 def render(
@@ -46,6 +53,7 @@ def render(
     article_text: str,
     memory_context: list[dict[str, str]] | None = None,
     general_instructions: str | None = None,
+    review_context: str | None = None,
 ) -> str:
     return _USER_TEMPLATE.format(
         entity_name=entity_name,
@@ -53,4 +61,5 @@ def render(
         memory_section=render_memory_section(memory_context),
         article_text=article_text,
         general_instructions_section=render_general_instructions_section(general_instructions),
+        review_context_section=render_review_context_section(review_context),
     )

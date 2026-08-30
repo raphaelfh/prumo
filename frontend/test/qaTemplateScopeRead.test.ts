@@ -53,6 +53,11 @@ describe("loadProjectQATemplate", () => {
       s.startsWith("project_extraction_templates:"),
     );
     expect(templateSelect).toContain("schema");
+    // `schema_` is the Python-side ORM alias, and PostgREST answers it with
+    // 42703 — so it is the likeliest typo here AND a substring of "schema",
+    // which means the assertion above alone stays green through exactly the
+    // mistake this guard exists to catch.
+    expect(templateSelect).not.toContain("schema_");
   });
 
   it("hands the rules through to the caller", async () => {

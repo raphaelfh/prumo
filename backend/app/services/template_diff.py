@@ -341,9 +341,20 @@ def _as_uuid(raw: str | None) -> UUID | None:
 # --------------------------------------------------------------------------
 
 
+def normalize_instruction(value: Any) -> str | None:
+    """The instruction-normalization rule, for every reader that compares one.
+
+    Mirrors ``template_instruction_service``'s write-side expression so
+    ``absent ≡ null ≡ ""`` holds identically wherever an instruction is
+    compared — here and in ``TemplateCloneService``'s zero-state guard.
+    Kept in one place because a second copy lets the Draft chip and that
+    guard disagree about whether a draft is pending.
+    """
+    return (str(value) if value is not None else "").strip() or None
+
+
 def _instruction(snapshot: dict[str, Any]) -> str | None:
-    raw = snapshot.get(TEMPLATE_INSTRUCTION_KEY)
-    return (str(raw) if raw is not None else "").strip() or None
+    return normalize_instruction(snapshot.get(TEMPLATE_INSTRUCTION_KEY))
 
 
 def _diff_instruction(baseline: dict[str, Any], current: dict[str, Any]) -> list[TemplateChange]:

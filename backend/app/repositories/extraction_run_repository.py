@@ -6,7 +6,7 @@ Manages persistence for AI extraction runs.
 
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -184,6 +184,10 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
     ) -> dict[str, Any] | None:
         """Pin the run's LLM engine under ``results["provenance"]["engine"]``.
 
+        A thin wrapper over ``freeze_provenance_key``, which owns the storage
+        mechanics (row lock, reassign-to-track, first-writer guard). The
+        REASONS below are the engine's alone and would be stranded there.
+
         First writer wins: ``candidate`` is installed only when the run names no
         engine yet, and the run's effective engine is returned either way. That
         is what makes a Celery retry reproducible — ``run_section_extraction_task``
@@ -202,16 +206,6 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         version already carries the engine that produced it, so re-pinning
         cannot relabel the values the previous engine wrote.
 
-        Row-locked read-modify-write, mirroring ``merge_provenance_section``:
-        concurrent section tasks on one run serialize here instead of racing to
-        install different engines. Sibling provenance keys (the per-section
-        ``sections`` map) are preserved; reassign (not mutate) so SQLAlchemy
-        tracks the JSONB change.
-
-        ``results`` is server-only. ``parameters`` is a free-form bag any project
-        reviewer can write through ``POST /api/v1/runs`` and must never hold
-        provenance — that is the hole #610 closed on the export side.
-
         Args:
             run_id: the run to pin.
             candidate: ``LlmTarget.model_dump()``, used only if none is pinned
@@ -220,6 +214,38 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
 
         Returns:
             The run's effective engine payload, or None if the run does not exist.
+        """
+        return await self.freeze_provenance_key(run_id, "engine", candidate, repin=repin)
+
+    async def freeze_provenance_key(
+        self,
+        run_id: UUID,
+        key: Literal["engine", "review_context"],
+        candidate: dict[str, Any],
+        *,
+        repin: bool = False,
+    ) -> dict[str, Any] | None:
+        """First-writer-wins pin of one ``results["provenance"][key]`` payload.
+
+        Row-locked read-modify-write: concurrent section tasks on one run
+        serialize here instead of racing to install different values. Sibling
+        provenance keys (the per-section ``sections`` map, and every other pin)
+        are preserved; ``results`` is REASSIGNED, not mutated, or SQLAlchemy
+        does not track the JSONB change.
+
+        ``key`` is a Literal, not a free string: this writes into the same dict
+        that holds the engine pin and the per-section ``sections`` map, and a
+        caller passing either name would clobber them. Widening the Literal is
+        a deliberate act; passing a variable is a type error.
+
+        The guard is a TRUTHY-dict test, so a caller that pins ``{}`` silently
+        loses first-writer-wins on every later call. Pin a dict with at least
+        one key — ``{"text": None}`` is a legitimate "resolved, and it says
+        nothing", and stays distinguishable from an absent key.
+
+        ``results`` is server-only. ``parameters`` is a free-form bag any
+        project reviewer can write through ``POST /api/v1/runs`` and must never
+        hold provenance — that is the hole #610 closed on the export side.
         """
         run = (
             await self.db.execute(
@@ -230,10 +256,10 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
             return None
         results = {**(run.results or {})}
         provenance = {**(results.get("provenance") or {})}
-        pinned = provenance.get("engine")
+        pinned = provenance.get(key)
         if not repin and isinstance(pinned, dict) and pinned:
             return pinned
-        provenance["engine"] = candidate
+        provenance[key] = candidate
         results["provenance"] = provenance
         run.results = results
         await self.db.flush()

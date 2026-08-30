@@ -70,6 +70,7 @@ from app.services.extraction_snapshot import (
     entity_types_for_version,
     general_instructions_for_version,
 )
+from app.services.run_prompt_context import read_pinned_review_context
 
 logger = get_logger(__name__)
 
@@ -448,6 +449,9 @@ async def build_run_view(
     # Kind-neutral on purpose: nesting this in the quality-assessment branch
     # above would silently null the pin for extraction runs, which carry it too.
     general_instructions = await general_instructions_for_version(db, detail.run.version_id)
+    # A pure READ of the run's pin — never ``resolve_run_prompt_context``, which
+    # installs one. A read path must not take the row lock or write provenance.
+    review_pin = read_pinned_review_context(detail.run.results)
 
     if detail.run.stage in _READY_HINT_STAGES:
         # include_peers reuses detail.peers_revealed (the single blind source),
@@ -475,6 +479,7 @@ async def build_run_view(
         reviewers_ready=ready["reviewers_ready"],
         derived_judgments=derived_judgments,
         general_instructions=general_instructions,
+        review_context=review_pin.text if review_pin else None,
         peers_revealed=detail.peers_revealed,
     )
 

@@ -21,12 +21,12 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  isOutOfScope,
-  OUT_OF_SCOPE,
-  toneFor,
-} from "@/components/assessment/OverallJudgmentBanner";
+import { toneFor } from "@/components/assessment/OverallJudgmentBanner";
 import { qa } from "@/lib/copy/qa";
+import {
+  derivedInputStateDisplay,
+  isJudgmentOutOfScope,
+} from "@/lib/qa/derivedInputState";
 import { cn } from "@/lib/utils";
 import type { components } from "@/types/api/schema";
 
@@ -47,17 +47,12 @@ type RunViewDerivedInput = components["schemas"]["RunViewDerivedInput"];
  * to act on.
  */
 function rowDisplay(input: RunViewDerivedInput): { text: string; tone: string } {
-  // First, and muted: out-of-scope outranks the other two by wire contract —
-  // there is no work behind it to report as unreported or in progress.
-  if (input.state === OUT_OF_SCOPE) {
-    return { text: qa.outOfScopeValue, tone: "text-muted-foreground" };
-  }
-  if (input.state === "unreported") {
-    return { text: qa.derivedInputUnreported, tone: "text-muted-foreground" };
-  }
-  if (input.state === "in-progress") {
-    return { text: qa.derivedInputInProgress, tone: "text-warning" };
-  }
+  // A stated reason wins over the raw answer: out-of-scope outranks the other
+  // two by wire contract, and none of the three is work still owed except
+  // "in-progress". The literals and tones live in one place, shared with the
+  // overall banner, so the two surfaces cannot drift.
+  const stated = derivedInputStateDisplay(input.state);
+  if (stated) return stated;
   const display = input.value ?? input.contribution;
   if (display != null) return { text: display, tone: "text-foreground" };
   return { text: qa.derivedInputNotAnswered, tone: "text-warning" };
@@ -80,7 +75,7 @@ export function DerivedDefaultChip({
   const inputs = judgment.inputs ?? [];
   // A domain with no applicable signaling questions has no default to derive,
   // which is not the same as "not every question has been answered yet".
-  const blank = isOutOfScope(inputs)
+  const blank = isJudgmentOutOfScope(inputs)
     ? { text: qa.outOfScopeValue, hint: qa.outOfScopeHint }
     : { text: qa.derivedDefaultIncomplete, hint: qa.derivedDefaultIncompleteHint };
 

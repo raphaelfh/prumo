@@ -20,10 +20,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
 from app.schemas.llm_target import LlmTarget
+from app.schemas.run_prompt_context import RunPromptContext
 from app.services.extraction_prompt_input import PromptInputInfo
 from app.services.llm_field_filter import LlmFieldFilter
 from app.services.run_engine_freeze import build_run_provenance
 from app.services.section_extraction_service import SectionExtractionService
+
+
+@pytest.fixture(autouse=True)
+def _stub_run_prompt_context():
+    """Stub the run-constant prompt context.
+
+    ``resolve_run_prompt_context`` reads a real run row, renders the project's
+    review question and PINS it — all of which need Postgres. These tests drive
+    the service on mocks, so it is stubbed to the empty context the old
+    ``general_instructions_for_version`` mock effectively returned. What it
+    threads is covered for real in ``test_run_review_context_pin`` and
+    ``test_prompt_context_threading``.
+    """
+    with patch(
+        "app.services.section_extraction_service.resolve_run_prompt_context",
+        AsyncMock(return_value=RunPromptContext()),
+    ):
+        yield
 
 
 @pytest.fixture

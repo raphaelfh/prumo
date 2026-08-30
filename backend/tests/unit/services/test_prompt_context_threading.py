@@ -1,6 +1,9 @@
-"""_extract_with_llm prepends the pinned general instruction to the user
-prompt AND to the persisted composition re-render (constitution §IX —
-provenance must record the prompt actually sent)."""
+"""_extract_with_llm prepends BOTH run-constant blocks to the user prompt
+AND to the persisted composition re-render (constitution §IX — provenance must
+record the prompt actually sent).
+
+The two travel as one ``RunPromptContext`` precisely so a caller cannot thread
+one and forget the other; this asserts they arrive together and in order."""
 
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -8,7 +11,11 @@ from uuid import uuid4
 import pytest
 
 from app.llm.extractor import LlmUsage
-from app.llm.prompts import render_general_instructions_section
+from app.llm.prompts import (
+    render_general_instructions_section,
+    render_review_context_section,
+)
+from app.schemas.run_prompt_context import RunPromptContext
 from app.services.section_extraction_service import SectionExtractionService
 
 
@@ -36,7 +43,7 @@ class _EntityType:
 
 
 @pytest.mark.asyncio
-async def test_extract_with_llm_prepends_general_instructions(monkeypatch) -> None:
+async def test_extract_with_llm_prepends_both_run_constant_blocks(monkeypatch) -> None:
     captured: dict[str, str] = {}
 
     async def fake_extract_structured(**kwargs):
@@ -67,14 +74,21 @@ async def test_extract_with_llm_prepends_general_instructions(monkeypatch) -> No
     data, usage = await service._extract_with_llm(
         pdf_text="ARTICLE",
         entity_type=_EntityType(),
-        general_instructions="Report values exactly as stated.",
+        prompt_context=RunPromptContext(
+            review_context="- Population: Adults with heart failure",
+            general_instructions="Report values exactly as stated.",
+        ),
     )
     # The glue builds the snapshot post-verify (fast mode → pure no-op).
     await service._maybe_verify(uuid4(), uuid4(), "extraction", "ARTICLE", data, usage)
-    # Threading is under test here; the block's exact wording is golden-
-    # tested in tests/unit/llm/test_prompts.py, so build the expected
-    # prefix through the renderer instead of duplicating the literal.
-    expected_prefix = render_general_instructions_section("Report values exactly as stated.")
+    # Threading is under test here; each block's exact wording is golden-
+    # tested in tests/unit/llm/test_review_context_prompt.py, so build the
+    # expected prefix through the renderers instead of duplicating literals.
+    # ORDER is part of it: the review question frames the task, the template
+    # instruction is the more specific guidance and sits closest to it.
+    expected_prefix = render_review_context_section(
+        "- Population: Adults with heart failure"
+    ) + render_general_instructions_section("Report values exactly as stated.")
     assert expected_prefix  # non-empty guard: a broken renderer must not pass
     assert captured["user_prompt"].startswith(expected_prefix)
     # Constitution §IX: the persisted composition re-render must be
