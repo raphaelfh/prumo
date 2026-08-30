@@ -29,6 +29,7 @@ import type { GridField } from "@/components/extraction/template-config/template
 import type { ExtractionFieldInsert } from "@/types/extraction";
 import { toast } from "sonner";
 import { t } from "@/lib/copy";
+import { cn } from "@/lib/utils";
 import { AddSectionDialog, ImportTemplateDialog } from "./dialogs";
 import type { AddSectionMode } from "./dialogs/AddSectionDialog";
 import { useDeleteTemplateField } from "@/hooks/extraction/useDeleteTemplateField";
@@ -306,11 +307,26 @@ export function TemplateConfigEditor({
           instruction row — for ~128px of reclaimed vertical space. Priority
           tracks (RunHeader's contract): the identity track is the only
           elastic one, every command is shrink-0, and Publish never collapses. */}
-      <div className="@container/configbar flex h-12 shrink-0 items-center gap-2 rounded-md border border-border/40 bg-card px-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div
+        className={cn(
+          "@container/configbar flex shrink-0 items-center gap-2 rounded-md border border-border/40 bg-card px-3",
+          // Fixed 48px chrome at every width a manager configures a template
+          // at. Below the last rung the commands would clip Publish instead,
+          // so there the bar wraps to a second line and keeps every control
+          // reachable — the one place height is worth more than the row.
+          // Below the last collapse rung the commands genuinely do not fit.
+          // Wrapping was tried and read worse (the elastic identity track
+          // claims a whole first line), so the cluster scrolls inside its own
+          // bar instead — every control stays reachable and the chrome stays
+          // 48px. Viewport, not container: an element cannot query the
+          // container IT declares, so `@max-*/configbar` here never matches.
+          "h-12 max-sm:overflow-x-auto",
+        )}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2 max-sm:hidden">
           {/* A count is a statistic, not a command: muted text, not a
               bordered Badge, and the first thing to fold when space runs out. */}
-          <span className="hidden truncate text-[13px] text-muted-foreground @[38rem]/configbar:inline">
+          <span className="hidden whitespace-nowrap text-[13px] text-muted-foreground @[52rem]/configbar:inline">
             {(entityTypes.length === 1
               ? t("extraction", "configSectionsCountOne")
               : t("extraction", "configSectionsCountOther")
@@ -321,10 +337,11 @@ export function TemplateConfigEditor({
         </div>
         {engineSlot && (
           <>
-            {/* The one control that degrades GRACEFULLY under pressure: its
-                content is a long proper noun that already truncates, so it
-                absorbs the squeeze instead of pushing Publish off the bar. */}
-            <div className="min-w-0 shrink">{engineSlot}</div>
+            {/* shrink-0, deliberately: the chip's own wrapper is
+                `justify-end`, so squeezing its box spills the content off the
+                LEFT edge ("GPT-" clipped) instead of ellipsing. It sheds parts
+                of itself by container query instead — see LlmEngineChip. */}
+            <div className="shrink-0">{engineSlot}</div>
             {/* Hairline between project regime and versioned-template regime:
                 the engine is not part of what Publish ships. */}
             <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />
