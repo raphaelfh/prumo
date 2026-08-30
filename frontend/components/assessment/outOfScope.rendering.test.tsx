@@ -154,3 +154,36 @@ describe("DerivedDefaultChip — a recommendation whose inputs are all out of sc
     expect(row.textContent).not.toContain(qa.derivedInputUnreported);
   });
 });
+
+describe("the banner reads every wire state, not only out-of-scope", () => {
+  // Before the shared module, the banner knew ONE literal and its local input
+  // type was a hand mirror that had never learned `state` at all. Any state
+  // the backend adds now renders through one switch, and the generated
+  // contract type makes a future field's absence a compile error.
+  const withState = (state: string | undefined) => ({
+    id: "ov",
+    label: "Overall",
+    value: null,
+    inputs: [{ label: "D4 apparent", value: null, contribution: null, state }],
+  });
+
+  it("renders an unreported contributor muted, not as work owed", () => {
+    render(<OverallJudgmentBanner judgments={[withState("unreported")]} />);
+    openDisclosure("qa-overall-explain-toggle");
+    const row = screen.getByText(qa.derivedInputUnreported);
+    expect(row).toHaveClass("text-muted-foreground");
+    expect(row).not.toHaveClass("text-warning");
+  });
+
+  it("renders an in-progress contributor as the gap it is", () => {
+    render(<OverallJudgmentBanner judgments={[withState("in-progress")]} />);
+    openDisclosure("qa-overall-explain-toggle");
+    expect(screen.getByText(qa.derivedInputInProgress)).toHaveClass("text-warning");
+  });
+
+  it("still warns on a stateless blank — a domain genuinely not judged", () => {
+    render(<OverallJudgmentBanner judgments={[withState(undefined)]} />);
+    openDisclosure("qa-overall-explain-toggle");
+    expect(screen.getByText(qa.overallExplainInputNotJudged)).toHaveClass("text-warning");
+  });
+});

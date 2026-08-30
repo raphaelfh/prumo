@@ -24,48 +24,27 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { qa } from "@/lib/copy/qa";
+import {
+  derivedInputStateDisplay,
+  isJudgmentOutOfScope,
+} from "@/lib/qa/derivedInputState";
 import { cn } from "@/lib/utils";
+import type { components } from "@/types/api/schema";
 
-interface DerivedJudgmentInputView {
-  label: string;
-  value: string | null;
-  /** The Low/High/Unclear the rule consumed from this row (null = nothing). */
-  contribution?: string | null;
-  /** Why the row contributed nothing; `"out-of-scope"` outranks the rest. */
-  state?: string | null;
-}
-
-export interface DerivedJudgmentView {
-  id: string;
-  label: string;
-  value: string | null;
-  inputs?: DerivedJudgmentInputView[];
-  /**
-   * Present on RECOMMENDATION entries (the derived default for a stored
-   * judgment field). The banner renders OVERALLS only — entries whose
-   * target is null or absent (loose check: older payloads omit the key).
-   */
-  target_field_id?: string | null;
-}
+/**
+ * The generated contract, not a hand mirror. The local copy this replaced had
+ * never learned `state`, which is the documented root cause of the
+ * envelope-drift incident class (`.claude/rules/frontend.md`): the payload
+ * gained a field, the type did not, and the omission was invisible to tsc.
+ *
+ * `target_field_id` is present on RECOMMENDATION entries (the derived default
+ * for a stored judgment field). The banner renders OVERALLS only — entries
+ * whose target is null or absent (loose check: older payloads omit the key).
+ */
+export type DerivedJudgmentView = components["schemas"]["RunViewDerivedJudgment"];
 
 interface OverallJudgmentBannerProps {
   judgments: DerivedJudgmentView[];
-}
-
-/** The wire literal for a row the template's scope rules took out of play. */
-export const OUT_OF_SCOPE = "out-of-scope";
-
-/**
- * A judgment the scope rules took out of play ENTIRELY. Shared with the
- * derived-default chip, like `toneFor` below, so the two surfaces cannot
- * drift. Every input must be excluded: the rules exclude whole parts, so a
- * mixed judgment should not arise — and if one ever does, it is unfinished
- * work, never "nothing to do".
- */
-export function isOutOfScope(
-  inputs: ReadonlyArray<{ state?: string | null }> | null | undefined,
-): boolean {
-  return !!inputs?.length && inputs.every((input) => input.state === OUT_OF_SCOPE);
 }
 
 /**
@@ -95,13 +74,12 @@ function InputBreakdown({ judgment }: { judgment: DerivedJudgmentView }) {
       <p className="mb-1 text-[11px] font-medium text-foreground">{judgment.label}</p>
       <ul className="space-y-0.5">
         {inputs.map((input) => {
-          // Muted, not warning: an excluded domain is not a gap to chase.
-          const excluded = input.state === OUT_OF_SCOPE;
-          const tone = excluded
-            ? "text-muted-foreground"
-            : input.value === null
-              ? "text-warning"
-              : "text-foreground";
+          // A stated reason wins: an excluded or unreported domain is not a
+          // gap to chase, so it is muted rather than warning-toned. Only the
+          // stateless blank means the domain is genuinely still owed.
+          const stated = derivedInputStateDisplay(input.state);
+          const tone =
+            stated?.tone ?? (input.value === null ? "text-warning" : "text-foreground");
           return (
             <li
               key={input.label}
@@ -109,9 +87,7 @@ function InputBreakdown({ judgment }: { judgment: DerivedJudgmentView }) {
             >
               <span className="min-w-0 truncate text-muted-foreground">{input.label}</span>
               <span className={cn("shrink-0 font-medium", tone)}>
-                {excluded
-                  ? qa.outOfScopeValue
-                  : (input.value ?? qa.overallExplainInputNotJudged)}
+                {stated?.text ?? input.value ?? qa.overallExplainInputNotJudged}
               </span>
             </li>
           );
@@ -132,7 +108,7 @@ export function OverallJudgmentBanner({ judgments: allJudgments }: OverallJudgme
   // An out-of-scope overall is blank because nothing applies, so it must not
   // trigger the "go judge the domains marked Not judged" remediation.
   const anyIncomplete = judgments.some(
-    (judgment) => judgment.value === null && !isOutOfScope(judgment.inputs),
+    (judgment) => judgment.value === null && !isJudgmentOutOfScope(judgment.inputs),
   );
   const explainable = judgments.some((judgment) => (judgment.inputs?.length ?? 0) > 0);
 
@@ -150,7 +126,7 @@ export function OverallJudgmentBanner({ judgments: allJudgments }: OverallJudgme
       </div>
       <ul className="flex flex-wrap gap-2">
         {judgments.map((judgment) => {
-          const blank = isOutOfScope(judgment.inputs)
+          const blank = isJudgmentOutOfScope(judgment.inputs)
             ? { text: qa.outOfScopeValue, hint: qa.outOfScopeHint }
             : { text: qa.overallIncomplete, hint: qa.overallIncompleteHint };
           return (
