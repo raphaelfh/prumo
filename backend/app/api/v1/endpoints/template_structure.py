@@ -82,6 +82,27 @@ from app.services.template_section_service import (
 router = APIRouter()
 
 
+async def _claim_lock(db: DbSession, project_id: UUID, template_id: UUID, user_sub: UUID) -> None:
+    """Claim the B-9f editor lock before a config write, or refuse.
+
+    ONE copy for all 8 config-write endpoints — this block was pasted into
+    each of them, which is how a 404 mapping went missing when the claim
+    became project-scoped.
+
+    The claim is itself an UPDATE on the template row, so it can lose a
+    deadlock race exactly like the write it guards; a template outside the
+    path project 404s here rather than reaching the lock at all.
+    """
+    try:
+        await claim_draft_lock(db, project_id=project_id, template_id=template_id, user_id=user_sub)
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except DBAPIError as e:
+        if is_deadlock(e):
+            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
+        raise
+
+
 @router.post(
     "/{project_id}/templates/{template_id}/fields",
     status_code=status.HTTP_201_CREATED,
@@ -99,18 +120,7 @@ async def create_template_field(
     The write stamps the B-4 draft marker via the 0048 trigger (nothing
     manual); the field reaches article forms at Publish.
     """
-    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
-    # with the holder named when another manager holds the draft.
-    #
-    # The claim is itself an UPDATE on the template row, so it can lose a
-    # deadlock race exactly like the write below — hence one guard around
-    # both rather than only around the service call.
-    try:
-        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
-    except DBAPIError as e:
-        if is_deadlock(e):
-            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
-        raise
+    await _claim_lock(db, project_id, template_id, user_sub)
     try:
         result = await create_field(
             db, project_id=project_id, template_id=template_id, payload=body
@@ -147,18 +157,7 @@ async def update_template_field(
     Relocation is the move endpoint's job (the schema rejects a smuggled
     ``entity_type_id``). Stamps the B-4 draft marker via the 0048 trigger.
     """
-    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
-    # with the holder named when another manager holds the draft.
-    #
-    # The claim is itself an UPDATE on the template row, so it can lose a
-    # deadlock race exactly like the write below — hence one guard around
-    # both rather than only around the service call.
-    try:
-        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
-    except DBAPIError as e:
-        if is_deadlock(e):
-            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
-        raise
+    await _claim_lock(db, project_id, template_id, user_sub)
     try:
         result = await update_field(
             db,
@@ -202,18 +201,7 @@ async def delete_template_field(
 
     Stamps the B-4 draft marker via the 0048 trigger (nothing manual).
     """
-    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
-    # with the holder named when another manager holds the draft.
-    #
-    # The claim is itself an UPDATE on the template row, so it can lose a
-    # deadlock race exactly like the write below — hence one guard around
-    # both rather than only around the service call.
-    try:
-        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
-    except DBAPIError as e:
-        if is_deadlock(e):
-            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
-        raise
+    await _claim_lock(db, project_id, template_id, user_sub)
     try:
         result = await delete_field(
             db, project_id=project_id, template_id=template_id, field_id=field_id
@@ -251,18 +239,7 @@ async def move_template_field(
     retry can succeed) — the cross-template hole this slice closes.
     Stamps the B-4 draft marker via the 0048 trigger.
     """
-    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
-    # with the holder named when another manager holds the draft.
-    #
-    # The claim is itself an UPDATE on the template row, so it can lose a
-    # deadlock race exactly like the write below — hence one guard around
-    # both rather than only around the service call.
-    try:
-        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
-    except DBAPIError as e:
-        if is_deadlock(e):
-            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
-        raise
+    await _claim_lock(db, project_id, template_id, user_sub)
     try:
         result = await move_field(
             db,
@@ -305,18 +282,7 @@ async def reorder_template_fields(
     applies or fully fails. Stamps the B-4 draft marker via the 0048
     trigger.
     """
-    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
-    # with the holder named when another manager holds the draft.
-    #
-    # The claim is itself an UPDATE on the template row, so it can lose a
-    # deadlock race exactly like the write below — hence one guard around
-    # both rather than only around the service call.
-    try:
-        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
-    except DBAPIError as e:
-        if is_deadlock(e):
-            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
-        raise
+    await _claim_lock(db, project_id, template_id, user_sub)
     try:
         result = await reorder_fields(
             db, project_id=project_id, template_id=template_id, payload=body
@@ -355,18 +321,7 @@ async def create_template_section(
     a second model_container is a 409. Stamps the B-4 draft marker via
     the 0048 trigger (nothing manual).
     """
-    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
-    # with the holder named when another manager holds the draft.
-    #
-    # The claim is itself an UPDATE on the template row, so it can lose a
-    # deadlock race exactly like the write below — hence one guard around
-    # both rather than only around the service call.
-    try:
-        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
-    except DBAPIError as e:
-        if is_deadlock(e):
-            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
-        raise
+    await _claim_lock(db, project_id, template_id, user_sub)
     try:
         result = await create_section(
             db, project_id=project_id, template_id=template_id, payload=body
@@ -408,18 +363,7 @@ async def update_template_section(
     draft marker via the 0048 trigger; an all-no-op update skips the
     write (no stamp).
     """
-    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
-    # with the holder named when another manager holds the draft.
-    #
-    # The claim is itself an UPDATE on the template row, so it can lose a
-    # deadlock race exactly like the write below — hence one guard around
-    # both rather than only around the service call.
-    try:
-        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
-    except DBAPIError as e:
-        if is_deadlock(e):
-            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
-        raise
+    await _claim_lock(db, project_id, template_id, user_sub)
     try:
         result = await update_section(
             db,
@@ -461,18 +405,7 @@ async def delete_template_section(
     Extracted data anywhere under it (RESTRICT FK) is a 409. Stamps the
     B-4 draft marker via the 0048 trigger (nothing manual).
     """
-    # B-9f: claim the advisory editor lock BEFORE the write. Refuses
-    # with the holder named when another manager holds the draft.
-    #
-    # The claim is itself an UPDATE on the template row, so it can lose a
-    # deadlock race exactly like the write below — hence one guard around
-    # both rather than only around the service call.
-    try:
-        await claim_draft_lock(db, template_id=template_id, user_id=user_sub)
-    except DBAPIError as e:
-        if is_deadlock(e):
-            raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
-        raise
+    await _claim_lock(db, project_id, template_id, user_sub)
     try:
         result = await delete_section(
             db, project_id=project_id, template_id=template_id, section_id=section_id

@@ -39,10 +39,11 @@ class AbsentReason(StrEnum):
     """The closed vocabulary of coded "no value, on purpose" dispositions.
 
     Kept intentionally minimal (three codes, not FHIR ``dataAbsentReason``'s
-    fifteen — YAGNI for evidence extraction). ``no_information`` is available on
-    every field; ``not_applicable`` / ``not_evaluated`` are opt-in per field
-    (``allows_not_applicable`` / ``allows_not_evaluated``, surfaced by
-    ``FieldInput``). Mirrored by hand in
+    fifteen — YAGNI for evidence extraction). All three are opt-in per field
+    (``allows_not_applicable`` / ``allows_not_evaluated`` /
+    ``allows_no_information``, surfaced by ``FieldInput``); ``no_information``
+    was universal until migration 0062 and so defaults ON, off only where the
+    answer set already carries the concept as a value. Mirrored by hand in
     ``frontend/lib/extraction/valueSemantics.ts``; the shared cross-checked test
     vector keeps the two vocabularies in lock-step.
     """
@@ -165,7 +166,9 @@ def _option_values(allowed_values: Any) -> set[str]:
     return out
 
 
-def disposition_to_marker(raw: Any, allowed_values: Any) -> Any:
+def disposition_to_marker(
+    raw: Any, allowed_values: Any, *, allows_no_information: bool = True
+) -> Any:
     """The single write-time disposition normalizer (ADR-0016 Phase 2).
 
     If *raw*'s peeled value is a recognized in-band disposition string **and**
@@ -176,11 +179,22 @@ def disposition_to_marker(raw: Any, allowed_values: Any) -> Any:
     ``allowed_values``), a substantive value, an already-resolved marker, or a
     multiselect list is never rewritten. Pure; no DB. Domain-scoped exactly like
     the Phase-3 data migration so the two agree.
+
+    ``allows_no_information`` (migration 0062) is the field's flag, and it
+    inverts the premise for its own disposition: the rewrite exists because an
+    in-band "NI" USED to mean the marker. A field that opts OUT offers no marker
+    button, so the string can only be its own substantive answer — PROBAST+AI
+    2.1.0's fifth signaling answer, which the instrument itself defines.
+    Rewriting it there would erase the reviewer's answer into a marker the form
+    then refuses to render. Scoped to ``no_information`` alone: NA/NE on the
+    same field are still the retired strings and still normalize.
     """
     value = unwrap_value_envelope(raw)
     if not isinstance(value, str):
         return raw
     reason = _DISPOSITION_TO_REASON.get(value)
     if reason is None or value not in _option_values(allowed_values):
+        return raw
+    if reason is AbsentReason.NO_INFORMATION and not allows_no_information:
         return raw
     return {"value": None, "absent_reason": reason.value}

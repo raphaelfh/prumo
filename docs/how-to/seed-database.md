@@ -41,12 +41,20 @@ This guide explains how to load seed data after the schema migrations run.
   `derived_judgments` spec on the template's `schema` JSONB (the domain
   judgments themselves get `signaling_worst` derived *defaults*).
 
-> **Re-seeding does not update an existing template.** Every `seed_*` helper is
-> idempotent *by primary key*: it returns early when the row already exists and
-> never issues an UPDATE. A corrected definition (new field, fixed
-> `derived_judgments` coordinate) therefore needs `make db-fresh` locally, or a
-> deliberate manual UPDATE in a deployed environment — `make db-seed` alone
-> will silently keep the old row.
+> **Re-seeding updates PROBAST+AI, and only PROBAST+AI.** `seed_probast_ai`
+> converges: it UPDATEs the existing row and replaces its sections and fields
+> under deterministic ids on every run, unconditionally — no version compare,
+> because gating on a `version` bump would reintroduce the forgotten-bump
+> silent no-op it exists to fix. `version` is display metadata. The template
+> ROW is never deleted (that would `SET NULL` every clone's
+> `global_template_id`), and project clones are untouched.
+>
+> Every other `seed_*` helper is still idempotent *by primary key*: it returns
+> early when the row already exists and never issues an UPDATE. A corrected
+> definition there (new field, fixed `derived_judgments` coordinate) still
+> needs `make db-fresh` locally, or a deliberate manual UPDATE in a deployed
+> environment — `make db-seed` alone will silently keep the old row. They adopt
+> convergence when their own instrument migrations touch them.
 >
 > **The project clone is a second copy with the same problem.** `schema` is
 > written once, in the create branch of `TemplateCloneService.clone()`; the
@@ -113,8 +121,10 @@ psql "$DATABASE_URL" -c "SELECT name, version, kind FROM extraction_templates_gl
 
 ## Re-seeding
 
-The script is **idempotent**. If a template already exists it is left alone;
-otherwise it is created.
+The script is **idempotent**, in two shapes. PROBAST+AI converges — the row is
+updated in place and its children replaced under the same deterministic ids, so
+running it twice leaves an identical database. Every other template is left
+alone if it already exists, and created otherwise.
 
 ## Verification queries
 

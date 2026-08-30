@@ -53,9 +53,13 @@ interface CapturedField {
   allowOther: boolean;
   otherLabel: string | null;
   otherPlaceholder: string | null;
-  /** ADR-0016 opt-in dispositions. */
+  /** ADR-0016 per-field dispositions. `allowsNoInformation` defaults TRUE
+   * (migration 0062): a pre-0062 row carries no key and the marker WAS
+   * available, so capturing it as false would make Undo lossy in the one
+   * direction nobody would notice. */
   allowsNotApplicable: boolean;
   allowsNotEvaluated: boolean;
+  allowsNoInformation: boolean;
   validationSchema: Record<string, unknown>;
   sortOrder: number;
 }
@@ -121,6 +125,9 @@ function capture(entityType: TemplateEntityTypeWithFields): CapturedSection {
         otherPlaceholder: field.other_placeholder ?? null,
         allowsNotApplicable: Boolean(field.allows_not_applicable),
         allowsNotEvaluated: Boolean(field.allows_not_evaluated),
+        // Defaults TRUE when absent (migration 0062): dropping it would make
+        // Undo silently switch the marker back ON for every restored field.
+        allowsNoInformation: field.allows_no_information !== false,
         validationSchema: (field.validation_schema ?? {}) as Record<string, unknown>,
         sortOrder: field.sort_order ?? 0,
       })),
@@ -154,6 +161,7 @@ interface ReplayDeps {
     other_placeholder: string | null;
     allows_not_applicable: boolean;
     allows_not_evaluated: boolean;
+    allows_no_information: boolean;
     validation_schema: Record<string, unknown>;
     sort_order: number;
   }) => Promise<{ok: true; data: unknown} | {ok: false; error: Error}>;
@@ -210,6 +218,7 @@ export async function replaySection(
         other_placeholder: field.otherPlaceholder,
         allows_not_applicable: field.allowsNotApplicable,
         allows_not_evaluated: field.allowsNotEvaluated,
+        allows_no_information: field.allowsNoInformation,
         validation_schema: field.validationSchema,
         sort_order: field.sortOrder,
       });

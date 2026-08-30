@@ -47,6 +47,9 @@ test.describe('Portable template import/export', () => {
     renamed.name = `E2E import ${stamp}`;
     renamed.sections[0].label = `Imported section ${stamp}`;
     await page.getByTestId('template-config-open-import').first().click();
+    // One pane renders at a time now: Radix drops the inactive panes from the
+    // DOM, so each pane must be activated before its controls exist.
+    await page.getByTestId('import-template-tab-file').click();
     await page.getByTestId('import-template-file-input').setInputFiles({
       name: 'x.prumo-template.json',
       mimeType: 'application/json',
@@ -58,6 +61,7 @@ test.describe('Portable template import/export', () => {
 
     // Switch back to the original, then delete the import.
     await page.getByTestId('template-config-open-import').first().click();
+    await page.getByTestId('import-template-tab-project').click();
     const importedRow = page
       .locator('[data-testid^="project-template-row-"]')
       .filter({hasText: renamed.name});
@@ -71,6 +75,7 @@ test.describe('Portable template import/export', () => {
     await expect(page.getByText(`Imported section ${stamp}`)).toHaveCount(0, {timeout: 60_000});
 
     await page.getByTestId('template-config-open-import').first().click();
+    await page.getByTestId('import-template-tab-project').click();
     await importedRow.locator('[data-testid^="project-template-delete-"]').click();
     await page.getByTestId('project-template-delete-confirm').click();
     await expect(importedRow).toHaveCount(0, {timeout: 30_000});

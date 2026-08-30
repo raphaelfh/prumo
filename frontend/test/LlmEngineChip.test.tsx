@@ -117,19 +117,8 @@ const ALT_GPT41 = {
   retired: false,
 };
 
-const ALT_RETIRED = {
-  provider: 'openai',
-  model: 'gpt-3.5-turbo',
-  canonical: 'openai:gpt-3.5-turbo',
-  retired: true,
-};
-
-const ALT_BYOK = {
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-5',
-  canonical: 'anthropic:claude-sonnet-4-5',
-  retired: false,
-};
+// ALT_RETIRED / ALT_BYOK moved with their assertions to
+// LlmEngineSettingsDialog.test.tsx — the alternates list lives there now.
 
 const mutateMock = vi.fn();
 
@@ -258,12 +247,65 @@ describe('popover', () => {
     expect(screen.getByText(copy.providerAnthropic)).toBeInTheDocument();
     // BYOK-only providers carry the own-key note in the group header.
     expect(screen.getByText(copy.byokGroupNote)).toBeInTheDocument();
-    // Row anatomy: best-for line + mono canonical + context/cost column.
-    expect(screen.getByText('Fast bulk extraction')).toBeInTheDocument();
-    expect(screen.getByText('openai:gpt-4o-mini')).toBeInTheDocument();
-    expect(screen.getByText('200k')).toBeInTheDocument();
+    // Row anatomy since slice C: the visible line is the label plus one
+    // right-aligned "<context> · <cost>". The best-for text and canonical id
+    // are present but revealed only on the active row (asserted separately).
+    // The label is scoped to the row — the chip trigger shows the same string.
+    const row = screen.getByTestId('llm-engine-option-openai:gpt-4o-mini');
+    expect(within(row).getByText('GPT-4o mini')).toBeInTheDocument();
+    expect(screen.getByText('200k · $$')).toBeInTheDocument();
     // Million-token windows round to "M", never a five-digit "k".
-    expect(screen.getByText('1M')).toBeInTheDocument();
+    expect(screen.getByText('1M · $')).toBeInTheDocument();
+  });
+
+  it('reveals the description and canonical id on the ACTIVE row only', async () => {
+    // Slice C moved them off the row so the list reads one line per model.
+    // They must still be reachable — and reachable by KEYBOARD, which a
+    // hover-only tooltip would not be: cmdk marks the active row
+    // data-selected on arrow-key navigation as well as hover.
+    await renderOpenPopover();
+
+    const row = screen.getByTestId('llm-engine-option-openai:gpt-4o-mini');
+    const detail = within(row).getByText('Fast bulk extraction');
+
+    // Present in the DOM for every row, revealed by CSS on the active one —
+    // so assert the mechanism, not just presence.
+    expect(detail.className).toContain('hidden');
+    expect(detail.className).toContain('group-data-[selected=true]:block');
+    expect(within(row).getByText('openai:gpt-4o-mini')).toBeInTheDocument();
+  });
+
+  it('fills the current row and keeps its accessible marker', async () => {
+    await renderOpenPopover();
+
+    const current = screen.getByTestId(
+      `llm-engine-option-${ENGINE_READ.provider}:${ENGINE_READ.model}`,
+    );
+    expect(current.className).toContain('bg-primary/5');
+    expect(
+      within(current).getByLabelText(copy.currentModelAria),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the engine settings dialog from the footer link', async () => {
+    await renderOpenPopover();
+
+    await userEvent.click(screen.getByTestId('llm-engine-open-settings'));
+
+    expect(
+      await screen.findByTestId('llm-engine-settings-dialog'),
+    ).toBeInTheDocument();
+  });
+
+  it('no longer carries policy controls in the popover', async () => {
+    // The split is the point of slice C: 156px of mode + alternates used to
+    // sit above the search box.
+    await renderOpenPopover();
+
+    expect(
+      screen.queryByRole('group', {name: copy.modeGroupAria}),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.alternatesTitle)).not.toBeInTheDocument();
   });
 
   it('renders a locked row disabled with the Add-your-key CTA deep link', async () => {
@@ -327,51 +369,6 @@ describe('popover', () => {
     expect(mutateMock).not.toHaveBeenCalled();
   });
 
-  it('shows the stored mode selected with Verified enabled — no soon hint (§5 Verified)', async () => {
-    await renderOpenPopover();
-
-    const verified = screen.getByRole('radio', {name: copy.modeVerified});
-    expect(verified).toBeEnabled();
-    // The "soon" hint died with the disabled state.
-    expect(verified.textContent).toBe(copy.modeVerified);
-    expect(
-      screen.getByRole('radio', {name: copy.modeFast}),
-    ).toHaveAttribute('data-state', 'on');
-  });
-
-  it('drives the toggle from the stored mode on a verified project', async () => {
-    await renderOpenPopover({mode: 'verified'});
-
-    expect(
-      screen.getByRole('radio', {name: copy.modeVerified}),
-    ).toHaveAttribute('data-state', 'on');
-    expect(
-      screen.getByRole('radio', {name: copy.modeFast}),
-    ).toHaveAttribute('data-state', 'off');
-  });
-
-  it('fires the mutation with the CHOSEN mode on toggle', async () => {
-    await renderOpenPopover();
-
-    await userEvent.click(screen.getByRole('radio', {name: copy.modeVerified}));
-
-    expect(mutateMock).toHaveBeenCalledTimes(1);
-    expect(mutateMock.mock.calls[0][0]).toEqual({
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      mode: 'verified',
-      alternates: [],
-    });
-  });
-
-  it('re-clicking the active mode never fires a mutation (Radix deselect)', async () => {
-    await renderOpenPopover();
-
-    await userEvent.click(screen.getByRole('radio', {name: copy.modeFast}));
-
-    expect(mutateMock).not.toHaveBeenCalled();
-  });
-
   it('MODEL selection on a verified project sends mode: "verified" explicitly (panel B2)', async () => {
     // Omitting mode would let the server default silently downgrade the
     // project back to fast — the old-FE stale-tab clobber this FE must not
@@ -389,159 +386,9 @@ describe('popover', () => {
     });
   });
 
-  it('a 422 from an old backend toasts generically and leaves the toggle unchanged (panel B3)', async () => {
-    // The deploy window: FastAPI's raw `detail` body misses the client's
-    // message chain, so the surfaced Error carries the generic copy (pinned
-    // at the service level in llmEngineService.test.ts).
-    mutateMock.mockImplementation(
-      (_body: unknown, opts?: {onError?: (e: Error) => void}) => {
-        opts?.onError?.(new Error('Unknown error'));
-      },
-    );
-    await renderOpenPopover();
-
-    await userEvent.click(screen.getByRole('radio', {name: copy.modeVerified}));
-
-    expect(toast.error).toHaveBeenCalledWith(
-      `${copy.saveError}: Unknown error`,
-    );
-    // No optimistic update: the toggle re-derives from the cached read.
-    expect(
-      screen.getByRole('radio', {name: copy.modeFast}),
-    ).toHaveAttribute('data-state', 'on');
-    expect(
-      screen.getByRole('radio', {name: copy.modeVerified}),
-    ).toHaveAttribute('data-state', 'off');
-  });
-
-  it('renders the attribution line only when the source is the project', async () => {
-    await renderOpenPopover({
-      source: 'project',
-      updated_by_name: 'Alice Reviewer',
-      updated_at: '2026-08-15T12:00:00Z',
-      previous_model: 'gpt-4o',
-    });
-
-    const expected = copy.attribution
-      .replace('{{name}}', 'Alice Reviewer')
-      .replace(
-        '{{date}}',
-        // Compact "Aug 15" shape — the popover line must not carry a full
-        // locale date.
-        new Date('2026-08-15T12:00:00Z').toLocaleDateString(undefined, {
-          month: 'short',
-          day: 'numeric',
-        }),
-      )
-      .replace('{{model}}', 'gpt-4o');
-    expect(screen.getByText(expected)).toBeInTheDocument();
-  });
-
-  it('omits the attribution line for the env default', async () => {
-    await renderOpenPopover();
-
-    expect(
-      screen.queryByText(/Model changed by/),
-    ).not.toBeInTheDocument();
-  });
-
-  it('flags a retired stored engine with the amber re-choose note', async () => {
-    await renderOpenPopover({model: 'gpt-3.5-turbo', retired: true, source: 'project'});
-
-    expect(screen.getByRole('alert')).toHaveTextContent(copy.retiredNote);
-  });
 });
 
-describe('alternates section', () => {
-  it('renders the header, helper, and empty state when no alternates are stored', async () => {
-    await renderOpenPopover();
-
-    expect(screen.getByText(copy.alternatesTitle)).toBeInTheDocument();
-    expect(screen.getByText(copy.alternatesHelper)).toBeInTheDocument();
-    expect(screen.getByText(copy.alternatesEmpty)).toBeInTheDocument();
-  });
-
-  it('toggling an alternate ON fires the PUT with the full body incl. explicit mode', async () => {
-    await renderOpenPopover();
-
-    await userEvent.click(
-      screen.getByRole('button', {name: copy.alternatesAddLabel}),
-    );
-    await userEvent.click(screen.getByTestId('llm-engine-option-openai:gpt-4o'));
-
-    expect(mutateMock).toHaveBeenCalledTimes(1);
-    expect(mutateMock.mock.calls[0][0]).toEqual({
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      mode: 'fast',
-      alternates: [{provider: 'openai', model: 'gpt-4o'}],
-    });
-  });
-
-  it('toggling a member OFF strips it from the PUT alternates', async () => {
-    await renderOpenPopover({alternates: [ALT_GPT41]});
-
-    await userEvent.click(
-      screen.getByRole('button', {name: copy.alternatesAddLabel}),
-    );
-
-    // a11y: managing mode is a multiselect — each membership row exposes
-    // its state as aria-checked (role=option supports it).
-    expect(
-      screen.getByTestId('llm-engine-option-openai:gpt-4.1-mini'),
-    ).toHaveAttribute('aria-checked', 'true');
-    expect(
-      screen.getByTestId('llm-engine-option-openai:gpt-4o'),
-    ).toHaveAttribute('aria-checked', 'false');
-
-    await userEvent.click(
-      screen.getByTestId('llm-engine-option-openai:gpt-4.1-mini'),
-    );
-
-    expect(mutateMock).toHaveBeenCalledTimes(1);
-    expect(mutateMock.mock.calls[0][0]).toEqual({
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      mode: 'fast',
-      alternates: [],
-    });
-  });
-
-  it('disables the current default row in managing mode with the primary note', async () => {
-    await renderOpenPopover();
-
-    await userEvent.click(
-      screen.getByRole('button', {name: copy.alternatesAddLabel}),
-    );
-
-    const current = screen.getByTestId('llm-engine-option-openai:gpt-4o-mini');
-    expect(current).toHaveAttribute('aria-disabled', 'true');
-    expect(
-      within(current).getByText(copy.alternatesPrimaryNote),
-    ).toBeInTheDocument();
-
-    await userEvent.click(current);
-    expect(mutateMock).not.toHaveBeenCalled();
-  });
-
-  it('renders a retired alternate with the amber treatment and canonical fallback label', async () => {
-    // gpt-3.5-turbo left the catalogue: no label match, so the row falls
-    // back to the canonical id — flagged amber like the retiredNote.
-    await renderOpenPopover({alternates: [ALT_RETIRED]});
-
-    const row = screen.getByTestId(
-      'llm-engine-alternate-openai:gpt-3.5-turbo',
-    );
-    expect(row).toHaveTextContent('openai:gpt-3.5-turbo');
-    expect(row.className).toContain('text-warning');
-  });
-
-  it('shows the BYOK-only inline warning on a BYOK alternate', async () => {
-    await renderOpenPopover({alternates: [ALT_BYOK]});
-
-    expect(screen.getByText(copy.alternatesByokWarn)).toBeInTheDocument();
-  });
-
+describe('selection preserves stored policy', () => {
   it('switching the default model sends the stored alternates untouched', async () => {
     await renderOpenPopover({alternates: [ALT_GPT41]});
 
@@ -556,56 +403,6 @@ describe('alternates section', () => {
     });
   });
 
-  it('the remove button strips the alternate and PUTs the remainder', async () => {
-    await renderOpenPopover({alternates: [ALT_GPT41, ALT_BYOK]});
-
-    const row = screen.getByTestId(
-      'llm-engine-alternate-openai:gpt-4.1-mini',
-    );
-    await userEvent.click(
-      within(row).getByRole('button', {name: copy.alternatesRemoveAria}),
-    );
-
-    expect(mutateMock).toHaveBeenCalledTimes(1);
-    expect(mutateMock.mock.calls[0][0]).toEqual({
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      mode: 'fast',
-      alternates: [{provider: 'anthropic', model: 'claude-sonnet-4-5'}],
-    });
-  });
-
-  it('a successful membership toggle toasts the alternates-specific copy', async () => {
-    mutateMock.mockImplementation(
-      (_body: unknown, opts?: {onSuccess?: () => void}) => opts?.onSuccess?.(),
-    );
-    await renderOpenPopover();
-
-    await userEvent.click(
-      screen.getByRole('button', {name: copy.alternatesAddLabel}),
-    );
-    await userEvent.click(screen.getByTestId('llm-engine-option-openai:gpt-4o'));
-
-    expect(toast.success).toHaveBeenCalledWith(copy.alternatesSaveSuccess);
-  });
-
-  it('a failed remove toasts the alternates-specific error copy', async () => {
-    mutateMock.mockImplementation(
-      (_body: unknown, opts?: {onError?: (e: Error) => void}) =>
-        opts?.onError?.(new Error('boom')),
-    );
-    await renderOpenPopover({alternates: [ALT_GPT41]});
-
-    const row = screen.getByTestId('llm-engine-alternate-openai:gpt-4.1-mini');
-    await userEvent.click(
-      within(row).getByRole('button', {name: copy.alternatesRemoveAria}),
-    );
-
-    expect(toast.error).toHaveBeenCalledWith(
-      `${copy.alternatesSaveError}: boom`,
-    );
-  });
-
   it('a model change keeps the existing generic save toast', async () => {
     mutateMock.mockImplementation(
       (_body: unknown, opts?: {onSuccess?: () => void}) => opts?.onSuccess?.(),
@@ -618,46 +415,8 @@ describe('alternates section', () => {
   });
 });
 
-describe('pending mutation guards (lost-update race)', () => {
-  // Back-to-back mutations both computed `next` from the SAME stale list —
-  // the second PUT silently reverted the first. While one is in flight the
-  // membership toggles and remove buttons are disabled and inert.
-  beforeEach(() => {
-    useSetLlmEngineMock.mockReturnValue({
-      mutate: mutateMock,
-      isPending: true,
-    } as unknown as ReturnType<typeof useSetLlmEngine>);
-  });
 
-  it('disables the remove button while the mutation is pending', async () => {
-    await renderOpenPopover({alternates: [ALT_GPT41]});
-
-    const row = screen.getByTestId('llm-engine-alternate-openai:gpt-4.1-mini');
-    const removeButton = within(row).getByRole('button', {
-      name: copy.alternatesRemoveAria,
-    });
-    expect(removeButton).toBeDisabled();
-
-    await userEvent.click(removeButton);
-    expect(mutateMock).not.toHaveBeenCalled();
-  });
-
-  it('disables the managing-mode membership toggles while the mutation is pending', async () => {
-    await renderOpenPopover();
-
-    await userEvent.click(
-      screen.getByRole('button', {name: copy.alternatesAddLabel}),
-    );
-
-    const option = screen.getByTestId('llm-engine-option-openai:gpt-4o');
-    expect(option).toHaveAttribute('aria-disabled', 'true');
-
-    await userEvent.click(option);
-    expect(mutateMock).not.toHaveBeenCalled();
-  });
-});
-
-describe('alternates — deploy-window tolerance (old backend omits the field)', () => {
+describe('selection — deploy-window tolerance (old backend omits alternates)', () => {
   /**
    * The read as the SERVICE normalizes an old backend's payload (wire body
    * without the `alternates` field): `alternates: []` plus
@@ -671,27 +430,6 @@ describe('alternates — deploy-window tolerance (old backend omits the field)',
       isPending: false,
     } as unknown as ReturnType<typeof useLlmEngine>);
   }
-
-  it('renders the popover without crashing on a legacy payload', async () => {
-    mockLegacyRead();
-    renderChip();
-    await userEvent.click(screen.getByRole('button', {name: copy.chipAria}));
-
-    expect(screen.getByText(copy.alternatesTitle)).toBeInTheDocument();
-    expect(
-      screen.getByPlaceholderText(copy.searchPlaceholder),
-    ).toBeInTheDocument();
-  });
-
-  it('hides the Add-alternate affordance on a legacy payload (old backend 422s alternates writes)', async () => {
-    mockLegacyRead();
-    renderChip();
-    await userEvent.click(screen.getByRole('button', {name: copy.chipAria}));
-
-    expect(
-      screen.queryByRole('button', {name: copy.alternatesAddLabel}),
-    ).not.toBeInTheDocument();
-  });
 
   it('a model change fires the PUT WITHOUT the alternates key', async () => {
     mockLegacyRead();
