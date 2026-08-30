@@ -1,7 +1,7 @@
 """Flatten picots_config_ai_review.timing to match its five siblings.
 
-Revision ID: 0063_flatten_picots_timing
-Revises: 0062_allows_no_information
+Revision ID: 0064_flatten_picots_timing
+Revises: 0063_drop_probast_ai_v1
 Create Date: 2026-08-30
 
 ``timing`` is the only PICOTS slot stored one level deeper than the rest:
@@ -49,8 +49,8 @@ both objects filled, already-flat, ``timing`` as a scalar string, and
 
 from alembic import op
 
-revision = "0063_flatten_picots_timing"
-down_revision = "0062_allows_no_information"
+revision = "0064_flatten_picots_timing"
+down_revision = "0063_drop_probast_ai_v1"
 branch_labels = None
 depends_on = None
 

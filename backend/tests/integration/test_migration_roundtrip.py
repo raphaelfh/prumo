@@ -530,6 +530,62 @@ async def test_migration_0062_round_trip(
 
 
 @pytest.mark.asyncio
+async def test_migration_0063_deletes_the_orphaned_probast_ai_v1_row(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0063_drop_probast_ai_v1`` removes the catalogue row #693 stranded.
+
+    Driven through alembic rather than by re-issuing the statement, so it is
+    the migration's own SQL under test: seed the orphan while downgraded to
+    the parent, then upgrade and watch it go — together with its catalogue
+    sections and fields, which follow on CASCADE.
+
+    The scratch DB is built by ``alembic upgrade head`` and never seeded, so
+    the row cannot be there already and the delete cannot be a coincidence.
+    """
+    _run_alembic("downgrade", "0062_allows_no_information", database_url=migration_db_url)
+    try:
+        await migration_session.execute(
+            text(
+                "INSERT INTO public.extraction_templates_global "
+                "(id, name, description, framework, version, kind, is_global, schema) "
+                "VALUES ('00ba0000-0000-0000-0000-000000000001', 'PROBAST+AI', NULL, "
+                "        'CUSTOM', '1.0.0', 'quality_assessment', true, '{}'::jsonb)"
+            )
+        )
+        await migration_session.execute(
+            text(
+                "INSERT INTO public.extraction_entity_types "
+                "(id, template_id, name, label, role, cardinality, sort_order) "
+                "VALUES ('00ba0000-0000-0000-0000-0000000000aa', "
+                "        '00ba0000-0000-0000-0000-000000000001', 'dev_d1', 'D1', "
+                "        'study_section', 'one', 0)"
+            )
+        )
+        await migration_session.commit()
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    await migration_session.commit()
+    assert (
+        await migration_session.execute(
+            text(
+                "SELECT count(*) FROM public.extraction_templates_global "
+                "WHERE id = '00ba0000-0000-0000-0000-000000000001'"
+            )
+        )
+    ).scalar() == 0, "the orphaned v1 catalogue row must be gone at head"
+    assert (
+        await migration_session.execute(
+            text(
+                "SELECT count(*) FROM public.extraction_entity_types "
+                "WHERE id = '00ba0000-0000-0000-0000-0000000000aa'"
+            )
+        )
+    ).scalar() == 0, "its catalogue sections must follow on CASCADE"
+
+
+@pytest.mark.asyncio
 async def test_migration_0039_round_trip(
     migration_db_url: str, migration_session: AsyncSession
 ) -> None:
@@ -1266,8 +1322,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0063_flatten_picots_timing" in out, (
-        f"Expected head revision '0063_flatten_picots_timing', got:\n{out}"
+    assert "0064_flatten_picots_timing" in out, (
+        f"Expected head revision '0064_flatten_picots_timing', got:\n{out}"
     )
 
 

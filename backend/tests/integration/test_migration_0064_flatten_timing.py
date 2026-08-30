@@ -1,4 +1,4 @@
-"""Data migration 0063: nested PICOTS ``timing`` -> a flat slot.
+"""Data migration 0064: nested PICOTS ``timing`` -> a flat slot.
 
 Drives the migration's EXACT statements inside the rolled-back test
 transaction, importing them by file path. A data migration must never be run
@@ -27,9 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tests.integration.conftest import SEED
 
 _MIG_PATH = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "0063_flatten_picots_timing.py"
+    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "0064_flatten_picots_timing.py"
 )
-_spec = importlib.util.spec_from_file_location("mig0063", _MIG_PATH)
+_spec = importlib.util.spec_from_file_location("mig0064", _MIG_PATH)
 _mig = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mig)
 
@@ -314,6 +314,6 @@ def test_the_downgrade_is_an_intentional_no_op() -> None:
 
 
 def test_the_revision_chain_is_declared() -> None:
-    assert _mig.revision == "0063_flatten_picots_timing"
-    assert _mig.down_revision == "0062_allows_no_information"
+    assert _mig.revision == "0064_flatten_picots_timing"
+    assert _mig.down_revision == "0063_drop_probast_ai_v1"
     assert len(_mig.revision) <= 32, "alembic_version.version_num is varchar(32)"
