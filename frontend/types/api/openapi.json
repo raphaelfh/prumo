@@ -6335,6 +6335,11 @@
             ],
             "title": "Allowed Values"
           },
+          "allows_no_information": {
+            "default": true,
+            "title": "Allows No Information",
+            "type": "boolean"
+          },
           "allows_not_applicable": {
             "default": false,
             "title": "Allows Not Applicable",
@@ -7485,6 +7490,11 @@
               }
             ],
             "title": "Allowed Values"
+          },
+          "allows_no_information": {
+            "default": true,
+            "title": "Allows No Information",
+            "type": "boolean"
           },
           "allows_not_applicable": {
             "default": false,
@@ -9160,6 +9170,11 @@
             ],
             "title": "Allowed Values"
           },
+          "allows_no_information": {
+            "default": true,
+            "title": "Allows No Information",
+            "type": "boolean"
+          },
           "allows_not_applicable": {
             "default": false,
             "title": "Allows Not Applicable",
@@ -9375,6 +9390,11 @@
               }
             ],
             "title": "Allowed Values"
+          },
+          "allows_no_information": {
+            "default": true,
+            "title": "Allows No Information",
+            "type": "boolean"
           },
           "allows_not_applicable": {
             "default": false,
@@ -9617,6 +9637,17 @@
               }
             ],
             "title": "Allowed Values"
+          },
+          "allows_no_information": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allows No Information"
           },
           "allows_not_applicable": {
             "anyOf": [

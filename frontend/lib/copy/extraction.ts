@@ -65,19 +65,17 @@ export const extraction = {
     // ExtractionInterface configuration
     configPanelTitle: 'Configure your extraction template',
     configPanelDesc: 'Choose how you want to structure data extraction from articles',
-    configImportCharmsTitle: 'Import CHARMS Template',
-    configImportCharmsFullDesc: 'Use the official checklist for systematic reviews of predictive models. Includes 11 sections and 45 pre-configured fields following CHARMS guidelines.',
-    configImportButton: 'Import',
     configCreateCustomTitle: 'Create Custom Template',
     configCreateCustomFullDesc: 'Define your own extraction sections and fields. Ideal for reviews with specific needs or different frameworks.',
     configCreateTemplateButton: 'Create Template',
+    // The catalogue table moved into the import dialog; this card is
+    // now the only entry point to it (spec 2026-08-27, slice A).
+    configImportCardTitle: 'Import a template',
+    configImportCardDesc: 'Start from a ready-made framework, or import a JSON file you or an AI assistant prepared.',
+    configImportCardButton: 'Import template',
     configManagersNote: 'Managers can configure templates',
     configManagersNoteDesc: 'If you are not a project manager, ask a manager to configure the extraction template before you start.',
     configContactManagerToConfigure: 'Only project managers can configure the extraction template. Contact the project manager to set up templates and start extracting.',
-    configImportSectionTitle: 'Import template',
-    configAvailableTemplates: 'Available templates',
-    configNoTemplatesAvailable: 'No templates available at the moment.',
-    configImportThisTemplate: 'Import',
     configImportTemplateButton: 'Import Template',
     configHeaderTitle: 'Template configuration',
     configPublishButton: 'Publish',
@@ -90,7 +88,6 @@ export const extraction = {
     configSectionsCountOther: '{{n}} sections · {{main}} main',
     configSubSectionsCountOne: '{{n}} sub-section',
     configSubSectionsCountOther: '{{n}} sub-sections',
-    configSeeDetails: 'See details',
     // ExtractionInterface loading & error
     loadingTemplates: 'Loading templates',
     errorLoadTemplates: 'Error loading templates',

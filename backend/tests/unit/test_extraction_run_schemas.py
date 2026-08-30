@@ -460,6 +460,12 @@ class TestRunViewField:
         assert field.allow_other is False
         assert field.other_label is None
         assert field.other_placeholder is None
+        # The opt-in dispositions default off; ``no_information`` defaults ON,
+        # because a pre-0062 snapshot carries no key and the marker WAS
+        # universal in it. False here would retro-disable it everywhere.
+        assert field.allows_not_applicable is False
+        assert field.allows_not_evaluated is False
+        assert field.allows_no_information is True
 
     def test_full_population(self) -> None:
         field = RunViewField.model_validate(

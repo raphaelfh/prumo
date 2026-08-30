@@ -4364,6 +4364,11 @@ export interface components {
             /** Allowed Values */
             allowed_values?: string[] | null;
             /**
+             * Allows No Information
+             * @default true
+             */
+            allows_no_information: boolean;
+            /**
              * Allows Not Applicable
              * @default false
              */
@@ -4928,6 +4933,11 @@ export interface components {
             allowed_units?: unknown | null;
             /** Allowed Values */
             allowed_values?: unknown | null;
+            /**
+             * Allows No Information
+             * @default true
+             */
+            allows_no_information: boolean;
             /**
              * Allows Not Applicable
              * @default false
@@ -5703,6 +5713,11 @@ export interface components {
             /** Allowed Values */
             allowed_values?: string[] | null;
             /**
+             * Allows No Information
+             * @default true
+             */
+            allows_no_information: boolean;
+            /**
              * Allows Not Applicable
              * @default false
              */
@@ -5803,6 +5818,11 @@ export interface components {
             allowed_units?: string[] | null;
             /** Allowed Values */
             allowed_values?: string[] | null;
+            /**
+             * Allows No Information
+             * @default true
+             */
+            allows_no_information: boolean;
             /**
              * Allows Not Applicable
              * @default false
@@ -5909,6 +5929,8 @@ export interface components {
             allowed_units?: string[] | null;
             /** Allowed Values */
             allowed_values?: string[] | null;
+            /** Allows No Information */
+            allows_no_information?: boolean | null;
             /** Allows Not Applicable */
             allows_not_applicable?: boolean | null;
             /** Allows Not Evaluated */

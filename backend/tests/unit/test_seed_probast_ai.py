@@ -13,7 +13,7 @@ after triplication), and a ``derived_judgments`` spec of 8
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import pytest
 
@@ -23,9 +23,11 @@ from app.models.extraction import (
     ExtractionTemplateGlobal,
 )
 from app.seed import _PROBAST_JUDGMENT, _PROBAST_SIGNALING
-from app.seed_probast_ai import seed_probast_ai
+from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID, seed_probast_ai
+from app.seed_probast_ai_data import _PAI_SIGNALING
 from app.services.derived_judgment_service import is_recommendation, spec_coordinates
-from tests.unit.conftest import CapturingSession, ExistingTemplateSession
+from app.services.value_semantics import ABSENT_REASON_LABELS
+from tests.unit.conftest import CapturingSession, ConvergingSession
 
 
 async def _seed() -> CapturingSession:
@@ -81,7 +83,7 @@ async def test_template_row() -> None:
     [tpl] = _of(session, ExtractionTemplateGlobal)
     assert tpl.id == UUID("00ba0000-0000-0000-0000-000000000002")
     assert tpl.name == "PROBAST+AI"
-    assert tpl.version == "2.0.0"
+    assert tpl.version == "2.1.0"
     assert tpl.kind == "quality_assessment"
     assert tpl.framework == "CUSTOM"
 
@@ -128,20 +130,93 @@ async def test_na_restricted_to_the_six_conditional_rows() -> None:
     assert not any(f.allows_not_evaluated for f in _of(session, ExtractionField))
 
 
+def _signaling_rows(session: CapturingSession) -> list[tuple[str, Any]]:
+    """Every seeded signaling question, by (section, field).
+
+    Selects on ``_PAI_SIGNALING`` — the v2-local five-answer list. The pre-2.1.0
+    selector was ``_PROBAST_SIGNALING``, which after the swap matches nothing
+    and makes an unchanged loop-body test pass vacuously.
+    """
+    return [
+        (sec, f)
+        for sec, rows in _fields_by_section(session).items()
+        for f in rows
+        if f.allowed_values == _PAI_SIGNALING
+    ]
+
+
+@pytest.mark.asyncio
+async def test_signaling_selects_carry_the_instruments_five_answer_scale() -> None:
+    """Y/PY/PN/N/NI on ONE control (spec 2026-08-26 §1b).
+
+    NI is the instrument's own fifth answer, so it ships as a select option and
+    the separate marker button is turned off per field — one concept, one
+    control. The shared four-answer constant is untouched: the classic PROBAST
+    seed still uses it, and ``_signaling``'s identity rule keys off it.
+    """
+    session = await _seed()
+    rows = _signaling_rows(session)
+    assert len(rows) == 42
+    assert [o["value"] if isinstance(o, dict) else o for o in _PAI_SIGNALING] == [
+        "Y",
+        "PY",
+        "PN",
+        "N",
+        "NI",
+    ]
+    assert _PROBAST_SIGNALING == ["Y", "PY", "PN", "N"]
+    # The label is display only — ``resolve_value`` emits an option's VALUE,
+    # and maps to a marker label only for a coded absent_reason — so both the
+    # screen and the workbook reach Unclear through ``_SIGNALING_MAP["ni"]``.
+    # It coincides with the marker's label on purpose (one concept reads the
+    # same wherever it appears), which is only safe because the marker is off
+    # on these fields; a field offering both would be ambiguous downstream.
+    assert _PAI_SIGNALING[-1]["label"] in ABSENT_REASON_LABELS.values()
+    assert all(not f.allows_no_information for _, f in rows)
+
+
 @pytest.mark.asyncio
 async def test_signaling_rows_have_the_matching_answer_instruction() -> None:
     session = await _seed()
+    rows = _signaling_rows(session)
+    assert rows, "selector matched no signaling rows"
+    for sec, f in rows:
+        assert f.llm_description, (sec, f.name)
+        assert "Answer Y, PY, PN, N or NI" in f.llm_description, (sec, f.name)
+        if (sec, f.name) in _NA_ROWS:
+            assert "not applicable" in f.llm_description, (sec, f.name)
+
+
+#: Prompt phrasings that steer the model to the RETIRED marker. 2.1.0 made "no
+#: information" an answer on the scale, and turned the marker off on every
+#: field — a prompt still asking for it requests an encoding the field refuses.
+_MARKER_PHRASINGS = ("mark no information", "lean to no information")
+
+
+@pytest.mark.asyncio
+async def test_no_prompt_still_steers_the_model_to_the_retired_marker() -> None:
+    session = await _seed()
     for sec, rows in _fields_by_section(session).items():
         for f in rows:
-            if f.allowed_values != _PROBAST_SIGNALING:
-                continue
-            assert f.llm_description, (sec, f.name)
-            if (sec, f.name) in _NA_ROWS:
-                assert "not applicable" in f.llm_description, (sec, f.name)
-            else:
-                assert f.llm_description.endswith(
-                    "mark no information when the article is silent."
-                ), (sec, f.name)
+            for phrase in _MARKER_PHRASINGS:
+                assert phrase not in (f.llm_description or ""), (sec, f.name, phrase)
+
+
+@pytest.mark.asyncio
+async def test_the_marker_is_off_everywhere_the_answer_set_carries_the_concept() -> None:
+    """...and ON for the one field where it does not.
+
+    Signaling questions have NI on the scale, judgments have Unclear, text
+    boxes are optional. The Step-2 classifier has neither: it is REQUIRED,
+    its three options are all substantive, and none of them means "the article
+    does not say" — so turning the marker off there would leave an
+    unclassifiable study with no representable answer, and would make the
+    "an absent-reason marker excludes nothing" branch of §1 unreachable.
+    """
+    session = await _seed()
+    fields = _of(session, ExtractionField)
+    assert len(fields) == 95
+    assert [f.name for f in fields if f.allows_no_information] == ["study_type"]
 
 
 @pytest.mark.asyncio
@@ -182,17 +257,33 @@ async def test_assessor_owned_fields_carry_no_llm_description() -> None:
 
 
 @pytest.mark.asyncio
-async def test_optionality() -> None:
-    """Free-text boxes (describes, rationales, summaries) are optional; the
-    scope select, signaling questions, judgments and applicability stay
-    required."""
+async def test_required_is_the_deliverable_not_the_scaffolding() -> None:
+    """Required = what the assessment OWES: the Step-2 classifier, the 8 domain
+    judgments, the 6 applicability judgments (spec 2026-08-26 §1b).
+
+    Signaling questions and every text box are optional. Which part of the
+    instrument applies is unknown until Step 2, so "all 95 fields owed" was
+    unknowable up front and left a development-only study stuck at ~52%
+    forever. ``signaling_worst`` is completeness-gated below High, so an
+    unanswered SQ still withholds the derived default — the nudge survives
+    without requiredness.
+    """
     session = await _seed()
-    for sec, rows in _fields_by_section(session).items():
-        for f in rows:
-            if f.field_type == "text":
-                assert f.is_required is False, (sec, f.name)
-            else:
-                assert f.is_required is True, (sec, f.name)
+    required = {
+        (sec, f.name)
+        for sec, rows in _fields_by_section(session).items()
+        for f in rows
+        if f.is_required
+    }
+    assert {name for _, name in required} == {
+        "study_type",
+        "quality_concern",
+        "risk_of_bias",
+        "applicability_concerns",
+    }
+    assert len(required) == 15
+    for sec, f in _signaling_rows(session):
+        assert f.is_required is False, (sec, f.name)
 
 
 @pytest.mark.asyncio
@@ -318,6 +409,63 @@ async def test_derived_spec_shape() -> None:
 
 
 @pytest.mark.asyncio
+async def test_scope_rules_declare_the_two_single_part_study_types() -> None:
+    """The Step-2 classification stops being a display hint: which sections a
+    study type excludes is DECLARED DATA beside ``derived_judgments``, so every
+    layer reads one rule instead of re-deriving it from ``dev_``/``eval_`` name
+    prefixes (spec 2026-08-26 §1). ``combination`` excludes nothing and is
+    therefore absent — the conservative default for anything unrecognized.
+    """
+    session = await _seed()
+    [tpl] = _of(session, ExtractionTemplateGlobal)
+    rules = tpl.schema_["scope_rules"]
+    assert set(rules["excludes"]) == {"development_only", "evaluation_only"}
+    assert rules["excludes"]["development_only"] == [
+        "eval_d1_participants",
+        "eval_d2_predictors",
+        "eval_d3_outcome",
+        "eval_d4_analysis_apparent",
+        "eval_d4_analysis_internal",
+        "eval_d4_analysis_external",
+        "eval_d4_judgment",
+    ]
+    assert rules["excludes"]["evaluation_only"] == [
+        "dev_d1_participants",
+        "dev_d2_predictors",
+        "dev_d3_outcome",
+        "dev_d4_analysis",
+    ]
+    # The classifier's own options are what the excludes keys must match.
+    study_type = next(f for f in _fields_by_section(session)["assessment_scope"])
+    codes = {o["value"] for o in study_type.allowed_values}
+    assert set(rules["excludes"]) <= codes
+
+
+@pytest.mark.asyncio
+async def test_scope_rule_coordinates_resolve_to_seeded_sections() -> None:
+    """Dangling-ref guard, the ``derived_judgments`` assertion's sibling. A
+    section name that resolves to nothing simply stops being excluded, which is
+    invisible on screen; and a classifier that excluded its OWN section would
+    hide the form's entry point, making the classification unreachable.
+    """
+    session = await _seed()
+    [tpl] = _of(session, ExtractionTemplateGlobal)
+    by_section = _fields_by_section(session)
+    seeded_fields = {(sec, f.name) for sec, rows in by_section.items() for f in rows}
+    rules = tpl.schema_["scope_rules"]
+
+    classifier = rules["classifier"]
+    assert (classifier["section"], classifier["field"]) in seeded_fields
+
+    for study_type, excluded in rules["excludes"].items():
+        assert excluded, study_type
+        assert len(set(excluded)) == len(excluded), study_type
+        for section in excluded:
+            assert section in by_section, (study_type, section)
+        assert classifier["section"] not in excluded, study_type
+
+
+@pytest.mark.asyncio
 async def test_every_spec_coordinate_resolves_to_a_seeded_field() -> None:
     """Inputs AND the target/rationale/summary pointers: a dangling ref
     silently nulls a judgment forever, because the seed never UPDATEs an
@@ -330,7 +478,99 @@ async def test_every_spec_coordinate_resolves_to_a_seeded_field() -> None:
 
 
 @pytest.mark.asyncio
-async def test_idempotent_when_template_exists() -> None:
-    session = ExistingTemplateSession()
+async def test_field_ids_are_deterministic() -> None:
+    """Converging replaces the children every boot, so their identity must be
+    derived, not random: ``_field`` leaves ``id`` to ``uuid4``, which would
+    churn 95 global UUIDs per deploy and make "same data → same rows" false."""
+    first = _of(await _seed(), ExtractionField)
+    second = _of(await _seed(), ExtractionField)
+    ids = [f.id for f in first]
+    assert ids == [f.id for f in second]
+    assert len(set(ids)) == 95
+    for f in first:
+        assert f.id == uuid5(f.entity_type_id, f.name), f.name
+
+
+@pytest.mark.asyncio
+async def test_converges_onto_an_existing_row_instead_of_skipping() -> None:
+    """The delivery vehicle for every future template correction.
+
+    Before 2.1.0 the seeder early-returned on an existing row, so a corrected
+    ``derived_judgments`` spec could never reach a database that already had
+    the template and ``version`` was decorative. Now it UPDATEs the row in
+    place and replaces its children — unconditionally, because gating on a
+    version bump would reintroduce the forgotten-bump silent no-op.
+    """
+    session = ConvergingSession()
     await seed_probast_ai(session)
-    assert session.added == []
+
+    # The row is mutated, never re-added: deleting and re-inserting it would
+    # SET NULL every clone's global_template_id and break clone dedupe.
+    assert _of(session, ExtractionTemplateGlobal) == []
+    assert session.existing.version == "2.1.0"
+    assert "scope_rules" in session.existing.schema_
+    assert "derived_judgments" in session.existing.schema_
+    # ...and the manager-customized ✨ instruction is never written here.
+    assert not hasattr(session.existing, "llm_template_instruction")
+
+    # Children are REPLACED: one delete, then the full tree re-inserted.
+    deletes = [s for s in session.executed if "DELETE" in str(s).upper()]
+    assert len(deletes) == 1
+    assert len(_of(session, ExtractionEntityType)) == 13
+    assert len(_of(session, ExtractionField)) == 95
+
+
+@pytest.mark.asyncio
+async def test_converging_produces_the_same_tree_as_a_fresh_insert() -> None:
+    """Idempotence, stated as identity rather than as counts: the row the
+    convergence path writes must be indistinguishable from the insert path's."""
+    fresh = await _seed()
+    converged = ConvergingSession()
+    await seed_probast_ai(converged)
+
+    def _shape(ets: list[Any], fields: list[Any]) -> Any:
+        return (
+            sorted((et.id, et.name, et.sort_order) for et in ets),
+            sorted((f.id, f.name, f.is_required, f.allows_no_information) for f in fields),
+        )
+
+    assert _shape(_of(converged, ExtractionEntityType), _of(converged, ExtractionField)) == _shape(
+        _of(fresh, ExtractionEntityType), _of(fresh, ExtractionField)
+    )
+    [tpl] = _of(fresh, ExtractionTemplateGlobal)
+    assert converged.existing.schema_ == tpl.schema_
+    assert converged.existing.version == tpl.version
+
+
+@pytest.mark.asyncio
+async def test_a_referenced_catalogue_skips_the_replace_instead_of_wedging() -> None:
+    """The RESTRICT FK would abort the boot, and STAY aborted.
+
+    Nothing should ever point recorded work at the catalogue's own entity
+    types, but the schema does not forbid it and the global ids are
+    deterministic. One such row would make the DELETE raise on every deploy
+    from then on — including the one carrying the fix — because the offending
+    row survives each failed boot. Skipping keeps deploys flowing; the scalar
+    columns still converge, and the log says the tree did not.
+    """
+    session = ConvergingSession()
+    session.scalar_result = uuid5(_PROBAST_AI_TEMPLATE_ID, "an-instance")
+
+    await seed_probast_ai(session)
+
+    assert not [s for s in session.executed if "DELETE" in str(s).upper()]
+    assert _of(session, ExtractionEntityType) == []
+    assert _of(session, ExtractionField) == []
+    # The row's own columns still converge — only the tree is left alone.
+    assert session.existing.version == "2.1.0"
+    assert "scope_rules" in session.existing.schema_
+
+
+@pytest.mark.asyncio
+async def test_convergence_is_serialized_by_an_advisory_lock() -> None:
+    """The boot runs this before gunicorn starts; two containers starting at
+    once would otherwise race one's DELETE against the other's re-INSERT and
+    abort a deploy on a duplicate key."""
+    session = ConvergingSession()
+    await seed_probast_ai(session)
+    assert "pg_advisory_xact_lock" in str(session.executed[0])

@@ -34,6 +34,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ConsensusOverrideEditor } from '@/components/runs/ConsensusOverrideEditor';
+import type { DispositionRowField } from '@/components/extraction/DispositionRow';
 import { ReviewerAITrace } from '@/components/runs/ReviewerAITrace';
 import { FieldAITrace } from '@/components/runs/FieldAITrace';
 import type { FieldValueEditorField } from '@/components/extraction/FieldValueEditor';
@@ -58,6 +59,11 @@ export interface ComparisonField {
   allow_other?: boolean;
   other_label?: string | null;
   other_placeholder?: string | null;
+  /** ADR-0016 disposition flags — gate the shared DispositionRow in the override
+   *  editor. Absent `allows_no_information` ⇒ ON (pre-0062 behaviour). */
+  allows_no_information?: boolean;
+  allows_not_applicable?: boolean;
+  allows_not_evaluated?: boolean;
 }
 
 export interface ComparisonEntityType {
@@ -234,7 +240,9 @@ function displayValue(raw: unknown): string {
   return String(v);
 }
 
-function toEditorField(field: ComparisonField): FieldValueEditorField {
+function toEditorField(
+  field: ComparisonField,
+): FieldValueEditorField & DispositionRowField {
   return {
     id: field.id,
     label: field.label ?? field.name ?? field.id,
@@ -245,6 +253,9 @@ function toEditorField(field: ComparisonField): FieldValueEditorField {
     allow_other: field.allow_other,
     other_label: field.other_label,
     other_placeholder: field.other_placeholder,
+    allows_no_information: field.allows_no_information,
+    allows_not_applicable: field.allows_not_applicable,
+    allows_not_evaluated: field.allows_not_evaluated,
   };
 }
 

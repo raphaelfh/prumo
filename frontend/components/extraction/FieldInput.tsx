@@ -16,15 +16,16 @@
 
 import {memo, useState} from 'react';
 import {Label} from '@/components/ui/label';
-import {AlertCircle, Check, History} from 'lucide-react';
+import {AlertCircle, History} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import {AISuggestionDisplay, type AISuggestionReviewBinding} from './ai/AISuggestionDisplay';
 import {AISuggestionReviewPopover} from './ai/AISuggestionReviewPopover';
 import {FieldValueEditor} from './FieldValueEditor';
+import {DispositionRow} from './DispositionRow';
 import {isEmptyValue, isValidNumber} from '@/lib/ai-extraction/valueParser';
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
 import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
@@ -160,42 +161,13 @@ export function FieldInput(props: FieldInputProps) {
     onChange(newValue);
   };
 
-    // ADR-0016 runtime disposition control — record a coded "no value, on purpose"
-    // answer on ANY field type. `no_information` is universal; the opt-in codes
-    // render only where the field enables them. Toggling the active one clears back
-    // to unresolved. Setting a marker clears any validation error (it is resolved).
-  const dispositions: { code: string; label: string; hint: string }[] = [
-    {
-      code: 'no_information',
-      label: t('extraction', 'dispositionNoInformation'),
-      hint: t('extraction', 'dispositionNoInformationHint'),
-    },
-    ...(field.allows_not_applicable
-      ? [
-          {
-            code: 'not_applicable',
-            label: t('extraction', 'dispositionNotApplicable'),
-            hint: t('extraction', 'dispositionNotApplicableHint'),
-          },
-        ]
-      : []),
-    ...(field.allows_not_evaluated
-      ? [
-          {
-            code: 'not_evaluated',
-            label: t('extraction', 'dispositionNotEvaluated'),
-            hint: t('extraction', 'dispositionNotEvaluatedHint'),
-          },
-        ]
-      : []),
-  ];
-  const setDisposition = (code: string) => {
-    if (activeReason === code) {
-      onChange('');
-    } else {
-      setValidationError(null);
-      onChange({ value: null, absent_reason: code });
-    }
+  // ADR-0016 disposition control — the chips, their per-field gating and the
+  // marker envelope all live in the shared DispositionRow. Setting a marker
+  // clears any validation error (the coordinate is resolved); clearing one
+  // leaves the error alone, exactly as before.
+  const handleDisposition = (next: unknown) => {
+    if (valueAbsentReason(next) !== null) setValidationError(null);
+    onChange(next);
   };
 
     // Render input by type — delegated to the shared, AI-chrome-free editor
@@ -333,53 +305,14 @@ export function FieldInput(props: FieldInputProps) {
           </div>
         </div>
 
-                  {/* Disposition control (ADR-0016): a quiet row to mark the field
-                      "No information" (any type) or the opt-in Not applicable /
-                      Not evaluated. Each button describes itself on hover; the
-                      active one gets the accepted-style success ring (matching
-                      the accept-suggestion affordance) + an explicit "recorded"
-                      hint, so a blank input is never ambiguous. Clicking the
-                      active one clears back to unresolved. */}
-        {/* Local provider: the disposition row renders on EVERY field, so its
-            tooltips must not depend on a caller-supplied provider. */}
-        <TooltipProvider delayDuration={300}>
-        <div className="flex flex-wrap items-center gap-1.5" data-disposition-control>
-          {dispositions.map((d) => {
-            const active = activeReason === d.code;
-            return (
-              <Tooltip key={d.code}>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="ghost"
-                    aria-pressed={active}
-                    disabled={inputDisabled}
-                    onClick={() => setDisposition(d.code)}
-                    className={cn(
-                      'gap-1 px-2 text-xs',
-                      active
-                        ? 'text-success ring-1 ring-inset ring-success bg-success/10 hover:bg-success/15 hover:text-success'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {active ? <Check className="h-3 w-3" /> : null}
-                    {d.label}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{active ? t('extraction', 'dispositionActiveHint') : d.hint}</p>
-                </TooltipContent>
-              </Tooltip>
-            );
-          })}
-          {activeReason ? (
-            <span className="text-[11px] text-muted-foreground">
-              {t('extraction', 'dispositionActiveHint')}
-            </span>
-          ) : null}
-        </div>
-        </TooltipProvider>
+                  {/* Disposition control (ADR-0016) — the shared chip row, also
+                      used by the consensus override editor. */}
+        <DispositionRow
+          field={field}
+          value={value}
+          onChange={handleDisposition}
+          disabled={inputDisabled}
+        />
 
                   {/* Suggested value + accept/reject buttons below input — only
                       when no manual value, and never on read-only runs (a

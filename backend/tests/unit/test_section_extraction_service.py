@@ -1361,6 +1361,67 @@ class TestCreateSuggestions:
         assert by_field[f2]["rationale"] == "not stated in the article"
 
     @pytest.mark.asyncio
+    async def test_abstention_writes_no_marker_when_field_opts_out(self, service):
+        # The AI abstention writer is gated by ``allows_no_information``
+        # (migration 0062) exactly like ``disposition_to_marker`` gates the human
+        # write path. On a field that opts OUT — PROBAST+AI 2.1.0's signaling
+        # questions, where "NI" is the fifth answer of the scale rather than a
+        # marker — ``FieldInput`` renders no marker button, so a marker written
+        # here would be invisible AND unclearable on the form while still
+        # counting as filled. The abstention is still a recorded proposal: value
+        # ``None`` carrying its rationale, with NO ``absent_reason`` sibling.
+        f_off, f_on = uuid4(), uuid4()
+        field_off, field_on = MagicMock(), MagicMock()
+        field_off.id, field_off.name = f_off, "sq_off"
+        field_off.allows_no_information = False
+        field_on.id, field_on.name = f_on, "sq_on"
+        field_on.allows_no_information = True
+        et = MagicMock()
+        et.fields = [field_off, field_on]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        instance = MagicMock()
+        instance.id = uuid4()
+        instance.parent_instance_id = None
+        service._instances.get_by_article = AsyncMock(return_value=[instance])
+        recorded: list[dict] = []
+
+        async def _rec(**kwargs):
+            recorded.append(kwargs)
+            return MagicMock(id=uuid4())
+
+        service._proposals.record_proposal = AsyncMock(side_effect=_rec)
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={
+                "sq_off": {
+                    "status": "not_found",
+                    "value": None,
+                    "reasoning": "not stated in the article",
+                },
+                "sq_on": {"status": "not_found", "value": None},
+            },
+            run=run,
+        )
+
+        assert result == 2
+        by_field = {k["field_id"]: k for k in recorded}
+        # Opted out: recorded, but no marker — and the rationale survives.
+        assert by_field[f_off]["proposed_value"] == {"value": None}
+        assert "absent_reason" not in by_field[f_off]["proposed_value"]
+        assert by_field[f_off]["rationale"] == "not stated in the article"
+        # The sibling field on the same run still gets the marker.
+        assert by_field[f_on]["proposed_value"] == {
+            "value": None,
+            "absent_reason": "no_information",
+        }
+
+    @pytest.mark.asyncio
     async def test_ambiguous_status_records_no_marker(self, service):
         # ADR-0016 Phase 1 splits the recording branch: ``status='ambiguous'``
         # ("present but conflicting") is NOT "absent". It must stay a

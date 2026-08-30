@@ -18,7 +18,6 @@ frontend/components/navigation/NotificationCenter.tsx:2
 frontend/components/project/settings/PICOTSItemEditor.tsx:1
 frontend/components/project/settings/TeamMembersSection.tsx:6
 frontend/components/project/settings/ZoteroIntegrationSection.tsx:4
-frontend/components/runs/ConsensusOverrideEditor.tsx:1
 frontend/components/runs/FieldAITrace.tsx:1
 frontend/components/runs/ReviewerAITrace.tsx:1
 frontend/components/runs/RunReviewerComparison.tsx:5
