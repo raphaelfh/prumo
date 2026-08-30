@@ -7,32 +7,49 @@
  * Simplifies code and allows natural hierarchy support.
  */
 
-import {useState} from 'react';
-import {createSection, deleteSection, updateEntityTypeLabel} from '@/services/templateService';
-import {Card, CardContent} from '@/components/ui/card';
-import {Button} from '@/components/ui/button';
-import {Badge} from '@/components/ui/badge';
-import {AlertTriangle, Import, Loader2, Plus, Settings} from 'lucide-react';
-import {TemplateInstructionRow} from '@/components/extraction/TemplateInstructionRow';
-import {TemplateConfigGridPanel} from '@/components/extraction/template-config/TemplateConfigGridPanel';
-import {TemplateConfigPublishControls} from '@/components/extraction/template-config/TemplateConfigPublishControls';
-import {TemplateExportButton} from '@/components/extraction/template-config/TemplateExportButton';
-import type {GridField} from '@/components/extraction/template-config/templateTree';
-import type {ExtractionFieldInsert} from '@/types/extraction';
-import {toast} from 'sonner';
-import {t} from '@/lib/copy';
-import {AddSectionDialog, ImportTemplateDialog} from './dialogs';
-import type {AddSectionMode} from './dialogs/AddSectionDialog';
-import {useDeleteTemplateField} from '@/hooks/extraction/useDeleteTemplateField';
-import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
-import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
-import {insertField} from '@/services/extractionFieldService';
-import {captureSection, replaySection} from '@/components/extraction/template-config/sectionRestore';
-import {STRUCTURAL_UNDO_TOAST_ID} from '@/components/extraction/template-config/useStructuralUndo';
+import { useState } from "react";
+import {
+  createSection,
+  deleteSection,
+  updateEntityTypeLabel,
+} from "@/services/templateService";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, Import, Loader2, Plus } from "lucide-react";
+import { TemplateInstructionControl } from "@/components/extraction/TemplateInstructionControl";
+import { TemplateConfigGridPanel } from "@/components/extraction/template-config/TemplateConfigGridPanel";
+import { TemplateConfigPublishControls } from "@/components/extraction/template-config/TemplateConfigPublishControls";
+import { TemplateExportButton } from "@/components/extraction/template-config/TemplateExportButton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import type { GridField } from "@/components/extraction/template-config/templateTree";
+import type { ExtractionFieldInsert } from "@/types/extraction";
+import { toast } from "sonner";
+import { t } from "@/lib/copy";
+import { AddSectionDialog, ImportTemplateDialog } from "./dialogs";
+import type { AddSectionMode } from "./dialogs/AddSectionDialog";
+import { useDeleteTemplateField } from "@/hooks/extraction/useDeleteTemplateField";
+import { useTemplateEntityTypes } from "@/hooks/extraction/useTemplateEntityTypes";
+import { useTemplateConfigCaches } from "@/hooks/extraction/useTemplateRepublish";
+import { insertField } from "@/services/extractionFieldService";
+import {
+  captureSection,
+  replaySection,
+} from "@/components/extraction/template-config/sectionRestore";
+import { STRUCTURAL_UNDO_TOAST_ID } from "@/components/extraction/template-config/useStructuralUndo";
 
 interface TemplateConfigEditorProps {
   projectId: string;
   templateId: string;
+  /** Project-scoped chrome the PAGE owns, rendered into the config bar so
+   * it stops costing a row of its own. Passed as a slot rather than built
+   * here on purpose: choosing an engine must never arm the Draft chip or
+   * enter the Publish diff, so the control stays outside this component's
+   * template-versioned state. Optional — the editor renders without it. */
+  engineSlot?: React.ReactNode;
   /** The dialog inside this editor can switch/import the ACTIVE template;
    * the host owns that state (this editor is keyed by it), so it must be
    * told which id is active now. */
@@ -42,6 +59,7 @@ interface TemplateConfigEditorProps {
 export function TemplateConfigEditor({
   projectId,
   templateId,
+  engineSlot,
   onActiveTemplateChanged,
 }: TemplateConfigEditorProps) {
   // ONE cached read of the template structure, shared with the grid panel
@@ -53,7 +71,8 @@ export function TemplateConfigEditor({
   // `query.data ?? []`, so a FAILED fetch is byte-identical to a template
   // with zero sections. `isError` must be answered before the empty state,
   // or a dropped connection reads as "your configuration is gone".
-  const {entityTypes, isPending, isError} = useTemplateEntityTypes(templateId);
+  const { entityTypes, isPending, isError } =
+    useTemplateEntityTypes(templateId);
   // …but only while there is nothing cached. TanStack flips `status` to
   // error on a BACKGROUND failure and KEEPS the rows, and with staleTime at
   // 5min and refetch-on-focus off, that is the realistic error on this
@@ -64,7 +83,9 @@ export function TemplateConfigEditor({
   // mounted inside the publish controls in the success branch below.
   const structureRefreshFailed = isError && entityTypes.length > 0;
   // Which AddSectionDialog variant is open (B-8 D3); null = closed.
-  const [addSectionMode, setAddSectionMode] = useState<AddSectionMode | null>(null);
+  const [addSectionMode, setAddSectionMode] = useState<AddSectionMode | null>(
+    null,
+  );
   const [showImportDialog, setShowImportDialog] = useState(false);
   // B-9b2a: the read-only diff sheet's trigger lives in the command bar
   // while the grid hosts the inspector Sheet, and two modal sheets must
@@ -74,7 +95,7 @@ export function TemplateConfigEditor({
   // reaches published data, and the grid arms a 6s Undo for the misclick.
   // The mutation stays here because the editor owns the cache refresh.
   const deleteFieldMutation = useDeleteTemplateField(projectId, templateId);
-  const {invalidateStructure} = useTemplateConfigCaches(
+  const { invalidateStructure } = useTemplateConfigCaches(
     projectId,
     templateId,
   );
@@ -102,7 +123,7 @@ export function TemplateConfigEditor({
       description: field.description,
       // The grid projection widens field_type to string; the insert
       // payload wants the closed union the server validates anyway.
-      field_type: field.fieldType as ExtractionFieldInsert['field_type'],
+      field_type: field.fieldType as ExtractionFieldInsert["field_type"],
       is_required: field.isRequired,
       llm_description: field.aiInstruction,
       allow_other: field.allowOther,
@@ -117,9 +138,9 @@ export function TemplateConfigEditor({
       sort_order: index,
     });
     if (!result.ok) {
-      console.error('[TemplateConfigEditor] restore failed:', result.error);
+      console.error("[TemplateConfigEditor] restore failed:", result.error);
       toast.error(
-        `${t('templateConfig', 'errors_restoreField')}: ${result.error.message}`,
+        `${t("templateConfig", "errors_restoreField")}: ${result.error.message}`,
       );
       return false;
     }
@@ -142,7 +163,10 @@ export function TemplateConfigEditor({
    * hook is panel-scoped and this needs the RAW `entityTypes` the editor
    * holds, which is where `role` and `is_required` survive.
    */
-  const deleteSectionNow = async (sectionId: string, label: string): Promise<void> => {
+  const deleteSectionNow = async (
+    sectionId: string,
+    label: string,
+  ): Promise<void> => {
     const snapshot = captureSection(entityTypes, sectionId);
     const result = await deleteSection(projectId, templateId, sectionId);
     if (!result.ok) {
@@ -154,23 +178,31 @@ export function TemplateConfigEditor({
     await invalidateStructure();
     if (!snapshot) return;
 
-    toast(t('templateConfig', 'undoDeleteSectionToast').replace('{{section}}', label), {
-      id: STRUCTURAL_UNDO_TOAST_ID,
-      duration: 6000,
-      action: {
-        label: t('templateConfig', 'undoAction'),
-        onClick: () => {
-          void replaySection(snapshot, {
-            createSection: (params) =>
-              createSection({projectId, templateId, ...params}),
-            insertField: (payload) => insertField(projectId, templateId, payload),
-          }).then(async (restored) => {
-            if (!restored) toast.error(t('templateConfig', 'errors_restoreSection'));
-            await invalidateStructure();
-          });
+    toast(
+      t("templateConfig", "undoDeleteSectionToast").replace(
+        "{{section}}",
+        label,
+      ),
+      {
+        id: STRUCTURAL_UNDO_TOAST_ID,
+        duration: 6000,
+        action: {
+          label: t("templateConfig", "undoAction"),
+          onClick: () => {
+            void replaySection(snapshot, {
+              createSection: (params) =>
+                createSection({ projectId, templateId, ...params }),
+              insertField: (payload) =>
+                insertField(projectId, templateId, payload),
+            }).then(async (restored) => {
+              if (!restored)
+                toast.error(t("templateConfig", "errors_restoreSection"));
+              await invalidateStructure();
+            });
+          },
         },
       },
-    });
+    );
   };
 
   /** Delete a field. B-9d removed the confirmation modal — the Publish ☑
@@ -183,8 +215,8 @@ export function TemplateConfigEditor({
   const deleteFieldNow = (fieldId: string) =>
     new Promise<boolean>((resolve) => {
       deleteFieldMutation.mutate(
-        {fieldId},
-        {onSuccess: () => resolve(true), onError: () => resolve(false)},
+        { fieldId },
+        { onSuccess: () => resolve(true), onError: () => resolve(false) },
       );
     });
 
@@ -192,13 +224,18 @@ export function TemplateConfigEditor({
   // here (service call + cache refresh; the grid guarantees one commit
   // per rename, with a changed, non-empty, trimmed label).
   const handleSaveEdit = async (entityTypeId: string, label: string) => {
-    const result = await updateEntityTypeLabel(projectId, templateId, entityTypeId, label);
+    const result = await updateEntityTypeLabel(
+      projectId,
+      templateId,
+      entityTypeId,
+      label,
+    );
     if (!result.ok) {
-      console.error('Erro ao atualizar label:', result.error);
-      toast.error(`${t('common', 'error')}: ${result.error.message}`);
+      console.error("Erro ao atualizar label:", result.error);
+      toast.error(`${t("common", "error")}: ${result.error.message}`);
       return;
     }
-    toast.success(t('extraction', 'labelUpdatedSuccess'));
+    toast.success(t("extraction", "labelUpdatedSuccess"));
     await invalidateStructure();
   };
 
@@ -218,7 +255,9 @@ export function TemplateConfigEditor({
     return (
       <div className="flex items-center justify-center p-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <span className="ml-3 text-muted-foreground">{t('extraction', 'loadingConfiguration')}</span>
+        <span className="ml-3 text-muted-foreground">
+          {t("extraction", "loadingConfiguration")}
+        </span>
       </div>
     );
   }
@@ -238,11 +277,16 @@ export function TemplateConfigEditor({
               strokeWidth={1.5}
             />
             <p className="text-sm font-medium mb-1 text-foreground">
-              {t('templateConfig', 'sectionsLoadFailedTitle')}
+              {t("templateConfig", "sectionsLoadFailedTitle")}
             </p>
-            <p className="text-xs mb-4">{t('templateConfig', 'sectionsLoadFailedBody')}</p>
-            <Button variant="outline" onClick={() => void invalidateStructure()}>
-              {t('common', 'tryAgain')}
+            <p className="text-xs mb-4">
+              {t("templateConfig", "sectionsLoadFailedBody")}
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => void invalidateStructure()}
+            >
+              {t("common", "tryAgain")}
             </Button>
           </div>
         </CardContent>
@@ -256,33 +300,71 @@ export function TemplateConfigEditor({
     // this box and the parent's overflow-y-auto scrolls to them — growth
     // via min-h-full would instead make every height below indefinite and
     // un-cap the grid card.
-    <div className="flex h-full min-h-0 flex-col gap-6">
-      {/* Thin command bar (replaces the tall header Card). */}
-      <div className="@container/configbar flex h-12 shrink-0 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <Settings className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-          <span className="truncate text-sm font-medium">{t('extraction', 'configHeaderTitle')}</span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Badge variant="outline" className="text-xs">
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      {/* ONE configuration bar. It absorbed three stacked bands — the engine
+          chip's own right-aligned row, this command bar, and the 48px AI
+          instruction row — for ~128px of reclaimed vertical space. Priority
+          tracks (RunHeader's contract): the identity track is the only
+          elastic one, every command is shrink-0, and Publish never collapses. */}
+      <div className="@container/configbar flex h-12 shrink-0 items-center gap-2 rounded-md border border-border/40 bg-card px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {/* A count is a statistic, not a command: muted text, not a
+              bordered Badge, and the first thing to fold when space runs out. */}
+          <span className="hidden truncate text-[13px] text-muted-foreground @[38rem]/configbar:inline">
             {(entityTypes.length === 1
-              ? t('extraction', 'configSectionsCountOne')
-              : t('extraction', 'configSectionsCountOther')
+              ? t("extraction", "configSectionsCountOne")
+              : t("extraction", "configSectionsCountOther")
             )
-              .replace('{{n}}', String(entityTypes.length))
-              .replace('{{main}}', String(rootEntityTypes.length))}
-          </Badge>
+              .replace("{{n}}", String(entityTypes.length))
+              .replace("{{main}}", String(rootEntityTypes.length))}
+          </span>
+        </div>
+        {engineSlot && (
+          <>
+            {/* The one control that degrades GRACEFULLY under pressure: its
+                content is a long proper noun that already truncates, so it
+                absorbs the squeeze instead of pushing Publish off the bar. */}
+            <div className="min-w-0 shrink">{engineSlot}</div>
+            {/* Hairline between project regime and versioned-template regime:
+                the engine is not part of what Publish ships. */}
+            <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />
+          </>
+        )}
+        <div className="flex shrink-0 items-center gap-1">
+          <TemplateInstructionControl
+            projectId={projectId}
+            templateId={templateId}
+          />
           <TemplateExportButton projectId={projectId} templateId={templateId} />
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid="template-config-open-import"
-            onClick={() => setShowImportDialog(true)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <Import className="h-4 w-4 mr-2" />
-            {t('extraction', 'configImportTemplateButton')}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="template-config-open-import"
+                onClick={() => setShowImportDialog(true)}
+                // Stays a visible, directly clickable button at every width: one
+                // Playwright spec asserts toBeVisible() on this testid, which a
+                // DropdownMenuItem could never satisfy while closed. The label
+                // matches the accessible name (WCAG 2.5.3) when it folds away.
+                aria-label={t("extraction", "configImportTemplateButton")}
+                className="gap-1.5 text-muted-foreground hover:text-foreground"
+              >
+                <Import
+                  className="size-4 shrink-0"
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+                <span className="sr-only @[58rem]/configbar:not-sr-only">
+                  {t("extraction", "configImportTemplateButton")}
+                </span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t("extraction", "configImportTemplateButton")}
+            </TooltipContent>
+          </Tooltip>
+          <span className="h-4 w-px shrink-0 bg-border/60" aria-hidden />
           <TemplateConfigPublishControls
             projectId={projectId}
             templateId={templateId}
@@ -302,9 +384,13 @@ export function TemplateConfigEditor({
           data-testid="template-config-refresh-failed"
           className="flex shrink-0 items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning"
         >
-          <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden />
+          <AlertTriangle
+            className="h-4 w-4 shrink-0"
+            strokeWidth={1.5}
+            aria-hidden
+          />
           <span className="min-w-0 flex-1">
-            {t('templateConfig', 'sectionsRefreshFailedBody')}
+            {t("templateConfig", "sectionsRefreshFailedBody")}
           </span>
           <Button
             variant="ghost"
@@ -312,40 +398,40 @@ export function TemplateConfigEditor({
             className="shrink-0 hover:bg-warning/20 hover:text-warning"
             onClick={() => void invalidateStructure()}
           >
-            {t('common', 'tryAgain')}
+            {t("common", "tryAgain")}
           </Button>
         </div>
       )}
 
-      <TemplateInstructionRow projectId={projectId} templateId={templateId} />
-
       {entityTypes.length > 0 && (
-      // The grid absorbs the leftover column height (dashboard regime:
-      // the panel scrolls inside, never the page). min-h-48 keeps the
-      // field list useful when the fixed rows squeeze it (the column's
-      // overflow escape hatch scrolls instead).
-      <div className="min-h-48 flex-1">
-      <TemplateConfigGridPanel
-        projectId={projectId}
-        templateId={templateId}
-        diffSheetOpen={diffSheetOpen}
-        sectionActions={{
-          onCommitRename: (sectionId, label) => void handleSaveEdit(sectionId, label),
-          onDelete: (section) => void deleteSectionNow(section.id, section.label),
-          onAddPerModelSection: (group) =>
-            setAddSectionMode({
-              kind: 'perModel',
-              parentId: group.id,
-              parentLabel: group.label,
-              entryNoun: group.entryNoun,
-            }),
-        }}
-        onDeleteField={deleteFieldNow}
-        onRestoreField={restoreFieldNow}
-        onAddSection={() => setAddSectionMode({kind: 'root'})}
-        onAddGroup={() => setAddSectionMode({kind: 'group'})}
-      />
-      </div>
+        // The grid absorbs the leftover column height (dashboard regime:
+        // the panel scrolls inside, never the page). min-h-48 keeps the
+        // field list useful when the fixed rows squeeze it (the column's
+        // overflow escape hatch scrolls instead).
+        <div className="min-h-48 flex-1">
+          <TemplateConfigGridPanel
+            projectId={projectId}
+            templateId={templateId}
+            diffSheetOpen={diffSheetOpen}
+            sectionActions={{
+              onCommitRename: (sectionId, label) =>
+                void handleSaveEdit(sectionId, label),
+              onDelete: (section) =>
+                void deleteSectionNow(section.id, section.label),
+              onAddPerModelSection: (group) =>
+                setAddSectionMode({
+                  kind: "perModel",
+                  parentId: group.id,
+                  parentLabel: group.label,
+                  entryNoun: group.entryNoun,
+                }),
+            }}
+            onDeleteField={deleteFieldNow}
+            onRestoreField={restoreFieldNow}
+            onAddSection={() => setAddSectionMode({ kind: "root" })}
+            onAddGroup={() => setAddSectionMode({ kind: "group" })}
+          />
+        </div>
       )}
 
       {entityTypes.length === 0 && (
@@ -353,25 +439,27 @@ export function TemplateConfigEditor({
           <CardContent className="pt-6">
             <div className="text-center text-muted-foreground">
               <Plus className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
-                <p className="text-sm font-medium mb-1">{t('extraction', 'noSectionsConfigured')}</p>
-              <p className="text-xs mb-4">
-                  Import a global template or create custom sections
+              <p className="text-sm font-medium mb-1">
+                {t("extraction", "noSectionsConfigured")}
               </p>
-                <div className="flex flex-wrap gap-2 justify-center">
+              <p className="text-xs mb-4">
+                Import a global template or create custom sections
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
                 <Button
                   variant="outline"
                   data-testid="template-config-open-import"
                   onClick={() => setShowImportDialog(true)}
                 >
                   <Import className="h-4 w-4 mr-2" />
-                  {t('extraction', 'configImportTemplateButton')}
+                  {t("extraction", "configImportTemplateButton")}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => setAddSectionMode({kind: 'root'})}
+                  onClick={() => setAddSectionMode({ kind: "root" })}
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                    {t('extraction', 'addSection')}
+                  {t("extraction", "addSection")}
                 </Button>
               </div>
             </div>
@@ -379,7 +467,7 @@ export function TemplateConfigEditor({
         </Card>
       )}
 
-        {/* Adding a section lives in the grid now: the rail footer and
+      {/* Adding a section lives in the grid now: the rail footer and
             the end-of-grid ghost row. A third button here was duplicate. */}
 
       {/* Dialogs. Field add/edit went inline in B-5 (ghost rows + the
@@ -389,17 +477,16 @@ export function TemplateConfigEditor({
           (inline section creation was dropped in the B-8 plan). Keyed
           by mode so the form re-initializes per variant. */}
       <AddSectionDialog
-        key={addSectionMode?.kind ?? 'root'}
+        key={addSectionMode?.kind ?? "root"}
         projectId={projectId}
         templateId={templateId}
         open={addSectionMode !== null}
-        mode={addSectionMode ?? {kind: 'root'}}
+        mode={addSectionMode ?? { kind: "root" }}
         onOpenChange={(open) => {
           if (!open) setAddSectionMode(null);
         }}
         onSectionAdded={handleSectionAdded}
       />
-
 
       <ImportTemplateDialog
         projectId={projectId}
@@ -408,9 +495,10 @@ export function TemplateConfigEditor({
         // Pure pass-through: the dialog already closed itself, and the host
         // owns both the cache refresh and `activeTemplate` (this editor is
         // keyed by it) — doing either here would just do it twice.
-        onActiveTemplateChanged={(activeTemplateId) => onActiveTemplateChanged?.(activeTemplateId)}
+        onActiveTemplateChanged={(activeTemplateId) =>
+          onActiveTemplateChanged?.(activeTemplateId)
+        }
       />
     </div>
   );
 }
-

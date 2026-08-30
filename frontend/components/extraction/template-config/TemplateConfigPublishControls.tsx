@@ -45,7 +45,7 @@ export function TemplateConfigPublishControls({
 }: TemplateConfigPublishControlsProps) {
   const {data: configStatus} = useTemplateConfigStatus(projectId, templateId);
   // D10 — the Discard confirm pane warns about the AI instruction only when
-  // there IS one. TemplateInstructionRow mounts this same key alongside us,
+  // there IS one. TemplateInstructionControl mounts this same key alongside us,
   // so the two observers dedupe into one request.
   const {data: instruction} = useTemplateInstruction(projectId, templateId);
   const {takeOver, takingOver} = useTakeOverDraftLock(projectId, templateId);
