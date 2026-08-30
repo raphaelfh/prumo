@@ -22,20 +22,22 @@ section or judgment field without updating the spec silently nulls every
 overall — callers should surface a dangling reference (see ``spec_coordinates``)
 rather than fail closed.
 
-Aggregations, deliberately different:
+Aggregations. There are TWO, not three — ``worst_domain`` and
+``signaling_worst`` differ only in how they map their inputs, and share
+``_worst_gated`` for the aggregation itself:
 
 * ``worst_of`` — collapse across the evaluation-D4 performance types
-  (apparent / internal / external). LENIENT: an unreported type is ignored,
-  because "the study did not do external validation" is not a gap in the
-  assessment. Null only when no type was judged at all.
-* ``worst_domain`` — aggregate across domains. STRICT below High: if any
-  domain is unjudged, the overall is None ("incomplete"), never Low — but a
-  single High propagates regardless (the official step-4 tables say "at
-  least one domain high → high" without requiring the rest to be rated).
+  (apparent / internal / external). LENIENT, and the one genuinely different
+  rule: an unreported type is ignored, because "the study did not do external
+  validation" is not a gap in the assessment. Null only when no type was
+  judged at all. Deliberately NOT folded into ``_worst_gated``.
+* ``worst_domain`` — aggregate across domains: map each stored value to a
+  judgment (a ``no_information`` marker counts as Unclear), then
+  ``_worst_gated``.
 * ``signaling_worst`` — map each signaling answer (Y/PY → Low, PN/N → High,
-  unclear/NI → Unclear), then aggregate with High monotone and Low/Unclear
-  completeness-gated; collapse groups model the D4 performance types with
-  unreported-vs-in-progress semantics (see ``_signaling_group_state``).
+  unclear/NI → Unclear), then ``_worst_gated``; collapse groups model the D4
+  performance types with unreported-vs-in-progress semantics (see
+  ``_signaling_group_state``), and an unreported group withholds nothing.
 """
 
 from __future__ import annotations
@@ -241,13 +243,26 @@ def worst_domain(values: Iterable[Any]) -> str | None:
     genuinely missing value yields None, so Low/Unclear are never concluded
     from an unfinished assessment.
     """
-    judgments = [judgment_of(v, no_information_as_unclear=True) for v in values]
-    if any(j == "High" for j in judgments):
+    return _worst_gated([judgment_of(v, no_information_as_unclear=True) for v in values])
+
+
+def _worst_gated(states: Sequence[str | None]) -> str | None:
+    """Worst of *states*, withholding the answer while any input is unsettled.
+
+    The ONE rule behind both ``worst_domain`` and ``signaling_worst``: High is
+    monotone — a single High concludes High however much else is missing — and
+    Low/Unclear are completeness-gated, so neither is ever concluded from an
+    unfinished assessment. An unsettled input reaches here as None (nothing
+    judged), ``"missing"`` (unanswered) or ``_GROUP_IN_PROGRESS``; each caller
+    maps its own vocabulary onto those first. ``worst_of`` is deliberately NOT
+    folded in — its leniency is a different rule, not a different vocabulary.
+    """
+    if "High" in states:
         return "High"
-    if not judgments or any(j is None for j in judgments):
+    if any(s is None or s in ("missing", _GROUP_IN_PROGRESS) for s in states):
         return None
-    ranked = [j for j in judgments if j is not None]
-    return max(ranked, key=JUDGMENT_SEVERITY.__getitem__)
+    judged = [s for s in states if s in JUDGMENT_SEVERITY]
+    return max(judged, key=JUDGMENT_SEVERITY.__getitem__) if judged else None
 
 
 def _signaling_contribution(raw: Any) -> Contribution:
@@ -302,27 +317,9 @@ def _signaling_group_state(raws: Iterable[Any]) -> str:
     contributions = [_signaling_contribution(r) for r in raws]
     if all(c in ("excluded", "missing") for c in contributions):
         return _GROUP_UNREPORTED
-    if any(c == "High" for c in contributions):
-        return "High"
-    if any(c == "missing" for c in contributions):
-        return _GROUP_IN_PROGRESS
-    judged = [c for c in contributions if c in JUDGMENT_SEVERITY]
-    return max(judged, key=JUDGMENT_SEVERITY.__getitem__)
-
-
-def _aggregate_signaling(plain: list[str], groups: list[str]) -> str | None:
-    """Aggregate resolved inputs — High is monotone, Low/Unclear are not."""
-    reported = [g for g in groups if g != _GROUP_UNREPORTED]
-    if any(s == "High" for s in plain) or any(g == "High" for g in reported):
-        return "High"
-    if any(s == "missing" for s in plain) or any(g == _GROUP_IN_PROGRESS for g in reported):
-        return None
-    judged = [s for s in plain if s in JUDGMENT_SEVERITY] + [
-        g for g in reported if g in JUDGMENT_SEVERITY
-    ]
-    if not judged:
-        return None
-    return max(judged, key=JUDGMENT_SEVERITY.__getitem__)
+    # The shared rule's None IS this group's in-progress. Spelled out because
+    # the string is wire contract: the run view renders it.
+    return _worst_gated(contributions) or _GROUP_IN_PROGRESS
 
 
 def _compute_signaling_entry(
@@ -330,8 +327,10 @@ def _compute_signaling_entry(
     values_by_coord: Mapping[tuple[str, str], Any],
 ) -> tuple[str | None, tuple[DerivedInput, ...]]:
     """value + breakdown rows for one ``signaling_worst`` recommendation."""
-    plain_states: list[str] = []
-    group_states: list[str] = []
+    # One list, both shapes: an UNREPORTED group is left out entirely (the
+    # study never did that performance type, so it withholds nothing), which
+    # is the only asymmetry between a plain row and a collapse group here.
+    states: list[str] = []
     rows: list[DerivedInput] = []
     for item in items:
         sections, label = _input_identity(item)
@@ -340,7 +339,8 @@ def _compute_signaling_entry(
             subs = [s for s in nested if isinstance(s, dict)] if isinstance(nested, list) else []
             raws = [values_by_coord.get(coordinate_of(s)) for s in subs]
             state = _signaling_group_state(raws)
-            group_states.append(state)
+            if state != _GROUP_UNREPORTED:
+                states.append(state)
             judged = state in JUDGMENT_SEVERITY
             rows.append(
                 DerivedInput(
@@ -357,7 +357,7 @@ def _compute_signaling_entry(
             section_name, field_name = coordinate_of(item)
             raw = values_by_coord.get((section_name, field_name))
             state = _signaling_contribution(raw)
-            plain_states.append(state)
+            states.append(state)
             rows.append(
                 DerivedInput(
                     sections=sections,
@@ -367,7 +367,7 @@ def _compute_signaling_entry(
                     field=field_name,
                 )
             )
-    return _aggregate_signaling(plain_states, group_states), tuple(rows)
+    return _worst_gated(states), tuple(rows)
 
 
 def is_recommendation(entry: Mapping[str, Any]) -> bool:

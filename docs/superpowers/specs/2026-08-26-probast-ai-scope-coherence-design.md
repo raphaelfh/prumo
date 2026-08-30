@@ -327,15 +327,24 @@ API consolidation remains extraction-only per the roadmap).
   logic. Rejected placements: the run header (declutter, #475/#476), a
   per-applicability-row popover (×6 noise), a side sheet (weight).
   Copy via `lib/copy/qa.ts`.
-  **Precondition for this item** (recorded 2026-08-30): the disclosure
-  mounts in `frontend/pages/QualityAssessmentFullScreen.tsx` and its test
-  in `frontend/test/QualityAssessmentFullScreen.test.tsx`. Corrected
-  2026-08-30: the PAGE is 1008 against a 1012 cap (4 lines of headroom,
-  not zero as first recorded); the TEST is 1594 against 1594 and is the
-  one genuinely at zero, so PR3 must split the test file before it can
-  add a single assertion. PR2 already put `general_instructions` on the wire
-  (`schema.d.ts:5060`, `hooks/runs/types.ts:243`); no frontend
-  component reads it yet.
+  **Preconditions for this item** (recorded 2026-08-30, revised when the
+  train closed): PR3 shipped without the disclosure and is closed, so
+  this item has NO owner — it is deferred to its own design pass (see
+  the plan's "Recorded for their own work"). The blocker chain, in
+  order: (1) the amended null-state copy above names the QA
+  Configuration tab, which only becomes reachable when the 2026-08-30
+  PICOT-AI-context spec's §5c ships — SHIPPED in its slice 3, so this
+  blocker is cleared; (2)
+  the disclosure's test would land in
+  `frontend/test/QualityAssessmentFullScreen.test.tsx`, still 1594
+  lines, EXACTLY at its `scripts/fitness/check_file_size.baseline` cap,
+  so that file must be split first. The page itself
+  (`frontend/pages/QualityAssessmentFullScreen.tsx`) has since shrunk
+  below its 1012-line baseline entry, and `check_file_size.py` only
+  fails on growth, so it has headroom — the earlier "both have ZERO
+  headroom, PR3 must split them" note is superseded. PR2 already put
+  `general_instructions` on the wire (`schema.d.ts`,
+  `hooks/runs/types.ts`); no frontend component reads it yet.
 - **`useProjectQATemplate` → TanStack Query** while touched: wrap
   `loadProjectQATemplate` in `useQuery` with a key-factory entry,
   mirroring #677. Behavior-preserving otherwise.
@@ -467,6 +476,23 @@ superseded by this section.
 - **E2E (`qa-flow`)**: classify development_only → eval sections
   collapse with badge, progress reaches 100% on dev-only completion,
   banner shows "Not applicable" on the two eval overalls.
+  <!-- Shipped correction: this E2E was NOT written, and it cannot be
+  written as specified. "Eval sections collapse" was dropped as a near
+  no-op during PR3 — out-of-scope sections were already collapsed on
+  mount, because only `idx === 0` gets `defaultOpen` — so asserting it
+  would pin an accident of the accordion's default-open rule, not a
+  shipped guarantee. The guarantee is carried one layer down, by
+  `frontend/components/assessment/outOfScope.rendering.test.tsx` (banner
+  + chip), `frontend/test/lib/scopedProgress.test.ts`,
+  `frontend/test/lib/studyTypeScope.test.ts` and
+  `backend/tests/unit/test_run_view_derived_judgments.py:518-585`. The
+  remaining cost is the fixture, not the assertions: the badge testid
+  already exists (`QASectionAccordion.tsx`), but `local-hitl` runs
+  serially over ONE shared (project, article, template) triple, so
+  writing `study_type=development_only` would leak into four sibling
+  specs unless the test resets the classification afterwards. See the
+  plan's "Dropped, with reasons". -->
+
 
 ## 7. Delivery — PR train on dev
 

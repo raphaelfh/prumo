@@ -2,9 +2,10 @@
 default must say why.
 
 Direct-call unit tests on the pure rule (the documented ASGI blind spot makes
-endpoint-only coverage invisible to diff-cover). The integration test that
-proves the 400 actually reaches a caller lives in
-``tests/integration/test_run_lifecycle_service.py``.
+endpoint-only coverage invisible to diff-cover). The assembly against a real
+run — instance resolution and the published-state read — is proven in
+``tests/integration/test_qa_finalize_divergence_gate.py``, which also pins the
+subclass relationship the 400 rests on.
 """
 
 from __future__ import annotations
@@ -206,6 +207,45 @@ def test_rationale_is_found_in_its_own_section() -> None:
         ],
     )
     assert blocked == []
+
+
+def test_only_the_first_instance_of_a_repeated_section_is_backstopped() -> None:
+    # The payload derives the default from the FIRST instance's values, so the
+    # gate must read the published judgment from that same instance. Reading
+    # the last would both strand a finalize the first instance explained and
+    # stop seeing an unexplained override on it. Keep q1 on the first instance:
+    # the payload resolves the input coordinate through the same map, so an
+    # answer on the second derives no default and the entry would be skipped
+    # for an unrelated reason.
+    f = _Fixture()
+    second = uuid4()
+    instances = [_Instance(f.et.id, f.iid), _Instance(f.et.id, second)]
+
+    def blocked(published: list[_Value]) -> list[str]:
+        return divergences_without_rationale(
+            template_schema=_SPEC,
+            entity_types=[f.et],
+            instances=instances,
+            published=published,
+        )
+
+    assert (
+        blocked(
+            [
+                _Value(f.iid, f.q1, {"value": "PY"}),
+                _Value(f.iid, f.judgment, {"value": "Low"}),
+                _Value(second, f.judgment, {"value": "High"}),
+            ]
+        )
+        == []
+    )
+    assert blocked(
+        [
+            _Value(f.iid, f.q1, {"value": "PY"}),
+            _Value(f.iid, f.judgment, {"value": "High"}),
+            _Value(second, f.judgment, {"value": "Low"}),
+        ]
+    ) == ["Development D1: quality"]
 
 
 def test_template_without_a_spec_is_a_no_op() -> None:
