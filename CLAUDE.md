@@ -145,6 +145,11 @@ Design rationale (the *why*):
   (`backend/.vulture_baseline` + `scripts/vulture_baseline.py`; config
   in `[tool.vulture]`). Delete dead code in files you touch and tighten
   the baseline in the same PR — never park a finding behind an ignore.
+- **One ownership predicate, one implementation — and it lives in the
+  WHERE clause.** BOLA is this repo's most repeated incident class, and
+  every instance has been a copied guard that drifted or was never made.
+  CI gates it (`scripts/fitness/check_scope_guards.py`); the guards and
+  the rules are in `.claude/rules/backend.md` § Ownership guards.
 - PRs target `dev` and are squash-merged. Conventional commits.
 
 Path-scoped conventions live in `.claude/rules/` (`backend.md`,

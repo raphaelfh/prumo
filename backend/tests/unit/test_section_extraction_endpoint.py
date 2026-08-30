@@ -13,7 +13,7 @@ Uses httpx ASGITransport — same pattern as test_extraction_export_endpoint.py.
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -24,12 +24,17 @@ from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import scope
 from app.api.v1.endpoints import section_extraction as se
 from app.core.deps import get_db, get_supabase
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from app.schemas.extraction import ExtractionErrorCode, SectionExtractionRequest
+from app.services.coordinate_coherence import CoordinateMismatchError
 from app.services.extraction_errors import ExtractionTaskError
+from app.services.extraction_run_read_service import RunNotFoundError
+from app.services.project_template_active_service import ProjectTemplateNotFoundError
+from app.services.template_section_service import SectionNotFoundError
 
 CALLER_USER_ID = str(uuid4())
 OTHER_USER_ID = str(uuid4())
@@ -664,6 +669,9 @@ class TestQueueAndOwnerHelpers:
 
 
 class TestCheckRequestScope:
+    """The BOLA gate: membership, then the run coordinate, then each
+    client-supplied leaf id."""
+
     def _payload(self, **over: object) -> SectionExtractionRequest:
         base = {
             "projectId": str(uuid4()),
@@ -674,69 +682,177 @@ class TestCheckRequestScope:
         base.update(over)  # type: ignore[arg-type]
         return SectionExtractionRequest(**base)  # type: ignore[arg-type]
 
+    @pytest.fixture
+    def gates(self) -> Iterator[SimpleNamespace]:
+        """Patch every seam ``_check_request_scope`` calls, all passing.
+
+        A test makes exactly the one gate it is about fail. Adding a gate to
+        the endpoint means extending this fixture, not editing every test.
+        """
+        coordinate, section, instance = AsyncMock(), AsyncMock(), AsyncMock()
+        with (
+            patch("app.api.v1.endpoints.section_extraction.assert_kickoff_scope", new=coordinate),
+            patch("app.api.v1.endpoints.section_extraction.owned_section", new=section),
+            patch(
+                "app.api.v1.endpoints.section_extraction.assert_instance_in_coordinate",
+                new=instance,
+            ),
+        ):
+            yield SimpleNamespace(coordinate=coordinate, section=section, instance=instance)
+
     @pytest.mark.asyncio
-    async def test_no_run_id_checks_project_membership(self) -> None:
+    async def test_the_coordinate_binding_is_delegated(self, gates: SimpleNamespace) -> None:
+        """Shared with /extraction/models — see TestAssertKickoffScope."""
         payload = self._payload()
-        with patch(
-            "app.api.v1.endpoints.section_extraction.ensure_project_member",
-            new=AsyncMock(),
-        ) as guard:
+        await se._check_request_scope(MagicMock(), payload, uuid4())
+        assert gates.coordinate.await_args.kwargs["project_id"] == payload.project_id
+        assert gates.coordinate.await_args.kwargs["run_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_entity_type_outside_the_template_raises_400(
+        self, gates: SimpleNamespace
+    ) -> None:
+        """The catalogue-poisoning case — see the integration suite for why."""
+        gates.section.side_effect = SectionNotFoundError("nope")
+        with pytest.raises(HTTPException) as exc:
+            await se._check_request_scope(MagicMock(), self._payload(), uuid4())
+        assert exc.value.status_code == 400
+        assert exc.value.detail == "entityTypeId does not belong to templateId"
+
+    @pytest.mark.asyncio
+    async def test_parent_instance_outside_the_coordinate_raises_400(
+        self, gates: SimpleNamespace
+    ) -> None:
+        """The cross-tenant parent case — see the integration suite for why."""
+        gates.instance.side_effect = CoordinateMismatchError("nope")
+        payload = self._payload(parentInstanceId=str(uuid4()))
+        with pytest.raises(HTTPException) as exc:
             await se._check_request_scope(MagicMock(), payload, uuid4())
-        guard.assert_awaited_once()
+        assert exc.value.status_code == 400
+        assert exc.value.detail == "parentInstanceId does not belong to this coordinate"
+
+    @pytest.mark.asyncio
+    async def test_absent_leaf_ids_skip_their_lookups(self, gates: SimpleNamespace) -> None:
+        """Each guard is opt-in on its field being present."""
+        await se._check_request_scope(
+            MagicMock(), self._payload(entityTypeId=None, runId=str(uuid4())), uuid4()
+        )
+        gates.section.assert_not_awaited()
+        gates.instance.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_membership_is_checked_before_any_leaf_id(self, gates: SimpleNamespace) -> None:
+        """A non-member must not learn whether any id exists."""
+        gates.coordinate.side_effect = HTTPException(status_code=403, detail="no")
+        gates.section.side_effect = SectionNotFoundError("nope")
+        gates.instance.side_effect = CoordinateMismatchError("nope")
+        payload = self._payload(parentInstanceId=str(uuid4()))
+        with pytest.raises(HTTPException) as exc:
+            await se._check_request_scope(MagicMock(), payload, uuid4())
+        assert exc.value.status_code == 403
+        gates.section.assert_not_awaited()
+        gates.instance.assert_not_awaited()
+
+
+class TestAssertKickoffScope:
+    """The coordinate binding itself — shared by BOTH AI kickoff endpoints.
+
+    It lives in ``app.api.deps.scope`` precisely so /extraction/sections and
+    /extraction/models cannot disagree about it, so it is tested once, here,
+    rather than once per endpoint.
+    """
+
+    _PID, _AID, _TID = uuid4(), uuid4(), uuid4()
+
+    def _kwargs(self, **over: object) -> dict:
+        base = {
+            "project_id": self._PID,
+            "article_id": self._AID,
+            "template_id": self._TID,
+            "run_id": None,
+            "current_user_sub": uuid4(),
+        }
+        base.update(over)
+        return base
+
+    @pytest.mark.asyncio
+    async def test_no_run_binds_the_template_to_the_project(self) -> None:
+        """Without a run there is nothing else binding them — and the worker
+        binds too late to keep the response code from leaking."""
+        with (
+            patch("app.api.deps.scope.ensure_project_member", new=AsyncMock()) as member,
+            patch("app.api.deps.scope.owned_template", new=AsyncMock()) as template,
+        ):
+            await scope.assert_kickoff_scope(MagicMock(), **self._kwargs())
+        member.assert_awaited_once()
+        assert template.await_args.kwargs == {
+            "project_id": self._PID,
+            "template_id": self._TID,
+        }
+
+    @pytest.mark.asyncio
+    async def test_foreign_template_raises_400(self) -> None:
+        with (
+            patch("app.api.deps.scope.ensure_project_member", new=AsyncMock()),
+            patch(
+                "app.api.deps.scope.owned_template",
+                new=AsyncMock(side_effect=ProjectTemplateNotFoundError("nope")),
+            ),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await scope.assert_kickoff_scope(MagicMock(), **self._kwargs())
+        assert exc.value.status_code == 400
+        assert exc.value.detail == "templateId does not belong to projectId"
+
+    @pytest.mark.asyncio
+    async def test_membership_precedes_the_template_lookup(self) -> None:
+        """A non-member must not learn whether a template id exists."""
+        template = AsyncMock(side_effect=ProjectTemplateNotFoundError("nope"))
+        with (
+            patch(
+                "app.api.deps.scope.ensure_project_member",
+                new=AsyncMock(side_effect=HTTPException(status_code=403, detail="no")),
+            ),
+            patch("app.api.deps.scope.owned_template", new=template),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await scope.assert_kickoff_scope(MagicMock(), **self._kwargs())
+        assert exc.value.status_code == 403
+        template.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_run_not_found_raises_404(self) -> None:
-        from app.services.extraction_run_read_service import RunNotFoundError
-
-        payload = self._payload(runId=str(uuid4()), entityTypeId=None)
         with (
             patch(
-                "app.api.v1.endpoints.section_extraction.get_run_or_raise",
+                "app.api.deps.scope.get_run_or_raise",
                 new=AsyncMock(side_effect=RunNotFoundError("nope")),
             ),
             pytest.raises(HTTPException) as exc,
         ):
-            await se._check_request_scope(MagicMock(), payload, uuid4())
+            await scope.assert_kickoff_scope(MagicMock(), **self._kwargs(run_id=uuid4()))
         assert exc.value.status_code == 404
 
     @pytest.mark.asyncio
     async def test_run_mismatch_raises_400(self) -> None:
-        payload = self._payload(runId=str(uuid4()), entityTypeId=None)
         run = SimpleNamespace(project_id=uuid4(), article_id=uuid4(), template_id=uuid4())
         with (
-            patch(
-                "app.api.v1.endpoints.section_extraction.get_run_or_raise",
-                new=AsyncMock(return_value=run),
-            ),
-            patch(
-                "app.api.v1.endpoints.section_extraction.ensure_project_member",
-                new=AsyncMock(),
-            ),
+            patch("app.api.deps.scope.get_run_or_raise", new=AsyncMock(return_value=run)),
+            patch("app.api.deps.scope.ensure_project_member", new=AsyncMock()),
             pytest.raises(HTTPException) as exc,
         ):
-            await se._check_request_scope(MagicMock(), payload, uuid4())
+            await scope.assert_kickoff_scope(MagicMock(), **self._kwargs(run_id=uuid4()))
         assert exc.value.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_run_match_passes(self) -> None:
-        pid, aid, tid = uuid4(), uuid4(), uuid4()
-        payload = self._payload(
-            projectId=str(pid),
-            articleId=str(aid),
-            templateId=str(tid),
-            runId=str(uuid4()),
-            entityTypeId=None,
-        )
-        run = SimpleNamespace(project_id=pid, article_id=aid, template_id=tid)
+    async def test_run_match_passes_and_skips_the_template_lookup(self) -> None:
+        """The run already carries a project-bound template; re-checking it
+        would be a second query for a rule create_run enforced."""
+        run = SimpleNamespace(project_id=self._PID, article_id=self._AID, template_id=self._TID)
         with (
-            patch(
-                "app.api.v1.endpoints.section_extraction.get_run_or_raise",
-                new=AsyncMock(return_value=run),
-            ),
-            patch(
-                "app.api.v1.endpoints.section_extraction.ensure_project_member",
-                new=AsyncMock(),
-            ) as guard,
+            patch("app.api.deps.scope.get_run_or_raise", new=AsyncMock(return_value=run)),
+            patch("app.api.deps.scope.ensure_project_member", new=AsyncMock()) as member,
+            patch("app.api.deps.scope.owned_template", new=AsyncMock()) as template,
         ):
-            await se._check_request_scope(MagicMock(), payload, uuid4())
-        guard.assert_awaited_once()
+            await scope.assert_kickoff_scope(MagicMock(), **self._kwargs(run_id=uuid4()))
+        member.assert_awaited_once()
+        template.assert_not_awaited()

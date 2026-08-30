@@ -39,8 +39,39 @@ objects; repositories never contain business logic.
 - Responses use the `ApiResponse` envelope; errors expose
   `error.message` (not FastAPI's default `detail`). New endpoints get
   a typed Pydantic response model — never `ApiResponse[dict[str, Any]]`.
-- Every project-scoped endpoint checks project membership (BOLA is a
-  recurring incident class here — see the `code-review` skill).
+
+## Ownership guards (BOLA)
+
+Every client-supplied id is bound to the caller's scope before use, and
+every such predicate has exactly ONE implementation. BOLA is this repo's
+most repeated incident class, and every instance has been a copy of a
+guard that drifted or was never made.
+
+- **Membership / role** → the `public.is_project_*` SQL helpers, via
+  `api/deps/security.py`. Never hand-roll `FROM public.project_members`:
+  those helpers are what the RLS policies call, so a copy lets the API
+  and the database disagree. Services cannot import `api.deps`, so a
+  service calls the DB function directly (`SELECT public.is_project_member(...)`).
+- **Row-in-parent** → the named guard for that pair:
+  `project_template_active_service.owned_template`,
+  `template_section_service.owned_section`,
+  `ExtractionInstanceRepository.get_in_coordinate`. Need a new pair? Add
+  ONE guard and import it — never copy a sibling.
+- **The request coordinate** for the AI kickoff endpoints →
+  `api/deps/scope.assert_kickoff_scope`. Both kickoff endpoints share it;
+  `/extraction/models` shipped without the binding precisely because the
+  logic lived inline in its sibling.
+- **Scope goes in the WHERE clause**, never a compare after `db.get` /
+  `get_by_id`. A scoped SELECT never locks a foreign row, and makes
+  "missing" and "foreign" indistinguishable — no existence oracle.
+- One error for both cases, 404-class, and the message names no field of
+  the foreign row (not even its editor's name).
+- Endpoints may not reach a repository, so an api-layer guard calls the
+  service wrapper (`assert_instance_in_coordinate`), not the repo.
+
+CI: `scripts/fitness/check_scope_guards.py` — a second implementation of
+an existing predicate fails the gate. Grandfathering needs a baseline
+line with a reason in the same PR; the baseline only shrinks.
 
 ## Dead code
 

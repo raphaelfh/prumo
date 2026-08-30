@@ -1,10 +1,15 @@
 /**
- * UI copy for the per-project LLM engine chip + picker popover (§5, C1b).
- * English only.
+ * UI copy for the per-project LLM engine chip, its picker popover, and the
+ * engine-settings dialog (§5, C1b; slice C split). English only.
  */
 export const llmEngine = {
     chipAria: 'Extraction model',
     chipTooltip: 'Model used for AI extraction in this project',
+    // --- Engine settings dialog (slice C) ---
+    settingsLink: 'Engine settings…',
+    settingsTitle: 'Engine settings',
+    settingsDesc: 'How this project runs AI extraction.',
+    modeSectionLabel: 'Mode',
     modeGroupAria: 'Extraction mode',
     modeFast: 'Fast',
     modeVerified: 'Verified',
@@ -29,7 +34,6 @@ export const llmEngine = {
     alternatesByokWarn:
         "BYOK-only — won't unblock reviewers without their own key.",
     alternatesAddLabel: 'Add alternate',
-    alternatesDoneLabel: 'Done',
     alternatesSaveSuccess: 'Alternates updated.',
     alternatesSaveError: 'Failed to update alternates',
     saveSuccess: 'Extraction model updated.',
@@ -79,6 +83,8 @@ export const llmEngine = {
     endpointVerifyError: 'Failed to verify the endpoint',
     endpointGroupNote: 'Project endpoint — runs on its shared key',
     endpointPromptedGroupNote: 'Prompted JSON only — cannot back Verified mode',
+    // Mode lives in the settings dialog since slice C, so the blocked row has
+    // to say WHERE to change it — otherwise the cause is off-screen.
     endpointPromptedBlocked:
-        'Switch this project to Fast to extract with this model.',
+        'Switch this project to Fast in Engine settings to extract with this model.',
 } as const;

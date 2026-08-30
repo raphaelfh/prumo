@@ -323,15 +323,15 @@ export const templateConfig = {
 
   // Switch-template dialog (moved from extraction.ts, which sits at its
   // file-size ratchet ceiling; the dialog now reads ONE namespace).
-  importTitle: 'Switch template',
-  importDesc: "Switch between this project's templates, or add one from the catalogue or a file.",
+  importTitle: 'Add a template',
+  importDesc: 'Start from the catalogue, import a JSON file, or switch to a template this project already has.',
   importLoadingTemplates: 'Loading templates…',
   importNoTemplates: 'No global templates available at the moment.',
   importSections: 'sections',
   importTemplateSelected: 'Selected template:',
   importTemplateSelectedDetail: 'with pre-configured sections. All sections and fields will be imported to your project.',
   importImporting: 'Importing…',
-  importImportButton: 'Import Template',
+  importImportButton: 'Import selected template',
   importErrorSelect: 'Select a template to import',
   importErrorImport: 'Error importing template',
   importSuccess: 'Template imported successfully',
@@ -346,9 +346,34 @@ export const templateConfig = {
   projectTemplateDeleteTitle: 'Delete "{{name}}"?',
   projectTemplateDeleteBody: 'Its sections and fields are removed. This cannot be undone.',
   projectTemplateDeleted: 'Template deleted',
-  importFromCatalogueHeading: 'Add from the catalogue',
+  importTabCatalogue: 'Catalogue',
+  importTabFile: 'Import',
+  importTabProject: 'This project',
   importFromFileHeading: 'Add from a file',
-  importFromFileHint: 'A .prumo-template.json file exported from prumo.',
+  importFromFileHint: 'A .prumo-template.json file exported from prumo, or one you wrote with an AI assistant.',
+
+  // Authoring guidance (spec 2026-08-27, slice A). ONE source of the format
+  // rules: the "How to build this file" accordion renders this array and
+  // lib/templateImport/aiPrompt.ts embeds it, so the two cannot drift apart.
+  // A backend test (test_template_portable_example_drift.py) asserts every
+  // field type and every cap below still matches template_portable.py.
+  importGuidanceTitle: 'How to build this file',
+  importGuidanceRules: [
+    'The file is one JSON object with prumo_template: 1, kind: "extraction", a name, and a non-empty sections array.',
+    'Field types are text, number, date, select, multiselect and boolean. There is no textarea.',
+    'Spell the field keys type and required. The longer field_type and is_required spellings are rejected.',
+    'A section with group: true repeats. Only a top-level section may be a group, and a file may contain at most one.',
+    'Sections nest only inside a group, and entry_label is only allowed on a group.',
+    'Limits: 100 sections per level, 200 fields per section, 2000 fields in total.',
+  ],
+  importPromptIntro:
+    'Produce a prumo extraction template as a single JSON document that follows these rules:',
+  importPromptExampleLabel: 'A valid example:',
+  importPromptOutputOnly: 'Output only the JSON document, with no commentary and no code fence.',
+  importCopyPrompt: 'Copy AI prompt',
+  importCopyPromptDone: 'Prompt copied. Paste it into your AI assistant.',
+  importDownloadExample: 'Download example',
+  importExampleFilename: 'example.prumo-template.json',
   importFromFileTrust: 'Only import templates you trust — a file can carry AI instructions.',
   importFileChoose: 'Choose file',
   importFileNone: 'No file selected',

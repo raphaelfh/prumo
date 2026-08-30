@@ -96,6 +96,9 @@ class TemplateFieldCreateRequest(BaseModel):
     other_placeholder: str | None = Field(default=None, max_length=200)
     allows_not_applicable: bool = False
     allows_not_evaluated: bool = False
+    # 0062: TRUE by default — the marker was universal before the column, so
+    # an omitting client must keep it, not silently retire it.
+    allows_no_information: bool = True
     is_entity_key: bool = False
     validation_schema: dict[str, Any] | None = Field(default_factory=dict)
     sort_order: int = Field(default=0, ge=0)
@@ -113,6 +116,7 @@ _NON_NULLABLE_UPDATE_FIELDS = frozenset(
         "allow_other",
         "allows_not_applicable",
         "allows_not_evaluated",
+        "allows_no_information",
         "sort_order",
         "is_entity_key",
     }
@@ -144,6 +148,7 @@ class TemplateFieldUpdateRequest(BaseModel):
     other_placeholder: str | None = Field(default=None, max_length=200)
     allows_not_applicable: bool | None = None
     allows_not_evaluated: bool | None = None
+    allows_no_information: bool | None = None
     # 0059: which field identifies an instance of a repeating section. At
     # most one per section — the service refuses a second one before the
     # partial unique index has to.
@@ -217,6 +222,7 @@ class TemplateFieldRead(BaseModel):
     is_entity_key: bool = False
     allows_not_applicable: bool = False
     allows_not_evaluated: bool = False
+    allows_no_information: bool = True
     validation_schema: dict[str, Any] | None = None
     sort_order: int
     created_at: datetime

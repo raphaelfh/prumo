@@ -90,7 +90,7 @@ async def test_mark_ready_endpoint_returns_hint() -> None:
     summary = {"ready_count": 2, "reviewer_count": 3, "reviewers_ready": [uuid4()]}
     db = AsyncMock()
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run_summary())),
         patch(f"{_EP}.ensure_project_reviewer", AsyncMock()) as gate,
         patch(f"{_EP}.ExtractionReviewerReadyService") as svc,
     ):
@@ -120,7 +120,7 @@ async def test_mark_ready_endpoint_returns_hint() -> None:
 async def test_approve_finalize_endpoint_success_returns_count() -> None:
     db = AsyncMock()
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run_summary())),
         patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()) as gate,
         patch(f"{_EP}.RunLifecycleService") as svc,
     ):
@@ -148,7 +148,7 @@ async def test_approve_finalize_endpoint_success_returns_count() -> None:
 )
 async def test_approve_finalize_endpoint_maps_errors(exc: Exception, expected_status: int) -> None:
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run_summary())),
         patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()),
         patch(f"{_EP}.RunLifecycleService") as svc,
     ):
@@ -179,7 +179,7 @@ async def test_consensus_extraction_requires_arbitrator() -> None:
     """extraction runs gate the consensus publish behind the arbitrator role."""
     with (
         patch(
-            f"{_EP}._load_run_and_check_member",
+            f"{_EP}.load_run_for_member",
             AsyncMock(return_value=_run_summary(kind="extraction")),
         ),
         patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()) as arb,
@@ -206,7 +206,7 @@ async def test_consensus_quality_assessment_requires_arbitrator() -> None:
     arbitrator action for BOTH kinds — a plain reviewer no longer self-publishes."""
     with (
         patch(
-            f"{_EP}._load_run_and_check_member",
+            f"{_EP}.load_run_for_member",
             AsyncMock(return_value=_run_summary(kind="quality_assessment")),
         ),
         patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()) as arb,
@@ -239,7 +239,7 @@ async def test_advance_to_finalized_requires_arbitrator() -> None:
     /approve-finalize. Direct-coroutine test (the ASGI transport hides these
     handler lines from diff-cover)."""
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run_summary())),
         patch(f"{_EP}.ensure_project_reviewer", AsyncMock()) as rev,
         patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()) as arb,
         patch(f"{_EP}.RunLifecycleService") as svc,
@@ -263,7 +263,7 @@ async def test_advance_to_consensus_skips_arbitrator_gate() -> None:
     """Non-finalize transitions (e.g. extract→consensus) stay reviewer-level —
     the arbitrator gate is NOT invoked, matching extraction."""
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run_summary())),
         patch(f"{_EP}.ensure_project_reviewer", AsyncMock()) as rev,
         patch(f"{_EP}.ensure_project_arbitrator", AsyncMock()) as arb,
         patch(f"{_EP}.RunLifecycleService") as svc,
@@ -290,7 +290,7 @@ async def test_advance_to_consensus_skips_arbitrator_gate() -> None:
 async def test_get_run_resolves_arbitrator_flag() -> None:
     detail = MagicMock()
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run_summary())),
         patch(f"{_EP}.caller_can_see_peers", AsyncMock(return_value=False)),
         patch(f"{_EP}.is_run_arbitrator", AsyncMock(return_value=True)) as is_arb,
         patch(f"{_EP}.get_run_with_workflow_history", AsyncMock(return_value=detail)) as history,
@@ -307,7 +307,7 @@ async def test_get_run_resolves_arbitrator_flag() -> None:
 async def test_get_run_view_resolves_arbitrator_flag() -> None:
     view = MagicMock()
     with (
-        patch(f"{_EP}._load_run_and_check_member", AsyncMock(return_value=_run_summary())),
+        patch(f"{_EP}.load_run_for_member", AsyncMock(return_value=_run_summary())),
         patch(f"{_EP}.caller_can_see_peers", AsyncMock(return_value=True)),
         patch(f"{_EP}.is_run_arbitrator", AsyncMock(return_value=False)) as is_arb,
         patch(f"{_EP}.build_run_view", AsyncMock(return_value=view)) as build,

@@ -4,7 +4,6 @@ import { loginViaUi } from "../_fixtures/auth";
 import { loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 
 /** Fixed catalogue id for CHARMS (matches `app/seed.py`). */
-const CHARMS_GLOBAL_TEMPLATE_ID = "000c0000-0000-0000-0000-000000000001";
 
 /**
  * Runs against E2E_IMPORT_PROJECT_ID — a dedicated, CHARMS-free project so
@@ -30,15 +29,17 @@ test.describe("Extraction template import (global → project)", () => {
       { waitUntil: "domcontentloaded" },
     );
 
-    const importFromTable = page.getByTestId(
-      `extraction-import-global-${CHARMS_GLOBAL_TEMPLATE_ID}`,
-    );
+    // Which entry point renders depends on whether this project already has
+    // an active template, and this suite is stateful across runs — so both
+    // alternatives must stay. The per-catalogue-row button is gone; the
+    // no-active-template screen now offers one generic Import card.
+    const importFromCards = page.getByTestId("extraction-open-import");
     const importFromEditor = page.getByTestId("template-config-open-import").first();
 
-    await expect(importFromTable.or(importFromEditor)).toBeVisible({ timeout: 60_000 });
+    await expect(importFromCards.or(importFromEditor)).toBeVisible({ timeout: 60_000 });
 
-    if ((await importFromTable.count()) > 0) {
-      await importFromTable.click();
+    if ((await importFromCards.count()) > 0) {
+      await importFromCards.click();
     } else {
       await importFromEditor.click();
     }

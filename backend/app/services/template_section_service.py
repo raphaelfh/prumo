@@ -37,7 +37,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionInstance,
-    ProjectExtractionTemplate,
 )
 from app.schemas.template_structure import (
     SectionCreateRequest,
@@ -45,7 +44,7 @@ from app.schemas.template_structure import (
     SectionRead,
     SectionUpdateRequest,
 )
-from app.services.project_template_active_service import ProjectTemplateNotFoundError
+from app.services.project_template_active_service import owned_template
 
 # Constraint names duplicated as literals on purpose: both are frozen by
 # shipped migrations (0016 partial unique index; baseline FK) and the
@@ -120,17 +119,7 @@ def _violates(exc: IntegrityError, constraint_name: str) -> bool:
     return constraint_name in str(orig or exc)
 
 
-async def _owned_template(
-    db: AsyncSession, *, project_id: UUID, template_id: UUID
-) -> ProjectExtractionTemplate:
-    """BOLA guard: 404 (not 403) so foreign ids don't leak existence."""
-    tpl = await db.get(ProjectExtractionTemplate, template_id)
-    if tpl is None or tpl.project_id != project_id:
-        raise ProjectTemplateNotFoundError(f"Template {template_id} not found")
-    return tpl
-
-
-async def _owned_section(
+async def owned_section(
     db: AsyncSession, *, template_id: UUID, section_id: UUID
 ) -> ExtractionEntityType:
     """BOLA guard: the section must belong to THIS template (project
@@ -160,9 +149,9 @@ async def create_section(
     Raises ProjectTemplateNotFoundError / SectionNotFoundError (BOLA),
     SectionParentRoleError (parent is not the model_container), or
     OneContainerError (second model_container, 23505)."""
-    await _owned_template(db, project_id=project_id, template_id=template_id)
+    await owned_template(db, project_id=project_id, template_id=template_id)
     if payload.parent_entity_type_id is not None:
-        parent = await _owned_section(
+        parent = await owned_section(
             db, template_id=template_id, section_id=payload.parent_entity_type_id
         )
         if parent.role != "model_container":
@@ -241,8 +230,8 @@ async def update_section(
     row; an all-no-op update skips the flush entirely so the 0048
     trigger does not stamp the draft marker (extends the old
     rename-no-op contract)."""
-    await _owned_template(db, project_id=project_id, template_id=template_id)
-    section = await _owned_section(db, template_id=template_id, section_id=section_id)
+    await owned_template(db, project_id=project_id, template_id=template_id)
+    section = await owned_section(db, template_id=template_id, section_id=section_id)
 
     if payload.entry_label is not None and section.role != "model_container":
         raise SectionEntryLabelRoleError(
@@ -283,8 +272,8 @@ async def delete_section(
     Raises SectionInUseError (23503) when the section — or a child
     model_section reached via the parent cascade — still has extraction
     instances (RESTRICT FK)."""
-    await _owned_template(db, project_id=project_id, template_id=template_id)
-    await _owned_section(db, template_id=template_id, section_id=section_id)
+    await owned_template(db, project_id=project_id, template_id=template_id)
+    await owned_section(db, template_id=template_id, section_id=section_id)
     try:
         # Core DELETE (not ORM cascade): one statement, the DB cascades
         # fields + child sections, and the RESTRICT FK stays the arbiter.

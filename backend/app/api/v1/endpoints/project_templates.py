@@ -723,7 +723,7 @@ async def take_over_draft_lock_endpoint(
             template_id=template_id,
             user_id=current_user_sub,
         )
-    except TemplateNotFoundError as e:
+    except ProjectTemplateNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     await db.commit()
     return ApiResponse.success(
