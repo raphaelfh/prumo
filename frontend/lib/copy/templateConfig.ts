@@ -69,6 +69,7 @@ export const templateConfig = {
   diffAttrAllowedUnits: 'Allowed units',
   diffAttrAllowedValues: 'Options',
   diffAttrAllowOther: '“Other” option',
+  diffAttrAllowsNoInformation: '“No information” option',
   diffAttrAllowsNotApplicable: '“Not applicable” option',
   diffAttrAllowsNotEvaluated: '“Not evaluated” option',
   diffAttrCardinality: 'Repeats',

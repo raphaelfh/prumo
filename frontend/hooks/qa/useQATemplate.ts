@@ -11,6 +11,8 @@ export interface QATemplate {
   framework: string;
   version: string;
   kind: string;
+  /** Template-level declared data: `scope_rules`, `derived_judgments`. */
+  schema?: Record<string, unknown> | null;
 }
 
 export interface QADomain {

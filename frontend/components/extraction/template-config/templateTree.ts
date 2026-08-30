@@ -82,6 +82,9 @@ export interface TemplateFieldInput {
   other_placeholder?: string | null;
   allows_not_applicable?: boolean;
   allows_not_evaluated?: boolean;
+  /** 0062 — absent on a pre-migration payload, where the marker WAS
+   * available, so absence reads as TRUE (unlike its two siblings). */
+  allows_no_information?: boolean;
   /** 0059 — absent on a pre-migration payload, which reads as "no key". */
   is_entity_key?: boolean;
   llm_description?: string | null;
@@ -120,6 +123,10 @@ export interface GridField {
   otherPlaceholder: string | null;
   allowsNotApplicable: boolean;
   allowsNotEvaluated: boolean;
+  /** Carried so an Undo restore can resend it — the create endpoint
+   * defaults it to TRUE, so omitting it re-enables the NI marker on a
+   * field that had it off (mirrors `sectionRestore`). */
+  allowsNoInformation: boolean;
   /** Carried so an Undo restore can resend it verbatim. OPTIONAL — not
    * required — so existing GridField test fixtures keep compiling (the
    * panel test file sits at its file-size ratchet ceiling); the builder
@@ -222,6 +229,7 @@ function toGridField(input: TemplateFieldInput): GridField {
     otherPlaceholder: input.other_placeholder ?? null,
     allowsNotApplicable: Boolean(input.allows_not_applicable),
     allowsNotEvaluated: Boolean(input.allows_not_evaluated),
+    allowsNoInformation: input.allows_no_information !== false,
     validationSchema: input.validation_schema ?? {},
   };
 }

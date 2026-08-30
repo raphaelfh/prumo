@@ -608,8 +608,10 @@ export const extraction = {
     dispositionNotApplicableHint: 'The item does not apply to this study.',
     dispositionNotEvaluatedHint: 'The item was not assessed.',
     dispositionActiveHint: 'Recorded as a resolved answer.',
-    // Template builder — opt-in disposition flags. "No information" is universal.
-    dispositionBuilderHint: '"No information" is available on every field automatically.',
+    // Template builder — the two opt-in disposition flags. "No information"
+    // became per-field too (migration 0062) but is not edited here: it
+    // defaults ON, and these templates keep it that way.
+    dispositionBuilderHint: '"No information" is enabled by default and is not configured here.',
     dispositionAllowNotApplicableLabel: 'Allow "Not applicable"',
     dispositionAllowNotEvaluatedLabel: 'Allow "Not evaluated"',
     // Provenance summary + GenerationDetailsDialog – "how this was generated"
