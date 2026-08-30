@@ -250,7 +250,7 @@ export default function ProjectView() {
           {/* Sticky action bar — Articles only */}
         {activeTab === 'articles' && (
             <div
-                className="shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
+                className="shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-4 lg:px-6">
           <span className="text-[13px] text-muted-foreground/70 w-full min-w-0 md:flex-1 md:truncate">
             {t('pages', 'projectViewArticlesLabel')}
           </span>
@@ -323,13 +323,13 @@ export default function ProjectView() {
       {isFullBleed ? (
           <div className="flex-1 overflow-y-auto">{renderContent()}</div>
       ) : activeTab === 'extraction' || activeTab === 'quality' || activeTab === 'articles' ? (
-          <div className="flex-1 min-h-0 flex flex-col px-6 py-4 lg:px-10">
+          <div className="flex-1 min-h-0 flex flex-col px-4 py-3 lg:px-6">
               <div className="w-full max-w-[1800px] mx-auto flex flex-1 min-h-0 flex-col">
                   {renderContent()}
               </div>
           </div>
       ) : (
-          <div className="flex-1 overflow-y-auto px-6 py-4 lg:px-10">
+          <div className="flex-1 overflow-y-auto px-4 py-3 lg:px-6">
               <div className="w-full max-w-[1800px] mx-auto">
             {renderContent()}
           </div>

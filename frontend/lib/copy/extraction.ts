@@ -444,6 +444,8 @@ export const extraction = {
     gridSearchClear: 'Clear search',
     gridNoMatches: 'No field matches this search.',
     gridDisplayMenu: 'Display options',
+    gridOutlineToggle: 'Show or hide the section outline',
+    gridOutlineResize: 'Section outline width',
     gridDisplayKeyColumn: 'Key column',
     gridDisplayOptionsColumn: 'Options column',
     gridEditLabelAria: 'Edit label',
@@ -497,6 +499,7 @@ export const extraction = {
     inspectorDispositionsLabel: 'Dispositions',
     inspectorTypeChangeHint: 'Changing the type of a field that already holds answers is a destructive change — you will confirm it before publishing.',
     inspectorToggle: 'Show or hide the inspector (⌘./Ctrl+.)',
+    inspectorResize: 'Inspector width',
     inspectorSheetTitle: 'Field inspector',
     // TemplateInstructionControl (general AI instruction, config bar)
     instructionTitle: 'General AI instruction',
