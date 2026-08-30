@@ -1315,7 +1315,7 @@ class SectionExtractionService(LoggerMixin):
         framework: str | None = None,
         fields_override: list[Any] | None = None,
         prompt_context: RunPromptContext | None = None,
-        field_filter: LlmFieldFilter | None = None,
+        field_filter: LlmFieldFilter = LlmFieldFilter(),
     ) -> tuple[dict[str, Any], LlmUsage]:
         """Run extraction using the typed LLM call layer.
 
@@ -1360,29 +1360,14 @@ class SectionExtractionService(LoggerMixin):
             if fields_override is not None
             else (getattr(entity_type, "fields", None) or [])
         )
-        if field_filter and entity_name in field_filter.out_of_scope_sections:
+        if entity_name in field_filter.out_of_scope_sections:
             # The scope rules take this whole section out of play, so there is
             # nothing to ask about. Empty list -> the existing no-fields skip
             # below; no new return path, no LLM call, no proposals.
             effective = []
-        excluded_coordinates = field_filter.excluded_coordinates if field_filter else frozenset()
-        if excluded_coordinates:
-            excluded_names = {f for s, f in excluded_coordinates if s == str(entity_name)}
-            if excluded_names:
-                present = {str(getattr(f, "name", "")) for f in effective}
-                dangling = excluded_names - present
-                if dangling:
-                    # A live rename that orphans an exclusion coordinate would
-                    # quietly re-open an assessor-owned field to the model —
-                    # fail open (the spec is advisory data) but never silently.
-                    self.logger.warning(
-                        "qa_derived_spec_dangling_ref",
-                        trace_id=self.trace_id,
-                        coordinates=sorted((str(entity_name), name) for name in dangling),
-                    )
-                effective = [
-                    f for f in effective if str(getattr(f, "name", "")) not in excluded_names
-                ]
+        excluded = {f for s, f in field_filter.excluded_coordinates if s == str(entity_name)}
+        if excluded:
+            effective = [f for f in effective if str(getattr(f, "name", "")) not in excluded]
 
         output_models = build_output_models(entity_type, fields=effective)
         if not output_models:

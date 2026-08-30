@@ -42,7 +42,7 @@ import {
   ReviewerAvatarStack,
   type ReviewerAvatarEntry,
 } from "@/components/runs/ReviewerAvatarStack";
-import type { QADomain } from "@/hooks/qa/useQATemplate";
+import type { QADomain } from "@/types/qa";
 import {
   getSuggestionKey,
   type AISuggestion,
@@ -114,13 +114,14 @@ interface QASectionAccordionProps {
    * domain. When provided, the accordion header surfaces a stacked
    * avatar of reviewers who have written at least one decision in any
    * field of the domain, and each FieldInput row shows a small stack
-   * of the reviewers active on that specific field.
+   * of the reviewers active on that specific field. Coordinates are keyed
+   * off the top-level ``instanceId`` prop — the same instance the value
+   * writes use — so the two can never name different instances.
    */
   reviewerActivity?: {
     decisionsByCoord: Map<string, { reviewer_id: string }[]>;
     labelById: Record<string, string>;
     avatarById: Record<string, string | null>;
-    instanceId: string;
   };
 }
 
@@ -273,7 +274,7 @@ export function QASectionAccordion({
   // (renders nothing) when no activity data was provided.
   function fieldStack(fieldId: string): ReviewerAvatarEntry[] {
     if (!reviewerActivity) return [];
-    const coordKey = `${reviewerActivity.instanceId}::${fieldId}`;
+    const coordKey = `${instanceId}::${fieldId}`;
     const decisions = reviewerActivity.decisionsByCoord.get(coordKey) ?? [];
     const seen = new Set<string>();
     const stack: ReviewerAvatarEntry[] = [];

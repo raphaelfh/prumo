@@ -10,11 +10,7 @@ import { useEffect, useState } from "react";
 
 import { loadProjectQATemplate } from "@/services/qaTemplateService";
 
-import type { QADomain, QATemplate } from "./useQATemplate";
-
-;
-
-// Re-export EntityTypeWithFields shape for consumers that need it.
+import type { QADomain, QATemplate } from "@/types/qa";
 
 interface UseProjectQATemplateProps {
   projectTemplateId: string | undefined;

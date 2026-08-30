@@ -471,10 +471,15 @@ Shipped in three slices. Slice 1 (backend spine) is complete; 2 and 3 are queued
 | --- | --- | --- |
 | 1 | §2 rendering, §3 pin + prompt, §7 backend tests, §10 docs | shipped |
 | 2 | §1 storage flatten, §4 API, §5a/5b/5d/5e (extraction bar, PICOT dialog, Project Settings) | queued |
-| 3 | §5c QA Configuration tab, §8 amendment, the E2E flow | queued |
+| 3 | §5c QA Configuration tab, the E2E flow | queued |
 
-Four claims above did not survive contact with the code, and slice 1 deviates
-from the spec accordingly:
+§8's amendment is no longer part of slice 3: its text was applied to
+`2026-08-26-probast-ai-scope-coherence-design.md` in `cc7aa3bc`, ahead of the
+§5c screen it points at.
+
+Five claims above did not survive contact with the code; slice 1 deviates from
+the spec accordingly for the first four, and the fifth is a stale ownership
+assignment:
 
 1. **§Problem(3) and §1 are wrong: `timing` IS written by the UI.**
    `ReviewDetailsSection.tsx` renders a hardcoded accordion writing
@@ -497,6 +502,15 @@ from the spec accordingly:
    every row; nothing records the review context per proposal, so a re-pin would
    make the run-level field misdescribe sections extracted under the previous
    text. First-writer-wins is permanent for the run.
+5. **§8's "PR3, which still owns the disclosure" was written before #751
+   merged.** PR3 shipped (`3e9370ce`) without the Step-1 PICOTS disclosure, and
+   the scope-coherence plan defers it to its own design pass. No slice here
+   claims it either — §5c mounts the instruction control and its publish
+   cluster, not the disclosure — so the disclosure is currently unassigned, and
+   the §5c screen it depends on is the queued slice 3 above. The preconditions
+   §8 lists are also stale: `QualityAssessmentFullScreen.tsx` has since shrunk
+   below its 1012-line baseline (`check_file_size.py` only fails on growth), so
+   only the test file at 1594 is still exactly at cap.
 
 Two further changes to §3: the pin payload is `{"text": ...}` alone — `enabled`
 and `reason` had no reader in any of the three slices and are derived — and

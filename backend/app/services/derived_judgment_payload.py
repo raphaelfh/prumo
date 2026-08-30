@@ -30,6 +30,20 @@ from app.services.derived_judgment_service import (
 _OUT_OF_SCOPE = "out-of-scope"
 
 
+def first_instance_by_entity_type(instances: Sequence[Any]) -> dict[Any, Any]:
+    """Entity type -> the instance whose values represent it: the FIRST one.
+
+    Mirrors the export's ``instance_ids[0]``. Shared rather than repeated
+    because the finalize backstop looks a published value up by the instance
+    this picks: if the two ever disagreed, the gate would silently be checking
+    a different row than the one the default was computed from.
+    """
+    by_entity_type: dict[Any, Any] = {}
+    for inst in instances:
+        by_entity_type.setdefault(inst.entity_type_id, inst.id)
+    return by_entity_type
+
+
 def _group_label(sections: tuple[str, ...], label_by_section: dict[str, str]) -> str:
     """Name a breakdown row from the section label(s) behind it.
 
@@ -78,10 +92,7 @@ def build_derived_judgments_payload(
     if not spec:
         return []
 
-    instance_by_entity_type: dict[Any, Any] = {}
-    for inst in instances:
-        # First instance wins, mirroring the export's ``instance_ids[0]``.
-        instance_by_entity_type.setdefault(inst.entity_type_id, inst.id)
+    instance_by_entity_type = first_instance_by_entity_type(instances)
     value_by_ids = {(v.instance_id, v.field_id): v.value for v in values}
 
     values_by_coord: dict[tuple[str, str], Any] = {}
@@ -157,12 +168,11 @@ def build_derived_judgments_payload(
                         label=_input_label(inp, recommendation=recommendation),
                         value=inp.value,
                         # An excluded row contributed nothing by construction —
-                        # §2a already dropped its value — so the stamp replaces
-                        # whatever the rule inferred from the resulting silence.
-                        contribution=None
-                        if (excluded := is_out_of_scope(inp, out_of_scope))
-                        else inp.contribution,
-                        state=_OUT_OF_SCOPE if excluded else inp.state,
+                        # §2a dropped its value before the rule ran — so only
+                        # the state stamp is needed, and it replaces whatever
+                        # the rule inferred from the resulting silence.
+                        contribution=inp.contribution,
+                        state=_OUT_OF_SCOPE if is_out_of_scope(inp, out_of_scope) else inp.state,
                     )
                     for inp in d.inputs
                 ],

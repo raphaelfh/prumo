@@ -14,7 +14,7 @@ import {apiClient} from '@/integrations/api';
 import {supabase} from '@/integrations/supabase/client';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {ExtractionEntityType, ExtractionField} from '@/types/extraction';
-import type {QATemplate, QADomain} from '@/hooks/qa/useQATemplate';
+import type {QATemplate, QADomain} from '@/types/qa';
 import type {ReviewKind} from '@/lib/comparison/permissions';
 
 // ---------------------------------------------------------------------------
@@ -31,12 +31,7 @@ export interface QATemplateWithDomains {
 }
 
 // ---------------------------------------------------------------------------
-// useQATemplate: load a global QA template + entity types + fields
-// ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
-// useProjectQATemplate: load a project-scoped QA template + entity types
+// loadProjectQATemplate: load a project-scoped QA template + entity types
 // ---------------------------------------------------------------------------
 
 /**

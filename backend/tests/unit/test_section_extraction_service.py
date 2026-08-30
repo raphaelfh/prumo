@@ -2884,34 +2884,28 @@ class TestLlmExclusion:
         assert bom.call_args.kwargs["fields"] is override
 
     @pytest.mark.asyncio
-    async def test_dangling_exclusion_coordinate_warns_and_fails_open(self, service):
-        """A live rename that orphans an exclusion must never be silent: it
-        would quietly re-open an assessor-owned field to the model (§9)."""
+    async def test_orphaned_exclusion_coordinate_fails_open(self, service):
+        """A stale exclusion name filters nothing rather than dropping a field.
+
+        The spec is advisory data, so a coordinate no live field answers to
+        must not silently shrink what the model is asked. Detecting that
+        orphan is ``build_llm_field_filter``'s job, once per run against the
+        whole live tree — this seam sees one already-narrowed section and
+        cannot tell a rename from a field that was legitimately filtered out.
+        """
         fields = self._fields("q1", "quality_score")  # renamed live
         et = self._entity("dev_d1_participants", fields)
         excluded = {("dev_d1_participants", "quality_concern")}  # stale spec name
-        mock_logger = MagicMock()
-        with (
-            patch.object(SectionExtractionService, "logger", mock_logger),
-            patch(
-                "app.services.section_extraction_service.build_output_models", return_value=[]
-            ) as bom,
-        ):
+        with patch(
+            "app.services.section_extraction_service.build_output_models", return_value=[]
+        ) as bom:
             await service._extract_with_llm(
                 pdf_text="text",
                 entity_type=et,
                 fields_override=list(fields),
                 field_filter=LlmFieldFilter(excluded_coordinates=frozenset(excluded)),
             )
-        sent = [f.name for f in bom.call_args.kwargs["fields"]]
-        assert sent == ["q1", "quality_score"]  # fails open...
-        warned = [
-            c
-            for c in mock_logger.warning.call_args_list
-            if c.args[:1] == ("qa_derived_spec_dangling_ref",)
-        ]
-        assert warned, "expected a qa_derived_spec_dangling_ref warning on the extraction path"
-        assert warned[0].kwargs["coordinates"] == [("dev_d1_participants", "quality_concern")]
+        assert [f.name for f in bom.call_args.kwargs["fields"]] == ["q1", "quality_score"]
 
 
 def test_no_qa_kind_branch_in_the_extraction_path():
@@ -3005,6 +2999,14 @@ class TestLlmExclusionWiring:
 
         # Real _excluded_field_names reads the template off the session.
         service.db.get = AsyncMock(return_value=template)
+        # The orphan check resolves the spec against the LIVE tree; hand it
+        # back the coordinates the spec names, so nothing reads as renamed.
+        live_tree = MagicMock()
+        live_tree.all.return_value = [
+            ("dev_d1_participants", "quality_concern"),
+            ("dev_d1_participants", "quality_concern_rationale"),
+        ]
+        service.db.execute = AsyncMock(return_value=live_tree)
         # Live-intersection + instance probes use the harness mocks.
         service._entity_types.get_with_fields = AsyncMock(return_value=entity)
         service._instances.get_by_article = AsyncMock(
