@@ -29,7 +29,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DerivedDefaultChip } from "@/components/assessment/DerivedDefaultChip";
-import { toneFor } from "@/components/assessment/OverallJudgmentBanner";
+import { isOutOfScope, toneFor } from "@/components/assessment/OverallJudgmentBanner";
 import { FieldInput } from "@/components/extraction/FieldInput";
 import { useRunEditability } from "@/components/runs/RunEditabilityContext";
 import { isJudgmentField, isSignalingSelect } from "@/lib/extraction/judgmentFields";
@@ -380,7 +380,14 @@ export function QASectionAccordion({
                     data-testid={`qa-section-risk-icon-${entityType.name}`}
                   />
                 ) : null}
-                <span className="text-sm font-semibold">{sectionLabel}</span>
+                <span
+                  className={cn(
+                    "text-sm font-semibold",
+                    outOfScope && "text-muted-foreground",
+                  )}
+                >
+                  {sectionLabel}
+                </span>
                 {signalingQuestionCount > 0 ? (
                   <Badge variant="secondary" className="text-[10px]">
                     {signalingQuestionCount} signaling{" "}
@@ -409,8 +416,10 @@ export function QASectionAccordion({
           {/* Per-domain AI extract — shared with the data-extraction screen.
               Hidden when every field is assessor-owned (LLM-excluded): the
               backend would skip the call, so the button would be a dead
-              affordance (the ``overall_judgement`` section). */}
-          {!allFieldsExcluded ? (
+              affordance (the ``overall_judgement`` section). Same reasoning
+              out of scope: ``llm_field_filter`` drops those fields server-side,
+              so the button would spin and return nothing. */}
+          {!allFieldsExcluded && !outOfScope ? (
             <SectionAIExtractButton
               projectId={projectId}
               articleId={articleId}
@@ -452,7 +461,10 @@ export function QASectionAccordion({
                           )}
                           data-testid={`qa-summary-overall-${summaryEntry.id}`}
                         >
-                          {summaryEntry.value ?? qa.overallIncomplete}
+                          {summaryEntry.value ??
+                            (isOutOfScope(summaryEntry.inputs)
+                              ? qa.outOfScopeValue
+                              : qa.overallIncomplete)}
                         </Badge>
                       </div>
                     ) : null}

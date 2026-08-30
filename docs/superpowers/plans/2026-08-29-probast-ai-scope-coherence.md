@@ -45,10 +45,10 @@ an existing database.
 | PR | Content | State |
 |----|---------|-------|
 | PR1 | model + seed: the migration, `scope_rules` data, the NI answer, optionality, unconditional convergence, `2.1.0` | **shipped** |
-| PR2 | backend consumers: scope helper, AI-path guard, payload state, export parity, run-view `general_instructions` | queued |
-| PR3 | frontend: schema in selects, data-driven `studyTypeScope`, progress filtering, collapse and copy, banner and chip state, flag-gated NI in `FieldInput` | queued |
+| PR2 | backend consumers: scope helper, AI-path guard, payload state, export parity, run-view `general_instructions` | **shipped** |
+| PR3 | frontend: `schema` in the selects, data-driven `studyTypeScope`, progress filtering, the out-of-scope render across its three sites, AI button and muted title | **shipped** |
 | PR4 | finalize backstop for divergence-without-rationale | queued |
-| PR5 | `useProjectQATemplate` to TanStack Query | queued |
+| PR5 | `useProjectQATemplate` to TanStack Query | dropped — see below |
 
 ---
 
@@ -112,43 +112,123 @@ churn 95 global UUIDs per deploy and the design's "deterministic UUIDs, same
 data → same rows" was false for fields. Deriving them makes the claim true and
 lets the integration test assert identity rather than content equality.
 
-### Open finding for PR2/PR3 — the adoption story does not hold
+### Open finding for PR2/PR3 — the adoption story does not hold — CLOSED
 
-`ProjectExtractionTemplate.schema_` has exactly ONE writer
-(`template_clone_service.py:226`, at clone creation). The re-import branch heals
-structure counts, republishes and re-activates, but never rewrites `schema_`.
-So the design's "existing clones adopt on re-import" is false: an existing
-v2.0.0 clone can never receive `scope_rules`, and only an explicit delete plus a
-fresh import installs it. PR2/PR3 must either refresh `schema_` on the re-import
-heal or state the delete-and-reimport requirement in the UI. Nothing in PR1
-depends on it.
+`ProjectExtractionTemplate.schema_` had exactly ONE writer (at clone
+creation), so the design's "existing clones adopt on re-import" was false and
+only a delete plus a fresh import installed `scope_rules`. **Closed by #738**:
+`template_clone_service.py:193` now re-syncs `schema_` from the global on every
+re-import heal (copied, not aliased). No action left for PR3.
 
 ---
 
-## PR2–PR5 (queued)
+## PR2 (shipped) and PR3 (shipped)
 
-- **PR2 — backend consumers.** `out_of_scope_sections(schema, values_by_coord)`
-  and `scope_filtered_values` in `derived_judgment_service`; the AI-path guard
-  at the single eligible-field assembly point in `section_extraction_service`,
-  resolving the classifier from the run's newest proposal on the classifier
-  coordinate; `state="out-of-scope"` stamped by `derived_judgment_payload`
-  (wire contract — assert the literal); export parity via
-  `scope_filtered_values` before `compute_derived_judgments`; the run view's
-  nullable `general_instructions`, read through the same
-  `general_instructions_for_version` the prompts call (regenerate
-  `frontend/types/api/*` and the hand-mirrored `hooks/runs/types.ts`).
-- **PR3 — frontend.** `schema_` added to the template selects in
-  `qaTemplateService` and the shared project-template query; `studyTypeScope`
-  rewritten data-driven (`outOfScopeSections(scopeRules, studyTypeValue)`);
-  progress filtered by filtering the `entityTypes` projection at the two QA call
-  sites, with `computeRequiredFieldProgress` itself untouched; collapsed muted
-  out-of-scope sections that stay editable; the "Not applicable" banner and chip
-  state; the Step-1 PICOTS disclosure; flag-gated NI in `FieldInput` plus the
-  config-editor toggle. Also carries the `allows_no_information` copy key in
-  `TemplateConfigDiffSheet`'s `ATTRIBUTE_COPY`, and the hand mirror in
-  `hooks/runs/types.ts` + `runViewAdapters.ts`, which PR1 deliberately left to
-  the slice that reads them.
+- **PR2 — backend consumers** (#739). `out_of_scope_sections` /
+  `scope_filtered_values` in `derived_judgment_service`; the AI-path guard in
+  `llm_field_filter`; `state="out-of-scope"` stamped by
+  `derived_judgment_payload`; export parity through the same filter; the run
+  view's nullable `general_instructions`.
+- **PR3 — frontend.** `schema` added to `loadProjectQATemplate`'s select and to
+  `ProjectTemplateRow`'s type (the shared query already fetched it);
+  `studyTypeScope` rewritten data-driven (`outOfScopeSectionsOnForm` /
+  `outOfScopeSectionsOnRow` over `outOfScopeSections`); worklist progress
+  filtered via `lib/qa/scopedProgress`; the out-of-scope render across its
+  three sites (the derived chip's badge, hint and breakdown rows; the overall
+  banner's badge, tooltip, remediation paragraph and breakdown rows; the
+  in-section summary badge); the section AI button hidden and the section title
+  muted out of scope.
+
+### Corrections the execution surfaced
+
+Three premises in §3 of the design did not survive contact with the code, and
+the sentences that state them should be read as pre-PR1 artifacts:
+
+- **"the two QA call sites (form header, `HITLArticleTable` per row)" — there
+  is ONE.** The QA run form header passes a hardcoded `{completed: 0, total: 0,
+  pct: 0}` and `RunStatus` hides the counter when `total === 0`, so filtering it
+  is a no-op; the QA dashboard computes `started / totalArticles` and never
+  consults requiredness at all. `HITLArticleTable` is the only live QA
+  required-field percentage.
+- **Problem #1's numbers are pre-PR1.** "All 49 fields of the evaluation part
+  are `is_required=True`" and "~52%" were true before PR1 cut requiredness to
+  15 fields. Post-PR1 a completed single-part assessment read **8/15 = 53%**;
+  after PR3's filtering it reads 8/8.
+- **Out-of-scope sections were already collapsed on mount**, because only
+  `idx === 0` (`assessment_scope`, never excluded) gets `defaultOpen`. The
+  spec's "renders collapsed by default" was therefore dropped as a near no-op;
+  only the muted title shipped. The residual it leaves — re-collapsing a
+  section the reviewer already opened when they reclassify — was judged not
+  worth the state it would add.
+
+### Dropped, with reasons
+
+- **The `allows_no_information` toggle in the template-config field inspector.**
+  The inspector is extraction-only by construction (`TemplateConfigEditor`
+  mounts solely from `ExtractionInterface`, whose list is filtered
+  `kind: 'extraction'`; documented at `TemplateGrid.tsx:718-722`), so it can
+  never reach PROBAST+AI — the one template that uses the flag. On the
+  templates it *can* reach, the only thing the toggle enables is switching off
+  a disposition ADR-0016 keeps available by default. Two real defects in the
+  same area (the lossy field-delete Undo, and the now-false
+  `dispositionBuilderHint` copy) are extraction-side and spun out separately.
+- **PR5, `useProjectQATemplate` → TanStack Query.** Its stated justification —
+  "a file PR3 has to touch anyway" — is false: PR3 touches
+  `qaTemplateService.ts` and `useQATemplate.ts`, not that hook. It is a
+  behaviour-preserving rewrite with no forcing function, and migrating one of
+  three sibling hand-rolled hooks in `hooks/qa/` is half a cleanup. Pay the
+  pattern debt for the directory at once, when something needs cache sharing.
+
+### Still queued
+
 - **PR4 — finalize backstop.** `DivergenceRationaleError` raised in
   `RunLifecycleService.advance` at `target == FINALIZED`, from
   `build_derived_judgments_payload` over the published states.
-- **PR5 — `useProjectQATemplate` to TanStack Query.**
+
+  Its value was underrated, not overrated: the client-side gate lives only in
+  `QASectionAccordion.handleJudgmentChange`, and the surface where a manager
+  actually resolves divergence — `ConsensusResolutionPanel` — has **no
+  divergence gate at all**. Two further bypasses are reachable through the
+  reviewer's own form with no HTTP: the paired rationale renders through
+  `renderFieldInput` ungated, and the gate never re-runs when the derived
+  default moves after the pick. So the unguarded path is not "someone crafting
+  a POST", it is normal use.
+
+  Two things to design for before shipping it: count production runs at
+  CONSENSUS already carrying a diverged-no-rationale coordinate (there is no
+  backfill, so the gate can strand them), and make the 422 name the coordinate
+  and the compare-table route rather than only the domain — a 422 at the last
+  action of a long workflow that does not say where to type the rationale is a
+  dead end.
+
+### Recorded for their own work
+
+- **QA templates have no AI-instruction surface.** `TemplateInstructionControl`
+  is mounted only inside the extraction-only editor, and the QA Configuration
+  tab offers per-tool switches only — yet every seeded applicability prompt
+  tells the model to judge "as stated in the review's general instructions (the
+  Step-1 PICOTS)". So AI applicability proposals are made against a
+  `[customize: …]` placeholder no QA manager can see or fix. The design's
+  Step-1 PICOTS disclosure was **not** implemented as specified because its
+  null-state copy points the user at that unreachable screen; the underlying
+  defect deserves its own design pass.
+- **Instrument fidelity of the free-text boxes.** The 34 signaling questions
+  and 14 judgments are verbatim-correct against the source with zero extras and
+  zero gaps. The losses are all in the describe prompts, and they matter because
+  `_describe` interpolates the prompt straight into `llm_description`: a dropped
+  phrase is a fact the AI is never asked to extract, from boxes PROBAST+AI
+  defines as the evidence its signaling questions are answered on. Seven of the
+  eight Domain-4 prompts, both D2 prompts and both D3-applicability prompts lose
+  something the form names — the candidate-predictor counts, events per
+  predictor, the optimism adjustment, classification or risk group definition,
+  the EXTENT of missing data rather than only its handling, and the
+  per-component frequencies of a composite outcome, which no field among the 95
+  asks for. Fixed separately in seed 2.2.0; not part of this train.
+
+  Two adjacent findings were REJECTED after re-derivation, both non-defects, and
+  should not be re-opened: evaluation D4's describes-after-signaling order is a
+  layout deviation published in the item map and in the 2026-08-22 spec (only
+  the module docstring over-claimed), and the `llm_description` on the 6
+  applicability rationales but not the 8 judgment rationales is the spec's own
+  AI-affordance rule — each rationale follows its own judgment, and the
+  applicability judgment is AI-proposable while the quality/RoB judgment is not.
