@@ -205,6 +205,14 @@ export function loadProjectForSettings(
   }, 'projectSettingsService.loadProjectForSettings');
 }
 
+/**
+ * NOTE: `picots_config_ai_review` is deliberately NOT here. This save PATCHes
+ * every listed column, so including it let a client's stale snapshot overwrite
+ * a newer value — and the `.update()` below has no `.select()`, so an
+ * RLS-filtered write returns no error and a non-manager would lose the edit
+ * behind a success toast. The review question is written by
+ * `PUT /api/v1/projects/:id/ai-context` instead (manager-gated, typed).
+ */
 export type SaveProjectFields = Pick<Project,
   | 'name'
   | 'description'
@@ -213,7 +221,6 @@ export type SaveProjectFields = Pick<Project,
   | 'condition_studied'
   | 'review_rationale'
   | 'search_strategy'
-  | 'picots_config_ai_review'
   | 'eligibility_criteria'
   | 'study_design'
   | 'review_keywords'

@@ -1694,6 +1694,54 @@
         "title": "ApiResponse[PortableTemplate]",
         "type": "object"
       },
+      "ApiResponse_ProjectAiContextRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectAiContextRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ProjectAiContextRead]",
+        "type": "object"
+      },
       "ApiResponse_RepublishTemplateVersionResponse_": {
         "properties": {
           "data": {
@@ -6293,6 +6341,57 @@
         "title": "ParserSettingsRead",
         "type": "object"
       },
+      "PicotsSlot": {
+        "description": "One PICOTS slot. Flat since migration 0063 \u2014 ``timing`` included.",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "exclusion": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclusion",
+            "type": "array"
+          },
+          "inclusion": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Inclusion",
+            "type": "array"
+          }
+        },
+        "title": "PicotsSlot",
+        "type": "object"
+      },
+      "PicotsSlots": {
+        "description": "The six slots, in the instrument's P-I-C-O-T-S order.",
+        "properties": {
+          "comparator_models": {
+            "$ref": "#/components/schemas/PicotsSlot"
+          },
+          "index_models": {
+            "$ref": "#/components/schemas/PicotsSlot"
+          },
+          "outcomes": {
+            "$ref": "#/components/schemas/PicotsSlot"
+          },
+          "population": {
+            "$ref": "#/components/schemas/PicotsSlot"
+          },
+          "setting_and_intended_use": {
+            "$ref": "#/components/schemas/PicotsSlot"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/PicotsSlot"
+          }
+        },
+        "title": "PicotsSlots",
+        "type": "object"
+      },
       "PortableField": {
         "additionalProperties": false,
         "description": "One ``extraction_fields`` row. ``type``/``required`` are the file keys\n(JSON Schema convention); the attributes keep the column names.",
@@ -6612,6 +6711,82 @@
           "sections"
         ],
         "title": "PortableTemplate",
+        "type": "object"
+      },
+      "ProjectAiContextRead": {
+        "description": "What the editor renders: the slots, their labels, the switch, the preview.",
+        "properties": {
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "object"
+          },
+          "picots": {
+            "$ref": "#/components/schemas/PicotsSlots"
+          },
+          "picots_enabled": {
+            "default": true,
+            "title": "Picots Enabled",
+            "type": "boolean"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          },
+          "review_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Type"
+          }
+        },
+        "required": [
+          "picots",
+          "labels"
+        ],
+        "title": "ProjectAiContextRead",
+        "type": "object"
+      },
+      "ProjectAiContextUpdate": {
+        "description": "Both halves ride one write so they cannot disagree.\n\nEach field is optional: omitting ``picots`` changes only the switch and vice\nversa, which is what lets the toggle and the editor share one endpoint\nwithout either clobbering the other's value.",
+        "properties": {
+          "picots": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PicotsSlots"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "picots_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Picots Enabled"
+          }
+        },
+        "title": "ProjectAiContextUpdate",
         "type": "object"
       },
       "ProposalRecordResponse": {
@@ -11509,6 +11684,112 @@
         "summary": "Open Hitl Session",
         "tags": [
           "hitl-sessions"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ai-context": {
+      "get": {
+        "description": "The stored PICOTS, the labels the prompt will use, the switch, the preview.",
+        "operationId": "read_ai_context_api_v1_projects__project_id__ai_context_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProjectAiContextRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Read Ai Context",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "description": "Persist the review question and/or its switch, and return the new preview.\n\nReturning the re-read model (rather than echoing the request) is what makes\nthe preview trustworthy: it is rendered from what was actually stored.",
+        "operationId": "update_ai_context_api_v1_projects__project_id__ai_context_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectAiContextUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProjectAiContextRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Ai Context",
+        "tags": [
+          "projects"
         ]
       }
     },

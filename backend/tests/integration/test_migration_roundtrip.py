@@ -1266,8 +1266,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0062_allows_no_information" in out, (
-        f"Expected head revision '0062_allows_no_information', got:\n{out}"
+    assert "0063_flatten_picots_timing" in out, (
+        f"Expected head revision '0063_flatten_picots_timing', got:\n{out}"
     )
 
 

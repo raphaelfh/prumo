@@ -10,8 +10,15 @@ import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/compon
 import {HelpCircle} from 'lucide-react';
 import {Separator} from '@/components/ui/separator';
 import {TagInput} from '@/components/settings';
-import type {PICOTSItem} from './ReviewDetailsSection';
 import {t} from '@/lib/copy';
+
+/** One PICOTS slot. Declared here now — the section that used to own this
+ * type no longer edits slots, and the editor is the only shape authority. */
+export interface PICOTSItem {
+  description?: string;
+  inclusion?: string[];
+  exclusion?: string[];
+}
 
 interface PICOTSItemEditorProps {
   label: string;
