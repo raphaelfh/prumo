@@ -149,6 +149,7 @@ const V2_ENTRY = {
   target_field_id: "j1",
   rationale_field_id: "r1",
   summary_field_id: null,
+  rationale_required: false,
 };
 
 function renderV2(
@@ -200,39 +201,21 @@ describe("QASectionAccordion — recommendation card (v2)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("holds a divergent pick until the rationale exists, then confirm dispatches", async () => {
+  it("a divergent pick is written through, and the server's requirement shows", async () => {
+    // The pick is NOT held. Holding it was what let the rationale be deleted
+    // afterwards, hid a divergence loaded from an earlier session, and dropped
+    // a pending pick on article navigation. The requirement is now a property
+    // of the stored state — `rationale_required`, decided by the same server
+    // rule that refuses the finalize — so it survives all three.
     const user = userEvent.setup();
-    const { onValueChange, rerender } = renderV2();
+    const { onValueChange } = renderV2({
+      derivedJudgments: [{ ...V2_ENTRY, rationale_required: true }],
+    });
     const card = screen.getByTestId("qa-judgment-card-j1");
     await user.click(within(card).getAllByRole("combobox")[0]);
     await user.click(screen.getByRole("option", { name: "Low" }));
-    // Held, not dispatched — and the requirement is visible.
-    expect(onValueChange).not.toHaveBeenCalledWith("j1", "Low");
-    expect(screen.getByTestId("qa-divergence-j1")).toBeInTheDocument();
-    const confirm = screen.getByTestId("qa-divergence-confirm-j1");
-    expect(confirm).toBeDisabled();
-
-    // The reviewer writes the rationale (arrives via the values map).
-    rerender(
-      <TooltipProvider>
-      <QASectionAccordion
-        domain={V2_DOMAIN}
-        values={{ r1: "large development sample" }}
-        onValueChange={onValueChange}
-        projectId="p1"
-        articleId="a1"
-        templateId="t1"
-        runId="r1"
-        instanceId="i1"
-        defaultOpen
-        derivedJudgments={[V2_ENTRY]}
-      />
-      </TooltipProvider>,
-    );
-    const confirmEnabled = screen.getByTestId("qa-divergence-confirm-j1");
-    expect(confirmEnabled).toBeEnabled();
-    await user.click(confirmEnabled);
     expect(onValueChange).toHaveBeenCalledWith("j1", "Low");
+    expect(screen.getByTestId("qa-divergence-j1")).toBeInTheDocument();
   });
 
   it("a pick matching the derived default dispatches immediately", async () => {
@@ -245,12 +228,22 @@ describe("QASectionAccordion — recommendation card (v2)", () => {
     expect(screen.queryByTestId("qa-divergence-j1")).not.toBeInTheDocument();
   });
 
-  it("hydrated pre-existing divergence shows the state but never blocks", () => {
-    renderV2({ values: { j1: "Low" } });
-    expect(screen.getByTestId("qa-divergence-note-j1")).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("qa-divergence-confirm-j1"),
-    ).not.toBeInTheDocument();
+  it("a divergence hydrated from an earlier session states the same requirement", () => {
+    // Previously this rendered a muted note and nothing else, so a divergence
+    // created anywhere but this select — the consensus panel, a marker, an
+    // earlier session — was only ever annotated. One server flag, one render.
+    renderV2({
+      values: { j1: "Low" },
+      derivedJudgments: [{ ...V2_ENTRY, rationale_required: true }],
+    });
+    expect(screen.getByTestId("qa-divergence-j1")).toBeInTheDocument();
+  });
+
+  it("says nothing when the server says the rationale is not owed", () => {
+    // The complement that stops the assertion above passing vacuously: the
+    // same hydrated divergence, with the rationale already written, is silent.
+    renderV2({ values: { j1: "Low", r1: "explained" } });
+    expect(screen.queryByTestId("qa-divergence-j1")).not.toBeInTheDocument();
   });
 
   it("judgments without a matching entry render exactly as today", async () => {
@@ -307,6 +300,7 @@ describe("QASectionAccordion — exclusions and summaries (v2)", () => {
     target_field_id: null,
     rationale_field_id: null,
     summary_field_id: "s1",
+    rationale_required: false,
   };
 
   it("hides the AI extract button when every field of the section is excluded", () => {
@@ -411,35 +405,6 @@ describe("QASectionAccordion — editability, scope sections, paired rationales"
     ).not.toBeInTheDocument();
   });
 
-  it("an instance change drops a held divergent pick (in-place article navigation)", async () => {
-    const user = userEvent.setup();
-    const { onValueChange, rerender } = renderV2();
-    const card = screen.getByTestId("qa-judgment-card-j1");
-    await user.click(within(card).getAllByRole("combobox")[0]);
-    await user.click(screen.getByRole("option", { name: "Low" }));
-    expect(screen.getByTestId("qa-divergence-j1")).toBeInTheDocument();
-
-    // Same accordion instance, next article: new run instance id.
-    rerender(
-      <TooltipProvider>
-        <QASectionAccordion
-          domain={V2_DOMAIN}
-          values={{}}
-          onValueChange={onValueChange}
-          projectId="p1"
-          articleId="a2"
-          templateId="t1"
-          runId="r2"
-          instanceId="i2"
-          defaultOpen
-          derivedJudgments={[V2_ENTRY]}
-        />
-      </TooltipProvider>,
-    );
-    expect(screen.queryByTestId("qa-divergence-j1")).not.toBeInTheDocument();
-    expect(onValueChange).not.toHaveBeenCalledWith("j1", "Low");
-  });
-
   it("a scope-like section shows neither the risk icon nor a signaling badge", () => {
     const SCOPE_DOMAIN = {
       entityType: { ...BASE_ENTITY, id: "scope-et", name: "assessment_scope", label: "Assessment scope" },
@@ -513,8 +478,8 @@ describe("QASectionAccordion — editability, scope sections, paired rationales"
   });
 });
 
-describe("QASectionAccordion — markers and clears bypass the divergence gate", () => {
-  it("a 'No information' marker on a gated judgment writes through as the envelope", async () => {
+describe("QASectionAccordion — markers and clears are ordinary writes", () => {
+  it("a 'No information' marker writes through as the envelope", async () => {
     const user = userEvent.setup();
     const { onValueChange } = renderV2();
     const card = screen.getByTestId("qa-judgment-card-j1");
@@ -526,10 +491,22 @@ describe("QASectionAccordion — markers and clears bypass the divergence gate",
       value: null,
       absent_reason: "no_information",
     });
-    expect(screen.queryByTestId("qa-divergence-j1")).not.toBeInTheDocument();
   });
 
-  it("clearing a stored marker writes through instead of being held", async () => {
+  it("a marker the server counts as an override still states the requirement", async () => {
+    // The hole this closes: the backend reads a `no_information` marker as a
+    // judgment (the instrument reads NI as Unclear on a domain), so overriding
+    // a default with one owes a rationale — but a pick-time gate keyed on
+    // `typeof next === "string"` could never see an object envelope, and the
+    // finalize refused a divergence the screen had never mentioned.
+    renderV2({
+      values: { j1: { value: null, absent_reason: "no_information" } },
+      derivedJudgments: [{ ...V2_ENTRY, rationale_required: true }],
+    });
+    expect(screen.getByTestId("qa-divergence-j1")).toBeInTheDocument();
+  });
+
+  it("clearing a stored marker writes through", async () => {
     const user = userEvent.setup();
     const marker = { value: null, absent_reason: "no_information" };
     const { onValueChange } = renderV2({ values: { j1: marker } });
@@ -539,6 +516,5 @@ describe("QASectionAccordion — markers and clears bypass the divergence gate",
       within(card).getAllByRole("button", { name: /dispositionNoInformation/ })[0],
     );
     expect(onValueChange).toHaveBeenCalledWith("j1", "");
-    expect(screen.queryByTestId("qa-divergence-j1")).not.toBeInTheDocument();
   });
 });

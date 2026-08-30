@@ -221,11 +221,17 @@ export interface RunViewResponse extends RunDetailResponse {
    * is the third value and the only one a PLAIN row carries: the template's
    * scope rules took that section out of play for this study type. It
    * outranks the other two — render it as "Not applicable", never as
-   * unfinished work. */
+   * unfinished work.
+   *
+   * `rationale_required` is the server's verdict that the STORED judgment
+   * overrides `value` with an empty `rationale_field_id` — the same rule,
+   * from the same code, that refuses the finalize with a 400. Render it;
+   * never recompute it, or the screen and the refusal will disagree. */
   derived_judgments?: {
     id: string;
     label: string;
     value: string | null;
+    rationale_required: boolean;
     inputs?: {
       label: string;
       value: string | null;

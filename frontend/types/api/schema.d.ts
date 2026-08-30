@@ -4974,6 +4974,15 @@ export interface components {
          *     OVERALLS, whose paired Step-4 narrative field is ``summary_field_id``.
          *     ``value`` is None when the inputs are incomplete — the client renders
          *     that as an em dash, never as the most favourable judgment.
+         *
+         *     ``rationale_required`` is True when the STORED judgment at
+         *     ``target_field_id`` overrides ``value`` and ``rationale_field_id`` is
+         *     still empty — the same rule, from the same code, that refuses the
+         *     finalize (``DivergenceRationaleError``). It is computed over whatever
+         *     value set the caller derived from, so on the reviewer's form it means
+         *     "your answer owes an explanation" and at consensus "this run cannot
+         *     finalize yet". The client must never recompute it: a second
+         *     implementation is how the screen and the refusal come to disagree.
          */
         RunViewDerivedJudgment: {
             /** Id */
@@ -4984,6 +4993,11 @@ export interface components {
             label: string;
             /** Rationale Field Id */
             rationale_field_id?: string | null;
+            /**
+             * Rationale Required
+             * @default false
+             */
+            rationale_required: boolean;
             /** Summary Field Id */
             summary_field_id?: string | null;
             /** Target Entity Type Id */
