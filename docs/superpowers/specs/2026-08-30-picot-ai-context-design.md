@@ -470,8 +470,8 @@ Shipped in three slices. Slice 1 (backend spine) is complete; 2 and 3 are queued
 | Slice | Scope | Status |
 | --- | --- | --- |
 | 1 | §2 rendering, §3 pin + prompt, §7 backend tests, §10 docs | shipped |
-| 2 | §1 storage flatten, §4 API, §5a/5b/5d/5e (extraction bar, PICOT dialog, Project Settings) | queued |
-| 3 | §5c QA Configuration tab, the E2E flow | queued |
+| 2 | §1 storage flatten, §4 API, §5a/5d/5e (PICOT dialog, Project Settings, gating) | shipped |
+| 3 | §5b extraction-bar chip, §5c QA Configuration tab | queued |
 
 §8's amendment is no longer part of slice 3: its text was applied to
 `2026-08-26-probast-ai-scope-coherence-design.md` in `cc7aa3bc`, ahead of the
@@ -522,3 +522,24 @@ Slice 3 is BLOCKED on §9's first follow-up: `TemplateCloneService.clone`'s
 zero-state branch republishes without `fail_if_pending_draft`, and the QA
 session-open path that reaches it is member-gated. Do not ship §5c's publish
 controls before that is closed.
+
+### Slice 2 notes
+
+`AiContextProjectBlocks` (§5a) was NOT built. Slice 1 dropped the
+`review_context` and `eligibility` toggles — their shapes are contradicted three
+ways in-tree and neither had a reachable writer — so only `picots` remains. A
+dedicated three-block component for one switch is speculation; the switch lives
+in `PicotsEditDialog`.
+
+Three defects found while building it, all pre-existing and none cosmetic:
+
+1. `saveProjectSettings` issues `.update()` with no `.select()`, so an
+   RLS-filtered write matches zero rows and returns NO error. §5e's premise —
+   that a reviewer "discovers it on save failure" — was wrong; the reviewer saw
+   a SUCCESS toast and lost the edit. Gating is a correctness fix.
+2. `addArrayItem`/`removeArrayItem` looked up `picots['timing.prediction_moment']`,
+   a key that never existed, so a Timing slot's criteria list could only ever
+   hold 0 or 1 entry.
+3. A row can carry the flat AND nested `timing` shapes at once — reachable in
+   the window between migration 0063 and the frontend deploy. Both the migration
+   and the renderer merge them rather than branching either/or.

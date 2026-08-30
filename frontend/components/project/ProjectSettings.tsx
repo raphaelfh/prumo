@@ -117,7 +117,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                     <BasicInfoSection project={project} onChange={updateProject}/>
                 )}
                 {activeTab === 'review' && (
-                    <ReviewDetailsSection project={project} onChange={updateProject}/>
+                    <ReviewDetailsSection projectId={projectId} project={project} onChange={updateProject}/>
                 )}
                 {activeTab === 'team' && <TeamMembersSection projectId={projectId}/>}
                 {activeTab === 'consensus' && (

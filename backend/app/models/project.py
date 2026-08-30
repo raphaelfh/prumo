@@ -84,18 +84,21 @@ class Project(BaseModel):
     review_context: Mapped[str | None] = mapped_column(Text, nullable=True)
     search_strategy: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # PICOTS configuration for predictive model reviews
+    # The review question the AI is given (rendered by ``project_ai_context``).
+    # Six slots, each ``{description, inclusion[], exclusion[]}``; ``timing`` was
+    # nested one level deeper until 0063 flattened it.
+    #
+    # NO default, deliberately. The column has no server default either, and no
+    # backend code constructs a ``Project`` — rows are created by the
+    # ``create_project_with_member`` RPC, which never sets this column, so every
+    # row starts NULL. The declared default that used to sit here had therefore
+    # never once fired, and it described a shape (six empty STRINGS) that no
+    # writer produced and the reader had to tolerate anyway. Keeping an
+    # unreachable default in sync with reality is a standing invitation to plan
+    # against it, which is exactly what happened.
     picots_config_ai_review: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
-        default={
-            "population": "",
-            "index_models": "",
-            "comparator_models": "",
-            "outcomes": "",
-            "timing": {"prediction_moment": "", "prediction_horizon": ""},
-            "setting_and_intended_use": "",
-        },
     )
 
     review_type: Mapped[str | None] = mapped_column(

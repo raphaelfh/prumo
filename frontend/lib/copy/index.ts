@@ -21,6 +21,7 @@ import {runs} from './runs';
 import {parsing} from './parsing';
 import {templateConfig} from './templateConfig';
 import {llmEngine} from './llmEngine';
+import {aiContext} from './aiContext';
 
 export {
     common,
@@ -30,6 +31,7 @@ export {
     consensus,
     templateConfig,
     llmEngine,
+    aiContext,
 };
 
 const copy = {
@@ -52,6 +54,7 @@ const copy = {
     parsing,
     templateConfig,
     llmEngine,
+    aiContext,
 } as const;
 
 export type CopyNamespace = keyof typeof copy;
