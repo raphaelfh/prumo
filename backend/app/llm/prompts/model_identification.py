@@ -6,7 +6,11 @@ the container's children."""
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.llm.prompts import content_version, render_general_instructions_section
+from app.llm.prompts import (
+    content_version,
+    render_general_instructions_section,
+    render_review_context_section,
+)
 
 NAME = "model_identification"
 
@@ -32,7 +36,7 @@ class ModelIdentificationOutput(BaseModel):
     )
 
 
-_USER_TEMPLATE = """{general_instructions_section}Analyze the following scientific article and identify all {container_label} described in it. For each one, return a clear and descriptive name as it appears in the article.
+_USER_TEMPLATE = """{review_context_section}{general_instructions_section}Analyze the following scientific article and identify all {container_label} described in it. For each one, return a clear and descriptive name as it appears in the article.
 {existing_section}
 Article text:
 {article_text}
@@ -63,7 +67,11 @@ def _render_existing_section(container_label: str, existing_keys: list[str] | No
 # Canary: hashes the shared block renderer's literal prefix (see
 # section_extraction.py) so helper edits bump VERSION.
 VERSION = content_version(
-    SYSTEM_PROMPT, _USER_TEMPLATE, _EXISTING_TEMPLATE, render_general_instructions_section("x")
+    SYSTEM_PROMPT,
+    _USER_TEMPLATE,
+    _EXISTING_TEMPLATE,
+    render_review_context_section("x"),
+    render_general_instructions_section("x"),
 )
 
 
@@ -72,6 +80,7 @@ def render(
     container_label: str,
     article_text: str,
     general_instructions: str | None = None,
+    review_context: str | None = None,
     existing_keys: list[str] | None = None,
 ) -> str:
     """``existing_keys`` are the identities already extracted for this
@@ -80,5 +89,6 @@ def render(
         container_label=container_label,
         article_text=article_text,
         general_instructions_section=render_general_instructions_section(general_instructions),
+        review_context_section=render_review_context_section(review_context),
         existing_section=_render_existing_section(container_label, existing_keys),
     )

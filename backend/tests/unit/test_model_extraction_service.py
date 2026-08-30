@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
 from app.llm.prompts.model_identification import IdentifiedModel, ModelIdentificationOutput
+from app.schemas.run_prompt_context import RunPromptContext
 from app.services.extraction_prompt_input import PromptInputInfo
 from app.services.model_extraction_service import ModelExtractionService
 
@@ -47,10 +48,10 @@ def _patch_empty_pinned_tree():
 
 
 def _patch_no_pinned_instruction():
-    """B-2: no pinned template-level general instruction for the run."""
+    """B-2: neither run-constant prompt block is set for this run."""
     return patch(
-        "app.services.model_extraction_service.general_instructions_for_version",
-        AsyncMock(return_value=None),
+        "app.services.model_extraction_service.resolve_run_prompt_context",
+        AsyncMock(return_value=RunPromptContext()),
     )
 
 
