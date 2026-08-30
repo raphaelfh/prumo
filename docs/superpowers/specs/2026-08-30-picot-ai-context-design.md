@@ -471,7 +471,7 @@ Shipped in three slices. Slice 1 (backend spine) is complete; 2 and 3 are queued
 | --- | --- | --- |
 | 1 | §2 rendering, §3 pin + prompt, §7 backend tests, §10 docs | shipped |
 | 2 | §1 storage flatten, §4 API, §5a/5d/5e (PICOT dialog, Project Settings, gating) | shipped |
-| 3 | §5b extraction-bar chip, §5c QA Configuration tab, §8 amendment, the E2E flow | queued |
+| 3 | §5b extraction-bar chip, §5c QA Configuration tab, §8 amendment | shipped |
 
 Four claims above did not survive contact with the code, and slice 1 deviates
 from the spec accordingly:
