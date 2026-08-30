@@ -69,6 +69,7 @@ import { RunHeader } from "@/components/runs/header";
 // stays free of the supabase-reaching NotificationCenter/feedback deps.
 import { Utility } from "@/components/runs/header/Utility";
 import { buildQaTransition } from "@/lib/qa/qaTransition";
+import { rationaleGapCoords } from "@/lib/qa/rationaleGaps";
 import { usePdfPanel } from "@/hooks/usePdfPanel";
 import { setManagerReviewVisibility } from "@/services/hitlConfigService";
 import type { ExtractionRunStage } from "@/types/ai-extraction";
@@ -897,7 +898,12 @@ export default function QualityAssessmentFullScreen() {
           onFinalize={handleApproveFinalize}
           isResolving={consensusMutation.isPending}
           isFinalizing={approveFinalize.isPending}
-          requiredCoords={[]}
+          // Owed rationales, and what strands the run without them: see
+          // lib/qa/rationaleGaps.
+          requiredCoords={rationaleGapCoords(
+            runDetail.derived_judgments,
+            session?.instancesByEntityType,
+          )}
           peersRevealed={!!runDetail.peers_revealed}
           showFinalize={false}
         />

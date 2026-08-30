@@ -25,6 +25,7 @@ const ENTRY = {
   target_field_id: "j1",
   rationale_field_id: "r1",
   summary_field_id: null,
+  rationale_required: false,
 };
 
 describe("DerivedDefaultChip", () => {

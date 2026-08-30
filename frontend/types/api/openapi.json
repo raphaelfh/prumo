@@ -7469,7 +7469,7 @@
         "type": "object"
       },
       "RunViewDerivedJudgment": {
-        "description": "One computed judgment (never stored, never entered).\n\nPresent only for templates whose ``schema`` JSONB declares a\n``derived_judgments`` spec. Entries WITH ``target_field_id`` are\nRECOMMENDATIONS: the derived default for the assessor-owned stored field\nthe ids point at (resolved against the run's frozen tree; None when the\nspec coordinate does not resolve). Entries without one are computed\nOVERALLS, whose paired Step-4 narrative field is ``summary_field_id``.\n``value`` is None when the inputs are incomplete \u2014 the client renders\nthat as an em dash, never as the most favourable judgment.",
+        "description": "One computed judgment (never stored, never entered).\n\nPresent only for templates whose ``schema`` JSONB declares a\n``derived_judgments`` spec. Entries WITH ``target_field_id`` are\nRECOMMENDATIONS: the derived default for the assessor-owned stored field\nthe ids point at (resolved against the run's frozen tree; None when the\nspec coordinate does not resolve). Entries without one are computed\nOVERALLS, whose paired Step-4 narrative field is ``summary_field_id``.\n``value`` is None when the inputs are incomplete \u2014 the client renders\nthat as an em dash, never as the most favourable judgment.\n\n``rationale_required`` is True when the STORED judgment at\n``target_field_id`` overrides ``value`` and ``rationale_field_id`` is\nstill empty \u2014 the same rule, from the same code, that refuses the\nfinalize (``DivergenceRationaleError``). It is computed over whatever\nvalue set the caller derived from, so on the reviewer's form it means\n\"your answer owes an explanation\" and at consensus \"this run cannot\nfinalize yet\". The client must never recompute it: a second\nimplementation is how the screen and the refusal come to disagree.",
         "properties": {
           "id": {
             "title": "Id",
@@ -7497,6 +7497,11 @@
               }
             ],
             "title": "Rationale Field Id"
+          },
+          "rationale_required": {
+            "default": false,
+            "title": "Rationale Required",
+            "type": "boolean"
           },
           "summary_field_id": {
             "anyOf": [

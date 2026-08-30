@@ -9,10 +9,22 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { qa } from "@/lib/copy/qa";
 
-function renderBanner(judgments: DerivedJudgmentView[]) {
+/** Fills the wire defaults so a case states only what it is about.
+ *
+ * `rationale_required` is always present on the wire but irrelevant to the
+ * banner, which renders overalls — entries that own no stored judgment and so
+ * can never owe a rationale. */
+function renderBanner(judgments: Partial<DerivedJudgmentView>[]) {
   return render(
     <TooltipProvider>
-      <OverallJudgmentBanner judgments={judgments} />
+      <OverallJudgmentBanner
+        judgments={judgments.map((j) => ({
+          id: "",
+          label: "",
+          rationale_required: false,
+          ...j,
+        }))}
+      />
     </TooltipProvider>,
   );
 }
@@ -48,6 +60,7 @@ describe("OverallJudgmentBanner — calculation disclosure", () => {
       id: "dev_overall_quality",
       label: "Overall quality (development)",
       value: null,
+      rationale_required: false,
       inputs: [
         { label: "Development D1: Participants", value: null },
         { label: "Development D2: Predictors", value: "Unclear" },

@@ -336,6 +336,42 @@ def test_recommendation_resolves_target_and_rationale_ids() -> None:
     assert ov.summary_field_id == ids["sm"]
 
 
+def _v2_payload(stored: dict[str, Any]) -> list[Any]:
+    """The payload for one instance whose values are *stored* by field key."""
+    d1, overall, ids = _v2_tree()
+    iid = uuid4()
+    return build_derived_judgments_payload(
+        template_schema=_V2_SPEC,
+        entity_types=[d1, overall],
+        instances=[_Instance(d1.id, iid)],
+        values=[_Value(iid, ids[k], {"value": v}) for k, v in stored.items()],
+    )
+
+
+def test_rationale_required_is_stamped_for_an_unexplained_override() -> None:
+    """The wire flag the QA screen renders and the finalize refuses on.
+
+    Computed here so both read ONE implementation: the screen showing a
+    requirement the server would not enforce — or missing one it would — is
+    the failure this field exists to make impossible.
+    """
+    rec, ov = _v2_payload({"q1": "PY", "qc": "High"})
+    assert rec.value == "Low"  # PY derives Low; the stored judgment overrides it
+    assert rec.rationale_required is True
+    # An overall owns no stored judgment, so it can never carry the flag.
+    assert ov.rationale_required is False
+
+
+def test_rationale_required_clears_once_the_rationale_has_text() -> None:
+    rec, _ = _v2_payload({"q1": "PY", "qc": "High", "qcr": "Small sample."})
+    assert rec.rationale_required is False
+
+
+def test_rationale_required_is_false_when_the_judgment_agrees() -> None:
+    rec, _ = _v2_payload({"q1": "PY", "qc": "Low"})
+    assert rec.rationale_required is False
+
+
 def test_v1_shaped_spec_has_no_pointer_ids() -> None:
     et = _EntityType("dev_d1_participants", [_Field(uuid4(), "quality_concern")])
     out = build_derived_judgments_payload(
