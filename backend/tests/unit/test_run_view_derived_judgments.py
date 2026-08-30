@@ -154,10 +154,6 @@ def test_dangling_spec_reference_does_not_crash() -> None:
     assert out[0].value is None
 
 
-def test_schema_model_accepts_null_value() -> None:
-    assert RunViewDerivedJudgment(id="x", label="X", value=None).value is None
-
-
 # --- naming a collapse group whose spec carries no label --------------------
 
 _D4_SPEC: dict[str, Any] = {

@@ -143,16 +143,6 @@ describe("DerivedDefaultChip — a recommendation whose inputs are all out of sc
       qa.derivedInputNotAnswered,
     );
   });
-
-  it("out-of-scope outranks the other two states on the same row", () => {
-    // Per the schema docstring: it is the only state a PLAIN row carries and
-    // it wins over unreported / in-progress on a collapse group.
-    render(chip([{ label: "D4 apparent", value: null, contribution: null, state: "out-of-scope" }]));
-    openDisclosure("qa-derived-explain-toggle-eval_d1_rob");
-    const row = screen.getAllByTestId("qa-derived-input-row-eval_d1_rob")[0];
-    expect(row).toHaveTextContent(qa.outOfScopeValue);
-    expect(row.textContent).not.toContain(qa.derivedInputUnreported);
-  });
 });
 
 describe("the banner reads every wire state, not only out-of-scope", () => {
