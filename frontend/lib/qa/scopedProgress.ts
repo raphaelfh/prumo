@@ -35,9 +35,6 @@ export function scopedRowProgress(
     instances,
     values,
   );
-  const inScope =
-    excluded.size === 0
-      ? entityTypes
-      : entityTypes.filter((et) => !excluded.has(et.name));
+  const inScope = entityTypes.filter((et) => !excluded.has(et.name));
   return computeRowProgress(instances, values, inScope);
 }
