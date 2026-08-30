@@ -261,7 +261,10 @@ async def test_call_site_passes_pinned_not_live_instruction(
         run_id=run.id,
     )
 
-    assert service._extract_with_llm.call_args.kwargs["general_instructions"] == "PINNED"
+    assert (
+        service._extract_with_llm.call_args.kwargs["prompt_context"].general_instructions
+        == "PINNED"
+    )
 
 
 @pytest.mark.asyncio
@@ -337,6 +340,6 @@ async def test_batch_call_site_passes_pinned_not_live_instruction(
 
     assert service._extract_with_llm.call_count > 0
     assert all(
-        call.kwargs["general_instructions"] == "PINNED"
+        call.kwargs["prompt_context"].general_instructions == "PINNED"
         for call in service._extract_with_llm.call_args_list
     )

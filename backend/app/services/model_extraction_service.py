@@ -41,12 +41,10 @@ from app.schemas.llm_target import LlmTarget
 from app.services.engine_credentials import EngineCredentials
 from app.services.entity_key import existing_keys, match_or_none, resolve_key_field, stamp
 from app.services.extraction_prompt_input import build_prompt_input
-from app.services.extraction_snapshot import (
-    entity_types_for_version,
-    general_instructions_for_version,
-)
+from app.services.extraction_snapshot import entity_types_for_version
 from app.services.run_engine_freeze import freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
+from app.services.run_prompt_context import resolve_run_prompt_context
 
 
 @dataclass
@@ -403,7 +401,7 @@ class ModelExtractionService(LoggerMixin):
             )
 
         container_label = model_entity.label if model_entity else "prediction models"
-        general_instructions = await general_instructions_for_version(self.db, run.version_id)
+        prompt_context = await resolve_run_prompt_context(self.db, run)
 
         # Re-run grounding: show the model what this article already has, so
         # it returns the existing name instead of a fresh wording for the
@@ -430,7 +428,8 @@ class ModelExtractionService(LoggerMixin):
             user_prompt=model_identification.render(
                 container_label=container_label,
                 article_text=pdf_text,
-                general_instructions=general_instructions,
+                general_instructions=prompt_context.general_instructions,
+                review_context=prompt_context.review_context,
                 existing_keys=already_identified,
             ),
             model=build_model(

@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-08-23
+last_reviewed: 2026-08-30
 owner: '@raphaelfh'
 ---
 
@@ -33,7 +33,7 @@ PMC: `https://www.ebi.ac.uk/europepmc/webservices/rest/PMC11931409/supplementary
 
 | Step (once per…) | Instrument | In prumo |
 |---|---|---|
-| 1. Intended purpose (review) | PICOTS table: Population, Index model(s), Comparator model(s), Outcome(s), Timing, Setting/intended use | The project template's ✨ instruction (`llm_template_instruction`). Fill it with the review's PICOTS; it reaches every AI call as general instructions and is the reference for every applicability judgment |
+| 1. Intended purpose (review) | PICOTS table: Population, Index model(s), Comparator model(s), Outcome(s), Timing, Setting/intended use | The project's structured PICOTS (`projects.picots_config_ai_review`, Project Settings → Review). It renders into every AI call as a `Review question and scope:` block, is pinned per run under `results.provenance.review_context`, and is the reference for every applicability judgment. Retyping it into the template's ✨ instruction is the pre-2026-08-30 workaround and is no longer needed |
 | 2. Classify study type (model × publication) | development only / evaluation only / combination | `assessment_scope.study_type` (select, AI-proposed). Informational — it tells the reviewer which part of the form applies; blank sections of the unused part stay blank |
 | 3. Domain assessment (publication × outcome) | Describe boxes → signalling questions → domain judgment + rationale; applicability on domains 1–3 | The 11 domain sections below; judgments carry a derived default computed from the SQ answers, overridable with a mandatory rationale |
 | 4. Overall judgments (model) | Four roll-up tables + summary boxes | Four computed overalls (`derived_judgments` spec, `worst_domain` rule) + four assessor summary fields in `overall_judgement` |

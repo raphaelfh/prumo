@@ -6,6 +6,7 @@ from app.llm.prompts import (
     content_version,
     render_general_instructions_section,
     render_memory_section,
+    render_review_context_section,
 )
 
 NAME = "quality_assessment"
@@ -25,7 +26,7 @@ _SYSTEM_TEMPLATE = (
     " the value."
 )
 
-_USER_TEMPLATE = """{general_instructions_section}Assess the following domain of {framework_label} for the study below.
+_USER_TEMPLATE = """{review_context_section}{general_instructions_section}Assess the following domain of {framework_label} for the study below.
 
 Domain: {entity_name}
 Description: {entity_description}
@@ -43,7 +44,10 @@ For EACH field in the response schema, return an object with:
 # Canary: hashes the shared block renderer's literal prefix (see
 # section_extraction.py) so helper edits bump VERSION.
 VERSION = content_version(
-    _SYSTEM_TEMPLATE, _USER_TEMPLATE, render_general_instructions_section("x")
+    _SYSTEM_TEMPLATE,
+    _USER_TEMPLATE,
+    render_review_context_section("x"),
+    render_general_instructions_section("x"),
 )
 
 _DEFAULT_FRAMEWORK_LABEL = "the assessment tool"
@@ -61,6 +65,7 @@ def render(
     framework: str | None,
     memory_context: list[dict[str, str]] | None = None,
     general_instructions: str | None = None,
+    review_context: str | None = None,
 ) -> str:
     return _USER_TEMPLATE.format(
         framework_label=framework or _DEFAULT_FRAMEWORK_LABEL,
@@ -69,4 +74,5 @@ def render(
         memory_section=render_memory_section(memory_context),
         article_text=article_text,
         general_instructions_section=render_general_instructions_section(general_instructions),
+        review_context_section=render_review_context_section(review_context),
     )

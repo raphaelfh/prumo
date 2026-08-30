@@ -49,18 +49,17 @@ from app.repositories import (
 )
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
+from app.schemas.run_prompt_context import RunPromptContext
 from app.services.engine_credentials import EngineCredentials, rekey_for_adopted_engine
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
-from app.services.extraction_snapshot import (
-    entity_types_for_version,
-    general_instructions_for_version,
-)
+from app.services.extraction_snapshot import entity_types_for_version
 from app.services.llm_engine_service import resolve_project_engine
 from app.services.llm_field_filter import LlmFieldFilter, build_llm_field_filter
 from app.services.run_engine_freeze import build_proposal_engine, freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
+from app.services.run_prompt_context import resolve_run_prompt_context
 from app.services.value_semantics import AbsentReason
 from app.services.verified_mode import (
     SectionSnapshotInputs,
@@ -369,12 +368,12 @@ class SectionExtractionService(LoggerMixin):
 
             # 5. Run LLM extraction (with token tracking)
             phase_start = perf_counter()
-            general_instructions = await general_instructions_for_version(self.db, run.version_id)
+            prompt_context = await resolve_run_prompt_context(self.db, run)
             extracted_data, llm_usage = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=entity_type,
                 fields_override=fields_override,
-                general_instructions=general_instructions,
+                prompt_context=prompt_context,
                 field_filter=await self._field_filter(run),
             )
             # 6. Verify pass (mode + kind checks inside the glue) + snapshot.
@@ -545,7 +544,7 @@ class SectionExtractionService(LoggerMixin):
             pdf_text = await self._assemble_prompt_text(run.article_id, model)
 
             # Run-constant (keyed by the pinned version): fetch once, not per section.
-            general_instructions = await general_instructions_for_version(self.db, run.version_id)
+            prompt_context = await resolve_run_prompt_context(self.db, run)
 
             # Top-level set from the run-PINNED snapshot (B-2). The provider
             # chains empty/narrow snapshots to live rows, so an empty pin can
@@ -562,7 +561,7 @@ class SectionExtractionService(LoggerMixin):
                         framework=framework,
                         kind=kind,
                         skip_fields_with_human_proposals=skip_fields_with_human_proposals,
-                        general_instructions=general_instructions,
+                        prompt_context=prompt_context,
                     )
                     successful += 1
                     total_suggestions += result["suggestions_created"]
@@ -658,7 +657,7 @@ class SectionExtractionService(LoggerMixin):
         framework: str | None,
         kind: str,
         skip_fields_with_human_proposals: bool,
-        general_instructions: str | None = None,
+        prompt_context: RunPromptContext | None = None,
     ) -> dict[str, Any]:
         """Extract a single entity_type into an existing Run.
 
@@ -712,7 +711,7 @@ class SectionExtractionService(LoggerMixin):
             kind=kind,
             framework=framework,
             fields_override=fields_override,
-            general_instructions=general_instructions,
+            prompt_context=prompt_context,
             field_filter=await self._field_filter(run),
         )
         verdicts, llm_usage = await self._maybe_verify(
@@ -997,7 +996,7 @@ class SectionExtractionService(LoggerMixin):
             total_suggestions = 0
 
             # Run-constant (keyed by the pinned version): fetch once, not per section.
-            general_instructions = await general_instructions_for_version(self.db, run.version_id)
+            prompt_context = await resolve_run_prompt_context(self.db, run)
 
             # 3. Extract each section sequentially with memory — every section
             # appends to THE batch run (no more one-run-per-section pollution).
@@ -1009,7 +1008,7 @@ class SectionExtractionService(LoggerMixin):
                         parent_instance_id=parent_instance_id,
                         pdf_text=pdf_text,
                         memory_history=memory_history,
-                        general_instructions=general_instructions,
+                        prompt_context=prompt_context,
                     )
 
                     successful += 1
@@ -1122,7 +1121,7 @@ class SectionExtractionService(LoggerMixin):
         parent_instance_id: UUID,
         pdf_text: str,
         memory_history: list[dict[str, str]],
-        general_instructions: str | None = None,
+        prompt_context: RunPromptContext | None = None,
     ) -> dict[str, Any]:
         """
         Extract one section with summarized memory context onto the batch run.
@@ -1164,7 +1163,7 @@ class SectionExtractionService(LoggerMixin):
             entity_type=entity_type,
             memory_context=memory_history,
             fields_override=pinned_fields,
-            general_instructions=general_instructions,
+            prompt_context=prompt_context,
             field_filter=await self._field_filter(run),
         )
         verdicts, llm_usage = await self._maybe_verify(
@@ -1315,7 +1314,7 @@ class SectionExtractionService(LoggerMixin):
         kind: str = "extraction",
         framework: str | None = None,
         fields_override: list[Any] | None = None,
-        general_instructions: str | None = None,
+        prompt_context: RunPromptContext | None = None,
         field_filter: LlmFieldFilter | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
         """Run extraction using the typed LLM call layer.
@@ -1323,8 +1322,8 @@ class SectionExtractionService(LoggerMixin):
         ``kind`` selects the prompt pair ('extraction' /
         'quality_assessment', ``framework`` naming the instrument);
         ``fields_override`` is the exact field list to send (never mutate
-        ``entity_type.fields``); ``general_instructions`` comes from the
-        run-pinned snapshot, never the live column.
+        ``entity_type.fields``); ``prompt_context`` carries the run-pinned
+        review question and template instruction, never live columns.
         ``field_filter`` carries the template's two exclusion sets —
         assessor-owned coordinates and out-of-scope sections — subtracted
         HERE, the one seam every extraction path funnels through (including
@@ -1349,7 +1348,7 @@ class SectionExtractionService(LoggerMixin):
                 article_text=pdf_text,
                 article_marker=ARTICLE_MARKDOWN_MARKER,
                 memory_context=memory_context,
-                general_instructions=general_instructions,
+                prompt_context=prompt_context,
             )
         )
 

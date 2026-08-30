@@ -361,6 +361,12 @@ class RunViewResponse(RunDetailResponse):
     # model did not get. Kind-neutral (extraction runs carry the pin too);
     # None when the pinned version declares none.
     general_instructions: str | None = None
+    # The project's review question this run is PINNED to. Its sibling above
+    # exists so the screen can never show a text the model did not get — and
+    # both blocks reach every prompt, so shipping only one of them would make
+    # this response lie by omission. None when no AI call has run yet, or when
+    # the review says nothing.
+    review_context: str | None = None
 
 
 class RunReviewerProfile(BaseModel):
