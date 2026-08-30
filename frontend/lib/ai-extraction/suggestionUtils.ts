@@ -164,18 +164,36 @@ export function formatFullSuggestionValue(value: any, field?: SuggestionFieldCon
 }
 
 /**
- * True when a value carries a resolved `absent_reason` disposition marker — the
- * affirmative "no information" / "not applicable" / "not evaluated" answer. Drives
- * the quiet no-info strip / no-info card instead of a misleading "(empty) · 0%".
+ * The two proposal shapes that carry NO value to show, as one discriminated
+ * outcome; `null` for an ordinary value. This is the ONE predicate the quiet
+ * rendering, the copy choice, and the bulk-accept exclusion all key off — a
+ * caller that recognized only one shape would reintroduce the loud
+ * "(empty) · 0%" the quiet branch exists to prevent, and nothing would go red.
  *
- * Narrowed to the pure marker shape (ADR-0016 Phase 3, data migrated + shim
- * removed): a bare `null` / `undefined` / `''` is **unresolved**, not an
- * abstention, so a real value can never masquerade as one. The AI read path
- * carries the marker as the full `{value:null, absent_reason}` envelope
- * (`aiSuggestionService.unwrapValue`), so this recognizes it at the call sites.
+ * · `'marker'` — a resolved `absent_reason` disposition (`{value:null,
+ *   absent_reason}`): the affirmative "no information" / "not applicable" /
+ *   "not evaluated" answer (ADR-0016 Phase 3, narrowed to the pure marker
+ *   shape). Accepting it fills the coordinate.
+ * · `'unmarked'` — a bare null with no marker: what the backend records when
+ *   the field opts OUT of the marker (`allows_no_information = false`,
+ *   migration 0062) or on a `status='ambiguous'` verdict. Stamping a marker on
+ *   an opted-out field would fabricate an instrument answer (§IX), so the
+ *   honest record is `{value: null}` plus its rationale — and the coordinate
+ *   stays empty.
+ *
+ * An empty STRING is deliberately NEITHER: it is a genuine extracted value and
+ * keeps the ordinary loud rendering, so a real value can never masquerade as an
+ * abstention. That distinction survives only because
+ * `aiSuggestionService.unwrapValue` preserves the bare-null envelope instead of
+ * collapsing it to ''; pass this a RAW `proposed_value` and it will not hold.
  */
-export function isAbstention(value: unknown): boolean {
-  return valueAbsentReason(value) !== null;
+export type ValuelessProposal = 'marker' | 'unmarked';
+
+export function valuelessProposalKind(value: unknown): ValuelessProposal | null {
+  if (valueAbsentReason(value) !== null) return 'marker';
+  // A marker is an object, so the two branches are disjoint by construction.
+  if (value === null || value === undefined) return 'unmarked';
+  return null;
 }
 
 /**

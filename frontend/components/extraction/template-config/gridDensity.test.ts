@@ -36,6 +36,8 @@ const SURFACE = [
   'TemplateInspectorSectionPane.tsx',
   'TemplateOutlineRail.tsx',
   'inspectorShared.tsx',
+  'templateConfigAtoms.tsx',
+  'PaneResizer.tsx',
 ] as const;
 
 /** 11px secondary · 13px body · 14px pane titles — `frontend-ux` §Type. */
@@ -51,12 +53,27 @@ const FIXED_HEIGHT_CLASS = /\b(min-)?h-(?:\[(\d+)px\]|(\d+(?:\.5)?)\b)/g;
 
 const read = (file: string) => readFileSync(resolve(here, file), 'utf-8');
 
+/** Comments explain the rules; only emitted classes may break them. */
+const stripComments = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
 describe.each(SURFACE)('%s', (file) => {
   it('uses only the three system font sizes', () => {
     const offenders = [
       ...new Set(read(file).match(FONT_SIZE_CLASS) ?? []),
     ].filter((cls) => !ALLOWED_FONT_CLASSES.has(cls));
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * Focus owns the outline, selection owns a tint (`frontend-ux` §4.6).
+   * `gridCellFocus.CELL_RING` is the roving FOCUS ring and the ONLY place
+   * this surface may write it: a row that re-used it for `selected` drew
+   * two concentric 2px rules once focus landed on the same cell, and lied
+   * about having focus the rest of the time.
+   */
+  it('never paints the focus-ring outline outside gridCellFocus', () => {
+    expect(stripComments(read(file))).not.toContain('outline-ring');
   });
 
   it('declares no control height below the 24px minimum target', () => {

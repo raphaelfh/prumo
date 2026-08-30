@@ -63,6 +63,18 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   eyes, not the diff: run the `design-review` loop
   (`/design-review <route>`) — render, screenshot, compare to the
   Plane/Linear target, fix, re-screenshot.
+- **Space belongs to content — keep to the edge budget** (`frontend-ux` §6).
+  Page gutter `px-4 py-3 lg:px-6` (never wider); one hairline per boundary,
+  drawn by the region that owns it; no card nested inside an already-bordered
+  pane; no doubled padding. Compact rows (rail, menu, list) sit at `px-2 py-1`
+  with `space-y-0.5` — tighter and they read as one glued block. Space
+  reclaimed from the outside gets spent on the inside, not banked. A
+  **resizable** pane clamps three things — its own min, its own max, and a
+  live floor under the pane it steals from (`template-config/PaneResizer.tsx`).
+- **Selection and focus never share a vocabulary** (`frontend-ux` §4.6). Focus
+  owns `outline-2 outline-ring`; selection owns a tint plus a weight/colour
+  shift. An element painting both draws two concentric rules whenever it is
+  selected *and* focused.
 
 ## Dead code
 
@@ -78,6 +90,15 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   (`frontend/types/api/schema.d.ts`,
   `frontend/integrations/supabase/types.ts`) are knip-ignored — never
   hand-edit them to silence a finding.
+- **UI copy has its own gate**, because knip cannot see it: a copy key is a
+  *member* of an exported object literal, not an export, so an orphaned one is
+  invisible to both knip modes. `scripts/fitness/check_copy_keys.py` fails on
+  any `frontend/lib/copy/*.ts` key with no reference in
+  `frontend/**/*.{ts,tsx}` (shrink-only baseline). Clearing a baseline entry
+  DELETES user-facing copy — `t()` returns `''` for a missing key, so a wrong
+  deletion ships as a blank string, not an error. Run `npm run typecheck` AND
+  `npm run test:run`: typecheck catches the three reference forms, but only the
+  suite catches the tests that assert a key's *presence* at runtime.
 - **A production-mode finding is not automatically "delete it."** It means
   no production file imports the export; the code behind it may still be
   live. Check, in order: (1) is the symbol called inside its own module?

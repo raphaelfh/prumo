@@ -95,11 +95,25 @@ describe('AISuggestionService.loadSuggestions', () => {
     expect(sug.evidence).toBeUndefined(); // evidence=null → undefined
   });
 
-  it('unwraps a no-information proposal {value:null} to the empty abstention shape', async () => {
-    // Routing unwrapValue through the shared envelope oracle must keep the
-    // null→'' collapse the abstention rendering relies on (isAbstention('') → true).
+  it('keeps a MARKERLESS {value:null} proposal null — never collapsed to \'\'', async () => {
+    // The abstention the backend records when the field opts out of the marker
+    // (allows_no_information = false, migration 0062) or on an `ambiguous`
+    // verdict. Collapsing it to '' made it byte-identical to a genuine
+    // empty-string extraction, so the quiet rendering could not cover one
+    // without swallowing the other (isUnmarkedAbstention).
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       suggestions: [makeItem({ proposed_value: { value: null } })],
+      count: 1,
+    });
+    const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
+    expect(result.suggestions['inst-1_f-1'].value).toBeNull();
+  });
+
+  it('keeps a genuine empty-string extraction as \'\', distinct from a null abstention', async () => {
+    // The other half of the same contract: '' is a VALUE the model extracted,
+    // so it must not read as "the model proposed nothing".
+    (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      suggestions: [makeItem({ proposed_value: { value: '' } })],
       count: 1,
     });
     const result = await AISuggestionService.loadSuggestions('art-1', ['inst-1']);
@@ -108,7 +122,7 @@ describe('AISuggestionService.loadSuggestions', () => {
 
   it('preserves a resolved no_information marker as the full envelope (ADR-0016 P3)', async () => {
     // A coded abstention must round-trip so the NARROWED isAbstention still
-    // recognizes it at the call sites (GAP4). A bare {value:null} stays '' above.
+    // recognizes it at the call sites (GAP4). A bare {value:null} stays null above.
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       suggestions: [
         makeItem({ proposed_value: { value: null, absent_reason: 'no_information' } }),

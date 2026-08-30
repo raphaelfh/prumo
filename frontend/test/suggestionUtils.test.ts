@@ -14,7 +14,7 @@ import {
   countActionableSuggestions,
   formatFullSuggestionValue,
   formatSuggestionValue,
-  isAbstention,
+  valuelessProposalKind,
 } from '@/lib/ai-extraction/suggestionUtils';
 
 const YES_NO = [
@@ -94,26 +94,41 @@ describe('formatSuggestionValue — select/multiselect label resolution', () => 
   });
 });
 
-describe('isAbstention — pure marker predicate (Phase 3, narrowed)', () => {
+describe('valuelessProposalKind — the one valueless-proposal discriminator', () => {
   const NO_INFO = { value: null, absent_reason: 'no_information' };
 
-  it('only a resolved marker envelope is an abstention', () => {
-    expect(isAbstention(NO_INFO)).toBe(true);
-    expect(isAbstention({ value: null, absent_reason: 'not_applicable' })).toBe(true);
+  it("a resolved marker envelope is 'marker' (ADR-0016 Phase 3, narrowed)", () => {
+    expect(valuelessProposalKind(NO_INFO)).toBe('marker');
+    expect(valuelessProposalKind({ value: null, absent_reason: 'not_applicable' })).toBe('marker');
+    expect(valuelessProposalKind({ value: null, absent_reason: 'not_evaluated' })).toBe('marker');
   });
 
-  it('bare null/undefined/"" are UNRESOLVED, not abstentions (narrowed truth table)', () => {
-    expect(isAbstention(null)).toBe(false);
-    expect(isAbstention(undefined)).toBe(false);
-    expect(isAbstention('')).toBe(false);
+  it("a bare null/undefined proposal is 'unmarked'", () => {
+    // What the backend records when the field opts out of the marker
+    // (allows_no_information = false, migration 0062) or on `ambiguous`.
+    expect(valuelessProposalKind(null)).toBe('unmarked');
+    expect(valuelessProposalKind(undefined)).toBe('unmarked');
   });
 
-  it('substantive scalars and a bare disposition string are NOT abstentions', () => {
-    expect(isAbstention('x')).toBe(false);
-    expect(isAbstention(0)).toBe(false);
-    expect(isAbstention(false)).toBe(false);
-    expect(isAbstention('No information')).toBe(false); // a scalar string is not a marker
-    expect(isAbstention({ value: null, absent_reason: 'garbage' })).toBe(false);
+  it('an empty STRING is a genuine extracted value — NEITHER kind', () => {
+    // The whole point of the split: the quiet branch must not swallow a real
+    // (if unusual) empty-string extraction. Guarded end-to-end by
+    // aiSuggestionService keeping {value:null} null and {value:''} ''.
+    expect(valuelessProposalKind('')).toBeNull();
+  });
+
+  it('substantive and falsy-but-real values are NOT valueless', () => {
+    expect(valuelessProposalKind('x')).toBeNull();
+    expect(valuelessProposalKind(0)).toBeNull();
+    expect(valuelessProposalKind(false)).toBeNull();
+    expect(valuelessProposalKind([])).toBeNull();
+    expect(valuelessProposalKind('No information')).toBeNull(); // a scalar string is not a marker
+  });
+
+  it('an out-of-vocabulary absent_reason is not a marker', () => {
+    // A garbage code must never read as a resolved answer. It is an object, so
+    // it is not 'unmarked' either — it stays an ordinary value.
+    expect(valuelessProposalKind({ value: null, absent_reason: 'garbage' })).toBeNull();
   });
 });
 

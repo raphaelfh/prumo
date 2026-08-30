@@ -43,7 +43,7 @@ Skipping any of these steps means you are *guessing*, not *verifying*.
 | Frontend tests pass | `npm test` (or `npx vitest run`) | All green, exit 0 |
 | One frontend test passes | `npx vitest run <path> -t "<name>"` | `1 passed`, exit 0 |
 | Frontend lint clean | `npm run lint` | exit 0, no errors |
-| Frontend types | `cd frontend && npx tsc --noEmit` | exit 0, no errors |
+| Frontend types | `npm run typecheck` (from the REPO ROOT) | exit 0, no errors |
 | Migration is reversible | `cd backend && alembic upgrade head && alembic downgrade -1 && alembic upgrade head` | All three succeed |
 | E2E pass | `npx playwright test` | All green, no `failed` lines |
 | Bug reproduces | The test that should fail does fail (red), then after fix is green | TDD red-green cycle visible |
@@ -54,7 +54,7 @@ Skipping any of these steps means you are *guessing*, not *verifying*.
 |---|---|---|
 | "Tests pass" | "Linter passed" | Test command exit 0, 0 failures |
 | "Backend is clean" | `ruff check` only | `ruff check` + `mypy` + `pytest` |
-| "Frontend is clean" | `npm run lint` only | `lint` + `tsc --noEmit` + `vitest run` |
+| "Frontend is clean" | `npm run lint` only, or a bare `tsc --noEmit` | `lint` + `npm run typecheck` + `vitest run` |
 | "Build succeeds" | "TypeScript compiles" | The actual build command exit 0 |
 | "Bug is fixed" | Diff "looks right" | Failing test now passes; full suite still green |
 | "Regression test works" | Test passes after fix | Red-green: revert fix → test fails; restore → test passes |
@@ -124,7 +124,7 @@ Read the full output of each. Exit 0 alone is necessary, not sufficient — warn
 ```bash
 npx vitest run frontend/hooks/extraction          # focused
 npx vitest run                                     # full
-cd frontend && npx tsc --noEmit                   # type drift
+npm run typecheck                                  # type drift — NOT `tsc --noEmit`
 npm run lint
 ```
 

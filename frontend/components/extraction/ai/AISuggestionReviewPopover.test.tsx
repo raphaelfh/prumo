@@ -81,6 +81,48 @@ describe('AISuggestionReviewPopover', () => {
     );
   });
 
+  it('a MARKERLESS null version reads "No value proposed" with NO confidence badge', async () => {
+    // Migration 0062: on a field that opts out of the marker the abstention is
+    // recorded bare (`{value: null}`, confidence null). Without this the row
+    // rendered an EMPTY title beside a fabricated "0% · low".
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p2', value: null, confidence: 0 })]}
+        selectedProposalId="p2"
+        onSelect={vi.fn()}
+        trigger={<button>open</button>}
+      />,
+    );
+
+    await user.click(screen.getByText('open'));
+    expect(await screen.findByText('reviewNoValue')).toBeInTheDocument();
+    expect(screen.getByText('reviewNoValueDesc')).toBeInTheDocument();
+    // Not the marker copy — there is no recorded "No information" answer here.
+    expect(screen.queryByText('reviewNoInformation')).not.toBeInTheDocument();
+    expect(screen.queryByText(/0%/)).not.toBeInTheDocument();
+  });
+
+  it('a genuine empty-string version keeps its confidence badge (not an abstention)', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({ id: 'p2', value: '', confidence: 0.9 })]}
+        selectedProposalId="p2"
+        onSelect={vi.fn()}
+        trigger={<button>open</button>}
+      />,
+    );
+
+    await user.click(screen.getByText('open'));
+    expect(await screen.findByText('90%')).toBeInTheDocument();
+    expect(screen.queryByText('reviewNoValue')).not.toBeInTheDocument();
+  });
+
   it('Clear in the pinned footer calls onClear', async () => {
     const onClear = vi.fn();
     const user = userEvent.setup();
