@@ -20,14 +20,64 @@ from app.services.derived_judgment_service import (
     derived_spec,
     is_out_of_scope,
     is_recommendation,
+    judgment_of,
     out_of_scope_sections,
     scope_filtered_values,
     warn_dangling_spec_refs,
 )
+from app.services.value_semantics import unwrap_value_envelope
 
 # Wire contract, alongside the rules' own "unreported"/"in-progress": clients
 # switch on the STRING. Named here because the payload — not a rule — stamps it.
 _OUT_OF_SCOPE = "out-of-scope"
+
+
+def _rationale_is_empty(raw: Any) -> bool:
+    """Mirror of the client's ``rationaleIsEmpty`` — NOT ``is_value_filled``.
+
+    Two deliberate departures from the shared emptiness predicate, both so the
+    requirement can never be stricter than the box that satisfies it:
+    whitespace is empty here (``is_value_filled`` calls ``"  "`` filled), and a
+    disposition marker peels to None and counts as empty (``is_value_filled``
+    calls any marker filled). A missing value is empty for the same reason the
+    client reads an absent key as empty.
+    """
+    value = unwrap_value_envelope(raw)
+    return value is None or (isinstance(value, str) and value.strip() == "")
+
+
+def _rationale_required(
+    entry: Any,
+    default: str | None,
+    values_by_coord: Any,
+) -> bool:
+    """Whether this entry's STORED judgment overrides its derived default unsaid.
+
+    The single implementation of the rule the finalize backstop enforces and
+    the QA screen renders — computed here because this is where a coordinate
+    becomes a value, and computed ONCE so the screen can never disagree with
+    the refusal it is meant to prevent. The caller's value set decides what
+    "stored" means: the reviewer's own answers on the form, the published set
+    at finalize.
+
+    False for anything that is not a live override: an overall (no target), an
+    incomplete default, a blank or N/A target, a target that agrees, and an
+    out-of-scope section (§2a dropped its value, so the default is None). A
+    ``no_information`` marker on the target IS a judgment here — the instrument
+    reads NI as Unclear on a domain — so overriding a default with it owes a
+    rationale like any other pick.
+    """
+    if default is None or not isinstance(entry, dict):
+        return False
+    target, rationale = entry.get("target"), entry.get("rationale")
+    if not isinstance(target, dict) or not isinstance(rationale, dict):
+        return False
+    judgment = judgment_of(
+        values_by_coord.get(coordinate_of(target)), no_information_as_unclear=True
+    )
+    if judgment is None or judgment == default:
+        return False
+    return _rationale_is_empty(values_by_coord.get(coordinate_of(rationale)))
 
 
 def first_instance_by_entity_type(instances: Sequence[Any]) -> dict[Any, Any]:
@@ -176,6 +226,7 @@ def build_derived_judgments_payload(
                     )
                     for inp in d.inputs
                 ],
+                rationale_required=_rationale_required(entry, d.value, values_by_coord),
                 target_entity_type_id=target_et_id,
                 target_field_id=target_field_id,
                 rationale_field_id=rationale_field_id,

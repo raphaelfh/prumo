@@ -42,6 +42,7 @@ describe("OverallJudgmentBanner — an overall whose inputs are all out of scope
     id: "eval_overall_rob",
     label: "Evaluation overall risk of bias",
     value: null,
+    rationale_required: false,
     inputs: [excluded("Evaluation D1"), excluded("Evaluation D2")],
   };
 
@@ -76,6 +77,7 @@ describe("OverallJudgmentBanner — an overall whose inputs are all out of scope
             id: "dev_overall_quality",
             label: "Development overall",
             value: null,
+            rationale_required: false,
             inputs: [unanswered("Development D1")],
           },
         ]}
@@ -97,6 +99,7 @@ describe("OverallJudgmentBanner — an overall whose inputs are all out of scope
             id: "mixed",
             label: "Mixed",
             value: null,
+            rationale_required: false,
             inputs: [excluded("D1"), unanswered("D2")],
           },
         ]}
@@ -154,6 +157,7 @@ describe("the banner reads every wire state, not only out-of-scope", () => {
     id: "ov",
     label: "Overall",
     value: null,
+    rationale_required: false,
     inputs: [{ label: "D4 apparent", value: null, contribution: null, state }],
   });
 
