@@ -62,11 +62,8 @@ import {
 // useProjectMembers, which the barrel deliberately keeps out.
 import { useExpectedReviewerCount } from "@/hooks/runs/useExpectedReviewerCount";
 import { ConsensusResolutionPanel } from "@/components/runs/ConsensusResolutionPanel";
-import {
-  toConsensusValueEnvelope,
-  unwrapValueEnvelope,
-} from "@/lib/extraction/valueSemantics";
-import { isDomainOutOfScope, resolveStudyType } from "@/lib/qa/studyTypeScope";
+import { toConsensusValueEnvelope } from "@/lib/extraction/valueSemantics";
+import { outOfScopeSectionsOnForm } from "@/lib/qa/studyTypeScope";
 import { RunHeader } from "@/components/runs/header";
 // Imported directly (not via the RunHeader compound) so the shared compound
 // stays free of the supabase-reaching NotificationCenter/feedback deps.
@@ -562,14 +559,16 @@ export default function QualityAssessmentFullScreen() {
   };
   const sortedDomains = domains;
 
-  // Step-2 display hint (PROBAST+AI v2): the classified study type labels
-  // the sections of the unused part as out of scope. Never gates input.
-  const studyType = resolveStudyType(
+  // Step-2 display hint (PROBAST+AI v2): the template's own `scope_rules`
+  // name the sections the classified study type takes out of play — the same
+  // declared data the derivation reads, so screen and payload agree. Never
+  // gates input.
+  const outOfScope = outOfScopeSectionsOnForm(
+    template?.schema,
     sortedDomains,
     session?.instancesByEntityType,
     values,
     (instanceId, fieldId) => keyOf({ instanceId, fieldId }),
-    unwrapValueEnvelope,
   );
 
   // Compare-view inputs derived from the QA template tree: one instance per
@@ -972,10 +971,7 @@ export default function QualityAssessmentFullScreen() {
                     selectSuggestion={selectAISuggestion}
                     getSuggestionsHistory={getAISuggestionsHistory}
                     derivedJudgments={runDetail?.derived_judgments}
-                    outOfScope={isDomainOutOfScope(
-                      domain.entityType.name,
-                      studyType,
-                    )}
+                    outOfScope={outOfScope.has(domain.entityType.name)}
                   />
                 );
               })}

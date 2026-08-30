@@ -52,7 +52,7 @@ export function loadProjectQATemplate(
   return toResult(async () => {
     const tplRes = await supabase
       .from('project_extraction_templates')
-      .select('id, name, description, framework, version, kind')
+      .select('id, name, description, framework, version, kind, schema')
       .eq('id', projectTemplateId)
       .maybeSingle();
     if (tplRes.error) throw tplRes.error;
@@ -95,6 +95,11 @@ export interface ProjectTemplateRow {
   framework: string;
   version: string;
   kind: ReviewKind;
+  /**
+   * Template-level declared data (`scope_rules`, `derived_judgments`). The
+   * `select('*')` below already returns it; only this type used to hide it.
+   */
+  schema?: Record<string, unknown> | null;
   is_active: boolean;
   created_at: string;
   created_by: string | null;
