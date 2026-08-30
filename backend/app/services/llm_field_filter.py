@@ -82,11 +82,9 @@ async def _out_of_scope_for_run(db: AsyncSession, run: Any, schema: Any) -> froz
         db, version_id=run.version_id, template_id=run.template_id
     )
     section = next((et for et in entity_types if et.name == section_name), None)
-    field = (
-        next((f for f in getattr(section, "fields", []) if f.name == field_name), None)
-        if section is not None
-        else None
-    )
+    if section is None:
+        return frozenset()
+    field = next((f for f in section.fields if f.name == field_name), None)
     if field is None:
         return frozenset()
 
