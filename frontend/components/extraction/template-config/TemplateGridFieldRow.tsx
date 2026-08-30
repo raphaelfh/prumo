@@ -221,13 +221,24 @@ export function FieldRow({
             data-cell-row={rowId}
             data-cell-cols="label"
             tabIndex={rovingTabIndex(focus, rowId, ['label'])}
+            // Selection is the ROW's tint (bg-muted/60) plus the label's
+            // weight bump — never a second outline. `outline-2 outline-ring`
+            // is the roving FOCUS ring's vocabulary
+            // (gridCellFocus.CELL_RING), so painting it here too drew two
+            // concentric 2px rules around a row that was both selected and
+            // focused, and made a merely selected row look focused.
             className={cn(
               'flex min-h-6 w-full max-w-full items-center gap-1.5 rounded text-left',
               'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
-              selected && 'outline outline-2 -outline-offset-2 outline-ring',
             )}
           >
-            <span className={cn('truncate', field.isRequired && 'font-medium')}>
+            <span
+              className={cn(
+                'truncate',
+                (field.isRequired || selected) && 'font-medium',
+                selected && 'text-foreground',
+              )}
+            >
               {field.label}
             </span>
             {hintKey && (

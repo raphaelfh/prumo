@@ -1,7 +1,6 @@
 import {useRef, useState} from 'react';
 import {useDroppable} from '@dnd-kit/core';
 import {
-  ChevronDown,
   ChevronRight,
   FolderPlus,
   GripVertical,
@@ -22,6 +21,7 @@ import {cn} from '@/lib/utils';
 
 import {ringClass, rovingTabIndex, type CellFocus} from './gridCellFocus';
 import {SectionRenameEditor} from './TemplateGridCellEditors';
+import {DescriptionDot} from './templateConfigAtoms';
 import type {GridSection} from './templateTree';
 
 /**
@@ -116,7 +116,6 @@ export function SectionHeaderRow({
   // slot when expanded (see resolveDropSlot). Inert without a DndContext.
   const {setNodeRef: setDropRef, isOver} = useDroppable({id: section.id});
 
-  const Chevron = collapsed ? ChevronRight : ChevronDown;
   // B-8 D7: meta copy interpolates the group's entry noun ('{{noun}}'
   // placeholder convention); keys without the placeholder pass through.
   const meta = [
@@ -148,7 +147,7 @@ export function SectionHeaderRow({
         colSpan={columnCount - 2}
         className={cn('px-2', indent, ringClass(focus, section.id, cellCols))}
       >
-        <div className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap">
+        <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap">
           <button
             type="button"
             onClick={onToggle}
@@ -157,9 +156,20 @@ export function SectionHeaderRow({
             data-cell-row={section.id}
             data-cell-cols="label"
             tabIndex={rovingTabIndex(focus, section.id, ['label'])}
-            className="-m-[5px] rounded p-[5px] text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground/70 hover:bg-muted hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <Chevron className="size-3.5" aria-hidden />
+            {/* ONE glyph that rotates, not two that swap: the open/closed
+                states then read as the same affordance moving, and the
+                arrow keeps a single optical centre inside its 24px box.
+                A swap re-centres the icon on every toggle (Down is wider
+                than Right) and nudged the label sideways. */}
+            <ChevronRight
+              className={cn(
+                'size-3.5 transition-transform duration-150 motion-reduce:transition-none',
+                !collapsed && 'rotate-90',
+              )}
+              aria-hidden
+            />
           </button>
           {renaming ? (
             <SectionRenameEditor
@@ -184,11 +194,7 @@ export function SectionHeaderRow({
               {section.label}
             </button>
           )}
-          {section.hasDescription && (
-            <span className="shrink-0 text-primary" aria-hidden>
-              ●
-            </span>
-          )}
+          {section.hasDescription && <DescriptionDot />}
           <span className="truncate text-[11px] text-muted-foreground">
             · {meta.join(' · ')}
           </span>
@@ -196,7 +202,10 @@ export function SectionHeaderRow({
       </td>
       <td
         role="gridcell"
-        className={cn('px-2 text-right', ringClass(focus, section.id, ['actions']))}
+        // px-1, matching the field row's actions cell: the column is 34px
+        // wide, so px-2 leaves 18px of content box and anything larger
+        // overflows the table's right edge and is clipped by the scroller.
+        className={cn('px-1 text-right', ringClass(focus, section.id, ['actions']))}
       >
         <DropdownMenu>
           <Tooltip>
@@ -208,10 +217,9 @@ export function SectionHeaderRow({
                   data-cell-row={section.id}
                   data-cell-cols="actions"
                   tabIndex={rovingTabIndex(focus, section.id, ['actions'])}
-                  className="inline-flex h-6 items-center gap-0.5 whitespace-nowrap rounded-md border bg-card px-[7px] text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted data-[state=open]:text-foreground"
                 >
-                  <Plus className="size-3" aria-hidden />
-                  <ChevronDown className="size-2.5" aria-hidden />
+                  <Plus className="size-3.5" aria-hidden />
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>

@@ -1,4 +1,4 @@
-import {PanelRight, Search, SlidersHorizontal, X} from 'lucide-react';
+import {PanelLeft, PanelRight, Search, SlidersHorizontal, X} from 'lucide-react';
 
 import {Button} from '@/components/ui/button';
 import {
@@ -27,6 +27,8 @@ export function TemplateConfigToolbar({
   onShowKeyColumn,
   showOptionsColumn,
   onShowOptionsColumn,
+  railPressed,
+  onToggleRail,
   inspectorPressed,
   onToggleInspector,
 }: {
@@ -39,11 +41,35 @@ export function TemplateConfigToolbar({
   onShowKeyColumn: (show: boolean) => void;
   showOptionsColumn: boolean;
   onShowOptionsColumn: (show: boolean) => void;
+  /** Outline-rail visibility — the left twin of `inspectorPressed`. */
+  railPressed: boolean;
+  onToggleRail: () => void;
   inspectorPressed: boolean;
   onToggleInspector: () => void;
 }) {
   return (
     <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+      {/* The rail toggle sits LEFT of the search box, on the side of the
+          pane it controls — the mirror of the inspector toggle on the far
+          right. Hidden below the width where the rail itself can render
+          (@[52rem]/grid), so it never toggles something invisible. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="hidden @[52rem]/grid:inline-flex"
+            aria-label={t('extraction', 'gridOutlineToggle')}
+            aria-pressed={railPressed}
+            onClick={onToggleRail}
+          >
+            <PanelLeft className="size-3.5" aria-hidden />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t('extraction', 'gridOutlineToggle')}</TooltipContent>
+      </Tooltip>
+
       <div className="relative w-[240px]">
         <Search
           className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
