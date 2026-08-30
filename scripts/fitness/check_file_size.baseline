@@ -10,5 +10,4 @@ frontend/components/extraction/ArticleExtractionTable.tsx:1134
 frontend/components/extraction/template-config/TemplateConfigGridPanel.test.tsx:1038
 frontend/pages/ExtractionFullScreen.tsx:1378
 frontend/pages/QualityAssessmentFullScreen.tsx:1012
-frontend/test/QualityAssessmentFullScreen.test.tsx:1594
 frontend/test/hooks/useAutoSaveProposals.test.tsx:1025
