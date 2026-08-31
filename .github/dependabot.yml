@@ -1,10 +1,25 @@
 version: 2
 updates:
-  - package-ecosystem: pip
+  # `uv`, NOT `pip`: the pip ecosystem does not manage `uv.lock`, and the lock
+  # is what CI (`uv sync --frozen`) and the image (`uv export`) install. With
+  # pip, backend lock updates were never automated at all — 26 of 28 direct
+  # deps are lower-bound-only (`openai>=1.0.0`), so a new release needs no
+  # manifest edit and dependabot had nothing to open a PR about. Six months of
+  # `git log backend/uv.lock` shows zero bot commits; every bump was a human
+  # doing something else, and the only dependency-driven ones were reactive
+  # CVE sweeps (#245, #541, #641).
+  - package-ecosystem: uv
     directory: /backend
     schedule:
       interval: weekly
       day: monday
+    # Transitive deps too — dependabot defaults to DIRECT dependencies only,
+    # and the package that zeroed every prod token count for three weeks
+    # (genai-prices, via pydantic-ai) is transitive: it appears in `uv.lock`
+    # and nowhere in `pyproject.toml`, so no direct-only config could ever
+    # surface it. `all` = direct + dependencies of direct, for uv.
+    allow:
+      - dependency-type: all
     groups:
       python-minor-patch:
         update-types: [minor, patch]
@@ -25,8 +40,17 @@ updates:
       # pyproject is intentional; widen it only in a planned migration PR.
       # Fully ignored (no update-types filter): dependabot classifies a
       # range-widening PR (<2.0.0 -> <3.0.0) as NOT semver-major, so the
-      # narrower rule failed to stop #409/#546 from reopening. In-range
-      # minors need no manifest change, so a full ignore loses nothing.
+      # narrower rule failed to stop #409/#546 from reopening.
+      #
+      # NOTE, since the pip -> uv switch: "a full ignore loses nothing" is no
+      # longer true. Under pip an in-range minor needed no manifest change, so
+      # there was nothing to ignore; under uv an in-range 1.107.0 -> 1.107.x
+      # IS a lock change, and this rule now blocks it. That is deliberate but
+      # it has a cost: genai-prices (transitive, NOT ignored) can move while
+      # pydantic-ai stays pinned, and that exact pairing is what zeroed prod's
+      # token counts. `tests/unit/llm/test_extractor.py` guards the seam, so
+      # the mismatch surfaces as a RED dependabot PR rather than silent
+      # zeroes — unpin here only alongside that guard, never without it.
       - dependency-name: pydantic-ai-slim
 
   - package-ecosystem: npm
