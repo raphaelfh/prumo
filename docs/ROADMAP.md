@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-08-18
+last_reviewed: 2026-08-30
 owner: '@raphaelfh'
 ---
 
 # Roadmap
 
-> **Status:** Stable · Last reviewed: 2026-08-18 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-08-30 · Owner: @raphaelfh
 
 The day-to-day roadmap with status, priority, owner, and target dates lives
 on the GitHub Project:
@@ -30,6 +30,19 @@ Carved out of the template-config redesign (`docs/superpowers/specs/2026-08-05-t
 - [x] **Verified mode execution** — shipped 2026-08-17 (`docs/superpowers/plans/2026-08-17-verified-mode.md`): the second same-engine pass annotates each AI value with a `confirmed`/`unsupported`/`uncertain` verdict chip; per-section provenance records `mode_requested`/`mode_executed`/`passes`, degrading to Fast honestly on verify failure.
 - [x] **Alternates + custom endpoints (§5, C2)** — shipped 2026-08-18 (`docs/superpowers/plans/2026-08-17-template-config-c2-alternates-endpoints.md`): manager-curated alternate engines on the stored engine spine (storage + popover only — trigger-time resolution stays §5.1), and project-scoped custom OpenAI-compatible endpoints (`project_llm_endpoints`, migration `0055`) with a day-one SSRF guard, per-row Fernet shared keys, a save-time capabilities probe, and endpoint-backed engines that fail a run with a typed `LLM_ENDPOINT_UNAVAILABLE` rather than falling back to cloud. A local Ollama evaluation (`docs/superpowers/plans/2026-08-17-ollama-local-eval.md`) exercised the path end to end: it found that `output_mode` does not predict extraction success, so self-hosted local inference stays undocumented as a supported path and the §10 SaaS posture is unchanged.
 - [ ] **Reviewer surfaces + trigger-time resolution (§5.1) and the per-field "Probe with another model" side-artifact (§7)** — the per-article cost preview lands with this trigger-time UX.
+
+## Future cycles — designed, not started
+
+- [ ] **Screening workflow + imports** — the inclusion/exclusion stage prumo
+  does not have. Articles currently go from import straight to extraction /
+  quality assessment, with no PRISMA flow tracking and no dual-review
+  consensus on screening decisions. Designed in
+  [`docs/superpowers/specs/2026-05-03-screening-and-imports-design.md`](superpowers/specs/2026-05-03-screening-and-imports-design.md):
+  a greenfield, per-project-optional `screening_*` module reusing the
+  extraction HITL/consensus pattern, with AI seams (single-article verdict,
+  active-learning prioritization, stop criteria) present but deferred. It
+  supersedes the closed PR #7 and records why that attempt was rejected.
+  **Nothing is implemented** — verified 2026-08-30 against production.
 
 ## Recently shipped (2026-Q2)
 

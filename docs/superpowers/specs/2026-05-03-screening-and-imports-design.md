@@ -1,10 +1,22 @@
 ---
-status: in_progress
-last_reviewed: 2026-05-24
+status: draft
+last_reviewed: 2026-08-30
 owner: '@raphaelfh'
 ---
 
-> **Status:** In_progress · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> **Status:** Draft · Last reviewed: 2026-08-30 · Owner: @raphaelfh
+
+> **Nothing here is built.** Screening is future work, tracked in
+> [`docs/ROADMAP.md`](../../ROADMAP.md). Verified 2026-08-30: no `screening_*`
+> table exists in production, and no screening code exists in the repo — not
+> in `backend/app/`, not in `frontend/`, not in an Alembic revision, not in
+> the squashed baseline. The status was `in_progress` and a companion Phase 0
+> plan was filed under `plans/archive/2026-06-10-shipped-sweep/` marked
+> `shipped`; the 2026-06-10 sweep appears to have bulk-archived it without
+> checking. That plan is deleted rather than corrected — it was a task list
+> against a codebase that has since moved several months on, so it would
+> mislead more than it would help. This design survives it and is the
+> starting point whenever screening is picked up.
 
 # Design: Screening Workflow + Imports (Greenfield, Modular, AI-Ready)
 
