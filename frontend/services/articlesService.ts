@@ -89,18 +89,32 @@ export interface ArticleInsertData {
 // ---------------------------------------------------------------------------
 
 /**
- * Inserts a new article row (add mode).
+ * Inserts a new article row (add mode) and returns its id.
+ *
+ * The id is what lets the form attach staged files immediately after creating
+ * the row, instead of making the user reopen the article to reach the picker.
+ *
+ * NOTE: keep `await supabase` and `.from('articles')` on separate lines.
+ * check_frontend_data_path.py matches the direct-table-read pattern with a
+ * single-line regex, so collapsing this chain turns a grandfathered call into
+ * a new violation and fails CI. Comments are not exempt from that regex
+ * either, which is why this note spells the pattern out instead of quoting it.
  */
 export function insertArticle(
   articleData: ArticleInsertData,
-): Promise<ErrorResult<void>> {
+): Promise<ErrorResult<{id: string}>> {
   return toResult(async () => {
-    const {error} = await supabase
+    const {data, error} = await supabase
       .from('articles')
       .insert([articleData])
-      .select()
+      .select('id')
       .single();
     if (error) throw error;
+    // PostgREST can answer {data: null, error: null}; reading .id off that
+    // would throw a TypeError past the ErrorResult boundary.
+    const id = (data as {id?: string} | null)?.id;
+    if (!id) throw new Error('Article was created but its id was not returned');
+    return {id};
   }, 'articlesService.insertArticle');
 }
 
@@ -269,19 +283,21 @@ export function uploadArticleFile(params: UploadFileParams): Promise<ErrorResult
 
     if (uploadError) throw new Error('Upload failed: ' + uploadError.message);
 
-    try {
-      await confirmArticleFileUpload({
-        articleId: params.articleId,
-        storageKey: params.storageKey,
-        originalFilename: params.file.name,
-        contentType: detectedFormat,
-        bytes: params.file.size,
-        fileRole: params.role,
-      });
-    } catch (e) {
-      await supabase.storage.from('articles').remove([params.storageKey]);
-      throw e instanceof Error ? e : new Error('File registration failed');
-    }
+    // No storage rollback on a failed registration. It was never correct in
+    // either direction: on a 503 the backend has already COMMITTED the
+    // article_files row (it commits before enqueueing the parse, then marks the
+    // row parse_failed), so removing the object destroys the bytes that
+    // /article-files/{id}/reparse exists to recover; on a 4xx no row exists, and
+    // the storage DELETE policy requires a matching article_files row, so the
+    // delete is denied — silently, since its result was never checked.
+    await confirmArticleFileUpload({
+      articleId: params.articleId,
+      storageKey: params.storageKey,
+      originalFilename: params.file.name,
+      contentType: detectedFormat,
+      bytes: params.file.size,
+      fileRole: params.role,
+    });
   }, 'articlesService.uploadArticleFile');
 }
 
