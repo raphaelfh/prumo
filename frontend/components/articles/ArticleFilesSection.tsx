@@ -18,18 +18,30 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {Alert, AlertDescription} from '@/components/ui/alert';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
-import {AlertCircle, Download, Eye, FileText, Plus, Trash2, Upload} from 'lucide-react';
+import {Download, Eye, FileText, Plus, Trash2, Upload} from 'lucide-react';
 import {t} from '@/lib/copy';
+import type {FileRole} from '@/lib/file-constants';
 import type {ArticleFileRecord} from '@/services/articlesService';
+
+/**
+ * A file the user attached before the article row existed. It lives only in this
+ * tree: a `File` cannot be re-fetched, so nothing may unmount the form while one
+ * of these is still unsent.
+ */
+export interface StagedArticleFile {
+    id: string;
+    file: File;
+    role: FileRole;
+    error?: string;
+}
 
 interface ArticleFilesSectionProps {
     files: ArticleFileRecord[];
-    /** False while the article has no row yet — files cannot be attached. */
-    canAddFiles: boolean;
+    stagedFiles: StagedArticleFile[];
+    onRemoveStaged: (id: string) => void;
     /** The file awaiting delete confirmation, or null when the dialog is closed. */
     fileToDelete: ArticleFileRecord | null;
     deleting: boolean;
@@ -43,7 +55,8 @@ interface ArticleFilesSectionProps {
 
 export function ArticleFilesSection({
                                         files,
-                                        canAddFiles,
+                                        stagedFiles,
+                                        onRemoveStaged,
                                         fileToDelete,
                                         deleting,
                                         onView,
@@ -71,22 +84,54 @@ export function ArticleFilesSection({
                         variant="outline"
                         className="shrink-0 text-[12px]"
                         onClick={onAddFiles}
-                        disabled={!canAddFiles}
                     >
                         <Plus className="mr-1.5 h-3.5 w-3.5"/>
                         {t('articles', 'addFiles')}
                     </Button>
                 </CardHeader>
                 <CardContent className="p-4 pt-2">
-                    {!canAddFiles ? (
-                        <Alert className="border-border/50 py-2">
-                            <AlertCircle className="h-3.5 w-3.5"/>
-                            <AlertDescription className="text-[13px]">
-                                {t('articles', 'formSaveFirstFiles')}
-                            </AlertDescription>
-                        </Alert>
-                    ) : files.length > 0 ? (
+                    {files.length > 0 || stagedFiles.length > 0 ? (
                         <div className="space-y-2">
+                            {stagedFiles.map((staged) => (
+                                <div
+                                    key={staged.id}
+                                    className="flex items-center justify-between gap-2 rounded-md border border-dashed border-border/50 px-2 py-2"
+                                >
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground"/>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-[13px] font-medium">{staged.file.name}</p>
+                                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                                <Badge variant="outline"
+                                                       className="h-5 px-1.5 text-[10px] font-normal">
+                                                    {staged.role}
+                                                </Badge>
+                                                <span className="text-[11px] text-muted-foreground">
+                                                    {(staged.file.size / 1024 / 1024).toFixed(2)} MB
+                                                </span>
+                                                <span className="text-[11px] text-muted-foreground/70">
+                                                    {t('articles', 'stagedPending')}
+                                                </span>
+                                            </div>
+                                            {staged.error && (
+                                                <p className="mt-1 text-[11px] text-destructive">
+                                                    {t('articles', 'stagedUploadFailed')}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="ghost"
+                                        className="shrink-0 text-destructive hover:text-destructive"
+                                        onClick={() => onRemoveStaged(staged.id)}
+                                        aria-label={t('articles', 'stagedRemoveAria')}
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5"/>
+                                    </Button>
+                                </div>
+                            ))}
                             {files.map((file) => (
                                 <div
                                     key={file.id}

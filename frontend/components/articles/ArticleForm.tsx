@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import {useAuth} from "@/contexts/AuthContext";
 import {ArticleFileUploadDialogNew} from './ArticleFileUploadDialogNew';
-import {ArticleFilesSection} from './ArticleFilesSection';
+import {ArticleFilesSection, type StagedArticleFile} from './ArticleFilesSection';
 import {ArticleAuthorsField} from './ArticleAuthorsField';
 import {ArticleKeywordsField} from './ArticleKeywordsField';
 import {PageHeader} from '@/components/patterns/PageHeader';
@@ -44,10 +44,13 @@ import {
     fetchArticleFiles,
     insertArticle,
     updateArticle,
+    uploadArticleFile,
     downloadFileBlob,
     deleteArticleFile,
     type ArticleFileRecord,
 } from '@/services/articlesService';
+import {generateStorageKey} from '@/lib/file-validation';
+import {FILE_ROLES} from '@/lib/file-constants';
 import {authorsFromRows, newAuthorRow, rowsFromAuthorsArray, type AuthorFormRow} from '@/lib/articleAuthors';
 import {normalizeArticleKeywordsForSave} from '@/lib/articleKeywords';
 import {
@@ -199,6 +202,12 @@ export function ArticleForm({
   const [article, setArticle] = useState<Article | null>(null);
   const [files, setFiles] = useState<ArticleFile[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
+  const [stagedFiles, setStagedFiles] = useState<StagedArticleFile[]>([]);
+  // Set once the add-mode row lands. Its ONLY job is to stop a retry from
+  // inserting a second article; the form deliberately does NOT derive a mode
+  // from it — `mode` is a prop owned by the URL, and rewriting the URL would
+  // remount this tree and destroy the staged `File` objects.
+  const [createdArticleId, setCreatedArticleId] = useState<string | null>(null);
   const [fileToDelete, setFileToDelete] = useState<ArticleFile | null>(null);
   const [deletingFile, setDeletingFile] = useState(false);
 
@@ -242,6 +251,8 @@ export function ArticleForm({
     open_access: false,
     license: ''
   });
+
+  const effectiveArticleId = articleId ?? createdArticleId ?? undefined;
 
   const loadArticle = async () => {
     if (!articleId) return;
@@ -293,13 +304,17 @@ export function ArticleForm({
     });
   };
 
-  const loadFiles = async () => {
-    if (!articleId) return;
-    const result = await fetchArticleFiles(articleId);
+  const loadFilesFor = async (targetId: string) => {
+    const result = await fetchArticleFiles(targetId);
     if (result.ok) {
       setFiles(result.data);
     }
     // silent on error — files are best-effort
+  };
+
+  const loadFiles = async () => {
+    if (!effectiveArticleId) return;
+    await loadFilesFor(effectiveArticleId);
   };
 
     // Load article data (edit mode)
@@ -470,27 +485,54 @@ export function ArticleForm({
         sync_state: mode === 'add' ? "active" : undefined,
     };
 
-    let result;
-    if (mode === 'add') {
-      result = await insertArticle(articleData);
+    // Creating an article with staged files is two writes: the row, then N
+    // uploads. `saving` stays true across BOTH — clearing it after phase one
+    // would re-enable Create while the row already exists, and a second click
+    // would insert a duplicate.
+    const isCreating = mode === 'add' && createdArticleId === null;
+
+    let savedArticleId: string;
+    if (isCreating) {
+      const created = await insertArticle(articleData);
+      if (!created.ok) {
+        setSaving(false);
+        toast.error(`${t('articles', 'errorCreateArticle')}: ${created.error.message || t('articles', 'errorCreateArticle')}`);
+        return; // staged files are untouched, so the user can fix and retry
+      }
+      savedArticleId = created.data.id;
+      setCreatedArticleId(savedArticleId);
     } else {
-      if (!articleId) {
+      const targetId = articleId ?? createdArticleId;
+      if (!targetId) {
         setSaving(false);
         toast.error(t('articles', 'errorUpdateArticle') + ': articleId is required for edit mode');
         return;
       }
-      result = await updateArticle(articleId, articleData);
+      const updated = await updateArticle(targetId, articleData);
+      if (!updated.ok) {
+        setSaving(false);
+        toast.error(`${t('articles', 'errorUpdateArticle')}: ${updated.error.message || t('articles', 'errorUpdateArticle')}`);
+        return;
+      }
+      savedArticleId = targetId;
     }
+
+    // Phase two. Only files that have not landed yet are retried.
+    const failedIds = await uploadStagedFiles(savedArticleId);
 
     setSaving(false);
 
-    if (!result.ok) {
-      const errorMessage = result.error.message || (mode === 'add' ? t('articles', 'errorCreateArticle') : t('articles', 'errorUpdateArticle'));
-        toast.error(`${mode === 'add' ? t('articles', 'errorCreateArticle') : t('articles', 'errorUpdateArticle')}: ${errorMessage}`);
+    if (failedIds.length > 0) {
+      // The row persisted, so the sheet MUST stay open: these `File` objects
+      // exist nowhere else and dismissing would drop them silently.
+      toast.warning(
+        t('articles', 'stagedUploadPartial').replace('{{failed}}', String(failedIds.length)),
+      );
+      void loadFilesFor(savedArticleId);
       return;
     }
 
-      toast.success(mode === 'add' ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));
+    toast.success(isCreating ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));
 
     if (mode === 'add') {
         if (isPanel) {
@@ -502,6 +544,37 @@ export function ArticleForm({
     } else {
       onComplete?.();
     }
+  };
+
+  /**
+   * Uploads every staged file against `targetId`, sequentially so a MAIN
+   * conflict surfaces before the rest. Returns the ids that failed; those stay
+   * staged and retryable, and the ones that succeeded are dropped from the list
+   * so a retry never uploads them twice.
+   */
+  const uploadStagedFiles = async (targetId: string): Promise<string[]> => {
+    if (stagedFiles.length === 0) return [];
+
+    const failures = new Map<string, string>();
+    for (const staged of stagedFiles) {
+      const result = await uploadArticleFile({
+        projectId,
+        articleId: targetId,
+        storageKey: generateStorageKey(projectId, targetId, staged.file.name),
+        file: staged.file,
+        role: staged.role,
+      });
+      if (!result.ok) {
+        failures.set(staged.id, result.error.message || t('articles', 'errorUnknown'));
+      }
+    }
+
+    setStagedFiles(prev =>
+      prev
+        .filter(f => failures.has(f.id))
+        .map(f => ({...f, error: failures.get(f.id)})),
+    );
+    return [...failures.keys()];
   };
 
   const downloadFile = async (file: ArticleFile) => {
@@ -1102,7 +1175,10 @@ export function ArticleForm({
                                              description={t('articles', 'filesDesc')}>
                                 <ArticleFilesSection
                                     files={files}
-                                    canAddFiles={mode !== 'add'}
+                                    stagedFiles={stagedFiles}
+                                    onRemoveStaged={(id) =>
+                                        setStagedFiles(prev => prev.filter(f => f.id !== id))
+                                    }
                                     fileToDelete={fileToDelete}
                                     deleting={deletingFile}
                                     onView={viewPDF}
@@ -1119,16 +1195,27 @@ export function ArticleForm({
       </div>
 
         {/* File upload modal */}
-      {showFileUpload && articleId && (
+      {showFileUpload && (
         <ArticleFileUploadDialogNew
           open={showFileUpload}
           onOpenChange={setShowFileUpload}
-          articleId={articleId}
+          articleId={effectiveArticleId}
           projectId={projectId}
+          mainAlreadyStaged={stagedFiles.some(f => f.role === FILE_ROLES.MAIN)}
           onFileUploaded={() => {
             loadFiles();
             setShowFileUpload(false);
           }}
+          onFilesStaged={(picked) =>
+            setStagedFiles(prev => [
+              ...prev,
+              ...picked.map((p, i) => ({
+                id: `staged-${prev.length + i}-${p.file.name}`,
+                file: p.file,
+                role: p.role,
+              })),
+            ])
+          }
         />
       )}
 
