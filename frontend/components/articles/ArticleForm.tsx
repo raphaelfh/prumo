@@ -18,6 +18,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import {cn} from "@/lib/utils";
+import {TooltipProvider} from "@/components/ui/tooltip";
 import {toast} from "sonner";
 import {
   AlertCircle,
@@ -33,6 +34,7 @@ import {
 import {useAuth} from "@/contexts/AuthContext";
 import {ArticleFileUploadDialogNew} from './ArticleFileUploadDialogNew';
 import {ArticleFilesSection, type StagedArticleFile} from './ArticleFilesSection';
+import {ArticleFormSteps, type ArticleFormStep, type FormStep} from './ArticleFormSteps';
 import {ArticleAuthorsField} from './ArticleAuthorsField';
 import {ArticleKeywordsField} from './ArticleKeywordsField';
 import {PageHeader} from '@/components/patterns/PageHeader';
@@ -59,7 +61,6 @@ import {
     ZOTERO_ITEM_TYPES,
     isKnownZoteroItemType,
 } from '@/lib/zoteroItemTypes';
-import type {LucideIcon} from 'lucide-react';
 
 interface Article {
   id: string;
@@ -109,7 +110,6 @@ interface ArticleFormProps {
     onDismiss?: () => void;
 }
 
-type FormStep = 'basic' | 'publication' | 'identifiers' | 'additional' | 'files';
 
 interface FormData {
   title: string;
@@ -143,7 +143,8 @@ interface FormData {
   license: string;
 }
 
-const STEPS: { id: FormStep; label: string; icon: LucideIcon; description: string }[] = [
+
+const STEPS: ArticleFormStep[] = [
   {
     id: 'basic',
       label: t('articles', 'basicInfo'),
@@ -672,6 +673,7 @@ export function ArticleForm({
     }
 
     return (
+      <TooltipProvider delayDuration={200}>
         <div
             className={cn(
                 'flex flex-col bg-background min-h-0',
@@ -681,13 +683,28 @@ export function ArticleForm({
             <PageHeader
                 leading={
                     <Button variant="ghost" size="sm" onClick={handleDismiss} aria-label={t('common', 'back')}>
-                        <ArrowLeft className="h-4 w-4 mr-2"/>
-                        {t('common', 'back')}
+                        {/*
+                          * At 375px this bar is 374px wide and the actions group takes 206
+                          * of it, so the identity group was compressed until the title
+                          * rendered as nothing. The label folds first — the arrow plus the
+                          * aria-label still name the button — and sr-only rather than
+                          * `hidden` keeps that name in the accessibility tree.
+                          */}
+                        <ArrowLeft className="h-4 w-4 sm:mr-2"/>
+                        <span data-slot="back-label" className="sr-only sm:not-sr-only">
+                            {t('common', 'back')}
+                        </span>
                     </Button>
                 }
                 title={mode === 'add' ? t('articles', 'addArticle') : t('articles', 'editArticle')}
                 description={
-                    mode === 'edit' && article ? article.title : t('articles', 'addArticleDesc')
+                    /*
+                     * Edit mode's description IS the article's title, and it is the only
+                     * thing naming which article this is — so it must never fold. Add
+                     * mode's merely restates the title next to it, so it is the one that
+                     * gives way rather than the title.
+                     */
+                    mode === 'edit' && article ? article.title : undefined
                 }
                 actions={
                     <div className="flex items-center gap-2">
@@ -717,41 +734,12 @@ export function ArticleForm({
             />
 
             <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row">
-                <aside
-                    className="w-full shrink-0 border-b border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] lg:w-56 lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto">
-                    <nav
-                        role="navigation"
-                        aria-label={t('articles', 'formStepsAria')}
-                        className="flex flex-row gap-0.5 px-2 py-3 lg:flex-col lg:px-2 lg:py-4"
-                    >
-                        {STEPS.map((step) => {
-                            const Icon = step.icon;
-                            const isActive = step.id === activeSection;
-                            return (
-                                <button
-                                    key={step.id}
-                                    type="button"
-                                    aria-current={isActive ? 'location' : undefined}
-                                    onClick={() => scrollToSection(step.id)}
-                                    className={cn(
-                                        'flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium transition-colors duration-75',
-                                        'hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
-                                        'lg:w-full lg:shrink',
-                                        isActive
-                                            ? 'bg-muted text-foreground border-l-2 border-l-primary pl-1.5'
-                                            : 'text-muted-foreground border-l-2 border-l-transparent pl-1.5'
-                                    )}
-                                >
-                                    <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5}/>
-                                    <span className="whitespace-nowrap lg:whitespace-normal">{step.label}</span>
-                                    {isActive && step.id === 'basic' && !isStepValid('basic') && (
-                                        <AlertCircle className="ml-auto h-3.5 w-3.5 shrink-0 text-warning"/>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </nav>
-                </aside>
+                <ArticleFormSteps
+                    steps={STEPS}
+                    activeStep={activeSection}
+                    onSelect={scrollToSection}
+                    titleMissing={!isStepValid('basic')}
+                />
 
                 <main
                     ref={scrollRef}
@@ -1220,6 +1208,6 @@ export function ArticleForm({
       )}
 
     </div>
+      </TooltipProvider>
   );
 }
-

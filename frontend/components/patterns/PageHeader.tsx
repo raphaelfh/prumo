@@ -24,6 +24,7 @@ interface PageHeaderProps {
 export function PageHeader({title, description, leading, actions, className}: PageHeaderProps) {
   return (
       <div
+          data-slot="page-header"
           className={cn(
               'h-12 flex items-center justify-between border-b border-border/40 bg-background/80 backdrop-blur-md px-6 shrink-0',
               className
