@@ -41,7 +41,7 @@ vi.mock('@/hooks/project/useAiContext', () => ({
   useSetAiContext: () => ({mutate: vi.fn(), isPending: false}),
 }));
 vi.mock('@/hooks/extraction/useTemplateInstruction', () => ({
-  useTemplateInstruction: () => ({data: undefined, isLoading: true}),
+  useTemplateInstruction: vi.fn(() => ({data: undefined, isLoading: true})),
   useUpdateTemplateInstruction: () => ({mutate: vi.fn(), isPending: false}),
 }));
 // Callable-with-methods shape — a namespace-only mock swallows `toast(...)`
@@ -58,6 +58,7 @@ import {toast} from 'sonner';
 
 import {LlmEngineChip} from '@/components/extraction/LlmEngineChip';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
+import {useTemplateInstruction} from '@/hooks/extraction/useTemplateInstruction';
 import {
   useCreateLlmEndpoint,
   useDeleteLlmEndpoint,
@@ -65,7 +66,7 @@ import {
   useUpdateLlmEndpoint,
   useVerifyLlmEndpoint,
 } from '@/hooks/extraction/useLlmEndpoints';
-import {llmEngine as copy} from '@/lib/copy';
+import {aiContext, extraction, llmEngine as copy} from '@/lib/copy';
 import type {LlmEndpointRead} from '@/services/llmEndpointService';
 import type {LlmEngineRead} from '@/services/llmEngineService';
 
@@ -162,12 +163,12 @@ function LocationSpy() {
   );
 }
 
-function renderChip() {
+function renderChip(templateId?: string) {
   return render(
     <MemoryRouter>
       <div data-testid="tab-sibling">sibling content</div>
       <LocationSpy />
-      <LlmEngineChip projectId="p1" />
+      <LlmEngineChip projectId="p1" templateId={templateId} />
     </MemoryRouter>,
   );
 }
@@ -176,7 +177,7 @@ function renderChip() {
 async function renderOpenPopover(overrides: Partial<LlmEngineRead> = {}) {
   mockRead(overrides);
   renderChip();
-  await userEvent.click(screen.getByRole('button', {name: copy.chipAria}));
+  await userEvent.click(screen.getByRole('button', {name: new RegExp(aiContext.configDialogTitle)}));
 }
 
 beforeAll(() => {
@@ -212,7 +213,7 @@ describe('chip', () => {
     mockRead();
     renderChip();
 
-    const chip = screen.getByRole('button', {name: copy.chipAria});
+    const chip = screen.getByRole('button', {name: new RegExp(aiContext.configDialogTitle)});
     expect(chip).toHaveTextContent('GPT-4o mini');
     expect(chip).toHaveTextContent(copy.modeFast);
   });
@@ -221,7 +222,7 @@ describe('chip', () => {
     mockRead({mode: 'verified'});
     renderChip();
 
-    const chip = screen.getByRole('button', {name: copy.chipAria});
+    const chip = screen.getByRole('button', {name: new RegExp(aiContext.configDialogTitle)});
     expect(chip).toHaveTextContent(copy.modeVerified);
     expect(chip).not.toHaveTextContent(copy.modeFast);
   });
@@ -235,9 +236,39 @@ describe('chip', () => {
     renderChip();
 
     expect(
-      screen.queryByRole('button', {name: copy.chipAria}),
+      screen.queryByRole('button', {name: new RegExp(aiContext.configDialogTitle)}),
     ).not.toBeInTheDocument();
     expect(screen.getByTestId('tab-sibling')).toBeInTheDocument();
+  });
+
+  /* The chip is the config bar's ONLY AI trigger, so the template
+     instruction's unfilled [customize:] slots — the one WARNING the other
+     tabs carry — have to survive on it, and inside the button's accessible
+     name (an aria-label would replace the composed name and erase exactly
+     this for the users who cannot see the amber count). */
+  it("carries the instruction's unfilled slots in the trigger's own name", () => {
+    mockRead();
+    vi.mocked(useTemplateInstruction).mockReturnValue({
+      data: {llm_template_instruction: 'Judge [customize:what] on [customize:whom]'},
+      isLoading: false,
+    } as unknown as ReturnType<typeof useTemplateInstruction>);
+    renderChip('t1');
+
+    expect(screen.getByTestId('instruction-customize-chip')).toHaveTextContent(
+      '2',
+    );
+    expect(
+      screen.getByRole('button', {
+        name: new RegExp(extraction.instructionCustomizeChip.replace('{{n}}', '2')),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows no warning while the chip rides standalone (no template)', () => {
+    mockRead();
+    renderChip();
+
+    expect(screen.queryByTestId('instruction-customize-chip')).toBeNull();
   });
 
   it('falls back to the raw model string when the pair left the catalogue', () => {
@@ -245,7 +276,7 @@ describe('chip', () => {
     renderChip();
 
     expect(
-      screen.getByRole('button', {name: copy.chipAria}),
+      screen.getByRole('button', {name: new RegExp(aiContext.configDialogTitle)}),
     ).toHaveTextContent('gpt-3.5-turbo');
   });
 });
@@ -445,7 +476,7 @@ describe('selection — deploy-window tolerance (old backend omits alternates)',
   it('a model change fires the PUT WITHOUT the alternates key', async () => {
     mockLegacyRead();
     renderChip();
-    await userEvent.click(screen.getByRole('button', {name: copy.chipAria}));
+    await userEvent.click(screen.getByRole('button', {name: new RegExp(aiContext.configDialogTitle)}));
     await userEvent.click(screen.getByTestId('llm-engine-option-openai:gpt-4o'));
 
     expect(mutateMock).toHaveBeenCalledTimes(1);

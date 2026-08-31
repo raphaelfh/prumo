@@ -44,12 +44,6 @@ export const aiContext = {
     filledCountFormat: '{{filled}} of {{total}} parts filled',
     managerOnly: 'Only project managers can change the review question.',
 
-    // Config-bar chip
-    chipLabel: 'Project context',
-    chipTooltip:
-        'The review question sent to the AI with every call. Applies to the next run.',
-    chipMuted: 'off',
-
     // Timing needs a hint the label alone cannot carry.
     timingHint: 'Covers both the prediction moment (T0) and the prediction horizon.',
 } as const;
