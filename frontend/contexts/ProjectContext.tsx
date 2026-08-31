@@ -47,7 +47,11 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
     }
   }
 
-    // Sync URL when activeTab changes (internal navigation)
+    // Sync URL when activeTab changes (internal navigation).
+    // This writes to the URL on mount, so the provider must only wrap the
+    // project view itself: mounting it around a component that redirects on
+    // mount clobbers that redirect (child effects flush first, and this
+    // `replace` resolves against the pre-redirect pathname).
   useEffect(() => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set('tab', activeTab);

@@ -39,8 +39,6 @@ export const common = {
     errorContextDashboard: 'Dashboard',
     errorContextProjectView: 'Project view',
     errorContextExtraction: 'Data extraction',
-    errorContextAddArticle: 'Add article',
-    errorContextEditArticle: 'Edit article',
     errorContextUserSettings: 'User settings',
     errors_userNotAuthenticated: 'User not authenticated',
     errors_templateNotFound: 'Global template not found',
