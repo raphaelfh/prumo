@@ -2,9 +2,9 @@
  * Review details section — the review's prose fields, plus a read-only summary
  * of the AI review question (PICOTS).
  *
- * PICOTS is NOT edited here any more. It moved to `PicotsEditDialog`, which
- * writes through a manager-gated typed PUT. Two reasons, both defects rather
- * than tidiness:
+ * PICOTS is NOT edited here any more. It moved to `PicotsPane` (opened via
+ * `AiConfigDialog`), which writes through a manager-gated typed PUT. Two
+ * reasons, both defects rather than tidiness:
  *
  *   - This section fed `ProjectSettings`' batched draft, and `saveProjectSettings`
  *     PATCHes every column in that draft on save. A client holding a stale
@@ -25,7 +25,7 @@ import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
 import {Button} from '@/components/ui/button';
 import {SettingsSection, SettingsField, SettingsCard} from '@/components/settings';
-import {PicotsEditDialog} from '../PicotsEditDialog';
+import {AiConfigDialog} from '../AiConfigDialog';
 import {useAiContext} from '@/hooks/project/useAiContext';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {
@@ -206,7 +206,7 @@ export function ReviewDetailsSection({ projectId, project, onChange }: ReviewDet
           </div>
       </SettingsCard>
 
-      <PicotsEditDialog
+      <AiConfigDialog
           projectId={projectId}
           open={picotsOpen}
           onOpenChange={setPicotsOpen}

@@ -518,6 +518,12 @@ export const extraction = {
       "You are extracting data for a systematic review. Report values exactly as stated in the article, do not infer unreported values, and quote the passage supporting each value. [customize: describe this review's scope]",
     instructionSavedToast: 'General AI instruction saved',
     errors_saveInstruction: 'Could not save the general AI instruction',
+    instructionScopeHint:
+      'Saved to this template draft — reaches reviewers when the template is published.',
+    // Short form for the dialog's tab strip, which must fit a phone.
+    instructionTabLabel: 'Instruction',
+    instructionCustomizeWarning:
+      '{{n}} unfilled [customize:] slot(s) — the AI receives the placeholder text as written.',
     // QualityAssessmentInterface / dashboard
     dashboardProgress: 'Progress',
     // AddSectionDialog – auto-generated technical name toggle

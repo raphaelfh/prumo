@@ -7,7 +7,6 @@ frontend/components/articles/ArticleForm.tsx:6
 frontend/components/articles/ArticleKeywordsField.tsx:3
 frontend/components/articles/ArticlesList.tsx:9
 frontend/components/assessment/DerivedDefaultChip.tsx:1
-frontend/components/assessment/QASectionAccordion.tsx:1
 frontend/components/hitl/HITLActiveTemplateBar.tsx:1
 frontend/components/hitl/HITLArticleTable.tsx:1
 frontend/components/layout/MobileSidebar.tsx:1
@@ -15,7 +14,6 @@ frontend/components/layout/SidebarHeader.tsx:1
 frontend/components/layout/SidebarNavItem.tsx:1
 frontend/components/layout/ThemeToggle.tsx:1
 frontend/components/navigation/NotificationCenter.tsx:2
-frontend/components/project/settings/PICOTSItemEditor.tsx:1
 frontend/components/project/settings/TeamMembersSection.tsx:6
 frontend/components/project/settings/ZoteroIntegrationSection.tsx:4
 frontend/components/runs/FieldAITrace.tsx:1
@@ -23,7 +21,6 @@ frontend/components/runs/ReviewerAITrace.tsx:1
 frontend/components/runs/RunReviewerComparison.tsx:5
 frontend/components/runs/header/AIActions.tsx:1
 frontend/components/runs/header/RunStatus.tsx:3
-frontend/components/settings/TagInput.tsx:2
 frontend/components/shared/ai-suggestions/AISuggestionActions.tsx:2
 frontend/components/shared/list/ActiveFilterChips.tsx:2
 frontend/components/shared/list/FilterButtonWithPopover.tsx:1

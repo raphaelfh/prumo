@@ -203,7 +203,7 @@ export default function ResetPassword() {
                                 {t("auth", "invalidLinkDesc")}
                             </p>
                         </div>
-                        <Button className="w-full" onClick={() => navigate("/auth")}>
+                        <Button size="default" className="w-full" onClick={() => navigate("/auth")}>
                             {t("auth", "backToLogin")}
                         </Button>
                     </div>
@@ -298,7 +298,7 @@ export default function ResetPassword() {
                                 <PasswordMatchIndicator password={form.newPassword} confirm={form.confirmPassword}/>
                             </div>
 
-                            <Button type="submit" className="w-full" disabled={loading}>
+                            <Button type="submit" size="default" className="w-full" disabled={loading}>
                                 {loading ? (
                                     <>
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
