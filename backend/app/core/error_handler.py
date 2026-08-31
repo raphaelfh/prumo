@@ -7,6 +7,8 @@ Set excecoes customizadas and handlers for a API.
 from typing import Any
 
 from fastapi import HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.logging import get_logger
@@ -231,6 +233,61 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
 
 
+async def request_validation_error_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Handler for FastAPI request-validation errors (422).
+
+    The framework default answers ``{"detail": [...]}`` — outside the
+    ``ApiResponse`` envelope and logged nowhere — so the typed frontend
+    client can only say "Unknown error" and the server keeps no trace.
+    That mute shape is how the template-publish double-stringify outage
+    went undiagnosed. The envelope's ``message`` names the first offending
+    location; the full per-field list survives in ``details.errors``.
+
+    ``input`` is dropped from every error, and that is load-bearing rather
+    than tidiness: for a ``missing``-type error Pydantic sets ``input`` to
+    the WHOLE submitted body, so a request that omits one field of an
+    endpoint carrying ``api_key`` would echo that key verbatim into the logs
+    and back down the wire. Dropping the field closes the class outright —
+    an allowlist of secret-ish names is one new field away from leaking
+    again. ``type``/``loc``/``msg`` are what actually diagnose a 422.
+    """
+    trace_id = getattr(request.state, "trace_id", None)
+    # jsonable_encoder because ``loc`` can carry non-str parts, and the
+    # values must survive json.dumps below.
+    errors = [
+        jsonable_encoder({"type": err.get("type"), "loc": err.get("loc"), "msg": err.get("msg")})
+        for err in exc.errors()
+    ]
+
+    logger.warning(
+        "request_validation_error",
+        trace_id=trace_id,
+        errors=errors,
+        path=str(request.url.path),
+    )
+
+    first = errors[0] if errors else {}
+    loc = ".".join(str(part) for part in first.get("loc", [])) or "request"
+    message = f"{loc}: {first.get('msg', 'Invalid request')}"
+    if len(errors) > 1:
+        message += f" (+{len(errors) - 1} more)"
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={
+            "ok": False,
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": message,
+                "details": {"errors": errors},
+            },
+            "trace_id": trace_id,
+        },
+    )
+
+
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handler for unhandled exceptions."""
     trace_id = getattr(request.state, "trace_id", None)
@@ -266,4 +323,5 @@ def register_exception_handlers(app: Any) -> None:
     """
     app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, request_validation_error_handler)
     app.add_exception_handler(Exception, generic_exception_handler)

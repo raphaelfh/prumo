@@ -147,8 +147,10 @@ export async function republishTemplateVersion(
       return await apiClient<RepublishTemplateVersionResponse>(
         `/api/v1/projects/${projectId}/templates/${templateId}/republish-version`,
         // The body is REQUIRED by the endpoint (B-9b2b): sending none would
-        // be a 422, never a silent unchecked publish.
-        {method: 'POST', body: JSON.stringify(contract)},
+        // be a 422, never a silent unchecked publish. Passed as the object —
+        // apiClient owns the stringify, and a pre-stringified body ships as
+        // a JSON string literal the server refuses with the same 422.
+        {method: 'POST', body: contract},
       );
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
