@@ -90,7 +90,6 @@ export function AppDialog({
         {showFooter && (
           <DialogFooter>
             <Button
-              size="sm"
               variant="outline" 
               onClick={handleCancel}
               disabled={isLoading}
@@ -99,7 +98,6 @@ export function AppDialog({
             </Button>
             {onConfirm && (
               <Button
-                size="sm"
                 variant={confirmVariant} 
                 onClick={onConfirm}
                 disabled={isLoading}

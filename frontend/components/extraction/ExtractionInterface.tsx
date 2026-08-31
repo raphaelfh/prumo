@@ -419,7 +419,12 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           <TemplateConfigEditor
             projectId={projectId}
             templateId={activeTemplate.id}
-            engineSlot={<LlmEngineChip projectId={projectId} />}
+            engineSlot={
+              <LlmEngineChip
+                projectId={projectId}
+                templateId={activeTemplate.id}
+              />
+            }
             onActiveTemplateChanged={handleActiveTemplateChanged}
           />
         ) : (

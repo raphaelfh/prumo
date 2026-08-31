@@ -53,17 +53,22 @@ export function TagInput({
 
     if (variant === 'badge') {
         return (
-            <div className={cn('space-y-3', className)}>
-                <div className="flex gap-2">
+            <div className={cn('space-y-2', className)}>
+                <div className="flex gap-1.5">
+                    {/* h-7 to match the Button beside it. The Input default is
+                        h-10, so this pair rendered a 40px field next to a 28px
+                        button on every settings page — pre-dating the compact
+                        default, and fixed here rather than left as the one row
+                        that ignores the tier. */}
                     <Input
                         placeholder={placeholder}
                         value={value}
                         onChange={(e) => setValue(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        className={cn('text-[13px]', inputClassName)}
+                        className={cn('h-7 text-[13px]', inputClassName)}
                     />
-                    <Button type="button" variant="outline" size="sm" onClick={handleAdd}>
-                        <Plus className="h-4 w-4" strokeWidth={1.5}/>
+                    <Button type="button" variant="outline" onClick={handleAdd}>
+                        <Plus strokeWidth={1.5}/>
                     </Button>
                 </div>
                 {items.length > 0 && (
@@ -76,13 +81,13 @@ export function TagInput({
                 {item}
                                 <Button
                                     type="button"
-                                    size="icon"
+                                    size="icon-xs"
                                     variant="ghost"
-                                    className="h-5 w-5 rounded-full hover:bg-muted"
+                                    className="rounded-full hover:bg-muted"
                                     onClick={() => onRemove(index)}
                                     aria-label={t('common', 'remove')}
                                 >
-                  <X className="h-3 w-3" strokeWidth={1.5}/>
+                  <X strokeWidth={1.5}/>
                 </Button>
               </span>
                         ))}
@@ -99,39 +104,39 @@ export function TagInput({
     };
 
     return (
-        <div className={cn('space-y-3', className)}>
-            <div className="flex gap-2">
+        <div className={cn('space-y-1.5', className)}>
+            <div className={'flex gap-1.5'}>
                 <Input
                     placeholder={placeholder}
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    className={cn('text-[13px]', inputClassName)}
+                    className={cn('h-7 text-[13px]', inputClassName)}
                 />
-                <Button type="button" variant="outline" size="sm" onClick={handleAdd}>
-                    <Plus className="h-4 w-4" strokeWidth={1.5}/>
+                <Button type="button" variant="outline" onClick={handleAdd}>
+                    <Plus strokeWidth={1.5}/>
                 </Button>
             </div>
             {items.length > 0 && (
-                <ul className="space-y-2">
+                <ul className="space-y-1">
                     {items.map((item, index) => (
                         <li
                             key={`${item}-${index}`}
                             className={cn(
-                                'flex items-center gap-2 p-2 rounded-md border text-[13px]',
+                                'flex items-center gap-2 rounded-md border py-0.5 pl-2 pr-0.5 text-[13px]',
                                 listItemClasses[listVariant]
                             )}
                         >
                             <span className="flex-1 text-muted-foreground">{item}</span>
                             <Button
                                 type="button"
-                                size="icon"
+                                size="icon-xs"
                                 variant="ghost"
-                                className="h-6 w-6 shrink-0"
+                                className="shrink-0"
                                 onClick={() => onRemove(index)}
-                                aria-label="Remover"
+                                aria-label={t('common', 'remove')}
                             >
-                                <X className="h-3 w-3" strokeWidth={1.5}/>
+                                <X strokeWidth={1.5}/>
                             </Button>
                         </li>
                     ))}
