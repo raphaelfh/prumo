@@ -26,6 +26,10 @@ interface PICOTSItemEditorProps {
     data: PICOTSItem;
     infoTooltip: string;
   descriptionPlaceholder: string;
+  /** Criteria lists are a Population concern — every other slot renders as a
+   * plain description box. A slot that already CARRIES criteria still shows
+   * the populated list, so stored data is never sent to the AI invisibly. */
+  showCriteria: boolean;
     onUpdate: (field: string, subField: string, value: unknown) => void;
   onAddItem: (field: string, arrayField: 'inclusion' | 'exclusion', value: string) => void;
   onRemoveItem: (field: string, arrayField: 'inclusion' | 'exclusion', index: number) => void;
@@ -37,31 +41,35 @@ export function PICOTSItemEditor({
   data,
   infoTooltip,
   descriptionPlaceholder,
+  showCriteria,
   onUpdate,
   onAddItem,
                                      onRemoveItem,
 }: PICOTSItemEditorProps) {
     const inclusion = data.inclusion || [];
     const exclusion = data.exclusion || [];
+    const withInclusion = showCriteria || inclusion.length > 0;
+    const withExclusion = showCriteria || exclusion.length > 0;
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
+    <div className="space-y-2.5">
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5">
             <Label htmlFor={`${fieldKey}_description`} className="text-[13px] font-medium">
             {label}
           </Label>
+          {infoTooltip !== '' && (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 rounded-full"
+                  size="icon-xs"
+                  className="rounded-full"
                   type="button"
                   aria-label={t('project', 'picotsHelpAria')}
                 >
-                    <HelpCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
+                    <HelpCircle className="text-muted-foreground" strokeWidth={1.5}/>
                 </Button>
               </TooltipTrigger>
               <TooltipContent className="max-w-sm">
@@ -69,21 +77,26 @@ export function PICOTSItemEditor({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          )}
         </div>
         <Textarea
           id={`${fieldKey}_description`}
           value={data.description ?? ''}
           onChange={(e) => onUpdate(fieldKey, 'description', e.target.value)}
           placeholder={descriptionPlaceholder}
-          rows={3}
+          rows={2}
           className="resize-none text-[13px]"
         />
       </div>
 
-      <Separator />
+      {(withInclusion || withExclusion) && <Separator />}
 
+        {withInclusion && (
         <div>
-            <Label className="text-[13px] font-medium mb-2 block">{t('project', 'picotsInclusionCriteriaLabel')}</Label>
+            <div className="mb-1.5 flex items-baseline gap-2">
+                <Label className="text-[13px] font-medium">{t('project', 'picotsInclusionCriteriaLabel')}</Label>
+                <span className="text-[11px] text-muted-foreground">{t('project', 'picotsCriteriaOptional')}</span>
+            </div>
             <TagInput
                 items={inclusion}
                 onAdd={(value) => onAddItem(fieldKey, 'inclusion', value)}
@@ -93,9 +106,14 @@ export function PICOTSItemEditor({
                 listVariant="green"
             />
         </div>
+        )}
 
+        {withExclusion && (
         <div>
-            <Label className="text-[13px] font-medium mb-2 block">{t('project', 'picotsExclusionCriteriaLabel')}</Label>
+            <div className="mb-1.5 flex items-baseline gap-2">
+                <Label className="text-[13px] font-medium">{t('project', 'picotsExclusionCriteriaLabel')}</Label>
+                <span className="text-[11px] text-muted-foreground">{t('project', 'picotsCriteriaOptional')}</span>
+            </div>
             <TagInput
                 items={exclusion}
                 onAdd={(value) => onAddItem(fieldKey, 'exclusion', value)}
@@ -105,6 +123,7 @@ export function PICOTSItemEditor({
                 listVariant="red"
             />
       </div>
+        )}
     </div>
   );
 }

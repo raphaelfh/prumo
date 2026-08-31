@@ -8,12 +8,36 @@
  * before it becomes invisible to the AI.
  */
 import {render, screen} from '@testing-library/react';
+import {MemoryRouter} from 'react-router';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/hooks/project/useAiContext', () => ({
   useAiContext: vi.fn(),
   useSetAiContext: vi.fn(() => ({mutate: vi.fn(), isPending: false})),
+}));
+// Imported (not called — the chip renders here without a templateId) via the
+// shared AI dialog; unmocked it drags the supabase client into module init.
+vi.mock('@/services/templateInstructionService', () => ({
+  getTemplateInstruction: vi.fn(),
+  updateTemplateInstruction: vi.fn(),
+}));
+// The dialog's model tab: an errored read keeps that pane inert so this
+// suite stays about the chip.
+vi.mock('@/hooks/extraction/useLlmEngine', () => ({
+  useLlmEngine: () => ({data: undefined, isError: true, isPending: false}),
+  useSetLlmEngine: () => ({mutate: vi.fn(), isPending: false}),
+}));
+vi.mock('@/hooks/extraction/useLlmEndpoints', () => ({
+  useLlmEndpoints: () => ({data: [], isError: false, isPending: false}),
+  useCreateLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
+  useUpdateLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
+  useDeleteLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
+  useVerifyLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
+}));
+vi.mock('@/hooks/extraction/useTemplateInstruction', () => ({
+  useTemplateInstruction: () => ({data: undefined, isLoading: true}),
+  useUpdateTemplateInstruction: () => ({mutate: vi.fn(), isPending: false}),
 }));
 vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), {success: vi.fn(), error: vi.fn(), info: vi.fn()}),
@@ -30,9 +54,12 @@ const PROJECT_ID = 'p-1';
 // isolation must.
 const renderChip = () =>
   render(
-    <TooltipProvider>
-      <ProjectContextChip projectId={PROJECT_ID} />
-    </TooltipProvider>,
+    // MemoryRouter: the dialog's model tab deep-links to the key settings.
+    <MemoryRouter>
+      <TooltipProvider>
+        <ProjectContextChip projectId={PROJECT_ID} />
+      </TooltipProvider>
+    </MemoryRouter>,
   );
 
 function read(overrides: Record<string, unknown> = {}) {

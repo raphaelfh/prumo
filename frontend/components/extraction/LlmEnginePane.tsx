@@ -1,0 +1,376 @@
+/**
+ * The extraction-engine picker, as the "Model" tab of `AiConfigDialog`.
+ *
+ * **It selects a model and nothing else.** Policy — mode, the retired alert,
+ * attribution, alternates, custom endpoints — lives in
+ * `LlmEngineSettingsDialog`, behind the footer link. Before that split this
+ * surface was 544px tall and spent 156px of it on configuration ABOVE the
+ * search box, while the model list showed 300px of 653px of content.
+ *
+ * Each row is `label` plus a right-aligned `<context> · <cost>`; the
+ * `best_for` description and the canonical id move to the ACTIVE row, which
+ * cmdk marks on hover AND on arrow-key navigation — unlike a tooltip, that
+ * also reaches keyboard users.
+ *
+ * Three things that look like policy stay here because they govern whether a
+ * row is SELECTABLE: locked BYOK rows with their "Add your key" CTA, custom
+ * endpoint groups, and endpoint rows blocked by the project's mode.
+ *
+ * Choosing a model does NOT close the dialog (the popover this replaced did):
+ * the tab sits beside the review question and the general instruction now, so
+ * a pick is one edit in a session, confirmed by the toast and the moved ✓.
+ */
+import { useState } from "react";
+import { Link, useNavigate } from "react-router";
+import { AlertTriangle, Check, KeyRound, Lock, SlidersHorizontal } from "lucide-react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { LlmEngineSettingsDialog } from "@/components/extraction/LlmEngineSettingsDialog";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { useLlmEngine, useSetLlmEngine } from "@/hooks/extraction/useLlmEngine";
+import { useLlmEndpoints } from "@/hooks/extraction/useLlmEndpoints";
+import { t } from "@/lib/copy";
+import { endpointHost } from "@/lib/llmEndpointHost";
+import { toUpdateBody } from "@/lib/llmEngineUpdateBody";
+import { cn } from "@/lib/utils";
+import type { LlmEngineCatalogEntry } from "@/services/llmEngineService";
+
+/** The existing key-settings surface (UserSettings → Integrations → API keys). */
+const KEY_SETTINGS_ROUTE = "/settings?tab=integrations";
+
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: t("llmEngine", "providerOpenai"),
+  anthropic: t("llmEngine", "providerAnthropic"),
+};
+
+const providerLabel = (provider: string): string =>
+  PROVIDER_LABELS[provider] ?? provider;
+
+/** 128000 → "128k", 1047576 → "1M" — a display rounding, not copy. */
+const formatContextWindow = (contextWindow: number): string =>
+  contextWindow >= 1_000_000
+    ? `${Math.round(contextWindow / 1_000_000)}M`
+    : `${Math.round(contextWindow / 1000)}k`;
+
+interface ProviderGroup {
+  provider: string;
+  entries: LlmEngineCatalogEntry[];
+  byokOnly: boolean;
+}
+
+function groupByProvider(catalog: LlmEngineCatalogEntry[]): ProviderGroup[] {
+  const groups: ProviderGroup[] = [];
+  for (const entry of catalog) {
+    const group = groups.find((g) => g.provider === entry.provider);
+    if (group) {
+      group.entries.push(entry);
+      group.byokOnly = group.byokOnly && entry.byok_only;
+    } else {
+      groups.push({
+        provider: entry.provider,
+        entries: [entry],
+        byokOnly: entry.byok_only,
+      });
+    }
+  }
+  return groups;
+}
+
+export function LlmEnginePane({ projectId }: { projectId: string }) {
+  const navigate = useNavigate();
+  // The settings dialog STACKS on the AI-configuration dialog rather than
+  // replacing it: policy is a detour from picking a model, and closing it
+  // should land the manager back on the list they came from — not on the
+  // page. (Its predecessor was a popover, which outside-click made
+  // impossible; two dialogs trap focus in order.)
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const query = useLlmEngine(projectId);
+  const setEngine = useSetLlmEngine(projectId);
+  // Decision 12: the endpoint groups derive from the endpoints hook, never
+  // from a matrix on the engine read (which carries only the scalar
+  // `endpoint_label`, for the chip). A failed read (old backend without the
+  // routes) simply yields no groups.
+  const endpointsQuery = useLlmEndpoints(projectId);
+
+  const engine = query.data;
+  if (!engine) {
+    // The deploy-race window where a new frontend hits an old backend without
+    // the route. The tab says so rather than rendering an empty list.
+    return (
+      <p className="px-5 text-[13px] text-muted-foreground">
+        {t("llmEngine", "paneUnavailable")}
+      </p>
+    );
+  }
+
+  // Only a VERIFIED endpoint with at least one allowed model can back an
+  // extraction: a heading with zero rows under it is dead UI that implies
+  // models the endpoint does not offer.
+  const runnableEndpoints = (endpointsQuery.data ?? []).filter(
+    (endpoint) =>
+      endpoint.validation_status === "ok" && endpoint.allowed_models.length > 0,
+  );
+
+  const mutationCallbacks = {
+    onSuccess: () => toast.success(t("llmEngine", "saveSuccess")),
+    // A 422 from an old backend (deploy window, panel B3) surfaces the
+    // client's generic message here; no optimistic update means the picker
+    // re-derives from the cached read and is never stuck.
+    onError: (error: Error) =>
+      toast.error(`${t("llmEngine", "saveError")}: ${error.message}`),
+  };
+
+  const handleSelect = (entry: LlmEngineCatalogEntry) => {
+    // toUpdateBody rides the CURRENT mode along explicitly (omitting it would
+    // let the server-side default silently downgrade a verified project,
+    // panel B2) and the stored alternates when the read carried them.
+    setEngine.mutate(
+      toUpdateBody(engine, {
+        provider: entry.provider,
+        model: entry.model,
+        // Clearing is EXPLICIT and only when there is something to clear: a
+        // catalogue pair carrying a live endpoint pointer would keep routing
+        // runs at the endpoint. A project that never had one keeps sending
+        // the pre-endpoints body.
+        ...(engine.endpoint_id ? { endpoint_id: null } : {}),
+      }),
+      mutationCallbacks,
+    );
+  };
+
+  const handleSelectEndpointModel = (endpointId: string, model: string) => {
+    setEngine.mutate(
+      toUpdateBody(engine, {
+        provider: "openai_compatible",
+        model,
+        endpoint_id: endpointId,
+      }),
+      mutationCallbacks,
+    );
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Command className="min-h-0 flex-1 bg-transparent">
+        <CommandInput placeholder={t("llmEngine", "searchPlaceholder")} />
+        <CommandList className="max-h-none flex-1">
+          <CommandEmpty>{t("llmEngine", "emptyResults")}</CommandEmpty>
+          {groupByProvider(engine.catalog).map((group) => (
+            <CommandGroup
+              key={group.provider}
+              heading={
+                group.byokOnly ? (
+                  <span className="flex items-baseline gap-2">
+                    {providerLabel(group.provider)}
+                    <span className="font-normal text-muted-foreground/80">
+                      {t("llmEngine", "byokGroupNote")}
+                    </span>
+                  </span>
+                ) : (
+                  providerLabel(group.provider)
+                )
+              }
+            >
+              {group.entries.map((entry) => {
+                const runnable = engine.availability[entry.provider] === true;
+                const isCurrent =
+                  entry.provider === engine.provider &&
+                  entry.model === engine.model;
+                return (
+                  <CommandItem
+                    key={entry.canonical}
+                    value={`${entry.label} ${entry.canonical}`}
+                    disabled={!runnable}
+                    onSelect={() => handleSelect(entry)}
+                    className={cn(
+                      "group flex-col items-stretch gap-0.5 px-2 py-1.5",
+                      isCurrent && "bg-primary/5",
+                    )}
+                    data-testid={`llm-engine-option-${entry.canonical}`}
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                      {!runnable && (
+                        <Lock
+                          className="h-3 w-3 shrink-0 text-muted-foreground"
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="truncate text-[13px] font-medium">
+                        {entry.label}
+                      </span>
+                      {isCurrent && (
+                        <Check
+                          className="h-3.5 w-3.5 shrink-0 text-primary"
+                          strokeWidth={1.5}
+                          aria-label={t("llmEngine", "currentModelAria")}
+                        />
+                      )}
+                      {!runnable && (
+                        <Link
+                          to={KEY_SETTINGS_ROUTE}
+                          // The parent item is pointer-events-none while
+                          // disabled; the CTA opts back in and keeps a
+                          // visible focus ring of its own.
+                          className={cn(
+                            "pointer-events-auto shrink-0 text-[11px] font-medium text-primary underline-offset-2 hover:underline",
+                            "rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                          )}
+                        >
+                          {t("llmEngine", "lockedAddKeyCta")}
+                        </Link>
+                      )}
+                      <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                        {formatContextWindow(entry.context_window)} ·{" "}
+                        {entry.cost_tier}
+                      </span>
+                    </span>
+                    {/* `best_for` and the canonical id left the row so the
+                        list reads as one line per model. They reveal on the
+                        ACTIVE row — cmdk sets data-selected on hover AND on
+                        arrow-key navigation, so unlike a tooltip this also
+                        reaches keyboard users. */}
+                    <span className="hidden pl-0.5 text-xs text-muted-foreground group-data-[selected=true]:block">
+                      {entry.best_for}
+                      <span className="ml-1.5 font-mono text-[11px] text-muted-foreground/80">
+                        {entry.canonical}
+                      </span>
+                    </span>
+                  </CommandItem>
+                );
+              })}
+              {engine.availability[group.provider] !== true && (
+                // cmdk's arrow keys skip disabled items, so the per-row "Add
+                // your key" link (inside a disabled row) is mouse-only. One
+                // ENABLED item per locked group keeps the CTA reachable the
+                // way the combobox teaches.
+                <CommandItem
+                  value={`${providerLabel(group.provider)} ${t("llmEngine", "lockedAddKeyItem")}`}
+                  onSelect={() => navigate(KEY_SETTINGS_ROUTE)}
+                  className="gap-2 px-2 py-2 text-[13px] font-medium text-primary"
+                  data-testid={`llm-engine-add-key-${group.provider}`}
+                >
+                  <KeyRound
+                    className="h-3.5 w-3.5 shrink-0"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
+                  {t("llmEngine", "lockedAddKeyItem")}
+                </CommandItem>
+              )}
+            </CommandGroup>
+          ))}
+          {runnableEndpoints.map((endpoint) => {
+            // Decision 10: the backend REJECTS mode="verified" on a
+            // prompted-only endpoint. Since slice C the mode toggle lives in
+            // the settings dialog, so the cause is off-screen — the blocked
+            // row therefore names WHERE to change it, never a dead click into
+            // a generic save-error toast.
+            const promptedOnly =
+              endpoint.capabilities.output_mode === "prompted";
+            const blocked = promptedOnly && engine.mode === "verified";
+            return (
+              <CommandGroup
+                key={endpoint.id}
+                heading={
+                  <span className="flex flex-col gap-0.5">
+                    <span className="flex items-baseline gap-2">
+                      {endpoint.label}
+                      <span className="truncate font-normal text-muted-foreground/80">
+                        {endpointHost(endpoint.base_url)}
+                      </span>
+                    </span>
+                    <span className="font-normal text-muted-foreground/80">
+                      {t("llmEngine", "endpointGroupNote")}
+                    </span>
+                    {promptedOnly && (
+                      <span className="flex items-start gap-1.5 font-normal text-warning">
+                        <AlertTriangle
+                          className="mt-0.5 h-3 w-3 shrink-0"
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0">
+                          {t("llmEngine", "endpointPromptedGroupNote")}
+                        </span>
+                      </span>
+                    )}
+                  </span>
+                }
+              >
+                {endpoint.allowed_models.map((model) => {
+                  const isCurrent =
+                    engine.endpoint_id === endpoint.id &&
+                    engine.model === model;
+                  return (
+                    <CommandItem
+                      key={`${endpoint.id}:${model}`}
+                      value={`${endpoint.label} ${model}`}
+                      disabled={blocked}
+                      onSelect={() =>
+                        handleSelectEndpointModel(endpoint.id, model)
+                      }
+                      className={cn(
+                        "items-start gap-2 px-2 py-1.5",
+                        isCurrent && "bg-primary/5",
+                      )}
+                      data-testid={`llm-engine-endpoint-option-${endpoint.id}-${model}`}
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate font-mono text-[13px]">
+                            {model}
+                          </span>
+                          {isCurrent && (
+                            <Check
+                              className="h-3.5 w-3.5 shrink-0 text-primary"
+                              strokeWidth={1.5}
+                              aria-label={t("llmEngine", "currentModelAria")}
+                            />
+                          )}
+                        </span>
+                        {blocked && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {t("llmEngine", "endpointPromptedBlocked")}
+                          </span>
+                        )}
+                      </span>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            );
+          })}
+        </CommandList>
+      </Command>
+      <div className="flex shrink-0 justify-start border-t border-border/40 px-3 py-2">
+        <Button
+          variant="ghost"
+          className="px-2 font-normal text-muted-foreground hover:text-foreground"
+          onClick={() => setSettingsOpen(true)}
+          data-testid="llm-engine-open-settings"
+        >
+          <SlidersHorizontal
+            className="shrink-0"
+            strokeWidth={1.5}
+            aria-hidden="true"
+          />
+          {t("llmEngine", "settingsLink")}
+        </Button>
+      </div>
+      <LlmEngineSettingsDialog
+        projectId={projectId}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+      />
+    </div>
+  );
+}

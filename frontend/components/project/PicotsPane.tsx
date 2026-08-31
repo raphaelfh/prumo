@@ -12,13 +12,22 @@
  * type and use the instrument's own wording ("Index model(s)" for a
  * predictive-model review), and they are the exact strings the prompt emits. A
  * second copy in the frontend could drift from what the model is told.
+ *
+ * This is a PANE, not a dialog: `AiConfigDialog` mounts it — alone from the
+ * project settings summary, or as the "Review question" tab next to the
+ * template's general AI instruction on the config surfaces.
  */
 
 import {useState} from 'react';
+import {ChevronRight} from 'lucide-react';
 import {toast} from 'sonner';
 
-import {AppDialog} from '@/components/patterns/AppDialog';
 import {Button} from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import {Switch} from '@/components/ui/switch';
 import {Label} from '@/components/ui/label';
 import {Separator} from '@/components/ui/separator';
@@ -105,7 +114,12 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
   };
 
   return (
-    <div className="space-y-5">
+    // Fills the host's fixed panel: the slots scroll in the middle region
+    // while the Save/Cancel footer keeps a fixed row on the panel's bottom
+    // edge — a six-slot form must never hide its only save button behind a
+    // full scroll.
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Label htmlFor="picots-enabled" className="text-[13px] font-medium">
@@ -122,9 +136,39 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
         />
       </div>
 
+      {/* The prompt preview is the ground truth of this whole tab — what the
+          model actually receives — so it sits at the TOP, where it is
+          discoverable, and collapsed, so it costs nothing until asked for.
+          Below six slots it was findable only by scrolling past everything. */}
+      <Collapsible>
+        <CollapsibleTrigger asChild>
+          <Button
+            variant="ghost"
+            className="group w-full justify-start gap-1.5 px-2 font-normal text-muted-foreground hover:text-foreground"
+          >
+            {/* Radix puts data-state on the TRIGGER, which is this button —
+                so the group is the button, not a wrapper. */}
+            <ChevronRight
+              className="shrink-0 transition-transform group-data-[state=open]:rotate-90"
+              strokeWidth={1.5}
+              aria-hidden
+            />
+            {t('aiContext', 'previewTitle')}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <p className="mt-1 px-2 text-xs text-muted-foreground">
+            {t('aiContext', 'previewHint')}
+          </p>
+          <pre className="mt-1.5 max-h-40 overflow-auto rounded-md border border-border/50 bg-muted/40 p-2.5 text-xs whitespace-pre-wrap">
+            {initial.preview ?? t('aiContext', 'previewEmpty')}
+          </pre>
+        </CollapsibleContent>
+      </Collapsible>
+
       <Separator />
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         {SLOT_KEYS.map((key) => (
           <PICOTSItemEditor
             key={key}
@@ -133,6 +177,7 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
             data={slots[key] ?? EMPTY_SLOT}
             infoTooltip={key === 'timing' ? t('aiContext', 'timingHint') : ''}
             descriptionPlaceholder=""
+            showCriteria={key === 'population'}
             onUpdate={updateField}
             onAddItem={addItem}
             onRemoveItem={removeItem}
@@ -140,21 +185,9 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
         ))}
       </div>
 
-      <Separator />
-
-      <div>
-        <p className="text-[13px] font-medium">
-          {t('aiContext', 'previewTitle')}
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {t('aiContext', 'previewHint')}
-        </p>
-        <pre className="mt-2 max-h-48 overflow-auto rounded-md border border-border/50 bg-muted/40 p-3 text-xs whitespace-pre-wrap">
-          {initial.preview ?? t('aiContext', 'previewEmpty')}
-        </pre>
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex shrink-0 justify-end gap-1.5 border-t border-border/40 px-4 py-2">
         <Button variant="outline" onClick={onCancel} disabled={pending}>
           {t('aiContext', 'cancel')}
         </Button>
@@ -169,57 +202,48 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
   );
 }
 
-interface PicotsEditDialogProps {
+interface PicotsPaneProps {
   projectId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** Called after a successful save and on Cancel — the host closes itself. */
+  onClose: () => void;
 }
 
-export function PicotsEditDialog({
-  projectId,
-  open,
-  onOpenChange,
-}: PicotsEditDialogProps) {
-  const {data, isError} = useAiContext(open ? projectId : null);
+export function PicotsPane({projectId, onClose}: PicotsPaneProps) {
+  const {data, isError} = useAiContext(projectId);
   const mutation = useSetAiContext(projectId);
 
   const save = (body: {picots: PicotsSlots; picots_enabled: boolean}) => {
     mutation.mutate(body, {
       onSuccess: () => {
         toast.success(t('aiContext', 'saveSuccess'));
-        onOpenChange(false);
+        onClose();
       },
       onError: () => toast.error(t('aiContext', 'saveError')),
     });
   };
 
+  if (isError) {
+    // Save stays unreachable: with no read there is no draft, and an empty
+    // one would overwrite the stored review question with blanks.
+    return (
+      <p className="px-5 text-[13px] text-destructive">
+        {t('aiContext', 'loadError')}
+      </p>
+    );
+  }
+  if (!data) {
+    return (
+      <p className="px-5 text-[13px] text-muted-foreground">
+        {t('aiContext', 'saving')}
+      </p>
+    );
+  }
   return (
-    <AppDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={t('aiContext', 'dialogTitle')}
-      description={t('aiContext', 'dialogDesc')}
-      size="2xl"
-      showFooter={false}
-    >
-      {isError ? (
-        // Save stays disabled above: with no read there is no draft, and an
-        // empty one would overwrite the stored review question with blanks.
-        <p className="text-[13px] text-destructive">
-          {t('aiContext', 'loadError')}
-        </p>
-      ) : data ? (
-        <PicotsForm
-          initial={data}
-          pending={mutation.isPending}
-          onSave={save}
-          onCancel={() => onOpenChange(false)}
-        />
-      ) : (
-        <p className="text-[13px] text-muted-foreground">
-          {t('aiContext', 'saving')}
-        </p>
-      )}
-    </AppDialog>
+    <PicotsForm
+      initial={data}
+      pending={mutation.isPending}
+      onSave={save}
+      onCancel={onClose}
+    />
   );
 }

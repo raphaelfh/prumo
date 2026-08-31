@@ -266,7 +266,7 @@ function LoginForm({
                 </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" size="default" className="w-full" disabled={loading}>
                 {loading ? (
                     <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
@@ -360,7 +360,7 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
                         {t("auth", "checkEmailDesc")} <strong>{form.email}</strong>. {t("auth", "checkEmailAction")}
                     </p>
                 </div>
-                <Button variant="outline" className="w-full" onClick={onSwitchToLogin}>
+                <Button variant="outline" size="default" className="w-full" onClick={onSwitchToLogin}>
                     {t("auth", "backToLogin")}
                 </Button>
             </div>
@@ -455,7 +455,7 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
                 <PasswordMatchIndicator password={form.password} confirm={form.confirmPassword}/>
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" size="default" className="w-full" disabled={loading}>
                 {loading ? (
                     <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
@@ -515,7 +515,7 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
                         {t("auth", "emailSentDesc")} <strong>{email}</strong>. {t("auth", "emailSentAction")}
                     </p>
                 </div>
-                <Button variant="outline" className="w-full" onClick={onBack}>
+                <Button variant="outline" size="default" className="w-full" onClick={onBack}>
                     {t("auth", "backToLogin")}
                 </Button>
             </div>
@@ -551,7 +551,7 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
                 />
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" size="default" className="w-full" disabled={loading}>
                 {loading ? (
                     <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin"/>

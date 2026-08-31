@@ -77,6 +77,7 @@ export const project = {
     // PICOTS fields (ReviewDetailsSection + PICOTSItemEditor)
     picotsInclusionCriteriaLabel: 'Inclusion criteria',
     picotsExclusionCriteriaLabel: 'Exclusion criteria',
+    picotsCriteriaOptional: 'Optional',
     picotsAddInclusionPlaceholder: 'Add inclusion criterion...',
     picotsAddExclusionPlaceholder: 'Add exclusion criterion...',
     picotsHelpAria: 'Help',

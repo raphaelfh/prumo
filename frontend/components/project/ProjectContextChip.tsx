@@ -19,16 +19,25 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
 import {useAiContext} from '@/hooks/project/useAiContext';
-import {PicotsEditDialog} from './PicotsEditDialog';
+import {AiConfigDialog} from './AiConfigDialog';
 
 const SLOT_TOTAL = 6;
 
 interface ProjectContextChipProps {
   projectId: string;
+  /** When the chip sits on a template's config surface, the shared AI
+   * dialog it opens also carries that template's instruction tab. */
+  templateId?: string;
 }
 
-export function ProjectContextChip({projectId}: ProjectContextChipProps) {
+export function ProjectContextChip({
+  projectId,
+  templateId,
+}: ProjectContextChipProps) {
   const [open, setOpen] = useState(false);
+  // The instruction tab's parked draft — held by the trigger so it survives
+  // the dialog closing (see TemplateInstructionPane).
+  const [instructionDraft, setInstructionDraft] = useState<string | null>(null);
   const {data} = useAiContext(projectId);
 
   const filled = data
@@ -65,10 +74,21 @@ export function ProjectContextChip({projectId}: ProjectContextChipProps) {
         </TooltipTrigger>
         <TooltipContent>{t('aiContext', 'chipTooltip')}</TooltipContent>
       </Tooltip>
-      <PicotsEditDialog
+      <AiConfigDialog
         projectId={projectId}
         open={open}
         onOpenChange={setOpen}
+        initialTab="picots"
+        withModel
+        template={
+          templateId
+            ? {
+                id: templateId,
+                instructionDraft,
+                onInstructionDraftChange: setInstructionDraft,
+              }
+            : undefined
+        }
       />
     </>
   );

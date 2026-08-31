@@ -1,5 +1,6 @@
 import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import {MemoryRouter} from 'react-router';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -11,6 +12,26 @@ vi.mock('@/services/templateInstructionService', () => ({
 }));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
+// The dialog the trigger opens force-mounts its review-question tab too;
+// an errored read keeps that pane inert so these tests stay about the
+// instruction surface.
+vi.mock('@/hooks/project/useAiContext', () => ({
+  useAiContext: () => ({data: undefined, isLoading: false, isError: true}),
+  useSetAiContext: () => ({mutate: vi.fn(), isPending: false}),
+}));
+// Same reason for the model tab: an errored read keeps that pane inert so
+// these tests stay about the instruction surface.
+vi.mock('@/hooks/extraction/useLlmEngine', () => ({
+  useLlmEngine: () => ({data: undefined, isError: true, isPending: false}),
+  useSetLlmEngine: () => ({mutate: vi.fn(), isPending: false}),
+}));
+vi.mock('@/hooks/extraction/useLlmEndpoints', () => ({
+  useLlmEndpoints: () => ({data: [], isError: false, isPending: false}),
+  useCreateLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
+  useUpdateLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
+  useDeleteLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
+  useVerifyLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
+}));
 
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {TemplateInstructionControl} from '@/components/extraction/TemplateInstructionControl';
@@ -20,11 +41,14 @@ function renderControl() {
     defaultOptions: {queries: {retry: false}, mutations: {retry: false}},
   });
   return render(
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <TemplateInstructionControl projectId="p1" templateId="t1" />
-      </TooltipProvider>
-    </QueryClientProvider>,
+    // MemoryRouter: the dialog's model tab deep-links to the key settings.
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <TemplateInstructionControl projectId="p1" templateId="t1" />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -125,7 +149,7 @@ describe('TemplateInstructionControl', () => {
     expect(screen.getByTestId('instruction-customize-chip')).toBeInTheDocument();
   });
 
-  it('preserves an unsaved draft when the popover is dismissed', async () => {
+  it('preserves an unsaved draft when the dialog is dismissed', async () => {
     getTemplateInstruction.mockResolvedValue({
       project_template_id: 't1',
       llm_template_instruction: 'Old text',
@@ -135,8 +159,8 @@ describe('TemplateInstructionControl', () => {
     const trigger = await screen.findByRole('button', {name: /instructionTitle/});
     await userEvent.click(trigger);
     await userEvent.type(screen.getByRole('textbox'), ' plus mine');
-    // Dismissing a popover must not silently destroy prose the manager typed —
-    // the draft outlives the surface that edits it.
+    // Dismissing the dialog must not silently destroy prose the manager
+    // typed — the draft outlives the surface that edits it.
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
     await userEvent.click(screen.getByRole('button', {name: /instructionTitle/}));
