@@ -16,8 +16,6 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Import, Loader2, Plus } from "lucide-react";
-import { TemplateInstructionControl } from "@/components/extraction/TemplateInstructionControl";
-import { ProjectContextChip } from "@/components/project/ProjectContextChip";
 import { TemplateConfigGridPanel } from "@/components/extraction/template-config/TemplateConfigGridPanel";
 import { TemplateConfigPublishControls } from "@/components/extraction/template-config/TemplateConfigPublishControls";
 import { TemplateExportButton } from "@/components/extraction/template-config/TemplateExportButton";
@@ -310,24 +308,25 @@ export function TemplateConfigEditor({
     // via min-h-full would instead make every height below indefinite and
     // un-cap the grid card.
     <div className="flex h-full min-h-0 flex-col gap-3">
-      {/* ONE configuration bar. It absorbed three stacked bands — the engine
-          chip's own right-aligned row, this command bar, and the 48px AI
-          instruction row — for ~128px of reclaimed vertical space. Priority
-          tracks (RunHeader's contract): the identity track is the only
-          elastic one, every command is shrink-0, and Publish never collapses. */}
+      {/* ONE configuration bar, and ONE trigger per destination. It absorbed
+          three stacked bands (the engine chip's own row, this command bar and
+          the 48px AI instruction row), and then the three AI triggers it had
+          collected — engine, review question, ✨ instruction — which all
+          opened the SAME AiConfigDialog on different tabs. The dialog's own
+          tab strip is the picker; the bar carries one chip. Priority tracks
+          (RunHeader's contract): the identity track is the only elastic one,
+          every command is shrink-0, and Publish never collapses. */}
       <div
         className={cn(
           "@container/configbar flex shrink-0 items-center gap-2 rounded-md border border-border/40 bg-card px-3",
           // Fixed 48px chrome at every width a manager configures a template
-          // at. Below the last rung the commands would clip Publish instead,
-          // so there the bar wraps to a second line and keeps every control
-          // reachable — the one place height is worth more than the row.
-          // Below the last collapse rung the commands genuinely do not fit.
-          // Wrapping was tried and read worse (the elastic identity track
-          // claims a whole first line), so the cluster scrolls inside its own
-          // bar instead — every control stays reachable and the chrome stays
-          // 48px. Viewport, not container: an element cannot query the
-          // container IT declares, so `@max-*/configbar` here never matches.
+          // at. Below the last collapse rung the commands genuinely do not
+          // fit; wrapping was tried and read worse (the elastic identity
+          // track claims a whole first line), so the cluster scrolls inside
+          // its own bar instead — every control stays reachable and the
+          // chrome stays 48px. Viewport, not container: an element cannot
+          // query the container IT declares, so `@max-*/configbar` here
+          // never matches.
           "h-12 max-sm:overflow-x-auto",
         )}
       >
@@ -350,22 +349,14 @@ export function TemplateConfigEditor({
                 LEFT edge ("GPT-" clipped) instead of ellipsing. It sheds parts
                 of itself by container query instead — see LlmEngineChip. */}
             <div className="shrink-0">{engineSlot}</div>
-            {/* Same regime as the engine: both are project-scoped and both
-                apply to the NEXT run, so the chip sits before the divider. */}
-            <div className="shrink-0">
-              <ProjectContextChip projectId={projectId} templateId={templateId} />
-            </div>
-            {/* Hairline between project regime and versioned-template regime:
-                neither the engine nor the review question is part of what
-                Publish ships. */}
+            {/* Hairline between the project regime (the model, the review
+                question and everything else the chip opens) and the
+                versioned-template regime: none of it is part of what Publish
+                ships. */}
             <BarDivider />
           </>
         )}
         <div className="flex shrink-0 items-center gap-1">
-          <TemplateInstructionControl
-            projectId={projectId}
-            templateId={templateId}
-          />
           <TemplateExportButton projectId={projectId} templateId={templateId} />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -386,7 +377,10 @@ export function TemplateConfigEditor({
                   strokeWidth={1.5}
                   aria-hidden
                 />
-                <span className="sr-only @[58rem]/configbar:not-sr-only">
+                {/* One rung for both file commands: they are a pair, and
+                    labelling one while the other is a bare icon read as two
+                    unrelated controls. */}
+                <span className="sr-only @[64rem]/configbar:not-sr-only">
                   {t("extraction", "configImportTemplateButton")}
                 </span>
               </Button>

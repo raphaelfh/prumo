@@ -71,9 +71,6 @@ vi.mock('@/hooks/extraction/useDeleteTemplateField', () => ({
   useDeleteTemplateField: vi.fn(() => ({mutate: vi.fn(), isPending: false})),
 }));
 // Siblings with their own data paths — not what this file is pinning.
-vi.mock('@/components/extraction/TemplateInstructionControl', () => ({
-  TemplateInstructionControl: () => null,
-}));
 vi.mock('@/components/extraction/template-config/TemplateConfigGridPanel', () => ({
   TemplateConfigGridPanel: () => 'grid-panel',
 }));

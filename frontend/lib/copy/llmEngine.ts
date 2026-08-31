@@ -3,8 +3,6 @@
  * engine-settings dialog (§5, C1b; slice C split). English only.
  */
 export const llmEngine = {
-    chipAria: 'Extraction model',
-    chipTooltip: 'Model used for AI extraction in this project',
     // --- Model tab of the shared AI configuration dialog ---
     modelTabLabel: 'Model',
     modelScopeHint:

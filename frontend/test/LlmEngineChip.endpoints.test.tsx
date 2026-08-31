@@ -58,7 +58,7 @@ import {
   useUpdateLlmEndpoint,
   useVerifyLlmEndpoint,
 } from '@/hooks/extraction/useLlmEndpoints';
-import {llmEngine as copy} from '@/lib/copy';
+import {aiContext, llmEngine as copy} from '@/lib/copy';
 import type {LlmEndpointRead} from '@/services/llmEndpointService';
 import type {LlmEngineRead} from '@/services/llmEngineService';
 
@@ -147,7 +147,7 @@ function renderChip() {
 async function renderOpenPopover(overrides: Partial<LlmEngineRead> = {}) {
   mockRead(overrides);
   renderChip();
-  await userEvent.click(screen.getByRole('button', {name: copy.chipAria}));
+  await userEvent.click(screen.getByRole('button', {name: new RegExp(aiContext.configDialogTitle)}));
 }
 
 beforeAll(() => {
@@ -204,7 +204,7 @@ describe('endpoint groups (C2 C3)', () => {
     renderChip();
 
     expect(
-      screen.getByRole('button', {name: copy.chipAria}),
+      screen.getByRole('button', {name: new RegExp(aiContext.configDialogTitle)}),
     ).toHaveTextContent('qwen3-30b · Lab vLLM');
   });
 

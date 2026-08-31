@@ -68,11 +68,11 @@ export function TemplateExportButton({projectId, templateId}: TemplateExportButt
             onClick={handleClick}
             className="text-muted-foreground hover:text-foreground"
           >
-            <FileUp className="h-4 w-4 @6xl/configbar:mr-2" />
-            {/* The command bar (a @container) is full at ~920px — its title
-                truncated once this button joined it — so the label earns its
-                room only when the BAR is wide, not the viewport. */}
-            <span className="hidden @6xl/configbar:inline">{t('extraction', 'exportButton')}</span>
+            <FileUp className="h-4 w-4 @[64rem]/configbar:mr-2" />
+            {/* The label earns its room from the BAR's width, not the
+                viewport's — and at the same rung as its Import twin, so the
+                pair never reads as two unrelated controls. */}
+            <span className="hidden @[64rem]/configbar:inline">{t('extraction', 'exportButton')}</span>
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t('templateConfig', 'exportTemplateTooltip')}</TooltipContent>
