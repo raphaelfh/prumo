@@ -6,17 +6,40 @@ WORKDIR /app
 # Install uv for faster dependency installation
 RUN pip install --no-cache-dir uv
 
-# Copy dependency files + the package itself. hatchling resolves
+# Copy dependency files + the package itself. `uv.lock` MUST be here: without
+# it the install below silently resolves fresh from the pyproject ranges (see
+# the comment on that RUN). hatchling resolves
 # `tool.hatch.build.targets.wheel.packages = ["app"]` at install time, so
 # the source tree must exist before `uv pip install -e .` runs.
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY app ./app
 
 # Install dependencies into the system prefix (the runtime stage copies it).
+#
+# THE LOCK IS THE CONTRACT. `uv pip install` is the pip-compatible interface
+# and does NOT read `uv.lock` — only `uv sync` does. This used to be a bare
+# `uv pip install -e .`, so every image re-resolved from the pyproject ranges
+# at build time while CI ran `uv sync --frozen`. Prod and CI drifted apart and
+# nothing said so: an image built 2026-08-10 picked up genai-prices 0.1.4,
+# whose `Usage` gained a field pydantic-ai's `RequestUsage` does not accept,
+# and `RequestUsage.extract` swallows that TypeError and returns ZERO usage —
+# so every LLM token count in prod was silently recorded as 0 for three weeks.
+# `tests/unit/llm/test_extractor.py` now guards the seam, but the guard only
+# helps if the image installs what CI tested. Export the lock, install that.
+#
+# `uv sync` would build a `.venv`, which the runtime stage's site-packages COPY
+# does not pick up — so export to requirements and keep the --system layout.
+# --no-hashes: the PyTorch CPU wheels below are not the hashes the lock pins.
+#
 # --torch-backend=cpu makes uv resolve torch/torchvision from the PyTorch CPU
-# wheel index, dropping the ~1GB CUDA stack (nvidia-*/triton) that is dead
-# weight on the CPU-only worker.
-RUN uv pip install --system --no-cache --torch-backend=cpu -e .
+# wheel index, dropping the ~1GB CUDA stack that is dead weight on the CPU-only
+# worker. It only redirects the index, so the CUDA packages must also be
+# dropped from the exported requirements or they come back (measured: +600MB
+# of triton alone). torch itself stays at the LOCKED version, as +cpu.
+RUN uv export --frozen --no-dev --no-hashes --no-emit-project -o /tmp/requirements.txt \
+    && grep -vE '^(nvidia-|triton|pytorch-triton)' /tmp/requirements.txt > /tmp/requirements.cpu.txt \
+    && uv pip install --system --no-cache --torch-backend=cpu -r /tmp/requirements.cpu.txt \
+    && uv pip install --system --no-cache --no-deps -e .
 
 # Prefetch ONLY the models the OCR-disabled standard pipeline needs (layout +
 # TableFormer) into the image, so the worker NEVER downloads at runtime. OCR
