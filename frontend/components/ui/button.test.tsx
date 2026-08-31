@@ -85,4 +85,13 @@ describe('button size scale', () => {
     render(<Button size="sm" className="h-9">Go</Button>);
     expect(heightOf('Go')).toBe('h-9');
   });
+
+  it('a Button with NO size prop renders the compact chrome tier', () => {
+    // The system standard, not a per-call-site opt-in: omitting `size` used
+    // to render the 40px CTA, which is how dialog footers ended up 40px tall
+    // beside 28px content. A CTA now opts in with size="default".
+    render(<Button>Go</Button>);
+    expect(heightOf('Go')).toBe('h-7');
+    expect(classesOf('Go')).toContain('[@media(pointer:coarse)]:h-11');
+  });
 });

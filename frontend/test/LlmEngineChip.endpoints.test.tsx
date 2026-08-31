@@ -30,6 +30,17 @@ vi.mock('@/hooks/extraction/useLlmEndpoints', () => ({
   useDeleteLlmEndpoint: vi.fn(),
   useVerifyLlmEndpoint: vi.fn(),
 }));
+// The chip opens `AiConfigDialog`, whose other tabs read the project's AI
+// context and the template instruction — mocked like every other data hook
+// here (unmocked they need a QueryClientProvider the chip never had).
+vi.mock('@/hooks/project/useAiContext', () => ({
+  useAiContext: () => ({data: undefined, isLoading: false, isError: true}),
+  useSetAiContext: () => ({mutate: vi.fn(), isPending: false}),
+}));
+vi.mock('@/hooks/extraction/useTemplateInstruction', () => ({
+  useTemplateInstruction: () => ({data: undefined, isLoading: true}),
+  useUpdateTemplateInstruction: () => ({mutate: vi.fn(), isPending: false}),
+}));
 vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), {
     error: vi.fn(),

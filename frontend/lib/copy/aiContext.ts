@@ -16,6 +16,12 @@ export const aiContext = {
     dialogTitle: 'Review question',
     dialogDesc:
         'Each part is optional. Anything left blank is omitted rather than sent as an empty field.',
+    // The tabbed variant, when the dialog also carries a template's
+    // general AI instruction.
+    configDialogTitle: 'AI configuration',
+    configDialogDesc: 'The context and instructions the AI receives on this project.',
+    picotsScopeHint:
+        'Project-wide — sent with every AI call from the next run. Blank parts are omitted.',
     save: 'Save',
     cancel: 'Cancel',
     saving: 'Saving…',

@@ -5,6 +5,11 @@
 export const llmEngine = {
     chipAria: 'Extraction model',
     chipTooltip: 'Model used for AI extraction in this project',
+    // --- Model tab of the shared AI configuration dialog ---
+    modelTabLabel: 'Model',
+    modelScopeHint:
+        'Project-wide — runs every AI call from the next run. Saved as you pick.',
+    paneUnavailable: 'The model list is unavailable right now.',
     // --- Engine settings dialog (slice C) ---
     settingsLink: 'Engine settings…',
     settingsTitle: 'Engine settings',

@@ -353,7 +353,7 @@ export function TemplateConfigEditor({
             {/* Same regime as the engine: both are project-scoped and both
                 apply to the NEXT run, so the chip sits before the divider. */}
             <div className="shrink-0">
-              <ProjectContextChip projectId={projectId} />
+              <ProjectContextChip projectId={projectId} templateId={templateId} />
             </div>
             {/* Hairline between project regime and versioned-template regime:
                 neither the engine nor the review question is part of what

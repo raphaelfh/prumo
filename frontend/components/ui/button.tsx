@@ -18,8 +18,11 @@ const buttonVariants = cva(
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
-      // Named by ROLE, not by location. `sm` is the chrome default at the
-      // h-7 density `frontend-ux` specifies; `default` is for CTAs only.
+      // Named by ROLE, not by location. `sm` is the chrome tier at the h-7
+      // density `frontend-ux` specifies, and it is what a Button renders
+      // WITHOUT a size prop (see defaultVariants) — the compact tier is the
+      // system standard, not a per-call-site opt-in. `default` (h-10) is the
+      // deliberate CTA exception: empty states, auth, marketing.
       // Never override a height in a call site's className —
       // scripts/fitness/check_button_scale.py fails the build on a new one.
       //
@@ -39,7 +42,11 @@ const buttonVariants = cva(
     },
     defaultVariants: {
       variant: "default",
-      size: "default",
+      // The compact tier is the DEFAULT, so the ~68 buttons that never named
+      // a size stop rendering a 40px CTA in dense chrome (dialog footers were
+      // the visible case: 40px controls beside 28px content). A CTA now opts
+      // IN with size="default" rather than inheriting one by omission.
+      size: "sm",
     },
   },
 );
