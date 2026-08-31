@@ -41,7 +41,15 @@ export interface ApiResponse<T = unknown> {
  * Options for API requests.
  */
 export interface ApiRequestOptions extends Omit<RequestInit, "body"> {
-  body?: unknown;
+  /**
+   * The request payload BEFORE serialization — apiClient owns the
+   * `JSON.stringify`. Typed `object` (not `unknown`) so a caller that
+   * pre-stringifies fails to compile: a string body would be stringified
+   * again and reach the server as a JSON string literal, which FastAPI
+   * refuses with an envelope-less 422 (`model_attributes_type`) — the
+   * template-publish outage class.
+   */
+  body?: object;
   /**
    * If true, do not include auth token.
    * Use for public endpoints.
