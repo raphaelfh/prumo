@@ -4,8 +4,8 @@ backend/app/seed.py:3289
 backend/app/services/extraction_export_service.py:2352
 backend/app/services/run_lifecycle_service.py:871
 backend/app/services/section_extraction_service.py:1839
-frontend/components/articles/ArticleForm.tsx:1266
-frontend/components/articles/ArticlesList.tsx:1353
+frontend/components/articles/ArticleForm.tsx:1213
+frontend/components/articles/ArticlesList.tsx:1349
 frontend/components/extraction/ArticleExtractionTable.tsx:1134
 frontend/components/extraction/template-config/TemplateConfigGridPanel.test.tsx:1038
 frontend/pages/ExtractionFullScreen.tsx:1378
