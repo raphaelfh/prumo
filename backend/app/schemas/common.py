@@ -9,7 +9,14 @@ API contract — error semantics
 The API uses a hybrid error model on purpose:
 
 1. **HTTP 4xx (400/401/403/404/422/429)** — surfaced for:
-   - Pydantic / FastAPI request validation (auto-generated 422)
+   - Pydantic / FastAPI request validation (422). The framework default body
+     (``{"detail": [...]}``) is REPLACED by ``request_validation_error_handler``
+     so these carry the envelope like every other error: code
+     ``VALIDATION_ERROR``, a message naming the first offending location, and
+     the full per-field list under ``error.details.errors``. An un-enveloped
+     422 is unreadable to the typed client (it can only say "Unknown error")
+     and is logged nowhere — that combination hid a broken publish path in
+     production for three weeks.
    - Authentication / authorization failures (401/403)
    - Routing failures (404)
    - Rate limiting (429)

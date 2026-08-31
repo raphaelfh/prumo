@@ -198,6 +198,13 @@ export function importTemplateFromFile(
     } catch {
       throw new Error(t('templateConfig', 'importFileNotJson'));
     }
+    // A root that isn't a JSON object (a bare string, number, or array) can
+    // never be a template document, and sending it would draw FastAPI's
+    // envelope-less request-validation 422 — the "Unknown error" class —
+    // instead of the server's typed refusal.
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(t('templateConfig', 'importFileNotJson'));
+    }
     const result = await apiClient<CloneTemplateResponse>(
       `/api/v1/projects/${projectId}/templates/import`,
       {method: 'POST', body: parsed, timeout: 120_000},
