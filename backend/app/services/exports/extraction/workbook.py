@@ -156,6 +156,27 @@ _SHAPE_BUILDERS: dict[ExportShape, frozenset[str]] = {
 }
 
 
+#: The builders that read resolved ARTICLE VALUES, as opposed to the template
+#: snapshot. Derived from ``_SHAPE_BUILDERS`` rather than written beside it, so
+#: a future shape's answer follows from the sheets it was given instead of
+#: needing a second list somebody can forget to update.
+_ARTICLE_BUILDERS: frozenset[str] = frozenset(
+    {"summary", "matrix", "tidy_tables", "appraisal_summary", "ai_metadata"}
+)
+
+
+def shape_needs_articles(shape: ExportShape) -> bool:
+    """Whether any sheet in ``shape`` reads resolved article values.
+
+    False for the dictionary shape: README, Data dictionary and Dropdown lists
+    are all projections of the TEMPLATE, so that workbook is meaningful before
+    anyone has finalized a single run — which is exactly when you want it, while
+    wiring another tool to the template. Callers use this to decide whether an
+    empty eligible-article set is a reason to refuse the export.
+    """
+    return bool(_SHAPE_BUILDERS[shape] & _ARTICLE_BUILDERS)
+
+
 def _ordered_specs(
     layout: ExportLayout,
     shape: ExportShape = ExportShape.COMPLETE,
@@ -232,4 +253,10 @@ def build_workbook(
     return buf.getvalue()
 
 
-__all__ = ["EXCEL_MAX_COLUMNS", "ExportColumnLimitError", "ExportShape", "build_workbook"]
+__all__ = [
+    "EXCEL_MAX_COLUMNS",
+    "ExportColumnLimitError",
+    "ExportShape",
+    "build_workbook",
+    "shape_needs_articles",
+]

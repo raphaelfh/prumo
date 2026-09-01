@@ -11,6 +11,7 @@ called (the filter must save the work, not discard it afterwards).
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from uuid import UUID, uuid4
 
 from openpyxl import load_workbook
@@ -22,7 +23,11 @@ from app.models.extraction import (
 )
 from app.services.exports.extraction import workbook as workbook_module
 from app.services.exports.extraction.sheet_spec import Cell, SheetSpec
-from app.services.exports.extraction.workbook import ExportShape, build_workbook
+from app.services.exports.extraction.workbook import (
+    ExportShape,
+    build_workbook,
+    shape_needs_articles,
+)
 from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.extraction_export_service import (
     AppraisalModel,
@@ -227,3 +232,33 @@ def test_complete_shape_calls_every_builder(monkeypatch) -> None:
         "dropdown_lists",
         "ai_metadata",
     }
+
+
+# ---------------------------------------------------------------------------
+# A dictionary-only workbook describes the INSTRUMENT, so it must build before
+# anyone has finalized a run — the state a project is in while it is still
+# being wired up.
+# ---------------------------------------------------------------------------
+
+
+def _no_article_layout() -> ExportLayout:
+    """The template resolved for a project with zero eligible articles."""
+    layout = _every_sheet_layout()
+    return replace(layout, articles=(), tidy_tables=(), appraisal=None, value_map={})
+
+
+def test_dictionary_shape_builds_with_no_articles() -> None:
+    data = build_workbook(_no_article_layout(), shape=ExportShape.DICTIONARY)
+    wb = load_workbook(io.BytesIO(data))
+    assert wb.sheetnames == ["README", "Data dictionary", "Dropdown lists"]
+    # The catalogue is the point: it must carry the field, not just a header.
+    assert any(
+        "Risk of bias" in [str(c) for c in row]
+        for row in wb["Data dictionary"].iter_rows(values_only=True)
+    )
+
+
+def test_only_the_dictionary_shape_is_free_of_article_values() -> None:
+    assert shape_needs_articles(ExportShape.COMPLETE) is True
+    assert shape_needs_articles(ExportShape.PUBLICATION) is True
+    assert shape_needs_articles(ExportShape.DICTIONARY) is False
