@@ -1,12 +1,15 @@
 /**
- * Vitest coverage for ExtractionExportDialog.
+ * Vitest coverage for HITLExportDialog — the one dialog both HITL surfaces render.
  *
  * Validates:
- *  - smart-default scope (FR-029)
  *  - submit calls startExport and triggers the download (US1 happy path)
  *  - in-flight spinner + disabled submit (FR-030)
  *  - inline error renders error.message and exposes Retry (FR-031)
  *  - "Include AI metadata sheet" checkbox forwards the flag (FR-002 §3)
+ *  - the output-shape radio reaches the request (§3)
+ *  - N selected tools issue N SEQUENTIAL requests, and a partial failure
+ *    names the tool that failed without swallowing the ones that worked (§4)
+ *  - single-user mode is single-tool: reviewer eligibility is per template
  */
 
 import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
@@ -50,6 +53,10 @@ vi.mock("@/hooks/exports/useEligibleReviewers", () => ({
     useEligibleReviewers: () => useEligibleReviewersMock(),
 }));
 
+vi.mock("@/integrations/api/client", async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+}));
+
 vi.mock("sonner", () => ({
     toast: {success: toastSuccess, info: toastInfo, error: vi.fn()},
 }));
@@ -79,21 +86,23 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-import {ExtractionExportDialog} from "./ExtractionExportDialog";
+import {ApiError} from "@/integrations/api/client";
+import {HITLExportDialog} from "./HITLExportDialog";
+
+const PROBAST = {id: "22222222-2222-2222-2222-222222222222", name: "PROBAST"};
+const QUADAS = {id: "33333333-3333-3333-3333-333333333333", name: "QUADAS-2"};
 
 function renderDialog(
-    overrides: Partial<React.ComponentProps<typeof ExtractionExportDialog>> = {},
+    overrides: Partial<React.ComponentProps<typeof HITLExportDialog>> = {},
 ) {
     const onOpenChange = vi.fn();
-    const props: React.ComponentProps<typeof ExtractionExportDialog> = {
+    const props: React.ComponentProps<typeof HITLExportDialog> = {
         open: true,
         onOpenChange,
         projectId: "11111111-1111-1111-1111-111111111111",
         projectName: "Demo Project",
-        templateId: "22222222-2222-2222-2222-222222222222",
-        templateName: "CHARMS",
+        templates: [PROBAST],
         currentListIds: ["a1", "a2", "a3"],
-        selectedIds: [],
         isManager: true,
         fieldCount: 42,
         ...overrides,
@@ -102,7 +111,7 @@ function renderDialog(
     return {
         ...render(
             <QueryClientProvider client={client}>
-                <ExtractionExportDialog {...props} />
+                <HITLExportDialog {...props} />
             </QueryClientProvider>,
         ),
         onOpenChange,
@@ -112,19 +121,7 @@ function renderDialog(
 
 // ---- Tests --------------------------------------------------------------
 
-describe("ExtractionExportDialog", () => {
-    it("defaults to 'Current list' scope when no articles are pre-selected (FR-029)", () => {
-        renderDialog();
-        const current = screen.getByLabelText(/Current list/i) as HTMLInputElement;
-        expect(current).toBeChecked();
-    });
-
-    it("defaults to 'Selected only' when articles are pre-selected (FR-029)", () => {
-        renderDialog({selectedIds: ["a1", "a2"]});
-        const selected = screen.getByLabelText(/Selected only/i) as HTMLInputElement;
-        expect(selected).toBeChecked();
-    });
-
+describe("HITLExportDialog", () => {
     it("sends the consensus request and triggers a blob download on sync success", async () => {
         startExportMock.mockResolvedValueOnce({
             kind: "sync",
@@ -313,5 +310,119 @@ describe("ExtractionExportDialog", () => {
             true,
         );
         expect(startExportMock.mock.calls[0][1].mode).toBe("all_users");
+    });
+
+    // ---- §3 output shape ------------------------------------------------
+
+    it("defaults to the complete workbook", async () => {
+        startExportMock.mockResolvedValueOnce({
+            kind: "sync",
+            blob: new Blob(["x"]),
+            filename: "x.xlsx",
+        });
+        const user = userEvent.setup();
+        renderDialog();
+        await user.click(screen.getByTestId("extraction-export-submit"));
+        await waitFor(() => expect(startExportMock).toHaveBeenCalled());
+        expect(startExportMock.mock.calls[0][1].shape).toBe("complete");
+    });
+
+    it("sends the picked shape in the request (§3)", async () => {
+        startExportMock.mockResolvedValueOnce({
+            kind: "sync",
+            blob: new Blob(["x"]),
+            filename: "x.xlsx",
+        });
+        const user = userEvent.setup();
+        renderDialog();
+        await user.click(screen.getByLabelText(/Publication tables/i));
+        await user.click(screen.getByTestId("extraction-export-submit"));
+        await waitFor(() => expect(startExportMock).toHaveBeenCalled());
+        expect(startExportMock.mock.calls[0][1].shape).toBe("publication");
+    });
+
+    // ---- §4 one or several tools ----------------------------------------
+
+    it("hides the template picker on a single-template surface (§2)", () => {
+        renderDialog();
+        expect(screen.queryByTestId("export-template-picker")).not.toBeInTheDocument();
+    });
+
+    it("renders the template picker above one template, active tool ticked (§2)", () => {
+        renderDialog({templates: [PROBAST, QUADAS]});
+        expect(screen.getByTestId("export-template-picker")).toBeInTheDocument();
+        expect(screen.getByLabelText("PROBAST")).toBeChecked();
+        expect(screen.getByLabelText("QUADAS-2")).not.toBeChecked();
+    });
+
+    it("issues one sequential request per selected tool (§4)", async () => {
+        startExportMock.mockResolvedValue({
+            kind: "sync",
+            blob: new Blob(["x"]),
+            filename: "x.xlsx",
+        });
+        const user = userEvent.setup();
+        const {onOpenChange} = renderDialog({templates: [PROBAST, QUADAS]});
+        await user.click(screen.getByLabelText("QUADAS-2"));
+        await user.click(screen.getByTestId("extraction-export-submit"));
+
+        await waitFor(() => expect(startExportMock).toHaveBeenCalledTimes(2));
+        expect(startExportMock.mock.calls[0][1].template_id).toBe(PROBAST.id);
+        expect(startExportMock.mock.calls[1][1].template_id).toBe(QUADAS.id);
+        await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    });
+
+    it("names the failed tool and keeps the successful downloads (§4)", async () => {
+        startExportMock
+            .mockResolvedValueOnce({
+                kind: "sync",
+                blob: new Blob(["x"]),
+                filename: "probast.xlsx",
+            })
+            .mockRejectedValueOnce(
+                new ApiError("EMPTY_ELIGIBLE_ARTICLES", "No eligible articles.", 422),
+            );
+        const user = userEvent.setup();
+        const {onOpenChange} = renderDialog({templates: [PROBAST, QUADAS]});
+        await user.click(screen.getByLabelText("QUADAS-2"));
+        await user.click(screen.getByTestId("extraction-export-submit"));
+
+        await waitFor(() => expect(startExportMock).toHaveBeenCalledTimes(2));
+        const failures = await screen.findByTestId("extraction-export-failures");
+        expect(failures).toHaveTextContent(/QUADAS-2/);
+        expect(failures).toHaveTextContent(/No eligible articles/);
+        // The PROBAST workbook already downloaded; the dialog stays open so the
+        // failure is not swallowed by the success.
+        expect(toastSuccess).toHaveBeenCalled();
+        expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    });
+
+    it("names a rate limit as a rate limit, not 'unknown error' (§4)", async () => {
+        startExportMock.mockRejectedValueOnce(
+            new ApiError("UNKNOWN", "An unknown error occurred", 429),
+        );
+        const user = userEvent.setup();
+        renderDialog({templates: [PROBAST, QUADAS]});
+        await userEvent.setup();
+        await user.click(screen.getByTestId("extraction-export-submit"));
+
+        const failures = await screen.findByTestId("extraction-export-failures");
+        expect(failures).toHaveTextContent(/Too many exports/i);
+    });
+
+    it("collapses the tool picker to one choice in single-user mode", async () => {
+        const user = userEvent.setup();
+        renderDialog({templates: [PROBAST, QUADAS]});
+        await user.click(screen.getByLabelText("QUADAS-2"));
+        expect(screen.getByLabelText("QUADAS-2")).toBeChecked();
+
+        await user.click(screen.getByLabelText(/Single user/i));
+
+        // Eligibility is per template, so only one tool can be targeted at a
+        // time — the extra tick is dropped rather than 422ing on submit.
+        await waitFor(() =>
+            expect(screen.getByLabelText("QUADAS-2")).not.toBeChecked(),
+        );
+        expect(screen.getByLabelText("PROBAST")).toBeChecked();
     });
 });

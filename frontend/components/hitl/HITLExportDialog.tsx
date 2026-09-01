@@ -1,10 +1,20 @@
 /**
- * Dialog to export extraction data as an Excel workbook (.xlsx).
+ * Dialog to export HITL data as an Excel workbook (.xlsx).
  *
- * Feature: 009-extraction-excel-export.
- * Mirrors the visual structure of ArticlesExportDialog so the
- * cross-page UX stays consistent. Sync uploads stream the blob via
- * the browser; async uploads dispatch a BackgroundJob + toast.
+ * One dialog, two surfaces: Data Extraction mounts it with a single
+ * template, Quality Assessment with every tool the project has enabled.
+ * The multi-tool picker renders only above one template, so the extraction
+ * surface is visually unchanged and there is no `kind` conditional anywhere
+ * in here.
+ *
+ * Sync uploads stream the blob via the browser; async uploads dispatch a
+ * BackgroundJob + toast. Selecting N tools starts N exports and produces N
+ * workbooks, each byte-for-byte what a single-tool export produces —
+ * sequential, so they stay inside the endpoint's rate limit and N browser
+ * downloads do not race.
+ *
+ * Feature: 009-extraction-excel-export. Copy stays in the `extraction`
+ * namespace, which `HITLArticleTable` already uses for every shared string.
  */
 
 import {useEffect, useRef, useState} from "react";
@@ -32,36 +42,39 @@ import {AlertCircle, Loader2} from "lucide-react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {triggerDownload} from "@/lib/download";
+import {ApiError} from "@/integrations/api/client";
 import {useEligibleReviewers} from "@/hooks/exports/useEligibleReviewers";
 import {useAuth} from "@/contexts/AuthContext";
-import {
-    startExport,
-} from "@/services/extractionExportService";
+import {startExport} from "@/services/extractionExportService";
 import {useBackgroundJobs} from "@/stores/useBackgroundJobs";
 import {createExtractionExportJob} from "@/types/background-jobs";
 import type {
-    ExtractionArticleScope,
     ExtractionExportMode,
     ExtractionExportRequest,
+    ExtractionExportShape,
     StartExtractionExportResult,
 } from "@/types/extraction-export";
 
-interface ExtractionExportDialogProps {
+/** One exportable template as the dialog needs it. */
+export interface ExportTemplateOption {
+    id: string;
+    name: string;
+}
+
+interface HITLExportDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     projectId: string;
     projectName?: string;
-    /** Active project_extraction_templates id (drives the layout). */
-    templateId: string;
-    templateName?: string;
+    /**
+     * Templates this surface can export, **active one first** — it is the
+     * default tick, and the picker lists them in this order.
+     */
+    templates: ExportTemplateOption[];
     /** Article ids visible on the page given current filters/search. */
     currentListIds: string[];
-    /** Article ids ticked in the Article-Extraction table. */
-    selectedIds: string[];
     /** Whether the current user has the project manager role. */
     isManager: boolean;
-    /** Default article scope when opening; overrides "smart default" if set. */
-    defaultArticleScope?: ExtractionArticleScope;
     /** Total field count in the active template — drives the live preview. */
     fieldCount?: number;
 }
@@ -69,69 +82,113 @@ interface ExtractionExportDialogProps {
 /** Mirror of the backend SYNC_EXPORT_MAX_ARTICLES (research.md §3). */
 const SYNC_EXPORT_MAX_ARTICLES = 50;
 
-export function ExtractionExportDialog({
+const SHAPES: {
+    value: ExtractionExportShape;
+    label: string;
+    description: string;
+}[] = [
+    {
+        value: "complete",
+        label: t("extraction", "exportShapeComplete"),
+        description: t("extraction", "exportShapeCompleteDesc"),
+    },
+    {
+        value: "dictionary",
+        label: t("extraction", "exportShapeDictionary"),
+        description: t("extraction", "exportShapeDictionaryDesc"),
+    },
+    {
+        value: "publication",
+        label: t("extraction", "exportShapePublication"),
+        description: t("extraction", "exportShapePublicationDesc"),
+    },
+];
+
+/**
+ * The message to show for one failed tool.
+ *
+ * 429 is special-cased on `status`, not on the message: slowapi's rate-limit
+ * body carries a bare string `error`, which the typed client flattens to its
+ * generic unknown-error text — so the reason the user actually needs would
+ * otherwise be lost.
+ */
+function failureMessage(error: Error): string {
+    if (error instanceof ApiError && error.status === 429) {
+        return t("extraction", "exportRateLimited");
+    }
+    return error.message || t("extraction", "exportFailedToast");
+}
+
+export function HITLExportDialog({
     open,
     onOpenChange,
     projectId,
     projectName,
-    templateId,
-    templateName,
+    templates,
     currentListIds,
-    selectedIds,
     isManager,
-    defaultArticleScope,
     fieldCount,
-}: ExtractionExportDialogProps) {
+}: HITLExportDialogProps) {
     const {addJob} = useBackgroundJobs();
     const {user} = useAuth();
     const [mode, setMode] = useState<ExtractionExportMode>("consensus");
     const [reviewerId, setReviewerId] = useState<string | null>(null);
-    const initialScope: ExtractionArticleScope =
-        defaultArticleScope ?? (selectedIds.length > 0 ? "selected_only" : "current_list");
-    const [articleScope, setArticleScope] =
-        useState<ExtractionArticleScope>(initialScope);
+    const [shape, setShape] = useState<ExtractionExportShape>("complete");
+    const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>(
+        templates.length > 0 ? [templates[0].id] : [],
+    );
     const [includeAiMetadata, setIncludeAiMetadata] = useState(false);
     const [anonymizeReviewerNames, setAnonymizeReviewerNames] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [failures, setFailures] = useState<string[]>([]);
 
     // AbortController for in-flight cancellation (FR-030).
     const abortRef = useRef<AbortController | null>(null);
 
-    // Re-apply smart default + reset transient state each time the
-    // dialog opens (FR-029). Adjusted during render instead of via effect;
-    // the null sentinel makes the first render perform the initial reset.
+    // Reset transient state each time the dialog opens (FR-029). Adjusted
+    // during render instead of via effect; the null sentinel makes the first
+    // render perform the initial reset.
     const userId = user?.id;
+    const templatesKey = templates.map((tpl) => tpl.id).join(",");
     const [prevResetKey, setPrevResetKey] = useState<{
         open: boolean;
-        defaultArticleScope: typeof defaultArticleScope;
-        selectedCount: number;
+        templatesKey: string;
         userId: string | undefined;
     } | null>(null);
     if (
         !prevResetKey ||
         open !== prevResetKey.open ||
-        defaultArticleScope !== prevResetKey.defaultArticleScope ||
-        selectedIds.length !== prevResetKey.selectedCount ||
+        templatesKey !== prevResetKey.templatesKey ||
         userId !== prevResetKey.userId
     ) {
-        setPrevResetKey({open, defaultArticleScope, selectedCount: selectedIds.length, userId});
+        setPrevResetKey({open, templatesKey, userId});
         if (open) {
-            setArticleScope(
-                defaultArticleScope ??
-                (selectedIds.length > 0 ? "selected_only" : "current_list"),
-            );
             setIncludeAiMetadata(false);
             setAnonymizeReviewerNames(false);
             setMode("consensus");
+            setShape("complete");
+            setSelectedTemplateIds(templates.length > 0 ? [templates[0].id] : []);
             setReviewerId(userId ?? null);
             setError(null);
+            setFailures([]);
             setSubmitting(false);
         }
     }
 
+    // Eligibility is per template, so a reviewer offered for tool A may have
+    // no decisions on tool B — a union across tools would offer a pick whose
+    // submit then 422s. Single-user therefore exports ONE tool at a time, and
+    // the picker stays a single-template question. (Render-phase adjustment;
+    // the branch makes its own guard false next render, so it terminates.)
+    if (mode === "single_user" && selectedTemplateIds.length > 1) {
+        setSelectedTemplateIds(selectedTemplateIds.slice(0, 1));
+    }
+
+    const reviewerTemplateId = selectedTemplateIds[0] ?? null;
+
     // US2 reviewer picker source. Only fetched when the dialog is open.
-    const reviewersQuery = useEligibleReviewers(projectId, templateId, {
+    const reviewersQuery = useEligibleReviewers(projectId, reviewerTemplateId, {
         enabled: open,
     });
     const reviewers = reviewersQuery.data ?? [];
@@ -166,13 +223,13 @@ export function ExtractionExportDialog({
         }
     }, [open]);
 
-    const articleIds =
-        articleScope === "selected_only" ? selectedIds : currentListIds;
+    const articleIds = currentListIds;
     const articleCount = articleIds.length;
     const modeReady =
         mode !== "single_user" ||
         (reviewerId !== null && reviewers.some((r) => r.id === reviewerId));
-    const canSubmit = articleCount > 0 && modeReady && !submitting;
+    const canSubmit =
+        articleCount > 0 && modeReady && selectedTemplateIds.length > 0 && !submitting;
 
     const expectedSync =
         mode !== "all_users" && !includeAiMetadata && articleCount <= SYNC_EXPORT_MAX_ARTICLES;
@@ -195,55 +252,98 @@ export function ExtractionExportDialog({
             .replace("{delivery}", delivery);
     })();
 
-    // Build the request payload from the current state.
-    const buildRequest = (): ExtractionExportRequest => ({
+    // Build the request payload for one template.
+    //
+    // `article_scope` is held at "current_list": the field is a real part of
+    // the API contract and the backend still validates it, but the dialog no
+    // longer offers a choice (its only mount site always passed an empty
+    // selection, so "Selected only" had always rendered disabled).
+    const buildRequest = (templateId: string): ExtractionExportRequest => ({
         template_id: templateId,
         mode,
         reviewer_id: mode === "single_user" ? reviewerId : null,
-        article_scope: articleScope,
+        article_scope: "current_list",
         article_ids: articleIds,
         include_ai_metadata: includeAiMetadata,
         anonymize_reviewer_names: anonymizeReviewerNames,
+        shape,
     });
+
+    const toggleTemplate = (templateId: string, checked: boolean) => {
+        setSelectedTemplateIds((current) =>
+            checked
+                ? [...current, templateId]
+                : current.filter((id) => id !== templateId),
+        );
+    };
 
     const submit = async () => {
         if (!canSubmit) return;
         setSubmitting(true);
         setError(null);
+        setFailures([]);
 
         const controller = new AbortController();
         abortRef.current = controller;
-        const request = buildRequest();
 
-        const result = await startExport(projectId, request, controller.signal).then(
-            (r): { ok: true; data: StartExtractionExportResult } => ({ok: true, data: r}),
-            (err: Error) => ({ok: false, error: err} as const),
-        );
+        // Sequential, and outcomes are collected rather than merged: a tool
+        // with no finalized assessments returns 422 EMPTY_ELIGIBLE_ARTICLES,
+        // and that must not swallow the ones that succeeded.
+        const failed: string[] = [];
+        let succeeded = 0;
+        let aborted = false;
 
-        if (result.ok) {
-            if (result.data.kind === "sync") {
-                triggerDownload(result.data.blob, result.data.filename);
-                toast.success(t("extraction", "exportSuccessToast"));
-                onOpenChange(false);
+        for (const templateId of selectedTemplateIds) {
+            const template = templates.find((tpl) => tpl.id === templateId);
+            const result = await startExport(
+                projectId,
+                buildRequest(templateId),
+                controller.signal,
+            ).then(
+                (r): {ok: true; data: StartExtractionExportResult} => ({ok: true, data: r}),
+                (err: Error) => ({ok: false, error: err} as const),
+            );
+
+            if (result.ok) {
+                succeeded += 1;
+                if (result.data.kind === "sync") {
+                    triggerDownload(result.data.blob, result.data.filename);
+                } else {
+                    addJob(
+                        createExtractionExportJob(projectId, result.data.job_id, {
+                            projectName,
+                            templateId,
+                            templateName: template?.name,
+                            mode,
+                            articleCount,
+                            includeAiMetadata,
+                            anonymizeReviewerNames,
+                        }),
+                    );
+                }
+            } else if (result.error.name === "AbortError") {
+                // User cancelled — silent, and the remaining tools are dropped.
+                aborted = true;
+                break;
             } else {
-                addJob(
-                    createExtractionExportJob(projectId, result.data.job_id, {
-                        projectName,
-                        templateId,
-                        templateName,
-                        mode,
-                        articleCount,
-                        includeAiMetadata,
-                        anonymizeReviewerNames,
-                    }),
+                failed.push(`${template?.name ?? templateId} — ${failureMessage(result.error)}`);
+            }
+        }
+
+        if (!aborted) {
+            if (succeeded > 0) {
+                toast[expectedSync ? "success" : "info"](
+                    t("extraction", expectedSync ? "exportSuccessToast" : "exportStartedToast"),
                 );
-                toast.info(t("extraction", "exportStartedToast"));
+            }
+            if (failed.length > 0) {
+                // Stay open and name what failed; the successful downloads have
+                // already been triggered.
+                setFailures(failed);
+                setError(t("extraction", "exportPartialFailureTitle"));
+            } else {
                 onOpenChange(false);
             }
-        } else if (result.error.name !== "AbortError") {
-            // AbortError = user cancelled — silent; other errors surface inline
-            const message = result.error.message ?? t("extraction", "exportFailedToast");
-            setError(message);
         }
 
         setSubmitting(false);
@@ -267,6 +367,8 @@ export function ExtractionExportDialog({
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
     }, [open, canSubmit, submit]);
+
+    const singleUser = mode === "single_user";
 
     return (
         <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(o) : dismiss())}>
@@ -330,7 +432,7 @@ export function ExtractionExportDialog({
                     </div>
 
                     {/* 1b. Reviewer picker (US2 — only when mode=single_user) */}
-                    {mode === "single_user" && (
+                    {singleUser && (
                         <div className="space-y-2">
                             <Label htmlFor="reviewer-picker">
                                 {t("extraction", "exportReviewerLabel")}
@@ -379,42 +481,99 @@ export function ExtractionExportDialog({
                         </div>
                     )}
 
-                    {/* 2. Articles to export */}
+                    {/* 2. Templates — only above one; a single-template surface
+                        (extraction) is visually unchanged. */}
+                    {templates.length > 1 && (
+                        <div className="space-y-3" data-testid="export-template-picker">
+                            <Label>{t("extraction", "exportTemplatesLabel")}</Label>
+                            {singleUser ? (
+                                <>
+                                    <RadioGroup
+                                        value={selectedTemplateIds[0] ?? undefined}
+                                        onValueChange={(v) => setSelectedTemplateIds([v])}
+                                        className="flex flex-col gap-2"
+                                    >
+                                        {templates.map((tpl) => (
+                                            <div
+                                                key={tpl.id}
+                                                className="flex items-center space-x-2"
+                                            >
+                                                <RadioGroupItem
+                                                    value={tpl.id}
+                                                    id={`export-template-${tpl.id}`}
+                                                />
+                                                <Label
+                                                    htmlFor={`export-template-${tpl.id}`}
+                                                    className="text-sm font-normal cursor-pointer"
+                                                >
+                                                    {tpl.name}
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </RadioGroup>
+                                    <p className="text-xs text-muted-foreground">
+                                        {t("extraction", "exportTemplatesSingleUserHint")}
+                                    </p>
+                                </>
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    {templates.map((tpl) => (
+                                        <div key={tpl.id} className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id={`export-template-${tpl.id}`}
+                                                checked={selectedTemplateIds.includes(tpl.id)}
+                                                onCheckedChange={(c) =>
+                                                    toggleTemplate(tpl.id, c === true)
+                                                }
+                                            />
+                                            <Label
+                                                htmlFor={`export-template-${tpl.id}`}
+                                                className="text-sm font-normal cursor-pointer"
+                                            >
+                                                {tpl.name}
+                                            </Label>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 3. Sheets to include */}
                     <div className="space-y-3">
-                        <Label>{t("extraction", "exportScopeLabel")}</Label>
+                        <Label>{t("extraction", "exportShapeLabel")}</Label>
                         <RadioGroup
-                            value={articleScope}
-                            onValueChange={(v) =>
-                                setArticleScope(v as ExtractionArticleScope)
-                            }
+                            value={shape}
+                            onValueChange={(v) => setShape(v as ExtractionExportShape)}
                             className="flex flex-col gap-2"
                         >
-                            <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="current_list" id="scope-current"/>
-                                <Label
-                                    htmlFor="scope-current"
-                                    className="text-sm font-normal cursor-pointer"
+                            {SHAPES.map((option) => (
+                                <div
+                                    key={option.value}
+                                    className="flex items-start space-x-2"
                                 >
-                                    {t("extraction", "exportScopeCurrentList")} ({currentListIds.length})
-                                </Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <RadioGroupItem
-                                    value="selected_only"
-                                    id="scope-selected"
-                                    disabled={selectedIds.length === 0}
-                                />
-                                <Label
-                                    htmlFor="scope-selected"
-                                    className="text-sm font-normal cursor-pointer"
-                                >
-                                    {t("extraction", "exportScopeSelectedOnly")} ({selectedIds.length})
-                                </Label>
-                            </div>
+                                    <RadioGroupItem
+                                        value={option.value}
+                                        id={`shape-${option.value}`}
+                                        className="mt-0.5"
+                                    />
+                                    <div className="space-y-0.5">
+                                        <Label
+                                            htmlFor={`shape-${option.value}`}
+                                            className="text-sm font-normal cursor-pointer"
+                                        >
+                                            {option.label}
+                                        </Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            {option.description}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
                         </RadioGroup>
                     </div>
 
-                    {/* 3. Additional content */}
+                    {/* 4. Additional content */}
                     <div className="space-y-3">
                         <Label>{t("extraction", "exportAdditionalLabel")}</Label>
                         <div className="flex items-start space-x-2">
@@ -481,8 +640,19 @@ export function ExtractionExportDialog({
                     {error && (
                         <Alert variant="destructive">
                             <AlertCircle className="h-4 w-4"/>
-                            <AlertTitle>{t("extraction", "exportFailedToast")}</AlertTitle>
-                            <AlertDescription>{error}</AlertDescription>
+                            <AlertTitle>{error}</AlertTitle>
+                            {failures.length > 0 && (
+                                <AlertDescription>
+                                    <ul
+                                        className="list-disc space-y-0.5 pl-4"
+                                        data-testid="extraction-export-failures"
+                                    >
+                                        {failures.map((line) => (
+                                            <li key={line}>{line}</li>
+                                        ))}
+                                    </ul>
+                                </AlertDescription>
+                            )}
                         </Alert>
                     )}
                 </div>

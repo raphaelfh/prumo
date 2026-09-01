@@ -15,9 +15,12 @@ from app.schemas.extraction_export import (
     ExtractionExportCancelResponse,
     ExtractionExportMode,
     ExtractionExportRequest,
+    ExtractionExportShape,
     ExtractionExportStartedResponse,
     ExtractionExportStatusResponse,
 )
+from app.services.exports.extraction.workbook import ExportShape
+from app.services.extraction_export_service import ExportMode
 
 
 class TestExtractionExportMode:
@@ -173,7 +176,34 @@ class TestExtractionExportRequestConfig:
             "article_ids",
             "include_ai_metadata",
             "anonymize_reviewer_names",
+            "shape",
         }
+
+    def test_shape_defaults_to_complete(self) -> None:
+        """Every pre-shape caller keeps today's whole-workbook output."""
+        req = ExtractionExportRequest(template_id=uuid4(), article_ids=[uuid4()])
+        assert req.shape is ExtractionExportShape.COMPLETE
+
+    def test_shape_accepts_the_three_declared_values(self) -> None:
+        for value in ("complete", "dictionary", "publication"):
+            req = ExtractionExportRequest.model_validate(
+                {
+                    "template_id": str(uuid4()),
+                    "article_ids": [str(uuid4())],
+                    "shape": value,
+                }
+            )
+            assert req.shape.value == value
+
+    def test_shape_rejects_an_unknown_value(self) -> None:
+        with pytest.raises(ValidationError):
+            ExtractionExportRequest.model_validate(
+                {
+                    "template_id": str(uuid4()),
+                    "article_ids": [str(uuid4())],
+                    "shape": "everything",
+                }
+            )
 
 
 class TestExtractionExportStartedResponse:
@@ -231,3 +261,18 @@ class TestExtractionExportCancelResponse:
     def test_cancelled_coerces_truthy_int(self) -> None:
         # Pydantic v2 bool coercion accepts 1/0 ints.
         assert ExtractionExportCancelResponse(cancelled=1).cancelled is True  # type: ignore[arg-type]
+
+
+class TestSchemaServiceEnumParity:
+    """The schema layer mirrors the service enums BY VALUE, never by import.
+
+    The endpoint converts with ``ExportShape(payload.shape.value)``, so a
+    member added to one side and not the other turns a perfectly valid
+    request into a 500 at the boundary. Same for ``mode``.
+    """
+
+    def test_shape_values_match_the_service_enum(self) -> None:
+        assert {m.value for m in ExtractionExportShape} == {m.value for m in ExportShape}
+
+    def test_mode_values_match_the_service_enum(self) -> None:
+        assert {m.value for m in ExtractionExportMode} == {m.value for m in ExportMode}

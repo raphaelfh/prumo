@@ -37,7 +37,7 @@ from app.schemas.extraction_export import (
     ExtractionExportStartedResponse,
     ExtractionExportStatusResponse,
 )
-from app.services.exports.extraction.workbook import build_workbook
+from app.services.exports.extraction.workbook import ExportShape, build_workbook
 from app.services.extraction_export_service import (
     ExportMode,
     ExtractionExportService,
@@ -197,6 +197,7 @@ async def start_extraction_export(
         article_scope=payload.article_scope.value,
         include_ai_metadata=payload.include_ai_metadata,
         anonymize_reviewer_names=payload.anonymize_reviewer_names,
+        shape=payload.shape.value,
         trace_id=trace_id,
     )
 
@@ -232,7 +233,9 @@ async def start_extraction_export(
             )
 
         # Run the CPU-bound openpyxl writer off the event loop.
-        data: bytes = await asyncio.to_thread(build_workbook, layout)
+        data: bytes = await asyncio.to_thread(
+            build_workbook, layout, ExportShape(payload.shape.value)
+        )
 
         filename = ExtractionExportService.format_filename(
             project_name=layout.project_name,
@@ -272,6 +275,7 @@ async def start_extraction_export(
             reviewer_id=(str(payload.reviewer_id) if payload.reviewer_id else None),
             include_ai_metadata=payload.include_ai_metadata,
             anonymize_reviewer_names=payload.anonymize_reviewer_names,
+            shape=payload.shape.value,
         )
     except Exception:
         return _envelope_failure(
