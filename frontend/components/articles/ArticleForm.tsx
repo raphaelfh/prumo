@@ -9,8 +9,6 @@ import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
 import {Textarea} from "@/components/ui/textarea";
-import {Badge} from "@/components/ui/badge";
-import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Switch} from "@/components/ui/switch";
 import {
     Select,
@@ -19,36 +17,24 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import {Alert, AlertDescription} from "@/components/ui/alert";
 import {cn} from "@/lib/utils";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import {TooltipProvider} from "@/components/ui/tooltip";
 import {toast} from "sonner";
 import {
   AlertCircle,
   ArrowLeft,
   BookOpen,
-  Download,
-  Eye,
   FileText,
   Hash,
   Loader2,
-  Plus,
   Save,
   Tag,
-  Trash2,
   Upload
 } from "lucide-react";
 import {useAuth} from "@/contexts/AuthContext";
 import {ArticleFileUploadDialogNew} from './ArticleFileUploadDialogNew';
+import {ArticleFilesSection, type StagedArticleFile} from './ArticleFilesSection';
+import {ArticleFormSteps, type ArticleFormStep, type FormStep} from './ArticleFormSteps';
 import {ArticleAuthorsField} from './ArticleAuthorsField';
 import {ArticleKeywordsField} from './ArticleKeywordsField';
 import {PageHeader} from '@/components/patterns/PageHeader';
@@ -60,10 +46,13 @@ import {
     fetchArticleFiles,
     insertArticle,
     updateArticle,
+    uploadArticleFile,
     downloadFileBlob,
     deleteArticleFile,
     type ArticleFileRecord,
 } from '@/services/articlesService';
+import {generateStorageKey} from '@/lib/file-validation';
+import {FILE_ROLES} from '@/lib/file-constants';
 import {authorsFromRows, newAuthorRow, rowsFromAuthorsArray, type AuthorFormRow} from '@/lib/articleAuthors';
 import {normalizeArticleKeywordsForSave} from '@/lib/articleKeywords';
 import {
@@ -72,7 +61,6 @@ import {
     ZOTERO_ITEM_TYPES,
     isKnownZoteroItemType,
 } from '@/lib/zoteroItemTypes';
-import type {LucideIcon} from 'lucide-react';
 
 interface Article {
   id: string;
@@ -122,7 +110,6 @@ interface ArticleFormProps {
     onDismiss?: () => void;
 }
 
-type FormStep = 'basic' | 'publication' | 'identifiers' | 'additional' | 'files';
 
 interface FormData {
   title: string;
@@ -156,7 +143,8 @@ interface FormData {
   license: string;
 }
 
-const STEPS: { id: FormStep; label: string; icon: LucideIcon; description: string }[] = [
+
+const STEPS: ArticleFormStep[] = [
   {
     id: 'basic',
       label: t('articles', 'basicInfo'),
@@ -215,8 +203,13 @@ export function ArticleForm({
   const [article, setArticle] = useState<Article | null>(null);
   const [files, setFiles] = useState<ArticleFile[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
+  const [stagedFiles, setStagedFiles] = useState<StagedArticleFile[]>([]);
+  // Set once the add-mode row lands. Its ONLY job is to stop a retry from
+  // inserting a second article; the form deliberately does NOT derive a mode
+  // from it — `mode` is a prop owned by the URL, and rewriting the URL would
+  // remount this tree and destroy the staged `File` objects.
+  const [createdArticleId, setCreatedArticleId] = useState<string | null>(null);
   const [fileToDelete, setFileToDelete] = useState<ArticleFile | null>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingFile, setDeletingFile] = useState(false);
 
     // State for validation errors
@@ -259,6 +252,8 @@ export function ArticleForm({
     open_access: false,
     license: ''
   });
+
+  const effectiveArticleId = articleId ?? createdArticleId ?? undefined;
 
   const loadArticle = async () => {
     if (!articleId) return;
@@ -310,13 +305,17 @@ export function ArticleForm({
     });
   };
 
-  const loadFiles = async () => {
-    if (!articleId) return;
-    const result = await fetchArticleFiles(articleId);
+  const loadFilesFor = async (targetId: string) => {
+    const result = await fetchArticleFiles(targetId);
     if (result.ok) {
       setFiles(result.data);
     }
     // silent on error — files are best-effort
+  };
+
+  const loadFiles = async () => {
+    if (!effectiveArticleId) return;
+    await loadFilesFor(effectiveArticleId);
   };
 
     // Load article data (edit mode)
@@ -487,27 +486,54 @@ export function ArticleForm({
         sync_state: mode === 'add' ? "active" : undefined,
     };
 
-    let result;
-    if (mode === 'add') {
-      result = await insertArticle(articleData);
+    // Creating an article with staged files is two writes: the row, then N
+    // uploads. `saving` stays true across BOTH — clearing it after phase one
+    // would re-enable Create while the row already exists, and a second click
+    // would insert a duplicate.
+    const isCreating = mode === 'add' && createdArticleId === null;
+
+    let savedArticleId: string;
+    if (isCreating) {
+      const created = await insertArticle(articleData);
+      if (!created.ok) {
+        setSaving(false);
+        toast.error(`${t('articles', 'errorCreateArticle')}: ${created.error.message || t('articles', 'errorCreateArticle')}`);
+        return; // staged files are untouched, so the user can fix and retry
+      }
+      savedArticleId = created.data.id;
+      setCreatedArticleId(savedArticleId);
     } else {
-      if (!articleId) {
+      const targetId = articleId ?? createdArticleId;
+      if (!targetId) {
         setSaving(false);
         toast.error(t('articles', 'errorUpdateArticle') + ': articleId is required for edit mode');
         return;
       }
-      result = await updateArticle(articleId, articleData);
+      const updated = await updateArticle(targetId, articleData);
+      if (!updated.ok) {
+        setSaving(false);
+        toast.error(`${t('articles', 'errorUpdateArticle')}: ${updated.error.message || t('articles', 'errorUpdateArticle')}`);
+        return;
+      }
+      savedArticleId = targetId;
     }
+
+    // Phase two. Only files that have not landed yet are retried.
+    const failedIds = await uploadStagedFiles(savedArticleId);
 
     setSaving(false);
 
-    if (!result.ok) {
-      const errorMessage = result.error.message || (mode === 'add' ? t('articles', 'errorCreateArticle') : t('articles', 'errorUpdateArticle'));
-        toast.error(`${mode === 'add' ? t('articles', 'errorCreateArticle') : t('articles', 'errorUpdateArticle')}: ${errorMessage}`);
+    if (failedIds.length > 0) {
+      // The row persisted, so the sheet MUST stay open: these `File` objects
+      // exist nowhere else and dismissing would drop them silently.
+      toast.warning(
+        t('articles', 'stagedUploadPartial').replace('{{failed}}', String(failedIds.length)),
+      );
+      void loadFilesFor(savedArticleId);
       return;
     }
 
-      toast.success(mode === 'add' ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));
+    toast.success(isCreating ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));
 
     if (mode === 'add') {
         if (isPanel) {
@@ -519,6 +545,37 @@ export function ArticleForm({
     } else {
       onComplete?.();
     }
+  };
+
+  /**
+   * Uploads every staged file against `targetId`, sequentially so a MAIN
+   * conflict surfaces before the rest. Returns the ids that failed; those stay
+   * staged and retryable, and the ones that succeeded are dropped from the list
+   * so a retry never uploads them twice.
+   */
+  const uploadStagedFiles = async (targetId: string): Promise<string[]> => {
+    if (stagedFiles.length === 0) return [];
+
+    const failures = new Map<string, string>();
+    for (const staged of stagedFiles) {
+      const result = await uploadArticleFile({
+        projectId,
+        articleId: targetId,
+        storageKey: generateStorageKey(projectId, targetId, staged.file.name),
+        file: staged.file,
+        role: staged.role,
+      });
+      if (!result.ok) {
+        failures.set(staged.id, result.error.message || t('articles', 'errorUnknown'));
+      }
+    }
+
+    setStagedFiles(prev =>
+      prev
+        .filter(f => failures.has(f.id))
+        .map(f => ({...f, error: failures.get(f.id)})),
+    );
+    return [...failures.keys()];
   };
 
   const downloadFile = async (file: ArticleFile) => {
@@ -544,13 +601,11 @@ export function ArticleForm({
 
       toast.success(t('articles', 'fileRemovedSuccess'));
       void loadFiles(); // Reload file list
-    setDeleteDialogOpen(false);
     setFileToDelete(null);
   };
 
   const openDeleteDialog = (file: ArticleFile) => {
     setFileToDelete(file);
-    setDeleteDialogOpen(true);
   };
 
   const viewPDF = async (file: ArticleFile) => {
@@ -618,6 +673,7 @@ export function ArticleForm({
     }
 
     return (
+      <TooltipProvider delayDuration={200}>
         <div
             className={cn(
                 'flex flex-col bg-background min-h-0',
@@ -627,13 +683,28 @@ export function ArticleForm({
             <PageHeader
                 leading={
                     <Button variant="ghost" size="sm" onClick={handleDismiss} aria-label={t('common', 'back')}>
-                        <ArrowLeft className="h-4 w-4 mr-2"/>
-                        {t('common', 'back')}
+                        {/*
+                          * At 375px this bar is 374px wide and the actions group takes 206
+                          * of it, so the identity group was compressed until the title
+                          * rendered as nothing. The label folds first — the arrow plus the
+                          * aria-label still name the button — and sr-only rather than
+                          * `hidden` keeps that name in the accessibility tree.
+                          */}
+                        <ArrowLeft className="h-4 w-4 sm:mr-2"/>
+                        <span data-slot="back-label" className="sr-only sm:not-sr-only">
+                            {t('common', 'back')}
+                        </span>
                     </Button>
                 }
                 title={mode === 'add' ? t('articles', 'addArticle') : t('articles', 'editArticle')}
                 description={
-                    mode === 'edit' && article ? article.title : t('articles', 'addArticleDesc')
+                    /*
+                     * Edit mode's description IS the article's title, and it is the only
+                     * thing naming which article this is — so it must never fold. Add
+                     * mode's merely restates the title next to it, so it is the one that
+                     * gives way rather than the title.
+                     */
+                    mode === 'edit' && article ? article.title : undefined
                 }
                 actions={
                     <div className="flex items-center gap-2">
@@ -663,41 +734,12 @@ export function ArticleForm({
             />
 
             <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row">
-                <aside
-                    className="w-full shrink-0 border-b border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] lg:w-56 lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto">
-                    <nav
-                        role="navigation"
-                        aria-label={t('articles', 'formStepsAria')}
-                        className="flex flex-row gap-0.5 px-2 py-3 lg:flex-col lg:px-2 lg:py-4"
-                    >
-                        {STEPS.map((step) => {
-                            const Icon = step.icon;
-                            const isActive = step.id === activeSection;
-                            return (
-                                <button
-                                    key={step.id}
-                                    type="button"
-                                    aria-current={isActive ? 'location' : undefined}
-                                    onClick={() => scrollToSection(step.id)}
-                                    className={cn(
-                                        'flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium transition-colors duration-75',
-                                        'hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
-                                        'lg:w-full lg:shrink',
-                                        isActive
-                                            ? 'bg-muted text-foreground border-l-2 border-l-primary pl-1.5'
-                                            : 'text-muted-foreground border-l-2 border-l-transparent pl-1.5'
-                                    )}
-                                >
-                                    <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5}/>
-                                    <span className="whitespace-nowrap lg:whitespace-normal">{step.label}</span>
-                                    {isActive && step.id === 'basic' && !isStepValid('basic') && (
-                                        <AlertCircle className="ml-auto h-3.5 w-3.5 shrink-0 text-warning"/>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </nav>
-                </aside>
+                <ArticleFormSteps
+                    steps={STEPS}
+                    activeStep={activeSection}
+                    onSelect={scrollToSection}
+                    titleMissing={!isStepValid('basic')}
+                />
 
                 <main
                     ref={scrollRef}
@@ -1119,106 +1161,21 @@ export function ArticleForm({
                         <section id="article-section-files" className="scroll-mt-4 space-y-6">
                             <SettingsSection title={t('articles', 'filesLabel')}
                                              description={t('articles', 'filesDesc')}>
-                                <Card className="rounded-md border-border/40 shadow-elev-popover">
-                                    <CardHeader
-                                        className="flex flex-row items-start justify-between gap-3 space-y-0 p-4 pb-2">
-                                        <div className="min-w-0 space-y-1.5">
-                                            <CardTitle
-                                                className="text-[13px] font-medium leading-none">{t('articles', 'articleFiles')}</CardTitle>
-                                            <CardDescription className="text-[12px] text-muted-foreground/70">
-                                                {t('articles', 'articleFilesDesc')}
-                                            </CardDescription>
-                                        </div>
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-8 shrink-0 text-[12px]"
-                                            onClick={() => setShowFileUpload(true)}
-                                            disabled={mode === 'add'}
-                                        >
-                                            <Plus className="mr-1.5 h-3.5 w-3.5"/>
-                                            {t('articles', 'addFiles')}
-                                        </Button>
-                                    </CardHeader>
-                                    <CardContent className="p-4 pt-2">
-                                        {mode === 'add' ? (
-                                            <Alert className="border-border/50 py-2">
-                                                <AlertCircle className="h-3.5 w-3.5"/>
-                                                <AlertDescription
-                                                    className="text-[13px]">{t('articles', 'formSaveFirstFiles')}</AlertDescription>
-                                            </Alert>
-                                        ) : files.length > 0 ? (
-                                            <div className="space-y-2">
-                                                {files.map((file) => (
-                                                    <div
-                                                        key={file.id}
-                                                        className="flex items-center justify-between gap-2 rounded-md border border-border/50 px-2 py-2"
-                                                    >
-                                                        <div className="flex min-w-0 items-center gap-2">
-                                                            <FileText
-                                                                className="h-4 w-4 shrink-0 text-muted-foreground"/>
-                                                            <div className="min-w-0">
-                                                                <p className="truncate text-[13px] font-medium">{file.original_filename || 'document.pdf'}</p>
-                                                                <div
-                                                                    className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                                                    <Badge variant="outline"
-                                                                           className="h-5 px-1.5 text-[10px] font-normal">
-                                                                        {file.file_role}
-                                                                    </Badge>
-                                                                    {file.bytes != null && (
-                                                                        <span
-                                                                            className="text-[11px] text-muted-foreground">
-                                        {(file.bytes / 1024 / 1024).toFixed(2)} MB
-                                      </span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex shrink-0 gap-1">
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                variant="ghost"
-                                                                className="h-7 px-2 text-[11px]"
-                                                                onClick={() => viewPDF(file)}
-                                                            >
-                                                                <Eye className="mr-1 h-3 w-3"/>
-                                                                {t('articles', 'formViewPdf')}
-                                                            </Button>
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                variant="ghost"
-                                                                className="h-7 px-2 text-[11px]"
-                                                                onClick={() => downloadFile(file)}
-                                                            >
-                                                                <Download className="mr-1 h-3 w-3"/>
-                                                                {t('articles', 'formDownloadPdf')}
-                                                            </Button>
-                                                            <Button
-                                                                type="button"
-                                                                size="icon"
-                                                                variant="ghost"
-                                                                className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                                                                onClick={() => openDeleteDialog(file)}
-                                                                aria-label={t('articles', 'removeFile')}
-                                                            >
-                                                                <Trash2 className="h-3.5 w-3.5"/>
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="py-8 text-center text-[13px] text-muted-foreground">
-                                                <Upload className="mx-auto mb-3 h-9 w-9 opacity-40"/>
-                                                <p>{t('articles', 'noFilesAddedYet')}</p>
-                                                <p className="mt-1 text-[11px]">{t('articles', 'addFilesHint')}</p>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
+                                <ArticleFilesSection
+                                    files={files}
+                                    stagedFiles={stagedFiles}
+                                    onRemoveStaged={(id) =>
+                                        setStagedFiles(prev => prev.filter(f => f.id !== id))
+                                    }
+                                    fileToDelete={fileToDelete}
+                                    deleting={deletingFile}
+                                    onView={viewPDF}
+                                    onDownload={downloadFile}
+                                    onRequestDelete={openDeleteDialog}
+                                    onCancelDelete={() => setFileToDelete(null)}
+                                    onConfirmDelete={handleDeleteFile}
+                                    onAddFiles={() => setShowFileUpload(true)}
+                                />
                             </SettingsSection>
                         </section>
                     </div>
@@ -1226,41 +1183,31 @@ export function ArticleForm({
       </div>
 
         {/* File upload modal */}
-      {showFileUpload && articleId && (
+      {showFileUpload && (
         <ArticleFileUploadDialogNew
           open={showFileUpload}
           onOpenChange={setShowFileUpload}
-          articleId={articleId}
+          articleId={effectiveArticleId}
           projectId={projectId}
+          mainAlreadyStaged={stagedFiles.some(f => f.role === FILE_ROLES.MAIN)}
           onFileUploaded={() => {
             loadFiles();
             setShowFileUpload(false);
           }}
+          onFilesStaged={(picked) =>
+            setStagedFiles(prev => [
+              ...prev,
+              ...picked.map((p, i) => ({
+                id: `staged-${prev.length + i}-${p.file.name}`,
+                file: p.file,
+                role: p.role,
+              })),
+            ])
+          }
         />
       )}
 
-        {/* Delete confirmation dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-              <AlertDialogTitle>{t('articles', 'confirmRemove')}</AlertDialogTitle>
-            <AlertDialogDescription>
-                {t('articles', 'confirmRemoveFile')} &quot;{fileToDelete?.original_filename}&quot;? {t('articles', 'confirmRemoveDesc')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-              <AlertDialogCancel disabled={deletingFile}>{t('common', 'cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteFile}
-              disabled={deletingFile}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-                {deletingFile ? t('articles', 'removing') : t('articles', 'remove')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
+      </TooltipProvider>
   );
 }
-

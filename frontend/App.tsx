@@ -41,8 +41,6 @@ const ExtractionFullScreen = lazy(() => import("./pages/ExtractionFullScreen"));
 const QualityAssessmentFullScreen = lazy(
   () => import("./pages/QualityAssessmentFullScreen"),
 );
-const AddArticle = lazy(() => import("./pages/AddArticle"));
-const EditArticle = lazy(() => import("./pages/EditArticle"));
 const UserSettings = lazy(() => import("./pages/UserSettings"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -128,30 +126,6 @@ const App = () => {
                           <RunRoute tab="quality">
                             <QualityAssessmentFullScreen />
                           </RunRoute>
-                        </ErrorBoundary>
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/projects/:projectId/articles/add"
-                    element={
-                      <ProtectedRoute>
-                          <ErrorBoundary context={t('common', 'errorContextAddArticle')}>
-                          <ProjectProvider>
-                            <AddArticle />
-                          </ProjectProvider>
-                        </ErrorBoundary>
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/projects/:projectId/articles/:articleId/edit"
-                    element={
-                      <ProtectedRoute>
-                          <ErrorBoundary context={t('common', 'errorContextEditArticle')}>
-                          <ProjectProvider>
-                            <EditArticle />
-                          </ProjectProvider>
                         </ErrorBoundary>
                       </ProtectedRoute>
                     }
