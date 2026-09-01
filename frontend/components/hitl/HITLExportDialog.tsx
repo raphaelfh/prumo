@@ -241,6 +241,12 @@ export function HITLExportDialog({
         const delivery = expectedSync
             ? t("extraction", "exportPreviewDeliveryInline")
             : t("extraction", "exportPreviewDeliveryAsync");
+        // A dictionary-only workbook carries no article data at all, so
+        // promising a count of them describes the wrong thing.
+        if (shape === "dictionary") {
+            return t("extraction", "exportPreviewLineDictionaryFmt")
+                .replace("{delivery}", delivery);
+        }
         if (fieldCount == null) {
             return t("extraction", "exportPreviewLineNoFieldsFmt")
                 .replace("{articles}", String(articleCount))

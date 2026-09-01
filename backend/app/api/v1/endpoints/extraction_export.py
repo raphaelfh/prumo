@@ -37,7 +37,11 @@ from app.schemas.extraction_export import (
     ExtractionExportStartedResponse,
     ExtractionExportStatusResponse,
 )
-from app.services.exports.extraction.workbook import ExportShape, build_workbook
+from app.services.exports.extraction.workbook import (
+    ExportShape,
+    build_workbook,
+    shape_needs_articles,
+)
 from app.services.extraction_export_service import (
     ExportMode,
     ExtractionExportService,
@@ -203,6 +207,7 @@ async def start_extraction_export(
 
     # --- sync path --------------------------------------------------------
     if _should_run_sync(payload):
+        shape = ExportShape(payload.shape.value)
         try:
             layout = await service.resolve_layout(
                 project_id=project_id,
@@ -221,7 +226,10 @@ async def start_extraction_export(
                 trace_id=trace_id,
             )
 
-        if not layout.articles:
+        # A dictionary-only workbook is a description of the INSTRUMENT — its
+        # three sheets are template projections that never read a run — so it
+        # must not be refused for want of finalized assessments.
+        if not layout.articles and shape_needs_articles(shape):
             return _envelope_failure(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 code="EMPTY_ELIGIBLE_ARTICLES",
@@ -233,9 +241,7 @@ async def start_extraction_export(
             )
 
         # Run the CPU-bound openpyxl writer off the event loop.
-        data: bytes = await asyncio.to_thread(
-            build_workbook, layout, ExportShape(payload.shape.value)
-        )
+        data: bytes = await asyncio.to_thread(build_workbook, layout, shape)
 
         filename = ExtractionExportService.format_filename(
             project_name=layout.project_name,
