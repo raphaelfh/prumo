@@ -443,4 +443,21 @@ describe("HITLExportDialog", () => {
         );
         expect(screen.getByLabelText("PROBAST")).toBeChecked();
     });
+
+    it("does not promise an article count for a dictionary-only export", async () => {
+        const user = userEvent.setup();
+        renderDialog();
+        // Complete workbook: the count is the right thing to promise.
+        expect(screen.getByTestId("extraction-export-preview")).toHaveTextContent(
+            /3 articles/,
+        );
+
+        await user.click(screen.getByLabelText(/Data dictionary only/i));
+
+        // That workbook carries no article data at all, so a count describes
+        // the wrong thing.
+        const preview = screen.getByTestId("extraction-export-preview");
+        expect(preview).not.toHaveTextContent(/3 articles/);
+        expect(preview).toHaveTextContent(/field catalogue/i);
+    });
 });

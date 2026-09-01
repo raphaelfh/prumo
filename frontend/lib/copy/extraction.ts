@@ -430,6 +430,7 @@ export const extraction = {
     exportFailedToast: 'Export failed.',
     exportPreviewLineFmt: 'Will export {articles} articles × {fields} fields → {delivery}',
     exportPreviewLineNoFieldsFmt: 'Will export {articles} articles → {delivery}',
+    exportPreviewLineDictionaryFmt: "Will export this template's field catalogue → {delivery}",
     exportPreviewDeliveryInline: 'inline download',
     exportPreviewDeliveryAsync: 'background job',
     // TemplateInspector section summary
