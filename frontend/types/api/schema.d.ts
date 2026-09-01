@@ -3646,12 +3646,27 @@ export interface components {
              */
             reviewer_id?: string | null;
             /**
+             * @description Which sheets the workbook carries. Defaults to every sheet.
+             * @default complete
+             */
+            shape: components["schemas"]["ExtractionExportShape"];
+            /**
              * Template Id
              * Format: uuid
              * @description Active project_extraction_templates id.
              */
             template_id: string;
         };
+        /**
+         * ExtractionExportShape
+         * @description Which sheets the produced workbook carries.
+         *
+         *     Mirrors ``services.extraction_export_service.ExportShape`` by value, the
+         *     same way ``ExtractionExportMode`` mirrors ``ExportMode`` — the schema
+         *     layer never imports the service layer.
+         * @enum {string}
+         */
+        ExtractionExportShape: "complete" | "dictionary" | "publication";
         /**
          * ExtractionExportStatusResponse
          * @description GET /status/{job_id} payload.

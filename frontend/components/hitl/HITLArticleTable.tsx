@@ -17,7 +17,7 @@
  * and the structural parity the user asked for.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { AlertCircle, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -118,6 +118,12 @@ interface Props {
   templateSchema?: Record<string, unknown> | null;
   emptyTitle?: string;
   emptyDescription?: string;
+  /**
+   * Rendered in the toolbar's trailing group, beside the list count — the
+   * same prop name and placement ``ArticleExtractionTable`` uses, so a
+   * surface mounts the same action on either table.
+   */
+  toolbarActions?: ReactNode;
 }
 
 export function HITLArticleTable({
@@ -128,6 +134,7 @@ export function HITLArticleTable({
   templateSchema,
   emptyTitle,
   emptyDescription,
+  toolbarActions,
 }: Props) {
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -458,6 +465,7 @@ export function HITLArticleTable({
               total={articles.length}
               label={t("extraction", "tableArticlesCount")}
             />
+            {toolbarActions}
           </div>
         </div>
         <ActiveFilterChips

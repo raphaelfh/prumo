@@ -152,4 +152,19 @@ describe('QualityAssessmentInterface', () => {
       ),
     );
   });
+
+  it('offers the export dialog from the article-table toolbar', async () => {
+    const user = userEvent.setup();
+    renderInterface();
+
+    // The button lives in HITLArticleTable's toolbar via `toolbarActions` —
+    // the same slot and placement the extraction table uses.
+    const exportButton = await screen.findByTestId('qa-export-button');
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    await user.click(exportButton);
+
+    expect(
+      await screen.findByRole('dialog', { name: /Export extraction data/i }),
+    ).toBeInTheDocument();
+  });
 });

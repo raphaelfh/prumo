@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-08-30
+last_reviewed: 2026-09-01
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-08-30 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-09-01 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -500,6 +500,15 @@ AI-path guard (`app/services/llm_field_filter.py`), progress
 same consumers walk comes from the run's FROZEN `version_id`. That
 live-vs-frozen split is the non-obvious invariant to preserve here.
 
+In the export, that parity is applied **once**, on the resolved
+`value_map`, in `resolve_layout` before any sheet builder reads it
+(`_mark_out_of_scope_values`): an out-of-scope coordinate is stamped with
+the same `"Not applicable"` label the run view renders, so the matrix, the
+per-section tidy tables and the appraisal summary inherit it without any
+builder receiving the schema. The classifier's own section is never
+stamped — the appraisal re-reads the map, and a stamped classifier would
+answer "Not applicable" to "which sections are out of scope?".
+
 ### QA / Data-extraction code reuse boundary
 
 Both flows share the **field-level primitives** but diverge above that:
@@ -512,6 +521,7 @@ Both flows share the **field-level primitives** but diverge above that:
 | `RunReviewerComparison` (server-blinded reviewer compare view) | ✅ Yes | `frontend/components/runs/RunReviewerComparison.tsx`. Both screens render it for the manager/consensus compare surface, fed by `reviewerSummary.decisionsByCoord` (from `/runs/{id}/view`) — no direct Supabase read, blind callers get no peer columns. Gated by `useComparisonPermissions(projectId, userId, kind)`. |
 | `useGlobalQATemplates` / `useExtractionTemplates` | ❌ Distinct | QA needs `kind='quality_assessment'` filter; extraction operates on project clones. |
 | Form panel structure | ❌ Distinct | Extraction supports multi-instance (`cardinality='many'`) + AI suggestions panel; QA is 1:1 per domain. Both now carry a per-kind assess/extract↔compare view-mode toggle that swaps in the shared `RunReviewerComparison`. Trying to unify the rest creates over-engineering. |
+| `HITLExportDialog` (.xlsx export: mode, output shape, template picker) | ✅ Yes | `frontend/components/hitl/HITLExportDialog.tsx`, mounted by `ExtractionInterface` and `QualityAssessmentInterface` through each table's `toolbarActions` slot. One template = no picker, so the extraction surface is unchanged; QA passes every enabled tool, active one first. Single-user mode is single-tool — reviewer eligibility is per template. |
 | Header actions | ❌ Distinct | Extraction has AI extraction triggers, full export menu; QA has Publish + finalized badge. Both expose the compare view-mode toggle (shown only when the caller may see peers). |
 
 **Rule of thumb:** if you're adding behaviour that touches a *single field*

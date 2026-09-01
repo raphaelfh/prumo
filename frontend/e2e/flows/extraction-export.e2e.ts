@@ -323,9 +323,9 @@ test.describe("Extraction export — UI flow", () => {
 
     // Dialog opens.
     await expect(page.getByText(/Export extraction data/i)).toBeVisible();
-    // Defaults: Consensus + Current list selected; AI off; anonymize hidden.
+    // Defaults: Consensus + the complete workbook; AI off; anonymize hidden.
     await expect(page.getByLabel("Consensus")).toBeChecked();
-    await expect(page.getByLabel(/Current list/i)).toBeChecked();
+    await expect(page.getByLabel(/Complete workbook/i)).toBeChecked();
     await expect(
       page.getByLabel(/Include AI metadata sheet/i),
     ).not.toBeChecked();
@@ -387,12 +387,11 @@ test.describe("Extraction export — UI flow", () => {
     await expect(page.getByText(/Export extraction data/i)).not.toBeVisible();
   });
 
-  test("Empty-scope guard: Selected only is disabled when nothing is ticked", async ({ page }) => {
+  test("the template picker is absent on the single-template extraction surface", async ({ page }) => {
     const env = loadE2EEnv();
     const exportBtn = await openExportTab(page, env);
     await exportBtn.click();
-    const selected = page.getByLabel(/Selected only/i);
-    // When no articles ticked, the radio is disabled per FR-005.
-    await expect(selected).toBeDisabled();
+    // One template = no picker, so the extraction dialog is unchanged (§2).
+    await expect(page.getByTestId("export-template-picker")).toHaveCount(0);
   });
 });
