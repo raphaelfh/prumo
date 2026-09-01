@@ -25,7 +25,14 @@ vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 // `toast` is CALLABLE as well as a namespace: the B-9d undo arms
 // `toast(message, {action})`, which a namespace-only mock cannot receive.
 vi.mock('sonner', () => ({
-  toast: Object.assign(vi.fn(), {error: vi.fn(), success: vi.fn(), info: vi.fn()}),
+  toast: Object.assign(vi.fn(), {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    // useStructuralHistory clears the shared slot when a button or the
+    // toast action consumes it.
+    dismiss: vi.fn(),
+  }),
 }));
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {

@@ -168,7 +168,7 @@ interface ReplayDeps {
 }
 
 /**
- * Re-create the captured subtree. Resolves false on the FIRST failure.
+ * Re-create the captured subtree. Resolves null on the FIRST failure.
  *
  * Sections go back parents-first, and each child's dead `parentId` is
  * rewritten to the id its parent just received — the one step that cannot
@@ -177,11 +177,15 @@ interface ReplayDeps {
  * A partial replay stops rather than pressing on: reporting success over a
  * half-restored subtree would leave the manager believing their group came
  * back intact.
+ *
+ * On success it resolves the ROOT section's new id. The restored rows are
+ * new rows, not un-tombstoned ones, so that id is the only handle a Redo
+ * has on what came back.
  */
 export async function replaySection(
   snapshot: SectionSnapshot,
   deps: ReplayDeps,
-): Promise<boolean> {
+): Promise<string | null> {
   const newIdByOldId = new Map<string, string>();
 
   for (const section of snapshot.sections) {
@@ -198,7 +202,7 @@ export async function replaySection(
       entryLabel: section.entryLabel,
       isRequired: section.isRequired,
     });
-    if (!created.ok) return false;
+    if (!created.ok) return null;
     newIdByOldId.set(section.id, created.data.id);
 
     for (const field of section.fields) {
@@ -222,8 +226,10 @@ export async function replaySection(
         validation_schema: field.validationSchema,
         sort_order: field.sortOrder,
       });
-      if (!inserted.ok) return false;
+      if (!inserted.ok) return null;
     }
   }
-  return true;
+  // Parents-first, so the first captured section IS the root.
+  const root = snapshot.sections[0];
+  return root ? (newIdByOldId.get(root.id) ?? null) : null;
 }

@@ -209,7 +209,7 @@ describe('TemplateGrid accessibility', () => {
   it('keeps the section actions menu reachable by name', () => {
     renderGrid();
     expect(
-      screen.getByRole('button', {name: /gridAddMenu — Source of Data/}),
+      screen.getByRole('button', {name: /gridSectionActions — Source of Data/}),
     ).toBeInTheDocument();
   });
 
@@ -546,7 +546,7 @@ describe('TemplateGrid ghost-row Enter-chain (B-5 Task 4)', () => {
   it('the ＋ ▾ New-field item opens the section ghost editor', async () => {
     renderGrid();
     await userEvent.click(
-      screen.getByRole('button', {name: /gridAddMenu — Source of Data/}),
+      screen.getByRole('button', {name: /gridSectionActions — Source of Data/}),
     );
     await userEvent.click(
       await screen.findByRole('menuitem', {name: /gridNewField/}),
@@ -557,7 +557,7 @@ describe('TemplateGrid ghost-row Enter-chain (B-5 Task 4)', () => {
   it('the ＋ ▾ New-field item is disabled while filtering (ghosts are hidden)', async () => {
     renderGrid({isFiltering: true});
     await userEvent.click(
-      screen.getByRole('button', {name: /gridAddMenu — Source of Data/}),
+      screen.getByRole('button', {name: /gridSectionActions — Source of Data/}),
     );
     const item = await screen.findByRole('menuitem', {name: /gridNewField/});
     expect(item).toHaveAttribute('aria-disabled', 'true');
@@ -661,7 +661,7 @@ describe('TemplateGrid section rename (B-5 Task 6)', () => {
   /** Open the rename editor through the section `＋ ▾` menu. */
   async function startRename() {
     await userEvent.click(
-      screen.getByRole('button', {name: /gridAddMenu — Source of Data/}),
+      screen.getByRole('button', {name: /gridSectionActions — Source of Data/}),
     );
     await userEvent.click(
       await screen.findByRole('menuitem', {name: /editLabelButton/}),

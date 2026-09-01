@@ -38,8 +38,12 @@ import { insertField } from "@/services/extractionFieldService";
 import {
   captureSection,
   replaySection,
+  type SectionSnapshot,
 } from "@/components/extraction/template-config/sectionRestore";
-import { STRUCTURAL_UNDO_TOAST_ID } from "@/components/extraction/template-config/useStructuralUndo";
+import {
+  useStructuralHistory,
+  type StructuralStep,
+} from "@/components/extraction/template-config/useStructuralHistory";
 
 interface TemplateConfigEditorProps {
   projectId: string;
@@ -101,6 +105,10 @@ export function TemplateConfigEditor({
   // reaches published data, and the grid arms a 6s Undo for the misclick.
   // The mutation stays here because the editor owns the cache refresh.
   const deleteFieldMutation = useDeleteTemplateField(projectId, templateId);
+  // The ONE Undo/Redo slot for this surface. It lives here rather than in
+  // the grid panel because section deletes are dispatched from here and
+  // field moves/deletes from there — both must land in the same slot.
+  const history = useStructuralHistory();
   const { invalidateStructure } = useTemplateConfigCaches(
     projectId,
     templateId,
@@ -121,7 +129,7 @@ export function TemplateConfigEditor({
     field: GridField,
     sectionId: string,
     index: number,
-  ): Promise<boolean> => {
+  ): Promise<string | null> => {
     const result = await insertField(projectId, templateId, {
       entity_type_id: sectionId,
       name: field.key,
@@ -149,10 +157,10 @@ export function TemplateConfigEditor({
       toast.error(
         `${t("templateConfig", "errors_restoreField")}: ${result.error.message}`,
       );
-      return false;
+      return null;
     }
     await invalidateStructure();
-    return true;
+    return result.data.id;
   };
 
   /**
@@ -161,55 +169,32 @@ export function TemplateConfigEditor({
    * The snapshot is taken BEFORE the write, because the delete cascades:
    * a repeating group takes its child sections and every field beneath
    * them, and nothing is tombstoned — after the round trip there is
-   * nothing left to read.
-   *
-   * The undo shares the ONE structural slot (`STRUCTURAL_UNDO_TOAST_ID`)
-   * with the grid's move/delete undos: pushing under that id replaces a
-   * live toast, which is what keeps "one live undo at a time" true across
-   * the two owners. It cannot live in `useStructuralUndo` itself — that
+   * nothing left to read. It cannot live in `useStructuralUndo` — that
    * hook is panel-scoped and this needs the RAW `entityTypes` the editor
    * holds, which is where `role` and `is_required` survive.
+   *
+   * The delete runs through the SAME step a Redo would, so the write
+   * exists in one place; the slot raises its own toast.
    */
   const deleteSectionNow = async (
     sectionId: string,
     label: string,
   ): Promise<void> => {
     const snapshot = captureSection(entityTypes, sectionId);
-    const result = await deleteSection(projectId, templateId, sectionId);
-    if (!result.ok) {
-      // A section owning extraction instances cannot be deleted at all
-      // (RESTRICT), and the service maps that 409 to friendly copy.
-      toast.error(result.error.message);
+    if (!snapshot) {
+      // Nothing to put back — delete, offer no Undo.
+      const result = await deleteSection(projectId, templateId, sectionId);
+      if (!result.ok) toast.error(result.error.message);
+      else await invalidateStructure();
       return;
     }
-    await invalidateStructure();
-    if (!snapshot) return;
-
-    toast(
-      t("templateConfig", "undoDeleteSectionToast").replace(
-        "{{section}}",
-        label,
-      ),
-      {
-        id: STRUCTURAL_UNDO_TOAST_ID,
-        duration: 6000,
-        action: {
-          label: t("templateConfig", "undoAction"),
-          onClick: () => {
-            void replaySection(snapshot, {
-              createSection: (params) =>
-                createSection({ projectId, templateId, ...params }),
-              insertField: (payload) =>
-                insertField(projectId, templateId, payload),
-            }).then(async (restored) => {
-              if (!restored)
-                toast.error(t("templateConfig", "errors_restoreSection"));
-              await invalidateStructure();
-            });
-          },
-        },
-      },
-    );
+    const undoStep = await deleteSectionStep(
+      { projectId, templateId, invalidateStructure },
+      sectionId,
+      snapshot,
+      label,
+    ).apply();
+    if (undoStep) history.push(undoStep);
   };
 
   /** Delete a field. B-9d removed the confirmation modal — the Publish ☑
@@ -453,6 +438,7 @@ export function TemplateConfigEditor({
             }}
             onDeleteField={deleteFieldNow}
             onRestoreField={restoreFieldNow}
+            history={history}
             onAddSection={() => setAddSectionMode({ kind: "root" })}
             onAddGroup={() => setAddSectionMode({ kind: "group" })}
           />
@@ -526,4 +512,69 @@ export function TemplateConfigEditor({
       />
     </div>
   );
+}
+
+// Module scope on purpose: a step sits in the slot for the whole editing
+// session, and a factory declared in the component body would close over
+// that render's scope — pinning the entire raw `entityTypes` array (every
+// section, every field, every AI instruction) long after the invalidation
+// that followed the edit replaced it. These retain only their arguments.
+interface SectionStepDeps {
+  projectId: string;
+  templateId: string;
+  invalidateStructure: () => Promise<void>;
+}
+
+/** Put the captured subtree back; resolves the step that deletes it again
+ * (Redo), addressing the id the replay just minted. */
+function restoreSectionStep(
+  deps: SectionStepDeps,
+  snapshot: SectionSnapshot,
+  label: string,
+): StructuralStep {
+  const { projectId, templateId, invalidateStructure } = deps;
+  return {
+    label: t("templateConfig", "undoDeleteSectionToast").replace(
+      "{{section}}",
+      label,
+    ),
+    apply: async () => {
+      const restoredId = await replaySection(snapshot, {
+        createSection: (params) =>
+          createSection({ projectId, templateId, ...params }),
+        insertField: (payload) => insertField(projectId, templateId, payload),
+      });
+      await invalidateStructure();
+      if (!restoredId) {
+        toast.error(t("templateConfig", "errors_restoreSection"));
+        return null;
+      }
+      return deleteSectionStep(deps, restoredId, snapshot, label);
+    },
+  };
+}
+
+function deleteSectionStep(
+  deps: SectionStepDeps,
+  sectionId: string,
+  snapshot: SectionSnapshot,
+  label: string,
+): StructuralStep {
+  return {
+    label: t("templateConfig", "undoDeleteSectionToast").replace(
+      "{{section}}",
+      label,
+    ),
+    apply: async () => {
+      const result = await deleteSection(deps.projectId, deps.templateId, sectionId);
+      if (!result.ok) {
+        // Recorded extraction work anywhere under the section refuses the
+        // delete (409); the service maps it to friendly copy.
+        toast.error(result.error.message);
+        return null;
+      }
+      await deps.invalidateStructure();
+      return restoreSectionStep(deps, snapshot, label);
+    },
+  };
 }

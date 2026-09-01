@@ -57,6 +57,7 @@ from app.services.template_diff import (
     _normalize_entity,
     _normalize_field,
 )
+from app.services.template_section_service import sweep_empty_instances
 from app.services.template_version_service import TemplateVersionService
 
 __all__ = [
@@ -387,6 +388,18 @@ async def restore_snapshot(
     await db.flush()
 
     # Phase 4 — delete draft-added entity types, reverse-topologically.
+    #
+    # The instance sweep comes first: ``extraction_instances.entity_type_id``
+    # is ON DELETE RESTRICT, and a session seeds an empty instance for every
+    # top-level section on open, so without it the FK would refuse every
+    # section anyone had ever opened. Safe because the caller's gate
+    # (``_analyze`` -> ``sections_with_recorded_work``) has already kept back
+    # every section holding recorded work, and the up-walk in
+    # ``_closed_over_the_tree`` keeps a blocked node's draft-added ancestors
+    # with it — so nothing reachable from here owns work to lose.
+    if delete_entity_ids:
+        await sweep_empty_instances(db, section_ids=sorted(delete_entity_ids))
+        await db.flush()
     for level in reversed(_levels([live_entities[eid] for eid in delete_entity_ids])):
         await db.execute(
             delete(ExtractionEntityType).where(

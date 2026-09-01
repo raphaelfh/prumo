@@ -21,7 +21,7 @@ import {ChevronDown, GripVertical, Plus, Star, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import {Popover, PopoverContent, PopoverTrigger,} from '@/components/ui/popover';
-import {Command, CommandEmpty, CommandGroup, CommandInput, CommandItem,} from '@/components/ui/command';
+import {Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,} from '@/components/ui/command';
 
 interface AllowedUnitsListProps {
   values: string[];
@@ -161,28 +161,33 @@ export function AllowedUnitsList({
           </PopoverTrigger>
           <PopoverContent className="w-[250px] p-0" align="end">
             <Command>
-                <CommandInput placeholder={t('extraction', 'searchUnit')}/>
+              <CommandInput placeholder={t('extraction', 'searchUnit')} />
+              {/* CommandList is the scroll box (max-h-[300px] overflow-y-auto).
+                  Command itself has no height, so the nine COMMON_UNITS groups
+                  rendered as its direct children grew the popover to ~1400px
+                  and it escaped the viewport instead of scrolling. */}
+              <CommandList>
                 <CommandEmpty>{t('extraction', 'noUnitFound')}</CommandEmpty>
-              
-              {Object.entries(COMMON_UNITS).map(([category, units]) => (
-                <CommandGroup key={category} heading={category}>
-                  {units.map((unit) => (
-                    <CommandItem
-                      key={unit}
-                      onSelect={() => handleSelectSuggestion(unit)}
-                      className="cursor-pointer"
-                      disabled={values.includes(unit)}
-                    >
-                      <span className="font-mono text-sm">{unit}</span>
-                      {values.includes(unit) && (
-                        <Badge variant="secondary" className="ml-auto text-xs">
-                          Adicionado
-                        </Badge>
-                      )}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))}
+                {Object.entries(COMMON_UNITS).map(([category, units]) => (
+                  <CommandGroup key={category} heading={category}>
+                    {units.map((unit) => (
+                      <CommandItem
+                        key={unit}
+                        onSelect={() => handleSelectSuggestion(unit)}
+                        className="cursor-pointer"
+                        disabled={values.includes(unit)}
+                      >
+                        <span className="font-mono text-sm">{unit}</span>
+                        {values.includes(unit) && (
+                          <Badge variant="secondary" className="ml-auto text-xs">
+                            {t('extraction', 'unitAdded')}
+                          </Badge>
+                        )}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                ))}
+              </CommandList>
             </Command>
           </PopoverContent>
         </Popover>

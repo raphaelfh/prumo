@@ -72,6 +72,7 @@ import {
   loadTemplateConfigDiff,
   loadTemplateConfigStatus,
 } from './mocks/templateService';
+import {stubStructuralHistory} from '@/test/helpers/structuralHistoryStub';
 
 type Tier = 'additive' | 'cosmetic' | 'semantic' | 'destructive';
 type Variant = components['schemas']['ChangeVariant'];
@@ -440,6 +441,7 @@ function ConfigSurface({forceDiffOpen = false}: {forceDiffOpen?: boolean}) {
         templateId="t1"
         diffSheetOpen={diffOpen}
         onDeleteField={vi.fn()}
+        history={stubStructuralHistory()}
         sectionActions={{
           onCommitRename: vi.fn(),
           onDelete: vi.fn(),
