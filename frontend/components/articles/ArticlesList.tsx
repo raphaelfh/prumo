@@ -72,8 +72,8 @@ interface ArticlesListProps {
     onOpenRisDialog?: () => void;
     /** Notifies parent when export action should be enabled (filtered list or selection). */
     onExportAvailabilityChange?: (canExport: boolean) => void;
-    /** When set, empty-state "Add first article" opens the panel instead of navigating. */
-    onOpenAddArticle?: () => void;
+    /** Opens the article editor panel from the empty state's "Add first article". */
+    onOpenAddArticle: () => void;
 }
 
 type SortField =
@@ -699,11 +699,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
                 <Button
-                    onClick={() =>
-                        onOpenAddArticle
-                            ? onOpenAddArticle()
-                            : navigate(`/projects/${projectId}/articles/add`)
-                    }
+                    onClick={onOpenAddArticle}
                     className="h-10 px-6 text-[13px] font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors shadow-xs"
                 >
                     <Plus className="mr-2 h-4 w-4"/>

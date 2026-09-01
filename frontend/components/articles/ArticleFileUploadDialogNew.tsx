@@ -50,9 +50,21 @@ interface FileWithRole {
 interface ArticleFileUploadDialogNewProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  articleId: string;
+  /**
+   * Absent while the article has no row yet. The dialog then STAGES: it hands
+   * the chosen files back through `onFilesStaged` and uploads nothing, because
+   * both the storage key and the registration call need an article id.
+   */
+  articleId?: string;
   projectId: string;
   onFileUploaded?: () => void;
+  onFilesStaged?: (files: {file: File; role: FileRole}[]) => void;
+  /**
+   * True when the caller is already holding a staged MAIN. The dialog resets its
+   * own list and unmounts every time it closes, so across two separate picks it
+   * cannot see the earlier one — only the parent can.
+   */
+  mainAlreadyStaged?: boolean;
 }
 
 export function ArticleFileUploadDialogNew({
@@ -60,8 +72,11 @@ export function ArticleFileUploadDialogNew({
   onOpenChange,
   articleId,
   projectId,
-  onFileUploaded
+  onFileUploaded,
+  onFilesStaged,
+  mainAlreadyStaged = false
 }: ArticleFileUploadDialogNewProps) {
+  const isStaging = articleId === undefined;
   const { user } = useAuth();
   const [files, setFiles] = useState<FileWithRole[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -133,15 +148,26 @@ export function ArticleFileUploadDialogNew({
 
     if (validFiles.length === 0) return;
 
-    const filesWithRoles: FileWithRole[] = validFiles.map(file => ({
-      id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      file,
-      role: hasMainFile ? FILE_ROLES.SUPPLEMENT : FILE_ROLES.MAIN,
-      status: 'pending',
-      progress: 0
-    }));
-
-    setFiles(prev => [...prev, ...filesWithRoles]);
+    // A MAIN already claimed inside this batch counts too. Without that, every
+    // file in a multi-file drop defaulted to MAIN — harmless while handleUpload
+    // rejected the second one, but staging never reaches handleUpload, so the
+    // duplicate would travel all the way to the backend.
+    setFiles(prev => {
+      let mainTaken =
+        hasMainFile || mainAlreadyStaged || prev.some(f => f.role === FILE_ROLES.MAIN);
+      const filesWithRoles: FileWithRole[] = validFiles.map((file, i) => {
+        const role = mainTaken ? FILE_ROLES.SUPPLEMENT : FILE_ROLES.MAIN;
+        mainTaken = true;
+        return {
+          id: `${Date.now()}-${i}-${Math.random().toString(36).substring(2, 9)}`,
+          file,
+          role,
+          status: 'pending' as const,
+          progress: 0
+        };
+      });
+      return [...prev, ...filesWithRoles];
+    });
     updateStats();
   };
 
@@ -166,7 +192,7 @@ export function ArticleFileUploadDialogNew({
     ));
   };
 
-  // Upload individual de arquivo
+  // Upload one file
   const uploadFile = async (fileWithRole: FileWithRole): Promise<void> => {
     const { file, role } = fileWithRole;
 
@@ -203,6 +229,7 @@ export function ArticleFileUploadDialogNew({
       return;
     }
 
+    if (articleId === undefined) return; // staging never reaches here
     const storageKey = generateStorageKey(projectId, articleId, file.name);
 
     // Update progress: preparation done (10%)
@@ -235,7 +262,27 @@ export function ArticleFileUploadDialogNew({
     ));
   };
 
-  // Upload de todos os arquivos
+  /**
+   * Staging commit: publish the chosen files to the parent and close. Called
+   * from the click handler, not from inside a setState updater — the parent
+   * would otherwise be written to during render and double-published under
+   * StrictMode.
+   */
+  const handleStage = () => {
+    if (files.length === 0) {
+      toast.error(t('articles', 'uploadSelectAtLeastOne'));
+      return;
+    }
+    if (files.filter(f => f.role === FILE_ROLES.MAIN).length > 1) {
+      toast.error(t('articles', 'uploadOnlyOneMain'));
+      return;
+    }
+    onFilesStaged?.(files.map(({file, role}) => ({file, role})));
+    setFiles([]);
+    onOpenChange(false);
+  };
+
+  // Upload every selected file
   const handleUpload = async () => {
     if (!user) {
         toast.error(t('articles', 'authRequired'));
@@ -247,7 +294,7 @@ export function ArticleFileUploadDialogNew({
       return;
     }
 
-    // Validar roles
+    // Validate roles
     const mainFiles = files.filter(f => f.role === FILE_ROLES.MAIN);
     if (mainFiles.length > 1) {
         toast.error(t('articles', 'uploadOnlyOneMain'));
@@ -280,7 +327,7 @@ export function ArticleFileUploadDialogNew({
       });
     });
 
-    // Fazer upload sequencial de cada arquivo
+    // Upload sequentially so a MAIN conflict surfaces before the rest
     for (const fileWithRole of filesToUpload) {
       await uploadFile(fileWithRole);
     }
@@ -317,7 +364,7 @@ export function ArticleFileUploadDialogNew({
     setIsUploading(false);
   };
 
-  // Fechar modal
+  // Close the dialog
   const handleClose = () => {
     if (isUploading) {
         const confirm = window.confirm(t('articles', 'uploadCancelConfirm'));
@@ -337,7 +384,7 @@ export function ArticleFileUploadDialogNew({
     e.target.value = ''; // Reset input
   };
 
-  // Obter cor do status
+  // Status colour
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed': return 'text-success';
@@ -370,7 +417,7 @@ export function ArticleFileUploadDialogNew({
         <div className="flex-1 overflow-y-auto px-4 sm:px-6">
           {!isUploading ? (
             <>
-              {/* Alerta sobre arquivo MAIN existente */}
+              {/* Notice: this article already has a MAIN file */}
               {hasMainFile && mainFileInfo && (
                 <Alert className="mb-4">
                   <FileCheck className="h-4 w-4" />
@@ -384,7 +431,7 @@ export function ArticleFileUploadDialogNew({
                 </Alert>
               )}
 
-              {/* Área de Drop */}
+              {/* Drop zone */}
               <Card 
                 className={`mb-6 transition-colors ${
                   isDragOver ? 'border-primary bg-primary/5' : 'border-dashed'
@@ -437,7 +484,7 @@ export function ArticleFileUploadDialogNew({
                 </CardContent>
               </Card>
 
-              {/* Lista de Arquivos */}
+              {/* Selected files */}
               {files.length > 0 && (
                 <Card>
                   <CardHeader className="pb-3">
@@ -483,7 +530,8 @@ export function ArticleFileUploadDialogNew({
                                     </SelectTrigger>
                                     <SelectContent>
                                       {Object.entries(FILE_ROLE_LABELS).map(([value, label]) => {
-                                        const isMainDisabled = value === FILE_ROLES.MAIN && hasMainFile;
+                                        const isMainDisabled =
+                                          value === FILE_ROLES.MAIN && (hasMainFile || mainAlreadyStaged);
                                         return (
                                           <SelectItem 
                                             key={value} 
@@ -558,7 +606,7 @@ export function ArticleFileUploadDialogNew({
               )}
             </>
           ) : (
-            /* Progress durante upload */
+            /* Progress while uploading */
             <Card>
               <CardHeader className="pb-3">
                   <CardTitle className="text-base sm:text-lg">{t('articles', 'uploadUploadingFiles')}</CardTitle>
@@ -598,15 +646,17 @@ export function ArticleFileUploadDialogNew({
             <>
               <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
                 {files.length > 0 && (
-                  <span>{files.length} arquivo(s) selecionado(s)</span>
+                  <span>
+                    {t('articles', 'uploadSelectedCount').replace('{{n}}', String(files.length))}
+                  </span>
                 )}
               </div>
-              
+
               <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                 <Button
                   size="sm"
-                  variant="outline" 
-                  onClick={handleClose} 
+                  variant="outline"
+                  onClick={handleClose}
                   disabled={isUploading}
                   className="w-full sm:w-auto"
                 >
@@ -614,19 +664,21 @@ export function ArticleFileUploadDialogNew({
                 </Button>
                 <Button
                   size="sm"
-                  onClick={handleUpload}
+                  onClick={isStaging ? handleStage : handleUpload}
                   disabled={files.length === 0 || isUploading || !user}
                   className="w-full sm:w-auto"
                 >
                   {isUploading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Enviando...
+                      {t('articles', 'uploadUploading')}
                     </>
                   ) : (
                     <>
                       <Upload className="mr-2 h-4 w-4" />
-                      Enviar {files.length} Arquivo(s)
+                      {isStaging
+                        ? t('articles', 'attachToArticle')
+                        : t('articles', 'uploadSendCount').replace('{{n}}', String(files.length))}
                     </>
                   )}
                 </Button>
@@ -635,9 +687,11 @@ export function ArticleFileUploadDialogNew({
           ) : (
             <>
               <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
-                  {uploadStats.completed} of {uploadStats.total} completed
+                  {t('articles', 'uploadProgressCount')
+                      .replace('{{completed}}', String(uploadStats.completed))
+                      .replace('{{total}}', String(uploadStats.total))}
               </div>
-              
+
               <Button
                 size="sm"
                 onClick={handleClose}
@@ -645,7 +699,7 @@ export function ArticleFileUploadDialogNew({
                 variant={isUploading ? "outline" : "default"}
                 className="w-full sm:w-auto"
               >
-                {isUploading ? "Aguarde..." : "Concluir"}
+                {isUploading ? t('articles', 'uploadPleaseWait') : t('articles', 'uploadDone')}
               </Button>
             </>
           )}

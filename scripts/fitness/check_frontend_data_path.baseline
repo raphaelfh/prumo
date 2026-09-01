@@ -7,8 +7,6 @@ frontend/lib/supabase/baseRepository.ts:102
 frontend/lib/supabase/baseRepository.ts:163
 frontend/lib/supabase/baseRepository.ts:192
 frontend/services/articlesExportService.ts:11
-frontend/services/articlesService.ts:130
-frontend/services/articlesService.ts:146
 frontend/services/extractionDataService.ts:61
 frontend/services/extractionDataService.ts:62
 frontend/services/extractionExportService.ts:7
