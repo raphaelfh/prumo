@@ -457,7 +457,7 @@ export const extraction = {
     gridEmptyTemplate: 'This template has no sections yet.',
     gridCollapseSection: 'Collapse section',
     gridExpandSection: 'Expand section',
-    gridAddMenu: 'Add',
+    gridSectionActions: 'Section actions',
     // Control cells (B-5 Task 5): act on first click
     gridTypeMenuAria: 'Change type — {{label}}',
     gridRequiredToggleAria: 'Required — {{label}}',
@@ -552,6 +552,7 @@ export const extraction = {
     suggestionsButton: 'Suggestions',
     searchUnit: 'Search unit',
     noUnitFound: 'No unit found',
+    unitAdded: 'Added',
     // AllowedValuesList
     enterValue: 'Enter a value',
     valueAlreadyAdded: 'Value already added',

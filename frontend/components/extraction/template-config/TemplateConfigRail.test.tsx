@@ -44,6 +44,7 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 
 import {TemplateConfigGridPanel} from './TemplateConfigGridPanel';
 import type {TemplateSectionActions} from './TemplateGrid';
+import {stubStructuralHistory} from '@/test/helpers/structuralHistoryStub';
 
 const sectionActions: TemplateSectionActions = {
   onCommitRename: vi.fn(),
@@ -113,6 +114,7 @@ const panel = () => (
       projectId="p1"
       templateId="t1"
       onDeleteField={vi.fn()}
+        history={stubStructuralHistory()}
       sectionActions={sectionActions}
       onAddSection={vi.fn()}
       onAddGroup={vi.fn()}

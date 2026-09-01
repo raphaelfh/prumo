@@ -52,6 +52,7 @@ import {
 } from './TemplateConfigGridPanel';
 import type {TemplateSectionActions} from './TemplateGrid';
 import {buildTemplateTree, filterTemplateTree} from './templateTree';
+import {stubStructuralHistory} from '@/test/helpers/structuralHistoryStub';
 
 const field = (
   id: string,
@@ -142,6 +143,23 @@ const sectionActions: TemplateSectionActions = {
   onDelete: vi.fn(),
   onAddPerModelSection: vi.fn()};
 
+// A FRESH element per (re)render: reusing one element reference makes React
+// bail out of the subtree on rerender, so mocked data never lands. ONE copy
+// for the whole suite — six identical local ones is how a newly-required
+// prop ends up on five of them.
+const panel = () => (
+  <TooltipProvider>
+    <TemplateConfigGridPanel
+      projectId="p1"
+      templateId="t1"
+      onDeleteField={vi.fn()}
+      history={stubStructuralHistory()}
+      sectionActions={sectionActions}
+      onAddSection={vi.fn()} onAddGroup={vi.fn()}
+    />
+  </TooltipProvider>
+);
+
 /** Default queue stub: enqueueInsert echoes a deterministic client key. */
 function stubInsertQueue() {
   const enqueueInsert = vi.fn(() => ({clientKey: 'pending-1', name: 'peso'}));
@@ -190,19 +208,6 @@ describe('TemplateConfigGridPanel — retention wiring', () => {
     },
   ];
 
-  // A FRESH element per (re)render: reusing one element reference makes
-  // React bail out of the subtree on rerender, so mocked data never lands.
-  const panel = () => (
-    <TooltipProvider>
-      <TemplateConfigGridPanel
-        projectId="p1"
-        templateId="t1"
-        onDeleteField={vi.fn()}
-        sectionActions={sectionActions}
-        onAddSection={vi.fn()} onAddGroup={vi.fn()}
-      />
-    </TooltipProvider>
-  );
 
   const mockEntityTypes = (firstLabel: string) => {
     vi.mocked(useTemplateEntityTypes).mockReturnValue({
@@ -275,17 +280,6 @@ describe('TemplateConfigGridPanel — optimistic ghost inserts (B-5 Task 4)', ()
     },
   ];
 
-  const panel = () => (
-    <TooltipProvider>
-      <TemplateConfigGridPanel
-        projectId="p1"
-        templateId="t1"
-        onDeleteField={vi.fn()}
-        sectionActions={sectionActions}
-        onAddSection={vi.fn()} onAddGroup={vi.fn()}
-      />
-    </TooltipProvider>
-  );
 
   const mockEntityTypes = (extraFields: object[] = []) => {
     vi.mocked(useTemplateEntityTypes).mockReturnValue({
@@ -469,17 +463,6 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
     },
   ];
 
-  const panel = () => (
-    <TooltipProvider>
-      <TemplateConfigGridPanel
-        projectId="p1"
-        templateId="t1"
-        onDeleteField={vi.fn()}
-        sectionActions={sectionActions}
-        onAddSection={vi.fn()} onAddGroup={vi.fn()}
-      />
-    </TooltipProvider>
-  );
 
   const mockEntityTypes = () => {
     vi.mocked(useTemplateEntityTypes).mockReturnValue({
@@ -668,17 +651,6 @@ describe('TemplateConfigGridPanel — key-cell commit validation (B-5 review fix
     },
   ];
 
-  const panel = () => (
-    <TooltipProvider>
-      <TemplateConfigGridPanel
-        projectId="p1"
-        templateId="t1"
-        onDeleteField={vi.fn()}
-        sectionActions={sectionActions}
-        onAddSection={vi.fn()} onAddGroup={vi.fn()}
-      />
-    </TooltipProvider>
-  );
 
   const mockEntityTypes = () => {
     vi.mocked(useTemplateEntityTypes).mockReturnValue({
@@ -782,17 +754,6 @@ describe('TemplateConfigGridPanel — key-cell commit validation (B-5 review fix
 });
 
 describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => {
-  const panel = () => (
-    <TooltipProvider>
-      <TemplateConfigGridPanel
-        projectId="p1"
-        templateId="t1"
-        onDeleteField={vi.fn()}
-        sectionActions={sectionActions}
-        onAddSection={vi.fn()} onAddGroup={vi.fn()}
-      />
-    </TooltipProvider>
-  );
 
   const mockEntityTypes = () => {
     vi.mocked(useTemplateEntityTypes).mockReturnValue({
@@ -902,17 +863,6 @@ describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => 
 });
 
 describe('TemplateConfigGridPanel — 3-rung Esc ladder (B-5 Task 6)', () => {
-  const panel = () => (
-    <TooltipProvider>
-      <TemplateConfigGridPanel
-        projectId="p1"
-        templateId="t1"
-        onDeleteField={vi.fn()}
-        sectionActions={sectionActions}
-        onAddSection={vi.fn()} onAddGroup={vi.fn()}
-      />
-    </TooltipProvider>
-  );
 
   const mockEntityTypes = () => {
     vi.mocked(useTemplateEntityTypes).mockReturnValue({

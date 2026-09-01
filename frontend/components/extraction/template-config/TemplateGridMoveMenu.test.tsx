@@ -58,7 +58,6 @@ vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), {error: vi.fn(), success: vi.fn(), info: vi.fn()}),
 }));
 
-import {toast} from 'sonner';
 
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {useInsertTemplateField} from '@/hooks/extraction/useInsertTemplateField';
@@ -71,6 +70,7 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 import {TemplateConfigGridPanel} from './TemplateConfigGridPanel';
 import {TemplateGrid, type TemplateSectionActions} from './TemplateGrid';
 import {buildTemplateTree} from './templateTree';
+import {stubStructuralHistory} from '@/test/helpers/structuralHistoryStub';
 
 // cmdk scrolls the selected option into view; jsdom has no layout.
 Element.prototype.scrollIntoView = vi.fn();
@@ -304,18 +304,23 @@ beforeEach(() => {
 });
 
 function renderPanel() {
-  return render(
+  const history = stubStructuralHistory();
+  return {
+    history,
+    ...render(
     <TooltipProvider>
       <TemplateConfigGridPanel
         projectId="p1"
         templateId="t1"
         onDeleteField={vi.fn()}
+        history={history}
         sectionActions={sectionActions}
         onAddSection={vi.fn()}
         onAddGroup={vi.fn()}
       />
     </TooltipProvider>,
-  );
+    ),
+  };
 }
 
 const chordM = (el: Element) =>
@@ -334,7 +339,7 @@ describe('TemplateConfigGridPanel — Move-to-section dialog (T7)', () => {
   });
 
   it('picking a section moves the field to its END through the dispatcher', async () => {
-    const {container} = renderPanel();
+    const {container, history} = renderPanel();
     await openRowMenu('Beta');
     await userEvent.click(await menuItem(/Move to section/));
     await screen.findByRole('dialog');
@@ -356,17 +361,16 @@ describe('TemplateConfigGridPanel — Move-to-section dialog (T7)', () => {
       ],
     });
     expect(screen.queryByRole('dialog')).toBeNull();
-    // The pick entered through moveFieldWithUndo: announcement + the
-    // single-slot Undo toast ride along automatically.
+    // The pick entered through moveFieldWithUndo: the announcement and the
+    // Undo step ride along automatically (the slot raises the toast).
     await waitFor(() =>
       expect(within(container).getByRole('status')).toHaveTextContent(
         'Moved Beta to Outcomes, position 2 of 2',
       ),
     );
     await waitFor(() =>
-      expect(vi.mocked(toast)).toHaveBeenCalledWith(
-        'Moved Beta',
-        expect.objectContaining({duration: 6000}),
+      expect(history.push).toHaveBeenCalledWith(
+        expect.objectContaining({label: 'Moved Beta'}),
       ),
     );
   });

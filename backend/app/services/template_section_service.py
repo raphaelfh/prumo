@@ -28,15 +28,21 @@ concurrently aborts the endpoint's commit with a raw 23514-class error).
 Services flush, never commit (the endpoint owns the transaction).
 """
 
+from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import Select, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.integrity import violates_constraint
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionInstance,
+)
+from app.repositories.extraction_field_reference_repository import (
+    RESTRICT_FKS,
+    ExtractionFieldReferenceRepository,
 )
 from app.schemas.template_structure import (
     SectionCreateRequest,
@@ -50,7 +56,6 @@ from app.services.project_template_active_service import owned_template
 # shipped migrations (0016 partial unique index; baseline FK) and the
 # schemas/services layers must not depend on migration internals.
 _ONE_CONTAINER_INDEX = "uq_extraction_entity_types_one_container_per_project"
-_INSTANCES_ENTITY_TYPE_FK = "extraction_instances_entity_type_id_fkey"
 
 
 class SectionNotFoundError(Exception):
@@ -75,11 +80,15 @@ class OneContainerError(Exception):
 
 
 class SectionInUseError(Exception):
-    """The section still has extraction instances.
+    """Recorded extraction work lives under the section.
 
-    409-class: remap of the 23503 from the RESTRICT FK
-    ``extraction_instances_entity_type_id_fkey`` (fires for the section
-    itself or, via the parent cascade, for any of its model_sections)."""
+    409-class. The arbiter is
+    ``ExtractionFieldReferenceRepository.sections_hold_recorded_work`` over
+    the section's whole subtree, NOT the
+    ``extraction_instances_entity_type_id_fkey`` RESTRICT -- that FK counts
+    the empty containers a HITL session seeds on open, so it made every
+    main section permanently un-deletable the moment one reviewer opened
+    one article. The FKs remain the commit-time backstop for a race."""
 
 
 class SectionEntryLabelRoleError(Exception):
@@ -103,20 +112,6 @@ class SectionCardinalityInUseError(Exception):
     cardinality-one sections while the completion gate counts required
     fields on EVERY instance — flipping would make those runs
     un-completable. The message names the section label."""
-
-
-def _violates(exc: IntegrityError, constraint_name: str) -> bool:
-    """True when ``exc`` is a violation of ``constraint_name``.
-
-    asyncpg exposes the violated constraint on ``constraint_name`` —
-    reachable via ``exc.orig`` or its ``__cause__`` once SQLAlchemy's
-    dbapi adapter wraps the driver error; fall back to the message text
-    (Postgres always names the constraint there)."""
-    orig = getattr(exc, "orig", None)
-    for candidate in (orig, getattr(orig, "__cause__", None)):
-        if getattr(candidate, "constraint_name", None) == constraint_name:
-            return True
-    return constraint_name in str(orig or exc)
 
 
 async def owned_section(
@@ -183,7 +178,7 @@ async def create_section(
     try:
         await db.flush()
     except IntegrityError as exc:
-        if _violates(exc, _ONE_CONTAINER_INDEX):
+        if violates_constraint(exc, _ONE_CONTAINER_INDEX):
             raise OneContainerError("This template already has a model container") from exc
         raise
     # sort_order was written as a SQL expression and created_at is a
@@ -269,19 +264,74 @@ async def delete_section(
 ) -> SectionDeleteResponse:
     """Delete a section; the DB cascades its fields and child sections.
 
-    Raises SectionInUseError (23503) when the section — or a child
-    model_section reached via the parent cascade — still has extraction
-    instances (RESTRICT FK)."""
+    Raises SectionInUseError when RECORDED work (a proposal, a reviewer or
+    consensus decision, a reviewer state, a published value) exists
+    anywhere in the section's subtree. Empty instances are swept first:
+    they are the containers ``HITLSessionService.open_or_resume`` seeds for
+    every top-level cardinality-one section, so leaving the RESTRICT FK as
+    the arbiter meant one reviewer opening one article froze the whole
+    template's structure."""
     await owned_template(db, project_id=project_id, template_id=template_id)
     await owned_section(db, template_id=template_id, section_id=section_id)
+
+    subtree = _subtree_section_ids(section_id)
+    if await ExtractionFieldReferenceRepository(db).sections_with_recorded_work(subtree):
+        raise SectionInUseError("This section has extracted data and cannot be deleted")
+
     try:
+        await sweep_empty_instances(db, section_ids=subtree)
         # Core DELETE (not ORM cascade): one statement, the DB cascades
-        # fields + child sections, and the RESTRICT FK stays the arbiter.
+        # fields + child sections.
         await db.execute(delete(ExtractionEntityType).where(ExtractionEntityType.id == section_id))
     except IntegrityError as exc:
-        if _violates(exc, _INSTANCES_ENTITY_TYPE_FK):
+        # Backstop for a work row committed between the pre-check and here.
+        if violates_constraint(exc, *RESTRICT_FKS):
             raise SectionInUseError(
                 "This section has extracted data and cannot be deleted"
             ) from exc
         raise
     return SectionDeleteResponse(id=section_id, deleted=True)
+
+
+async def sweep_empty_instances(
+    db: AsyncSession, *, section_ids: Select[tuple[UUID]] | Sequence[UUID]
+) -> None:
+    """Delete the extraction instances of sections that are about to go.
+
+    ``extraction_instances.entity_type_id`` is ON DELETE RESTRICT, so a
+    section cannot be deleted while ANY instance references it — and a HITL
+    session seeds one empty instance per top-level section on open. Without
+    this sweep the FK, not the caller, decides what is deletable, and it
+    answers "was this template ever opened" rather than "was anything
+    recorded".
+
+    CALLER'S PRECONDITION, and it is not optional: every section named here
+    must already have been cleared by
+    ``ExtractionFieldReferenceRepository.sections_with_recorded_work``. The
+    rows this deletes cascade to reviewer decisions, reviewer states,
+    proposals and consensus decisions, so sweeping a section that holds work
+    would destroy it silently. Both callers check first; the five field-level
+    RESTRICT FKs are the backstop for a row written in between.
+    """
+    await db.execute(
+        delete(ExtractionInstance).where(ExtractionInstance.entity_type_id.in_(section_ids))
+    )
+
+
+def _subtree_section_ids(section_id: UUID) -> Select[tuple[UUID]]:
+    """The section plus its per-model children, as a SELECT.
+
+    A subquery rather than a materialized list: both consumers (the work
+    probe and the instance sweep) inline it, so the subtree costs no round
+    trip of its own.
+
+    Exactly two levels, and that is a schema invariant rather than a
+    shortcut: ``ck_extraction_entity_types_role_parent`` forces a parent on
+    ``model_section`` rows and forbids one everywhere else, so nothing can
+    sit below a child."""
+    return select(ExtractionEntityType.id).where(
+        or_(
+            ExtractionEntityType.id == section_id,
+            ExtractionEntityType.parent_entity_type_id == section_id,
+        )
+    )

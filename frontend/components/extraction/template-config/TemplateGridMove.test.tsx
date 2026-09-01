@@ -69,6 +69,7 @@ import {TemplateConfigGridPanel} from './TemplateConfigGridPanel';
 import {TemplateGrid, type TemplateSectionActions} from './TemplateGrid';
 import {useGridDrag, type GridDragArgs} from './gridDrag';
 import {buildTemplateTree} from './templateTree';
+import {stubStructuralHistory} from '@/test/helpers/structuralHistoryStub';
 
 const field = (
   id: string,
@@ -435,6 +436,7 @@ function renderPanel() {
         projectId="p1"
         templateId="t1"
         onDeleteField={vi.fn()}
+        history={stubStructuralHistory()}
         sectionActions={sectionActions}
         onAddSection={vi.fn()}
         onAddGroup={vi.fn()}
