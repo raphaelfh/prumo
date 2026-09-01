@@ -19,6 +19,15 @@ import {MemoryRouter} from 'react-router';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+// ArticleForm's static import graph reaches the Supabase client, which calls
+// createClient at module scope and throws without a URL. CI runs vitest with no
+// .env, so this stub is what keeps these specs from dying at import — a local
+// .env makes the failure invisible until CI. Same guard as legacyArticleRoutes.
+vi.hoisted(() => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'test-anon-key');
+});
+
 vi.mock('@/lib/copy', () => ({
     t: (_ns: string, key: string) => key,
 }));
