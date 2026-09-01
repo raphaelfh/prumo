@@ -26,14 +26,31 @@ const {
     toastInfo,
     useAuthMock,
     useEligibleReviewersMock,
-} = vi.hoisted(() => ({
-    startExportMock: vi.fn(),
-    addJobMock: vi.fn(),
-    toastSuccess: vi.fn(),
-    toastInfo: vi.fn(),
-    useAuthMock: vi.fn(),
-    useEligibleReviewersMock: vi.fn(),
-}));
+    ApiError,
+} = vi.hoisted(() => {
+    // Mirrors integrations/api/client's ApiError. Standing it up here keeps the
+    // test off the real module, which pulls in the Supabase client and throws
+    // without VITE_SUPABASE_* — set locally, absent in CI's frontend job.
+    class ApiError extends Error {
+        constructor(
+            public code: string,
+            message: string,
+            public status: number,
+        ) {
+            super(message);
+            this.name = "ApiError";
+        }
+    }
+    return {
+        startExportMock: vi.fn(),
+        addJobMock: vi.fn(),
+        toastSuccess: vi.fn(),
+        toastInfo: vi.fn(),
+        useAuthMock: vi.fn(),
+        useEligibleReviewersMock: vi.fn(),
+        ApiError,
+    };
+});
 
 vi.mock("@/services/extractionExportService", () => ({
     startExport: (...args: unknown[]) => startExportMock(...args),
@@ -53,8 +70,10 @@ vi.mock("@/hooks/exports/useEligibleReviewers", () => ({
     useEligibleReviewers: () => useEligibleReviewersMock(),
 }));
 
-vi.mock("@/integrations/api/client", async (importOriginal) => ({
-    ...(await importOriginal<Record<string, unknown>>()),
+vi.mock("@/integrations/api/client", () => ({
+    ApiError,
+    apiClient: vi.fn(),
+    apiBlobClient: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
@@ -86,7 +105,6 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-import {ApiError} from "@/integrations/api/client";
 import {HITLExportDialog} from "./HITLExportDialog";
 
 const PROBAST = {id: "22222222-2222-2222-2222-222222222222", name: "PROBAST"};
