@@ -46,7 +46,15 @@ from tests.integration.conftest import (
     clean_project_clones,
     clone_charms,
     get_config_draft_marker,
+    make_proposal,
+    open_session,
     set_config_draft_marker,
+)
+from tests.integration.helpers.template_fixtures import (
+    ARTICLE_ID,
+    entity_id,
+    field_id,
+    fresh_charms,
 )
 
 # =================== HELPERS ===================
@@ -146,6 +154,16 @@ async def _insert_instance(
         },
     )
     return instance_id
+
+
+async def _instance_count(db: AsyncSession, entity_type_id: uuid.UUID) -> int:
+    """Live ``extraction_instances`` rows for one section."""
+    return (
+        await db.execute(
+            text("SELECT count(*) FROM public.extraction_instances WHERE entity_type_id = :etid"),
+            {"etid": str(entity_type_id)},
+        )
+    ).scalar_one()
 
 
 async def _update(
@@ -711,27 +729,125 @@ async def test_delete_happy(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_section_with_instances_refused(db_session: AsyncSession) -> None:
-    """The seeded primary entity type carries an extraction instance —
-    the RESTRICT FK fires (23503) and the service remaps it to
-    SectionInUseError."""
+async def test_delete_sweeps_the_empty_instances_a_session_seeded(
+    db_session: AsyncSession,
+) -> None:
+    """Opening an article's extraction form seeds ONE empty instance per
+    top-level section. That row is scaffolding, not work — the delete
+    sweeps it and succeeds.
+
+    The regression this pins: the RESTRICT FK used to be the sole arbiter,
+    so a single reviewer opening a single article made EVERY main section
+    permanently un-deletable, and the refusal claimed extraction work
+    referenced the section's fields when nothing did."""
+    project_id, template_id, _ = await fresh_charms(db_session)
+    section_id = await entity_id(db_session, template_id, "sample_size")
+    await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    assert await _instance_count(db_session, section_id) == 1
+
+    result = await delete_section(
+        db_session,
+        project_id=project_id,
+        template_id=template_id,
+        section_id=section_id,
+    )
+
+    assert result.deleted is True
+    assert await _instance_count(db_session, section_id) == 0
+    gone = (
+        await db_session.execute(
+            select(ExtractionEntityType.id).where(ExtractionEntityType.id == section_id)
+        )
+    ).scalar_one_or_none()
+    assert gone is None
+
+
+@pytest.mark.asyncio
+async def test_delete_section_holding_recorded_work_refused(
+    db_session: AsyncSession,
+) -> None:
+    """One proposal under the section is real work — refused, and the
+    section survives."""
+    project_id, template_id, _ = await fresh_charms(db_session)
+    section_id = await entity_id(db_session, template_id, "sample_size")
+    target = await field_id(db_session, template_id, "sample_size", "number_of_participants")
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=uuid.UUID(session.instances_by_entity_type[str(section_id)]),
+        field_id=target,
+        user_id=SEED.primary_profile,
+    )
+
     with pytest.raises(SectionInUseError):
         await delete_section(
             db_session,
-            project_id=SEED.primary_project,
-            template_id=SEED.primary_template,
-            section_id=SEED.primary_entity_type,
+            project_id=project_id,
+            template_id=template_id,
+            section_id=section_id,
         )
-    await db_session.rollback()
 
     still_there = (
         await db_session.execute(
-            select(ExtractionEntityType.id).where(
-                ExtractionEntityType.id == SEED.primary_entity_type
-            )
+            select(ExtractionEntityType.id).where(ExtractionEntityType.id == section_id)
         )
     ).scalar_one_or_none()
     assert still_there is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_group_sweeps_its_child_sections_instances(
+    db_session: AsyncSession,
+) -> None:
+    """A repeating group cascades to its per-model sections, so the sweep
+    must reach THEIR instances too — the child's own RESTRICT FK fires
+    during that cascade otherwise."""
+    template_id = await _fresh_clone(db_session)
+    group_id = await _section_id_by_role(db_session, template_id, "model_container")
+    child_id = (
+        (
+            await db_session.execute(
+                select(ExtractionEntityType.id).where(
+                    ExtractionEntityType.parent_entity_type_id == group_id
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert child_id is not None
+    group_instance = await _insert_instance(
+        db_session, template_id=template_id, entity_type_id=group_id
+    )
+    await _insert_instance(
+        db_session,
+        template_id=template_id,
+        entity_type_id=child_id,
+        parent_instance_id=group_instance,
+    )
+
+    result = await delete_section(
+        db_session,
+        project_id=SEED.secondary_project,
+        template_id=template_id,
+        section_id=group_id,
+    )
+
+    assert result.deleted is True
+    assert await _instance_count(db_session, child_id) == 0
 
 
 # =================== CREATE BOLA ===================

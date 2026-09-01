@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FolderPlus,
   GripVertical,
+  MoreHorizontal,
   Pencil,
   Plus,
   Trash2,
@@ -213,17 +214,17 @@ export function SectionHeaderRow({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  aria-label={`${t('extraction', 'gridAddMenu')} — ${section.label}`}
+                  aria-label={`${t('extraction', 'gridSectionActions')} — ${section.label}`}
                   data-cell-row={section.id}
                   data-cell-cols="actions"
                   tabIndex={rovingTabIndex(focus, section.id, ['actions'])}
                   className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted data-[state=open]:text-foreground"
                 >
-                  <Plus className="size-3.5" aria-hidden />
+                  <MoreHorizontal className="size-3.5" aria-hidden />
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
-            <TooltipContent>{t('extraction', 'gridAddMenu')}</TooltipContent>
+            <TooltipContent>{t('extraction', 'gridSectionActions')}</TooltipContent>
           </Tooltip>
           <DropdownMenuContent
             align="end"

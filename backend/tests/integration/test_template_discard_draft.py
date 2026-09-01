@@ -32,7 +32,9 @@ from structlog.testing import LogCapture
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
-from app.services import template_discard_service
+from app.repositories.extraction_field_reference_repository import (
+    ExtractionFieldReferenceRepository,
+)
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_diff import diff_snapshots
@@ -221,17 +223,71 @@ async def _discard(
 
 
 @pytest.mark.asyncio
-async def test_section_owning_instances_is_kept_and_the_rest_restored(
+async def test_section_holding_recorded_work_is_kept_and_the_rest_restored(
     db_session: AsyncSession,
 ) -> None:
-    """The commonest draft shape: a new top-level section that a session
-    has already materialized an instance for. Refusing the whole Discard
-    would make it permanently unavailable, so the section is KEPT, the
-    rest of the draft is undone, and the marker stays set (D4/D7)."""
+    """The shape partial discard exists for: a new top-level section a
+    reviewer has already recorded something under. Refusing the whole
+    Discard would make it permanently unavailable, so the section is KEPT,
+    the rest of the draft is undone, and the marker stays set (D4/D7).
+
+    The work is a proposal, NOT merely the instance a session materialized:
+    an empty instance is scaffolding and is discarded like the rest of the
+    draft (see the sibling test above)."""
     project_id, template_id, baseline = await _fresh_charms(db_session)
     added = await _add_section(db_session, template_id, "b9c1_kept_section")
+    target = await _add_field(db_session, added, "b9c1_kept_field")
     renamed = await _entity_id(db_session, template_id, "participants")
     await _set_label(db_session, "extraction_entity_types", renamed, "Draft label")
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=_ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=UUID(session.instances_by_entity_type[str(added)]),
+        field_id=target,
+        user_id=SEED.primary_profile,
+    )
+
+    result = await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    assert result.draft_was_open is True
+    assert [(k.node_id, k.node_kind, k.reason) for k in result.kept] == [
+        (added, "entity_type", "has_recorded_data"),
+        (target, "field", "has_recorded_data"),
+    ]
+    assert result.deleted_entity_types == 0
+    assert result.updated_entity_types == 1
+    await _assert_matches_baseline(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        extra_entity_ids=frozenset({added}),
+        extra_field_ids=frozenset({target}),
+    )
+    # D4: something was kept, so the template is still in draft.
+    assert await get_config_draft_marker(db_session, template_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_section_whose_only_instance_is_empty_is_discarded(
+    db_session: AsyncSession,
+) -> None:
+    """Opening an article seeds ONE empty instance per top-level section.
+    That row is scaffolding, not work — the draft-added section is undone
+    like the rest of the draft, and nothing is kept.
+
+    The regression this pins: instance OWNERSHIP used to be the gate, so a
+    single reviewer opening a single article made every draft-added section
+    permanently un-discardable and the report claimed it held recorded
+    data."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    added = await _add_section(db_session, template_id, "b9c1_empty_instance_section")
     await open_session(
         db_session,
         project_id=project_id,
@@ -242,20 +298,17 @@ async def test_section_owning_instances_is_kept_and_the_rest_restored(
 
     result = await _discard(db_session, project_id=project_id, template_id=template_id)
 
-    assert result.draft_was_open is True
-    assert [k.node_id for k in result.kept] == [added]
-    assert result.kept[0].reason == "has_recorded_data"
-    assert result.kept[0].node_kind == "entity_type"
-    assert result.deleted_entity_types == 0
-    assert result.updated_entity_types == 1
-    await _assert_matches_baseline(
-        db_session,
-        template_id=template_id,
-        baseline=baseline,
-        extra_entity_ids=frozenset({added}),
-    )
-    # D4: something was kept, so the template is still in draft.
-    assert await get_config_draft_marker(db_session, template_id) is not None
+    assert list(result.kept) == []
+    assert result.deleted_entity_types == 1
+    await _assert_matches_baseline(db_session, template_id=template_id, baseline=baseline)
+    # Nothing was kept, so the draft is fully undone and the marker clears.
+    assert await get_config_draft_marker(db_session, template_id) is None
+    assert (
+        await db_session.execute(
+            text("SELECT count(*) FROM public.extraction_instances WHERE entity_type_id = :et"),
+            {"et": str(added)},
+        )
+    ).scalar_one() == 0
 
 
 @pytest.mark.asyncio
@@ -395,21 +448,145 @@ async def test_draft_added_ancestor_of_a_blocked_node_is_kept(
         ),
         {"id": str(_ARTICLE_ID), "pid": str(project_id)},
     )
-    await _add_instance(
+    target = await _add_field(db_session, child, "b9c1_child_field")
+    instance = await _add_instance(
         db_session, project_id=project_id, template_id=template_id, entity_type_id=child
+    )
+    # A bare instance is scaffolding; the proposal is what blocks the child.
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=_ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=instance,
+        field_id=target,
+        user_id=SEED.primary_profile,
     )
 
     result = await _discard(db_session, project_id=project_id, template_id=template_id)
 
     kept = {k.node_id: k.reason for k in result.kept}
-    assert kept == {child: "has_recorded_data", container: "related_to_kept_node"}
+    assert kept == {
+        child: "has_recorded_data",
+        container: "related_to_kept_node",
+        target: "has_recorded_data",
+    }
     assert result.deleted_entity_types == 0
     await _assert_matches_baseline(
         db_session,
         template_id=template_id,
         baseline=baseline,
         extra_entity_ids=frozenset({container, child}),
+        extra_field_ids=frozenset({target}),
     )
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_never_cascades_through_a_nested_instance(
+    db_session: AsyncSession,
+) -> None:
+    """The hazard the instance sweep introduces, pinned.
+
+    ``extraction_instances.parent_instance_id`` is ON DELETE CASCADE, and
+    four of the five work tables cascade from ``instance_id`` too — so
+    deleting a per-model container's instance would silently destroy the
+    reviewer decisions recorded against its ENTRY instances. Nothing but
+    the gate stands between the sweep and that, which is why this asserts
+    the work is still there afterwards rather than only that the nodes
+    were kept.
+
+    It holds because the child section is blocked by its own work and
+    ``_closed_over_the_tree`` walks UP: keeping the child forces keeping
+    its draft-added container, so neither reaches the sweep."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+    template_id = clone.project_template_id
+    # Drain the deferred role/parent queue while the tree is still whole
+    # (see the ancestor test above), then restore deferral.
+    await db_session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+    await db_session.execute(text("SET CONSTRAINTS ALL DEFERRED"))
+    await _delete_section(
+        db_session, await _entity_id(db_session, template_id, "prediction_models")
+    )
+    await TemplateVersionService(db_session).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+
+    container = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_nested_container",
+        role="model_container",
+        cardinality="many",
+        entry_label="model",
+        sort_order=98,
+    )
+    child = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_nested_child",
+        role="model_section",
+        parent_id=container,
+        sort_order=99,
+    )
+    target = await _add_field(db_session, child, "b9c1_nested_field")
+    await db_session.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, 'B-9c1 discard article', 1) ON CONFLICT (id) DO NOTHING"
+        ),
+        {"id": str(_ARTICLE_ID), "pid": str(project_id)},
+    )
+    # The container's OWN instance is empty; the work hangs off its entry.
+    entry = await _add_instance(
+        db_session, project_id=project_id, template_id=template_id, entity_type_id=container
+    )
+    nested = await _add_instance(
+        db_session,
+        project_id=project_id,
+        template_id=template_id,
+        entity_type_id=child,
+        parent_instance_id=entry,
+    )
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=_ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    proposal = await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=nested,
+        field_id=target,
+        user_id=SEED.primary_profile,
+    )
+
+    result = await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    # Asserted FIRST, and deliberately: this is the harm, and a failure
+    # here should name it rather than surface as a kept-set diff. Verified
+    # to bite by disabling the up-walk, which destroys all three rows.
+    for table, row_id in (
+        ("extraction_instances", entry),
+        ("extraction_instances", nested),
+        ("extraction_proposal_records", proposal),
+    ):
+        assert (
+            await db_session.execute(
+                text(f"SELECT count(*) FROM public.{table} WHERE id = :id"),
+                {"id": str(row_id)},
+            )
+        ).scalar_one() == 1, f"{table} row was destroyed by the sweep"
+    assert {k.node_id for k in result.kept} == {container, child, target}
+    assert result.deleted_entity_types == 0
 
 
 @pytest.mark.asyncio
@@ -466,21 +643,42 @@ async def test_instance_blocked_section_keeps_its_draft_added_children(
         ),
         {"id": str(_ARTICLE_ID), "pid": str(project_id)},
     )
-    # Only the CONTAINER owns run data; the child is deletable on its own.
-    await _add_instance(
+    # Only the CONTAINER holds recorded work; the child is deletable on its
+    # own and is kept solely to leave a coherent branch behind.
+    target = await _add_field(db_session, container, "b9c1_container_field")
+    instance = await _add_instance(
         db_session, project_id=project_id, template_id=template_id, entity_type_id=container
+    )
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=_ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=instance,
+        field_id=target,
+        user_id=SEED.primary_profile,
     )
 
     result = await _discard(db_session, project_id=project_id, template_id=template_id)
 
     kept = {k.node_id: k.reason for k in result.kept}
-    assert kept == {container: "has_recorded_data", child: "related_to_kept_node"}
+    assert kept == {
+        container: "has_recorded_data",
+        child: "related_to_kept_node",
+        target: "has_recorded_data",
+    }
     assert result.deleted_entity_types == 0
     await _assert_matches_baseline(
         db_session,
         template_id=template_id,
         baseline=baseline,
         extra_entity_ids=frozenset({container, child}),
+        extra_field_ids=frozenset({target}),
     )
 
 
@@ -893,22 +1091,37 @@ async def test_lost_race_on_a_blocked_node_raises_a_typed_error(
     """Detection is advisory: ``acquire_publish_locks`` narrows the window
     but the AI proposal writers take no locks. A 23503 from the RESTRICT
     FK must surface as a typed refusal, never as a 500 or as more SQL on a
-    poisoned transaction. Blinding the detection query reproduces exactly
-    the state a lost race leaves behind."""
+    poisoned transaction. Blinding the detection reads reproduces exactly
+    the state a lost race leaves behind — a proposal written after the
+    gate looked.
+
+    Real work, not a bare instance: the writer now SWEEPS the empty
+    instances it is allowed to delete, so instance ownership alone no
+    longer reaches the FK. What survives a blinded gate is the work the
+    five ``field_id`` RESTRICT FKs guard."""
     project_id, template_id, _ = await _fresh_charms(db_session)
-    await _add_section(db_session, template_id, "b9c1_raced_section")
-    await open_session(
+    added = await _add_section(db_session, template_id, "b9c1_raced_section")
+    target = await _add_field(db_session, added, "b9c1_raced_field")
+    session = await open_session(
         db_session,
         project_id=project_id,
         article_id=_ARTICLE_ID,
         template_id=template_id,
         user_id=SEED.primary_profile,
     )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=UUID(session.instances_by_entity_type[str(added)]),
+        field_id=target,
+        user_id=SEED.primary_profile,
+    )
 
     async def _blind(*_args: object, **_kwargs: object) -> frozenset[UUID]:
         return frozenset()
 
-    monkeypatch.setattr(template_discard_service, "_entity_types_with_instances", _blind)
+    monkeypatch.setattr(ExtractionFieldReferenceRepository, "sections_with_recorded_work", _blind)
+    monkeypatch.setattr(ExtractionFieldReferenceRepository, "fields_with_recorded_work", _blind)
 
     with pytest.raises(DiscardRacedError):
         await _discard(db_session, project_id=project_id, template_id=template_id)
@@ -935,11 +1148,19 @@ async def test_discard_emits_one_reconstructable_event(
     section = await _entity_id(db_session, template_id, "participants")
     await _set_label(db_session, "extraction_entity_types", section, "Draft label")
     added = await _add_section(db_session, template_id, "b9c1_logged_section")
-    await open_session(
+    target = await _add_field(db_session, added, "b9c1_logged_field")
+    session = await open_session(
         db_session,
         project_id=project_id,
         article_id=_ARTICLE_ID,
         template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=UUID(session.instances_by_entity_type[str(added)]),
+        field_id=target,
         user_id=SEED.primary_profile,
     )
 
@@ -955,7 +1176,8 @@ async def test_discard_emits_one_reconstructable_event(
     assert event["config_draft_since"] is not None
     assert event["updated_entity_types"] == 1
     assert event["kept"] == [
-        {"node_id": str(added), "node_kind": "entity_type", "reason": "has_recorded_data"}
+        {"node_id": str(added), "node_kind": "entity_type", "reason": "has_recorded_data"},
+        {"node_id": str(target), "node_kind": "field", "reason": "has_recorded_data"},
     ]
     assert event["marker_cleared"] is False
     # The summary is the diff in the direction of the OPERATION (live ->

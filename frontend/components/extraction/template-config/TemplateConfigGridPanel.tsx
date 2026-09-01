@@ -36,6 +36,7 @@ import {MoveToSectionDialog} from './MoveToSectionDialog';
 import {applyRetentionToFilter} from './filterRetention';
 import {GridDndContext} from './gridDrag';
 import {useMoveFieldTo} from './useMoveFieldTo';
+import type {StructuralHistory} from './useStructuralHistory';
 import {useStructuralUndo} from './useStructuralUndo';
 import {
   buildTemplateTree,
@@ -87,7 +88,6 @@ interface PendingInsert {
  * used to be display-hidden (and its properties uneditable). */
 const INSPECTOR_NARROW_PX = 640;
 
-
 // Re-exported (B-6 T7 extraction) so existing import sites keep working.
 export {applyRetentionToFilter};
 
@@ -105,7 +105,9 @@ interface TemplateConfigGridPanelProps {
     field: GridField,
     sectionId: string,
     index: number,
-  ) => Promise<boolean>;
+  ) => Promise<string | null>;
+  /** The one-level Undo/Redo slot, owned by the editor (see the hook). */
+  history: StructuralHistory;
   sectionActions: TemplateSectionActions;
   onAddSection: () => void;
   /** Bottom `＋▾` menu's "Add repeating group…" (B-8 D8) — the editor
@@ -121,6 +123,7 @@ export function TemplateConfigGridPanel({
   templateId,
   onDeleteField,
   onRestoreField,
+  history,
   sectionActions,
   onAddSection,
   onAddGroup,
@@ -174,7 +177,6 @@ export function TemplateConfigGridPanel({
   const isNarrow = useContainerNarrow(containerRef, INSPECTOR_NARROW_PX);
   const {railWidth, setRailWidth, inspectorWidth, setInspectorWidth, gridSlack} =
     usePaneWidths(scrollerRef);
-
 
   const insertQueue = useInsertTemplateField({
     projectId,
@@ -267,6 +269,7 @@ export function TemplateConfigGridPanel({
     moveFieldTo,
     deleteField: onDeleteField,
     restoreField: onRestoreField,
+    history,
   });
   const filtered = useMemo(
     () => filterTemplateTree(displayTree, query),
@@ -588,6 +591,24 @@ export function TemplateConfigGridPanel({
     return <Skeleton className="h-72 w-full rounded-md border" />;
   }
 
+  // Mounted twice (docked pane / narrow-width Sheet), differing only in
+  // sizing — two prop lists drifting apart is how a capability quietly
+  // stops being editable on one of the hosts.
+  const inspectorProps = {
+    projectId,
+    templateId,
+    field: selectedField,
+    section: selectedSection,
+    owningSection,
+    parentGroupLabel,
+    onSaveField: saveFieldUpdates,
+    saving: updateField.isPending,
+    sections: moveTargets,
+    onMoveField: moveFieldToSectionEnd,
+    moveDisabled: movePending,
+    focusGroup: inspectorFocusGroup,
+  };
+
   return (
     <div
       // @container/grid is declared HERE, not on the row below: the toolbar's
@@ -623,6 +644,7 @@ export function TemplateConfigGridPanel({
       <TemplateConfigToolbar
         query={query}
         onQueryChange={changeQuery}
+        history={history}
         matchCount={filtered.isFiltering ? filtered.matchCount : null}
         totalCount={filtered.totalCount}
         showKeyColumn={showKeyColumn}
@@ -739,18 +761,7 @@ export function TemplateConfigGridPanel({
               </SheetHeader>
               <TemplateInspector
                 className="block h-full w-full border-l-0 pt-10"
-                projectId={projectId}
-                templateId={templateId}
-                field={selectedField}
-                section={selectedSection}
-                owningSection={owningSection}
-                parentGroupLabel={parentGroupLabel}
-                onSaveField={saveFieldUpdates}
-                saving={updateField.isPending}
-                sections={moveTargets}
-                onMoveField={moveFieldToSectionEnd}
-                moveDisabled={movePending}
-                focusGroup={inspectorFocusGroup}
+                {...inspectorProps}
               />
             </SheetContent>
           </Sheet>
@@ -767,18 +778,7 @@ export function TemplateConfigGridPanel({
             />
             <TemplateInspector
               style={{width: inspectorWidth}}
-              projectId={projectId}
-              templateId={templateId}
-              field={selectedField}
-              section={selectedSection}
-              owningSection={owningSection}
-              parentGroupLabel={parentGroupLabel}
-              onSaveField={saveFieldUpdates}
-              saving={updateField.isPending}
-              sections={moveTargets}
-              onMoveField={moveFieldToSectionEnd}
-              moveDisabled={movePending}
-              focusGroup={inspectorFocusGroup}
+              {...inspectorProps}
             />
             </>
           )
