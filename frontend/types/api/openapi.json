@@ -4724,6 +4724,11 @@
             "description": "Required when mode=single_user. Caller may only target other reviewers if they hold the project manager role.",
             "title": "Reviewer Id"
           },
+          "shape": {
+            "$ref": "#/components/schemas/ExtractionExportShape",
+            "default": "complete",
+            "description": "Which sheets the workbook carries. Defaults to every sheet."
+          },
           "template_id": {
             "description": "Active project_extraction_templates id.",
             "format": "uuid",
@@ -4737,6 +4742,16 @@
         ],
         "title": "ExtractionExportRequest",
         "type": "object"
+      },
+      "ExtractionExportShape": {
+        "description": "Which sheets the produced workbook carries.\n\nMirrors ``services.extraction_export_service.ExportShape`` by value, the\nsame way ``ExtractionExportMode`` mirrors ``ExportMode`` \u2014 the schema\nlayer never imports the service layer.",
+        "enum": [
+          "complete",
+          "dictionary",
+          "publication"
+        ],
+        "title": "ExtractionExportShape",
+        "type": "string"
       },
       "ExtractionExportStatusResponse": {
         "description": "GET /status/{job_id} payload.",

@@ -34,6 +34,7 @@ Setup mirrors the run / instance / proposal / decision flow in
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
@@ -103,6 +104,8 @@ async def _seed_finalized_qa_run(
     with_second_reviewer: bool = False,
     domain1_consensus: dict | None = None,
     domain2_consensus: dict | None = None,
+    template_schema: dict | None = None,
+    domain1_signalling: dict | None = None,
 ) -> _QAFixture | None:
     """Build a 2-domain QA template + drive a run to FINALIZED.
 
@@ -155,7 +158,7 @@ async def _seed_finalized_qa_run(
                  framework, version, kind, schema, is_active, created_by)
             VALUES
                 (:id, :pid, :gid, :name, :desc, 'CUSTOM', '1.0.0',
-                 :kind, '{}'::jsonb, false, :uid)
+                 :kind, CAST(:schema AS jsonb), false, :uid)
             """
         ),
         {
@@ -166,6 +169,7 @@ async def _seed_finalized_qa_run(
             "desc": "Two-domain risk-of-bias template for the §7 export test.",
             "kind": TemplateKind.QUALITY_ASSESSMENT.value,
             "uid": str(profile_id),
+            "schema": json.dumps(template_schema or {}),
         },
     )
 
@@ -183,6 +187,7 @@ async def _seed_finalized_qa_run(
         )
     await db.flush()
 
+    signalling_by_domain: dict[UUID, UUID] = {}
     for verdict_id, et_id in (
         (domain1_verdict, domain1_et),
         (domain2_verdict, domain2_et),
@@ -190,9 +195,10 @@ async def _seed_finalized_qa_run(
         # Field 0: a SELECT-typed signalling question (NON risk-label set)
         # that precedes the judgment in sort_order — proves verdict
         # selection keys on the risk-label allowed_values, not position.
+        signalling_by_domain[et_id] = uuid4()
         db.add(
             ExtractionField(
-                id=uuid4(),
+                id=signalling_by_domain[et_id],
                 entity_type_id=et_id,
                 name="signalling",
                 label="Signalling question",
@@ -353,10 +359,17 @@ async def _seed_finalized_qa_run(
     # appraisal exclusion end-to-end (published-state → resolve_value → sheet).
     d1_consensus = domain1_consensus if domain1_consensus is not None else {"value": "Low"}
     d2_consensus = domain2_consensus if domain2_consensus is not None else {"value": "High"}
-    for instance_id, field_id, cvalue in (
+    published_values = [
         (domain1_instance, domain1_verdict, d1_consensus),
         (domain2_instance, domain2_verdict, d2_consensus),
-    ):
+    ]
+    if domain1_signalling is not None:
+        # The scope classifier for the §5 fidelity test: domain 1's signalling
+        # answer is what decides whether domain 2 is in play at all.
+        published_values.append(
+            (domain1_instance, signalling_by_domain[domain1_et], domain1_signalling)
+        )
+    for instance_id, field_id, cvalue in published_values:
         _record, published = await consensus_service.record_consensus(
             run_id=run_id,
             instance_id=instance_id,
@@ -607,5 +620,66 @@ async def test_qa_appraisal_marker_verdict_excluded_from_overall(
     assert rows[1][2] == "High"
     # Overall excludes the marker → the real "High" wins (NOT "No information").
     assert rows[1][-1] == "High"
+
+    await db_session.rollback()
+
+
+async def test_qa_out_of_scope_domain_reads_not_applicable_end_to_end(
+    db_session: AsyncSession,
+) -> None:
+    """§5 scope fidelity, DB → resolve_layout → sheet.
+
+    A domain the article's own classification takes out of play used to export
+    as a BLANK cell while the run view showed a "Not applicable" badge. The
+    marking happens once on ``value_map``, so the appraisal sheet AND the
+    per-section tidy table inherit it without a builder signature change.
+
+    Domain 2 carries a POISON verdict ("High", the fixture default) that was
+    recorded before the reclassification: a blank and "Not applicable" both
+    rank -1 in the worst-case rollup, so an unanswered domain would make the
+    Overall assertion below vacuous.
+    """
+    fx = await _seed_finalized_qa_run(
+        db_session,
+        template_schema={
+            "scope_rules": {
+                # Section machine names are ``label.lower()`` (see ``_entity_type``).
+                "classifier": {"section": "participants", "field": "signalling"},
+                "excludes": {"N": ["analysis"]},
+            }
+        },
+        domain1_signalling={"value": "N"},
+    )
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+
+    layout = await _service(db_session, fx).resolve_layout(
+        project_id=fx.project_id,
+        template_id=fx.qa_template_id,
+        mode=ExportMode.CONSENSUS,
+        article_ids=list(fx.article_ids),
+        include_ai_metadata=False,
+        anonymize_reviewer_names=False,
+    )
+
+    wb = load_workbook(__import__("io").BytesIO(build_workbook(layout)))
+
+    # 1. The appraisal sheet: domain 2 is inapplicable, domain 1 untouched.
+    rows = list(wb["Appraisal summary"].iter_rows(values_only=True))
+    assert rows[0] == ("Record", fx.domain1_label, fx.domain2_label, "Overall")
+    assert rows[1][1] == "Low"
+    assert rows[1][2] == "Not applicable"
+    # The out-of-scope "High" no longer inflates the Overall — it is excluded
+    # from the worst-case rank exactly as a blank is.
+    assert rows[1][-1] == "Low"
+
+    # 2. The same correction on the per-section tidy table, for free.
+    tidy = list(wb[fx.domain2_label].iter_rows(values_only=True))
+    assert tidy[0] == ("Record", "Signalling question", "Risk of bias")
+    assert tidy[1][2] == "Not applicable"
+
+    # 3. The in-scope section is not touched.
+    tidy1 = list(wb[fx.domain1_label].iter_rows(values_only=True))
+    assert tidy1[1][2] == "Low"
 
     await db_session.rollback()

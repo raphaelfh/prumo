@@ -28,7 +28,14 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 // tree out of these grid tests.
 vi.mock('@/services/templateService', () => ({updateSection: vi.fn()}));
 vi.mock('sonner', () => ({
-  toast: Object.assign(vi.fn(), {error: vi.fn(), success: vi.fn(), info: vi.fn()}),
+  toast: Object.assign(vi.fn(), {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    // useStructuralHistory clears the shared slot when a button or the
+    // toast action consumes it.
+    dismiss: vi.fn(),
+  }),
 }));
 vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
   useTemplateEntityTypes: vi.fn(),
@@ -69,7 +76,11 @@ import {TemplateConfigGridPanel} from './TemplateConfigGridPanel';
 import type {TemplateSectionActions} from './TemplateGrid';
 import {buildTemplateTree, findField, type GridField, type GridSection} from './templateTree';
 import type {FieldMoveRecord} from './useMoveFieldTo';
-import {STRUCTURAL_UNDO_TOAST_ID, useStructuralUndo} from './useStructuralUndo';
+import {
+  STRUCTURAL_UNDO_TOAST_ID,
+  useStructuralHistory,
+} from './useStructuralHistory';
+import {useStructuralUndo} from './useStructuralUndo';
 
 const field = (
   id: string,
@@ -148,8 +159,14 @@ function renderUndo(dispatcher: (
   toSectionId: string,
   toIndex: number,
 ) => FieldMoveRecord | null) {
+  // The REAL slot, not a stub: the toast's action delegates to it, so a
+  // stub would leave every "clicking Undo re-dispatches" assertion below
+  // testing nothing but the delegation.
   return renderHook(
-    ({tree}: {tree: GridSection[]}) => useStructuralUndo({tree, moveFieldTo: dispatcher}),
+    ({tree}: {tree: GridSection[]}) => {
+      const history = useStructuralHistory();
+      return {...useStructuralUndo({tree, moveFieldTo: dispatcher, history}), history};
+    },
     {initialProps: {tree: treeOf(baseFields)}},
   );
 }
@@ -300,20 +317,31 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useInsertTemplateField>);
 });
 
+/** The panel with the REAL slot behind it: these tests click the toast's
+ * Undo, which now routes through the history, so a stub would short the
+ * very wiring under test. */
+function PanelWithHistory() {
+  const history = useStructuralHistory();
+  return (
+    <TemplateConfigGridPanel
+      projectId="p1"
+      templateId="t1"
+      onDeleteField={vi.fn()}
+      history={history}
+      sectionActions={sectionActions}
+      onAddSection={vi.fn()}
+      onAddGroup={vi.fn()}
+    />
+  );
+}
+
 function renderPanel() {
   // dnd-kit's DndContext (T6) contributes its own role="status" live
   // region portaled to document.body — panel-region queries scope to
   // the render container.
   return render(
     <TooltipProvider>
-      <TemplateConfigGridPanel
-        projectId="p1"
-        templateId="t1"
-        onDeleteField={vi.fn()}
-        sectionActions={sectionActions}
-        onAddSection={vi.fn()}
-        onAddGroup={vi.fn()}
-      />
+      <PanelWithHistory />
     </TooltipProvider>,
   );
 }
@@ -429,16 +457,26 @@ describe('TemplateConfigGridPanel — undo wiring', () => {
 describe('useStructuralUndo — delete (B-9d)', () => {
   function renderDeleteUndo(
     deleteField: (fieldId: string) => Promise<boolean>,
-    restoreField: (field: GridField, sectionId: string, index: number) => Promise<boolean>,
+    restoreField: (
+      field: GridField,
+      sectionId: string,
+      index: number,
+    ) => Promise<string | null>,
   ) {
     return renderHook(
-      ({tree}: {tree: GridSection[]}) =>
-        useStructuralUndo({
-          tree,
-          moveFieldTo: vi.fn(() => record(true)),
-          deleteField,
-          restoreField,
-        }),
+      ({tree}: {tree: GridSection[]}) => {
+        const history = useStructuralHistory();
+        return {
+          ...useStructuralUndo({
+            tree,
+            moveFieldTo: vi.fn(() => record(true)),
+            deleteField,
+            restoreField,
+            history,
+          }),
+          history,
+        };
+      },
       {initialProps: {tree: treeOf(baseFields)}},
     );
   }
@@ -446,7 +484,7 @@ describe('useStructuralUndo — delete (B-9d)', () => {
   it('arms the undo toast only after the delete actually lands', async () => {
     const deleteField = vi.fn(async (_fieldId: string) => true);
     const restoreField = vi.fn(
-      async (_field: GridField, _sectionId: string, _index: number) => true,
+      async (_field: GridField, _sectionId: string, _index: number) => 'f2-restored',
     );
     const {result} = renderDeleteUndo(deleteField, restoreField);
     const beta = mustField(treeOf(baseFields), 'f2');
@@ -469,7 +507,7 @@ describe('useStructuralUndo — delete (B-9d)', () => {
     // and offering Undo on a delete that never happened would be a lie.
     const deleteField = vi.fn(async (_fieldId: string) => false);
     const restoreField = vi.fn(
-      async (_field: GridField, _sectionId: string, _index: number) => true,
+      async (_field: GridField, _sectionId: string, _index: number) => 'f2-restored',
     );
     const {result} = renderDeleteUndo(deleteField, restoreField);
 
@@ -483,7 +521,7 @@ describe('useStructuralUndo — delete (B-9d)', () => {
   it('Undo restores the field into the exact slot it was deleted from', async () => {
     const deleteField = vi.fn(async (_fieldId: string) => true);
     const restoreField = vi.fn(
-      async (_field: GridField, _sectionId: string, _index: number) => true,
+      async (_field: GridField, _sectionId: string, _index: number) => 'f2-restored',
     );
     const {result} = renderDeleteUndo(deleteField, restoreField);
     // Beta sits at index 1 of sec1 in the fixture tree.
@@ -505,12 +543,17 @@ describe('useStructuralUndo — delete (B-9d)', () => {
   it('a delete retires a live move undo — still one slot, never a stack', async () => {
     const deleteField = vi.fn(async (_fieldId: string) => true);
     const restoreField = vi.fn(
-      async (_field: GridField, _sectionId: string, _index: number) => true,
+      async (_field: GridField, _sectionId: string, _index: number) => 'f2-restored',
     );
     const dispatcher = vi.fn(() => record(true));
     const {result} = renderHook(
-      ({tree}: {tree: GridSection[]}) =>
-        useStructuralUndo({tree, moveFieldTo: dispatcher, deleteField, restoreField}),
+      ({tree}: {tree: GridSection[]}) => {
+        const history = useStructuralHistory();
+        return {
+          ...useStructuralUndo({tree, moveFieldTo: dispatcher, deleteField, restoreField, history}),
+          history,
+        };
+      },
       {initialProps: {tree: treeOf(baseFields)}},
     );
 

@@ -144,12 +144,20 @@ def _affects_recorded_data(
     refused. Stated here rather than left to the caller's id set, so a
     future caller resolving a wider set cannot turn it into a lie.
 
-    A section is answered from its child fields. That is deliberately NOT
-    the predicate Discard's section gate uses (instance ownership,
-    ``template_discard_service._entity_types_with_instances``): a section
-    owning instances but no field values reads "no recorded work" here and
-    would still be refused by Discard. Reconciling the two is a later
-    slice's problem; this flag is field-derived and says so.
+    A section is answered from its child fields, and Discard's section gate
+    now agrees: it reads
+    ``ExtractionFieldReferenceRepository.sections_with_recorded_work``,
+    which asks the same five tables. The gate used to test instance
+    OWNERSHIP instead, so a section a session had merely opened read "no
+    recorded work" here and was still refused there; that divergence is
+    closed.
+
+    One asymmetry survives, and it is the gate's to have: the gate also
+    matches on ``instance_id``, which catches work recorded before its
+    field was moved to another section. This flag is field-derived, so it
+    attributes that work to the field's CURRENT section — the right answer
+    for "does publishing this change touch recorded work", and a subset of
+    what the delete/discard gate must refuse.
     """
     if change.kind is ChangeKind.REMOVED or change.node_id is None:
         return False

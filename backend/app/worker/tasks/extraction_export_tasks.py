@@ -48,6 +48,7 @@ def export_extraction_task(
     reviewer_id: str | None = None,
     include_ai_metadata: bool = False,
     anonymize_reviewer_names: bool = False,
+    shape: str = "complete",
 ) -> dict[str, Any]:
     """Async extraction export job.
 
@@ -59,7 +60,7 @@ def export_extraction_task(
         # Lazy imports + lazy client construction.
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
-        from app.services.exports.extraction.workbook import build_workbook
+        from app.services.exports.extraction.workbook import ExportShape, build_workbook
         from app.services.extraction_export_service import (
             ExportMode,
             ExtractionExportService,
@@ -88,7 +89,7 @@ def export_extraction_task(
 
             # CPU-bound write — keep it in a thread so the event loop is
             # free for the upload coroutine that follows.
-            data = await asyncio.to_thread(build_workbook, layout)
+            data = await asyncio.to_thread(build_workbook, layout, ExportShape(shape))
 
             path = f"{_STORAGE_PREFIX}/{user_id}/{self.request.id}.xlsx"
             await storage.upload(

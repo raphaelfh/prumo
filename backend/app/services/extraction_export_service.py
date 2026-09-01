@@ -59,6 +59,11 @@ from app.services.derived_judgment_service import (
     scope_filtered_values,
     warn_dangling_spec_refs,
 )
+from app.services.exports.extraction_scope_marking import (
+    NOT_APPLICABLE,
+    article_values_by_coord,
+    mark_out_of_scope_values,
+)
 from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
@@ -359,11 +364,6 @@ class ExportLayout:
 
 _FILENAME_SANITISE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
-# What a derived overall prints when its every input is out of scope. Taken
-# from the shared marker labels, not written by hand: the banner renders the
-# same words for the same state, and a copy change moves both at once.
-_NOT_APPLICABLE = ABSENT_REASON_LABELS[AbsentReason.NOT_APPLICABLE.value]
-
 
 class ExtractionExportService(LoggerMixin):
     """Orchestrates an extraction `.xlsx` export request."""
@@ -503,6 +503,17 @@ class ExtractionExportService(LoggerMixin):
             )
         else:  # pragma: no cover — exhaustive over ExportMode
             raise AssertionError(f"unhandled export mode: {mode!r}")
+
+        # §5 scope fidelity, applied BEFORE the tidy tables, the AI rows and
+        # the appraisal read the map, so all three inherit it for free.
+        mark_out_of_scope_values(
+            template_schema=template.schema_,
+            sections=sections,
+            articles=tuple(articles),
+            reviewers=reviewers,
+            value_map=value_map,
+            is_all_users=mode is ExportMode.ALL_USERS,
+        )
 
         anchor_field_ids = {f.field_id for s in sections for f in s.fields}
         obsolete_fields = await self._compute_obsolete_fields_per_article(
@@ -712,25 +723,18 @@ class ExtractionExportService(LoggerMixin):
                 # Resolve the spec's (section, field) coordinates against the
                 # SAME value_map the domain verdicts came from, so a derived
                 # overall can never disagree with the columns beside it.
-                values_by_coord: dict[tuple[str, str], Any] = {}
-                for section in sections:
-                    instance_ids = article.section_instances.get(section.entity_type_id, ())
-                    instance_id = instance_ids[0] if instance_ids else None
-                    for field in section.fields:
-                        key = (
-                            (run_id, instance_id, field.field_id, None)
-                            if is_all_users
-                            else (run_id, instance_id, field.field_id)
-                        )
-                        raw = value_map.get(key)
-                        if raw is not None:
-                            values_by_coord[(section.name, field.name)] = raw
+                values_by_coord = article_values_by_coord(
+                    article=article,
+                    sections=sections,
+                    value_map=value_map,
+                    is_all_users=is_all_users,
+                )
                 # §2a parity: the same filter the run view applies, from the
                 # same helper, so the workbook cannot show a verdict the
                 # banner calls "Not applicable" (or vice versa).
                 out_of_scope = out_of_scope_sections(template_schema, values_by_coord)
                 derived_values = tuple(
-                    _NOT_APPLICABLE
+                    NOT_APPLICABLE
                     if d.inputs and all(is_out_of_scope(i, out_of_scope) for i in d.inputs)
                     else d.value
                     for d in compute_derived_judgments(

@@ -316,7 +316,12 @@ export const templateConfig = {
   shortcutMoveDown: '⌘⇧↓',
   shortcutMoveToSection: '⌘⇧M',
   shortcutMoveUp: '⌘⇧↑',
+  // Also the toolbar's Undo button — one key per string; the pair share
+  // one slot, so they must read identically.
   undoAction: 'Undo',
+  historyRedo: 'Redo',
+  historyUndoEmpty: 'Nothing to undo',
+  historyRedoEmpty: 'Nothing to redo',
   undoDeleteSectionToast: 'Deleted {{section}}',
   undoDeleteToast: 'Deleted {{field}}',
   undoFieldMissing: 'This field no longer exists — nothing to undo',

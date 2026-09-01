@@ -28,6 +28,19 @@ class ExtractionArticleScope(StrEnum):
     SELECTED_ONLY = "selected_only"
 
 
+class ExtractionExportShape(StrEnum):
+    """Which sheets the produced workbook carries.
+
+    Mirrors ``services.extraction_export_service.ExportShape`` by value, the
+    same way ``ExtractionExportMode`` mirrors ``ExportMode`` — the schema
+    layer never imports the service layer.
+    """
+
+    COMPLETE = "complete"
+    DICTIONARY = "dictionary"
+    PUBLICATION = "publication"
+
+
 class ExtractionExportRequest(BaseModel):
     """Start an extraction export."""
 
@@ -64,6 +77,10 @@ class ExtractionExportRequest(BaseModel):
     anonymize_reviewer_names: bool = Field(
         default=False,
         description="Only meaningful when mode=all_users; replaces names with Reviewer A/B/…",
+    )
+    shape: ExtractionExportShape = Field(
+        default=ExtractionExportShape.COMPLETE,
+        description="Which sheets the workbook carries. Defaults to every sheet.",
     )
 
 

@@ -20,7 +20,7 @@ import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateCards} from './config/ConfigureTemplateCards';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
-import {ExtractionExportDialog} from './ExtractionExportDialog';
+import {HITLExportDialog} from '@/components/hitl/HITLExportDialog';
 import {LlmEngineChip} from './LlmEngineChip';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
@@ -507,13 +507,12 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
       {/* Dialog to export extraction data as .xlsx (009-extraction-excel-export) */}
       {activeTemplate && (
-        <ExtractionExportDialog
+        <HITLExportDialog
           open={showExportDialog}
           onOpenChange={setShowExportDialog}
           projectId={projectId}
-          templateId={activeTemplate.id}
+          templates={[{id: activeTemplate.id, name: activeTemplate.name}]}
           currentListIds={articles.map((a) => a.id)}
-          selectedIds={[]}
           isManager={isManager}
         />
       )}

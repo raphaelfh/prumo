@@ -59,6 +59,7 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 import {TemplateConfigGridPanel} from './TemplateConfigGridPanel';
 import {TemplateGrid, type TemplateSectionActions} from './TemplateGrid';
 import {buildTemplateTree} from './templateTree';
+import {stubStructuralHistory} from '@/test/helpers/structuralHistoryStub';
 
 const field = (id: string, entityTypeId: string, name: string, label: string) => ({
   id,
@@ -154,7 +155,7 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
 const focusEl = (el: HTMLElement) => act(() => el.focus());
 
 const openSectionMenu = async (label: string) => {
-  await userEvent.click(screen.getByRole('button', {name: `Add — ${label}`}));
+  await userEvent.click(screen.getByRole('button', {name: `Section actions — ${label}`}));
 };
 
 describe('section ＋▾ menu — role-aware items (B-8 D8)', () => {
@@ -330,6 +331,7 @@ describe('TemplateConfigGridPanel — new callback threading (B-8 T5)', () => {
           projectId="p1"
           templateId="t1"
           onDeleteField={vi.fn()}
+        history={stubStructuralHistory()}
           sectionActions={sectionActions}
           onAddSection={vi.fn()}
           onAddGroup={onAddGroup}

@@ -196,9 +196,11 @@ describe('replaySection', () => {
       return {ok: true, data: {id: `new-${params.name}`}};
     });
 
-    const ok = await replaySection(snapshot, d);
+    const restoredRootId = await replaySection(snapshot, d);
 
-    expect(ok).toBe(true);
+    // The ROOT's new id comes back — Redo has no other handle on rows
+    // that were re-created rather than un-tombstoned.
+    expect(restoredRootId).toBe('new-models');
     expect(created).toEqual([
       'models:root',
       'performance:new-models',
@@ -264,7 +266,7 @@ describe('replaySection', () => {
       error: new Error('nope'),
     } as never);
 
-    expect(await replaySection(snapshot, d)).toBe(false);
+    expect(await replaySection(snapshot, d)).toBeNull();
     expect(d.insertField).not.toHaveBeenCalled();
   });
 
@@ -276,6 +278,6 @@ describe('replaySection', () => {
       error: new Error('nope'),
     } as never);
 
-    expect(await replaySection(snapshot, d)).toBe(false);
+    expect(await replaySection(snapshot, d)).toBeNull();
   });
 });

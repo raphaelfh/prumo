@@ -9,6 +9,9 @@ export type ExtractionExportMode = "consensus" | "single_user" | "all_users";
 
 export type ExtractionArticleScope = "current_list" | "selected_only";
 
+/** Which sheets the produced workbook carries. Mirrors the backend enum. */
+export type ExtractionExportShape = "complete" | "dictionary" | "publication";
+
 export interface ExtractionExportRequest {
     template_id: string;
     mode: ExtractionExportMode;
@@ -17,6 +20,7 @@ export interface ExtractionExportRequest {
     article_ids: string[];
     include_ai_metadata?: boolean;
     anonymize_reviewer_names?: boolean;
+    shape?: ExtractionExportShape;
 }
 
 interface StartExtractionExportSyncResult {

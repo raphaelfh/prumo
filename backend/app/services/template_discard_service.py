@@ -78,10 +78,10 @@ from app.domain.template_change import ChangeTier
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
-    ExtractionInstance,
     ProjectExtractionTemplate,
 )
 from app.repositories.extraction_field_reference_repository import (
+    RESTRICT_FKS,
     ExtractionFieldReferenceRepository,
 )
 from app.repositories.extraction_template_version_repository import (
@@ -119,22 +119,10 @@ __all__ = [
     "discard_draft",
 ]
 
-#: The RESTRICT references that make a live node un-deletable. Detection
-#: queries these tables up front (D4); this list is the D8 backstop, used to
-#: tell a lost race apart from a genuine bug in the writer's own phase order
-#: (a ``parent_entity_type_id`` violation is also 23503 and must NOT be
-#: reported as a race).
-_RESTRICT_FKS = frozenset(
-    {
-        "extraction_instances_entity_type_id_fkey",
-        "extraction_proposal_records_field_id_fkey",
-        "extraction_reviewer_decisions_field_id_fkey",
-        "extraction_reviewer_states_field_id_fkey",
-        "extraction_consensus_decisions_field_id_fkey",
-        "extraction_published_states_field_id_fkey",
-    }
-)
-
+# ``RESTRICT_FKS`` (imported above) is the D8 backstop: detection queries
+# those tables up front (D4), and the name set tells a lost race apart from a
+# genuine bug in the writer's own phase order — a ``parent_entity_type_id``
+# violation is also 23503 and must NOT be reported as a race.
 _FK_VIOLATION = "23503"
 _DEADLOCK = "40P01"
 
@@ -407,23 +395,6 @@ async def _live_tree(
     return entities, fields
 
 
-async def _entity_types_with_instances(
-    db: AsyncSession, entity_type_ids: list[UUID]
-) -> frozenset[UUID]:
-    """Which of these entity types already own extraction instances.
-
-    Instances materialize from LIVE rows, so a draft-added section owns real
-    run data as soon as any session opens on the article."""
-    if not entity_type_ids:
-        return frozenset()
-    rows = await db.execute(
-        select(ExtractionInstance.entity_type_id)
-        .where(ExtractionInstance.entity_type_id.in_(entity_type_ids))
-        .distinct()
-    )
-    return frozenset(rows.scalars().all())
-
-
 async def _analyze(
     db: AsyncSession,
     *,
@@ -441,23 +412,28 @@ async def _analyze(
     added_entity_ids = {eid for eid in live_entities if eid not in baseline_entity_ids}
     added_field_ids = {fid for fid in live_fields if fid not in baseline_field_ids}
 
-    with_instances = await _entity_types_with_instances(db, sorted(added_entity_ids))
-    # B-9b2a D5: the same repository the config-diff read resolves
-    # ``affects_recorded_data`` from, so the two can never disagree about
-    # which fields already hold recorded work.
-    referenced = await ExtractionFieldReferenceRepository(db).fields_with_recorded_work(
-        sorted(live_fields)
-    )
+    # B-9b2a D5: ONE repository answers both halves of "already holds
+    # recorded work", so the config-diff read's ``affects_recorded_data``
+    # and this gate can never disagree.
+    #
+    # The section half asks about WORK, not about instance ownership. A HITL
+    # session seeds an empty instance for every top-level section the moment
+    # an article is opened, so the old ownership test made every draft-added
+    # section permanently un-discardable and reported "has_recorded_data"
+    # over a container holding nothing.
+    references = ExtractionFieldReferenceRepository(db)
+    with_work = await references.sections_with_recorded_work(sorted(added_entity_ids))
+    referenced = await references.fields_with_recorded_work(sorted(live_fields))
     blocked_fields = referenced & added_field_ids
 
     # The writer's skip set is entity-type-granular: a blocked FIELD is
     # spared by skipping its OWNING section, whether that section is
     # draft-added or a survivor (a survivor is never deleted anyway — the
     # skip only stops its draft-added children being swept).
-    seed = set(with_instances) | {live_fields[fid].entity_type_id for fid in blocked_fields}
+    seed = set(with_work) | {live_fields[fid].entity_type_id for fid in blocked_fields}
     skip = _closed_over_the_tree(
         seed,
-        instance_blocked=with_instances,
+        work_blocked=with_work,
         live_entities=live_entities,
         added_entity_ids=added_entity_ids,
     )
@@ -469,7 +445,7 @@ async def _analyze(
             node_id=eid,
             node_kind="entity_type",
             label=live_entities[eid].label,
-            reason="has_recorded_data" if eid in with_instances else "related_to_kept_node",
+            reason="has_recorded_data" if eid in with_work else "related_to_kept_node",
         )
         for eid in sorted(kept_entity_ids, key=lambda i: live_entities[i].sort_order)
     ] + [
@@ -491,7 +467,7 @@ async def _analyze(
 def _closed_over_the_tree(
     seed: set[UUID],
     *,
-    instance_blocked: frozenset[UUID],
+    work_blocked: frozenset[UUID],
     live_entities: dict[UUID, ExtractionEntityType],
     added_entity_ids: set[UUID],
 ) -> set[UUID]:
@@ -506,8 +482,8 @@ def _closed_over_the_tree(
       and the ancestor walk is the correction.
     * **down** — a kept section keeps its draft-added subtree (D4), so the
       manager is left with a coherent branch rather than a decapitated one.
-      Only walked from nodes blocked by their own instances: a section kept
-      merely to spare one field of its own has no claim on its child
+      Only walked from nodes blocked by their OWN recorded work: a section
+      kept merely to spare one field of its own has no claim on its child
       sections.
 
     One hop down IS the whole subtree: ``ck_extraction_entity_types_role_parent``
@@ -526,7 +502,7 @@ def _closed_over_the_tree(
         if parent is not None and parent in added_entity_ids and parent not in skip:
             skip.add(parent)
             stack.append(parent)
-        if node not in instance_blocked:
+        if node not in work_blocked:
             continue
         for child_id, child in live_entities.items():
             if (
@@ -641,9 +617,7 @@ def _reraise_if_raced(
     would mean the writer's phase order is wrong — propagates untouched, so
     a real bug never hides behind a "someone else was editing" message."""
     state = _sqlstate(exc)
-    raced = state == _DEADLOCK or (
-        state == _FK_VIOLATION and _constraint_name(exc) in _RESTRICT_FKS
-    )
+    raced = state == _DEADLOCK or (state == _FK_VIOLATION and _constraint_name(exc) in RESTRICT_FKS)
     if not raced:
         return
     _refuse(
