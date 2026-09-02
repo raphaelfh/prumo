@@ -29,6 +29,8 @@ vi.mock("@/services/articlesExportService", () => ({
 import {NotificationCenter} from "../NotificationCenter";
 import {useBackgroundJobs} from "@/stores/useBackgroundJobs";
 import {createExtractionExportJob} from "@/types/background-jobs";
+import {getExportStatus as getExtractionExportStatus} from "@/services/extractionExportService";
+import type {ExtractionExportStatus} from "@/types/extraction-export";
 
 function completedExportJob(id: string) {
     return {
@@ -46,7 +48,30 @@ function completedExportJob(id: string) {
     };
 }
 
+function runningExportJobWithoutTemplateName(id: string) {
+    return {
+        ...createExtractionExportJob("11111111-1111-1111-1111-111111111111", `backend-${id}`, {
+            // `templateName` is genuinely optional: the dialog fills it from
+            // `templates.find(...)?.name`, which is undefined when the template
+            // is not in the loaded list.
+            templateId: "22222222-2222-2222-2222-222222222222",
+            mode: "all_users" as const,
+            articleCount: 5,
+            includeAiMetadata: false,
+            anonymizeReviewerNames: false,
+        }),
+        id,
+        status: "running" as const,
+    };
+}
+
 beforeEach(() => {
+    // The bell polls every in-flight export job on mount. Re-establish the
+    // default terminal result each time so a per-test override cannot leak.
+    vi.mocked(getExtractionExportStatus).mockResolvedValue({
+        job_id: "x",
+        status: "completed",
+    });
     act(() => {
         // Fresh slate: no jobs, and lastReadAt=now so nothing reads as unread
         // until a test arranges it.
@@ -72,7 +97,7 @@ describe("NotificationCenter", () => {
         });
 
         // The bell must reflect it immediately (not only after a reload).
-        expect(await screen.findByText("Export extraction data")).toBeInTheDocument();
+        expect(await screen.findByText("Export to Excel")).toBeInTheDocument();
         expect(screen.queryByText(/No notifications/i)).not.toBeInTheDocument();
     });
 
@@ -107,5 +132,33 @@ describe("NotificationCenter", () => {
         );
         expect(screen.queryByText("2")).not.toBeInTheDocument();
         expect(screen.queryByRole("button", {name: /unread/i})).toBeNull();
+    });
+
+    it("names a generic template noun when the job carries no template name", async () => {
+        const user = userEvent.setup();
+        // Hold the job in-flight: the trailing template slot is only rendered
+        // while the export is still generating.
+        const stillRunning: ExtractionExportStatus = {job_id: "x", status: "running"};
+        vi.mocked(getExtractionExportStatus).mockResolvedValue(stillRunning);
+        act(() => {
+            useBackgroundJobs.setState({
+                jobs: [runningExportJobWithoutTemplateName("job-1")],
+                lastReadAt: Date.now(),
+            });
+        });
+        render(
+            <MemoryRouter>
+                <NotificationCenter />
+            </MemoryRouter>,
+        );
+
+        await user.click(screen.getByRole("button", {name: /notifications/i}));
+
+        // The trailing slot names the TEMPLATE being exported, so an absent name
+        // must degrade to a generic noun — never to the export dialog's own
+        // title, which reads as nonsense in this sentence.
+        expect(
+            await screen.findByText("Generating… (5 articles, Template)"),
+        ).toBeInTheDocument();
     });
 });

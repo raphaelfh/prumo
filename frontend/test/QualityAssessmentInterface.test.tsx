@@ -164,7 +164,7 @@ describe('QualityAssessmentInterface', () => {
     await user.click(exportButton);
 
     expect(
-      await screen.findByRole('dialog', { name: /Export extraction data/i }),
+      await screen.findByRole('dialog', { name: /Export to Excel/i }),
     ).toBeInTheDocument();
   });
 });
