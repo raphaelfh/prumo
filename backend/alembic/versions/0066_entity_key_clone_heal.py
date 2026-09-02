@@ -31,13 +31,13 @@ from one 0059 set or a manager declared by hand, so clearing them would
 destroy data this migration never owned. 0059's own downgrade drops the column
 outright, which is the only honest way to undo the concept.
 
-Revision ID: 0066_entity_key_reclone_heal
+Revision ID: 0066_entity_key_clone_heal
 Revises: 0065_revoke_anon_model_prog
 """
 
 from alembic import op
 
-revision = "0066_entity_key_reclone_heal"
+revision = "0066_entity_key_clone_heal"
 down_revision = "0065_revoke_anon_model_prog"
 branch_labels = None
 depends_on = None
