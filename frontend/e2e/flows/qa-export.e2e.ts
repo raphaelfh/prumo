@@ -64,7 +64,7 @@ test.describe("Quality assessment export — UI flow", () => {
     const exportBtn = await openQaExportButton(page, env);
     await exportBtn.click();
 
-    await expect(page.getByText(/Export extraction data/i)).toBeVisible();
+    await expect(page.getByText(/Export to Excel/i)).toBeVisible();
     await expect(page.getByLabel("Consensus")).toBeChecked();
     await expect(page.getByLabel(/Complete workbook/i)).toBeChecked();
     await expect(page.getByTestId("extraction-export-preview")).toBeVisible();
@@ -98,8 +98,8 @@ test.describe("Quality assessment export — UI flow", () => {
     const env = loadE2EEnv();
     const exportBtn = await openQaExportButton(page, env);
     await exportBtn.click();
-    await expect(page.getByText(/Export extraction data/i)).toBeVisible();
+    await expect(page.getByText(/Export to Excel/i)).toBeVisible();
     await page.getByRole("button", { name: /Cancel/i }).click();
-    await expect(page.getByText(/Export extraction data/i)).not.toBeVisible();
+    await expect(page.getByText(/Export to Excel/i)).not.toBeVisible();
   });
 });

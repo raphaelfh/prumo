@@ -394,8 +394,8 @@ export const extraction = {
     noOptionsAddedYet: 'No options added yet',
     complete: 'complete',
     // ExtractionExportDialog (009-extraction-excel-export)
-    exportDialogTitle: 'Export extraction data',
-    exportDialogSubtitle: 'Export extracted data from the active template as an Excel workbook (.xlsx).',
+    exportDialogTitle: 'Export to Excel',
+    exportDialogSubtitle: "Export this project's recorded values as an Excel workbook (.xlsx).",
     exportSourceLabel: 'Source of values',
     exportSourceConsensus: 'Consensus',
     exportSourceSingleUser: 'Single user',

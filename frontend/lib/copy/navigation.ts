@@ -25,6 +25,7 @@ export const navigation = {
     unitItems: 'items',
     unitArticles: 'articles',
     defaultCollectionName: 'Collection',
+    defaultTemplateName: 'Template',
     exportStatusCheckFailed: 'Failed to check export status',
     importComplete: 'Import complete!',
     taskCompleteSuccess: 'Task completed successfully!',
