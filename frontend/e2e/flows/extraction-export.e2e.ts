@@ -313,7 +313,7 @@ test.describe("Extraction export — UI flow", () => {
 
     // The single dialog opens from the toolbar button.
     await exportBtn.click();
-    await expect(page.getByText(/Export extraction data/i)).toBeVisible();
+    await expect(page.getByText(/Export to Excel/i)).toBeVisible();
   });
 
   test("dialog opens with defaults and shows live preview", async ({ page }) => {
@@ -322,7 +322,7 @@ test.describe("Extraction export — UI flow", () => {
     await exportBtn.click();
 
     // Dialog opens.
-    await expect(page.getByText(/Export extraction data/i)).toBeVisible();
+    await expect(page.getByText(/Export to Excel/i)).toBeVisible();
     // Defaults: Consensus + the complete workbook; AI off; anonymize hidden.
     await expect(page.getByLabel("Consensus")).toBeChecked();
     await expect(page.getByLabel(/Complete workbook/i)).toBeChecked();
@@ -382,9 +382,9 @@ test.describe("Extraction export — UI flow", () => {
     const env = loadE2EEnv();
     const exportBtn = await openExportTab(page, env);
     await exportBtn.click();
-    await expect(page.getByText(/Export extraction data/i)).toBeVisible();
+    await expect(page.getByText(/Export to Excel/i)).toBeVisible();
     await page.getByRole("button", { name: /Cancel/i }).click();
-    await expect(page.getByText(/Export extraction data/i)).not.toBeVisible();
+    await expect(page.getByText(/Export to Excel/i)).not.toBeVisible();
   });
 
   test("the template picker is absent on the single-template extraction surface", async ({ page }) => {

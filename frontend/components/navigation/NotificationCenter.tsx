@@ -451,7 +451,7 @@ function getJobDescription(job: BackgroundJob): string {
     }
     if (job.type === 'extraction-export') {
         const metadata = (job as ExtractionExportJob).metadata;
-        const templateName = metadata.templateName || t('extraction', 'exportDialogTitle');
+        const templateName = metadata.templateName || t('navigation', 'defaultTemplateName');
         if (job.status === 'running' || job.status === 'pending') {
             return `${t('extraction', 'exportGenerating')} (${metadata.articleCount} ${t('navigation', 'unitArticles')}, ${templateName})`;
         }
