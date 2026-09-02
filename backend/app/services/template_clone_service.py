@@ -72,6 +72,54 @@ class TemplateClone:
         self.created = created
 
 
+#: Every ``ExtractionField`` column the clone copies onto the project row.
+#: Named — and checked against the model by
+#: ``tests/unit/test_template_clone_field_columns.py`` — rather than spread
+#: inline, because this list has silently swallowed a new column TWICE: first
+#: the ADR-0016 dispositions (which removed the "Not applicable" affordance
+#: from every cloned signaling question), then ``is_entity_key`` (which left
+#: every cloned CHARMS project's repeating sections with no identity, so the
+#: first AI extraction into one raised ``MissingEntityKeyError``). Neither
+#: turned a test red. A column that is in the model and in neither set here
+#: now fails the guard, which forces the copy-or-not call to be made once,
+#: deliberately, by whoever adds the column.
+CLONED_FIELD_COLUMNS: frozenset[str] = frozenset(
+    {
+        "name",
+        "label",
+        "description",
+        "field_type",
+        "is_required",
+        "validation_schema",
+        "allowed_values",
+        "unit",
+        "allowed_units",
+        "llm_description",
+        "sort_order",
+        "allow_other",
+        "other_label",
+        "other_placeholder",
+        # ADR-0016 opt-in dispositions travel with the field: the project clone
+        # is what the run-open form renders, so dropping them here removes the
+        # "Not applicable" affordance and freezes that loss into the snapshot.
+        "allows_not_applicable",
+        "allows_not_evaluated",
+        "allows_no_information",
+        # Identity for repeating groups (``entity_key.resolve_key_field``).
+        # The clone is what a Run resolves against, so without this an AI
+        # re-run cannot tell a new entry from one it already extracted.
+        "is_entity_key",
+    }
+)
+
+#: Columns the clone deliberately does NOT carry over: the row's own identity,
+#: its parent link (re-pointed at the clone's own entity types), and the
+#: timestamps the new row mints for itself.
+UNCLONED_FIELD_COLUMNS: frozenset[str] = frozenset(
+    {"id", "entity_type_id", "created_at", "updated_at"}
+)
+
+
 class TemplateCloneService:
     """Clone a global template (CHARMS / PROBAST / QUADAS-2 / ...) into a project.
 
@@ -373,28 +421,7 @@ class TemplateCloneService:
                 self.db.add(
                     ExtractionField(
                         entity_type_id=entity_type_id_map[et.id],
-                        name=f.name,
-                        label=f.label,
-                        description=f.description,
-                        field_type=f.field_type,
-                        is_required=f.is_required,
-                        validation_schema=f.validation_schema,
-                        allowed_values=f.allowed_values,
-                        unit=f.unit,
-                        allowed_units=f.allowed_units,
-                        llm_description=f.llm_description,
-                        sort_order=f.sort_order,
-                        allow_other=f.allow_other,
-                        other_label=f.other_label,
-                        other_placeholder=f.other_placeholder,
-                        # ADR-0016 opt-in dispositions travel with the field:
-                        # the project clone is what the run-open form renders,
-                        # so dropping them here silently removes the
-                        # "Not applicable" affordance from every signaling
-                        # question (and freezes that loss into the snapshot).
-                        allows_not_applicable=f.allows_not_applicable,
-                        allows_not_evaluated=f.allows_not_evaluated,
-                        allows_no_information=f.allows_no_information,
+                        **{c: getattr(f, c) for c in CLONED_FIELD_COLUMNS},
                     )
                 )
                 field_count += 1
