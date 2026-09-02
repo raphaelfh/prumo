@@ -72,6 +72,34 @@ class TemplateClone:
         self.created = created
 
 
+#: Columns the clone must NOT carry over: the row's own identity, its parent
+#: link (re-pointed at the clone's own entity types), and the timestamps the
+#: new row mints for itself. Hand-maintained and deliberately short.
+UNCLONED_FIELD_COLUMNS: frozenset[str] = frozenset(
+    {"id", "entity_type_id", "created_at", "updated_at"}
+)
+
+#: Everything else travels with the project copy — DERIVED from the model, so
+#: a column added to ``ExtractionField`` is copied by default.
+#:
+#: This used to be a hand-written kwarg list, and it silently swallowed a new
+#: column TWICE: first the ADR-0016 dispositions (every cloned signaling
+#: question lost its "Not applicable" affordance, frozen into the snapshot),
+#: then ``is_entity_key`` (every cloned CHARMS project's repeating sections
+#: declared no identity, so the first AI extraction into one raised
+#: ``MissingEntityKeyError``). Neither turned a test red; both were found from
+#: the outside, long after shipping.
+#:
+#: Inverting the default is what retires that class. Forgetting to copy a
+#: column removes a behaviour from every project in silence; forgetting to
+#: EXCLUDE one copies a value onto a row that already accepts it, which is
+#: both rarer and louder. The sibling portable-import path never had either
+#: bug precisely because it spreads ``f.model_dump()`` instead of listing.
+CLONED_FIELD_COLUMNS: frozenset[str] = (
+    frozenset(c.name for c in ExtractionField.__table__.columns) - UNCLONED_FIELD_COLUMNS
+)
+
+
 class TemplateCloneService:
     """Clone a global template (CHARMS / PROBAST / QUADAS-2 / ...) into a project.
 
@@ -373,28 +401,7 @@ class TemplateCloneService:
                 self.db.add(
                     ExtractionField(
                         entity_type_id=entity_type_id_map[et.id],
-                        name=f.name,
-                        label=f.label,
-                        description=f.description,
-                        field_type=f.field_type,
-                        is_required=f.is_required,
-                        validation_schema=f.validation_schema,
-                        allowed_values=f.allowed_values,
-                        unit=f.unit,
-                        allowed_units=f.allowed_units,
-                        llm_description=f.llm_description,
-                        sort_order=f.sort_order,
-                        allow_other=f.allow_other,
-                        other_label=f.other_label,
-                        other_placeholder=f.other_placeholder,
-                        # ADR-0016 opt-in dispositions travel with the field:
-                        # the project clone is what the run-open form renders,
-                        # so dropping them here silently removes the
-                        # "Not applicable" affordance from every signaling
-                        # question (and freezes that loss into the snapshot).
-                        allows_not_applicable=f.allows_not_applicable,
-                        allows_not_evaluated=f.allows_not_evaluated,
-                        allows_no_information=f.allows_no_information,
+                        **{c: getattr(f, c) for c in CLONED_FIELD_COLUMNS},
                     )
                 )
                 field_count += 1
