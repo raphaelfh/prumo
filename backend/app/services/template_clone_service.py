@@ -4,9 +4,10 @@ from collections import deque
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.base import Base
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
@@ -70,6 +71,41 @@ class TemplateClone:
         self.entity_type_count = entity_type_count
         self.field_count = field_count
         self.created = created
+
+
+def _copied_columns(model: type[Base], exclude: frozenset[str]) -> frozenset[str]:
+    """Every mapped column of ``model`` except ``exclude``.
+
+    Derived rather than listed, so a column added to the model travels into
+    the project copy by default. A hand-written list drops each new column in
+    silence (it did, twice: the ADR-0016 dispositions, then ``is_entity_key``);
+    a missing exclusion copies a value onto a row that accepts it, which is
+    rarer and louder. A stale exclusion name fails here, at import.
+    """
+    keys = frozenset(attr.key for attr in inspect(model).column_attrs)
+    stale = exclude - keys
+    if stale:
+        raise ValueError(f"{model.__name__} has no columns {sorted(stale)}")
+    return keys - exclude
+
+
+#: What a clone must NOT copy: the row's own identity, the links it re-points
+#: at its own rows, and the timestamps the new row mints for itself.
+UNCLONED_ENTITY_TYPE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "id",
+        "template_id",
+        "project_template_id",
+        "parent_entity_type_id",
+        "created_at",
+        "updated_at",
+    }
+)
+UNCLONED_FIELD_COLUMNS: frozenset[str] = frozenset(
+    {"id", "entity_type_id", "created_at", "updated_at"}
+)
+CLONED_ENTITY_TYPE_COLUMNS = _copied_columns(ExtractionEntityType, UNCLONED_ENTITY_TYPE_COLUMNS)
+CLONED_FIELD_COLUMNS = _copied_columns(ExtractionField, UNCLONED_FIELD_COLUMNS)
 
 
 class TemplateCloneService:
@@ -347,19 +383,12 @@ class TemplateCloneService:
                     id=new_id,
                     project_template_id=project_template_id,
                     template_id=None,
-                    name=et.name,
-                    label=et.label,
-                    description=et.description,
                     parent_entity_type_id=(
                         entity_type_id_map[et.parent_entity_type_id]
                         if et.parent_entity_type_id is not None
                         else None
                     ),
-                    cardinality=et.cardinality,
-                    role=et.role,
-                    entry_label=et.entry_label,
-                    sort_order=et.sort_order,
-                    is_required=et.is_required,
+                    **{c: getattr(et, c) for c in CLONED_ENTITY_TYPE_COLUMNS},
                 )
             )
         await self.db.flush()
@@ -373,28 +402,7 @@ class TemplateCloneService:
                 self.db.add(
                     ExtractionField(
                         entity_type_id=entity_type_id_map[et.id],
-                        name=f.name,
-                        label=f.label,
-                        description=f.description,
-                        field_type=f.field_type,
-                        is_required=f.is_required,
-                        validation_schema=f.validation_schema,
-                        allowed_values=f.allowed_values,
-                        unit=f.unit,
-                        allowed_units=f.allowed_units,
-                        llm_description=f.llm_description,
-                        sort_order=f.sort_order,
-                        allow_other=f.allow_other,
-                        other_label=f.other_label,
-                        other_placeholder=f.other_placeholder,
-                        # ADR-0016 opt-in dispositions travel with the field:
-                        # the project clone is what the run-open form renders,
-                        # so dropping them here silently removes the
-                        # "Not applicable" affordance from every signaling
-                        # question (and freezes that loss into the snapshot).
-                        allows_not_applicable=f.allows_not_applicable,
-                        allows_not_evaluated=f.allows_not_evaluated,
-                        allows_no_information=f.allows_no_information,
+                        **{c: getattr(f, c) for c in CLONED_FIELD_COLUMNS},
                     )
                 )
                 field_count += 1
