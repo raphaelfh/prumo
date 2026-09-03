@@ -240,6 +240,32 @@ class CreateModelHierarchyRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class InstanceIdentityUpdateRequest(BaseModel):
+    """Rename and/or re-key one extraction instance (the run form's rename
+    dialog). ``entity_key`` is the identity an AI re-run matches against; the
+    server normalizes it and appends the change to ``entity_key_history``.
+    At least one of ``label`` / ``entity_key`` must be present, and neither
+    may be blank — a smuggled ``{"label": ""}`` must never blank a column."""
+
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    template_id: UUID = Field(..., alias="templateId")
+    label: str | None = Field(default=None, max_length=200)
+    entity_key: str | None = Field(default=None, alias="entityKey", max_length=500)
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    @model_validator(mode="after")
+    def _one_non_blank_change(self) -> "InstanceIdentityUpdateRequest":
+        if self.label is None and self.entity_key is None:
+            raise ValueError("at least one of label, entityKey is required")
+        for name in ("label", "entity_key"):
+            value = getattr(self, name)
+            if value is not None and not value.strip():
+                raise ValueError(f"{name} may be omitted but not blank")
+        return self
+
+
 class ModelHierarchyChildResponse(BaseModel):
     """Child instance created under the parent model instance."""
 

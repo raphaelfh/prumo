@@ -158,6 +158,12 @@ async def test_create_model_hierarchy_creates_parent_and_singleton_children(
     # No HITL run is open in this test, so nothing was recorded.
     assert result.proposal_run_id is None
 
+    # The manual entry carries the same materialized identity an AI-created
+    # one does (identity spec §5.1.1), so an AI re-run that finds this model
+    # reuses the row instead of adding a second one beside it.
+    parent = await db_session.get(ExtractionInstance, result.model_id)
+    assert parent is not None and parent.metadata_["entity_key"] == "cox model"
+
 
 @pytest.mark.asyncio
 async def test_create_model_hierarchy_records_name_and_method_decisions(

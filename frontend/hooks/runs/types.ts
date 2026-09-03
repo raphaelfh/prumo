@@ -154,6 +154,11 @@ export interface RunViewFieldResponse {
   allows_not_applicable: boolean;
   allows_not_evaluated: boolean;
   allows_no_information?: boolean;
+  /** 0059: the field identifying one entry of a repeating section — read off
+   * the pinned snapshot, like the backend's re-run gate. The backend always
+   * serializes it; optional here so hand-written fixtures stay valid (absent
+   * reads as "not the key", the same default the schema carries). */
+  is_entity_key?: boolean;
 }
 
 interface RunViewEntityType {

@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Sparkles, Loader2, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Sparkles, Loader2, ChevronDown, Pencil } from 'lucide-react';
 import {t} from '@/lib/copy';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -52,6 +52,8 @@ interface ModelSelectorProps {
   onSelectModel: (instanceId: string) => void;
   onAddModel: () => void;
   onRemoveModel: (instanceId: string) => void;
+  /** Rename / re-key the active entry (opens the page's rename dialog). */
+  onRenameModel?: (instanceId: string) => void;
   onExtractModels?: () => Promise<void>;
   extractingModels?: boolean;
   loading?: boolean;
@@ -78,6 +80,7 @@ export function ModelSelector({
   onSelectModel,
   onAddModel,
   onRemoveModel,
+  onRenameModel,
   onExtractModels,
   extractingModels = false,
   loading = false,
@@ -259,6 +262,19 @@ export function ModelSelector({
             ))}
           </SelectContent>
         </Select>
+
+        {!readOnly && activeModelId && onRenameModel && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onRenameModel(activeModelId)}
+            title={t('extraction', 'modelRenameActiveTitle').replace('{{noun}}', entryLabel)}
+            aria-label={t('extraction', 'modelRenameActiveTitle').replace('{{noun}}', entryLabel)}
+            className="shrink-0"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        )}
 
         {!readOnly && activeModelId && (
           <Button

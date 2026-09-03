@@ -17,6 +17,8 @@ import {t} from '@/lib/copy';
 import {useRef} from 'react';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {InstanceCard} from './InstanceCard';
+import type {EntryIdentityChanges} from './AddEntryDialog';
+import {entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {SectionAIExtractButton} from '@/components/extraction/ai/shared/SectionAIExtractButton';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
@@ -47,6 +49,8 @@ interface SectionAccordionProps {
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   onAddInstance?: () => void;
   onRemoveInstance?: (instanceId: string) => void;
+  /** Rename / re-key one entry; absent → no rename affordance on the cards. */
+  onRenameInstance?: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
   /**
    * Badge count override for containers that render only the active
    * instance but represent more entries (the model container passes the
@@ -73,6 +77,10 @@ export function SectionAccordion(props: SectionAccordionProps) {
   const isMultiple = entityType.cardinality === 'many';
   // Read-only run: instance add/remove affordances hide (published view).
   const { readOnly } = useRunEditability();
+  // The field identifying one entry (0059) labels the rename dialog's key
+  // input; the entry noun (B-8) names the entry in its copy.
+  const keyField = keyFieldOf(fields);
+  const entryLabel = entityType.entry_label ?? 'entry';
 
     // Calculate progress for this section
   const requiredFields = fields.filter(f => f.is_required);
@@ -199,6 +207,16 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       }
                       onRemove={() => props.onRemoveInstance?.(instance.id)}
                       canRemove={!!props.onRemoveInstance}
+                      entryLabel={entryLabel}
+                      keyLabel={keyField?.label ?? null}
+                      siblingKeys={instances
+                        .filter((other) => other.id !== instance.id)
+                        .map((other) => entryKeyOf(other) ?? other.label)}
+                      onRename={
+                        props.onRenameInstance
+                          ? (changes) => props.onRenameInstance!(instance.id, changes)
+                          : undefined
+                      }
                       projectId={projectId}
                       aiSuggestions={props.aiSuggestions}
                       onAcceptAI={props.onAcceptAI}

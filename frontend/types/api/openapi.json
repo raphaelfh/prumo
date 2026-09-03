@@ -2078,6 +2078,54 @@
         "title": "ApiResponse[RunSummaryResponse]",
         "type": "object"
       },
+      "ApiResponse_RunViewInstance_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunViewInstance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RunViewInstance]",
+        "type": "object"
+      },
       "ApiResponse_RunViewResponse_": {
         "properties": {
           "data": {
@@ -5371,6 +5419,58 @@
           "inherited"
         ],
         "title": "HitlConfigRead",
+        "type": "object"
+      },
+      "InstanceIdentityUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Rename and/or re-key one extraction instance (the run form's rename\ndialog). ``entity_key`` is the identity an AI re-run matches against; the\nserver normalizes it and appends the change to ``entity_key_history``.\nAt least one of ``label`` / ``entity_key`` must be present, and neither\nmay be blank \u2014 a smuggled ``{\"label\": \"\"}`` must never blank a column.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "entityKey": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitykey"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "articleId",
+          "templateId"
+        ],
+        "title": "InstanceIdentityUpdateRequest",
         "type": "object"
       },
       "KeyValidationResult": {
@@ -11428,6 +11528,65 @@
         "summary": "Get Suggestions History",
         "tags": [
           "articles"
+        ]
+      }
+    },
+    "/api/v1/extraction/instances/{instance_id}": {
+      "patch": {
+        "description": "Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.",
+        "operationId": "update_instance_api_v1_extraction_instances__instance_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceIdentityUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunViewInstance_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Rename or re-key one extraction instance",
+        "tags": [
+          "Extraction Instances"
         ]
       }
     },
