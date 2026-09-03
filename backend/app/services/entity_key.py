@@ -31,20 +31,27 @@ published snapshot like every other field column (0067 backfilled the
 snapshots that predate that): the publish diff shows a key move, and
 Discard restores the key the baseline granted (see
 ``template_restore_service`` for the per-section slot it parks first).
-:func:`resolve_key_field` deliberately still reads the LIVE flag — it is
-the re-run gate, not a prompt input, and a run in ``extract`` is re-pinned
-to the new version on Publish anyway.
+:func:`key_field_of` reads the declaration off the tree the run is PINNED
+to (``entity_types_for_version``), never the live row: a key moved in an
+unpublished draft gates nothing until Publish re-pins the run, exactly like
+every other column of ``schema_``.
+
+**Every repeating group is an entry group.** Identity never branches on
+``role`` — a ``cardinality='many'`` section at any depth that declares a
+key is resolved the same way the model container is; ``model_container``
+keeps only its hierarchy UX, its export record stem and the
+one-container-per-template rule.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionEntityType, ExtractionField, ExtractionInstance
+from app.models.extraction import ExtractionInstance
 
 # JSONB key under ``extraction_instances.metadata``.
 STORE_KEY = "entity_key"
@@ -53,11 +60,11 @@ STORE_KEY = "entity_key"
 class MissingEntityKeyError(Exception):
     """A repeating group declares no ``is_entity_key`` field.
 
-    Raised instead of duplicating in silence. The template inspector is
-    where a manager satisfies it. The seed stamps the global catalogue, the
-    clone copies the flag (``CLONED_FIELD_COLUMNS``) and migrations 0059 and
-    0066 backfilled the rows that predate them, so the common path never
-    reaches this.
+    Raised instead of duplicating in silence, before any write or LLM call.
+    The template inspector is where a manager satisfies it. The seed stamps
+    the global catalogue, the clone copies the flag (``CLONED_FIELD_COLUMNS``)
+    and migrations 0059 and 0066 backfilled the rows that predate them, so
+    the common path never reaches this.
     """
 
     def __init__(self, entity_type_id: UUID, entity_type_label: str | None = None) -> None:
@@ -94,27 +101,100 @@ def key_of(instance: ExtractionInstance) -> str | None:
     return raw if isinstance(raw, str) else None
 
 
-async def resolve_key_field(db: AsyncSession, entity_type_id: UUID) -> ExtractionField:
-    """The field declaring this entity type's identity.
+class _KeyedField(Protocol):
+    @property
+    def id(self) -> UUID: ...
+    @property
+    def label(self) -> str: ...
+    @property
+    def is_entity_key(self) -> bool: ...
 
-    Raises ``MissingEntityKeyError`` when none is declared — the caller
-    refuses rather than duplicating.
+
+class _EntryGroup(Protocol):
+    """What :func:`key_field_of` reads — the columns the pinned
+    ``RunViewEntityType`` and the live ``ExtractionEntityType`` row share.
+    Both AI services fall back to the live row when the pinned tree does not
+    carry the section, so the reader is typed over the intersection (as
+    read-only properties: a plain attribute would be invariant, and the two
+    shapes type ``label`` differently)."""
+
+    @property
+    def id(self) -> UUID: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def label(self) -> str | None: ...
+    @property
+    def cardinality(self) -> str: ...
+    @property
+    def fields(self) -> list[Any]: ...
+
+
+def key_field_of(entity_type: _EntryGroup) -> Any | None:
+    """The field declaring this section's identity, read from the pinned tree.
+
+    ``None`` for a section that does not repeat — a key declared there is
+    inert, not an error, so toggling one/many never trips it (spec §6.1).
+    Raises ``MissingEntityKeyError`` for a keyless repeating group: the
+    caller refuses rather than duplicating, and the message names the
+    section as the template editor shows it.
     """
-    field = (
-        await db.execute(
-            select(ExtractionField).where(
-                ExtractionField.entity_type_id == entity_type_id,
-                ExtractionField.is_entity_key.is_(True),
-            )
-        )
-    ).scalar_one_or_none()
-    if field is None:
-        # Name the section as the template editor shows it: a UUID does not
-        # tell the manager which section to open.
-        entity_type = await db.get(ExtractionEntityType, entity_type_id)
-        label = (entity_type.label or entity_type.name) if entity_type is not None else None
-        raise MissingEntityKeyError(entity_type_id, label)
-    return field
+    if entity_type.cardinality != "many":
+        return None
+    key: _KeyedField | None = next((f for f in entity_type.fields if f.is_entity_key), None)
+    if key is None:
+        raise MissingEntityKeyError(entity_type.id, entity_type.label or entity_type.name)
+    return key
+
+
+async def resolve_instance(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    article_id: UUID,
+    template_id: UUID,
+    entity_type_id: UUID,
+    parent_instance_id: UUID | None,
+    key_value: str,
+    sort_order: int,
+    created_by: UUID,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[ExtractionInstance, bool]:
+    """Match before create (spec §5.1): the instance for ``key_value`` at the
+    ``(article, entity_type, parent_instance)`` coordinate, and whether it
+    was created by this call.
+
+    A match returns the existing row untouched — its record of how it was
+    produced belongs to the run that created it, and what happens to its
+    values is the per-field guard's decision, not this function's. A miss
+    creates the row with the identity materialized alongside ``metadata``
+    and the trimmed key as its human-facing ``label``.
+    """
+    existing = await match_or_none(
+        db,
+        article_id=article_id,
+        entity_type_id=entity_type_id,
+        key_value=key_value,
+        parent_instance_id=parent_instance_id,
+    )
+    if existing is not None:
+        instance = await db.get(ExtractionInstance, existing)
+        if instance is not None:
+            return instance, False
+    instance = ExtractionInstance(
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        entity_type_id=entity_type_id,
+        parent_instance_id=parent_instance_id,
+        label=key_value.strip(),
+        sort_order=sort_order,
+        metadata_=stamp(metadata, key_value),
+        created_by=created_by,
+    )
+    db.add(instance)
+    await db.flush()
+    return instance, True
 
 
 async def existing_keys(

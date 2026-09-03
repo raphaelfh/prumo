@@ -171,3 +171,22 @@ def test_the_canary_actually_hashes_the_shared_renderer(module, monkeypatch) -> 
         monkeypatch.undo()
         importlib.reload(module)
     assert before == module.VERSION
+
+
+@pytest.mark.parametrize(
+    "module",
+    [section_extraction, quality_assessment],
+    ids=lambda m: m.NAME,
+)
+def test_the_entry_scope_canary_is_live_too(module, monkeypatch) -> None:
+    """Same proof for the entry-scope renderer: a repeating group's per-entry
+    prompt is production output, so editing its wording must move VERSION."""
+    before = module.VERSION
+    monkeypatch.setattr(prompts, "render_entry_scope_section", lambda _scope: "MUTATED")
+    try:
+        importlib.reload(module)
+        assert before != module.VERSION
+    finally:
+        monkeypatch.undo()
+        importlib.reload(module)
+    assert before == module.VERSION

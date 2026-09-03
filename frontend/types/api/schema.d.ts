@@ -5095,6 +5095,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
             /** Is Required */
             is_required: boolean;
             /** Label */

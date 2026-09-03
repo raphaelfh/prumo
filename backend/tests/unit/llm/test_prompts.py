@@ -1,9 +1,11 @@
 """Prompt templates: rendering (full-text, no truncation) and stable content versions."""
 
 from app.llm.prompts import (
+    EntryScope,
     content_version,
     model_identification,
     quality_assessment,
+    render_entry_scope_section,
     render_memory_section,
     section_extraction,
 )
@@ -121,3 +123,61 @@ def test_model_identification_general_instructions_block_leads():
         {"models": [{"name": "Cox model"}]}
     )
     assert output.models[0].name == "Cox model"
+
+
+# ---------------------------------------------------------------------------
+# Entry scope — a repeating group is extracted once per entry, and the prompt
+# has to say WHICH entry, or every instance receives the same values.
+# ---------------------------------------------------------------------------
+
+_SCOPE = EntryScope(
+    entry_label="validation",
+    key_label="Validation type",
+    key_value="internal",
+    parent_label="XGBoost",
+)
+
+
+def _section_prompt(**kwargs):
+    return section_extraction.render(
+        entity_name="numeric_performance",
+        entity_description="Discrimination and calibration per validation",
+        article_text="A",
+        **kwargs,
+    )
+
+
+def _qa_prompt(**kwargs):
+    return quality_assessment.render(
+        entity_name="numeric_performance",
+        entity_description="D",
+        article_text="A",
+        framework="F",
+        **kwargs,
+    )
+
+
+def test_entry_scope_block_names_the_entry_its_key_and_its_parent():
+    for render in (_section_prompt, _qa_prompt):
+        prompt = render(entry_scope=_SCOPE)
+        assert 'Validation type: "internal"' in prompt, render.__name__
+        assert '"XGBoost"' in prompt, render.__name__
+        assert "validation" in prompt, render.__name__
+        # Scoping is an instruction about the article, so it sits before it.
+        assert prompt.index("internal") < prompt.index("Article text:"), render.__name__
+
+
+def test_entry_scope_block_is_absent_without_a_scope():
+    for render in (_section_prompt, _qa_prompt):
+        assert render(entry_scope=None) == render(), render.__name__
+        assert "ONLY" not in render()
+
+
+def test_entry_scope_block_omits_the_parent_line_for_a_top_level_group():
+    top_level = EntryScope(
+        entry_label="entry", key_label="Validation type", key_value="internal", parent_label=None
+    )
+    rendered = render_entry_scope_section(top_level)
+    assert 'Validation type: "internal"' in rendered
+    assert "Belongs to" not in rendered
+    assert render_entry_scope_section(None) == ""

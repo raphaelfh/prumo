@@ -3,7 +3,9 @@
 downstream proposal writes are identical."""
 
 from app.llm.prompts import (
+    EntryScope,
     content_version,
+    render_entry_scope_section,
     render_general_instructions_section,
     render_memory_section,
     render_review_context_section,
@@ -30,7 +32,7 @@ _USER_TEMPLATE = """{review_context_section}{general_instructions_section}Assess
 
 Domain: {entity_name}
 Description: {entity_description}
-{memory_section}
+{entry_scope_section}{memory_section}
 Article text:
 {article_text}
 
@@ -48,6 +50,7 @@ VERSION = content_version(
     _USER_TEMPLATE,
     render_review_context_section("x"),
     render_general_instructions_section("x"),
+    render_entry_scope_section(EntryScope("x", "x", "x", "x")),
 )
 
 _DEFAULT_FRAMEWORK_LABEL = "the assessment tool"
@@ -66,11 +69,13 @@ def render(
     memory_context: list[dict[str, str]] | None = None,
     general_instructions: str | None = None,
     review_context: str | None = None,
+    entry_scope: EntryScope | None = None,
 ) -> str:
     return _USER_TEMPLATE.format(
         framework_label=framework or _DEFAULT_FRAMEWORK_LABEL,
         entity_name=entity_name,
         entity_description=entity_description,
+        entry_scope_section=render_entry_scope_section(entry_scope),
         memory_section=render_memory_section(memory_context),
         article_text=article_text,
         general_instructions_section=render_general_instructions_section(general_instructions),

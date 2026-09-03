@@ -1,6 +1,6 @@
 ---
 status: approved
-last_reviewed: 2026-08-23
+last_reviewed: 2026-09-03
 owner: '@raphaelfh'
 ---
 
@@ -283,6 +283,14 @@ Consequence to state plainly: after slice 1 a repeating section still
 collapses onto its first repeat under AI extraction. Nothing regresses —
 that is today's behaviour — but the spec is not fully delivered until
 slice 2 lands.
+
+> **Slice 2 landed (2026-09-03).** Every `cardinality='many'` section is
+> an entry group: `section_extraction_service` routes it through
+> `entry_group_extraction.extract_into_instances` — identify →
+> `entity_key.resolve_instance` per entry → extract per entry with the
+> prompt scoped to that entry — on all three paths (single section,
+> full-run sweep, per-model batch). The key is read from the run's pinned
+> tree (`key_field_of`), which also closes the live-read residual.
 
 ## 7. Out of scope
 
