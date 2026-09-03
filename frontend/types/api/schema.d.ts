@@ -4498,8 +4498,9 @@ export interface components {
          * PortableSection
          * @description One ``extraction_entity_types`` row plus its fields and (for a group)
          *     its child sections. ``group`` ⇒ ``model_container``; nested ⇒
-         *     ``model_section``; otherwise ``study_section``. ``entry_label`` is only
-         *     legal on a group; the import defaults it to ``"model"`` there.
+         *     ``model_section``; otherwise ``study_section``. ``entry_label`` is legal
+         *     on any repeating section (a group, or ``repeats``); the import defaults
+         *     it to ``"model"`` on a group and leaves it unset elsewhere.
          */
         PortableSection: {
             /** Description */
@@ -5243,9 +5244,10 @@ export interface components {
          *     frontend's read-then-write race. The ``ck_role_parent`` validator
          *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
          *     (parent belongs to THIS template) is the service's BOLA job.
-         *     ``entry_label`` is the repeating group's entry noun (B-8, D3):
-         *     container-only, defaulting to ``'model'``; containers always repeat
-         *     (``cardinality='many'`` is enforced, never chosen).
+         *     ``entry_label`` is a repeating section's entry noun (B-8, D3 —
+         *     unlocked from the container in the entry-group train): legal on any
+         *     ``cardinality='many'`` section; the container defaults it to
+         *     ``'model'`` and always repeats (``'many'`` is enforced, never chosen).
          */
         SectionCreateRequest: {
             /**
@@ -5419,7 +5421,7 @@ export interface components {
         /**
          * SectionUpdateRequest
          * @description Partial section update: ``label`` (any role), ``entry_label``
-         *     (repeating groups only) and ``cardinality`` (per-model sections
+         *     (repeating sections only) and ``cardinality`` (per-model sections
          *     only) — the role rules live in the service, which owns the row
          *     (B-8, D5). At least one field must be provided, and explicit nulls
          *     are rejected (omit instead) so a smuggled ``{"label": null}`` can

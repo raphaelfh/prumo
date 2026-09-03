@@ -5,14 +5,19 @@
  * Three variants by `section.kind`. Every edit commits IMMEDIATELY
  * through the section PATCH (the Section-combobox semantics — no
  * draft/Save row):
- * - group: entry-label Input (blur/Enter; unchanged or emptied value is
- *   a no-op that reverts the display — the header rename revert rule),
- *   Repeats LOCKED ("a group always repeats");
+ * - group: Repeats LOCKED ("a group always repeats");
  * - groupChild: Placement locked to the parent group, Repeats select
  *   (one/many). The D5 many→one 409 toasts the friendly copy in the
  *   hook and the select reverts here;
  * - root: Repeats READ-ONLY (cardinality is a create-time choice,
  *   spec §3).
+ *
+ * Every section that REPEATS — a group, or any other section with
+ * cardinality 'many' — additionally shows the entry-group controls: the
+ * entry-label Input (blur/Enter; an unchanged or emptied value is a
+ * no-op that reverts the display — the header rename revert rule) and
+ * the entry-key select (0059). One entry of a repeating section needs a
+ * name and an identity whether or not it is the model container.
  */
 import {useState} from 'react';
 
@@ -37,8 +42,16 @@ export function sectionContentKey(section: GridSection): string {
     section.id,
     section.label,
     section.entryNoun,
+    section.ownEntryLabel,
     section.cardinality,
   ]);
+}
+
+/** What the entry-label input shows: the group's resolved noun (its
+ * 'model' default is real server state), any other section's own raw
+ * noun — or '' while unset, with the default noun as the placeholder. */
+function shownEntryLabel(section: GridSection): string {
+  return section.kind === 'group' ? section.entryNoun : (section.ownEntryLabel ?? '');
 }
 
 export function SectionInspectorForm({
@@ -55,7 +68,7 @@ export function SectionInspectorForm({
 }) {
   const update = useUpdateTemplateSection(projectId, templateId);
   const updateFieldMutation = useUpdateTemplateField(projectId, templateId);
-  const [entryLabel, setEntryLabel] = useState(section.entryNoun);
+  const [entryLabel, setEntryLabel] = useState(shownEntryLabel(section));
   const [cardinality, setCardinality] = useState(section.cardinality);
 
   // A group always repeats; a per-model section only when it says so.
@@ -87,7 +100,7 @@ export function SectionInspectorForm({
   // against the last COMMITTED values instead; the remount on
   // sectionContentKey still reconciles external changes.
   const [lastCommitted, setLastCommitted] = useState({
-    entryLabel: section.entryNoun,
+    entryLabel: shownEntryLabel(section),
     cardinality: section.cardinality,
   });
   const saving = update.isPending;
@@ -162,7 +175,7 @@ export function SectionInspectorForm({
         </>
       )}
 
-      {section.kind === 'group' && (
+      {repeats && (
         <>
           <Label htmlFor="inspector-section-entry-label">
             {t('templateConfig', 'entryLabelLabel')}
@@ -176,6 +189,10 @@ export function SectionInspectorForm({
               // Enter commits through the blur path (one commit).
               if (e.key === 'Enter') e.currentTarget.blur();
             }}
+            placeholder={t(
+              'templateConfig',
+              section.kind === 'group' ? 'entryLabelPlaceholder' : 'entryLabelPlaceholderEntry',
+            )}
             disabled={saving}
             className="h-7 text-[13px]"
           />

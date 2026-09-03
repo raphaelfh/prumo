@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from app.llm.extractor import LlmUsage, extract_structured
-from app.llm.prompts import EntryScope, model_identification
+from app.llm.prompts import EntryScope, entry_identification
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.entity_key import existing_keys, key_field_of, resolve_instance
 
@@ -39,8 +39,8 @@ if TYPE_CHECKING:
     from app.models.extraction import ExtractionRun
     from app.services.section_extraction_service import SectionExtractionService
 
-#: Noun for a group whose ``entry_label`` is unset (pre-B-8 snapshots, and
-#: non-container groups until the noun is unlocked for every group).
+#: Noun for a repeating section whose ``entry_label`` is unset (pre-B-8
+#: snapshots; the container defaults to ``model`` at create time instead).
 DEFAULT_ENTRY_NOUN = "entry"
 
 
@@ -65,14 +65,18 @@ async def _identify_entries(
     *,
     run: ExtractionRun,
     entity_type: Any,
+    key_field: Any,
+    entry_label: str,
     parent_instance_id: UUID | None,
     article_text: str,
     prompt_context: RunPromptContext | None,
 ) -> tuple[list[str], LlmUsage]:
     """The entries the article describes for this group, as key values.
 
-    Reads instances only for the grounding list — never a reviewer-scoped
-    value (spec §5.1.1).
+    The prompt is parameterized by the PINNED group: its label, its entry
+    noun, the key field (label + choices) and its description as the
+    instruction. Reads instances only for the grounding list — never a
+    reviewer-scoped value (spec §5.1.1).
     """
     already = sorted(
         (
@@ -86,20 +90,24 @@ async def _identify_entries(
     )
     context = prompt_context or RunPromptContext()
     output, usage = await extract_structured(
-        output_model=model_identification.ModelIdentificationOutput,
-        system_prompt=model_identification.SYSTEM_PROMPT,
-        user_prompt=model_identification.render(
-            container_label=entity_type.label or entity_type.name,
+        output_model=entry_identification.EntryIdentificationOutput,
+        system_prompt=entry_identification.system_prompt(entry_label),
+        user_prompt=entry_identification.render(
+            group_label=entity_type.label or entity_type.name,
+            entry_label=entry_label,
+            key_label=key_field.label,
             article_text=article_text,
+            instruction=getattr(entity_type, "description", None),
+            allowed_values=getattr(key_field, "allowed_values", None),
             general_instructions=context.general_instructions,
             review_context=context.review_context,
             existing_keys=already,
         ),
         model=service._wire_model(),
-        prompt_name=model_identification.NAME,
-        prompt_version=model_identification.VERSION,
+        prompt_name=entry_identification.NAME,
+        prompt_version=entry_identification.VERSION,
     )
-    names = [entry.name.strip() for entry in output.models if entry.name.strip()]
+    names = [entry.name.strip() for entry in output.entries if entry.name.strip()]
     service.logger.info(
         "entries_identified",
         trace_id=service.trace_id,
@@ -141,15 +149,17 @@ async def _extract_entry_group(
         if parent is None:
             raise ValueError(f"Parent instance not found: {parent_instance_id}")
 
+    entry_label = getattr(entity_type, "entry_label", None) or DEFAULT_ENTRY_NOUN
     names, usage = await _identify_entries(
         service,
         run=run,
         entity_type=entity_type,
+        key_field=key_field,
+        entry_label=entry_label,
         parent_instance_id=parent_instance_id,
         article_text=pdf_text,
         prompt_context=prompt_context,
     )
-    entry_label = getattr(entity_type, "entry_label", None) or DEFAULT_ENTRY_NOUN
 
     count = 0
     extracted: dict[str, Any] = {}

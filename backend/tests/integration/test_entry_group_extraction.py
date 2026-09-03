@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.extractor import LlmUsage
 from app.llm.prompts import EntryScope
-from app.llm.prompts.model_identification import IdentifiedModel, ModelIdentificationOutput
+from app.llm.prompts.entry_identification import EntryIdentificationOutput, IdentifiedEntry
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.services import entry_group_extraction as pipeline
 from app.services import section_extraction_service as ses
@@ -294,10 +294,10 @@ def _fake_identification(monkeypatch: pytest.MonkeyPatch, names: list[str]) -> d
     runs) and records each prompt it was sent."""
     state: dict[str, Any] = {"names": names, "prompts": []}
 
-    async def fake_structured(**kwargs: Any) -> tuple[ModelIdentificationOutput, LlmUsage]:
+    async def fake_structured(**kwargs: Any) -> tuple[EntryIdentificationOutput, LlmUsage]:
         state["prompts"].append(kwargs["user_prompt"])
         return (
-            ModelIdentificationOutput(models=[IdentifiedModel(name=n) for n in state["names"]]),
+            EntryIdentificationOutput(entries=[IdentifiedEntry(name=n) for n in state["names"]]),
             LlmUsage(prompt_tokens=7, completion_tokens=3),
         )
 
@@ -373,6 +373,12 @@ async def test_repeats_get_their_own_instances_and_a_rerun_matches_them(
     assert await _proposed(db_session, first[1][0], value_id) == [C_STAT["internal"]]
     assert [s.key_value for s in fake.scopes if s] == ["apparent", "internal"]
     assert all(s.key_label == "Validation type" for s in fake.scopes if s)
+    # Identification was parameterized by THIS group: its label, its key
+    # field and the key's choices — not by the model container's wording.
+    first_prompt = identification["prompts"][0]
+    assert 'for the section "Numeric performance"' in first_prompt
+    assert "return its Validation type" in first_prompt
+    assert "must be one of: apparent, internal, external" in first_prompt
 
     # Run 2: the model spells two entries differently, finds a third, and
     # reads a slightly different number this time.

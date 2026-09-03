@@ -16,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
-from app.llm.prompts.model_identification import IdentifiedModel, ModelIdentificationOutput
-from app.schemas.extraction_run import RunViewEntityType
+from app.llm.prompts.entry_identification import EntryIdentificationOutput, IdentifiedEntry
+from app.schemas.extraction_run import RunViewEntityType, RunViewField
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.extraction_prompt_input import PromptInputInfo
 from app.services.model_extraction_service import ModelExtractionService
@@ -35,8 +35,9 @@ def _fake_prompt_info(text: str = "mocked article text"):
 
 
 def _fake_run():
-    """Minimal run fake for _identify_models' pinned-snapshot lookup (B-2)."""
-    return SimpleNamespace(version_id=uuid4(), template_id=uuid4())
+    """Minimal run fake for _identify_models: the pinned-snapshot lookup (B-2)
+    and the grounding read of the article's existing identities (0059)."""
+    return SimpleNamespace(id=uuid4(), version_id=uuid4(), template_id=uuid4(), article_id=uuid4())
 
 
 def _patch_empty_pinned_tree():
@@ -45,6 +46,15 @@ def _patch_empty_pinned_tree():
     return patch(
         "app.services.model_extraction_service.entity_types_for_version",
         AsyncMock(return_value=[]),
+    )
+
+
+def _patch_pinned_container():
+    """B-2: serve a pinned tree whose container is the keyed CHARMS shape, so
+    the identification prompt has a group to read regardless of live rows."""
+    return patch(
+        "app.services.model_extraction_service.entity_types_for_version",
+        AsyncMock(return_value=[_live_container()]),
     )
 
 
@@ -64,7 +74,8 @@ def mock_db():
 
 def _live_container(entry_label: str | None = None) -> RunViewEntityType:
     """What the live-row fallback of ``_pinned_container`` serves when the
-    pinned tree carries no container (every test here pins an empty tree)."""
+    pinned tree carries no container (every test here pins an empty tree):
+    a keyed CHARMS-shaped container."""
     return RunViewEntityType(
         id=uuid4(),
         name="prediction_models",
@@ -74,7 +85,17 @@ def _live_container(entry_label: str | None = None) -> RunViewEntityType:
         role="model_container",
         sort_order=0,
         is_required=False,
-        fields=[],
+        fields=[
+            RunViewField(
+                id=uuid4(),
+                name="model_name",
+                label="Model Name",
+                field_type="text",
+                is_required=True,
+                sort_order=0,
+                is_entity_key=True,
+            )
+        ],
     )
 
 
@@ -304,22 +325,19 @@ class TestModelIdentification:
     @pytest.mark.usefixtures("no_live_container")
     async def test_identify_models_success(self, service):
         """Test successful model identification."""
-        mock_entity_type = MagicMock()
-        mock_entity_type.name = "prediction_models"
-        mock_entity_type.role = "model_container"
-
-        template = MagicMock()
-        template.entity_types = [mock_entity_type]
+        mock_entity = MagicMock()
+        mock_entity.id = uuid4()
+        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
 
         with (
             patch(
                 "app.services.model_extraction_service.extract_structured",
                 AsyncMock(
                     return_value=(
-                        ModelIdentificationOutput(
-                            models=[
-                                IdentifiedModel(name="QSOFA Score"),
-                                IdentifiedModel(name="NEWS Score"),
+                        EntryIdentificationOutput(
+                            entries=[
+                                IdentifiedEntry(name="QSOFA Score"),
+                                IdentifiedEntry(name="NEWS Score"),
                             ]
                         ),
                         LlmUsage(prompt_tokens=100, completion_tokens=50),
@@ -327,12 +345,11 @@ class TestModelIdentification:
                 ),
             ),
             patch("app.services.model_extraction_service.build_model", MagicMock()),
-            _patch_empty_pinned_tree(),
+            _patch_pinned_container(),
             _patch_no_pinned_instruction(),
         ):
             models, usage = await service._identify_models(
                 pdf_text="Sample PDF text with model descriptions...",
-                template=template,
                 model="gpt-4o-mini",
                 run=_fake_run(),
             )
@@ -346,34 +363,61 @@ class TestModelIdentification:
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("no_live_container")
-    async def test_identify_models_no_models_found(self, service):
-        """Test when no model is found."""
-        template = MagicMock()
-        template.entity_types = []
-
+    async def test_identify_models_without_a_container_spends_no_llm_call(self, service):
+        """A template with no model container has nothing to identify into."""
+        extract = AsyncMock()
         with (
-            patch(
-                "app.services.model_extraction_service.extract_structured",
-                AsyncMock(
-                    return_value=(
-                        ModelIdentificationOutput(models=[]),
-                        LlmUsage(prompt_tokens=50, completion_tokens=20),
-                    )
-                ),
-            ),
+            patch("app.services.model_extraction_service.extract_structured", extract),
             patch("app.services.model_extraction_service.build_model", MagicMock()),
             _patch_empty_pinned_tree(),
             _patch_no_pinned_instruction(),
         ):
             models, usage = await service._identify_models(
                 pdf_text="Generic article text without models...",
-                template=template,
                 model="gpt-4o-mini",
                 run=_fake_run(),
             )
 
         assert models == []
-        assert usage.total_tokens == 70
+        assert usage.total_tokens == 0
+        extract.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_identify_models_prompt_is_parameterized_by_the_pinned_container(self, service):
+        """Label, entry noun, key field and description all come from the
+        pinned container — one prompt serves every repeating group."""
+        mock_entity = MagicMock()
+        mock_entity.id = uuid4()
+        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        container = _live_container("algorithm")
+        container.description = "Only models validated on external data."
+        captured: dict[str, str] = {}
+
+        async def _fake_extract(**kwargs):  # noqa: ANN003, ANN202
+            captured["system"] = kwargs["system_prompt"]
+            captured["user"] = kwargs["user_prompt"]
+            return EntryIdentificationOutput(entries=[]), LlmUsage()
+
+        with (
+            patch("app.services.model_extraction_service.extract_structured", _fake_extract),
+            patch("app.services.model_extraction_service.build_model", MagicMock()),
+            patch(
+                "app.services.model_extraction_service.entity_types_for_version",
+                AsyncMock(return_value=[container]),
+            ),
+            patch(
+                "app.services.model_extraction_service.key_field_of",
+                MagicMock(return_value=container.fields[0]),
+            ),
+            _patch_no_pinned_instruction(),
+        ):
+            await service._identify_models(pdf_text="ARTICLE", model="gpt-4o-mini", run=_fake_run())
+
+        assert "algorithm entries" in captured["system"]
+        assert 'for the section "Prediction Models"' in captured["user"]
+        assert "identify every algorithm" in captured["user"]
+        assert "return its Model Name" in captured["user"]
+        assert "Section instructions: Only models validated on external data." in captured["user"]
 
 
 class TestEntityTypeLookup:
@@ -490,7 +534,9 @@ class TestFullExtractionFlow:
                 "app.services.model_extraction_service.extract_structured",
                 AsyncMock(
                     return_value=(
-                        ModelIdentificationOutput(models=[IdentifiedModel(name="Extracted Model")]),
+                        EntryIdentificationOutput(
+                            entries=[IdentifiedEntry(name="Extracted Model")]
+                        ),
                         LlmUsage(prompt_tokens=100, completion_tokens=50),
                     )
                 ),
@@ -572,7 +618,9 @@ class TestFullExtractionFlow:
                 "app.services.model_extraction_service.extract_structured",
                 AsyncMock(
                     return_value=(
-                        ModelIdentificationOutput(models=[IdentifiedModel(name="Extracted Model")]),
+                        EntryIdentificationOutput(
+                            entries=[IdentifiedEntry(name="Extracted Model")]
+                        ),
                         LlmUsage(prompt_tokens=100, completion_tokens=50),
                     )
                 ),
@@ -672,7 +720,7 @@ class TestFullExtractionFlow:
                 "app.services.model_extraction_service.extract_structured",
                 AsyncMock(
                     return_value=(
-                        ModelIdentificationOutput(models=[IdentifiedModel(name="M")]),
+                        EntryIdentificationOutput(entries=[IdentifiedEntry(name="M")]),
                         LlmUsage(prompt_tokens=1, completion_tokens=1),
                     )
                 ),
@@ -748,7 +796,7 @@ class TestFullExtractionFlow:
                 AsyncMock(side_effect=UnexpectedModelBehavior("reask budget exhausted")),
             ),
             patch("app.services.model_extraction_service.build_model", MagicMock()),
-            _patch_empty_pinned_tree(),
+            _patch_pinned_container(),
             _patch_no_pinned_instruction(),
             pytest.raises(UnexpectedModelBehavior, match="reask budget exhausted"),
         ):
@@ -804,7 +852,7 @@ class TestFullExtractionFlow:
                 "app.services.model_extraction_service.extract_structured",
                 AsyncMock(
                     return_value=(
-                        ModelIdentificationOutput(models=[]),
+                        EntryIdentificationOutput(entries=[]),
                         LlmUsage(prompt_tokens=50, completion_tokens=20),
                     )
                 ),
@@ -860,7 +908,7 @@ async def test_build_prompt_input_called_with_correct_kwargs(service):
             "app.services.model_extraction_service.extract_structured",
             AsyncMock(
                 return_value=(
-                    MagicMock(models=[]),
+                    MagicMock(entries=[]),
                     MagicMock(prompt_tokens=0, completion_tokens=0, total_tokens=0),
                 )
             ),
@@ -880,22 +928,21 @@ async def test_build_prompt_input_called_with_correct_kwargs(service):
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("no_live_container")
 async def test_identify_models_sends_full_text_no_truncation(service):
-    """model_identification consumes the full assembled text — the legacy 15k
+    """entry_identification consumes the full assembled text — the legacy 15k
     truncation is gone (A1); _identify_models threads article_text verbatim."""
     captured: dict[str, str] = {}
 
     async def _fake_extract(**kwargs):
         captured["user_prompt"] = kwargs["user_prompt"]
         output = MagicMock()
-        output.models = []
+        output.entries = []
         return output, MagicMock()
 
     long_text = "MODEL_SECTION_MARKER\n" + ("token " * 8000)  # far over the old 15k chars
-    template = MagicMock()
-    template.id = "tpl"
-    template.entity_types = []
+    mock_entity = MagicMock()
+    mock_entity.id = uuid4()
+    service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
 
     with (
         patch("app.services.model_extraction_service.extract_structured", _fake_extract),
@@ -903,7 +950,7 @@ async def test_identify_models_sends_full_text_no_truncation(service):
         _patch_empty_pinned_tree(),
         _patch_no_pinned_instruction(),
     ):
-        models, _ = await service._identify_models(long_text, template, "gpt-4o-mini", _fake_run())
+        models, _ = await service._identify_models(long_text, "gpt-4o-mini", _fake_run())
 
     assert models == []
     assert "MODEL_SECTION_MARKER" in captured["user_prompt"]
