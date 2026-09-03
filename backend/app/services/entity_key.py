@@ -57,7 +57,8 @@ STORE_KEY = "entity_key"
 # tree the backfill produced (``template_diff._normalize_field``) — otherwise
 # every existing clone would report a phantom draft and Discard would clear
 # the backfilled key. Matched by NAME, never id: a project clone carries fresh
-# ids for every row.
+# ids for every row. (The migration docstrings name this list as
+# ``app.seed.ENTITY_KEY_FIELDS`` — its home until #798.)
 ENTITY_KEY_FIELDS: frozenset[tuple[str, str]] = frozenset(
     {
         ("prediction_models", "model_name"),  # CHARMS (000c)
