@@ -87,6 +87,7 @@ const ATTRIBUTE_COPY: Record<string, CopyKey> = {
   description: 'diffAttrDescription',
   entry_label: 'diffAttrEntryLabel',
   field_type: 'diffAttrFieldType',
+  is_entity_key: 'diffAttrIsEntityKey',
   is_required: 'diffAttrIsRequired',
   label: 'diffAttrLabel',
   llm_description: 'diffAttrLlmDescription',

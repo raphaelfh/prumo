@@ -86,6 +86,9 @@ OPTION_KEY = "allowed_values"
 _MODEL_CONTAINER_ROLE = "model_container"
 _DEFAULT_ENTRY_LABEL = "model"
 ENTRY_LABEL_KEY = "entry_label"
+#: Identity of a repeating-group entry (0059). Versioned config: the snapshot
+#: carries it, a move is two SEMANTIC changes, and restore round-trips it.
+ENTITY_KEY_KEY = "is_entity_key"
 
 #: Entity-type attributes → the value an absent key means (mirrors the ORM
 #: column defaults). ``role`` has no canonical default by design (migration
@@ -123,6 +126,10 @@ FIELD_ATTRIBUTE_DEFAULTS: dict[str, Any] = {
     # marker was universal before it existed: a pre-0062 baseline carrying no
     # key must not diff as "the marker was turned off".
     "allows_no_information": True,
+    # Mirrors the ORM column (0059, ``server_default false``). Migration 0067
+    # wrote the live flag into every stored snapshot by field id, so an
+    # absent key only remains where the field's live row was already gone.
+    ENTITY_KEY_KEY: False,
 }
 
 #: D2, exhaustive over the comparable keys of both node kinds. Two entries are
@@ -150,6 +157,11 @@ ATTRIBUTE_TIERS: dict[str, ChangeTier] = {
     "allows_not_evaluated": ChangeTier.SEMANTIC,
     "allows_no_information": ChangeTier.SEMANTIC,
     "allow_other": ChangeTier.SEMANTIC,
+    # Identity is versioned config: which field AI re-runs identify a
+    # repeating entry by (``entity_key``). Moving it strands no recorded
+    # value and changes no gate, so it is never destructive — but entries
+    # already materialized under the old key will not match a re-run.
+    ENTITY_KEY_KEY: ChangeTier.SEMANTIC,
     # B-8 made entry_label the export record stem + the AI instance-label
     # fallback: changing it silently relabels exported model rows.
     ENTRY_LABEL_KEY: ChangeTier.SEMANTIC,

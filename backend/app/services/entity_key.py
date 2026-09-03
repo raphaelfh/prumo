@@ -25,6 +25,15 @@ reviewer-scoped), so materializing there sidesteps both.
 
 ``label`` stays the human-facing, editable name; ``entity_key`` is the
 identity and is not edited by hand.
+
+**The declaration is versioned config.** ``is_entity_key`` rides the
+published snapshot like every other field column (0067 backfilled the
+snapshots that predate that): the publish diff shows a key move, and
+Discard restores the key the baseline granted (see
+``template_restore_service`` for the per-section slot it parks first).
+:func:`resolve_key_field` deliberately still reads the LIVE flag — it is
+the re-run gate, not a prompt input, and a run in ``extract`` is re-pinned
+to the new version on Publish anyway.
 """
 
 from __future__ import annotations

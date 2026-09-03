@@ -44,6 +44,7 @@ _FIELD_KEYS = {
     "allow_other",
     "other_label",
     "other_placeholder",
+    "is_entity_key",
 }
 
 
@@ -172,3 +173,36 @@ async def test_general_instructions_reader_none_when_key_absent(
         )
     ).scalar_one()
     assert await general_instructions_for_version(db_session, active_version_id) is None
+
+
+@pytest.mark.asyncio
+async def test_snapshot_carries_the_entry_key(db_session: AsyncSession) -> None:
+    """Identity is versioned config: every field object carries the live
+    ``is_entity_key`` flag, and the seeded clone declares at least one —
+    restore rebuilds a deleted field from this snapshot, and a key it cannot
+    see comes back as an ordinary field."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+
+    snapshot = await build_template_version_snapshot(db_session, clone.project_template_id)
+
+    live = dict(
+        (
+            await db_session.execute(
+                text(
+                    "SELECT f.id, f.is_entity_key FROM public.extraction_fields f "
+                    "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+                    "WHERE et.project_template_id = :tid"
+                ),
+                {"tid": str(clone.project_template_id)},
+            )
+        ).all()
+    )
+    frozen = {
+        uuid.UUID(f["id"]): f["is_entity_key"]
+        for et in snapshot["entity_types"]
+        for f in et["fields"]
+    }
+    assert frozen == live
+    assert any(frozen.values()), "the seeded clone must declare at least one entry key"
