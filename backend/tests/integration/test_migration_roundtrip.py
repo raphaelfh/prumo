@@ -1322,9 +1322,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0066_entity_key_clone_heal" in out, (
-        f"Expected head revision '0065_revoke_anon_model_prog', got:\n{out}"
-    )
+    expected_head = "0066_entity_key_clone_heal"
+    assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
 @pytest.mark.asyncio
