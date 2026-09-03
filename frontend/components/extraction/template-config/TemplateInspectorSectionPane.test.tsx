@@ -137,3 +137,66 @@ describe('entry label on every repeating section (entry-group train)', () => {
     expect(screen.queryByLabelText('Entry label')).not.toBeInTheDocument();
   });
 });
+
+describe('section description — the AI instruction for the section', () => {
+  // Before the entry-group follow-up the pane showed the description
+  // read-only and the PATCH could not carry it, so a manager could not tune
+  // what the identifier is told once a section existed.
+  const DESCRIPTION = 'Description — given to the AI';
+
+  it('shows the current description in an editable textarea', () => {
+    renderPane(section({description: 'One entry per validation set.'}));
+    const textarea = screen.getByLabelText(DESCRIPTION) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('One entry per validation set.');
+  });
+
+  it('commits the trimmed description through the section PATCH on blur', async () => {
+    const user = userEvent.setup();
+    renderPane(section({description: null}));
+    const textarea = screen.getByLabelText(DESCRIPTION);
+    await user.type(textarea, '  Add one entry per apparent / internal / external estimate.  ');
+    await user.tab();
+    await waitFor(() =>
+      expect(mutateSection).toHaveBeenCalledWith(
+        {
+          sectionId: 'sec-1',
+          changes: {
+            description: 'Add one entry per apparent / internal / external estimate.',
+          },
+        },
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('sends a blank so the server clears it — emptying IS an edit here', async () => {
+    mutateSection.mockClear();
+    const user = userEvent.setup();
+    renderPane(section({description: 'Stale guidance'}));
+    const textarea = screen.getByLabelText(DESCRIPTION);
+    await user.clear(textarea);
+    await user.tab();
+    await waitFor(() =>
+      expect(mutateSection).toHaveBeenCalledWith(
+        {sectionId: 'sec-1', changes: {description: ''}},
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('does not call when the text is unchanged up to whitespace', async () => {
+    mutateSection.mockClear();
+    const user = userEvent.setup();
+    renderPane(section({description: 'Keep me'}));
+    const textarea = screen.getByLabelText(DESCRIPTION) as HTMLTextAreaElement;
+    await user.type(textarea, '   ');
+    await user.tab();
+    expect(mutateSection).not.toHaveBeenCalled();
+    expect(textarea.value).toBe('Keep me');
+  });
+
+  it('is offered on a section that does not repeat too', () => {
+    renderPane(section({cardinality: 'one', description: null}));
+    expect(screen.getByLabelText(DESCRIPTION)).toBeInTheDocument();
+  });
+});

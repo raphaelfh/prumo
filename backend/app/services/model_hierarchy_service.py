@@ -139,10 +139,8 @@ class ModelHierarchyService:
             # parent.label, not the raw input: the label may have been
             # uniquified ("Cox Model (2)") and the append-only decision
             # value must match every visible surface.
-            values={
-                "model_name": parent.label,
-                "modelling_method": modelling_method,
-            },
+            model_label=parent.label,
+            modelling_method=modelling_method,
         )
 
         return ModelHierarchyResult(
@@ -234,24 +232,36 @@ class ModelHierarchyService:
         model_entity_type_id: UUID,
         model_instance_id: UUID,
         user_id: UUID,
-        values: dict[str, str | None],
+        model_label: str,
+        modelling_method: str | None,
     ) -> UUID | None:
         """Record the dialog-provided values as per-user ReviewerDecisions.
 
-        ``values`` maps container field *names* to raw strings; empty/None
-        entries and names the template does not carry are skipped. Returns
-        the live extract-stage run id when at least one decision landed,
-        ``None`` otherwise (no run open, nothing to record, or the run
-        advanced out of extract mid-flight).
+        The name lands on the container's entry key (``is_entity_key``) —
+        the field the AI identifies a model by and the add dialog labels
+        its input with — never on a field picked by name: CHARMS keys on
+        ``model_name``, the Multimodal lineage on ``mdl_name``. A keyless
+        container records no name (the instance label carries it). The
+        modelling method keeps its field-name contract — the dialog's
+        second input is CHARMS-shaped — and is skipped when empty or when
+        the template carries no such field. Returns the live extract-stage
+        run id when at least one decision landed, ``None`` otherwise (no
+        run open, nothing to record, or the run advanced out of extract
+        mid-flight).
         """
-        to_record = {name: value for name, value in values.items() if value}
-
         field_stmt = select(ExtractionField).where(
-            ExtractionField.entity_type_id == model_entity_type_id,
-            ExtractionField.name.in_(to_record.keys()),
+            ExtractionField.entity_type_id == model_entity_type_id
         )
         fields = list((await self.db.execute(field_stmt)).scalars().all())
-        if not fields:
+        key_field = next((f for f in fields if f.is_entity_key), None)
+        method_field = next((f for f in fields if f.name == "modelling_method"), None)
+
+        to_record: dict[UUID, str] = {}
+        if key_field is not None:
+            to_record[key_field.id] = model_label
+        if method_field is not None and modelling_method:
+            to_record[method_field.id] = modelling_method
+        if not to_record:
             return None
 
         run_stmt = (
@@ -276,14 +286,14 @@ class ModelHierarchyService:
         # would leak this reviewer's value to peers via the shared proposal track.
         review_service = ExtractionReviewService(self.db)
         try:
-            for field in fields:
+            for field_id, value in to_record.items():
                 await review_service.record_decision(
                     run_id=run.id,
                     instance_id=model_instance_id,
-                    field_id=field.id,
+                    field_id=field_id,
                     reviewer_id=user_id,
                     decision="edit",
-                    value={"value": to_record[field.name]},
+                    value={"value": value},
                 )
         except InvalidDecisionError:
             # The run advanced out of extract between lookup and record —

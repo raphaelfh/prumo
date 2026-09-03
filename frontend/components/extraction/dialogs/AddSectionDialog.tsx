@@ -5,11 +5,16 @@
  * Three mode variants (B-8 D3), chosen by the invoking menu/ghost:
  * - root ("New section"): the B-7 study-section form — cardinality
  *   select, description, required switch;
- * - group ("Add repeating group…"): Label + Entry label only; role
- *   model_container and cardinality 'many' are hard-coded (the server
- *   422s anything else — the form never offers the impossible);
+ * - group ("Add repeating group…"): Label + Entry label + Description;
+ *   role model_container and cardinality 'many' are hard-coded (the
+ *   server 422s anything else — the form never offers the impossible);
  * - perModel ("New per-{noun} section"): parent preset from the invoking
  *   group; cardinality select stays, worded per-{noun}.
+ *
+ * Every mode offers the description: it is the section's AI instruction
+ * (sent with every extraction of the section; for a repeating one also
+ * how its entries are identified), so a group created without one would
+ * have nothing to tell the identifier.
  *
  * Mount keyed by `mode.kind` (the editor does) so react-hook-form
  * re-initializes defaults when the variant changes between opens.
@@ -150,7 +155,7 @@ export function AddSectionDialog({
       templateId,
       name: data.name,
       label: data.label,
-      description: mode.kind === 'group' ? null : data.description || null,
+      description: data.description?.trim() || null,
       cardinality: mode.kind === 'group' ? 'many' : data.cardinality,
       role: ROLE_BY_MODE[mode.kind],
       parentEntityTypeId: mode.kind === 'perModel' ? mode.parentId : null,
@@ -296,8 +301,7 @@ export function AddSectionDialog({
               />
             )}
 
-            {/* Description — not part of the minimal group form */}
-            {mode.kind !== 'group' && (
+            {/* Description — the section's AI instruction, in every mode */}
             <FormField
               control={form.control}
               name="description"
@@ -313,13 +317,12 @@ export function AddSectionDialog({
                     />
                   </FormControl>
                   <FormDescription>
-                      Detailed explanation shown as a tooltip in the UI
+                    {t('templateConfig', 'sectionDescriptionHint')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            )}
 
             {/* Cardinality — root and per-model modes; a group is always
                 'many' (no choice to offer). Wording follows the mode:

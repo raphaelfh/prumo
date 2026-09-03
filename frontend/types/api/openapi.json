@@ -8513,7 +8513,7 @@
       },
       "SectionUpdateRequest": {
         "additionalProperties": false,
-        "description": "Partial section update: ``label`` (any role), ``entry_label``\n(repeating sections only) and ``cardinality`` (per-model sections\nonly) \u2014 the role rules live in the service, which owns the row\n(B-8, D5). At least one field must be provided, and explicit nulls\nare rejected (omit instead) so a smuggled ``{\"label\": null}`` can\nnever blank a column. Replaces the label-only SectionRenameRequest;\nthe pre-B-8 label-only body stays valid.",
+        "description": "Partial section update: ``label`` and ``description`` (any role),\n``entry_label`` (repeating sections only) and ``cardinality``\n(per-model sections only) \u2014 the role rules live in the service, which\nowns the row (B-8, D5). At least one field must be provided, and\nexplicit nulls are rejected (omit instead) so a smuggled ``{\"label\":\nnull}`` can never blank a column; a description is cleared by sending\nit blank. Replaces the label-only SectionRenameRequest; the pre-B-8\nlabel-only body stays valid.",
         "properties": {
           "cardinality": {
             "anyOf": [
@@ -8529,6 +8529,18 @@
               }
             ],
             "title": "Cardinality"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "entry_label": {
             "anyOf": [
@@ -14514,7 +14526,7 @@
         ]
       },
       "patch": {
-        "description": "Partial section update: label, entry_label, cardinality (B-8).\n\nRole rules are 422s (entry_label only on the repeating group;\ncardinality only on a per-model section); many -> one with a parent\ninstance holding 2+ entries is a 409. A real change stamps the B-4\ndraft marker via the 0048 trigger; an all-no-op update skips the\nwrite (no stamp).",
+        "description": "Partial section update: label, entry_label, cardinality, description (B-8).\n\nRole rules are 422s (entry_label only on a repeating section;\ncardinality only on a per-model section); many -> one with a parent\ninstance holding 2+ entries is a 409. ``description`` is the section's\nAI instruction; a blank one clears it. A real change stamps the B-4\ndraft marker via the 0048 trigger; an all-no-op update skips the\nwrite (no stamp).",
         "operationId": "update_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch",
         "parameters": [
           {

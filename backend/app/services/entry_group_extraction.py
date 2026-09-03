@@ -68,6 +68,7 @@ async def _identify_entries(
     key_field: Any,
     entry_label: str,
     parent_instance_id: UUID | None,
+    parent_label: str | None,
     article_text: str,
     prompt_context: RunPromptContext | None,
 ) -> tuple[list[str], LlmUsage]:
@@ -75,8 +76,10 @@ async def _identify_entries(
 
     The prompt is parameterized by the PINNED group: its label, its entry
     noun, the key field (label + choices) and its description as the
-    instruction. Reads instances only for the grounding list — never a
-    reviewer-scoped value (spec §5.1.1).
+    instruction — and, for a nested group, scoped to the parent entry the
+    way the grounding list already is, so model A's validation table does
+    not list model B's validations. Reads instances only for the grounding
+    list — never a reviewer-scoped value (spec §5.1.1).
     """
     already = sorted(
         (
@@ -102,6 +105,7 @@ async def _identify_entries(
             general_instructions=context.general_instructions,
             review_context=context.review_context,
             existing_keys=already,
+            parent_label=parent_label,
         ),
         model=service._wire_model(),
         prompt_name=entry_identification.NAME,
@@ -157,6 +161,7 @@ async def _extract_entry_group(
         key_field=key_field,
         entry_label=entry_label,
         parent_instance_id=parent_instance_id,
+        parent_label=parent.label if parent is not None else None,
         article_text=pdf_text,
         prompt_context=prompt_context,
     )

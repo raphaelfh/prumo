@@ -233,3 +233,103 @@ async def test_recorded_model_name_matches_the_deduplicated_label(
         )
     ).scalar_one()
     assert recorded == {"value": "Cox Model (2)"}
+
+
+async def _move_container_key(
+    db: AsyncSession, project_template_id: UUID, *, to_field: str | None
+) -> None:
+    """Re-key the clone's container: clear ``model_name`` and, when
+    ``to_field`` is given, add it as the new entry key — the Multimodal
+    lineage's shape (``mdl_name``), or a keyless container when None."""
+    fields = await _container_field_ids_by_name(db, project_template_id)
+    await db.execute(
+        text("UPDATE public.extraction_fields SET is_entity_key = false WHERE id = :id"),
+        {"id": str(fields["model_name"])},
+    )
+    if to_field is not None:
+        container = await ExtractionEntityTypeRepository(db).get_by_role(
+            role=ExtractionEntityRole.MODEL_CONTAINER.value,
+            template_id=project_template_id,
+            is_project_template=True,
+        )
+        assert container is not None
+        await db.execute(
+            text(
+                "INSERT INTO public.extraction_fields "
+                "(id, entity_type_id, name, label, field_type, sort_order, is_entity_key) "
+                "VALUES (:id, :et, :name, 'Model', 'text', 50, true)"
+            ),
+            {"id": str(uuid4()), "et": str(container.id), "name": to_field},
+        )
+    await db.flush()
+
+
+async def _decisions_for(
+    db: AsyncSession, run_id: UUID, instance_id: UUID
+) -> dict[UUID, dict[str, object]]:
+    rows = (
+        (
+            await db.execute(
+                select(ExtractionReviewerDecision).where(
+                    ExtractionReviewerDecision.run_id == run_id,
+                    ExtractionReviewerDecision.instance_id == instance_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {row.field_id: row.value for row in rows}
+
+
+@pytest.mark.asyncio
+async def test_the_name_is_recorded_on_the_entry_key_not_on_a_field_named_model_name(
+    db_session: AsyncSession,
+) -> None:
+    """CHARMS keys the container on ``model_name``; the Multimodal lineage on
+    ``mdl_name``. The dialog labels its input with the key field, so the
+    decision it records must land there — picking the field by the literal
+    name recorded nothing for Multimodal."""
+    clone, article_id, session = await _clone_with_open_session(db_session)
+    await _move_container_key(db_session, clone.project_template_id, to_field="mdl_name")
+
+    result = await ModelHierarchyService(db_session).create_model_hierarchy(
+        project_id=SEED.secondary_project,
+        article_id=article_id,
+        template_id=clone.project_template_id,
+        user_id=SEED.primary_profile,
+        model_name="Cox Model",
+        modelling_method="logistic regression",
+    )
+
+    fields = await _container_field_ids_by_name(db_session, clone.project_template_id)
+    decisions = await _decisions_for(db_session, session.run_id, result.model_id)
+    assert decisions[fields["mdl_name"]] == {"value": "Cox Model"}
+    assert fields["model_name"] not in decisions
+    assert decisions[fields["modelling_method"]] == {"value": "logistic regression"}
+
+
+@pytest.mark.asyncio
+async def test_a_keyless_container_still_creates_the_model_and_records_no_name(
+    db_session: AsyncSession,
+) -> None:
+    """Without a key there is no field that holds the name: the instance label
+    carries it, the method still lands, and creation does not refuse (the
+    AI path is what refuses a keyless group, not the manual dialog)."""
+    clone, article_id, session = await _clone_with_open_session(db_session)
+    await _move_container_key(db_session, clone.project_template_id, to_field=None)
+
+    result = await ModelHierarchyService(db_session).create_model_hierarchy(
+        project_id=SEED.secondary_project,
+        article_id=article_id,
+        template_id=clone.project_template_id,
+        user_id=SEED.primary_profile,
+        model_name="Cox Model",
+        modelling_method="logistic regression",
+    )
+
+    assert result.model_label == "Cox Model"
+    fields = await _container_field_ids_by_name(db_session, clone.project_template_id)
+    decisions = await _decisions_for(db_session, session.run_id, result.model_id)
+    assert fields["model_name"] not in decisions
+    assert decisions[fields["modelling_method"]] == {"value": "logistic regression"}

@@ -284,6 +284,20 @@ class TestUpdateRequestRules:
         with pytest.raises(ValidationError):
             SectionUpdateRequest(entry_label="   ")
 
+    def test_description_is_trimmed_and_a_blank_one_is_kept_as_a_clear(self) -> None:
+        # The section description is the section's AI instruction; unlike a
+        # label, emptying it is a legitimate edit (the service clears it).
+        assert SectionUpdateRequest(description="  Guide  ").description == "Guide"
+        assert SectionUpdateRequest(description="   ").description == ""
+
+    def test_description_over_500_characters_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="description"):
+            SectionUpdateRequest(description="x" * 501)
+
+    def test_null_description_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="description"):
+            SectionUpdateRequest(description=None)
+
     def test_unknown_key_rejected(self) -> None:
         with pytest.raises(ValidationError):
             SectionUpdateRequest(label="X", role="study_section")  # type: ignore[call-arg]
@@ -534,6 +548,69 @@ async def test_update_label_and_entry_label_together(db_session: AsyncSession) -
 
     assert read.label == "Algorithms"
     assert read.entry_label == "algorithm"
+
+
+@pytest.mark.asyncio
+async def test_update_description_on_any_role(db_session: AsyncSession) -> None:
+    """The description is the section's AI instruction (sent with every
+    extraction of the section; the identification instruction of a
+    repeating one) — editable after creation on every role, where before
+    only label / entry_label / cardinality were."""
+    template_id = await _fresh_clone(db_session)
+    for role in ("study_section", "model_container", "model_section"):
+        section_id = await _section_id_by_role(db_session, template_id, role)
+
+        read = await _update(
+            db_session,
+            template_id,
+            section_id,
+            SectionUpdateRequest(description="  One entry per reported model.  "),
+        )
+
+        assert read.description == "One entry per reported model."
+        stored = (
+            await db_session.execute(
+                select(ExtractionEntityType.description).where(
+                    ExtractionEntityType.id == section_id
+                )
+            )
+        ).scalar_one()
+        assert stored == "One entry per reported model."
+
+
+@pytest.mark.asyncio
+async def test_update_blank_description_clears_it(db_session: AsyncSession) -> None:
+    template_id = await _fresh_clone(db_session)
+    section_id = await _section_id_by_role(db_session, template_id, "study_section")
+    await _update(db_session, template_id, section_id, SectionUpdateRequest(description="Guide"))
+
+    read = await _update(db_session, template_id, section_id, SectionUpdateRequest(description=""))
+
+    assert read.description is None
+    stored = (
+        await db_session.execute(
+            select(ExtractionEntityType.description).where(ExtractionEntityType.id == section_id)
+        )
+    ).scalar_one()
+    assert stored is None
+
+
+@pytest.mark.asyncio
+async def test_noop_description_update_skips_draft_marker(db_session: AsyncSession) -> None:
+    """Writing the current description back (or blank onto an empty one) is
+    a no-op like any other field: no flush, no 0048 stamp."""
+    template_id = await _fresh_clone(db_session)
+    container = await _section_by_name(db_session, template_id, "prediction_models")
+    await set_config_draft_marker(db_session, template_id, None)
+
+    await _update(
+        db_session,
+        template_id,
+        container.id,
+        SectionUpdateRequest(description=container.description or ""),
+    )
+
+    assert await get_config_draft_marker(db_session, template_id) is None
 
 
 @pytest.mark.asyncio

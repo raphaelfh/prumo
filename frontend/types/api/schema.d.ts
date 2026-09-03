@@ -1274,11 +1274,12 @@ export interface paths {
         head?: never;
         /**
          * Update Template Section
-         * @description Partial section update: label, entry_label, cardinality (B-8).
+         * @description Partial section update: label, entry_label, cardinality, description (B-8).
          *
-         *     Role rules are 422s (entry_label only on the repeating group;
+         *     Role rules are 422s (entry_label only on a repeating section;
          *     cardinality only on a per-model section); many -> one with a parent
-         *     instance holding 2+ entries is a 409. A real change stamps the B-4
+         *     instance holding 2+ entries is a 409. ``description`` is the section's
+         *     AI instruction; a blank one clears it. A real change stamps the B-4
          *     draft marker via the 0048 trigger; an all-no-op update skips the
          *     write (no stamp).
          */
@@ -5486,17 +5487,20 @@ export interface components {
         };
         /**
          * SectionUpdateRequest
-         * @description Partial section update: ``label`` (any role), ``entry_label``
-         *     (repeating sections only) and ``cardinality`` (per-model sections
-         *     only) — the role rules live in the service, which owns the row
-         *     (B-8, D5). At least one field must be provided, and explicit nulls
-         *     are rejected (omit instead) so a smuggled ``{"label": null}`` can
-         *     never blank a column. Replaces the label-only SectionRenameRequest;
-         *     the pre-B-8 label-only body stays valid.
+         * @description Partial section update: ``label`` and ``description`` (any role),
+         *     ``entry_label`` (repeating sections only) and ``cardinality``
+         *     (per-model sections only) — the role rules live in the service, which
+         *     owns the row (B-8, D5). At least one field must be provided, and
+         *     explicit nulls are rejected (omit instead) so a smuggled ``{"label":
+         *     null}`` can never blank a column; a description is cleared by sending
+         *     it blank. Replaces the label-only SectionRenameRequest; the pre-B-8
+         *     label-only body stays valid.
          */
         SectionUpdateRequest: {
             /** Cardinality */
             cardinality?: ("one" | "many") | null;
+            /** Description */
+            description?: string | null;
             /** Entry Label */
             entry_label?: string | null;
             /** Label */

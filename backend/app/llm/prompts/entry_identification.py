@@ -6,9 +6,12 @@ blocks. This prompt asks which entries the article describes for ONE such
 group, and it is parameterized by the group as the run is pinned to it: the
 section label, its entry noun (``entry_label``), the field that identifies
 an entry (``is_entity_key``) and the section's description as the
-instruction. The contract stays intentionally narrow: the LLM returns the
-key value of each entry. Everything richer is captured afterwards by
-section extraction, once per entry.
+instruction. A nested group is also scoped to the entry it hangs under —
+the validation table of ONE model — or the prompt would list every
+validation in the article under each model. The contract stays
+intentionally narrow: the LLM returns the key value of each entry.
+Everything richer is captured afterwards by section extraction, once per
+entry.
 """
 
 from __future__ import annotations
@@ -51,7 +54,7 @@ class EntryIdentificationOutput(BaseModel):
     )
 
 
-_USER_TEMPLATE = """{review_context_section}{general_instructions_section}Analyze the following scientific article and identify every {entry_label} it describes for the section "{group_label}".{instruction_section}
+_USER_TEMPLATE = """{review_context_section}{general_instructions_section}Analyze the following scientific article and identify every {entry_label} it describes for the section "{group_label}".{parent_scope_section}{instruction_section}
 
 For each {entry_label}, return its {key_label} exactly as the article states it — this is what tells one {entry_label} apart from another.{allowed_values_section}
 {existing_section}
@@ -73,6 +76,15 @@ If one of the entries you find is any of those, return its EXACT existing {key_l
 """
 
 _INSTRUCTION_TEMPLATE = "\nSection instructions: {instruction}"
+
+# Nested-group scope. Extraction per entry is already scoped to its parent
+# (the entry-scope block); identification was not, so a validation table
+# under model A listed every validation type the article reports — model
+# B's included — and each got an instance under A.
+_PARENT_SCOPE_TEMPLATE = (
+    ' Only the {entry_label} entries that belong to "{parent_label}" count here; '
+    "leave out those the article reports for anything else."
+)
 
 _ALLOWED_VALUES_TEMPLATE = " The {key_label} must be one of: {allowed_values}."
 
@@ -96,6 +108,13 @@ def _render_existing_section(
 def _render_instruction_section(instruction: str | None) -> str:
     text = (instruction or "").strip()
     return _INSTRUCTION_TEMPLATE.format(instruction=text) if text else ""
+
+
+def _render_parent_scope_section(entry_label: str, parent_label: str | None) -> str:
+    """The parent clause of a nested group; nothing at top level."""
+    if not parent_label:
+        return ""
+    return _PARENT_SCOPE_TEMPLATE.format(entry_label=entry_label, parent_label=parent_label)
 
 
 def _allowed_value_names(allowed_values: Any) -> list[str]:
@@ -129,6 +148,7 @@ VERSION = content_version(
     _USER_TEMPLATE,
     _EXISTING_TEMPLATE,
     _INSTRUCTION_TEMPLATE,
+    _PARENT_SCOPE_TEMPLATE,
     _ALLOWED_VALUES_TEMPLATE,
     render_review_context_section("x"),
     render_general_instructions_section("x"),
@@ -146,16 +166,20 @@ def render(
     general_instructions: str | None = None,
     review_context: str | None = None,
     existing_keys: list[str] | None = None,
+    parent_label: str | None = None,
 ) -> str:
     """``group_label`` / ``entry_label`` / ``key_label`` / ``instruction`` /
     ``allowed_values`` come from the PINNED group and its key field;
     ``existing_keys`` are the identities already extracted at this
-    coordinate — the entries a re-run must recognize rather than rename."""
+    coordinate — the entries a re-run must recognize rather than rename;
+    ``parent_label`` is the enclosing entry of a nested group (the model a
+    validation table belongs to), ``None`` at top level."""
     return _USER_TEMPLATE.format(
         group_label=group_label,
         entry_label=entry_label,
         key_label=key_label,
         article_text=article_text,
+        parent_scope_section=_render_parent_scope_section(entry_label, parent_label),
         instruction_section=_render_instruction_section(instruction),
         allowed_values_section=_render_allowed_values_section(key_label, allowed_values),
         general_instructions_section=render_general_instructions_section(general_instructions),

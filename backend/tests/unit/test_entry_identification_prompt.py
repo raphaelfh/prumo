@@ -82,3 +82,17 @@ def test_prompt_asks_for_the_exact_existing_key() -> None:
 def test_prompt_omits_the_block_on_a_first_run() -> None:
     for keys in ([], None):
         assert "already been identified" not in _render(existing_keys=keys).lower()
+
+
+def test_a_nested_group_is_scoped_to_its_parent_entry() -> None:
+    """Extraction per entry was already scoped to the parent (the entry-scope
+    block); identification was not, so model A's validation table listed
+    model B's validations too — and each got an instance under A."""
+    out = _render(parent_label="XGBoost")
+    assert 'Only the validation entries that belong to "XGBoost" count here' in out
+    assert "leave out those the article reports for anything else" in out
+
+
+def test_a_top_level_group_carries_no_parent_clause() -> None:
+    for absent in (None, ""):
+        assert "belong to" not in _render(parent_label=absent)

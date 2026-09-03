@@ -2,11 +2,12 @@
  * AddSectionDialog — the three create variants (B-8 D3).
  *
  * ONE dialog, mode-driven: root keeps the B-7 study-section form
- * (cardinality select and all); group mode asks Label + Entry label and
- * hard-codes role model_container / cardinality many (the server enforces
- * the same, 422 — the form just never offers the impossible); per-model
- * mode presets the invoking group as parent and keeps the cardinality
- * select with per-{noun} wording. Copy is deliberately NOT mocked.
+ * (cardinality select and all); group mode asks Label + Entry label +
+ * Description and hard-codes role model_container / cardinality many (the
+ * server enforces the same, 422 — the form just never offers the
+ * impossible); per-model mode presets the invoking group as parent and
+ * keeps the cardinality select with per-{noun} wording. Copy is
+ * deliberately NOT mocked.
  */
 import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -120,7 +121,30 @@ describe('AddSectionDialog — group mode (Add repeating group…)', () => {
     await submit();
     await waitFor(() => expect(createSection).toHaveBeenCalledTimes(1));
     expect(createSection).toHaveBeenCalledWith(
-      expect.objectContaining({role: 'model_container', entryLabel: undefined}),
+      expect.objectContaining({
+        role: 'model_container',
+        entryLabel: undefined,
+        description: null,
+      }),
+    );
+  });
+
+  it('offers the description and posts it — the identifier has to be told something', async () => {
+    // The group form used to drop the description, so a UI-created group
+    // reached the AI with no identification instruction at all.
+    renderDialog({kind: 'group'});
+    await userEvent.type(labelInput(), 'Models compared');
+    await userEvent.type(
+      screen.getByPlaceholderText('Section description'),
+      '  One entry per model the paper reports.  ',
+    );
+    await submit();
+    await waitFor(() => expect(createSection).toHaveBeenCalledTimes(1));
+    expect(createSection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'model_container',
+        description: 'One entry per model the paper reports.',
+      }),
     );
   });
 });

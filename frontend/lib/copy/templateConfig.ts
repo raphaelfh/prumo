@@ -290,6 +290,10 @@ export const templateConfig = {
   inspectorEntryKeyNone: 'Not set — AI re-runs are blocked',
   inspectorEntryKeyHint:
     'The field whose value tells one entry apart from another. Without it, running AI extraction again would add a duplicate entry instead of updating this one.',
+  // The section description is the section's AI instruction (the field
+  // pane's "for reviewers / never sent to the AI" split does not apply:
+  // the run form never renders a section description).
+  inspectorSectionDescriptionLabel: 'Description — given to the AI',
   menuMoveDown: 'Move down',
   menuMoveToSection: 'Move to section…',
   menuMoveUp: 'Move up',
@@ -309,6 +313,8 @@ export const templateConfig = {
   // read must never be dressed up as "this template has no sections".
   // Reserved for a read that returned NOTHING — with rows cached the copy
   // below is the honest one (the sections ARE shown, just not refreshed).
+  sectionDescriptionHint:
+    'Sent to the AI with every extraction of this section. When the section repeats, it also tells the AI how to identify its entries. Reviewers do not see it on the run form.',
   sectionsLoadFailedBody:
     'The template structure could not be read, so the sections are not shown. Check your connection and try again.',
   sectionsLoadFailedTitle: 'Couldn’t load the sections',

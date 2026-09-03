@@ -18,11 +18,17 @@
  * no-op that reverts the display — the header rename revert rule) and
  * the entry-key select (0059). One entry of a repeating section needs a
  * name and an identity whether or not it is the model container.
+ *
+ * The description is the section's AI instruction — sent with every
+ * extraction of the section and, when it repeats, as the instruction for
+ * identifying its entries; the run form never shows it. It commits on
+ * blur like the entry label, except that a blank IS a commit (it clears).
  */
 import {useState} from 'react';
 
 import {Badge} from '@/components/ui/badge';
 import {Input} from '@/components/ui/input';
+import {Textarea} from '@/components/ui/textarea';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {useUpdateTemplateSection} from '@/hooks/extraction/useUpdateTemplateSection';
 import {t} from '@/lib/copy';
@@ -44,6 +50,7 @@ export function sectionContentKey(section: GridSection): string {
     section.entryNoun,
     section.ownEntryLabel,
     section.cardinality,
+    section.description,
   ]);
 }
 
@@ -70,6 +77,7 @@ export function SectionInspectorForm({
   const updateFieldMutation = useUpdateTemplateField(projectId, templateId);
   const [entryLabel, setEntryLabel] = useState(shownEntryLabel(section));
   const [cardinality, setCardinality] = useState(section.cardinality);
+  const [description, setDescription] = useState(section.description ?? '');
 
   // A group always repeats; a per-model section only when it says so.
   const repeats = section.kind === 'group' || cardinality === 'many';
@@ -102,6 +110,7 @@ export function SectionInspectorForm({
   const [lastCommitted, setLastCommitted] = useState({
     entryLabel: shownEntryLabel(section),
     cardinality: section.cardinality,
+    description: section.description ?? '',
   });
   const saving = update.isPending;
 
@@ -120,6 +129,24 @@ export function SectionInspectorForm({
           setLastCommitted((prev) => ({...prev, entryLabel: next})),
         // The hook toasted; an immediate-commit control shows server truth.
         onError: () => setEntryLabel(lastCommitted.entryLabel),
+      },
+    );
+  };
+
+  const commitDescription = () => {
+    const next = description.trim();
+    if (next === lastCommitted.description) {
+      // Whitespace-only edits normalize back; nothing to send.
+      setDescription(lastCommitted.description);
+      return;
+    }
+    // A blank goes through: the server clears the column.
+    update.mutate(
+      {sectionId: section.id, changes: {description: next}},
+      {
+        onSuccess: () =>
+          setLastCommitted((prev) => ({...prev, description: next})),
+        onError: () => setDescription(lastCommitted.description),
       },
     );
   };
@@ -281,10 +308,22 @@ export function SectionInspectorForm({
       <Label>{t('extraction', 'fieldsCountLabel')}</Label>
       <ReadOnlyValue>{section.totalFieldCount}</ReadOnlyValue>
 
-      <Label>{t('extraction', 'inspectorDescriptionLabel')}</Label>
-      <ReadOnlyValue muted={!section.description}>
-        {section.description ?? t('extraction', 'inspectorDescriptionEmpty')}
-      </ReadOnlyValue>
+      <Label htmlFor="inspector-section-description">
+        {t('templateConfig', 'inspectorSectionDescriptionLabel')}
+      </Label>
+      <Textarea
+        id="inspector-section-description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        onBlur={commitDescription}
+        placeholder={t('extraction', 'inspectorDescriptionEmpty')}
+        disabled={saving}
+        rows={3}
+        className="text-[13px]"
+      />
+      <p className="mt-[3px] text-[11px] leading-snug text-muted-foreground">
+        {t('templateConfig', 'sectionDescriptionHint')}
+      </p>
     </>
   );
 }
