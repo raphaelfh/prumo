@@ -19,6 +19,7 @@ from app.models.extraction import (
 )
 from app.models.extraction_versioning import TemplateKind
 from app.repositories.extraction_repository import ExtractionEntityTypeRepository
+from app.services.entity_key import stamp
 from app.services.extraction_review_service import (
     ExtractionReviewService,
     InvalidDecisionError,
@@ -100,7 +101,10 @@ class ModelHierarchyService:
             parent_instance_id=None,
             label=unique_label,
             sort_order=sort_order,
-            metadata_={},
+            # The manual entry carries the same materialized identity an
+            # AI-created one does (identity spec §5.1.1): the name IS the
+            # key, so an AI re-run that finds this model reuses this row.
+            metadata_=stamp({"created_via": "manual"}, unique_label),
             created_by=user_id,
         )
         self.db.add(parent)

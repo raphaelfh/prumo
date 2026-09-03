@@ -19,7 +19,6 @@ import {useEffect, useMemo, useRef, useState} from 'react';
 import {useNavigate, useParams} from 'react-router';
 import {toast} from 'sonner';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
-import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import {useAiLinkMaps} from '@/hooks/runs/useAiLinkMaps';
@@ -70,12 +69,20 @@ import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
 import {RunPdfContent} from '@/components/runs/RunPdfContent';
 import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
 import {AddModelDialog, RemoveModelDialog} from '@/components/extraction/hierarchy';
+import {
+  AddEntryDialog,
+  RenameEntryDialog,
+  type EntryIdentityChanges,
+} from '@/components/extraction/AddEntryDialog';
 import {ReopenExtractionDialog} from '@/components/extraction/dialogs/ReopenExtractionDialog';
 import {deriveCanReopenExtraction} from '@/lib/extraction/reopenExtraction';
 import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtractionProgress';
 
 // Additional hooks
 import {useModelManagement} from '@/hooks/extraction/useModelManagement';
+import {useAddEntry} from '@/hooks/extraction/useAddEntry';
+import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
+import {displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
 import {createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
@@ -768,116 +775,44 @@ export default function ExtractionFullScreen() {
     });
   };
 
-  const handleAddInstance = async (entityTypeId: string) => {
-    if (!template) return;
+  // Adding an entry to a repeating section: the dialog (key input labelled
+  // by the section's key field, sibling chips, duplicate block) and the
+  // create live in the hook; the identity is stamped at creation.
+  const addEntry = useAddEntry({
+    projectId,
+    articleId,
+    templateId: template?.id,
+    entityTypes,
+    instances,
+    modelParentEntityTypeId: modelParentEntityType?.id ?? null,
+    activeModelId,
+    updateValue,
+    onCreated: refetchRun,
+  });
+  const handleAddInstance = addEntry.open;
 
-    extractionLogger.info('handleAddInstance', 'Starting instance creation', {
-      entityTypeId,
-      templateId: template.id,
-    });
-
-    const userResult = await getRequiredUserId();
-    if (!userResult.ok) {
-      toast.error(t('common', 'errors_userNotAuthenticated'));
-      return;
-    }
-    const userId = userResult.data;
-
-    // Find the entity type
-    const entityType = entityTypes.find(et => et.id === entityTypeId);
-    if (!entityType) {
-      extractionLogger.warn('handleAddInstance', 'Entity type not found', {entityTypeId});
-      return;
-    }
-
-    // Determine parent_instance_id if hierarchical entity type
-    let parentInstanceId: string | undefined = undefined;
-    // Pre-compute optional chain to avoid unsupported value-blocks inside conditions
-    const modelParentId = modelParentEntityType?.id;
-
-    // If it has parent_entity_type_id, it is a child entity (e.g. model child sections)
-    if (entityType.parent_entity_type_id) {
-      // If parent is prediction_models, use activeModelId
-      if (entityType.parent_entity_type_id === modelParentId) {
-        if (!activeModelId) {
-          toast.error(t('pages', 'extractionScreenSelectModelFirst'));
-          return;
-        }
-        parentInstanceId = activeModelId;
-      } else {
-        // Para outras hierarquias, buscar parent instance
-        const parentInstance = instances.find(
-          i => i.entity_type_id === entityType.parent_entity_type_id
-        );
-        if (parentInstance) {
-          parentInstanceId = parentInstance.id;
-        } else {
-          toast.error(t('pages', 'extractionScreenParentNotFound'));
-          return;
-        }
-      }
-    }
-
-    // Count existing instances to generate label (same parent)
-    const existingCount = instances.filter(i =>
-      i.entity_type_id === entityTypeId &&
-      i.parent_instance_id === (parentInstanceId || null)
-    ).length;
-
-    // Generate unique label
-    let newLabel: string;
-    if (parentInstanceId) {
-      // For child instances, include parent reference to avoid conflicts
-      const parentInstance = instances.find(i => i.id === parentInstanceId);
-      newLabel = parentInstance
-        ? `${parentInstance.label} - ${entityType.label} ${existingCount + 1}`
-        : `${entityType.label} ${existingCount + 1}`;
-    } else {
-      newLabel = `${entityType.label} ${existingCount + 1}`;
-    }
-
-    extractionLogger.debug('handleAddInstance', 'Creating instance via service', {
-      entityTypeId,
-      entityTypeName: entityType.name,
-      parentInstanceId,
-      label: newLabel
-    });
-
-    // Use .then().catch() — no try/catch in the component function.
-    await extractionInstanceService.createInstance({
-      projectId: projectId!,
-      articleId: articleId!,
-      templateId: template.id,
-      entityTypeId,
-      entityType,
-      parentInstanceId,
-      label: newLabel,
-      userId,
-    }).then(async (result) => {
-      if (result.wasCreated) {
-        // Reload the run view after create (derived instances refresh)
-        await refetchRun();
-        extractionLogger.info('handleAddInstance', 'Instance created successfully', {
-          instanceId: result.instance.id,
-          label: result.instance.label
-        });
-        toast.success(`${result.instance.label} ${t('pages', 'extractionScreenInstanceAddedSuccess')}`);
-      } else {
-        extractionLogger.info('handleAddInstance', 'Instance already existed', {
-          instanceId: result.instance.id,
-          label: result.instance.label
-        });
-        toast.info(t('pages', 'extractionScreenInstanceAlreadyExists'));
-      }
-    }).catch((error: unknown) => {
-      extractionLogger.error('handleAddInstance', 'Failed to create instance', error instanceof Error ? error : undefined, {
-        entityTypeId,
-        templateId: template.id
-      });
-      console.error('Error adding instance:', error);
-      toast.error(`${t('pages', 'extractionScreenErrorAddInstance')}: ${error instanceof Error ? error.message : String(error)}`);
+  // Rename / re-key — one write for cards and for the active model. The
+  // noun names the entry in the toasts; the run view refetch (invalidated
+  // by the hook) re-derives labels and identities.
+  const updateIdentity = useUpdateInstanceIdentity(activeRunId);
+  const [modelToRename, setModelToRename] = useState<string | null>(null);
+  const handleRenameInstance = async (instanceId: string, changes: EntryIdentityChanges) => {
+    const instance = instances.find((i) => i.id === instanceId);
+    const entityType = entityTypes.find((et) => et.id === instance?.entity_type_id);
+    await updateIdentity.mutateAsync({
+      instanceId,
+      noun: entityType?.entry_label ?? 'entry',
+      body: {
+        projectId: projectId ?? '',
+        articleId: articleId ?? '',
+        templateId: template?.id ?? '',
+        label: changes.label,
+        entityKey: changes.entityKey ?? undefined,
+      },
     });
   };
+  const modelKeyField = modelParentEntityType ? keyFieldOf(modelParentEntityType.fields) : null;
+  const modelBeingRenamed = instances.find((i) => i.id === modelToRename) ?? null;
 
   const handleRemoveInstance = async (instanceId: string) => {
     // Check if there are extracted values
@@ -1223,11 +1158,13 @@ export default function ExtractionFullScreen() {
           setActiveModelId,
           onAddModel: handleAddModel,
           onRemoveModel: handleRemoveModel,
+          onRenameModel: setModelToRename,
           onRefreshModels: refreshModels,
           onRefreshInstances: handleRefreshInstances,
           getInstancesForModel,
           handleAddInstance,
           handleRemoveInstance,
+          handleRenameInstance,
           projectId: projectId || '',
           articleId: articleId || '',
           templateId: template?.id || '',
@@ -1353,6 +1290,29 @@ export default function ExtractionFullScreen() {
         onCancel={() => setShowAddModelDialog(false)}
         existingModels={models.map(m => m.modelName)}
         entryLabel={modelParentEntityType?.entry_label ?? 'model'}
+        keyLabel={modelKeyField?.label ?? null}
+      />
+
+      <AddEntryDialog {...addEntry.dialogProps} />
+
+      <RenameEntryDialog
+        open={modelBeingRenamed !== null}
+        entryLabel={modelParentEntityType?.entry_label ?? 'model'}
+        keyLabel={modelKeyField?.label ?? null}
+        initialLabel={modelBeingRenamed?.label ?? ''}
+        initialKey={modelBeingRenamed ? displayEntryKey(modelBeingRenamed) : null}
+        siblingKeys={instances
+          .filter(
+            (i) =>
+              i.entity_type_id === modelParentEntityType?.id && i.id !== modelToRename,
+          )
+          .map((i) => entryKeyOf(i) ?? i.label)}
+        onConfirm={async (changes) => {
+          if (!modelToRename) return;
+          await handleRenameInstance(modelToRename, changes);
+          setModelToRename(null);
+        }}
+        onCancel={() => setModelToRename(null)}
       />
 
       <RemoveModelDialog

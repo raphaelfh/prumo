@@ -307,6 +307,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/extraction/instances/{instance_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename or re-key one extraction instance
+         * @description Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.
+         */
+        patch: operations["update_instance_api_v1_extraction_instances__instance_id__patch"];
+        trace?: never;
+    };
     "/api/v1/extraction/models": {
         parameters: {
             query?: never;
@@ -2465,6 +2485,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[RunViewInstance] */
+        ApiResponse_RunViewInstance_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["RunViewInstance"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[RunViewResponse] */
         ApiResponse_RunViewResponse_: {
             /** @description Dados da resposta */
@@ -3910,6 +3947,35 @@ export interface components {
              * @enum {string}
              */
             scope_kind: "project" | "template" | "system_default";
+        };
+        /**
+         * InstanceIdentityUpdateRequest
+         * @description Rename and/or re-key one extraction instance (the run form's rename
+         *     dialog). ``entity_key`` is the identity an AI re-run matches against; the
+         *     server normalizes it and appends the change to ``entity_key_history``.
+         *     At least one of ``label`` / ``entity_key`` must be present, and neither
+         *     may be blank — a smuggled ``{"label": ""}`` must never blank a column.
+         */
+        InstanceIdentityUpdateRequest: {
+            /**
+             * Articleid
+             * Format: uuid
+             */
+            articleId: string;
+            /** Entitykey */
+            entityKey?: string | null;
+            /** Label */
+            label?: string | null;
+            /**
+             * Projectid
+             * Format: uuid
+             */
+            projectId: string;
+            /**
+             * Templateid
+             * Format: uuid
+             */
+            templateId: string;
         };
         /**
          * KeyValidationResult
@@ -6867,6 +6933,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_list_AISuggestionHistoryItem__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_instance_api_v1_extraction_instances__instance_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instance_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceIdentityUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RunViewInstance_"];
                 };
             };
             /** @description Validation Error */

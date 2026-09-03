@@ -382,4 +382,21 @@ export async function createManualModelHierarchy(
   });
 }
 
+// Rename / re-key one entry of a repeating section (the run form's rename
+// dialog). Shapes from the generated contract, like the manual-model call.
+export type InstanceIdentityUpdateRequest =
+  components['schemas']['InstanceIdentityUpdateRequest'];
+
+export type InstanceIdentityUpdateResponse = components['schemas']['RunViewInstance'];
+
+export async function updateInstanceIdentity(
+  instanceId: string,
+  body: InstanceIdentityUpdateRequest
+): Promise<InstanceIdentityUpdateResponse> {
+  return apiClient<InstanceIdentityUpdateResponse>(
+    `/api/v1/extraction/instances/${instanceId}`,
+    {method: "PATCH", body}
+  );
+}
+
 

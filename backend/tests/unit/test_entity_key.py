@@ -11,6 +11,7 @@ across the boundary ADR-0012 exists to hold.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -18,10 +19,12 @@ import pytest
 
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
 from app.services.entity_key import (
+    HISTORY_KEY,
     STORE_KEY,
     MissingEntityKeyError,
     key_field_of,
     normalize_key,
+    rekey_instance,
     stamp,
 )
 
@@ -120,3 +123,62 @@ def test_key_field_of_accepts_the_live_row_shape_the_pin_falls_back_to() -> None
         fields=[SimpleNamespace(id=uuid4(), label="Method", is_entity_key=False), key],
     )
     assert key_field_of(live) is key
+
+
+# ---------------------------------------------------------------------------
+# rekey_instance — a reviewer action, append-only (constitution §IX)
+# ---------------------------------------------------------------------------
+
+
+def _instance(metadata: dict | None) -> SimpleNamespace:
+    return SimpleNamespace(metadata_=metadata)
+
+
+def test_rekey_rewrites_the_identity_and_appends_who_when_from_to() -> None:
+    actor = uuid4()
+    when = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
+    instance = _instance(stamp({"ai_extracted": True}, "XGBoost"))
+
+    changed = rekey_instance(instance, key_value="  Gradient  Boosting ", actor_id=actor, at=when)
+
+    assert changed is True
+    assert instance.metadata_[STORE_KEY] == "gradient boosting"
+    assert instance.metadata_["ai_extracted"] is True, "the rest of the record survives"
+    assert instance.metadata_[HISTORY_KEY] == [
+        {"who": str(actor), "when": when.isoformat(), "from": "xgboost", "to": "gradient boosting"}
+    ]
+
+
+def test_rekey_is_append_only_across_successive_changes() -> None:
+    instance = _instance(stamp({}, "A"))
+    rekey_instance(instance, key_value="B", actor_id=uuid4())
+    rekey_instance(instance, key_value="C", actor_id=uuid4())
+    assert [h["from"] for h in instance.metadata_[HISTORY_KEY]] == ["a", "b"]
+    assert [h["to"] for h in instance.metadata_[HISTORY_KEY]] == ["b", "c"]
+    assert instance.metadata_[STORE_KEY] == "c"
+
+
+def test_rekey_to_the_same_identity_writes_nothing() -> None:
+    """Case and spacing are not identity — a no-op leaves no history row."""
+    instance = _instance(stamp({}, "XGBoost"))
+    before = dict(instance.metadata_)
+    assert rekey_instance(instance, key_value="  xgboost ", actor_id=uuid4()) is False
+    assert instance.metadata_ == before
+    assert HISTORY_KEY not in instance.metadata_
+
+
+def test_rekey_records_a_pre_0059_row_as_keyless_before() -> None:
+    instance = _instance({"created_via": "hitl_session"})
+    rekey_instance(instance, key_value="LightGBM", actor_id=uuid4())
+    assert instance.metadata_[HISTORY_KEY][0]["from"] is None
+    assert instance.metadata_[STORE_KEY] == "lightgbm"
+
+
+def test_rekey_replaces_the_metadata_object_so_the_orm_sees_the_change() -> None:
+    """An in-place mutation of a JSONB dict is invisible to SQLAlchemy's
+    change tracking; the write has to be a reassignment."""
+    original = stamp({}, "A")
+    instance = _instance(original)
+    rekey_instance(instance, key_value="B", actor_id=uuid4())
+    assert instance.metadata_ is not original
+    assert STORE_KEY in original and original[STORE_KEY] == "a", "the old dict is untouched"

@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     articles,
     articles_export,
     extraction_export,
+    extraction_instances,
     extraction_runs,
     feedback,
     hitl_configs,
@@ -48,6 +49,12 @@ api_router.include_router(
     section_extraction.router,
     prefix="/extraction/sections",
     tags=["Section Extraction"],
+)
+
+api_router.include_router(
+    extraction_instances.router,
+    prefix="/extraction/instances",
+    tags=["Extraction Instances"],
 )
 
 api_router.include_router(

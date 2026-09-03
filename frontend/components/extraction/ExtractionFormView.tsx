@@ -29,6 +29,7 @@ import type {
   ExtractionValue,
 } from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
+import type {EntryIdentityChanges} from './AddEntryDialog';
 
 export interface ExtractionFormViewProps {
   studyLevelSections: ExtractionEntityTypeWithFields[];
@@ -47,11 +48,13 @@ export interface ExtractionFormViewProps {
   setActiveModelId: (id: string) => void;
   onAddModel: () => void;
   onRemoveModel: (id: string) => void;
+  onRenameModel?: (id: string) => void;
   onRefreshModels: () => Promise<void>;
   onRefreshInstances: () => Promise<void>;
   getInstancesForModel: (entityTypeId: string, modelId: string) => ExtractionInstance[];
   handleAddInstance: (entityTypeId: string) => void;
   handleRemoveInstance: (instanceId: string) => void;
+  handleRenameInstance?: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
   projectId: string;
   articleId: string;
   /** Required for section-scoped AI extraction. */
@@ -136,6 +139,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
                 getSuggestionsHistory={props.getSuggestionsHistory}
                 onAddInstance={() => props.handleAddInstance(entityType.id)}
                 onRemoveInstance={props.handleRemoveInstance}
+                onRenameInstance={props.handleRenameInstance}
                 onExtractionComplete={props.onExtractionComplete}
               />
             </div>
@@ -158,6 +162,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
               modelsLoading={props.modelsLoading}
               onAddModel={props.onAddModel}
               onRemoveModel={props.onRemoveModel}
+              onRenameModel={props.onRenameModel}
               values={props.values}
               updateValue={props.updateValue}
               aiSuggestions={props.aiSuggestions}
@@ -168,6 +173,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
               getInstancesForModel={props.getInstancesForModel}
               handleAddInstance={props.handleAddInstance}
               handleRemoveInstance={props.handleRemoveInstance}
+              handleRenameInstance={props.handleRenameInstance}
               projectId={props.projectId}
               articleId={props.articleId}
               templateId={props.templateId}

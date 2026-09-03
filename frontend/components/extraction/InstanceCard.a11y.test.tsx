@@ -39,15 +39,26 @@ describe('InstanceCard icon-button labels', () => {
     ).toBeInTheDocument();
   });
 
-  it('names the save and cancel buttons in label-edit mode', async () => {
+  it('names the rename button after the instance label and opens the entry dialog', async () => {
     const user = userEvent.setup();
+    render(
+      <InstanceCard
+        {...baseProps}
+        canRemove={false}
+        entryLabel="validation"
+        keyLabel="Validation type"
+        onRename={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Rename "Model A"' }));
+    // The dialog edits the label AND the identity (re-key), each labelled.
+    expect(screen.getByRole('heading', { name: /Rename validation/ })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Label/)).toHaveValue('Model A');
+    expect(screen.getByLabelText(/Validation type/)).toBeInTheDocument();
+  });
+
+  it('offers no rename button without a rename handler', () => {
     render(<InstanceCard {...baseProps} canRemove={false} />);
-    await user.click(screen.getByRole('button', { name: /Model A/ }));
-    expect(
-      screen.getByRole('button', { name: 'Save label' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Cancel label editing' }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rename/ })).toBeNull();
   });
 });

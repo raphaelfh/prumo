@@ -128,6 +128,10 @@ export interface ExtractionField {
   allows_not_applicable?: boolean;
   allows_not_evaluated?: boolean;
   allows_no_information?: boolean;
+  /** 0059: this field's value identifies one entry of a repeating section.
+   * The run form labels its add/rename inputs with this field and stamps
+   * `metadata.entity_key` from it (see `lib/extraction/entryKey.ts`). */
+  is_entity_key?: boolean;
 }
 
 // =================== INSTANCES AND VALUES ===================

@@ -45,6 +45,7 @@ one-container-per-template rule.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -53,8 +54,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionInstance
 
-# JSONB key under ``extraction_instances.metadata``.
+# JSONB keys under ``extraction_instances.metadata``.
 STORE_KEY = "entity_key"
+#: Append-only trail of reviewer re-keys: ``[{who, when, from, to}, ...]``.
+HISTORY_KEY = "entity_key_history"
 
 
 class MissingEntityKeyError(Exception):
@@ -99,6 +102,36 @@ def key_of(instance: ExtractionInstance) -> str | None:
     """The instance's materialized identity, or None for a pre-0059 row."""
     raw = (instance.metadata_ or {}).get(STORE_KEY)
     return raw if isinstance(raw, str) else None
+
+
+def rekey_instance(
+    instance: Any, *, key_value: str, actor_id: UUID, at: datetime | None = None
+) -> bool:
+    """Re-key by a reviewer (identity spec §7 keeps merge out; this is the
+    one identity edit a human makes): rewrite the materialized key and
+    append ``{who, when, from, to}`` to the history — append-only, never
+    rewritten (constitution §IX). Returns False when the normalized key is
+    unchanged, in which case nothing is written and no history row lands.
+
+    The metadata object is REPLACED, not mutated: SQLAlchemy does not see
+    in-place changes to a JSONB dict.
+    """
+    new_key = normalize_key(key_value)
+    old_key = key_of(instance)
+    if old_key == new_key:
+        return False
+    metadata = dict(instance.metadata_ or {})
+    history = list(metadata.get(HISTORY_KEY) or [])
+    history.append(
+        {
+            "who": str(actor_id),
+            "when": (at or datetime.now(UTC)).isoformat(),
+            "from": old_key,
+            "to": new_key,
+        }
+    )
+    instance.metadata_ = {**metadata, STORE_KEY: new_key, HISTORY_KEY: history}
+    return True
 
 
 class _KeyedField(Protocol):
