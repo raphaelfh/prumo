@@ -27,12 +27,13 @@ reviewer-scoped), so materializing there sidesteps both.
 identity and is not edited by hand.
 
 **The declaration is versioned config.** ``is_entity_key`` rides the
-published snapshot like every other field column: the publish diff shows a
-key move, and Discard restores the key the baseline granted (see
-``template_restore_service`` for the per-section slot it has to release
-first). :func:`resolve_key_field` deliberately still reads the LIVE flag —
-it is the re-run gate, not a prompt input, and a run in ``extract`` is
-re-pinned to the new version on Publish anyway.
+published snapshot like every other field column (0067 backfilled the
+snapshots that predate that): the publish diff shows a key move, and
+Discard restores the key the baseline granted (see
+``template_restore_service`` for the per-section slot it parks first).
+:func:`resolve_key_field` deliberately still reads the LIVE flag — it is
+the re-run gate, not a prompt input, and a run in ``extract`` is re-pinned
+to the new version on Publish anyway.
 """
 
 from __future__ import annotations
@@ -47,26 +48,6 @@ from app.models.extraction import ExtractionEntityType, ExtractionField, Extract
 
 # JSONB key under ``extraction_instances.metadata``.
 STORE_KEY = "entity_key"
-
-# The seeded catalogue's key declarations, by ``(entity_type.name, field.name)``.
-# ONE list, three consumers that must agree on it: the seed stamps it on a
-# fresh database (``seed._apply_entity_keys``), migrations 0059/0066 carry a
-# verbatim copy for every installation that already held the templates
-# (``test_seed_entity_keys`` pins the two), and the publish diff treats a
-# pre-0059 snapshot lacking the key at one of these coordinates as the same
-# tree the backfill produced (``template_diff._normalize_field``) — otherwise
-# every existing clone would report a phantom draft and Discard would clear
-# the backfilled key. Matched by NAME, never id: a project clone carries fresh
-# ids for every row. (The migration docstrings name this list as
-# ``app.seed.ENTITY_KEY_FIELDS`` — its home until #798.)
-ENTITY_KEY_FIELDS: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("prediction_models", "model_name"),  # CHARMS (000c)
-        ("prediction_models", "mdl_name"),  # CHARMS + Multimodal (000e)
-        ("final_predictors", "predictor_name"),  # CHARMS (000c)
-        ("numeric_performance", "pnum_validation_type"),  # CHARMS + Multimodal (000e)
-    }
-)
 
 
 class MissingEntityKeyError(Exception):

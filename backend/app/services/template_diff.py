@@ -50,7 +50,6 @@ from uuid import UUID
 
 from app.domain.template_change import ChangeTier
 from app.llm.claim_value import normalize_options
-from app.services.entity_key import ENTITY_KEY_FIELDS
 
 _PATH_SEPARATOR = " → "
 
@@ -127,8 +126,9 @@ FIELD_ATTRIBUTE_DEFAULTS: dict[str, Any] = {
     # marker was universal before it existed: a pre-0062 baseline carrying no
     # key must not diff as "the marker was turned off".
     "allows_no_information": True,
-    # Mirrors the ORM column (0059, ``server_default false``) — except at the
-    # coordinates the 0059/0066 backfill stamped, see _normalize_field.
+    # Mirrors the ORM column (0059, ``server_default false``). Migration 0067
+    # wrote the live flag into every stored snapshot by field id, so an
+    # absent key only remains where the field's live row was already gone.
     ENTITY_KEY_KEY: False,
 }
 
@@ -308,7 +308,7 @@ def _index(
             fields[field_id] = _Node(
                 node_id=field_id,
                 label=_label(raw_field),
-                data=_normalize_field(raw_field, entity_name=raw_entity.get("name")),
+                data=_normalize_field(raw_field),
                 parent_id=entity_id,
                 parent_label=entity_label,
             )
@@ -328,21 +328,9 @@ def _normalize_entity(raw: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _normalize_field(raw: dict[str, Any], *, entity_name: str | None) -> dict[str, Any]:
-    """Fill absent keys with their canonical defaults (present-but-null stays null).
-
-    ``entity_name`` is the owning section's ``name``: the one era rule that
-    needs it is the entry key, whose backfill was keyed by section AND field
-    name.
-    """
+def _normalize_field(raw: dict[str, Any]) -> dict[str, Any]:
     data = {key: raw.get(key, default) for key, default in FIELD_ATTRIBUTE_DEFAULTS.items()}
     data[OPTION_KEY] = raw.get(OPTION_KEY)
-    if ENTITY_KEY_KEY not in raw and (entity_name, data["name"]) in ENTITY_KEY_FIELDS:
-        # 0059/0066 stamped the key on every live row at these coordinates;
-        # a pre-0059 baseline that simply lacks the key describes the same
-        # tree (the 0051 ``entry_label`` rule, applied to identity). Present
-        # ``false`` is a post-0059 publish with the key deliberately elsewhere.
-        data[ENTITY_KEY_KEY] = True
     return data
 
 

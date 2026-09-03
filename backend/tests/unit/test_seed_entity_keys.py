@@ -16,7 +16,7 @@ import pathlib
 
 import pytest
 
-from app.services.entity_key import ENTITY_KEY_FIELDS
+from app.seed import ENTITY_KEY_FIELDS
 
 EXPECTED = frozenset(
     {

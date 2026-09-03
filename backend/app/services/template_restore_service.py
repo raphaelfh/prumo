@@ -25,10 +25,10 @@ re-parenting destroys the baseline fields the draft had moved into it,
 and ``uq_extraction_fields_entity_type_name`` is immediate, so a draft
 that deleted field ``x`` and renamed a sibling to ``x`` collides during
 the create pass unless names are parked first. The entry key
-(``uq_extraction_fields_one_entity_key``, partial and immediate) is a
-second per-section slot with one difference: nothing stops the baseline
-holder from taking it back, so every key the baseline does not grant is
-released up front rather than skipped and reported.
+(``uq_extraction_fields_one_entity_key``, partial and immediate) is parked
+the same way with ``false`` as its universal park value — and because the
+index is partial, a KEPT row can simply stop holding it, which a name slot
+never allows.
 """
 
 from __future__ import annotations
@@ -152,10 +152,8 @@ def _baseline_entity_columns(raw: dict[str, Any]) -> dict[str, Any]:
     return columns
 
 
-def _baseline_field_columns(
-    raw: dict[str, Any], owner_id: UUID, *, entity_name: str | None
-) -> dict[str, Any]:
-    columns = _normalize_field(raw, entity_name=entity_name)
+def _baseline_field_columns(raw: dict[str, Any], owner_id: UUID) -> dict[str, Any]:
+    columns = _normalize_field(raw)
     columns[_OWNER_KEY] = owner_id
     columns[ORDER_KEY] = int(raw.get(ORDER_KEY) or 0)
     return columns
@@ -178,9 +176,7 @@ def _index_snapshot(
         entities[entity_id] = _baseline_entity_columns(raw_entity)
         for raw_field in raw_entity.get(NESTING_KEY) or []:
             field_id = UUID(str(raw_field[IDENTITY_KEY]))
-            fields[field_id] = _baseline_field_columns(
-                raw_field, entity_id, entity_name=raw_entity.get("name")
-            )
+            fields[field_id] = _baseline_field_columns(raw_field, entity_id)
     return entities, fields
 
 
@@ -349,27 +345,26 @@ async def restore_snapshot(
         and fid not in name_conflicted
         and _live_columns(live_fields[fid], _FIELD_KEYS) != columns
     ]
+    # Every phase-0 decision is taken from the pre-write reads above.
+    park_field_ids = [
+        fid for fid in update_field_ids if _moves_name_slot(live_fields[fid], baseline_fields[fid])
+    ]
+    stray_key_ids = _stray_entry_keys(
+        baseline_fields, live_fields, unrestorable_field_ids=name_conflicted
+    )
 
-    # Phase 0 — park the name of every field in the update set, INCLUDING
-    # the ones whose only change is the parent. Parking must precede the
-    # create pass: a draft that deleted field `x` and renamed a sibling to
-    # `x` otherwise collides on the immediate per-section unique index.
-    for field_id in update_field_ids:
+    # Phase 0 — park the two per-section slots. Names: every field whose
+    # name or owner changes, INCLUDING a parent-only change, gets a unique
+    # transient name, because a draft that deleted field `x` and renamed a
+    # sibling to `x` otherwise collides on the immediate unique index during
+    # the create pass. Keys: ``false`` is the park value, and phase 6 settles
+    # both through the same ``.values(**baseline)`` write.
+    for field_id in park_field_ids:
         await db.execute(
             update(ExtractionField)
             .where(ExtractionField.id == field_id)
             .values(name=f"{_PARK_PREFIX}{uuid4().hex}")
         )
-    # ... and release every entry key the baseline does not grant. The key
-    # is a per-section slot too (``uq_extraction_fields_one_entity_key`` is
-    # partial and immediate), so settling the update set in snapshot order
-    # — the baseline holder before the sibling the draft moved the key to —
-    # or re-creating a deleted holder in phase 5 collides with whoever holds
-    # it now. Unlike a name, a KEPT field's key is not something the row
-    # needs to survive, so it is released, not reported.
-    stray_key_ids = _stray_entry_keys(
-        baseline_fields, live_fields, delete_field_ids=frozenset(delete_field_ids)
-    )
     if stray_key_ids:
         await db.execute(
             update(ExtractionField)
@@ -440,7 +435,7 @@ async def restore_snapshot(
     )
     await db.flush()
 
-    # Phase 6 — settle the parked names and the rest of the attributes.
+    # Phase 6 — settle the parked slots and the rest of the attributes.
     for field_id in update_field_ids:
         await db.execute(
             update(ExtractionField)
@@ -475,22 +470,44 @@ async def restore_snapshot(
     )
 
 
+def _moves_name_slot(live: ExtractionField, baseline: dict[str, Any]) -> bool:
+    """Only a field whose ``(entity_type_id, name)`` slot changes can collide
+    while the rest of the update set settles; an attribute-only change
+    keeps its slot and needs no transient name."""
+    return live.name != baseline[_NAME_KEY] or live.entity_type_id != baseline[_OWNER_KEY]
+
+
 def _stray_entry_keys(
     baseline_fields: dict[UUID, dict[str, Any]],
     live_fields: dict[UUID, ExtractionField],
     *,
-    delete_field_ids: frozenset[UUID],
+    unrestorable_field_ids: frozenset[UUID],
 ) -> list[UUID]:
-    """Surviving live fields holding an entry key the baseline does not
-    grant them: update-set fields the draft moved the key to, kept
-    draft-added fields, and name-conflicted fields the draft keyed. A field
-    the baseline DOES key keeps it — it is the section's one holder."""
+    """Live key holders the baseline does not grant a key — release them.
+
+    Settling in snapshot order would otherwise re-grant the baseline holder
+    while the field the draft moved the key to still holds it, and phase 5
+    would collide re-creating a deleted holder. A KEPT row's key is not
+    something the row needs to survive (the index is partial), so unlike a
+    name it is released rather than reported.
+
+    The one exception: when the baseline's holder for a section is itself
+    unrestorable (its name slot is held by a kept field, so phases 5/6 will
+    never write it), releasing the live key would leave the section with
+    NO key — and a keyless repeating section refuses AI re-runs. That
+    section keeps the key where the draft put it.
+    """
+    unwritable_sections = {
+        columns[_OWNER_KEY]
+        for field_id, columns in baseline_fields.items()
+        if field_id in unrestorable_field_ids and columns[ENTITY_KEY_KEY]
+    }
     return [
         field_id
         for field_id, row in live_fields.items()
         if row.is_entity_key
-        and field_id not in delete_field_ids
         and not baseline_fields.get(field_id, {}).get(ENTITY_KEY_KEY, False)
+        and row.entity_type_id not in unwritable_sections
     ]
 
 

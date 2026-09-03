@@ -66,7 +66,6 @@ from app.models.extraction import (
     ExtractionTemplateGlobal,
 )
 from app.models.extraction_versioning import TemplateKind
-from app.services.entity_key import ENTITY_KEY_FIELDS
 
 
 class _EntitySpec(NamedTuple):
@@ -119,6 +118,23 @@ def _entity_type_from_spec(
 # ---------------------------------------------------------------------------
 
 _CHARMS_TEMPLATE_ID = UUID("000c0000-0000-0000-0000-000000000001")
+
+
+# The repeating groups that declare an identity key, as
+# (entity_type.name, field.name). Two mechanisms must agree on this list:
+# this seed, which only ever runs on a FRESH database, and migration
+# 0059's backfill, which is the only thing that reaches an installation
+# that already holds the templates (``seed_charms`` and ``seed_charms_mm``
+# both early-return on an existing row). ``test_seed_entity_keys`` pins
+# the two against each other.
+ENTITY_KEY_FIELDS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("prediction_models", "model_name"),  # CHARMS (000c)
+        ("prediction_models", "mdl_name"),  # CHARMS + Multimodal (000e)
+        ("final_predictors", "predictor_name"),  # CHARMS (000c)
+        ("numeric_performance", "pnum_validation_type"),  # CHARMS + Multimodal (000e)
+    }
+)
 
 
 def _apply_entity_keys(

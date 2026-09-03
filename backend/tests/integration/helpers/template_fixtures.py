@@ -242,6 +242,30 @@ async def set_label(db: AsyncSession, table: str, node_id: UUID, label: str) -> 
     await db.flush()
 
 
+async def set_entry_key(db: AsyncSession, target_field_id: UUID, value: bool) -> None:
+    """Move the section's identity the way the inspector does (one field at a
+    time; the caller clears the previous holder first, as the UI must)."""
+    await db.execute(
+        text("UPDATE public.extraction_fields SET is_entity_key = :v WHERE id = :id"),
+        {"id": str(target_field_id), "v": value},
+    )
+    await db.flush()
+
+
+async def entry_key_holders(db: AsyncSession, template_id: UUID) -> dict[UUID, UUID]:
+    """``entity_type_id -> field_id`` for every section of the template that
+    declares an entry key — derived from the rows, never from a name."""
+    rows = await db.execute(
+        text(
+            "SELECT f.entity_type_id, f.id FROM public.extraction_fields f "
+            "JOIN public.extraction_entity_types et ON et.id = f.entity_type_id "
+            "WHERE et.project_template_id = :tid AND f.is_entity_key"
+        ),
+        {"tid": str(template_id)},
+    )
+    return {row.entity_type_id: row.id for row in rows}
+
+
 async def delete_field(db: AsyncSession, target_field_id: UUID) -> None:
     await db.execute(
         text("DELETE FROM public.extraction_fields WHERE id = :id"), {"id": str(target_field_id)}

@@ -54,6 +54,7 @@ from tests.integration.conftest import (
     clone_charms,
     get_config_draft_marker,
 )
+from tests.integration.helpers.template_fixtures import entry_key_holders, set_entry_key
 
 # --------------------------------------------------------------------------
 # Baseline setup
@@ -441,23 +442,6 @@ async def _move_field(db: AsyncSession, field_id: UUID, entity_type_id: UUID, or
         {"id": str(field_id), "et": str(entity_type_id), "o": order},
     )
     await db.flush()
-
-
-async def _set_entry_key(db: AsyncSession, field_id: UUID, value: bool) -> None:
-    await db.execute(
-        text("UPDATE public.extraction_fields SET is_entity_key = :v WHERE id = :id"),
-        {"id": str(field_id), "v": value},
-    )
-    await db.flush()
-
-
-async def _is_entry_key(db: AsyncSession, field_id: UUID) -> bool:
-    return (
-        await db.execute(
-            text("SELECT is_entity_key FROM public.extraction_fields WHERE id = :id"),
-            {"id": str(field_id)},
-        )
-    ).scalar_one()
 
 
 async def _set_instruction(db: AsyncSession, template_id: UUID, value: str | None) -> None:
@@ -1141,23 +1125,31 @@ async def test_writer_never_touches_the_draft_marker(db_session: AsyncSession) -
 
 
 # --------------------------------------------------------------------------
-# Entry key — identity is versioned config, and its slot is per-section
+# Entry key — a second per-section slot, parked with ``false``
 # --------------------------------------------------------------------------
+
+
+async def _keyed_section(
+    db: AsyncSession, template_id: UUID, baseline: dict[str, Any]
+) -> tuple[UUID, UUID, UUID]:
+    """``(section, key holder, a keyless sibling)`` of one repeating section
+    that declares an entry key — read from the rows, so the tests do not
+    depend on which seeded coordinate carries it."""
+    section, holder = next(iter((await entry_key_holders(db, template_id)).items()))
+    fields = next(et for et in baseline["entity_types"] if UUID(et["id"]) == section)["fields"]
+    sibling = next(UUID(f["id"]) for f in fields if UUID(f["id"]) != holder)
+    return section, holder, sibling
 
 
 @pytest.mark.asyncio
 async def test_draft_deleted_entry_key_field_is_recreated_with_its_key(
     db_session: AsyncSession,
 ) -> None:
-    """The sharpest round-trip: delete the container's key field, Discard.
-
-    A field rebuilt from a snapshot that does not carry ``is_entity_key``
-    comes back as an ordinary field, the section silently loses its
-    identity, and the next AI re-run is refused with
-    ``MissingEntityKeyError`` — on a template the user just restored."""
+    """The writer half of ``test_discard_after_deleting_the_entry_key_field_
+    restores_the_identity`` (discard suite): the re-created field carries
+    the baseline's key, not the column default."""
     project_id, template_id, baseline = await _fresh_charms(db_session)
-    key_field = await _field_id(db_session, template_id, "prediction_models", "model_name")
-    assert await _is_entry_key(db_session, key_field)
+    section, key_field, _ = await _keyed_section(db_session, template_id, baseline)
     await _delete_field(db_session, key_field)
     capture = await _capture(db_session, template_id)
 
@@ -1166,7 +1158,7 @@ async def test_draft_deleted_entry_key_field_is_recreated_with_its_key(
     )
 
     assert outcome.created_fields == 1
-    assert await _is_entry_key(db_session, key_field)
+    assert (await entry_key_holders(db_session, template_id))[section] == key_field
     await _assert_restored(
         db_session,
         template_id=template_id,
@@ -1180,16 +1172,15 @@ async def test_draft_deleted_entry_key_field_is_recreated_with_its_key(
 async def test_entry_key_moved_between_baseline_fields_is_restored(
     db_session: AsyncSession,
 ) -> None:
-    """``uq_extraction_fields_one_entity_key`` is a partial unique index and
-    immediate, so settling the update set in snapshot order — the baseline
-    holder (``model_name``, sort 0) before the sibling the draft moved the key
-    to — collides unless the key is released first, the way names are
-    parked."""
+    """``uq_extraction_fields_one_entity_key`` is partial and immediate, so
+    settling the update set in snapshot order — the baseline holder before
+    the sibling the draft moved the key to — collides unless the key is
+    parked first, the way names are. Neither field changes its name slot,
+    so neither is name-parked: the key is the only slot in play."""
     project_id, template_id, baseline = await _fresh_charms(db_session)
-    old_key = await _field_id(db_session, template_id, "prediction_models", "model_name")
-    new_key = await _field_id(db_session, template_id, "prediction_models", "modelling_method")
-    await _set_entry_key(db_session, old_key, False)
-    await _set_entry_key(db_session, new_key, True)
+    section, old_key, new_key = await _keyed_section(db_session, template_id, baseline)
+    await set_entry_key(db_session, old_key, False)
+    await set_entry_key(db_session, new_key, True)
     capture = await _capture(db_session, template_id)
 
     outcome = await _restore(
@@ -1197,8 +1188,7 @@ async def test_entry_key_moved_between_baseline_fields_is_restored(
     )
 
     assert outcome.updated_fields == 2
-    assert await _is_entry_key(db_session, old_key)
-    assert not await _is_entry_key(db_session, new_key)
+    assert (await entry_key_holders(db_session, template_id))[section] == old_key
     await _assert_restored(
         db_session,
         template_id=template_id,
@@ -1215,11 +1205,10 @@ async def test_stray_entry_key_on_a_kept_field_is_released(db_session: AsyncSess
     restore releases it instead of skipping the baseline field or crashing
     on the index. The kept field itself survives, keyless."""
     project_id, template_id, baseline = await _fresh_charms(db_session)
-    section = await _entity_id(db_session, template_id, "prediction_models")
-    baseline_key = await _field_id(db_session, template_id, "prediction_models", "model_name")
+    section, baseline_key, _ = await _keyed_section(db_session, template_id, baseline)
     kept = await _add_field(db_session, section, "b9c1_kept_key")
-    await _set_entry_key(db_session, baseline_key, False)
-    await _set_entry_key(db_session, kept, True)
+    await set_entry_key(db_session, baseline_key, False)
+    await set_entry_key(db_session, kept, True)
     capture = await _capture(db_session, template_id)
 
     outcome = await _restore(
@@ -1231,8 +1220,7 @@ async def test_stray_entry_key_on_a_kept_field_is_released(db_session: AsyncSess
     )
 
     assert outcome.deleted_fields == 0
-    assert await _is_entry_key(db_session, baseline_key)
-    assert not await _is_entry_key(db_session, kept)
+    assert (await entry_key_holders(db_session, template_id))[section] == baseline_key
     await _assert_restored(
         db_session,
         template_id=template_id,
@@ -1244,33 +1232,44 @@ async def test_stray_entry_key_on_a_kept_field_is_released(db_session: AsyncSess
 
 
 @pytest.mark.asyncio
-async def test_pre_0059_baseline_keeps_the_backfilled_key(db_session: AsyncSession) -> None:
-    """Every snapshot published before the key was versioned lacks
-    ``is_entity_key``, while 0059/0066 stamped the flag on the live rows by
-    name. Restoring such a baseline must leave the backfilled key holders
-    alone — not rewrite them to False and hand the manager a template whose
-    AI re-runs are refused."""
-    project_id, template_id, wide = await _fresh_charms(db_session)
-    baseline: dict[str, Any] = {
-        **wide,
-        "entity_types": [
-            {
-                **et,
-                "fields": [
-                    {k: v for k, v in f.items() if k != "is_entity_key"}
-                    for f in et.get("fields") or []
-                ],
-            }
-            for et in wide["entity_types"]
-        ],
-    }
-    key_field = await _field_id(db_session, template_id, "prediction_models", "model_name")
+async def test_kept_key_stays_when_the_baseline_holder_is_unrestorable(
+    db_session: AsyncSession,
+) -> None:
+    """The two slot mechanisms must not compound into a keyless section.
+
+    The draft deleted the key holder, re-added a field under its name (the
+    standard "change a field's type" workaround) and keyed the replacement.
+    The replacement is kept, so the baseline holder is name-conflicted and
+    phases 5/6 will never write its key back — releasing the replacement's
+    key would leave the section with none, and AI re-runs refused."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    section, victim, _ = await _keyed_section(db_session, template_id, baseline)
+    victim_name = (
+        await db_session.execute(
+            text("SELECT name FROM public.extraction_fields WHERE id = :id"),
+            {"id": str(victim)},
+        )
+    ).scalar_one()
+    await _delete_field(db_session, victim)
+    replacement = await _add_field(db_session, section, victim_name)
+    await set_entry_key(db_session, replacement, True)
     capture = await _capture(db_session, template_id)
 
     outcome = await _restore(
-        db_session, project_id=project_id, template_id=template_id, baseline=baseline
+        db_session,
+        project_id=project_id,
+        template_id=template_id,
+        baseline=baseline,
+        skip_entity_type_ids=frozenset({section}),
     )
 
-    assert outcome.updated_fields == 0
-    assert await _is_entry_key(db_session, key_field)
-    await _assert_restored(db_session, template_id=template_id, baseline=wide, capture=capture)
+    assert outcome.name_conflicted_field_ids == frozenset({victim})
+    assert (await entry_key_holders(db_session, template_id))[section] == replacement
+    await _assert_restored(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        capture=capture,
+        extra_field_ids=frozenset({replacement}),
+        unrestorable_field_ids=frozenset({victim}),
+    )

@@ -697,50 +697,16 @@ def test_moving_the_entry_key_is_two_semantic_field_changes() -> None:
     )
 
 
-def test_pre_0059_baseline_without_the_key_is_unchanged() -> None:
-    """A baseline frozen before 0059 has no ``is_entity_key``; the column
-    shipped ``server_default false``, so absent must mean False (D4) — a
-    legacy template must not report a phantom "key cleared" draft."""
+def test_baseline_without_the_key_reads_as_no_key() -> None:
+    """Migration 0067 wrote the live flag into every stored snapshot by field
+    id, so an absent key survives only where the field's live row was
+    already gone. The column shipped ``server_default false``: absent must
+    mean False (D4), never a phantom "key cleared" change."""
     field = _field(uuid4())
     entity_id = uuid4()
-    baseline = _snapshot(_strip_from_fields(_entity(entity_id, field), "is_entity_key"))
+    baseline = _snapshot(
+        _strip_from_fields(_entity(entity_id, field), template_diff.ENTITY_KEY_KEY)
+    )
     current = _snapshot(_entity(entity_id, field))
 
     assert diff_snapshots(baseline, current, fields_with_values=NO_VALUES).total == 0
-
-
-def test_pre_0059_baseline_at_a_backfilled_coordinate_is_unchanged() -> None:
-    """Migrations 0059/0066 stamped the key on LIVE rows by
-    ``(section, field)`` name, so a pre-0059 baseline lacking the key at one
-    of those coordinates describes the same tree as a live key holder — the
-    ``entry_label`` 0051 rule, applied to identity. Without it every CHARMS
-    clone would report a phantom "key set" draft, and Discard would clear
-    the backfilled key."""
-    key_field = _field(uuid4(), name="model_name", is_entity_key=True)
-    entity_id = uuid4()
-    baseline = _snapshot(
-        _strip_from_fields(_entity(entity_id, key_field, name="prediction_models"), "is_entity_key")
-    )
-    current = _snapshot(_entity(entity_id, key_field, name="prediction_models"))
-
-    assert diff_snapshots(baseline, current, fields_with_values=NO_VALUES).total == 0
-
-
-def test_backfilled_coordinate_rule_yields_to_a_present_key() -> None:
-    """The rule fills an ABSENT key only: a baseline that carries
-    ``is_entity_key: false`` at a backfill coordinate was published after
-    0059 with the key deliberately elsewhere, and must diff as such."""
-    entity_id, key_field_id = uuid4(), uuid4()
-    baseline = _snapshot(
-        _entity(entity_id, _field(key_field_id, name="model_name"), name="prediction_models")
-    )
-    current = _snapshot(
-        _entity(
-            entity_id,
-            _field(key_field_id, name="model_name", is_entity_key=True),
-            name="prediction_models",
-        )
-    )
-
-    change = _only(diff_snapshots(baseline, current, fields_with_values=NO_VALUES))
-    assert (change.attribute, change.before, change.after) == ("is_entity_key", False, True)

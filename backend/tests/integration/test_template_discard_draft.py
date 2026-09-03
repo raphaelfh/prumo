@@ -85,10 +85,11 @@ from tests.integration.helpers.template_fixtures import (
     entity_id as _entity_id,
 )
 from tests.integration.helpers.template_fixtures import (
-    field_id as _field_id,
+    entry_key_holders,
+    force_narrow_baseline,
 )
 from tests.integration.helpers.template_fixtures import (
-    force_narrow_baseline,
+    field_id as _field_id,
 )
 from tests.integration.helpers.template_fixtures import (
     fresh_charms as _fresh_charms,
@@ -1351,8 +1352,7 @@ async def test_discard_after_deleting_the_entry_key_field_restores_the_identity(
     field and the container's next AI re-run was refused
     (``MissingEntityKeyError``) on a template the manager had just restored."""
     project_id, template_id, baseline = await _fresh_charms(db_session)
-    section = await _entity_id(db_session, template_id, "prediction_models")
-    key_field = await _field_id(db_session, template_id, "prediction_models", "model_name")
+    section, key_field = next(iter((await entry_key_holders(db_session, template_id)).items()))
     await _delete_field(db_session, key_field)
 
     result = await _discard(db_session, project_id=project_id, template_id=template_id)
