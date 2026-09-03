@@ -90,6 +90,17 @@ async def test_resolve_key_field_refuses_an_undeclared_group(db_session: AsyncSe
         await resolve_key_field(db_session, entity_type_id)
 
 
+async def test_refusal_names_the_section_as_the_template_editor_shows_it(
+    db_session: AsyncSession,
+) -> None:
+    """A UUID does not tell the manager which section to open."""
+    entity_type_id, _ = await _repeating_group(db_session, with_key=False)
+    with pytest.raises(MissingEntityKeyError) as excinfo:
+        await resolve_key_field(db_session, entity_type_id)
+    assert "'Probe Group'" in str(excinfo.value)
+    assert str(entity_type_id) not in str(excinfo.value)
+
+
 async def test_match_finds_the_instance_regardless_of_case_and_spacing(
     db_session: AsyncSession,
 ) -> None:

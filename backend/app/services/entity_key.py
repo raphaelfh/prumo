@@ -35,7 +35,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionField, ExtractionInstance
+from app.models.extraction import ExtractionEntityType, ExtractionField, ExtractionInstance
 
 # JSONB key under ``extraction_instances.metadata``.
 STORE_KEY = "entity_key"
@@ -98,7 +98,11 @@ async def resolve_key_field(db: AsyncSession, entity_type_id: UUID) -> Extractio
         )
     ).scalar_one_or_none()
     if field is None:
-        raise MissingEntityKeyError(entity_type_id)
+        # Name the section as the template editor shows it: a UUID does not
+        # tell the manager which section to open.
+        entity_type = await db.get(ExtractionEntityType, entity_type_id)
+        label = (entity_type.label or entity_type.name) if entity_type is not None else None
+        raise MissingEntityKeyError(entity_type_id, label)
     return field
 
 
