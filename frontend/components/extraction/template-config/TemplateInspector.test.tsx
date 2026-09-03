@@ -690,7 +690,7 @@ describe('TemplateInspector section pane — per-model section (B-8 T6, D10)', (
     expect(select).toHaveValue('one');
   });
 
-  it('has no entry-label input (groups only)', () => {
+  it('has no entry-label input while it does not repeat (the noun names entries)', () => {
     renderSection(childSection);
     expect(screen.queryByLabelText('entryLabelLabel')).toBeNull();
   });

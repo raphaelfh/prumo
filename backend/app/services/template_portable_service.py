@@ -150,15 +150,18 @@ def parse_portable_document(raw: dict[str, Any]) -> PortableTemplate:
 
 def _section_dict(et: ExtractionEntityType, children: list[ExtractionEntityType]) -> dict[str, Any]:
     is_group = et.role == ExtractionEntityRole.MODEL_CONTAINER.value
+    repeats = et.cardinality == ExtractionCardinality.MANY.value
     return {
         "name": et.name,
         "label": et.label,
         "description": et.description,
         "required": et.is_required,
         # A group always repeats; ``repeats`` is only meaningful elsewhere.
-        "repeats": (et.cardinality == ExtractionCardinality.MANY.value) and not is_group,
+        "repeats": repeats and not is_group,
         "group": is_group,
-        "entry_label": et.entry_label if is_group else None,
+        # The entry noun rides every repeating section (unlocked from the
+        # container in the entry-group train); a non-repeating row has none.
+        "entry_label": et.entry_label if repeats else None,
         "fields": [
             PortableField.model_validate(f, from_attributes=True, by_name=True)
             for f in sorted(et.fields, key=lambda x: x.sort_order)
@@ -229,7 +232,11 @@ def _entity_type_row(
         name=section.name,
         label=section.label,
         description=section.description,
-        entry_label=(section.entry_label or DEFAULT_ENTRY_LABEL) if is_group else None,
+        entry_label=(
+            (section.entry_label or DEFAULT_ENTRY_LABEL)
+            if is_group
+            else (section.entry_label if section.repeats else None)
+        ),
         parent_entity_type_id=parent_id,
         cardinality=(
             ExtractionCardinality.MANY.value

@@ -20,7 +20,7 @@ from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage, extract_structured
-from app.llm.prompts import model_identification
+from app.llm.prompts import entry_identification
 from app.llm.provider import build_model
 from app.models.extraction import (
     DEFAULT_ENTRY_LABEL,
@@ -40,7 +40,12 @@ from app.repositories import (
 from app.schemas.extraction_run import RunViewEntityType
 from app.schemas.llm_target import LlmTarget
 from app.services.engine_credentials import EngineCredentials
-from app.services.entity_key import existing_keys, key_field_of, resolve_instance
+from app.services.entity_key import (
+    MissingEntityKeyError,
+    existing_keys,
+    key_field_of,
+    resolve_instance,
+)
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_snapshot import entity_types_for_version
 from app.services.run_engine_freeze import freeze_run_engine
@@ -228,14 +233,15 @@ class ModelExtractionService(LoggerMixin):
             )
             phase_durations_ms["assemble_prompt"] = (perf_counter() - phase_start) * 1000
 
-            # 4. Fetch template and entity types
+            # 4. The template must exist (the prompt itself reads the run-PINNED
+            # container, not the live template).
             phase_start = perf_counter()
-            template = await self._get_template(template_id)
+            await self._get_template(template_id)
             phase_durations_ms["fetch_template"] = (perf_counter() - phase_start) * 1000
 
-            # 5. Identificar modelos usando LLM (com tracking de tokens)
+            # 5. Identify models with the LLM (token usage tracked)
             phase_start = perf_counter()
-            models, llm_usage = await self._identify_models(pdf_text, template, model, run)
+            models, llm_usage = await self._identify_models(pdf_text, model, run)
             phase_durations_ms["identify_models_llm"] = (perf_counter() - phase_start) * 1000
 
             # 6. Create instances in DB (model + children)
@@ -361,47 +367,36 @@ class ModelExtractionService(LoggerMixin):
     async def _identify_models(
         self,
         pdf_text: str,
-        template: Any,
         model: str,
         run: Any,
     ) -> tuple[list[dict[str, Any]], LlmUsage]:
         """
         Use LLM to identify models in PDF text.
 
-        Prompt content (container label + the template-level ✨ general
-        instruction) comes from the run-PINNED snapshot (B-2), never live
-        rows; the live template stays only as a fallback for trees the
-        provider could not serve (e.g. a global template, which has no
-        version snapshot).
+        The prompt is parameterized by the model container as the run is
+        PINNED to it (B-2): label, entry noun, key field and description
+        come from the snapshot, never live rows (``_pinned_container`` falls
+        back to the live row only when the pin carries no container). A
+        template without a container has nothing to identify into, so no
+        LLM call is spent; a keyless container refuses here, before the call.
 
         Returns:
             Tuple of model list and token usage.
         """
-        # Find the model container entity type by structural role —
-        # replaces the legacy ``name in ("prediction_models", "model", ...)``
-        # lookup that silently masked typos and template renames.
-        pinned_tree = await entity_types_for_version(
-            self.db, version_id=run.version_id, template_id=run.template_id
-        )
-        entity_types: list[Any] = list(pinned_tree)
-        if not entity_types:
-            entity_types = template.entity_types if hasattr(template, "entity_types") else []
-        model_entity = next(
-            (et for et in entity_types if et.role == ExtractionEntityRole.MODEL_CONTAINER.value),
-            None,
-        )
-
-        if not model_entity:
+        container = await self._pinned_container(run)
+        if container is None:
             self.logger.warning(
                 "no_model_container_entity_type",
                 trace_id=self.trace_id,
-                template_id=str(template.id),
-                available_entity_types=[{"name": et.name, "role": et.role} for et in entity_types]
-                if entity_types
-                else [],
+                template_id=str(run.template_id),
             )
-
-        container_label = model_entity.label if model_entity else "prediction models"
+            return [], LlmUsage()
+        key_field = key_field_of(container)
+        if key_field is None:
+            # A container always repeats; a pin that says otherwise is as
+            # keyless as one with no key field.
+            raise MissingEntityKeyError(container.id, container.label or container.name)
+        entry_label = container.entry_label or DEFAULT_ENTRY_LABEL
         prompt_context = await resolve_run_prompt_context(self.db, run)
 
         # Re-run grounding: show the model what this article already has, so
@@ -410,25 +405,26 @@ class ModelExtractionService(LoggerMixin):
         # drift between runs, and matching on a drifted key recreates the
         # very duplicate it exists to prevent. Reads instances only — no
         # reviewer-attributable row is touched.
-        already_identified: list[str] = []
-        live_container_id = await self._get_model_container_entity_type_id(run.template_id)
-        if live_container_id is not None:
-            already_identified = sorted(
-                (
-                    await existing_keys(
-                        self.db,
-                        article_id=run.article_id,
-                        entity_type_id=UUID(live_container_id),
-                    )
-                ).keys()
-            )
+        already_identified = sorted(
+            (
+                await existing_keys(
+                    self.db,
+                    article_id=run.article_id,
+                    entity_type_id=container.id,
+                )
+            ).keys()
+        )
 
         output, usage = await extract_structured(
-            output_model=model_identification.ModelIdentificationOutput,
-            system_prompt=model_identification.SYSTEM_PROMPT,
-            user_prompt=model_identification.render(
-                container_label=container_label,
+            output_model=entry_identification.EntryIdentificationOutput,
+            system_prompt=entry_identification.system_prompt(entry_label),
+            user_prompt=entry_identification.render(
+                group_label=container.label,
+                entry_label=entry_label,
+                key_label=key_field.label,
                 article_text=pdf_text,
+                instruction=container.description,
+                allowed_values=key_field.allowed_values,
                 general_instructions=prompt_context.general_instructions,
                 review_context=prompt_context.review_context,
                 existing_keys=already_identified,
@@ -439,10 +435,10 @@ class ModelExtractionService(LoggerMixin):
                 api_key=self._credentials.api_key,
                 base_url=self._credentials.base_url,
             ),
-            prompt_name=model_identification.NAME,
-            prompt_version=model_identification.VERSION,
+            prompt_name=entry_identification.NAME,
+            prompt_version=entry_identification.VERSION,
         )
-        models = [m.model_dump() for m in output.models]
+        models = [entry.model_dump() for entry in output.entries]
 
         self.logger.info(
             "models_identified",
@@ -486,14 +482,13 @@ class ModelExtractionService(LoggerMixin):
 
         return None
 
-    async def _pinned_container(self, run: Any, live_container_id: str) -> RunViewEntityType:
-        """The model container as the run is PINNED to it — the one shape both
-        the entry noun (B-8) and the entry key (0059) are read from, so a key
-        moved in an unpublished draft gates nothing until Publish re-pins.
-        Falls back to the live row when the pinned tree carries no container
-        (a narrow pre-0026 snapshot, or a re-pin race), mirroring
-        ``_identify_models``; the live id is the one this service already
-        located, so the fallback cannot miss.
+    async def _pinned_container(self, run: Any) -> RunViewEntityType | None:
+        """The model container as the run is PINNED to it — the one shape the
+        identification prompt, the entry noun (B-8) and the entry key (0059)
+        are all read from, so a key moved in an unpublished draft gates
+        nothing until Publish re-pins. Falls back to the live row when the
+        pinned tree carries no container (a narrow pre-0026 snapshot, or a
+        re-pin race). ``None`` when the template has no container at all.
         """
         pinned_tree = await entity_types_for_version(
             self.db, version_id=run.version_id, template_id=run.template_id
@@ -504,10 +499,11 @@ class ModelExtractionService(LoggerMixin):
         )
         if container is not None:
             return container
+        live_container_id = await self._get_model_container_entity_type_id(run.template_id)
+        if live_container_id is None:
+            return None
         live = await self._entity_types.get_with_fields(live_container_id)
-        if live is None:
-            raise ValueError(f"Model container not found: {live_container_id}")
-        return RunViewEntityType.model_validate(live)
+        return RunViewEntityType.model_validate(live) if live is not None else None
 
     async def _get_child_entity_types(
         self,
@@ -612,7 +608,9 @@ class ModelExtractionService(LoggerMixin):
 
         created: list[ExtractionInstance] = []
         total_children_created = 0
-        container = await self._pinned_container(run, entity_type_id)
+        container = await self._pinned_container(run)
+        if container is None:
+            raise ValueError(f"Model container not found: {entity_type_id}")
         # B-8: unnamed models are labelled with the container's entry noun.
         label_stem = (container.entry_label or DEFAULT_ENTRY_LABEL).title()
 
@@ -626,7 +624,7 @@ class ModelExtractionService(LoggerMixin):
         for idx, model_data in enumerate(models):
             # 1. Reuse or create the model instance (parent). The label comes
             # from the LLM's neutral "name" field — see
-            # ``app/llm/prompts/model_identification.py`` for the contract —
+            # ``app/llm/prompts/entry_identification.py`` for the contract —
             # and that same name is the container's identity. A match reuses
             # the row so reviewer decisions anchored on it stay attached; the
             # per-field guard (``skip_fields_with_human_proposals``) decides

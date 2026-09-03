@@ -208,6 +208,40 @@ describe('buildTemplateTree', () => {
     expect(tree[0].children[0].entryNoun).toBe('algorithm');
   });
 
+  it('carries each section OWN entry_label separately from the inherited group noun', () => {
+    // Entry-group train: a repeating child names its own entries ("validation")
+    // while still repeating per the parent's noun ("algorithm"). Both must be
+    // available — one word cannot play both parts.
+    const tree = buildTemplateTree(
+      [
+        section({
+          id: 'grp',
+          role: 'model_container',
+          cardinality: 'many',
+          entry_label: 'algorithm',
+          sort_order: 1,
+        }),
+        section({
+          id: 'perf',
+          role: 'model_section',
+          parent_entity_type_id: 'grp',
+          cardinality: 'many',
+          entry_label: 'validation',
+          sort_order: 2,
+        }),
+        section({id: 'arms', cardinality: 'many', entry_label: 'arm', sort_order: 3}),
+        section({id: 'plain', sort_order: 4}),
+      ],
+      [],
+    );
+
+    expect(tree[0].ownEntryLabel).toBe('algorithm');
+    expect(tree[0].children[0].entryNoun).toBe('algorithm');
+    expect(tree[0].children[0].ownEntryLabel).toBe('validation');
+    expect(tree[1].ownEntryLabel).toBe('arm');
+    expect(tree[2].ownEntryLabel).toBeNull();
+  });
+
   it('falls back entryNoun to "model" when entry_label is null or absent', () => {
     const tree = buildTemplateTree(
       [

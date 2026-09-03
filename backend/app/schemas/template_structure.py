@@ -285,9 +285,10 @@ class SectionCreateRequest(BaseModel):
     frontend's read-then-write race. The ``ck_role_parent`` validator
     below mirrors the DB CHECK of the same name; parent OWNERSHIP
     (parent belongs to THIS template) is the service's BOLA job.
-    ``entry_label`` is the repeating group's entry noun (B-8, D3):
-    container-only, defaulting to ``'model'``; containers always repeat
-    (``cardinality='many'`` is enforced, never chosen).
+    ``entry_label`` is a repeating section's entry noun (B-8, D3 —
+    unlocked from the container in the entry-group train): legal on any
+    ``cardinality='many'`` section; the container defaults it to
+    ``'model'`` and always repeats (``'many'`` is enforced, never chosen).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -314,22 +315,26 @@ class SectionCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _enforce_container_rules(self) -> "SectionCreateRequest":
-        """D3: the entry noun exists only on the repeating group, and a
-        group always repeats — cardinality is forced to 'many' at create
-        time; an omitted/blank noun collapses to the 'model' default."""
-        if self.role != "model_container":
-            if self.entry_label is not None:
-                raise ValueError("entry_label is only valid for model_container sections")
+        """D3: the entry noun exists only on a repeating section. A group
+        always repeats — cardinality is forced to 'many' at create time —
+        and an omitted/blank noun collapses to its 'model' default; any
+        other repeating section keeps the noun it was given (blank means
+        none), and a section that does not repeat cannot carry one."""
+        if self.role == "model_container":
+            if self.cardinality != "many":
+                raise ValueError("model_container cardinality must be 'many'")
+            self.entry_label = (self.entry_label or "").strip() or "model"
             return self
-        if self.cardinality != "many":
-            raise ValueError("model_container cardinality must be 'many'")
-        self.entry_label = (self.entry_label or "").strip() or "model"
+        if self.entry_label is not None:
+            if self.cardinality != "many":
+                raise ValueError("entry_label is only valid for a repeating section")
+            self.entry_label = self.entry_label.strip() or None
         return self
 
 
 class SectionUpdateRequest(BaseModel):
     """Partial section update: ``label`` (any role), ``entry_label``
-    (repeating groups only) and ``cardinality`` (per-model sections
+    (repeating sections only) and ``cardinality`` (per-model sections
     only) — the role rules live in the service, which owns the row
     (B-8, D5). At least one field must be provided, and explicit nulls
     are rejected (omit instead) so a smuggled ``{"label": null}`` can
@@ -369,7 +374,7 @@ class SectionRead(BaseModel):
     cardinality: SectionCardinality
     role: SectionRole
     parent_entity_type_id: UUID | None = None
-    # Group entry noun (B-8): non-null only on model_container rows.
+    # Entry noun (B-8): set on repeating sections; containers default 'model'.
     entry_label: str | None = None
     sort_order: int
     is_required: bool

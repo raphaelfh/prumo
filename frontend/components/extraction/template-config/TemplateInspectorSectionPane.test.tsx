@@ -7,16 +7,19 @@
  * without it a hand-built repeating section is a dead end.
  */
 
-import {render, screen} from '@testing-library/react';
+import {render, screen, waitFor} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {describe, expect, it, vi} from 'vitest';
 
 import {SectionInspectorForm} from './TemplateInspectorSectionPane';
 import type {GridField, GridSection} from './templateTree';
 
 const mutateAsync = vi.fn().mockResolvedValue({});
+/** The section PATCH the pane fires on blur/Enter (callbacks-style `mutate`). */
+const mutateSection = vi.fn();
 
 vi.mock('@/hooks/extraction/useUpdateTemplateSection', () => ({
-  useUpdateTemplateSection: () => ({mutateAsync, isPending: false}),
+  useUpdateTemplateSection: () => ({mutate: mutateSection, mutateAsync, isPending: false}),
 }));
 vi.mock('@/hooks/extraction/useUpdateTemplateField', () => ({
   useUpdateTemplateField: () => ({mutateAsync, isPending: false}),
@@ -90,5 +93,47 @@ describe('entry-key selector', () => {
   it('is absent on a section that does not repeat', () => {
     renderPane(section({cardinality: 'one'}));
     expect(screen.queryByLabelText('Entry key')).not.toBeInTheDocument();
+  });
+});
+
+describe('entry label on every repeating section (entry-group train)', () => {
+  // The noun was container-only (B-8 D3); every repeating section now names
+  // its own entries, so a per-model validation table or a repeating root can
+  // say what one of its entries is called.
+  it('shows the section OWN noun on a repeating groupChild, not the parent group noun', () => {
+    renderPane(section({ownEntryLabel: 'validation', entryNoun: 'model'}));
+    const input = screen.getByLabelText('Entry label') as HTMLInputElement;
+    expect(input.value).toBe('validation');
+  });
+
+  it('shows an empty input with the fallback noun as placeholder while unset', () => {
+    renderPane(section({ownEntryLabel: null, entryNoun: 'model'}));
+    const input = screen.getByLabelText('Entry label') as HTMLInputElement;
+    expect(input.value).toBe('');
+    expect(input.placeholder).toBe('entry');
+  });
+
+  it('commits the noun through the section PATCH on blur', async () => {
+    const user = userEvent.setup();
+    renderPane(section({ownEntryLabel: null}));
+    const input = screen.getByLabelText('Entry label');
+    await user.type(input, 'validation');
+    await user.tab();
+    await waitFor(() =>
+      expect(mutateSection).toHaveBeenCalledWith(
+        {sectionId: 'sec-1', changes: {entry_label: 'validation'}},
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('is offered on a repeating root section too', () => {
+    renderPane(section({kind: 'root', ownEntryLabel: 'arm', cardinality: 'many'}));
+    expect((screen.getByLabelText('Entry label') as HTMLInputElement).value).toBe('arm');
+  });
+
+  it('is absent on a section that does not repeat', () => {
+    renderPane(section({cardinality: 'one'}));
+    expect(screen.queryByLabelText('Entry label')).not.toBeInTheDocument();
   });
 });

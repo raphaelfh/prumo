@@ -190,7 +190,7 @@ def test_dict_input_rejects_attribute_names() -> None:
         ),
         (
             [{"name": "sec", "label": "S", "entry_label": "thing"}],
-            "entry_label is only allowed on a group",
+            "entry_label is only allowed on a repeating section",
         ),
     ],
 )
@@ -278,3 +278,17 @@ def test_portable_field_entity_key_defaults_false() -> None:
     """A bundle authored before 0059 imports as an unkeyed template."""
     doc = PortableField.model_validate({"name": "legacy_field", "label": "Legacy", "type": "text"})
     assert doc.is_entity_key is False
+
+
+def test_entry_label_rides_a_repeating_non_group_section() -> None:
+    """Every repeating section is an entry group, so its noun must survive the
+    file — a bundle that dropped it would re-import with the fallback noun."""
+    doc = PortableTemplate.model_validate(
+        _doc(
+            sections=[
+                {"name": "arms", "label": "Study arms", "repeats": True, "entry_label": "arm"}
+            ]
+        )
+    )
+    assert doc.sections[0].entry_label == "arm"
+    assert doc.sections[0].repeats is True

@@ -6570,7 +6570,7 @@
       },
       "PortableSection": {
         "additionalProperties": false,
-        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` \u21d2 ``model_container``; nested \u21d2\n``model_section``; otherwise ``study_section``. ``entry_label`` is only\nlegal on a group; the import defaults it to ``\"model\"`` there.",
+        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` \u21d2 ``model_container``; nested \u21d2\n``model_section``; otherwise ``study_section``. ``entry_label`` is legal\non any repeating section (a group, or ``repeats``); the import defaults\nit to ``\"model\"`` on a group and leaves it unset elsewhere.",
         "properties": {
           "description": {
             "anyOf": [
@@ -8037,7 +8037,7 @@
       },
       "SectionCreateRequest": {
         "additionalProperties": false,
-        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is the repeating group's entry noun (B-8, D3):\ncontainer-only, defaulting to ``'model'``; containers always repeat\n(``cardinality='many'`` is enforced, never chosen).",
+        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is a repeating section's entry noun (B-8, D3 \u2014\nunlocked from the container in the entry-group train): legal on any\n``cardinality='many'`` section; the container defaults it to\n``'model'`` and always repeats (``'many'`` is enforced, never chosen).",
         "properties": {
           "cardinality": {
             "enum": [
@@ -8413,7 +8413,7 @@
       },
       "SectionUpdateRequest": {
         "additionalProperties": false,
-        "description": "Partial section update: ``label`` (any role), ``entry_label``\n(repeating groups only) and ``cardinality`` (per-model sections\nonly) \u2014 the role rules live in the service, which owns the row\n(B-8, D5). At least one field must be provided, and explicit nulls\nare rejected (omit instead) so a smuggled ``{\"label\": null}`` can\nnever blank a column. Replaces the label-only SectionRenameRequest;\nthe pre-B-8 label-only body stays valid.",
+        "description": "Partial section update: ``label`` (any role), ``entry_label``\n(repeating sections only) and ``cardinality`` (per-model sections\nonly) \u2014 the role rules live in the service, which owns the row\n(B-8, D5). At least one field must be provided, and explicit nulls\nare rejected (omit instead) so a smuggled ``{\"label\": null}`` can\nnever blank a column. Replaces the label-only SectionRenameRequest;\nthe pre-B-8 label-only body stays valid.",
         "properties": {
           "cardinality": {
             "anyOf": [

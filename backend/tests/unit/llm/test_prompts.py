@@ -3,7 +3,7 @@
 from app.llm.prompts import (
     EntryScope,
     content_version,
-    model_identification,
+    entry_identification,
     quality_assessment,
     render_entry_scope_section,
     render_memory_section,
@@ -19,7 +19,7 @@ def test_content_version_is_stable_and_short():
 
 
 def test_all_prompt_modules_declare_name_and_version():
-    for module in (section_extraction, quality_assessment, model_identification):
+    for module in (section_extraction, quality_assessment, entry_identification):
         assert isinstance(module.NAME, str) and module.NAME
         assert isinstance(module.VERSION, str) and len(module.VERSION) == 12
 
@@ -101,28 +101,28 @@ def test_general_instructions_absent_when_none():
     assert "General instructions" not in qa
 
 
-def test_model_identification_render_and_output_model():
-    prompt = model_identification.render(
-        container_label="prediction models", article_text="§" * 20_000
+def _entry_prompt(**kwargs):
+    return entry_identification.render(
+        group_label="prediction models", entry_label="model", key_label="Model name", **kwargs
     )
+
+
+def test_entry_identification_render_and_output_model():
+    prompt = _entry_prompt(article_text="§" * 20_000)
     assert "prediction models" in prompt
     assert prompt.count("§") == 20_000  # no truncation
     assert "General instructions" not in prompt
 
 
-def test_model_identification_general_instructions_block_leads():
+def test_entry_identification_general_instructions_block_leads():
     """Phase-A gap (B-2): the template-level ✨ instruction must reach the
-    model-identification prompt like the other two prompt pairs."""
-    prompt = model_identification.render(
-        container_label="prediction models",
-        article_text="text",
-        general_instructions="Focus on cardiac models.",
-    )
+    identification prompt like the other two prompt pairs."""
+    prompt = _entry_prompt(article_text="text", general_instructions="Focus on cardiac models.")
     assert prompt.startswith("General instructions for this review:\nFocus on cardiac models.\n\n")
-    output = model_identification.ModelIdentificationOutput.model_validate(
-        {"models": [{"name": "Cox model"}]}
+    output = entry_identification.EntryIdentificationOutput.model_validate(
+        {"entries": [{"name": "Cox model"}]}
     )
-    assert output.models[0].name == "Cox model"
+    assert output.entries[0].name == "Cox model"
 
 
 # ---------------------------------------------------------------------------

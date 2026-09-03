@@ -232,17 +232,34 @@ class TestCreateRequestContainerRules:
         req = make_create(role="model_container", cardinality="many", entry_label=" algorithm ")
         assert req.entry_label == "algorithm"
 
-    def test_entry_label_on_study_section_is_rejected(self) -> None:
+    def test_entry_label_on_a_non_repeating_study_section_is_rejected(self) -> None:
         with pytest.raises(ValidationError, match="entry_label"):
             make_create(entry_label="model")
 
-    def test_entry_label_on_model_section_is_rejected(self) -> None:
+    def test_entry_label_on_a_non_repeating_model_section_is_rejected(self) -> None:
         with pytest.raises(ValidationError, match="entry_label"):
             make_create(
                 role="model_section",
                 parent_entity_type_id=str(uuid.uuid4()),
                 entry_label="model",
             )
+
+    def test_entry_label_on_a_repeating_section_is_kept_trimmed(self) -> None:
+        """Every repeating section is an entry group: the noun is legal on
+        any ``cardinality='many'`` section, not only the container."""
+        req = make_create(cardinality="many", entry_label=" predictor ")
+        assert req.entry_label == "predictor"
+        child = make_create(
+            role="model_section",
+            parent_entity_type_id=str(uuid.uuid4()),
+            cardinality="many",
+            entry_label="validation",
+        )
+        assert child.entry_label == "validation"
+
+    def test_blank_entry_label_on_a_repeating_section_means_none(self) -> None:
+        """Only the container has a 'model' default; elsewhere blank is unset."""
+        assert make_create(cardinality="many", entry_label="   ").entry_label is None
 
 
 # =================== SCHEMA-LEVEL UPDATE RULES (D5) ===================
@@ -520,13 +537,38 @@ async def test_update_label_and_entry_label_together(db_session: AsyncSession) -
 
 
 @pytest.mark.asyncio
-async def test_update_entry_label_on_non_container_refused(db_session: AsyncSession) -> None:
-    """D5: the entry noun exists only on the repeating group."""
+async def test_update_entry_label_on_non_repeating_section_refused(
+    db_session: AsyncSession,
+) -> None:
+    """D5: the entry noun names one entry of a repeating section — a section
+    that does not repeat has nothing for it to name."""
     template_id = await _fresh_clone(db_session)
     study_id = await _section_id_by_role(db_session, template_id, "study_section")
 
     with pytest.raises(SectionEntryLabelRoleError):
         await _update(db_session, template_id, study_id, SectionUpdateRequest(entry_label="model"))
+
+
+@pytest.mark.asyncio
+async def test_update_entry_label_on_repeating_study_section_accepted(
+    db_session: AsyncSession,
+) -> None:
+    """Unlocked from the container: any ``cardinality='many'`` section takes a noun."""
+    template_id = await _fresh_clone(db_session)
+    created = await create_section(
+        db_session,
+        project_id=SEED.secondary_project,
+        template_id=template_id,
+        payload=make_create(name="arms", label="Study arms", cardinality="many"),
+    )
+    assert created.entry_label is None
+
+    read = await _update(
+        db_session, template_id, created.id, SectionUpdateRequest(entry_label="arm")
+    )
+    assert read.entry_label == "arm"
+    row = await db_session.get(ExtractionEntityType, created.id)
+    assert row is not None and row.entry_label == "arm"
 
 
 @pytest.mark.asyncio

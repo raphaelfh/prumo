@@ -92,10 +92,12 @@ class SectionInUseError(Exception):
 
 
 class SectionEntryLabelRoleError(Exception):
-    """``entry_label`` is only editable on a repeating group.
+    """``entry_label`` is only editable on a repeating section.
 
-    422-class: deterministic role rule (B-8, D5) — the entry noun lives
-    on the model_container row and nowhere else; no retry can succeed."""
+    422-class: deterministic rule (B-8, D5; unlocked from the container in
+    the entry-group train) — the entry noun names one entry of a
+    ``cardinality='many'`` section, so a section that does not repeat has
+    nothing for it to name; no retry can succeed."""
 
 
 class SectionCardinalityRoleError(Exception):
@@ -216,7 +218,7 @@ async def update_section(
 ) -> SectionRead:
     """Partial section update (label / entry_label / cardinality).
 
-    Role rules (B-8, D5): ``entry_label`` only on model_container
+    Role rules (B-8, D5): ``entry_label`` only on a repeating section
     (SectionEntryLabelRoleError); ``cardinality`` only on model_section
     (SectionCardinalityRoleError); many -> one refused while any parent
     instance holds 2+ entries (SectionCardinalityInUseError) — the run
@@ -228,10 +230,8 @@ async def update_section(
     await owned_template(db, project_id=project_id, template_id=template_id)
     section = await owned_section(db, template_id=template_id, section_id=section_id)
 
-    if payload.entry_label is not None and section.role != "model_container":
-        raise SectionEntryLabelRoleError(
-            "entry_label can only be edited on a repeating group (model container)"
-        )
+    if payload.entry_label is not None and section.cardinality != "many":
+        raise SectionEntryLabelRoleError("entry_label can only be edited on a repeating section")
     if payload.cardinality is not None and section.role != "model_section":
         raise SectionCardinalityRoleError("cardinality can only be edited on a per-model section")
     if (

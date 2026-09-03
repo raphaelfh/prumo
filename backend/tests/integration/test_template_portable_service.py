@@ -160,7 +160,7 @@ async def test_import_derives_roles_and_template_wide_sort_order(
             "kind": "extraction",
             "name": "Grouped",
             "sections": [
-                {"name": "root", "label": "Root", "repeats": True},
+                {"name": "root", "label": "Root", "repeats": True, "entry_label": "arm"},
                 {
                     "name": "grp",
                     "label": "G",
@@ -189,6 +189,8 @@ async def test_import_derives_roles_and_template_wide_sort_order(
         "many",
         False,
     )
+    # The noun rides every repeating section, not only the group (entry-group train).
+    assert by_name["root"].entry_label == "arm"
     assert (by_name["grp"].role, by_name["grp"].cardinality, by_name["grp"].entry_label) == (
         "model_container",
         "many",

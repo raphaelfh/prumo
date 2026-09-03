@@ -189,10 +189,13 @@ export const templateConfig = {
   dragLockedPending: 'Wait for the new field to finish saving',
   dragPickedUp: 'Picked up {{field}}',
   entryLabelHint:
-    'What reviewers call one entry (e.g. model, arm, algorithm). Blank defaults to "model".',
+    'What reviewers call one entry of this section (e.g. model, arm, validation). Blank keeps the default shown as the placeholder.',
   entryLabelLabel: 'Entry label',
   entryLabelMax50: 'Entry label must have at most 50 characters',
   entryLabelPlaceholder: 'model',
+  // A repeating section that is not the group has no server default: the
+  // prompts and the run form fall back to this noun until one is set.
+  entryLabelPlaceholderEntry: 'entry',
   errors_cardinalityInUse:
     'This section cannot be set to repeat once: it already has multiple entries under at least one group entry. Remove the extra entries first.',
   errors_deleteSectionInUse:
