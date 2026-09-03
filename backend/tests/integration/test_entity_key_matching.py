@@ -1,6 +1,8 @@
 """Matching a finding against the instances that already exist.
 
-Reads instances only — never a reviewer-scoped value (spec §5.1.1).
+Reads instances only — never a reviewer-scoped value (spec §5.1.1). Which
+field declares the key is a pure read of the pinned tree (``key_field_of``,
+covered in ``tests/unit/test_entity_key.py``); this file is the database half.
 """
 
 from __future__ import annotations
@@ -13,10 +15,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.entity_key import (
-    MissingEntityKeyError,
     existing_keys,
     match_or_none,
-    resolve_key_field,
+    resolve_instance,
     stamp,
 )
 from tests.integration.conftest import SEED
@@ -77,28 +78,58 @@ async def _instance(db: AsyncSession, entity_type_id: UUID, key_value: str | Non
     return instance_id
 
 
-async def test_resolve_key_field_finds_the_declared_key(db_session: AsyncSession) -> None:
-    entity_type_id, field_id = await _repeating_group(db_session, with_key=True)
-    field = await resolve_key_field(db_session, entity_type_id)
-    assert field.id == field_id
+async def test_resolve_instance_creates_and_stamps_a_new_entry(db_session: AsyncSession) -> None:
+    """Identity is materialized at creation, alongside whatever the caller
+    records about how the entry was produced."""
+    entity_type_id, _ = await _repeating_group(db_session, with_key=True)
+    instance, created = await resolve_instance(
+        db_session,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        template_id=SEED.primary_template,
+        entity_type_id=entity_type_id,
+        parent_instance_id=None,
+        key_value="  Internal  validation ",
+        sort_order=3,
+        metadata={"ai_extracted": True, "ai_run_id": "r1"},
+        created_by=SEED.primary_profile,
+    )
+    assert created is True
+    assert instance.metadata_["entity_key"] == "internal validation"
+    assert instance.metadata_["ai_run_id"] == "r1"
+    assert instance.label == "Internal  validation"
+    assert instance.sort_order == 3
+    assert await existing_keys(
+        db_session, article_id=SEED.primary_article, entity_type_id=entity_type_id
+    ) == {"internal validation": instance.id}
 
 
-async def test_resolve_key_field_refuses_an_undeclared_group(db_session: AsyncSession) -> None:
-    """The refusal is what stops a silent duplicate on an unkeyed template."""
-    entity_type_id, _ = await _repeating_group(db_session, with_key=False)
-    with pytest.raises(MissingEntityKeyError):
-        await resolve_key_field(db_session, entity_type_id)
-
-
-async def test_refusal_names_the_section_as_the_template_editor_shows_it(
-    db_session: AsyncSession,
-) -> None:
-    """A UUID does not tell the manager which section to open."""
-    entity_type_id, _ = await _repeating_group(db_session, with_key=False)
-    with pytest.raises(MissingEntityKeyError) as excinfo:
-        await resolve_key_field(db_session, entity_type_id)
-    assert "'Probe Group'" in str(excinfo.value)
-    assert str(entity_type_id) not in str(excinfo.value)
+async def test_resolve_instance_reuses_the_entry_it_already_holds(db_session: AsyncSession) -> None:
+    """The re-run names the same entity in a different spelling — same row."""
+    entity_type_id, _ = await _repeating_group(db_session, with_key=True)
+    common = {
+        "project_id": SEED.primary_project,
+        "article_id": SEED.primary_article,
+        "template_id": SEED.primary_template,
+        "entity_type_id": entity_type_id,
+        "parent_instance_id": None,
+        "created_by": SEED.primary_profile,
+    }
+    first, _ = await resolve_instance(db_session, key_value="XGBoost", sort_order=0, **common)
+    second, created = await resolve_instance(
+        db_session, key_value="  xgboost ", sort_order=0, metadata={"ai_run_id": "r2"}, **common
+    )
+    assert created is False
+    assert second.id == first.id
+    assert second.metadata_.get("ai_run_id") is None, "reuse must not rewrite the row's record"
+    assert (
+        len(
+            await existing_keys(
+                db_session, article_id=SEED.primary_article, entity_type_id=entity_type_id
+            )
+        )
+        == 1
+    )
 
 
 async def test_match_finds_the_instance_regardless_of_case_and_spacing(

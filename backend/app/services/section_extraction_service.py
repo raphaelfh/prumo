@@ -23,6 +23,7 @@ from app.infrastructure.storage import StorageAdapter
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
 from app.llm.extractor import LlmUsage, extract_structured
+from app.llm.prompts import EntryScope
 from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
@@ -51,6 +52,7 @@ from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.engine_credentials import EngineCredentials, rekey_for_adopted_engine
+from app.services.entry_group_extraction import extract_into_instances
 from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
@@ -366,34 +368,21 @@ class SectionExtractionService(LoggerMixin):
                     raise ValueError(f"Entity type not found: {entity_type_id}")
             phase_durations_ms["fetch_entity_type"] = (perf_counter() - phase_start) * 1000
 
-            # 5. Run LLM extraction (with token tracking)
+            # 5-7. Extract → verify → record, once per instance the section
+            # resolves to: one for a singleton, one per identified entry for a
+            # repeating group (see ``extract_into_instances``).
             phase_start = perf_counter()
-            prompt_context = await resolve_run_prompt_context(self.db, run)
-            extracted_data, llm_usage = await self._extract_with_llm(
-                pdf_text=pdf_text,
-                entity_type=entity_type,
-                fields_override=fields_override,
-                prompt_context=prompt_context,
-                field_filter=await self._field_filter(run),
-            )
-            # 6. Verify pass (mode + kind checks inside the glue) + snapshot.
-            verdicts, llm_usage = await self._maybe_verify(
-                run.id, entity_type_id, run.kind, pdf_text, extracted_data, llm_usage
-            )
-            phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
-
-            # 7. Create suggestions in database
-            phase_start = perf_counter()
-            suggestions_created = await self._create_suggestions(
-                project_id=project_id,
-                article_id=article_id,
-                entity_type_id=entity_type_id,
-                parent_instance_id=parent_instance_id,
-                extracted_data=extracted_data,
+            outcome = await extract_into_instances(
+                self,
                 run=run,
-                verdicts=verdicts,
+                entity_type=entity_type,
+                fields=fields_override,
+                parent_instance_id=parent_instance_id,
+                pdf_text=pdf_text,
+                prompt_context=await resolve_run_prompt_context(self.db, run),
             )
-            phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
+            suggestions_created, llm_usage = outcome.suggestions_created, outcome.usage
+            phase_durations_ms["extract_and_record"] = (perf_counter() - phase_start) * 1000
 
             # Run stays in EXTRACT. The HITL session service's
             # ``_reuse_or_create_run`` returns this run on next session
@@ -419,7 +408,7 @@ class SectionExtractionService(LoggerMixin):
                         "tokens_completion": llm_usage.completion_tokens,
                         "tokens_total": llm_usage.total_tokens,
                         "duration_ms": duration,
-                        "fields_extracted": len(extracted_data) if extracted_data else 0,
+                        "fields_extracted": len(outcome.extracted_data),
                         "phase_durations_ms": phase_durations_ms,
                     },
                 )
@@ -672,64 +661,24 @@ class SectionExtractionService(LoggerMixin):
         if pinned_fields is None:
             return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
 
-        instance = await self._find_instance_for_entity_type(
-            article_id=run.article_id,
-            entity_type_id=entity_type.id,
-        )
-
-        # Always pass an override (never mutate a fields collection — the
-        # live ORM one cascades delete-orphan; see the FK regression test).
-        fields_override: list[Any] | None = pinned_fields
-        original_fields = list(pinned_fields)
-        if skip_fields_with_human_proposals and instance is not None and original_fields:
-            field_ids = [f.id for f in original_fields]
-            # Protect a field from the AI re-run if the human has already
-            # settled it on EITHER track: a ``human`` proposal (the QA
-            # surface still writes these) OR a committed reviewer decision
-            # (the collapsed ``extract`` lifecycle routes human extraction
-            # values to per-reviewer ``ReviewerDecision`` rows, so the
-            # proposal probe alone would miss them — see the blind-review
-            # write gate in ``extraction_proposal_service``).
-            human_fields = await self._fields_with_recent_human_proposal(
-                run_id=run.id,
-                instance_id=instance.id,
-                field_ids=field_ids,
-            )
-            human_fields |= await self._fields_with_human_decision(
-                run_id=run.id,
-                instance_id=instance.id,
-                field_ids=field_ids,
-            )
-            filtered = [f for f in original_fields if f.id not in human_fields]
-            if not filtered:
-                return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
-            fields_override = filtered
-
-        extracted_data, llm_usage = await self._extract_with_llm(
-            pdf_text=pdf_text,
+        outcome = await extract_into_instances(
+            self,
+            run=run,
             entity_type=entity_type,
+            fields=pinned_fields,
+            parent_instance_id=None,
+            pdf_text=pdf_text,
             kind=kind,
             framework=framework,
-            fields_override=fields_override,
             prompt_context=prompt_context,
-            field_filter=await self._field_filter(run),
+            skip_fields_with_human_proposals=skip_fields_with_human_proposals,
         )
-        verdicts, llm_usage = await self._maybe_verify(
-            run.id, entity_type.id, kind, pdf_text, extracted_data, llm_usage
-        )
-        suggestions_created = await self._create_suggestions(
-            project_id=run.project_id,
-            article_id=run.article_id,
-            entity_type_id=entity_type.id,
-            parent_instance_id=None,
-            extracted_data=extracted_data,
-            run=run,
-            verdicts=verdicts,
-        )
+        if outcome.skipped:
+            return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
         return {
-            "suggestions_created": suggestions_created,
-            "tokens_total": llm_usage.total_tokens,
-            "usage": llm_usage,
+            "suggestions_created": outcome.suggestions_created,
+            "tokens_total": outcome.usage.total_tokens,
+            "usage": outcome.usage,
         }
 
     async def _pinned_entity_types(self, run: ExtractionRun) -> list[Any]:
@@ -785,9 +734,9 @@ class SectionExtractionService(LoggerMixin):
         instances = await self._instances.get_by_article(article_id, entity_type_id)
         if not instances:
             return None
-        # QA / top-level extraction is 1:1 per (article, entity_type) — return
-        # the first match. ``_create_suggestions`` will auto-create one if it
-        # cannot find any.
+        # A singleton section is 1:1 per (article, entity_type) — the first
+        # match IS the instance. Repeating groups never reach this: they
+        # resolve one instance per entry (``extract_into_instances``).
         return instances[0]
 
     async def _fields_with_recent_human_proposal(
@@ -1156,40 +1105,26 @@ class SectionExtractionService(LoggerMixin):
         if pinned_fields is None:
             return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
 
-        # Run extraction with memory context
+        # Extract → verify → record, per instance (``extract_into_instances``).
         phase_start = perf_counter()
-        extracted_data, llm_usage = await self._extract_with_llm(
-            pdf_text=pdf_text,
-            entity_type=entity_type,
-            memory_context=memory_history,
-            fields_override=pinned_fields,
-            prompt_context=prompt_context,
-            field_filter=await self._field_filter(run),
-        )
-        verdicts, llm_usage = await self._maybe_verify(
-            run.id, entity_type.id, run.kind, pdf_text, extracted_data, llm_usage
-        )
-        section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
-
-        # Create suggestions
-        phase_start = perf_counter()
-        suggestions_created = await self._create_suggestions(
-            project_id=run.project_id,
-            article_id=run.article_id,
-            entity_type_id=entity_type.id,
-            parent_instance_id=parent_instance_id,
-            extracted_data=extracted_data,
+        outcome = await extract_into_instances(
+            self,
             run=run,
-            verdicts=verdicts,
+            entity_type=entity_type,
+            fields=pinned_fields,
+            parent_instance_id=parent_instance_id,
+            pdf_text=pdf_text,
+            memory_context=memory_history,
+            prompt_context=prompt_context,
         )
-        section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
+        section_phase_durations_ms["extract_and_record"] = (perf_counter() - phase_start) * 1000
 
         # Generate memory summary (max 200 chars)
-        summary = self._generate_extraction_summary(entity_type, extracted_data)
+        summary = self._generate_extraction_summary(entity_type, outcome.extracted_data)
 
         return {
-            "suggestions_created": suggestions_created,
-            "tokens_total": llm_usage.total_tokens,
+            "suggestions_created": outcome.suggestions_created,
+            "tokens_total": outcome.usage.total_tokens,
             "summary": summary,
             "phase_durations_ms": section_phase_durations_ms,
         }
@@ -1316,6 +1251,7 @@ class SectionExtractionService(LoggerMixin):
         fields_override: list[Any] | None = None,
         prompt_context: RunPromptContext | None = None,
         field_filter: LlmFieldFilter = LlmFieldFilter(),
+        entry_scope: EntryScope | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
         """Run extraction using the typed LLM call layer.
 
@@ -1328,7 +1264,8 @@ class SectionExtractionService(LoggerMixin):
         assessor-owned coordinates and out-of-scope sections — subtracted
         HERE, the one seam every extraction path funnels through (including
         the re-pin fallback that carries no override), so neither reaches
-        the model.
+        the model. ``entry_scope`` names the entry of a repeating group this
+        call is about, so the prompt asks for ONE entry's values.
         Returns ({field_name: {value, confidence, reasoning, evidence}},
         usage) — oversized templates are split into multiple calls and
         merged transparently. Side effect: stashes the section-snapshot
@@ -1349,6 +1286,7 @@ class SectionExtractionService(LoggerMixin):
                 article_marker=ARTICLE_MARKDOWN_MARKER,
                 memory_context=memory_context,
                 prompt_context=prompt_context,
+                entry_scope=entry_scope,
             )
         )
 
@@ -1460,10 +1398,13 @@ class SectionExtractionService(LoggerMixin):
         extracted_data: dict[str, Any],
         run: ExtractionRun,
         verdicts: dict[str, VerifyVerdict] | None = None,
+        instance: ExtractionInstance | None = None,
     ) -> int:
         """Create extraction suggestions in database via repository.
 
-        Auto-creates the instance when missing; links proposals to the run.
+        ``instance`` is the row the proposals belong to — a repeating group's
+        entry, resolved by the caller. ``None`` means the section's singleton,
+        auto-created when missing. Links proposals to the run.
         As the single choke-point for AI proposals it also persists the
         per-section ``provenance`` snapshot (built post-verify by
         ``_maybe_verify``) keyed by ``entity_type_id``. ``verdicts`` are the
@@ -1509,48 +1450,9 @@ class SectionExtractionService(LoggerMixin):
         for _vk in set(verdicts or ()) - set(field_map):
             self.logger.warning("verify_verdict_unmatched", trace_id=self.trace_id, field=_vk)
 
-        # Fetch existing instance
-        instances = await self._instances.get_by_article(article_id, entity_type_id)
-
-        # If parent_instance_id exists, filter by it too
-        if instances and parent_instance_id:
-            instances = [
-                inst for inst in instances if inst.parent_instance_id == parent_instance_id
-            ]
-
-        if instances:
-            instance = instances[0]
-            self.logger.debug(
-                "using_existing_instance",
-                trace_id=self.trace_id,
-                instance_id=str(instance.id),
-            )
-        else:
-            # Auto-create. Re-verified here too: last line before a foreign FK.
-            if parent_instance_id and not await self._instances.get_on_run(parent_instance_id, run):
-                raise ValueError(f"Parent instance not found: {parent_instance_id}")
-            new_instance = ExtractionInstance(
-                project_id=project_id,
-                article_id=article_id,
-                template_id=run.template_id,
-                entity_type_id=entity_type_id,
-                parent_instance_id=parent_instance_id,
-                label=entity_type.label if hasattr(entity_type, "label") else entity_type.name,
-                sort_order=entity_type.sort_order if hasattr(entity_type, "sort_order") else 0,
-                metadata_={
-                    "ai_created": True,
-                    "ai_run_id": str(run.id),
-                },
-                created_by=UUID(self.user_id),
-            )
-
-            instance = await self._instances.create(new_instance)
-
-            self.logger.info(
-                "instance_auto_created",
-                trace_id=self.trace_id,
-                instance_id=str(instance.id),
-                entity_type_id=str(entity_type_id),
+        if instance is None:
+            instance = await self._singleton_instance(
+                project_id, article_id, entity_type_id, entity_type, parent_instance_id, run
             )
 
         # Blocks were fetched once per run by _assemble_prompt_text; reuse them here
@@ -1747,6 +1649,50 @@ class SectionExtractionService(LoggerMixin):
             await self._runs.merge_provenance_section(run.id, entity_type_id, self._run_provenance)
 
         return count
+
+    async def _singleton_instance(
+        self,
+        project_id: UUID,
+        article_id: UUID,
+        entity_type_id: UUID,
+        entity_type: Any,
+        parent_instance_id: UUID | None,
+        run: ExtractionRun,
+    ) -> ExtractionInstance:
+        """The one instance a non-repeating section has at its coordinate,
+        auto-created when missing. Repeating groups never reach this — they
+        resolve one instance per entry (``entry_group_extraction``)."""
+        instances = await self._instances.get_by_article(article_id, entity_type_id)
+        if parent_instance_id:
+            instances = [i for i in instances if i.parent_instance_id == parent_instance_id]
+        if instances:
+            self.logger.debug(
+                "using_existing_instance", trace_id=self.trace_id, instance_id=str(instances[0].id)
+            )
+            return instances[0]
+        # Auto-create. Re-verified here too: last line before a foreign FK.
+        if parent_instance_id and not await self._instances.get_on_run(parent_instance_id, run):
+            raise ValueError(f"Parent instance not found: {parent_instance_id}")
+        instance = await self._instances.create(
+            ExtractionInstance(
+                project_id=project_id,
+                article_id=article_id,
+                template_id=run.template_id,
+                entity_type_id=entity_type_id,
+                parent_instance_id=parent_instance_id,
+                label=entity_type.label if hasattr(entity_type, "label") else entity_type.name,
+                sort_order=entity_type.sort_order if hasattr(entity_type, "sort_order") else 0,
+                metadata_={"ai_created": True, "ai_run_id": str(run.id)},
+                created_by=UUID(self.user_id),
+            )
+        )
+        self.logger.info(
+            "instance_auto_created",
+            trace_id=self.trace_id,
+            instance_id=str(instance.id),
+            entity_type_id=str(entity_type_id),
+        )
+        return instance
 
     async def run_from_request(
         self,

@@ -1,15 +1,14 @@
 """Clone must carry ``is_entity_key`` into the project copy.
 
-``entity_key.resolve_key_field`` reads the flag off the CLONE, since that is
-what a Run resolves against; drop it here and the first AI extraction into a
-repeating section raises ``MissingEntityKeyError``.
+A run's pinned snapshot is built from the CLONE, and ``entity_key.key_field_of``
+reads the flag off that snapshot; drop it here and the first AI extraction
+into a repeating section raises ``MissingEntityKeyError``.
 """
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.entity_key import resolve_key_field
 from tests.integration.conftest import CHARMS_GLOBAL_ID, SEED, clone_charms
 
 
@@ -63,4 +62,13 @@ async def test_clone_preserves_entity_key_flag(db_session: AsyncSession) -> None
         )
     ).scalar()
     assert prediction_models_id is not None, "CHARMS clone must carry prediction_models"
-    assert (await resolve_key_field(db_session, prediction_models_id)).name == "model_name"
+    key_name = (
+        await db_session.execute(
+            text(
+                "SELECT name FROM public.extraction_fields "
+                "WHERE entity_type_id = :et AND is_entity_key"
+            ),
+            {"et": prediction_models_id},
+        )
+    ).scalar_one()
+    assert key_name == "model_name"

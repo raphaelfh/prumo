@@ -222,6 +222,12 @@ class RunViewField(BaseModel):
     # carries no key and the marker was universal in that era, so absent means
     # available. False here would retro-disable it on every frozen snapshot.
     allows_no_information: bool = True
+    # 0059 — the field whose value identifies an entry of a repeating group.
+    # Read off THIS pinned shape by ``entity_key.key_field_of`` (the AI re-run
+    # gate) and by the run form (the add-entry dialog labels its key input
+    # with it). 0067 wrote the live flag into every earlier snapshot, so a
+    # missing key here means false, not "unknown".
+    is_entity_key: bool = False
 
 
 class RunViewEntityType(BaseModel):

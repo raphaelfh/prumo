@@ -7,6 +7,7 @@ every production trace resolves to an exact git version of the prompt.
 """
 
 import hashlib
+from dataclasses import dataclass
 
 
 def content_version(*parts: str) -> str:
@@ -48,3 +49,36 @@ def render_memory_section(memory_context: list[dict[str, str]] | None) -> str:
 
 Use this context to maintain consistency and avoid contradictions with previously extracted data.
 """
+
+
+@dataclass(frozen=True)
+class EntryScope:
+    """Which entry of a repeating group ONE extraction call is about.
+
+    A ``cardinality='many'`` section is extracted once per entry, and the
+    prompt has to say which one or every instance receives the same values.
+    ``key_label``/``key_value`` are the group's declared key
+    (``is_entity_key``) as identified for this entry; ``entry_label`` is the
+    group's noun; ``parent_label`` names the enclosing entry of a nested
+    group (the model a validation block belongs to), ``None`` at top level.
+    """
+
+    entry_label: str
+    key_label: str
+    key_value: str
+    parent_label: str | None = None
+
+
+def render_entry_scope_section(scope: EntryScope | None) -> str:
+    """The per-entry scoping block; empty when the section does not repeat."""
+    if scope is None:
+        return ""
+    lines = [f'- {scope.key_label}: "{scope.key_value}"']
+    if scope.parent_label:
+        lines.append(f'- Belongs to: "{scope.parent_label}"')
+    listed = "\n".join(lines)
+    return (
+        f"\nThis section repeats once per {scope.entry_label}. Extract ONLY the values "
+        f"that describe the {scope.entry_label} identified below; ignore values that "
+        f"describe a different {scope.entry_label}.\n{listed}\n"
+    )

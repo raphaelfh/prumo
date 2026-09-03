@@ -7721,6 +7721,11 @@
             "title": "Id",
             "type": "string"
           },
+          "is_entity_key": {
+            "default": false,
+            "title": "Is Entity Key",
+            "type": "boolean"
+          },
           "is_required": {
             "title": "Is Required",
             "type": "boolean"

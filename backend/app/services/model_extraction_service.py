@@ -37,9 +37,10 @@ from app.repositories import (
     ExtractionTemplateRepository,
     GlobalTemplateRepository,
 )
+from app.schemas.extraction_run import RunViewEntityType
 from app.schemas.llm_target import LlmTarget
 from app.services.engine_credentials import EngineCredentials
-from app.services.entity_key import existing_keys, match_or_none, resolve_key_field, stamp
+from app.services.entity_key import existing_keys, key_field_of, resolve_instance
 from app.services.extraction_prompt_input import build_prompt_input
 from app.services.extraction_snapshot import entity_types_for_version
 from app.services.run_engine_freeze import freeze_run_engine
@@ -485,13 +486,14 @@ class ModelExtractionService(LoggerMixin):
 
         return None
 
-    async def _pinned_entry_noun(self, run: Any) -> str:
-        """Title-cased label stem from the run-PINNED container's
-        ``entry_label`` (B-8) — the fallback name for models the LLM left
-        unnamed. Snapshots predating 0051 carry no key, and a tree may have
-        no container at all; both fall back to ``"model"`` (-> "Model", the
-        legacy stem). The identification prompt does NOT read this — it
-        keeps ``model_entity.label`` (prompt generalization is C-track).
+    async def _pinned_container(self, run: Any, live_container_id: str) -> RunViewEntityType:
+        """The model container as the run is PINNED to it — the one shape both
+        the entry noun (B-8) and the entry key (0059) are read from, so a key
+        moved in an unpublished draft gates nothing until Publish re-pins.
+        Falls back to the live row when the pinned tree carries no container
+        (a narrow pre-0026 snapshot, or a re-pin race), mirroring
+        ``_identify_models``; the live id is the one this service already
+        located, so the fallback cannot miss.
         """
         pinned_tree = await entity_types_for_version(
             self.db, version_id=run.version_id, template_id=run.template_id
@@ -500,8 +502,12 @@ class ModelExtractionService(LoggerMixin):
             (et for et in pinned_tree if et.role == ExtractionEntityRole.MODEL_CONTAINER.value),
             None,
         )
-        entry_label = container.entry_label if container else None
-        return (entry_label or DEFAULT_ENTRY_LABEL).title()
+        if container is not None:
+            return container
+        live = await self._entity_types.get_with_fields(live_container_id)
+        if live is None:
+            raise ValueError(f"Model container not found: {live_container_id}")
+        return RunViewEntityType.model_validate(live)
 
     async def _get_child_entity_types(
         self,
@@ -606,78 +612,54 @@ class ModelExtractionService(LoggerMixin):
 
         created: list[ExtractionInstance] = []
         total_children_created = 0
+        container = await self._pinned_container(run, entity_type_id)
         # B-8: unnamed models are labelled with the container's entry noun.
-        label_stem = await self._pinned_entry_noun(run)
+        label_stem = (container.entry_label or DEFAULT_ENTRY_LABEL).title()
 
         # Refuse rather than duplicate when the container declares no
         # identity: without a key this loop cannot tell a new model from one
         # a previous run already extracted, which is the bug it exists to
-        # fix. Raised before any write so the run fails clean.
-        await resolve_key_field(self.db, UUID(entity_type_id))
+        # fix. Read off the PINNED tree, raised before any write so the run
+        # fails clean.
+        key_field_of(container)
 
         for idx, model_data in enumerate(models):
             # 1. Reuse or create the model instance (parent). The label comes
             # from the LLM's neutral "name" field — see
             # ``app/llm/prompts/model_identification.py`` for the contract —
-            # and that same name is the container's identity.
+            # and that same name is the container's identity. A match reuses
+            # the row so reviewer decisions anchored on it stay attached; the
+            # per-field guard (``skip_fields_with_human_proposals``) decides
+            # what happens to its values, and its children already exist.
+            # Issue #21: no catch-and-continue around the write — a DB error
+            # leaves the asyncpg connection in a failed transaction, so it
+            # must propagate to the outer handler's rollback + fail_run.
             model_label = model_data.get("name") or f"{label_stem} {idx + 1}"
-
-            reused_id = await match_or_none(
+            saved_instance, is_new = await resolve_instance(
                 self.db,
-                article_id=article_id,
-                entity_type_id=UUID(entity_type_id),
-                key_value=model_label,
-            )
-            if reused_id is not None:
-                # A previous run already extracted this entity. Reuse the row
-                # so reviewer decisions anchored on it stay attached; the
-                # per-field guard (``skip_fields_with_human_proposals``)
-                # decides what happens to its values, and its children
-                # already exist.
-                existing = await self._instances.get_by_id(str(reused_id))
-                if existing is not None:
-                    created.append(existing)
-                    self.logger.info(
-                        "model_instance_reused",
-                        trace_id=self.trace_id,
-                        instance_id=str(reused_id),
-                        label=model_label,
-                    )
-                    continue
-
-            model_instance = ExtractionInstance(
                 project_id=project_id,
                 article_id=article_id,
                 template_id=template_id,
                 entity_type_id=UUID(entity_type_id),
-                label=model_label,
+                parent_instance_id=None,
+                key_value=model_label,
                 sort_order=idx,
-                metadata_=stamp(
-                    {
-                        "ai_extracted": True,
-                        "ai_run_id": str(run.id),
-                        "raw_extraction": model_data,
-                    },
-                    model_label,
-                ),
                 created_by=UUID(self.user_id),
+                metadata={
+                    "ai_extracted": True,
+                    "ai_run_id": str(run.id),
+                    "raw_extraction": model_data,
+                },
             )
-
-            # Issue #21: do NOT catch-and-continue here. `create()` calls
-            # `session.flush()` and any DB error puts the asyncpg connection
-            # into a failed-transaction state — every subsequent SQL on the
-            # same session then raises InFailedSQLTransactionError. Letting
-            # the exception propagate gives the outer handler a chance to
-            # rollback() and then mark the run as failed on a clean session.
-            saved_instance = await self._instances.create(model_instance)
             created.append(saved_instance)
-
             self.logger.info(
-                "model_instance_created",
+                "model_instance_created" if is_new else "model_instance_reused",
                 trace_id=self.trace_id,
                 instance_id=str(saved_instance.id),
-                label=model_instance.label,
+                label=model_label,
             )
+            if not is_new:
+                continue
 
             # 2. Criar child instances for este modelo
             children_count = await self._create_child_instances(

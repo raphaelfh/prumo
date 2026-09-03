@@ -35,7 +35,6 @@ from app.main import app
 from app.repositories.extraction_field_reference_repository import (
     ExtractionFieldReferenceRepository,
 )
-from app.services.entity_key import resolve_key_field
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_diff import diff_snapshots
@@ -1359,6 +1358,6 @@ async def test_discard_after_deleting_the_entry_key_field_restores_the_identity(
 
     assert result.kept == []
     assert result.created_fields == 1
-    assert (await resolve_key_field(db_session, section)).id == key_field
+    assert (await entry_key_holders(db_session, template_id))[section] == key_field
     assert await get_config_draft_marker(db_session, template_id) is None
     await _assert_matches_baseline(db_session, template_id=template_id, baseline=baseline)
