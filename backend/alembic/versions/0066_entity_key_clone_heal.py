@@ -1,35 +1,25 @@
 """Re-stamp ``is_entity_key`` on project clones created after 0059.
 
-0059 added the column and backfilled by NAME, which covered every template
-that existed at the time — global catalogue and project clones alike. What it
-could not cover is clones made *afterwards*, because
-``TemplateCloneService`` copied the field row attribute by attribute from a
-hand-written list and ``is_entity_key`` was never added to it.
+0059 backfilled by name every field row that existed at the time, global
+catalogue and project clones alike. Clones made since then lost the flag:
+``TemplateCloneService`` copied fields from a hand-written column list that
+never included ``is_entity_key``. The seed converges only the global
+catalogue, and a Run resolves against the clone, so every project that
+imported CHARMS in that window has repeating sections with no key, and the
+first AI extraction into one raises ``MissingEntityKeyError``. The clone now
+copies every column by default (``CLONED_FIELD_COLUMNS``); this heals the
+rows already written.
 
-So the identity silently stopped travelling into new projects. The seed stamps
-the GLOBAL catalogue and does not run on deploy; the clone is what a Run
-resolves against. The result, for every project that cloned CHARMS since 0059:
-``entity_key.resolve_key_field`` finds no key field on ``prediction_models`` /
-``final_predictors``, and the first AI extraction into a repeating section
-raises ``MissingEntityKeyError`` — "declares no identity field". The affected
-projects cannot fix themselves without a manager hand-marking the field in the
-template editor.
+The UPDATE is 0059's verbatim: matched by name (a clone carries fresh ids),
+idempotent, and yielding to any entity type that already declares a key, so
+it cannot trip ``uq_extraction_fields_one_entity_key``. The coordinates
+mirror ``app.seed.ENTITY_KEY_FIELDS``; ``test_seed_entity_keys`` pins both
+migrations to that list.
 
-The code leak is closed in the same change (``CLONED_FIELD_COLUMNS``, guarded
-by ``tests/unit/test_template_clone_field_columns.py``). This migration heals
-the rows already written, because a code fix alone leaves every project cloned
-in that window broken.
-
-The statement is 0059's, unchanged and deliberately so: matched by NAME (a
-clone carries fresh ids), idempotent (``IS DISTINCT FROM true``), and yielding
-to any entity type that already declares a key so it cannot trip
-``uq_extraction_fields_one_entity_key``. Re-running it is a no-op wherever
-0059 already did the work.
-
-``downgrade`` is a no-op: nothing here distinguishes a flag this migration set
-from one 0059 set or a manager declared by hand, so clearing them would
-destroy data this migration never owned. 0059's own downgrade drops the column
-outright, which is the only honest way to undo the concept.
+``downgrade`` is a no-op: a flag set here is indistinguishable from one 0059
+set or a manager declared by hand, so clearing it would destroy data this
+migration never owned. Dropping the column (0059's downgrade) is the only
+honest undo.
 
 Revision ID: 0066_entity_key_clone_heal
 Revises: 0065_revoke_anon_model_prog

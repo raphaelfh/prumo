@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import pathlib
 
+import pytest
+
 from app.services.entity_key import ENTITY_KEY_FIELDS
 
 EXPECTED = frozenset(
@@ -42,15 +44,15 @@ def test_prediction_models_is_the_only_name_shared_by_two_lineages() -> None:
     assert [name for name, n in seen.items() if n > 1] == ["prediction_models"]
 
 
-def test_migration_backfill_names_the_same_coordinates() -> None:
+@pytest.mark.parametrize("migration", ["0059_entity_key_field.py", "0066_entity_key_clone_heal.py"])
+def test_migration_backfill_names_the_same_coordinates(migration: str) -> None:
     """The backfill SQL is the only thing that reaches existing installs.
 
     If someone adds a key to the seed and forgets the migration, fresh
-    databases get it and production silently does not.
+    databases get it and production silently does not. 0066 re-runs 0059's
+    statement for the clones that lost the flag, so it carries the same list.
     """
-    sql = (
-        pathlib.Path(__file__).parents[2] / "alembic" / "versions" / "0059_entity_key_field.py"
-    ).read_text()
+    sql = (pathlib.Path(__file__).parents[2] / "alembic" / "versions" / migration).read_text()
     for entity_type, field in ENTITY_KEY_FIELDS:
         assert f"'{entity_type}'" in sql, f"backfill is missing entity type {entity_type}"
         assert f"'{field}'" in sql, f"backfill is missing field {field}"
