@@ -379,6 +379,7 @@ async def test_repeats_get_their_own_instances_and_a_rerun_matches_them(
     assert 'for the section "Numeric performance"' in first_prompt
     assert "return its Validation type" in first_prompt
     assert "must be one of: apparent, internal, external" in first_prompt
+    assert "belong to" not in first_prompt, "a top-level group has no parent to scope to"
 
     # Run 2: the model spells two entries differently, finds a third, and
     # reads a slightly different number this time.
@@ -409,7 +410,7 @@ async def test_nested_group_entries_are_scoped_by_their_parent(
     child, _key_id, _value_id = await _group(db_session, role="model_section", parent=container)
     run = await _run_in_extract(db_session)
     service, fake = _service(db_session)
-    _fake_identification(monkeypatch, ["internal"])
+    identification = _fake_identification(monkeypatch, ["internal"])
 
     for parent in (parent_a, parent_b):
         await service.extract_section(
@@ -421,6 +422,12 @@ async def test_nested_group_entries_are_scoped_by_their_parent(
     assert [key for _, key in under_a] == ["internal"]
     assert [key for _, key in under_b] == ["internal"]
     assert under_a[0][0] != under_b[0][0]
+    # Identification is scoped to the parent too, not only the grounding
+    # list: asked under A, the prompt rules out what the article reports
+    # for anything but A — or B's validations would land under A.
+    asked_a, asked_b = identification["prompts"]
+    assert 'belong to "XGBoost"' in asked_a and "LightGBM" not in asked_a
+    assert 'belong to "LightGBM"' in asked_b and "XGBoost" not in asked_b
     # The per-entry prompt names the parent so the model reads the right block.
     assert [s.parent_label for s in fake.scopes if s] == ["XGBoost", "LightGBM"]
 

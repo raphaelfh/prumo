@@ -273,6 +273,16 @@ SectionEntryLabel = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
 ]
 
+# The section description on updates — the section's AI instruction (sent
+# with every extraction of the section and, for a repeating one, as the
+# entry-identification instruction; the run form never shows it). Unlike a
+# label, a blank is a legitimate edit: the service clears the column. Max
+# length mirrors the create request and the dialog's Zod rule.
+SectionDescription = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=500),
+]
+
 
 class SectionCreateRequest(BaseModel):
     """Create a section (entity type) in the path template.
@@ -333,24 +343,28 @@ class SectionCreateRequest(BaseModel):
 
 
 class SectionUpdateRequest(BaseModel):
-    """Partial section update: ``label`` (any role), ``entry_label``
-    (repeating sections only) and ``cardinality`` (per-model sections
-    only) — the role rules live in the service, which owns the row
-    (B-8, D5). At least one field must be provided, and explicit nulls
-    are rejected (omit instead) so a smuggled ``{"label": null}`` can
-    never blank a column. Replaces the label-only SectionRenameRequest;
-    the pre-B-8 label-only body stays valid."""
+    """Partial section update: ``label`` and ``description`` (any role),
+    ``entry_label`` (repeating sections only) and ``cardinality``
+    (per-model sections only) — the role rules live in the service, which
+    owns the row (B-8, D5). At least one field must be provided, and
+    explicit nulls are rejected (omit instead) so a smuggled ``{"label":
+    null}`` can never blank a column; a description is cleared by sending
+    it blank. Replaces the label-only SectionRenameRequest; the pre-B-8
+    label-only body stays valid."""
 
     model_config = ConfigDict(extra="forbid")
 
     label: SectionLabel | None = None
     entry_label: SectionEntryLabel | None = None
     cardinality: SectionCardinality | None = None
+    description: SectionDescription | None = None
 
     @model_validator(mode="after")
     def _require_one_field_no_nulls(self) -> "SectionUpdateRequest":
         if not self.model_fields_set:
-            raise ValueError("at least one of label, entry_label, cardinality is required")
+            raise ValueError(
+                "at least one of label, entry_label, cardinality, description is required"
+            )
         for field in self.model_fields_set:
             if getattr(self, field) is None:
                 raise ValueError(f"{field} may be omitted but not null")
