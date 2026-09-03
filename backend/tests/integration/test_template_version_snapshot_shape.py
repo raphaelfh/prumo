@@ -44,6 +44,7 @@ _FIELD_KEYS = {
     "allow_other",
     "other_label",
     "other_placeholder",
+    "is_entity_key",
 }
 
 
@@ -172,3 +173,25 @@ async def test_general_instructions_reader_none_when_key_absent(
         )
     ).scalar_one()
     assert await general_instructions_for_version(db_session, active_version_id) is None
+
+
+@pytest.mark.asyncio
+async def test_snapshot_carries_the_entry_key(db_session: AsyncSession) -> None:
+    """Identity is versioned config: the CHARMS container declares
+    ``model_name`` as its entry key (0059 / seed ``ENTITY_KEY_FIELDS``) and the
+    clone copies the flag, so the published snapshot must carry it — restore
+    rebuilds a deleted field from this snapshot, and a key it cannot see
+    comes back as an ordinary field."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+
+    snapshot = await build_template_version_snapshot(db_session, clone.project_template_id)
+
+    keys = {
+        (et["name"], f["name"]): f["is_entity_key"]
+        for et in snapshot["entity_types"]
+        for f in et["fields"]
+    }
+    assert keys[("prediction_models", "model_name")] is True
+    assert keys[("prediction_models", "modelling_method")] is False

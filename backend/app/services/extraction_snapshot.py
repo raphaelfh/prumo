@@ -39,8 +39,9 @@ from app.schemas.extraction_run import RunViewEntityType
 # already existed at 0026's revision, update that migration's SQL too
 # (migrations must stay self-contained; they cannot import app code that may
 # change after they are committed). Keys for columns added AFTER 0026's slot
-# (e.g. ``entry_label``, 0051) are exempt by construction — on a fresh-DB
-# upgrade 0026 runs before the column exists, so mirroring them would fail
+# (e.g. ``entry_label``, 0051; ``is_entity_key``, 0059) are exempt by
+# construction — on a fresh-DB upgrade 0026 runs before the column exists, so
+# mirroring them would fail
 # with UndefinedColumn; readers treat the absent key as its null default
 # (same precedent as ``llm_template_instruction`` in the module docstring).
 SNAPSHOT_SQL = text(
@@ -80,7 +81,8 @@ SNAPSHOT_SQL = text(
                                     'other_placeholder', f.other_placeholder,
                                     'allows_not_applicable', f.allows_not_applicable,
                                     'allows_not_evaluated', f.allows_not_evaluated,
-                                    'allows_no_information', f.allows_no_information
+                                    'allows_no_information', f.allows_no_information,
+                                    'is_entity_key', f.is_entity_key
                                 ) ORDER BY f.sort_order)
                                 FROM public.extraction_fields f
                                 WHERE f.entity_type_id = et.id

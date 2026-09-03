@@ -24,7 +24,11 @@ is ON DELETE **CASCADE**, so deleting a draft-added section before
 re-parenting destroys the baseline fields the draft had moved into it,
 and ``uq_extraction_fields_entity_type_name`` is immediate, so a draft
 that deleted field ``x`` and renamed a sibling to ``x`` collides during
-the create pass unless names are parked first.
+the create pass unless names are parked first. The entry key
+(``uq_extraction_fields_one_entity_key``, partial and immediate) is a
+second per-section slot with one difference: nothing stops the baseline
+holder from taking it back, so every key the baseline does not grant is
+released up front rather than skipped and reported.
 """
 
 from __future__ import annotations
@@ -48,6 +52,7 @@ from app.schemas.hitl_session import TemplateDiscardRefusalCode
 from app.services.template_clone_service import TemplateCloneService, TemplateNotFoundError
 from app.services.template_diff import (
     ENTITY_ATTRIBUTE_DEFAULTS,
+    ENTITY_KEY_KEY,
     FIELD_ATTRIBUTE_DEFAULTS,
     IDENTITY_KEY,
     NESTING_KEY,
@@ -147,8 +152,10 @@ def _baseline_entity_columns(raw: dict[str, Any]) -> dict[str, Any]:
     return columns
 
 
-def _baseline_field_columns(raw: dict[str, Any], owner_id: UUID) -> dict[str, Any]:
-    columns = _normalize_field(raw)
+def _baseline_field_columns(
+    raw: dict[str, Any], owner_id: UUID, *, entity_name: str | None
+) -> dict[str, Any]:
+    columns = _normalize_field(raw, entity_name=entity_name)
     columns[_OWNER_KEY] = owner_id
     columns[ORDER_KEY] = int(raw.get(ORDER_KEY) or 0)
     return columns
@@ -171,7 +178,9 @@ def _index_snapshot(
         entities[entity_id] = _baseline_entity_columns(raw_entity)
         for raw_field in raw_entity.get(NESTING_KEY) or []:
             field_id = UUID(str(raw_field[IDENTITY_KEY]))
-            fields[field_id] = _baseline_field_columns(raw_field, entity_id)
+            fields[field_id] = _baseline_field_columns(
+                raw_field, entity_id, entity_name=raw_entity.get("name")
+            )
     return entities, fields
 
 
@@ -351,6 +360,22 @@ async def restore_snapshot(
             .where(ExtractionField.id == field_id)
             .values(name=f"{_PARK_PREFIX}{uuid4().hex}")
         )
+    # ... and release every entry key the baseline does not grant. The key
+    # is a per-section slot too (``uq_extraction_fields_one_entity_key`` is
+    # partial and immediate), so settling the update set in snapshot order
+    # — the baseline holder before the sibling the draft moved the key to —
+    # or re-creating a deleted holder in phase 5 collides with whoever holds
+    # it now. Unlike a name, a KEPT field's key is not something the row
+    # needs to survive, so it is released, not reported.
+    stray_key_ids = _stray_entry_keys(
+        baseline_fields, live_fields, delete_field_ids=frozenset(delete_field_ids)
+    )
+    if stray_key_ids:
+        await db.execute(
+            update(ExtractionField)
+            .where(ExtractionField.id.in_(stray_key_ids))
+            .values(is_entity_key=False)
+        )
     await db.flush()
 
     # Phase 1 — create missing entity types, topologically, level by level.
@@ -448,6 +473,25 @@ async def restore_snapshot(
         instruction_reset=instruction_reset,
         name_conflicted_field_ids=name_conflicted,
     )
+
+
+def _stray_entry_keys(
+    baseline_fields: dict[UUID, dict[str, Any]],
+    live_fields: dict[UUID, ExtractionField],
+    *,
+    delete_field_ids: frozenset[UUID],
+) -> list[UUID]:
+    """Surviving live fields holding an entry key the baseline does not
+    grant them: update-set fields the draft moved the key to, kept
+    draft-added fields, and name-conflicted fields the draft keyed. A field
+    the baseline DOES key keeps it — it is the section's one holder."""
+    return [
+        field_id
+        for field_id, row in live_fields.items()
+        if row.is_entity_key
+        and field_id not in delete_field_ids
+        and not baseline_fields.get(field_id, {}).get(ENTITY_KEY_KEY, False)
+    ]
 
 
 def _name_conflicted(

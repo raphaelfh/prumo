@@ -76,6 +76,7 @@ export const templateConfig = {
   diffAttrDescription: 'Description',
   diffAttrEntryLabel: 'Entry label',
   diffAttrFieldType: 'Field type',
+  diffAttrIsEntityKey: 'Entry key',
   diffAttrIsRequired: 'Required',
   diffAttrLabel: 'Label',
   diffAttrLlmDescription: 'AI instruction',

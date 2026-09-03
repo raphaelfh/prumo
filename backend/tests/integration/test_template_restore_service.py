@@ -443,6 +443,23 @@ async def _move_field(db: AsyncSession, field_id: UUID, entity_type_id: UUID, or
     await db.flush()
 
 
+async def _set_entry_key(db: AsyncSession, field_id: UUID, value: bool) -> None:
+    await db.execute(
+        text("UPDATE public.extraction_fields SET is_entity_key = :v WHERE id = :id"),
+        {"id": str(field_id), "v": value},
+    )
+    await db.flush()
+
+
+async def _is_entry_key(db: AsyncSession, field_id: UUID) -> bool:
+    return (
+        await db.execute(
+            text("SELECT is_entity_key FROM public.extraction_fields WHERE id = :id"),
+            {"id": str(field_id)},
+        )
+    ).scalar_one()
+
+
 async def _set_instruction(db: AsyncSession, template_id: UUID, value: str | None) -> None:
     await db.execute(
         text(
@@ -1121,3 +1138,139 @@ async def test_writer_never_touches_the_draft_marker(db_session: AsyncSession) -
     await _restore(db_session, project_id=project_id, template_id=template_id, baseline=baseline)
 
     assert await get_config_draft_marker(db_session, template_id) is not None
+
+
+# --------------------------------------------------------------------------
+# Entry key — identity is versioned config, and its slot is per-section
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_draft_deleted_entry_key_field_is_recreated_with_its_key(
+    db_session: AsyncSession,
+) -> None:
+    """The sharpest round-trip: delete the container's key field, Discard.
+
+    A field rebuilt from a snapshot that does not carry ``is_entity_key``
+    comes back as an ordinary field, the section silently loses its
+    identity, and the next AI re-run is refused with
+    ``MissingEntityKeyError`` — on a template the user just restored."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    key_field = await _field_id(db_session, template_id, "prediction_models", "model_name")
+    assert await _is_entry_key(db_session, key_field)
+    await _delete_field(db_session, key_field)
+    capture = await _capture(db_session, template_id)
+
+    outcome = await _restore(
+        db_session, project_id=project_id, template_id=template_id, baseline=baseline
+    )
+
+    assert outcome.created_fields == 1
+    assert await _is_entry_key(db_session, key_field)
+    await _assert_restored(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        capture=capture,
+        touched_field_ids=frozenset({key_field}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_entry_key_moved_between_baseline_fields_is_restored(
+    db_session: AsyncSession,
+) -> None:
+    """``uq_extraction_fields_one_entity_key`` is a partial unique index and
+    immediate, so settling the update set in snapshot order — the baseline
+    holder (``model_name``, sort 0) before the sibling the draft moved the key
+    to — collides unless the key is released first, the way names are
+    parked."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    old_key = await _field_id(db_session, template_id, "prediction_models", "model_name")
+    new_key = await _field_id(db_session, template_id, "prediction_models", "modelling_method")
+    await _set_entry_key(db_session, old_key, False)
+    await _set_entry_key(db_session, new_key, True)
+    capture = await _capture(db_session, template_id)
+
+    outcome = await _restore(
+        db_session, project_id=project_id, template_id=template_id, baseline=baseline
+    )
+
+    assert outcome.updated_fields == 2
+    assert await _is_entry_key(db_session, old_key)
+    assert not await _is_entry_key(db_session, new_key)
+    await _assert_restored(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        capture=capture,
+        touched_field_ids=frozenset({old_key, new_key}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_stray_entry_key_on_a_kept_field_is_released(db_session: AsyncSession) -> None:
+    """A kept draft-added field holding the section's key is not a name
+    slot: nothing stops the baseline holder from taking the key back, so the
+    restore releases it instead of skipping the baseline field or crashing
+    on the index. The kept field itself survives, keyless."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    section = await _entity_id(db_session, template_id, "prediction_models")
+    baseline_key = await _field_id(db_session, template_id, "prediction_models", "model_name")
+    kept = await _add_field(db_session, section, "b9c1_kept_key")
+    await _set_entry_key(db_session, baseline_key, False)
+    await _set_entry_key(db_session, kept, True)
+    capture = await _capture(db_session, template_id)
+
+    outcome = await _restore(
+        db_session,
+        project_id=project_id,
+        template_id=template_id,
+        baseline=baseline,
+        skip_entity_type_ids=frozenset({section}),
+    )
+
+    assert outcome.deleted_fields == 0
+    assert await _is_entry_key(db_session, baseline_key)
+    assert not await _is_entry_key(db_session, kept)
+    await _assert_restored(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        capture=capture,
+        touched_field_ids=frozenset({baseline_key, kept}),
+        extra_field_ids=frozenset({kept}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_pre_0059_baseline_keeps_the_backfilled_key(db_session: AsyncSession) -> None:
+    """Every snapshot published before the key was versioned lacks
+    ``is_entity_key``, while 0059/0066 stamped the flag on the live rows by
+    name. Restoring such a baseline must leave the backfilled key holders
+    alone — not rewrite them to False and hand the manager a template whose
+    AI re-runs are refused."""
+    project_id, template_id, wide = await _fresh_charms(db_session)
+    baseline: dict[str, Any] = {
+        **wide,
+        "entity_types": [
+            {
+                **et,
+                "fields": [
+                    {k: v for k, v in f.items() if k != "is_entity_key"}
+                    for f in et.get("fields") or []
+                ],
+            }
+            for et in wide["entity_types"]
+        ],
+    }
+    key_field = await _field_id(db_session, template_id, "prediction_models", "model_name")
+    capture = await _capture(db_session, template_id)
+
+    outcome = await _restore(
+        db_session, project_id=project_id, template_id=template_id, baseline=baseline
+    )
+
+    assert outcome.updated_fields == 0
+    assert await _is_entry_key(db_session, key_field)
+    await _assert_restored(db_session, template_id=template_id, baseline=wide, capture=capture)

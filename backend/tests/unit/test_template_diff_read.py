@@ -721,6 +721,7 @@ _SCALAR_ATTRIBUTES = frozenset(
         "allows_not_applicable",
         "allows_not_evaluated",
         "allows_no_information",
+        "is_entity_key",
     }
 )
 

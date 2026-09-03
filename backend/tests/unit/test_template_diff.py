@@ -653,3 +653,94 @@ def test_tier_map_is_exhaustive_over_the_snapshot_key_set() -> None:
     assert set(template_diff.ATTRIBUTE_TIERS) == (
         set(template_diff.ENTITY_ATTRIBUTE_DEFAULTS) | set(template_diff.FIELD_ATTRIBUTE_DEFAULTS)
     )
+
+
+# --------------------------------------------------------------------------
+# Entry key — identity is versioned config
+# --------------------------------------------------------------------------
+
+
+def test_moving_the_entry_key_is_two_semantic_field_changes() -> None:
+    """``is_entity_key`` is part of the published snapshot: the 0048 trigger
+    already stamps a draft on a key move, so the diff has to see it or the
+    Draft chip lights over an empty publish sheet.
+
+    Semantic, never destructive, even on a field holding values: moving the
+    key strands no recorded value and changes no completion gate — it
+    changes which field AI re-runs identify entries by.
+    """
+    section, old_key, new_key = uuid4(), uuid4(), uuid4()
+    before = _snapshot(
+        _entity(
+            section,
+            _field(old_key, name="model_name", is_entity_key=True),
+            _field(new_key, name="modelling_method"),
+        )
+    )
+    after = _snapshot(
+        _entity(
+            section,
+            _field(old_key, name="model_name"),
+            _field(new_key, name="modelling_method", is_entity_key=True),
+        )
+    )
+
+    diff = diff_snapshots(before, after, fields_with_values=frozenset({old_key, new_key}))
+
+    assert sorted(
+        (c.raw_node_id, c.kind, c.attribute, c.before, c.after, c.tier) for c in diff.changes
+    ) == sorted(
+        [
+            (str(old_key), ChangeKind.MODIFIED, "is_entity_key", True, False, ChangeTier.SEMANTIC),
+            (str(new_key), ChangeKind.MODIFIED, "is_entity_key", False, True, ChangeTier.SEMANTIC),
+        ]
+    )
+
+
+def test_pre_0059_baseline_without_the_key_is_unchanged() -> None:
+    """A baseline frozen before 0059 has no ``is_entity_key``; the column
+    shipped ``server_default false``, so absent must mean False (D4) — a
+    legacy template must not report a phantom "key cleared" draft."""
+    field = _field(uuid4())
+    entity_id = uuid4()
+    baseline = _snapshot(_strip_from_fields(_entity(entity_id, field), "is_entity_key"))
+    current = _snapshot(_entity(entity_id, field))
+
+    assert diff_snapshots(baseline, current, fields_with_values=NO_VALUES).total == 0
+
+
+def test_pre_0059_baseline_at_a_backfilled_coordinate_is_unchanged() -> None:
+    """Migrations 0059/0066 stamped the key on LIVE rows by
+    ``(section, field)`` name, so a pre-0059 baseline lacking the key at one
+    of those coordinates describes the same tree as a live key holder — the
+    ``entry_label`` 0051 rule, applied to identity. Without it every CHARMS
+    clone would report a phantom "key set" draft, and Discard would clear
+    the backfilled key."""
+    key_field = _field(uuid4(), name="model_name", is_entity_key=True)
+    entity_id = uuid4()
+    baseline = _snapshot(
+        _strip_from_fields(_entity(entity_id, key_field, name="prediction_models"), "is_entity_key")
+    )
+    current = _snapshot(_entity(entity_id, key_field, name="prediction_models"))
+
+    assert diff_snapshots(baseline, current, fields_with_values=NO_VALUES).total == 0
+
+
+def test_backfilled_coordinate_rule_yields_to_a_present_key() -> None:
+    """The rule fills an ABSENT key only: a baseline that carries
+    ``is_entity_key: false`` at a backfill coordinate was published after
+    0059 with the key deliberately elsewhere, and must diff as such."""
+    entity_id, key_field_id = uuid4(), uuid4()
+    baseline = _snapshot(
+        _entity(entity_id, _field(key_field_id, name="model_name"), name="prediction_models")
+    )
+    current = _snapshot(
+        _entity(
+            entity_id,
+            _field(key_field_id, name="model_name", is_entity_key=True),
+            name="prediction_models",
+        )
+    )
+
+    change = _only(diff_snapshots(baseline, current, fields_with_values=NO_VALUES))
+    assert (change.attribute, change.before, change.after) == ("is_entity_key", False, True)

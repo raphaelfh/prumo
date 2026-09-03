@@ -35,6 +35,7 @@ from app.main import app
 from app.repositories.extraction_field_reference_repository import (
     ExtractionFieldReferenceRepository,
 )
+from app.services.entity_key import resolve_key_field
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_diff import diff_snapshots
@@ -1334,3 +1335,30 @@ async def test_endpoint_rejects_a_non_manager(
     finally:
         app.dependency_overrides.pop(get_current_user, None)
     await db_session.rollback()
+
+
+# ==========================================================================
+# Entry key — Discard after deleting the key field gives the identity back
+# ==========================================================================
+
+
+@pytest.mark.asyncio
+async def test_discard_after_deleting_the_entry_key_field_restores_the_identity(
+    db_session: AsyncSession,
+) -> None:
+    """Identity is versioned config. Before the snapshot carried
+    ``is_entity_key``, Discard rebuilt the deleted key field as an ordinary
+    field and the container's next AI re-run was refused
+    (``MissingEntityKeyError``) on a template the manager had just restored."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    section = await _entity_id(db_session, template_id, "prediction_models")
+    key_field = await _field_id(db_session, template_id, "prediction_models", "model_name")
+    await _delete_field(db_session, key_field)
+
+    result = await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    assert result.kept == []
+    assert result.created_fields == 1
+    assert (await resolve_key_field(db_session, section)).id == key_field
+    assert await get_config_draft_marker(db_session, template_id) is None
+    await _assert_matches_baseline(db_session, template_id=template_id, baseline=baseline)
