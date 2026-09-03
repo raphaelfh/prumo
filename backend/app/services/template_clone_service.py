@@ -4,9 +4,10 @@ from collections import deque
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.base import Base
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
@@ -72,32 +73,39 @@ class TemplateClone:
         self.created = created
 
 
-#: Columns the clone must NOT carry over: the row's own identity, its parent
-#: link (re-pointed at the clone's own entity types), and the timestamps the
-#: new row mints for itself. Hand-maintained and deliberately short.
+def _copied_columns(model: type[Base], exclude: frozenset[str]) -> frozenset[str]:
+    """Every mapped column of ``model`` except ``exclude``.
+
+    Derived rather than listed, so a column added to the model travels into
+    the project copy by default. A hand-written list drops each new column in
+    silence (it did, twice: the ADR-0016 dispositions, then ``is_entity_key``);
+    a missing exclusion copies a value onto a row that accepts it, which is
+    rarer and louder. A stale exclusion name fails here, at import.
+    """
+    keys = frozenset(attr.key for attr in inspect(model).column_attrs)
+    stale = exclude - keys
+    if stale:
+        raise ValueError(f"{model.__name__} has no columns {sorted(stale)}")
+    return keys - exclude
+
+
+#: What a clone must NOT copy: the row's own identity, the links it re-points
+#: at its own rows, and the timestamps the new row mints for itself.
+UNCLONED_ENTITY_TYPE_COLUMNS: frozenset[str] = frozenset(
+    {
+        "id",
+        "template_id",
+        "project_template_id",
+        "parent_entity_type_id",
+        "created_at",
+        "updated_at",
+    }
+)
 UNCLONED_FIELD_COLUMNS: frozenset[str] = frozenset(
     {"id", "entity_type_id", "created_at", "updated_at"}
 )
-
-#: Everything else travels with the project copy — DERIVED from the model, so
-#: a column added to ``ExtractionField`` is copied by default.
-#:
-#: This used to be a hand-written kwarg list, and it silently swallowed a new
-#: column TWICE: first the ADR-0016 dispositions (every cloned signaling
-#: question lost its "Not applicable" affordance, frozen into the snapshot),
-#: then ``is_entity_key`` (every cloned CHARMS project's repeating sections
-#: declared no identity, so the first AI extraction into one raised
-#: ``MissingEntityKeyError``). Neither turned a test red; both were found from
-#: the outside, long after shipping.
-#:
-#: Inverting the default is what retires that class. Forgetting to copy a
-#: column removes a behaviour from every project in silence; forgetting to
-#: EXCLUDE one copies a value onto a row that already accepts it, which is
-#: both rarer and louder. The sibling portable-import path never had either
-#: bug precisely because it spreads ``f.model_dump()`` instead of listing.
-CLONED_FIELD_COLUMNS: frozenset[str] = (
-    frozenset(c.name for c in ExtractionField.__table__.columns) - UNCLONED_FIELD_COLUMNS
-)
+CLONED_ENTITY_TYPE_COLUMNS = _copied_columns(ExtractionEntityType, UNCLONED_ENTITY_TYPE_COLUMNS)
+CLONED_FIELD_COLUMNS = _copied_columns(ExtractionField, UNCLONED_FIELD_COLUMNS)
 
 
 class TemplateCloneService:
@@ -375,19 +383,12 @@ class TemplateCloneService:
                     id=new_id,
                     project_template_id=project_template_id,
                     template_id=None,
-                    name=et.name,
-                    label=et.label,
-                    description=et.description,
                     parent_entity_type_id=(
                         entity_type_id_map[et.parent_entity_type_id]
                         if et.parent_entity_type_id is not None
                         else None
                     ),
-                    cardinality=et.cardinality,
-                    role=et.role,
-                    entry_label=et.entry_label,
-                    sort_order=et.sort_order,
-                    is_required=et.is_required,
+                    **{c: getattr(et, c) for c in CLONED_ENTITY_TYPE_COLUMNS},
                 )
             )
         await self.db.flush()
