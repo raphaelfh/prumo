@@ -474,7 +474,7 @@ def _moves_name_slot(live: ExtractionField, baseline: dict[str, Any]) -> bool:
     """Only a field whose ``(entity_type_id, name)`` slot changes can collide
     while the rest of the update set settles; an attribute-only change
     keeps its slot and needs no transient name."""
-    return live.name != baseline[_NAME_KEY] or live.entity_type_id != baseline[_OWNER_KEY]
+    return bool(live.name != baseline[_NAME_KEY] or live.entity_type_id != baseline[_OWNER_KEY])
 
 
 def _stray_entry_keys(
