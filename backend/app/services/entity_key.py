@@ -45,8 +45,10 @@ class MissingEntityKeyError(Exception):
     """A repeating group declares no ``is_entity_key`` field.
 
     Raised instead of duplicating in silence. The template inspector is
-    where a manager satisfies it; the seed and migration 0059 cover every
-    CHARMS lineage so the common path never reaches this.
+    where a manager satisfies it. The seed stamps the global catalogue, the
+    clone copies the flag (``CLONED_FIELD_COLUMNS``) and migrations 0059 and
+    0066 backfilled the rows that predate them, so the common path never
+    reaches this.
     """
 
     def __init__(self, entity_type_id: UUID, entity_type_label: str | None = None) -> None:
