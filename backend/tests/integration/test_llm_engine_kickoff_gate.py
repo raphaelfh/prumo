@@ -9,17 +9,25 @@ precede engine work: an outsider on the same project gets 403, not 409
 The retired state is produced by a raw JSONB bypass-write (the PostgREST
 hole the read-side validation contains), so the gate is exercised end to
 end: stored pair → catalogue miss → EngineRetiredError → AppError handler.
+
+The models route is also the surface for the other typed kickoff refusal,
+``MISSING_ENTITY_KEY`` (a keyless repeating group): the last test pins its
+409 envelope for a member; the outsider case above already proves scope
+runs before any service call.
 """
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.endpoints import model_extraction as me
+from app.services.entity_key import MissingEntityKeyError
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
 
@@ -157,3 +165,26 @@ async def test_section_continuation_with_run_id_is_gated_too(
     assert r.status_code == 409, r.text
     assert r.json()["error"]["code"] == "LLM_ENGINE_RETIRED"
     fake_delay.assert_not_called()
+
+
+def _keyless_service() -> MagicMock:
+    """A service whose kickoff refuses the way a keyless container does; the
+    refusal itself is pinned by the entry-group pipeline tests — this test
+    pins the ROUTE, the registered handler and the envelope shape."""
+    service = MagicMock()
+    service.extract = AsyncMock(side_effect=MissingEntityKeyError(uuid4(), "Prediction models"))
+    return service
+
+
+@pytest.mark.asyncio
+async def test_models_kickoff_on_keyless_group_is_typed_409(
+    client_as_manager: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(me, "ModelExtractionService", MagicMock(return_value=_keyless_service()))
+    r = await client_as_manager.post("/api/v1/extraction/models", json=_models_payload())
+    assert r.status_code == 409, r.text
+    body = r.json()
+    assert body["ok"] is False
+    assert body["error"]["code"] == "MISSING_ENTITY_KEY"
+    assert "'Prediction models'" in body["error"]["message"]

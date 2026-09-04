@@ -24,6 +24,7 @@ import type {
   ExtractionValue,
 } from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
+import type {EntryIdentityChanges} from './AddEntryDialog';
 import type {ExtractionProgress} from '@/hooks/extraction/useBatchSectionExtractionChunked';
 import type {AllModelsSectionsProgress} from '@/hooks/extraction/useBatchAllModelsSectionsExtraction';
 
@@ -43,6 +44,8 @@ export interface ModelSectionProps {
   modelsLoading: boolean;
   onAddModel: () => void;
   onRemoveModel: (id: string) => void;
+  /** Rename / re-key the active model (the selector's pencil). */
+  onRenameModel?: (id: string) => void;
 
   /** Field values + change handler shared with study-level accordions. */
   values: Record<string, ExtractionValue>;
@@ -62,6 +65,7 @@ export interface ModelSectionProps {
   getInstancesForModel: (entityTypeId: string, modelId: string) => ExtractionInstance[];
   handleAddInstance: (entityTypeId: string) => void;
   handleRemoveInstance: (instanceId: string) => void;
+  handleRenameInstance?: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
 
   /** Context required by section-level AI triggers. */
   projectId: string;
@@ -103,6 +107,7 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
     modelsLoading,
     onAddModel,
     onRemoveModel,
+    onRenameModel,
     values,
     updateValue,
     aiSuggestions,
@@ -113,6 +118,7 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
     getInstancesForModel,
     handleAddInstance,
     handleRemoveInstance,
+    handleRenameInstance,
     projectId,
     articleId,
     templateId,
@@ -149,6 +155,7 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
         onSelectModel={setActiveModelId}
         onAddModel={onAddModel}
         onRemoveModel={onRemoveModel}
+        onRenameModel={onRenameModel}
         onExtractModels={onExtractModels}
         extractingModels={extractingModels}
         loading={modelsLoading}
@@ -230,6 +237,7 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
                 getSuggestionsHistory={getSuggestionsHistory}
                   onAddInstance={() => handleAddInstance(entityType.id)}
                 onRemoveInstance={handleRemoveInstance}
+                onRenameInstance={handleRenameInstance}
                 onExtractionComplete={onExtractionComplete}
               />
             </div>

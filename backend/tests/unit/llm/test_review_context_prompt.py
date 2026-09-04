@@ -15,7 +15,7 @@ import pytest
 
 from app.llm import prompts
 from app.llm.prompts import (
-    model_identification,
+    entry_identification,
     quality_assessment,
     render_review_context_section,
     section_extraction,
@@ -61,22 +61,21 @@ GOLDEN_QUALITY_ASSESSMENT = (
     ' and "page_number" (integer, if known), or null\n'
 )
 
-GOLDEN_MODEL_IDENTIFICATION = (
-    "Analyze the following scientific article and identify all prediction models described"
-    " in it. For each one, return a clear and descriptive name as it appears in the"
-    " article.\n"
-    "\n"
-    "Article text:\n"
-    "A\n"
-)
+#: ``entry_identification`` post-dates the review-context block, so its golden
+#: is the prompt as it first shipped (captured from ``render`` with no
+#: context on 2026-09-03) rather than a pre-block literal — the assertion
+#: still proves the renderer is inert on empty input.
+GOLDEN_ENTRY_IDENTIFICATION = 'Analyze the following scientific article and identify every model it describes for the section "prediction models".\n\nFor each model, return its Model name exactly as the article states it — this is what tells one model apart from another.\n\nArticle text:\nA\n'
 
 #: Content hashes of the three prompts before the block existed. The block
 #: changes production prompts, so §IX requires new runs to record a new
-#: version — these must all move.
+#: version — these must all move. ``entry_identification`` replaced
+#: ``model_identification`` (the hash is that module's last version): a
+#: parameterized prompt is a different prompt, and new runs must say so.
 PRE_CHANGE_VERSIONS = {
     "section_extraction": "d1d4d2483a3b",
     "quality_assessment": "6f04461c6f23",
-    "model_identification": "a4b46fddd177",
+    "entry_identification": "046fd17ca366",
 }
 
 
@@ -92,9 +91,13 @@ def _render_qa(**kwargs: object) -> str:
     )
 
 
-def _render_model_id(**kwargs: object) -> str:
-    return model_identification.render(
-        container_label="prediction models", article_text="A", **kwargs
+def _render_entry_id(**kwargs: object) -> str:
+    return entry_identification.render(
+        group_label="prediction models",
+        entry_label="model",
+        key_label="Model name",
+        article_text="A",
+        **kwargs,  # type: ignore[arg-type]
     )
 
 
@@ -113,7 +116,7 @@ def test_an_empty_context_reproduces_the_pre_change_prompt_byte_for_byte() -> No
     """
     assert _render_section() == GOLDEN_SECTION_EXTRACTION
     assert _render_qa() == GOLDEN_QUALITY_ASSESSMENT
-    assert _render_model_id() == GOLDEN_MODEL_IDENTIFICATION
+    assert _render_entry_id() == GOLDEN_ENTRY_IDENTIFICATION
 
 
 def test_the_review_question_frames_the_task_before_the_template_instruction() -> None:
@@ -121,7 +124,7 @@ def test_the_review_question_frames_the_task_before_the_template_instruction() -
     template instruction is the more specific guidance and stays closest to it.
     """
     body = "- Population: Adults"
-    for render in (_render_section, _render_qa, _render_model_id):
+    for render in (_render_section, _render_qa, _render_entry_id):
         prompt = render(review_context=body, general_instructions="Judge conservatively.")
         assert prompt.startswith(
             "Review question and scope:\n"
@@ -141,7 +144,7 @@ def test_the_block_stands_alone_without_a_template_instruction() -> None:
 
 @pytest.mark.parametrize(
     "module",
-    [section_extraction, quality_assessment, model_identification],
+    [section_extraction, quality_assessment, entry_identification],
     ids=lambda m: m.NAME,
 )
 def test_version_moved_from_the_pre_change_hash(module) -> None:
@@ -150,7 +153,7 @@ def test_version_moved_from_the_pre_change_hash(module) -> None:
 
 @pytest.mark.parametrize(
     "module",
-    [section_extraction, quality_assessment, model_identification],
+    [section_extraction, quality_assessment, entry_identification],
     ids=lambda m: m.NAME,
 )
 def test_the_canary_actually_hashes_the_shared_renderer(module, monkeypatch) -> None:
@@ -164,6 +167,25 @@ def test_the_canary_actually_hashes_the_shared_renderer(module, monkeypatch) -> 
     """
     before = module.VERSION
     monkeypatch.setattr(prompts, "render_review_context_section", lambda _body: "MUTATED")
+    try:
+        importlib.reload(module)
+        assert before != module.VERSION
+    finally:
+        monkeypatch.undo()
+        importlib.reload(module)
+    assert before == module.VERSION
+
+
+@pytest.mark.parametrize(
+    "module",
+    [section_extraction, quality_assessment],
+    ids=lambda m: m.NAME,
+)
+def test_the_entry_scope_canary_is_live_too(module, monkeypatch) -> None:
+    """Same proof for the entry-scope renderer: a repeating group's per-entry
+    prompt is production output, so editing its wording must move VERSION."""
+    before = module.VERSION
+    monkeypatch.setattr(prompts, "render_entry_scope_section", lambda _scope: "MUTATED")
     try:
         importlib.reload(module)
         assert before != module.VERSION

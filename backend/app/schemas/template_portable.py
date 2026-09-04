@@ -86,8 +86,9 @@ class PortableField(BaseModel):
 class PortableSection(BaseModel):
     """One ``extraction_entity_types`` row plus its fields and (for a group)
     its child sections. ``group`` ⇒ ``model_container``; nested ⇒
-    ``model_section``; otherwise ``study_section``. ``entry_label`` is only
-    legal on a group; the import defaults it to ``"model"`` there."""
+    ``model_section``; otherwise ``study_section``. ``entry_label`` is legal
+    on any repeating section (a group, or ``repeats``); the import defaults
+    it to ``"model"`` on a group and leaves it unset elsewhere."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -105,8 +106,8 @@ class PortableSection(BaseModel):
     def _section_rules(self) -> PortableSection:
         if self.sections and not self.group:
             raise ValueError("sections are only allowed inside a group")
-        if self.entry_label is not None and not self.group:
-            raise ValueError("entry_label is only allowed on a group")
+        if self.entry_label is not None and not (self.group or self.repeats):
+            raise ValueError("entry_label is only allowed on a repeating section")
         # A child carrying its own ``sections`` already failed the rule above
         # on itself (it is never a group), so depth > 1 needs no extra branch.
         for child in self.sections:

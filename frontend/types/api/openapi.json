@@ -2078,6 +2078,54 @@
         "title": "ApiResponse[RunSummaryResponse]",
         "type": "object"
       },
+      "ApiResponse_RunViewInstance_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunViewInstance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RunViewInstance]",
+        "type": "object"
+      },
       "ApiResponse_RunViewResponse_": {
         "properties": {
           "data": {
@@ -4641,12 +4689,13 @@
         "type": "string"
       },
       "ExtractionErrorCode": {
-        "description": "Stable, machine-readable code for a terminal extraction failure.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_project_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
+        "description": "Stable, machine-readable code for a terminal extraction failure.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_project_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
         "enum": [
           "PDF_NOT_FOUND",
           "MISSING_API_KEY",
           "ENGINE_RETIRED",
           "LLM_ENDPOINT_UNAVAILABLE",
+          "MISSING_ENTITY_KEY",
           "EXTRACTION_FAILED"
         ],
         "title": "ExtractionErrorCode",
@@ -5371,6 +5420,58 @@
           "inherited"
         ],
         "title": "HitlConfigRead",
+        "type": "object"
+      },
+      "InstanceIdentityUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Rename and/or re-key one extraction instance (the run form's rename\ndialog). ``entity_key`` is the identity an AI re-run matches against; the\nserver normalizes it and appends the change to ``entity_key_history``.\nAt least one of ``label`` / ``entity_key`` must be present, and neither\nmay be blank \u2014 a smuggled ``{\"label\": \"\"}`` must never blank a column.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "entityKey": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitykey"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "articleId",
+          "templateId"
+        ],
+        "title": "InstanceIdentityUpdateRequest",
         "type": "object"
       },
       "KeyValidationResult": {
@@ -6570,7 +6671,7 @@
       },
       "PortableSection": {
         "additionalProperties": false,
-        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` \u21d2 ``model_container``; nested \u21d2\n``model_section``; otherwise ``study_section``. ``entry_label`` is only\nlegal on a group; the import defaults it to ``\"model\"`` there.",
+        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` \u21d2 ``model_container``; nested \u21d2\n``model_section``; otherwise ``study_section``. ``entry_label`` is legal\non any repeating section (a group, or ``repeats``); the import defaults\nit to ``\"model\"`` on a group and leaves it unset elsewhere.",
         "properties": {
           "description": {
             "anyOf": [
@@ -7721,6 +7822,11 @@
             "title": "Id",
             "type": "string"
           },
+          "is_entity_key": {
+            "default": false,
+            "title": "Is Entity Key",
+            "type": "boolean"
+          },
           "is_required": {
             "title": "Is Required",
             "type": "boolean"
@@ -8032,7 +8138,7 @@
       },
       "SectionCreateRequest": {
         "additionalProperties": false,
-        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is the repeating group's entry noun (B-8, D3):\ncontainer-only, defaulting to ``'model'``; containers always repeat\n(``cardinality='many'`` is enforced, never chosen).",
+        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is a repeating section's entry noun (B-8, D3 \u2014\nunlocked from the container in the entry-group train): legal on any\n``cardinality='many'`` section; the container defaults it to\n``'model'`` and always repeats (``'many'`` is enforced, never chosen).",
         "properties": {
           "cardinality": {
             "enum": [
@@ -8408,7 +8514,7 @@
       },
       "SectionUpdateRequest": {
         "additionalProperties": false,
-        "description": "Partial section update: ``label`` (any role), ``entry_label``\n(repeating groups only) and ``cardinality`` (per-model sections\nonly) \u2014 the role rules live in the service, which owns the row\n(B-8, D5). At least one field must be provided, and explicit nulls\nare rejected (omit instead) so a smuggled ``{\"label\": null}`` can\nnever blank a column. Replaces the label-only SectionRenameRequest;\nthe pre-B-8 label-only body stays valid.",
+        "description": "Partial section update: ``label`` and ``description`` (any role),\n``entry_label`` (repeating sections only) and ``cardinality``\n(per-model sections only) \u2014 the role rules live in the service, which\nowns the row (B-8, D5). At least one field must be provided, and\nexplicit nulls are rejected (omit instead) so a smuggled ``{\"label\":\nnull}`` can never blank a column; a description is cleared by sending\nit blank. Replaces the label-only SectionRenameRequest; the pre-B-8\nlabel-only body stays valid.",
         "properties": {
           "cardinality": {
             "anyOf": [
@@ -8424,6 +8530,18 @@
               }
             ],
             "title": "Cardinality"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "entry_label": {
             "anyOf": [
@@ -11426,6 +11544,65 @@
         ]
       }
     },
+    "/api/v1/extraction/instances/{instance_id}": {
+      "patch": {
+        "description": "Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.",
+        "operationId": "update_instance_api_v1_extraction_instances__instance_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceIdentityUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunViewInstance_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Rename or re-key one extraction instance",
+        "tags": [
+          "Extraction Instances"
+        ]
+      }
+    },
     "/api/v1/extraction/models": {
       "post": {
         "description": "Identifica and extrai automaticamente modelos de predicao do article.",
@@ -14350,7 +14527,7 @@
         ]
       },
       "patch": {
-        "description": "Partial section update: label, entry_label, cardinality (B-8).\n\nRole rules are 422s (entry_label only on the repeating group;\ncardinality only on a per-model section); many -> one with a parent\ninstance holding 2+ entries is a 409. A real change stamps the B-4\ndraft marker via the 0048 trigger; an all-no-op update skips the\nwrite (no stamp).",
+        "description": "Partial section update: label, entry_label, cardinality, description (B-8).\n\nRole rules are 422s (entry_label only on a repeating section;\ncardinality only on a per-model section); many -> one with a parent\ninstance holding 2+ entries is a 409. ``description`` is the section's\nAI instruction; a blank one clears it. A real change stamps the B-4\ndraft marker via the 0048 trigger; an all-no-op update skips the\nwrite (no stamp).",
         "operationId": "update_template_section_api_v1_projects__project_id__templates__template_id__sections__section_id__patch",
         "parameters": [
           {

@@ -307,6 +307,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/extraction/instances/{instance_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename or re-key one extraction instance
+         * @description Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.
+         */
+        patch: operations["update_instance_api_v1_extraction_instances__instance_id__patch"];
+        trace?: never;
+    };
     "/api/v1/extraction/models": {
         parameters: {
             query?: never;
@@ -1254,11 +1274,12 @@ export interface paths {
         head?: never;
         /**
          * Update Template Section
-         * @description Partial section update: label, entry_label, cardinality (B-8).
+         * @description Partial section update: label, entry_label, cardinality, description (B-8).
          *
-         *     Role rules are 422s (entry_label only on the repeating group;
+         *     Role rules are 422s (entry_label only on a repeating section;
          *     cardinality only on a per-model section); many -> one with a parent
-         *     instance holding 2+ entries is a 409. A real change stamps the B-4
+         *     instance holding 2+ entries is a 409. ``description`` is the section's
+         *     AI instruction; a blank one clears it. A real change stamps the B-4
          *     draft marker via the 0048 trigger; an all-no-op update skips the
          *     write (no stamp).
          */
@@ -2465,6 +2486,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[RunViewInstance] */
+        ApiResponse_RunViewInstance_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["RunViewInstance"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[RunViewResponse] */
         ApiResponse_RunViewResponse_: {
             /** @description Dados da resposta */
@@ -3590,10 +3628,14 @@ export interface components {
          *       serve: row deleted, unverified, model dropped
          *       (``resolve_project_engine``), or its key no longer decrypts
          *       (``EndpointUnavailableError``; enqueue-time validation is a 409).
+         *     - ``MISSING_ENTITY_KEY`` — a repeating section declares no
+         *       ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
+         *       LLM call. Carried by the single-section job and, as a 409, by the sync
+         *       models kickoff; a batch run keeps reporting per-section text.
          *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
          * @enum {string}
          */
-        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "EXTRACTION_FAILED";
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "EXTRACTION_FAILED";
         /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.
@@ -3910,6 +3952,35 @@ export interface components {
              * @enum {string}
              */
             scope_kind: "project" | "template" | "system_default";
+        };
+        /**
+         * InstanceIdentityUpdateRequest
+         * @description Rename and/or re-key one extraction instance (the run form's rename
+         *     dialog). ``entity_key`` is the identity an AI re-run matches against; the
+         *     server normalizes it and appends the change to ``entity_key_history``.
+         *     At least one of ``label`` / ``entity_key`` must be present, and neither
+         *     may be blank — a smuggled ``{"label": ""}`` must never blank a column.
+         */
+        InstanceIdentityUpdateRequest: {
+            /**
+             * Articleid
+             * Format: uuid
+             */
+            articleId: string;
+            /** Entitykey */
+            entityKey?: string | null;
+            /** Label */
+            label?: string | null;
+            /**
+             * Projectid
+             * Format: uuid
+             */
+            projectId: string;
+            /**
+             * Templateid
+             * Format: uuid
+             */
+            templateId: string;
         };
         /**
          * KeyValidationResult
@@ -4498,8 +4569,9 @@ export interface components {
          * PortableSection
          * @description One ``extraction_entity_types`` row plus its fields and (for a group)
          *     its child sections. ``group`` ⇒ ``model_container``; nested ⇒
-         *     ``model_section``; otherwise ``study_section``. ``entry_label`` is only
-         *     legal on a group; the import defaults it to ``"model"`` there.
+         *     ``model_section``; otherwise ``study_section``. ``entry_label`` is legal
+         *     on any repeating section (a group, or ``repeats``); the import defaults
+         *     it to ``"model"`` on a group and leaves it unset elsewhere.
          */
         PortableSection: {
             /** Description */
@@ -5095,6 +5167,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Is Entity Key
+             * @default false
+             */
+            is_entity_key: boolean;
             /** Is Required */
             is_required: boolean;
             /** Label */
@@ -5238,9 +5315,10 @@ export interface components {
          *     frontend's read-then-write race. The ``ck_role_parent`` validator
          *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
          *     (parent belongs to THIS template) is the service's BOLA job.
-         *     ``entry_label`` is the repeating group's entry noun (B-8, D3):
-         *     container-only, defaulting to ``'model'``; containers always repeat
-         *     (``cardinality='many'`` is enforced, never chosen).
+         *     ``entry_label`` is a repeating section's entry noun (B-8, D3 —
+         *     unlocked from the container in the entry-group train): legal on any
+         *     ``cardinality='many'`` section; the container defaults it to
+         *     ``'model'`` and always repeats (``'many'`` is enforced, never chosen).
          */
         SectionCreateRequest: {
             /**
@@ -5413,17 +5491,20 @@ export interface components {
         };
         /**
          * SectionUpdateRequest
-         * @description Partial section update: ``label`` (any role), ``entry_label``
-         *     (repeating groups only) and ``cardinality`` (per-model sections
-         *     only) — the role rules live in the service, which owns the row
-         *     (B-8, D5). At least one field must be provided, and explicit nulls
-         *     are rejected (omit instead) so a smuggled ``{"label": null}`` can
-         *     never blank a column. Replaces the label-only SectionRenameRequest;
-         *     the pre-B-8 label-only body stays valid.
+         * @description Partial section update: ``label`` and ``description`` (any role),
+         *     ``entry_label`` (repeating sections only) and ``cardinality``
+         *     (per-model sections only) — the role rules live in the service, which
+         *     owns the row (B-8, D5). At least one field must be provided, and
+         *     explicit nulls are rejected (omit instead) so a smuggled ``{"label":
+         *     null}`` can never blank a column; a description is cleared by sending
+         *     it blank. Replaces the label-only SectionRenameRequest; the pre-B-8
+         *     label-only body stays valid.
          */
         SectionUpdateRequest: {
             /** Cardinality */
             cardinality?: ("one" | "many") | null;
+            /** Description */
+            description?: string | null;
             /** Entry Label */
             entry_label?: string | null;
             /** Label */
@@ -6860,6 +6941,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_list_AISuggestionHistoryItem__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_instance_api_v1_extraction_instances__instance_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instance_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceIdentityUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RunViewInstance_"];
                 };
             };
             /** @description Validation Error */

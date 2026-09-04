@@ -1,9 +1,11 @@
 """Prompt templates: rendering (full-text, no truncation) and stable content versions."""
 
 from app.llm.prompts import (
+    EntryScope,
     content_version,
-    model_identification,
+    entry_identification,
     quality_assessment,
+    render_entry_scope_section,
     render_memory_section,
     section_extraction,
 )
@@ -17,7 +19,7 @@ def test_content_version_is_stable_and_short():
 
 
 def test_all_prompt_modules_declare_name_and_version():
-    for module in (section_extraction, quality_assessment, model_identification):
+    for module in (section_extraction, quality_assessment, entry_identification):
         assert isinstance(module.NAME, str) and module.NAME
         assert isinstance(module.VERSION, str) and len(module.VERSION) == 12
 
@@ -99,25 +101,83 @@ def test_general_instructions_absent_when_none():
     assert "General instructions" not in qa
 
 
-def test_model_identification_render_and_output_model():
-    prompt = model_identification.render(
-        container_label="prediction models", article_text="§" * 20_000
+def _entry_prompt(**kwargs):
+    return entry_identification.render(
+        group_label="prediction models", entry_label="model", key_label="Model name", **kwargs
     )
+
+
+def test_entry_identification_render_and_output_model():
+    prompt = _entry_prompt(article_text="§" * 20_000)
     assert "prediction models" in prompt
     assert prompt.count("§") == 20_000  # no truncation
     assert "General instructions" not in prompt
 
 
-def test_model_identification_general_instructions_block_leads():
+def test_entry_identification_general_instructions_block_leads():
     """Phase-A gap (B-2): the template-level ✨ instruction must reach the
-    model-identification prompt like the other two prompt pairs."""
-    prompt = model_identification.render(
-        container_label="prediction models",
-        article_text="text",
-        general_instructions="Focus on cardiac models.",
-    )
+    identification prompt like the other two prompt pairs."""
+    prompt = _entry_prompt(article_text="text", general_instructions="Focus on cardiac models.")
     assert prompt.startswith("General instructions for this review:\nFocus on cardiac models.\n\n")
-    output = model_identification.ModelIdentificationOutput.model_validate(
-        {"models": [{"name": "Cox model"}]}
+    output = entry_identification.EntryIdentificationOutput.model_validate(
+        {"entries": [{"name": "Cox model"}]}
     )
-    assert output.models[0].name == "Cox model"
+    assert output.entries[0].name == "Cox model"
+
+
+# ---------------------------------------------------------------------------
+# Entry scope — a repeating group is extracted once per entry, and the prompt
+# has to say WHICH entry, or every instance receives the same values.
+# ---------------------------------------------------------------------------
+
+_SCOPE = EntryScope(
+    entry_label="validation",
+    key_label="Validation type",
+    key_value="internal",
+    parent_label="XGBoost",
+)
+
+
+def _section_prompt(**kwargs):
+    return section_extraction.render(
+        entity_name="numeric_performance",
+        entity_description="Discrimination and calibration per validation",
+        article_text="A",
+        **kwargs,
+    )
+
+
+def _qa_prompt(**kwargs):
+    return quality_assessment.render(
+        entity_name="numeric_performance",
+        entity_description="D",
+        article_text="A",
+        framework="F",
+        **kwargs,
+    )
+
+
+def test_entry_scope_block_names_the_entry_its_key_and_its_parent():
+    for render in (_section_prompt, _qa_prompt):
+        prompt = render(entry_scope=_SCOPE)
+        assert 'Validation type: "internal"' in prompt, render.__name__
+        assert '"XGBoost"' in prompt, render.__name__
+        assert "validation" in prompt, render.__name__
+        # Scoping is an instruction about the article, so it sits before it.
+        assert prompt.index("internal") < prompt.index("Article text:"), render.__name__
+
+
+def test_entry_scope_block_is_absent_without_a_scope():
+    for render in (_section_prompt, _qa_prompt):
+        assert render(entry_scope=None) == render(), render.__name__
+        assert "ONLY" not in render()
+
+
+def test_entry_scope_block_omits_the_parent_line_for_a_top_level_group():
+    top_level = EntryScope(
+        entry_label="entry", key_label="Validation type", key_value="internal", parent_label=None
+    )
+    rendered = render_entry_scope_section(top_level)
+    assert 'Validation type: "internal"' in rendered
+    assert "Belongs to" not in rendered
+    assert render_entry_scope_section(None) == ""

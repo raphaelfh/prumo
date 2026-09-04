@@ -2,25 +2,27 @@
  * Extraction instance card
  *
  * Used for sections with cardinality='many'.
- * Each card represents one instance (e.g. "Model 1", "Model 2").
+ * Each card represents one entry (e.g. "Model 1", "Model 2").
  *
  * Features:
- * - Inline editable label
+ * - Rename / re-key through the entry dialog (identity spec §7: re-keying is
+ *   the one identity edit a reviewer makes; the dialog gains the key field)
  * - Instance fields
  * - Remove button
  * - Number badge
+ *
+ * Hook-free on purpose: the write goes up through `onRename`, like `onRemove`,
+ * so the card renders in any test tree without a query client.
  *
  * @component
  */
 
 import {useState} from 'react';
 import {Button} from '@/components/ui/button';
-import {Input} from '@/components/ui/input';
 import {Badge} from '@/components/ui/badge';
-import {Edit2, Save, Trash2, X} from 'lucide-react';
-import {toast} from 'sonner';
+import {Pencil, Trash2} from 'lucide-react';
 import {t} from '@/lib/copy';
-import {updateInstanceLabel} from '@/services/extractionInstanceService';
+import {displayEntryKey} from '@/lib/extraction/entryKey';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {
   Tooltip,
@@ -29,6 +31,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
+import {RenameEntryDialog, type EntryIdentityChanges} from './AddEntryDialog';
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 
@@ -50,137 +53,81 @@ interface InstanceCardProps {
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   /** Threaded to FieldInput's review popover generation dialog. */
   articleId?: string;
+  /** The section's entry noun for the rename dialog copy (B-8 D6). */
+  entryLabel?: string;
+  /** Label of the section's key field; null on a keyless section. */
+  keyLabel?: string | null;
+  /** Identities of the OTHER entries at this coordinate (duplicate block). */
+  siblingKeys?: string[];
+  /** Rename / re-key write; absent → no rename affordance (read-only, QA). */
+  onRename?: (changes: EntryIdentityChanges) => Promise<void>;
 }
 
 // =================== COMPONENT ===================
 
 export function InstanceCard(props: InstanceCardProps) {
-  const { instance, index, fields, values, onRemove, canRemove, projectId } = props;
+  const {
+    instance,
+    index,
+    fields,
+    values,
+    onRemove,
+    canRemove,
+    projectId,
+    entryLabel = 'entry',
+    keyLabel = null,
+    siblingKeys = [],
+    onRename,
+  } = props;
 
-  // Read-only run: no remove button, no label editing (published view).
+  // Read-only run: no remove button, no rename (published view).
   const { readOnly } = useRunEditability();
-  const [isEditingLabel, setIsEditingLabel] = useState(false);
-  const [editedLabel, setEditedLabel] = useState(instance.label);
-  const [saving, setSaving] = useState(false);
-  // Saved label shown on the card. Local state instead of mutating the
-  // `instance` prop in place (react-hooks/immutability); re-synced if the
-  // prop changes from outside.
-  const [savedLabel, setSavedLabel] = useState(instance.label);
-  const [prevPropLabel, setPrevPropLabel] = useState(instance.label);
-  if (instance.label !== prevPropLabel) {
-    setPrevPropLabel(instance.label);
-    setSavedLabel(instance.label);
-  }
-
-  const handleSaveLabel = async () => {
-    if (editedLabel.trim() === savedLabel) {
-      setIsEditingLabel(false);
-      return;
-    }
-
-    setSaving(true);
-
-    const result = await updateInstanceLabel(instance.id, editedLabel);
-
-    if (result.ok) {
-      setSavedLabel(editedLabel.trim());
-      setIsEditingLabel(false);
-      toast.success(t('extraction', 'labelUpdatedSuccess'));
-    } else {
-      toast.error(t('extraction', 'errors_updateLabel'));
-      setEditedLabel(savedLabel); // Revert
-    }
-
-    setSaving(false);
-  };
-
-  const handleCancelEdit = () => {
-    setEditedLabel(savedLabel);
-    setIsEditingLabel(false);
-  };
+  const [renaming, setRenaming] = useState(false);
 
   const removeActionLabel = t('extraction', 'instanceRemoveAction').replace(
     '{{label}}',
-    savedLabel,
+    instance.label,
   );
-  const saveActionLabel = t('extraction', 'instanceLabelSaveAction');
-  const cancelActionLabel = t('extraction', 'instanceLabelCancelAction');
+  const renameActionLabel = t('extraction', 'instanceRenameAction').replace(
+    '{{label}}',
+    instance.label,
+  );
 
   return (
     <div className="bg-muted/30 rounded-lg border border-border/60 shadow-elev-card">
         {/* Instance header */}
       <div className="px-8 py-5 border-b border-border/40">
         {/* One provider for the header's icon-button tooltips (shared
-            skip-delay when moving between save/cancel/remove). */}
+            skip-delay when moving between rename/remove). */}
         <TooltipProvider>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 flex-1">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
               {/* Number badge */}
             <Badge variant="outline" className="text-xs shrink-0 bg-card">
               #{index}
             </Badge>
 
-            {/* Label (editável) */}
-            {isEditingLabel ? (
-              <div className="flex items-center gap-2 flex-1">
-                <Input
-                  value={editedLabel}
-                  onChange={(e) => setEditedLabel(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveLabel();
-                    if (e.key === 'Escape') handleCancelEdit();
-                  }}
-                  className="h-8 text-sm font-medium"
-                  autoFocus
-                  disabled={saving}
-                />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={handleSaveLabel}
-                      disabled={saving}
-                      aria-label={saveActionLabel}
-                    >
-                      <Save className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{saveActionLabel}</p>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={handleCancelEdit}
-                      disabled={saving}
-                      aria-label={cancelActionLabel}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{cancelActionLabel}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            ) : readOnly ? (
-              <span className="text-sm font-semibold" title={savedLabel}>
-                {savedLabel}
-              </span>
-            ) : (
-              <button
-                type="button"
-                className="text-sm font-semibold cursor-pointer hover:text-primary transition-colors duration-75 flex items-center gap-2 rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                onClick={() => setIsEditingLabel(true)}
-                title={savedLabel}
-              >
-                {savedLabel}
-                <Edit2 className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
-              </button>
+            <span className="text-sm font-semibold truncate" title={instance.label}>
+              {instance.label}
+            </span>
+
+            {!readOnly && onRename && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setRenaming(true)}
+                    aria-label={renameActionLabel}
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{renameActionLabel}</p>
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
 
@@ -206,6 +153,22 @@ export function InstanceCard(props: InstanceCardProps) {
         </div>
         </TooltipProvider>
       </div>
+
+      {onRename && (
+        <RenameEntryDialog
+          open={renaming}
+          entryLabel={entryLabel}
+          keyLabel={keyLabel}
+          initialLabel={instance.label}
+          initialKey={keyLabel ? displayEntryKey(instance) : null}
+          siblingKeys={siblingKeys}
+          onConfirm={async (changes) => {
+            await onRename(changes);
+            setRenaming(false);
+          }}
+          onCancel={() => setRenaming(false)}
+        />
+      )}
 
         {/* Instance fields */}
       <div className="bg-card rounded-b-lg px-2">
@@ -263,4 +226,3 @@ export function InstanceCard(props: InstanceCardProps) {
     </div>
   );
 }
-

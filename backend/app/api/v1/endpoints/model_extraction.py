@@ -22,6 +22,7 @@ from app.api.v1.endpoints._integrity import (
     is_one_live_run_conflict,
 )
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
+from app.core.error_handler import AppError
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
@@ -256,6 +257,11 @@ async def extract_models(
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
+    except AppError:
+        # Typed refusals (``MissingEntityKeyError``: 409 ``MISSING_ENTITY_KEY``)
+        # reach their registered handler; keep this arm above ``except Exception``.
+        await db.rollback()
+        raise
     except CreateRunInputError as e:
         rollback_start = perf_counter()
         await db.rollback()

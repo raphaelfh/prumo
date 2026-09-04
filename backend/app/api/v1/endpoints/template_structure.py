@@ -355,11 +355,12 @@ async def update_template_section(
     db: DbSession,
     user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[SectionRead]:
-    """Partial section update: label, entry_label, cardinality (B-8).
+    """Partial section update: label, entry_label, cardinality, description (B-8).
 
-    Role rules are 422s (entry_label only on the repeating group;
+    Role rules are 422s (entry_label only on a repeating section;
     cardinality only on a per-model section); many -> one with a parent
-    instance holding 2+ entries is a 409. A real change stamps the B-4
+    instance holding 2+ entries is a 409. ``description`` is the section's
+    AI instruction; a blank one clears it. A real change stamps the B-4
     draft marker via the 0048 trigger; an all-no-op update skips the
     write (no stamp).
     """

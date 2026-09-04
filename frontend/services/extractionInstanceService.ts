@@ -514,24 +514,10 @@ export const extractionInstanceService = new ExtractionInstanceService();
 import type {ErrorResult} from '@/lib/error-utils';
 import {toResult} from '@/lib/error-utils';
 
-/**
- * Update the label of a single extraction instance.
- * NOTE: on success the caller should show a toast using the extraction
- * 'labelUpdatedSuccess' copy key; on failure the 'errors_updateLabel' key.
- */
-export async function updateInstanceLabel(
-  instanceId: string,
-  label: string,
-): Promise<ErrorResult<void>> {
-  return toResult(async () => {
-    const {error} = await supabase
-      .from('extraction_instances')
-      .update({label: label.trim()})
-      .eq('id', instanceId);
-
-    if (error) throw error;
-  }, 'updateInstanceLabel');
-}
+// Renaming an instance goes through the typed endpoint now
+// (`useUpdateInstanceIdentity` → PATCH /extraction/instances/{id}): the
+// rename dialog also re-keys, and the identity history has to be written
+// by the server with the caller's identity.
 
 // ---------------------------------------------------------------------------
 // useModelManagement — model-container instance queries

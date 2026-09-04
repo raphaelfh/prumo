@@ -32,7 +32,8 @@ import type {
     SectionExtractionRequest,
     SectionExtractionResponse,
 } from "@/types/ai-extraction";
-import {APIError} from "@/lib/ai-extraction/errors";
+import {APIError, getErrorCode} from "@/lib/ai-extraction/errors";
+import {t} from "@/lib/copy";
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import {getExtractionJobStatus} from './extractionRunService';
 import type {components} from '@/types/api/schema';
@@ -76,14 +77,15 @@ async function pollUntilDone(jobId: string): Promise<ErrorResult<ExtractionJobRe
     if (!statusResult.ok) {
       return statusResult;
     }
-    const { status, result, error } = statusResult.data;
+    const { status, result, error, errorCode } = statusResult.data;
     if (status === 'completed' && result) {
       return { ok: true, data: result };
     }
     if (status === 'failed' || status === 'cancelled') {
+      // Carry the classified code so the hooks' toast mapping sees it.
       return {
         ok: false,
-        error: new Error(error ?? `Extraction job ${status}: ${jobId}`),
+        error: new APIError(error ?? `Extraction job ${status}: ${jobId}`, undefined, undefined, errorCode ?? 'API_ERROR'),
       };
     }
     // pending | running — keep polling
@@ -137,7 +139,7 @@ export class SectionExtractionService {
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
-        throw new APIError(err.message, err.status, { code: err.code, traceId: err.traceId });
+        throw new APIError(err.message, err.status, { traceId: err.traceId }, err.code);
       }
       throw new APIError(err instanceof Error ? err.message : String(err), undefined, { originalError: String(err) });
     });
@@ -148,7 +150,7 @@ export class SectionExtractionService {
     const jobResult = await pollUntilDone(jobId);
 
     if (!jobResult.ok) {
-      throw new APIError(jobResult.error.message, undefined, { traceId });
+      throw new APIError(jobResult.error.message, undefined, { traceId }, getErrorCode(jobResult.error) ?? 'API_ERROR');
     }
 
     const result = jobResult.data;
@@ -218,13 +220,10 @@ export class SectionExtractionService {
       };
     } catch (error) {
       if (error instanceof ApiError) {
-        throw new APIError(error.message, error.status, {
-          code: error.code,
-          traceId: error.traceId,
-        });
+        throw new APIError(error.message, error.status, { traceId: error.traceId }, error.code);
       }
       throw new APIError(
-          error instanceof Error ? error.message : "Unknown error",
+          error instanceof Error ? error.message : t('common', 'errors_unknownError'),
         undefined,
         { originalError: String(error) },
       );
@@ -269,7 +268,7 @@ export class SectionExtractionService {
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
-        throw new APIError(err.message, err.status, { code: err.code, traceId: err.traceId });
+        throw new APIError(err.message, err.status, { traceId: err.traceId }, err.code);
       }
       throw new APIError(err instanceof Error ? err.message : String(err), undefined, { originalError: String(err) });
     });
@@ -280,7 +279,7 @@ export class SectionExtractionService {
     const jobResult = await pollUntilDone(jobId);
 
     if (!jobResult.ok) {
-      throw new APIError(jobResult.error.message, undefined, { traceId });
+      throw new APIError(jobResult.error.message, undefined, { traceId }, getErrorCode(jobResult.error) ?? 'API_ERROR');
     }
 
     const result = jobResult.data;

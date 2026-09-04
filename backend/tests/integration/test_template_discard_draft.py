@@ -84,10 +84,11 @@ from tests.integration.helpers.template_fixtures import (
     entity_id as _entity_id,
 )
 from tests.integration.helpers.template_fixtures import (
-    field_id as _field_id,
+    entry_key_holders,
+    force_narrow_baseline,
 )
 from tests.integration.helpers.template_fixtures import (
-    force_narrow_baseline,
+    field_id as _field_id,
 )
 from tests.integration.helpers.template_fixtures import (
     fresh_charms as _fresh_charms,
@@ -1334,3 +1335,29 @@ async def test_endpoint_rejects_a_non_manager(
     finally:
         app.dependency_overrides.pop(get_current_user, None)
     await db_session.rollback()
+
+
+# ==========================================================================
+# Entry key — Discard after deleting the key field gives the identity back
+# ==========================================================================
+
+
+@pytest.mark.asyncio
+async def test_discard_after_deleting_the_entry_key_field_restores_the_identity(
+    db_session: AsyncSession,
+) -> None:
+    """Identity is versioned config. Before the snapshot carried
+    ``is_entity_key``, Discard rebuilt the deleted key field as an ordinary
+    field and the container's next AI re-run was refused
+    (``MissingEntityKeyError``) on a template the manager had just restored."""
+    project_id, template_id, baseline = await _fresh_charms(db_session)
+    section, key_field = next(iter((await entry_key_holders(db_session, template_id)).items()))
+    await _delete_field(db_session, key_field)
+
+    result = await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    assert result.kept == []
+    assert result.created_fields == 1
+    assert (await entry_key_holders(db_session, template_id))[section] == key_field
+    assert await get_config_draft_marker(db_session, template_id) is None
+    await _assert_matches_baseline(db_session, template_id=template_id, baseline=baseline)

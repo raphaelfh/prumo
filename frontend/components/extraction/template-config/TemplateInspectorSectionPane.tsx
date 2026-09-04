@@ -5,19 +5,30 @@
  * Three variants by `section.kind`. Every edit commits IMMEDIATELY
  * through the section PATCH (the Section-combobox semantics — no
  * draft/Save row):
- * - group: entry-label Input (blur/Enter; unchanged or emptied value is
- *   a no-op that reverts the display — the header rename revert rule),
- *   Repeats LOCKED ("a group always repeats");
+ * - group: Repeats LOCKED ("a group always repeats");
  * - groupChild: Placement locked to the parent group, Repeats select
  *   (one/many). The D5 many→one 409 toasts the friendly copy in the
  *   hook and the select reverts here;
  * - root: Repeats READ-ONLY (cardinality is a create-time choice,
  *   spec §3).
+ *
+ * Every section that REPEATS — a group, or any other section with
+ * cardinality 'many' — additionally shows the entry-group controls: the
+ * entry-label Input (blur/Enter; an unchanged or emptied value is a
+ * no-op that reverts the display — the header rename revert rule) and
+ * the entry-key select (0059). One entry of a repeating section needs a
+ * name and an identity whether or not it is the model container.
+ *
+ * The description is the section's AI instruction — sent with every
+ * extraction of the section and, when it repeats, as the instruction for
+ * identifying its entries; the run form never shows it. It commits on
+ * blur like the entry label, except that a blank IS a commit (it clears).
  */
 import {useState} from 'react';
 
 import {Badge} from '@/components/ui/badge';
 import {Input} from '@/components/ui/input';
+import {Textarea} from '@/components/ui/textarea';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {useUpdateTemplateSection} from '@/hooks/extraction/useUpdateTemplateSection';
 import {t} from '@/lib/copy';
@@ -37,8 +48,17 @@ export function sectionContentKey(section: GridSection): string {
     section.id,
     section.label,
     section.entryNoun,
+    section.ownEntryLabel,
     section.cardinality,
+    section.description,
   ]);
+}
+
+/** What the entry-label input shows: the group's resolved noun (its
+ * 'model' default is real server state), any other section's own raw
+ * noun — or '' while unset, with the default noun as the placeholder. */
+function shownEntryLabel(section: GridSection): string {
+  return section.kind === 'group' ? section.entryNoun : (section.ownEntryLabel ?? '');
 }
 
 export function SectionInspectorForm({
@@ -55,8 +75,9 @@ export function SectionInspectorForm({
 }) {
   const update = useUpdateTemplateSection(projectId, templateId);
   const updateFieldMutation = useUpdateTemplateField(projectId, templateId);
-  const [entryLabel, setEntryLabel] = useState(section.entryNoun);
+  const [entryLabel, setEntryLabel] = useState(shownEntryLabel(section));
   const [cardinality, setCardinality] = useState(section.cardinality);
+  const [description, setDescription] = useState(section.description ?? '');
 
   // A group always repeats; a per-model section only when it says so.
   const repeats = section.kind === 'group' || cardinality === 'many';
@@ -87,8 +108,9 @@ export function SectionInspectorForm({
   // against the last COMMITTED values instead; the remount on
   // sectionContentKey still reconciles external changes.
   const [lastCommitted, setLastCommitted] = useState({
-    entryLabel: section.entryNoun,
+    entryLabel: shownEntryLabel(section),
     cardinality: section.cardinality,
+    description: section.description ?? '',
   });
   const saving = update.isPending;
 
@@ -107,6 +129,24 @@ export function SectionInspectorForm({
           setLastCommitted((prev) => ({...prev, entryLabel: next})),
         // The hook toasted; an immediate-commit control shows server truth.
         onError: () => setEntryLabel(lastCommitted.entryLabel),
+      },
+    );
+  };
+
+  const commitDescription = () => {
+    const next = description.trim();
+    if (next === lastCommitted.description) {
+      // Whitespace-only edits normalize back; nothing to send.
+      setDescription(lastCommitted.description);
+      return;
+    }
+    // A blank goes through: the server clears the column.
+    update.mutate(
+      {sectionId: section.id, changes: {description: next}},
+      {
+        onSuccess: () =>
+          setLastCommitted((prev) => ({...prev, description: next})),
+        onError: () => setDescription(lastCommitted.description),
       },
     );
   };
@@ -162,7 +202,7 @@ export function SectionInspectorForm({
         </>
       )}
 
-      {section.kind === 'group' && (
+      {repeats && (
         <>
           <Label htmlFor="inspector-section-entry-label">
             {t('templateConfig', 'entryLabelLabel')}
@@ -176,6 +216,10 @@ export function SectionInspectorForm({
               // Enter commits through the blur path (one commit).
               if (e.key === 'Enter') e.currentTarget.blur();
             }}
+            placeholder={t(
+              'templateConfig',
+              section.kind === 'group' ? 'entryLabelPlaceholder' : 'entryLabelPlaceholderEntry',
+            )}
             disabled={saving}
             className="h-7 text-[13px]"
           />
@@ -264,10 +308,22 @@ export function SectionInspectorForm({
       <Label>{t('extraction', 'fieldsCountLabel')}</Label>
       <ReadOnlyValue>{section.totalFieldCount}</ReadOnlyValue>
 
-      <Label>{t('extraction', 'inspectorDescriptionLabel')}</Label>
-      <ReadOnlyValue muted={!section.description}>
-        {section.description ?? t('extraction', 'inspectorDescriptionEmpty')}
-      </ReadOnlyValue>
+      <Label htmlFor="inspector-section-description">
+        {t('templateConfig', 'inspectorSectionDescriptionLabel')}
+      </Label>
+      <Textarea
+        id="inspector-section-description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        onBlur={commitDescription}
+        placeholder={t('extraction', 'inspectorDescriptionEmpty')}
+        disabled={saving}
+        rows={3}
+        className="text-[13px]"
+      />
+      <p className="mt-[3px] text-[11px] leading-snug text-muted-foreground">
+        {t('templateConfig', 'sectionDescriptionHint')}
+      </p>
     </>
   );
 }

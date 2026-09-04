@@ -48,7 +48,6 @@ export const pages = {
     extractionScreenParentNotFound: 'Parent instance not found. Create the parent section first.',
     extractionScreenInstanceAddedSuccess: 'added successfully',
     extractionScreenInstanceAlreadyExists: 'Instance already exists',
-    extractionScreenErrorAddInstance: 'Error adding instance',
     extractionScreenConfirmRemoveInstance: 'This instance has extracted values. Are you sure you want to remove it?',
     extractionScreenInstanceRemoved: 'Instance removed successfully',
     extractionScreenErrorRemoveInstance: 'Error removing instance',

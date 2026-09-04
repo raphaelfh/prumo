@@ -1,0 +1,44 @@
+import {describe, expect, it, vi} from 'vitest';
+
+// `t` is mocked to echo the copy key so assertions read the key directly.
+vi.mock('@/lib/copy', () => ({
+  t: (_ns: string, key: string) => key,
+}));
+
+import {extractionErrorToast} from '@/lib/ai-extraction/extractionErrorToast';
+
+describe('extractionErrorToast', () => {
+  it('maps MISSING_API_KEY to the auth title + the backend message', () => {
+    expect(extractionErrorToast('MISSING_API_KEY', 'No OpenAI API key available.')).toEqual({
+      title: 'sectionExtractionErrorAuth',
+      description: 'No OpenAI API key available.',
+      duration: 8000,
+    });
+  });
+
+  it('maps PDF_NOT_FOUND to the generic error title + the backend message', () => {
+    expect(extractionErrorToast('PDF_NOT_FOUND', 'PDF not found. Upload a PDF first.')).toEqual({
+      title: 'sectionExtractionErrorTitle',
+      description: 'PDF not found. Upload a PDF first.',
+      duration: 8000,
+    });
+  });
+
+  it('maps MISSING_ENTITY_KEY to the entry-key title + the backend message', () => {
+    const message = "The repeating section 'Final predictors' declares no entry key.";
+    expect(extractionErrorToast('MISSING_ENTITY_KEY', message)).toEqual({
+      title: 'sectionExtractionErrorNoEntryKey',
+      description: message,
+      duration: 8000,
+    });
+  });
+
+  it('returns null for the generic code so the caller uses its own fallback', () => {
+    expect(extractionErrorToast('EXTRACTION_FAILED', 'something broke')).toBeNull();
+  });
+
+  it('returns null for a missing or unknown code', () => {
+    expect(extractionErrorToast(null, 'x')).toBeNull();
+    expect(extractionErrorToast(undefined, 'x')).toBeNull();
+  });
+});

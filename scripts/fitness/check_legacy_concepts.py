@@ -5,7 +5,7 @@ Bans reintroduction of legacy concepts that were explicitly removed from the
 codebase. Two tiers:
 
   HARD (4 patterns): hit anywhere outside the allowlist => exit 1.
-  WARN (12 patterns): reported in stdout + JSONL, do not fail the gate.
+  WARN (13 patterns): reported in stdout + JSONL, do not fail the gate.
 
 Usage:
   python check_legacy_concepts.py [--scope GLOB] [--repo-root PATH]
@@ -116,6 +116,15 @@ HARD: tuple[Pattern, ...] = (
 )
 
 WARN: tuple[Pattern, ...] = (
+    Pattern(
+        "suggestion_dtos",
+        "warn",
+        re.compile(r"\b(FieldSuggestion|SuggestionResponse|ReviewSuggestionRequest)\b"),
+        ("scripts/fitness/check_legacy_concepts.py",),
+        "AISuggestion-era DTOs deleted 2026-09-03 (quality run entry-key-typed-refusal): "
+        "proposals are status-less ProposalRecords and review is a ReviewerDecision.",
+        5,
+    ),
     Pattern(
         "suggestion_status_enum",
         "warn",

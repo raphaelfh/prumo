@@ -76,6 +76,7 @@ export const templateConfig = {
   diffAttrDescription: 'Description',
   diffAttrEntryLabel: 'Entry label',
   diffAttrFieldType: 'Field type',
+  diffAttrIsEntityKey: 'Entry key',
   diffAttrIsRequired: 'Required',
   diffAttrLabel: 'Label',
   diffAttrLlmDescription: 'AI instruction',
@@ -188,10 +189,13 @@ export const templateConfig = {
   dragLockedPending: 'Wait for the new field to finish saving',
   dragPickedUp: 'Picked up {{field}}',
   entryLabelHint:
-    'What reviewers call one entry (e.g. model, arm, algorithm). Blank defaults to "model".',
+    'What reviewers call one entry of this section (e.g. model, arm, validation). Blank keeps the default shown as the placeholder.',
   entryLabelLabel: 'Entry label',
   entryLabelMax50: 'Entry label must have at most 50 characters',
   entryLabelPlaceholder: 'model',
+  // A repeating section that is not the group has no server default: the
+  // prompts and the run form fall back to this noun until one is set.
+  entryLabelPlaceholderEntry: 'entry',
   errors_cardinalityInUse:
     'This section cannot be set to repeat once: it already has multiple entries under at least one group entry. Remove the extra entries first.',
   errors_deleteSectionInUse:
@@ -286,6 +290,10 @@ export const templateConfig = {
   inspectorEntryKeyNone: 'Not set — AI re-runs are blocked',
   inspectorEntryKeyHint:
     'The field whose value tells one entry apart from another. Without it, running AI extraction again would add a duplicate entry instead of updating this one.',
+  // The section description is the section's AI instruction (the field
+  // pane's "for reviewers / never sent to the AI" split does not apply:
+  // the run form never renders a section description).
+  inspectorSectionDescriptionLabel: 'Description — given to the AI',
   menuMoveDown: 'Move down',
   menuMoveToSection: 'Move to section…',
   menuMoveUp: 'Move up',
@@ -305,6 +313,8 @@ export const templateConfig = {
   // read must never be dressed up as "this template has no sections".
   // Reserved for a read that returned NOTHING — with rows cached the copy
   // below is the honest one (the sections ARE shown, just not refreshed).
+  sectionDescriptionHint:
+    'Sent to the AI with every extraction of this section. When the section repeats, it also tells the AI how to identify its entries. Reviewers do not see it on the run form.',
   sectionsLoadFailedBody:
     'The template structure could not be read, so the sections are not shown. Check your connection and try again.',
   sectionsLoadFailedTitle: 'Couldn’t load the sections',

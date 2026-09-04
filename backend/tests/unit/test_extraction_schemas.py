@@ -29,7 +29,6 @@ from app.schemas.extraction import (
     ExtractionFieldSchema,
     ExtractionOptions,
     ExtractionTemplateSchema,
-    FieldSuggestion,
     HybridCitationAnchor,
     IdentifiedModel,
     InstanceResponse,
@@ -41,12 +40,10 @@ from app.schemas.extraction import (
     PDFTextRange,
     PositionV1,
     RegionCitationAnchor,
-    ReviewSuggestionRequest,
     SaveValueRequest,
     SectionExtractionRequest,
     SectionOutcome,
     SingleSectionResult,
-    SuggestionResponse,
     TextCitationAnchor,
     ValueResponse,
     parse_position,
@@ -114,70 +111,6 @@ class TestEvidencePassage:
     def test_missing_text_rejected(self) -> None:
         with pytest.raises(ValidationError):
             EvidencePassage()  # type: ignore[call-arg]
-
-
-# =================== FieldSuggestion ===================
-
-
-class TestFieldSuggestion:
-    def test_construct_from_camel_alias(self) -> None:
-        fid = uuid4()
-        fs = FieldSuggestion(
-            fieldId=fid,
-            fieldName="age",
-            suggestedValue=42,
-            confidenceScore=0.9,
-        )
-        assert fs.field_id == fid
-        assert fs.field_name == "age"
-        assert fs.suggested_value == 42
-
-    def test_construct_from_snake_name(self) -> None:
-        fid = uuid4()
-        fs = FieldSuggestion(
-            field_id=fid,
-            field_name="age",
-            suggested_value=42,
-        )
-        assert fs.field_id == fid
-        assert fs.confidence_score is None
-        assert fs.evidence == []
-
-    def test_dump_by_alias_is_camel(self) -> None:
-        fs = FieldSuggestion(
-            field_id=uuid4(),
-            field_name="age",
-            suggested_value=42,
-            confidence_score=0.5,
-        )
-        wire = fs.model_dump(by_alias=True)
-        assert "fieldId" in wire
-        assert "fieldName" in wire
-        assert "suggestedValue" in wire
-        assert "confidenceScore" in wire
-
-    def test_confidence_bounds_just_inside(self) -> None:
-        base = {"field_id": uuid4(), "field_name": "x", "suggested_value": 1}
-        assert FieldSuggestion(**base, confidence_score=0).confidence_score == 0
-        assert FieldSuggestion(**base, confidence_score=1).confidence_score == 1
-
-    def test_confidence_below_min_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            FieldSuggestion(
-                field_id=uuid4(),
-                field_name="x",
-                suggested_value=1,
-                confidence_score=-0.01,
-            )
-
-    def test_confidence_above_max_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            FieldSuggestion(
-                field_id=uuid4(),
-                field_name="x",
-                suggested_value=1,
-                confidence_score=1.01,
-            )
 
 
 # =================== SectionExtractionRequest ===================
@@ -580,24 +513,6 @@ class TestSaveValueRequest:
         assert v.evidence == []
 
 
-class TestReviewSuggestionRequest:
-    def test_status_valid_literals(self) -> None:
-        for st in ("accepted", "rejected"):
-            req = ReviewSuggestionRequest(status=st)
-            assert req.status == st
-
-    def test_status_pending_rejected(self) -> None:
-        # ReviewSuggestionRequest only allows accepted/rejected (not pending).
-        with pytest.raises(ValidationError):
-            ReviewSuggestionRequest(status="pending")
-
-    def test_modified_value_alias(self) -> None:
-        req = ReviewSuggestionRequest(status="accepted", modifiedValue=42)
-        assert req.modified_value == 42
-        wire = req.model_dump(by_alias=True)
-        assert "modifiedValue" in wire
-
-
 # =================== Remaining public classes (construction coverage) ===================
 
 
@@ -695,30 +610,6 @@ class TestRemainingConstruction:
         )
         assert resp.is_consensus is False
         assert resp.confidence_score is None
-
-    def test_suggestion_response_status_literals(self) -> None:
-        now = "2026-06-13T00:00:00Z"
-        for st in ("pending", "accepted", "rejected"):
-            resp = SuggestionResponse(
-                id=uuid4(),
-                extractionRunId=uuid4(),
-                fieldId=uuid4(),
-                suggestedValue="v",
-                status=st,
-                createdAt=now,
-            )
-            assert resp.status == st
-
-    def test_suggestion_response_invalid_status_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            SuggestionResponse(
-                id=uuid4(),
-                extractionRunId=uuid4(),
-                fieldId=uuid4(),
-                suggestedValue="v",
-                status="approved",
-                createdAt="2026-06-13T00:00:00Z",
-            )
 
     def test_section_outcome_light_construction(self) -> None:
         # Wire shape pinned in test_typed_envelope_schemas; just a smoke

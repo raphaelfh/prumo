@@ -78,19 +78,6 @@ class EvidencePassage(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class FieldSuggestion(BaseModel):
-    """Sugestao de valor for um field."""
-
-    field_id: UUID = Field(..., alias="fieldId")
-    field_name: str = Field(..., alias="fieldName")
-    suggested_value: Any = Field(..., alias="suggestedValue")
-    confidence_score: float | None = Field(default=None, alias="confidenceScore", ge=0, le=1)
-    reasoning: str | None = None
-    evidence: list[EvidencePassage] = []
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
 # =================== SECTION EXTRACTION SCHEMAS ===================
 
 
@@ -238,6 +225,32 @@ class CreateModelHierarchyRequest(BaseModel):
     modelling_method: str | None = Field(default=None, alias="modellingMethod")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class InstanceIdentityUpdateRequest(BaseModel):
+    """Rename and/or re-key one extraction instance (the run form's rename
+    dialog). ``entity_key`` is the identity an AI re-run matches against; the
+    server normalizes it and appends the change to ``entity_key_history``.
+    At least one of ``label`` / ``entity_key`` must be present, and neither
+    may be blank — a smuggled ``{"label": ""}`` must never blank a column."""
+
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    template_id: UUID = Field(..., alias="templateId")
+    label: str | None = Field(default=None, max_length=200)
+    entity_key: str | None = Field(default=None, alias="entityKey", max_length=500)
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    @model_validator(mode="after")
+    def _one_non_blank_change(self) -> "InstanceIdentityUpdateRequest":
+        if self.label is None and self.entity_key is None:
+            raise ValueError("at least one of label, entityKey is required")
+        for name in ("label", "entity_key"):
+            value = getattr(self, name)
+            if value is not None and not value.strip():
+                raise ValueError(f"{name} may be omitted but not blank")
+        return self
 
 
 class ModelHierarchyChildResponse(BaseModel):
@@ -464,32 +477,7 @@ class ValueResponse(BaseModel):
 # =================== SUGGESTION SCHEMAS ===================
 
 
-class SuggestionResponse(BaseModel):
-    """Response de suggestion de IA for extraction."""
-
-    id: UUID
-    extraction_run_id: UUID = Field(..., alias="extractionRunId")
-    instance_id: UUID | None = Field(default=None, alias="instanceId")
-    field_id: UUID = Field(..., alias="fieldId")
-    suggested_value: Any = Field(..., alias="suggestedValue")
-    confidence_score: float | None = Field(default=None, alias="confidenceScore")
-    reasoning: str | None = None
-    status: Literal["pending", "accepted", "rejected"]
-    created_at: datetime = Field(..., alias="createdAt")
-
-    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
-
-
-class ReviewSuggestionRequest(BaseModel):
-    """Request for revisar suggestion."""
-
-    status: Literal["accepted", "rejected"]
-    modified_value: Any | None = Field(default=None, alias="modifiedValue")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-# =================== ASYNC SECTION EXTRACTION JOB SCHEMAS ===================
+# =================== EXTRACTION JOB SCHEMAS ===================
 
 
 class ExtractionErrorCode(str, Enum):
@@ -508,6 +496,10 @@ class ExtractionErrorCode(str, Enum):
       serve: row deleted, unverified, model dropped
       (``resolve_project_engine``), or its key no longer decrypts
       (``EndpointUnavailableError``; enqueue-time validation is a 409).
+    - ``MISSING_ENTITY_KEY`` — a repeating section declares no
+      ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
+      LLM call. Carried by the single-section job and, as a 409, by the sync
+      models kickoff; a batch run keeps reporting per-section text.
     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
     """
 
@@ -515,6 +507,7 @@ class ExtractionErrorCode(str, Enum):
     MISSING_API_KEY = "MISSING_API_KEY"
     ENGINE_RETIRED = "ENGINE_RETIRED"
     LLM_ENDPOINT_UNAVAILABLE = "LLM_ENDPOINT_UNAVAILABLE"
+    MISSING_ENTITY_KEY = "MISSING_ENTITY_KEY"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
 
 

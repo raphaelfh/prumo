@@ -18,7 +18,7 @@ import {useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 
 import {t} from '@/lib/copy';
-import {jobErrorToast} from '@/lib/ai-extraction/jobErrorToast';
+import {showExtractionErrorToast} from '@/hooks/extraction/helpers/showExtractionErrorToast';
 import {extractionKeys} from '@/lib/query-keys';
 import {
   extractSectionAsync,
@@ -103,13 +103,7 @@ export function useSectionExtraction(options?: {
       const msg = jobError ?? t('extraction', 'extractionJobFailedTitle');
       // A classified backend code gets specific copy; otherwise fall back to
       // the generic error toast.
-      const specific = jobErrorToast(jobErrorCode, msg);
-      if (specific) {
-        toast.error(specific.title, {
-          description: specific.description,
-          duration: specific.duration,
-        });
-      } else {
+      if (!showExtractionErrorToast(jobErrorCode, msg)) {
         toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
           description: msg,
           duration: 8000,

@@ -346,8 +346,9 @@ async def test_child_entity_types_come_from_the_pinned_snapshot(
 async def test_model_identification_uses_pinned_label_and_instruction(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Model identification: the container label comes from the pinned tree
-    and the template-level ✨ instruction (phase-A gap) leads the prompt."""
+    """Model identification: the container label, entry noun, key field and
+    description come from the pinned tree and the template-level ✨
+    instruction (phase-A gap) leads the prompt."""
     from app.services.model_extraction_service import ModelExtractionService
 
     fx = await _coords(db_session)
@@ -373,8 +374,21 @@ async def test_model_identification_uses_pinned_label_and_instruction(
             "llm_template_instruction": "PINNED GENERAL INSTRUCTION",
             "entity_types": [
                 {
-                    **_snapshot_entity(str(entity_type_id), "models", role="model_container"),
+                    **_snapshot_entity(
+                        str(entity_type_id),
+                        "models",
+                        role="model_container",
+                        fields=[
+                            {
+                                **_snapshot_field(str(field_a_id), "pinned_key"),
+                                "is_entity_key": True,
+                            }
+                        ],
+                    ),
                     "label": "PINNED MODELS LABEL",
+                    "description": "PINNED CONTAINER DESCRIPTION",
+                    "cardinality": "many",
+                    "entry_label": "algorithm",
                 }
             ],
         },
@@ -386,7 +400,7 @@ async def test_model_identification_uses_pinned_label_and_instruction(
     async def fake_extract_structured(**kwargs):  # noqa: ANN003
         captured["user_prompt"] = kwargs["user_prompt"]
         output = MagicMock()
-        output.models = []
+        output.entries = []
         return output, LlmUsage()
 
     monkeypatch.setattr(
@@ -404,10 +418,12 @@ async def test_model_identification_uses_pinned_label_and_instruction(
         storage=MagicMock(),
         trace_id="test-pinned-models",
     )
-    template = await service._get_template(template_id)
-    await service._identify_models("ARTICLE", template, "gpt-test", run)
+    await service._identify_models("ARTICLE", "gpt-test", run)
 
     assert "PINNED MODELS LABEL" in captured["user_prompt"]
+    assert "identify every algorithm" in captured["user_prompt"]
+    assert "return its pinned_key" in captured["user_prompt"]
+    assert "Section instructions: PINNED CONTAINER DESCRIPTION" in captured["user_prompt"]
     assert captured["user_prompt"].startswith(
         "General instructions for this review:\nPINNED GENERAL INSTRUCTION\n\n"
     )

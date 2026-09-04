@@ -72,7 +72,8 @@ export const extraction = {
     sectionExtractionSuccessTitle: 'Extraction completed! {{n}} suggestion(s) created for this section.',
     sectionExtractionErrorTitle: 'Extraction error',
     sectionExtractionErrorAuth: 'Authentication error',
-    sectionExtractionErrorAuthDesc: 'Please sign in again.',
+    sectionExtractionErrorNoEntryKey: 'Entry key missing',
+    fullAICompleteSummary: '{{n}} suggestion(s) created across {{ok}}/{{total}} sections.',
     // FullAIExtractionProgress
     fullAIProgressTitle: 'Full AI Extraction',
     fullAIProgressInProgress: 'AI extraction in progress…',
@@ -104,7 +105,6 @@ export const extraction = {
     errors_batchAcceptSuggestions: 'Error accepting suggestions in batch',
     noSectionsForModel: 'No sections found for this model',
     modelExtractionErrorTitle: 'Extraction error',
-    modelExtractionAuthErrorTitle: 'Authentication error',
     noModelsExtractionComplete: 'Extraction completed but no prediction models were found in the article.',
     noModelsToExtractSections: 'No models to extract sections from. Extract models first.',
     extractionMayTakeMinutes: 'This may take a few minutes',
@@ -119,11 +119,22 @@ export const extraction = {
     noModelsFoundTitle: 'No models found',
     errors_loadExtractionData: 'Error loading data',
     errors_loadExtractedValues: 'Error loading extracted values',
-    errors_updateLabel: 'Error updating label',
     labelUpdatedSuccess: 'Label updated successfully',
     instanceRemoveAction: 'Remove "{{label}}"',
-    instanceLabelSaveAction: 'Save label',
-    instanceLabelCancelAction: 'Cancel label editing',
+    instanceRenameAction: 'Rename "{{label}}"',
+    // Entry dialogs (every repeating section is an entry group). The key
+    // field's label is data; `{{key}}` carries it lower-cased into copy.
+    entryLabelField: 'Label',
+    entryKeyHint:
+      'Identity for AI re-runs: a re-run that finds this {{key}} updates this {{noun}} instead of adding another.',
+    entryKeyEmpty: '{{key}} cannot be empty',
+    entryKeyDuplicate: 'A {{noun}} with this {{key}} already exists',
+    renameEntryTitle: 'Rename {{noun}}',
+    renameEntryDesc:
+      'Change how this {{noun}} is shown, and what identifies it to AI re-runs.',
+    entryUpdatedSuccess: '{{noun}} updated',
+    errors_updateEntry: 'Error updating {{noun}}',
+    saving: 'Saving…',
     processingArticle: 'Processing article {{current}}/{{total}}: {{title}}',
     zoteroImportCompletedWithErrors: 'Import completed with errors',
     modelNotAuthenticatedOrInvalid: 'User not authenticated or invalid template',
@@ -355,6 +366,7 @@ export const extraction = {
     modelAddManuallyTitle: 'Add new {{noun}} manually',
     modelNewShort: 'New',
     modelRemoveActiveTitle: 'Remove active {{noun}}',
+    modelRenameActiveTitle: 'Rename active {{noun}}',
     modelActiveLabel: 'Active {{noun}}',
     // SectionAccordion
     sectionNoInstances: 'No instances created for this section',
@@ -575,9 +587,6 @@ export const extraction = {
     createInstanceBeforeExtract: 'Create an instance before extracting',
     // AddModelDialog – validation & errors
     modelCreateError: 'Error creating {{noun}}',
-    modelNameEmpty: '{{noun}} name cannot be empty',
-    modelNameMinLength: '{{noun}} name must be at least 3 characters',
-    modelNameDuplicate: 'A {{noun}} with this name already exists',
     evidenceCitedAria: 'Cited evidence',
     // AISuggestionReviewPopover – rationale section label
     aiRationaleLabel: 'Rationale',

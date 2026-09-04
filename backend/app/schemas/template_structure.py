@@ -273,6 +273,16 @@ SectionEntryLabel = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
 ]
 
+# The section description on updates — the section's AI instruction (sent
+# with every extraction of the section and, for a repeating one, as the
+# entry-identification instruction; the run form never shows it). Unlike a
+# label, a blank is a legitimate edit: the service clears the column. Max
+# length mirrors the create request and the dialog's Zod rule.
+SectionDescription = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=500),
+]
+
 
 class SectionCreateRequest(BaseModel):
     """Create a section (entity type) in the path template.
@@ -285,9 +295,10 @@ class SectionCreateRequest(BaseModel):
     frontend's read-then-write race. The ``ck_role_parent`` validator
     below mirrors the DB CHECK of the same name; parent OWNERSHIP
     (parent belongs to THIS template) is the service's BOLA job.
-    ``entry_label`` is the repeating group's entry noun (B-8, D3):
-    container-only, defaulting to ``'model'``; containers always repeat
-    (``cardinality='many'`` is enforced, never chosen).
+    ``entry_label`` is a repeating section's entry noun (B-8, D3 —
+    unlocked from the container in the entry-group train): legal on any
+    ``cardinality='many'`` section; the container defaults it to
+    ``'model'`` and always repeats (``'many'`` is enforced, never chosen).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -314,38 +325,46 @@ class SectionCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _enforce_container_rules(self) -> "SectionCreateRequest":
-        """D3: the entry noun exists only on the repeating group, and a
-        group always repeats — cardinality is forced to 'many' at create
-        time; an omitted/blank noun collapses to the 'model' default."""
-        if self.role != "model_container":
-            if self.entry_label is not None:
-                raise ValueError("entry_label is only valid for model_container sections")
+        """D3: the entry noun exists only on a repeating section. A group
+        always repeats — cardinality is forced to 'many' at create time —
+        and an omitted/blank noun collapses to its 'model' default; any
+        other repeating section keeps the noun it was given (blank means
+        none), and a section that does not repeat cannot carry one."""
+        if self.role == "model_container":
+            if self.cardinality != "many":
+                raise ValueError("model_container cardinality must be 'many'")
+            self.entry_label = (self.entry_label or "").strip() or "model"
             return self
-        if self.cardinality != "many":
-            raise ValueError("model_container cardinality must be 'many'")
-        self.entry_label = (self.entry_label or "").strip() or "model"
+        if self.entry_label is not None:
+            if self.cardinality != "many":
+                raise ValueError("entry_label is only valid for a repeating section")
+            self.entry_label = self.entry_label.strip() or None
         return self
 
 
 class SectionUpdateRequest(BaseModel):
-    """Partial section update: ``label`` (any role), ``entry_label``
-    (repeating groups only) and ``cardinality`` (per-model sections
-    only) — the role rules live in the service, which owns the row
-    (B-8, D5). At least one field must be provided, and explicit nulls
-    are rejected (omit instead) so a smuggled ``{"label": null}`` can
-    never blank a column. Replaces the label-only SectionRenameRequest;
-    the pre-B-8 label-only body stays valid."""
+    """Partial section update: ``label`` and ``description`` (any role),
+    ``entry_label`` (repeating sections only) and ``cardinality``
+    (per-model sections only) — the role rules live in the service, which
+    owns the row (B-8, D5). At least one field must be provided, and
+    explicit nulls are rejected (omit instead) so a smuggled ``{"label":
+    null}`` can never blank a column; a description is cleared by sending
+    it blank. Replaces the label-only SectionRenameRequest; the pre-B-8
+    label-only body stays valid."""
 
     model_config = ConfigDict(extra="forbid")
 
     label: SectionLabel | None = None
     entry_label: SectionEntryLabel | None = None
     cardinality: SectionCardinality | None = None
+    description: SectionDescription | None = None
 
     @model_validator(mode="after")
     def _require_one_field_no_nulls(self) -> "SectionUpdateRequest":
         if not self.model_fields_set:
-            raise ValueError("at least one of label, entry_label, cardinality is required")
+            raise ValueError(
+                "at least one of label, entry_label, cardinality, description is required"
+            )
         for field in self.model_fields_set:
             if getattr(self, field) is None:
                 raise ValueError(f"{field} may be omitted but not null")
@@ -369,7 +388,7 @@ class SectionRead(BaseModel):
     cardinality: SectionCardinality
     role: SectionRole
     parent_entity_type_id: UUID | None = None
-    # Group entry noun (B-8): non-null only on model_container rows.
+    # Entry noun (B-8): set on repeating sections; containers default 'model'.
     entry_label: str | None = None
     sort_order: int
     is_required: bool

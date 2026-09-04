@@ -369,17 +369,20 @@ export async function updateEntityTypeLabel(
 // --- Section update (B-8 D5) ---
 
 /** Partial section update — provided keys only; explicit nulls are
- * rejected by the endpoint (omit instead), so the param type bans them. */
+ * rejected by the endpoint (omit instead), so the param type bans them.
+ * `description` is the section's AI instruction; a blank string clears it
+ * (the one column where emptying is a legitimate edit). */
 export interface UpdateSectionChanges {
   label?: string;
   entry_label?: string;
   cardinality?: SectionCardinality;
+  description?: string;
 }
 
 /**
- * PATCH a section's label / entry_label / cardinality via the typed
- * endpoint (role rules live server-side: entry_label on groups only,
- * cardinality on per-model sections only).
+ * PATCH a section's label / entry_label / cardinality / description via the
+ * typed endpoint (rules live server-side: entry_label on repeating sections
+ * only, cardinality on per-model sections only).
  *
  * A many→one switch is REFUSED with a 409 while any model still holds
  * multiple entries of the section — re-wrapped as PgError('23503')
