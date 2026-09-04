@@ -8,6 +8,8 @@ session instead; migration 0068's own test pins the database state.
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from app.llm.prompts import entry_identification
@@ -56,3 +58,13 @@ async def test_seeded_noun_reaches_the_identification_prompt() -> None:
         article_text="…",
     )
     assert "identify every predictor it describes" in prompt
+
+
+def test_migration_0068_stamps_the_same_nouns() -> None:
+    """The migration is the only thing that reaches an existing install; a
+    noun added to the seed without it would reach fresh databases only."""
+    sql = (
+        pathlib.Path(__file__).parents[2] / "alembic" / "versions" / "0068_seeded_entry_nouns.py"
+    ).read_text()
+    for entity_type, noun in BACKFILLED_BY_0068:
+        assert f"('{entity_type}', '{noun}')" in sql, (entity_type, noun)
