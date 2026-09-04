@@ -43,6 +43,20 @@ class TestClassifyExtractionError:
         assert code is ExtractionErrorCode.LLM_ENDPOINT_UNAVAILABLE
         assert message == "The project's engine uses a custom endpoint that is gone."
 
+    def test_missing_entity_key_maps_to_missing_entity_key(self) -> None:
+        """A keyless repeating group refuses before any LLM call; the code
+        lets the run form show "Entry key missing" instead of the generic
+        failure, and the message already names the fix."""
+        from uuid import uuid4
+
+        from app.services.entity_key import MissingEntityKeyError
+
+        exc = MissingEntityKeyError(uuid4(), "Final predictors")
+        code, message = classify_extraction_error(exc)
+        assert code is ExtractionErrorCode.MISSING_ENTITY_KEY
+        assert message == str(exc)
+        assert "Configuration tab" in message
+
     def test_unknown_error_maps_to_generic(self) -> None:
         code, message = classify_extraction_error(RuntimeError("llm exploded"))
         assert code is ExtractionErrorCode.EXTRACTION_FAILED

@@ -393,6 +393,16 @@ class TestRunSectionExtractionTaskErrorCode:
         assert err.error_code == ExtractionErrorCode.MISSING_API_KEY.value
         assert str(err) == "No OpenAI API key available: pass a BYOK key."
 
+    def test_missing_entity_key_carries_missing_entity_key_code(self):
+        from uuid import uuid4
+
+        from app.services.entity_key import MissingEntityKeyError
+
+        exc = MissingEntityKeyError(uuid4(), "Final predictors")
+        err = self._run_with_side_effect(exc)
+        assert err.error_code == ExtractionErrorCode.MISSING_ENTITY_KEY.value
+        assert str(err) == str(exc)
+
 
 class TestRunSectionExtractionTaskEngineRetired:
     def test_retired_mid_flight_carries_engine_retired_code(

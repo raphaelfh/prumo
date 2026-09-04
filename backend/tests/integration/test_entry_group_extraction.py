@@ -451,6 +451,14 @@ async def test_a_keyless_repeating_group_is_refused_before_any_write_or_llm_call
         await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
 
     assert "'Numeric performance'" in str(excinfo.value)
+    # The code the single-section job carries for this exact raise: the task
+    # wraps whatever the service raises through ``classify_extraction_error``
+    # (pinned by ``TestRunSectionExtractionTaskErrorCode``), so this is the
+    # real-pipeline half of the section-path proof.
+    from app.schemas.extraction import ExtractionErrorCode
+    from app.services.extraction_errors import classify_extraction_error
+
+    assert classify_extraction_error(excinfo.value)[0] is ExtractionErrorCode.MISSING_ENTITY_KEY
     assert await _entries(db_session, entity_type_id) == []
     assert identification["prompts"] == [], "no identification call was spent"
     assert fake.scopes == [], "no extraction call was spent"
