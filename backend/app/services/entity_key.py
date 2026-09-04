@@ -52,6 +52,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import AppError
 from app.models.extraction import ExtractionInstance
 
 # JSONB keys under ``extraction_instances.metadata``.
@@ -60,14 +61,21 @@ STORE_KEY = "entity_key"
 HISTORY_KEY = "entity_key_history"
 
 
-class MissingEntityKeyError(Exception):
+class MissingEntityKeyError(AppError):
     """A repeating group declares no ``is_entity_key`` field.
 
-    Raised instead of duplicating in silence, before any write or LLM call.
-    The template inspector is where a manager satisfies it. The seed stamps
-    the global catalogue, the clone copies the flag (``CLONED_FIELD_COLUMNS``)
+    Raised instead of duplicating in silence, before any write or LLM call;
+    a manager satisfies it in the Configuration tab. The seed stamps the
+    global catalogue, the clone copies the flag (``CLONED_FIELD_COLUMNS``)
     and migrations 0059 and 0066 backfilled the rows that predate them, so
     the common path never reaches this.
+
+    An ``AppError`` (the ``EngineRetiredError`` shape): the registered
+    handler serves ``error.code = "MISSING_ENTITY_KEY"`` as HTTP 409 on the
+    sync models route, and ``classify_extraction_error`` maps the same type
+    to ``ExtractionErrorCode.MISSING_ENTITY_KEY`` for the job path. The
+    message names the section and the fix; the frontend shows it verbatim
+    under its own title.
     """
 
     def __init__(self, entity_type_id: UUID, entity_type_label: str | None = None) -> None:
@@ -75,9 +83,14 @@ class MissingEntityKeyError(Exception):
         self.entity_type_label = entity_type_label
         name = entity_type_label or str(entity_type_id)
         super().__init__(
-            f"The repeating section {name!r} declares no identity field, so AI "
-            "extraction cannot tell a new entry from one it already extracted. "
-            "Mark one of its fields as the entry key in the template editor."
+            code="MISSING_ENTITY_KEY",
+            message=(
+                f"The repeating section {name!r} declares no entry key, so AI "
+                "extraction cannot tell a new entry from one it already extracted. "
+                "Ask a project manager to mark one of its fields as the entry key "
+                "in the Configuration tab."
+            ),
+            status_code=409,
         )
 
 
@@ -170,7 +183,7 @@ def key_field_of(entity_type: _EntryGroup) -> Any | None:
     inert, not an error, so toggling one/many never trips it (spec §6.1).
     Raises ``MissingEntityKeyError`` for a keyless repeating group: the
     caller refuses rather than duplicating, and the message names the
-    section as the template editor shows it.
+    section as the Configuration tab shows it.
     """
     if entity_type.cardinality != "many":
         return None
