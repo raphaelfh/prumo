@@ -271,6 +271,9 @@ async def extract_models(
             project_id=str(payload.project_id),
             article_id=str(payload.article_id),
             template_id=str(payload.template_id),
+            # A 4xx refusal needs no traceback; a 5xx AppError keeps the one
+            # the generic arm would have recorded.
+            exc_info=e.status_code >= 500,
         )
         raise
     except CreateRunInputError as e:

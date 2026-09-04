@@ -9,6 +9,10 @@ precede engine work: an outsider on the same project gets 403, not 409
 The retired state is produced by a raw JSONB bypass-write (the PostgREST
 hole the read-side validation contains), so the gate is exercised end to
 end: stored pair → catalogue miss → EngineRetiredError → AppError handler.
+
+The same two routes are the surface for the other typed kickoff refusal,
+``MISSING_ENTITY_KEY`` (a keyless repeating group): the tests at the end pin
+its 409 envelope for a member and the 403 an outsider still gets first.
 """
 
 from __future__ import annotations

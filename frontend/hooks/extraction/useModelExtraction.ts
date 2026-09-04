@@ -17,7 +17,7 @@ import {useState} from "react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {type ModelExtractionRequest, SectionExtractionService,} from "@/services/sectionExtractionService";
-import {AuthenticationError, getErrorCode, getErrorMessage, PDFNotFoundError,} from "@/lib/ai-extraction/errors";
+import {getErrorCode, getErrorMessage} from "@/lib/ai-extraction/errors";
 import {jobErrorToast} from "@/lib/ai-extraction/jobErrorToast";
 
 /**
@@ -127,23 +127,16 @@ export function useModelExtraction(options?: {
           });
 
           const message = getErrorMessage(err);
-          const code = getErrorCode(err);
           setError(message);
 
-          const errorCode = code || '';
           // A typed backend refusal (MISSING_ENTITY_KEY: a keyless repeating
-          // group) gets the job path's title and duration — one mapping.
-          const specific = jobErrorToast(code, message);
+          // group) gets the job path's title and duration — one mapping;
+          // anything else falls to the generic toast.
+          const specific = jobErrorToast(getErrorCode(err), message);
           if (specific) {
             toast.error(specific.title, {
               description: specific.description,
               duration: specific.duration,
-            });
-          } else if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
-            toast.error(t('extraction', 'modelExtractionErrorTitle'), {description: message});
-          } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
-            toast.error(t('extraction', 'modelExtractionAuthErrorTitle'), {
-              description: t('extraction', 'sectionExtractionErrorAuthDesc'),
             });
           } else {
             toast.error(`${t('extraction', 'modelExtractionErrorTitle')}: ${message}`);
