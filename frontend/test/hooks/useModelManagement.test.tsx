@@ -5,9 +5,6 @@
  * the playwright extraction flow. These tests pin the awkward corners:
  *
  *  - createModel without auth / parent entity type → graceful no-op.
- *  - modellingMethod write skipped silently when no active run yet.
- *  - modellingMethod field absent on the template (custom CHARMS) →
- *    skip write, do NOT throw.
  *  - createModel must update local state with the freshly-created
  *    instance so the form can render the new model right away.
  *  - removeModel returns void / throws on error so the dialog can
@@ -93,12 +90,10 @@ beforeEach(() => {
 });
 
 describe('useModelManagement → createModel guard rails', () => {
-  // The hook delegates the full hierarchy creation (parent +
-  // sub-section children + modelling_method persistence) to the backend
-  // endpoint ``POST /api/v1/extraction/models/manual`` exposed via
-  // ``createManualModelHierarchy``. Persisting modelling_method is no
-  // longer a frontend concern — the backend writes it inside the same
-  // transaction.
+  // The hook delegates the full hierarchy creation (parent + sub-section
+  // children + the name recorded on the entry key) to the backend endpoint
+  // ``POST /api/v1/extraction/models/manual`` exposed via
+  // ``createManualModelHierarchy``; the dialog asks for the name only.
 
   it('returns null and toasts when modelParentEntityTypeId is missing', async () => {
     mockLoadModelsToEmpty();
@@ -107,7 +102,7 @@ describe('useModelManagement → createModel guard rails', () => {
     );
     let outcome: any;
     await act(async () => {
-      outcome = await result.current.createModel('Whatever', '');
+      outcome = await result.current.createModel('Whatever');
     });
     expect(outcome).toBeNull();
     expect(createManualModelHierarchy).not.toHaveBeenCalled();
@@ -125,7 +120,7 @@ describe('useModelManagement → createModel guard rails', () => {
 
     const { result } = renderHook(() => useModelManagement(baseProps));
     await act(async () => {
-      await result.current.createModel('  LogReg  ', '');
+      await result.current.createModel('  LogReg  ');
     });
 
     expect(createManualModelHierarchy).toHaveBeenCalledWith({
@@ -133,32 +128,7 @@ describe('useModelManagement → createModel guard rails', () => {
       articleId: 'a-1',
       templateId: 't-1',
       modelName: 'LogReg',
-      modellingMethod: null,
     });
-  });
-
-  it('forwards modelling_method to the backend (no client-side ReviewerDecision write)', async () => {
-    mockLoadModelsToEmpty();
-    (createManualModelHierarchy as any).mockResolvedValue({
-      modelId: 'inst-x',
-      modelLabel: 'M',
-      childInstances: [],
-    });
-
-    const { result } = renderHook(() => useModelManagement(baseProps));
-    await act(async () => {
-      await result.current.createModel('M', 'Neural Net');
-    });
-
-    expect(createManualModelHierarchy).toHaveBeenCalledWith(
-      expect.objectContaining({ modellingMethod: 'Neural Net' }),
-    );
-    // The hook must not bypass the backend by writing the method as a
-    // ReviewerDecision from the client.
-    expect(supabase.rpc).not.toHaveBeenCalledWith(
-      expect.stringMatching(/save_value|reviewer_decision/i),
-      expect.anything(),
-    );
   });
 
   it('adds the new model to local state on success and maps child_instances', async () => {
@@ -179,7 +149,7 @@ describe('useModelManagement → createModel guard rails', () => {
     const { result } = renderHook(() => useModelManagement(baseProps));
     let outcome: any;
     await act(async () => {
-      outcome = await result.current.createModel('XGBoost', '');
+      outcome = await result.current.createModel('XGBoost');
     });
 
     expect(result.current.models).toHaveLength(1);
@@ -202,7 +172,7 @@ describe('useModelManagement → createModel guard rails', () => {
     const { result } = renderHook(() => useModelManagement(baseProps));
     let outcome: any;
     await act(async () => {
-      outcome = await result.current.createModel('Foo', '');
+      outcome = await result.current.createModel('Foo');
     });
 
     expect(outcome).toBeNull();
@@ -503,7 +473,7 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
       childInstances: [],
     });
     await act(async () => {
-      await result.current.createModel('Beta', '');
+      await result.current.createModel('Beta');
     });
     expect(result.current.models.map((m) => m.modelName)).toEqual(['Alpha', 'Beta']);
     expect(result.current.activeModelId).toBe('m-B');
