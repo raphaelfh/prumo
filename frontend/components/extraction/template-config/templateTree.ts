@@ -14,6 +14,7 @@
  * (`metaKeys`), which the component resolves through `lib/copy`.
  */
 
+import {ENTITY_ROLE} from '@/lib/extraction/entityTypeRoles';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 type TemplateSectionKind = 'root' | 'group' | 'groupChild';
@@ -27,7 +28,6 @@ type TemplateSectionMetaKey =
 /** Which haystack produced a search hit — drives the "· in AI instruction" hints. */
 export type TemplateMatchHint = 'label' | 'key' | 'description' | 'aiInstruction' | 'options';
 
-const ROLE_MODEL_CONTAINER = 'model_container';
 const CARDINALITY_MANY = 'many';
 
 /** Copy keys in the `extraction` namespace naming each field type. */
@@ -316,7 +316,7 @@ export function buildTemplateTree(
   }
 
   return roots.map((entityType) => {
-    const isGroup = entityType.role === ROLE_MODEL_CONTAINER;
+    const isGroup = entityType.role === ENTITY_ROLE.MODEL_CONTAINER;
     // D7: the group resolves its own noun; children inherit the PARENT
     // group's resolved value (their own entry_label is never consulted).
     const entryNoun = (isGroup ? entityType.entry_label : null) ?? DEFAULT_ENTRY_NOUN;

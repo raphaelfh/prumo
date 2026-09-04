@@ -6671,7 +6671,7 @@
       },
       "PortableSection": {
         "additionalProperties": false,
-        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` \u21d2 ``model_container``; nested \u21d2\n``model_section``; otherwise ``study_section``. ``entry_label`` is legal\non any repeating section (a group, or ``repeats``); the import defaults\nit to ``\"model\"`` on a group and leaves it unset elsewhere.",
+        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` \u21d2 ``model_container``; nested \u21d2\n``model_section``; otherwise ``study_section``. ``entry_label`` is legal\non any repeating section (a group, or ``repeats``); the import keeps the\nbundle's value verbatim, NULL included, and readers fall back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL.",
         "properties": {
           "description": {
             "anyOf": [
@@ -8138,7 +8138,7 @@
       },
       "SectionCreateRequest": {
         "additionalProperties": false,
-        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is a repeating section's entry noun (B-8, D3 \u2014 unlocked\nfrom the container in the entry-group train): REQUIRED, non-blank, on\nevery ``cardinality='many'`` section, container included, and refused\non a section that does not repeat. Rows created before the noun was\nrequired may still carry NULL; every reader falls back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for them.",
+        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is a repeating section's entry noun (B-8, D3 \u2014 unlocked\nfrom the container in the entry-group train): REQUIRED, non-blank, on\nevery ``cardinality='many'`` section, container included, and refused\non a section that does not repeat. The rule lives at this API boundary:\nrows created before it may still carry NULL, the portable importer keeps\na bundle's NULL verbatim, and the column stays nullable until the\nentry-group trees spec makes it NOT NULL; every reader falls back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` meanwhile.",
         "properties": {
           "cardinality": {
             "enum": [

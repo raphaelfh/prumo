@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.integrity import violates_constraint
 from app.models.extraction import (
+    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionInstance,
 )
@@ -151,7 +152,7 @@ async def create_section(
         parent = await owned_section(
             db, template_id=template_id, section_id=payload.parent_entity_type_id
         )
-        if parent.role != "model_container":
+        if parent.role != ExtractionEntityRole.MODEL_CONTAINER.value:
             raise SectionParentRoleError(
                 "A model_section's parent must be the template's model_container"
             )

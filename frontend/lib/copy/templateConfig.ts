@@ -375,7 +375,7 @@ export const templateConfig = {
     'Field types are text, number, date, select, multiselect and boolean. There is no textarea.',
     'Spell the field keys type and required. The longer field_type and is_required spellings are rejected.',
     'A section with group: true repeats. Only a top-level section may be a group, and a file may contain at most one.',
-    'Sections nest only inside a group, and entry_label is only allowed on a group.',
+    'Sections nest only inside a group. entry_label (what one entry is called) is allowed on any section that repeats — a group, or repeats: true.',
     'Limits: 100 sections per level, 200 fields per section, 2000 fields in total.',
   ],
   importPromptIntro:

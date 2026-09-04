@@ -297,9 +297,11 @@ class SectionCreateRequest(BaseModel):
     ``entry_label`` is a repeating section's entry noun (B-8, D3 — unlocked
     from the container in the entry-group train): REQUIRED, non-blank, on
     every ``cardinality='many'`` section, container included, and refused
-    on a section that does not repeat. Rows created before the noun was
-    required may still carry NULL; every reader falls back to
-    :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for them.
+    on a section that does not repeat. The rule lives at this API boundary:
+    rows created before it may still carry NULL, the portable importer keeps
+    a bundle's NULL verbatim, and the column stays nullable until the
+    entry-group trees spec makes it NOT NULL; every reader falls back to
+    :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` meanwhile.
     """
 
     model_config = ConfigDict(extra="forbid")
