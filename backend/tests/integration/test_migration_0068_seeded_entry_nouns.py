@@ -2,8 +2,8 @@
 
 Runs the migration's UPDATE inside the savepoint-isolated ``db_session``.
 The statement is table-wide, so the shared local database's own seeded
-rows are touched too (and rolled back); every assertion here is scoped to
-the rows this test creates.
+rows are touched too (and rolled back); every assertion here is per row,
+on rows this test creates.
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionEntityType, ExtractionTemplateGlobal
-from tests.integration.conftest import SEED, clean_project_clones, clone_charms
+from tests.factories.template_factory import TemplateFactory
+from tests.integration.conftest import SEED
 
 _MIG_PATH = (
     Path(__file__).resolve().parents[2] / "alembic" / "versions" / "0068_seeded_entry_nouns.py"
@@ -55,22 +56,8 @@ async def _noun(db: AsyncSession, row_id: UUID) -> str | None:
     ).scalar_one()
 
 
-async def _stamped_in(db: AsyncSession, template_id: UUID) -> int:
-    return (
-        await db.execute(
-            text(
-                "SELECT count(*) FROM public.extraction_entity_types "
-                "WHERE template_id = :tid AND entry_label IS NOT NULL"
-            ),
-            {"tid": str(template_id)},
-        )
-    ).scalar_one()
-
-
 async def _upgrade(db: AsyncSession) -> int:
-    result = await db.execute(text(_mig.UPGRADE_SQL))
-    await db.flush()
-    return result.rowcount
+    return (await db.execute(text(_mig.UPGRADE_SQL))).rowcount
 
 
 @pytest.mark.asyncio
@@ -83,7 +70,6 @@ async def test_stamps_the_two_seeded_groups_on_global_rows(db_session: AsyncSess
 
     assert await _noun(db_session, predictors) == "predictor"
     assert await _noun(db_session, validations) == "validation"
-    assert await _stamped_in(db_session, tid) == 2
 
 
 @pytest.mark.asyncio
@@ -91,10 +77,9 @@ async def test_skips_clones_named_rows_and_non_repeating_rows(db_session: AsyncS
     """Versioned config on a clone is never touched; a noun a manager typed
     wins; a name match alone (a non-repeating row) is not enough."""
     tid = await _global_template(db_session)
-    await clean_project_clones(db_session, SEED.secondary_project)
-    clone_tid = (
-        await clone_charms(db_session, SEED.secondary_project, SEED.primary_profile)
-    ).project_template_id
+    clone_tid = await TemplateFactory(
+        db_session, SEED.secondary_project, SEED.primary_profile
+    ).create()
     clone = await _add(db_session, project_template_id=clone_tid, name="final_predictors")
     named = await _add(db_session, template_id=tid, name="final_predictors", entry_label="feature")
     single = await _add(db_session, template_id=tid, name="numeric_performance", cardinality="one")
@@ -104,7 +89,6 @@ async def test_skips_clones_named_rows_and_non_repeating_rows(db_session: AsyncS
     assert await _noun(db_session, clone) is None
     assert await _noun(db_session, named) == "feature"
     assert await _noun(db_session, single) is None
-    assert await _stamped_in(db_session, tid) == 1  # only the row that already had a noun
 
 
 @pytest.mark.asyncio

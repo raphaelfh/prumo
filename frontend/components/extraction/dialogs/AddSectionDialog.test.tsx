@@ -11,7 +11,7 @@
  */
 import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {beforeAll, beforeEach, describe, expect, it, vi} from 'vitest';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/services/templateService', () => ({createSection: vi.fn()}));
 vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
@@ -21,16 +21,6 @@ import {createSection} from '@/services/templateService';
 import {TooltipProvider} from '@/components/ui/tooltip';
 
 import {AddSectionDialog, type AddSectionMode} from './AddSectionDialog';
-
-// Radix Select drives its listbox through pointer-capture APIs jsdom does not
-// implement; without these the cardinality trigger never opens. Scoped to
-// this file — the assertions under test are the form rules, not the polyfill.
-beforeAll(() => {
-  Element.prototype.hasPointerCapture = vi.fn(() => false);
-  Element.prototype.setPointerCapture = vi.fn();
-  Element.prototype.releasePointerCapture = vi.fn();
-  Element.prototype.scrollIntoView = vi.fn();
-});
 
 function renderDialog(mode: AddSectionMode) {
   const onOpenChange = vi.fn();

@@ -84,7 +84,10 @@ NESTING_KEY = "fields"
 OPTION_KEY = "allowed_values"
 
 _MODEL_CONTAINER_ROLE = "model_container"
-_DEFAULT_ENTRY_LABEL = "model"
+# What 0051 stamped onto every container — the value a pre-0051 baseline that
+# lacks the key describes. A historical constant, NOT the runtime fallback
+# (``app.models.extraction.DEFAULT_ENTRY_LABEL`` reads ``entry``).
+_B8_CONTAINER_NOUN = "model"
 ENTRY_LABEL_KEY = "entry_label"
 #: Identity of a repeating-group entry (0059). Versioned config: the snapshot
 #: carries it, a move is two SEMANTIC changes, and restore round-trips it.
@@ -324,7 +327,7 @@ def _normalize_entity(raw: dict[str, Any]) -> dict[str, Any]:
     if ENTRY_LABEL_KEY not in raw and data["role"] == _MODEL_CONTAINER_ROLE:
         # 0051 seeded every repeating group to "model"; a pre-0051 baseline
         # that simply lacks the key describes the same tree.
-        data[ENTRY_LABEL_KEY] = _DEFAULT_ENTRY_LABEL
+        data[ENTRY_LABEL_KEY] = _B8_CONTAINER_NOUN
     return data
 
 

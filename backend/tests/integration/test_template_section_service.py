@@ -214,65 +214,44 @@ class TestCreateRequestRoleParentRules:
 
 # =================== SCHEMA-LEVEL ENTRY-NOUN CREATE RULES ===================
 
+_MODEL_SECTION = {"role": "model_section", "parent_entity_type_id": str(uuid.uuid4())}
+_EVERY_ROLE = [
+    pytest.param({"role": "model_container"}, id="container"),
+    pytest.param({"role": "study_section"}, id="root"),
+    pytest.param(_MODEL_SECTION, id="model_section"),
+]
+_NON_CONTAINER_ROLES = _EVERY_ROLE[1:]
+
 
 class TestCreateRequestEntryLabelRules:
     def test_container_with_cardinality_one_is_rejected(self) -> None:
         with pytest.raises(ValidationError, match="cardinality"):
             make_create(role="model_container", cardinality="one", entry_label="model")
 
-    def test_container_without_entry_label_is_rejected(self) -> None:
-        """The container no longer defaults its noun to 'model'."""
-        with pytest.raises(ValidationError, match="entry_label is required"):
-            make_create(role="model_container", cardinality="many")
+    @pytest.mark.parametrize("role", _EVERY_ROLE)
+    @pytest.mark.parametrize("entry_label", [None, "", "   "], ids=["absent", "empty", "blank"])
+    def test_repeating_section_without_entry_label_is_rejected(
+        self, role: dict[str, str], entry_label: str | None
+    ) -> None:
+        """A repeating section is created WITH its noun: the container no
+        longer defaults to 'model', and blank is refused, never 'unset'."""
+        with pytest.raises(ValidationError, match="entry_label"):
+            make_create(cardinality="many", entry_label=entry_label, **role)
 
-    def test_container_blank_entry_label_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="entry_label is required"):
-            make_create(role="model_container", cardinality="many", entry_label="   ")
-
-    def test_container_entry_label_is_kept_trimmed(self) -> None:
-        req = make_create(role="model_container", cardinality="many", entry_label=" algorithm ")
-        assert req.entry_label == "algorithm"
-
-    def test_entry_label_on_a_non_repeating_study_section_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="only valid for a repeating"):
-            make_create(entry_label="model")
-
-    def test_entry_label_on_a_non_repeating_model_section_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="only valid for a repeating"):
-            make_create(
-                role="model_section",
-                parent_entity_type_id=str(uuid.uuid4()),
-                entry_label="model",
-            )
-
-    def test_entry_label_on_a_repeating_section_is_kept_trimmed(self) -> None:
+    @pytest.mark.parametrize("role", _EVERY_ROLE)
+    def test_entry_label_is_kept_trimmed_on_every_repeating_role(
+        self, role: dict[str, str]
+    ) -> None:
         """Every repeating section is an entry group: the noun rides any
         ``cardinality='many'`` section, not only the container."""
-        req = make_create(cardinality="many", entry_label=" predictor ")
-        assert req.entry_label == "predictor"
-        child = make_create(
-            role="model_section",
-            parent_entity_type_id=str(uuid.uuid4()),
-            cardinality="many",
-            entry_label="validation",
+        assert make_create(cardinality="many", entry_label=" predictor ", **role).entry_label == (
+            "predictor"
         )
-        assert child.entry_label == "validation"
 
-    @pytest.mark.parametrize("entry_label", [None, "", "   "])
-    def test_repeating_section_without_entry_label_is_rejected_on_every_role(
-        self, entry_label: str | None
-    ) -> None:
-        """A repeating section is created WITH its noun — blank is refused,
-        never 'unset': the identification prompt has to name the entry."""
-        with pytest.raises(ValidationError, match="entry_label is required"):
-            make_create(cardinality="many", entry_label=entry_label)
-        with pytest.raises(ValidationError, match="entry_label is required"):
-            make_create(
-                role="model_section",
-                parent_entity_type_id=str(uuid.uuid4()),
-                cardinality="many",
-                entry_label=entry_label,
-            )
+    @pytest.mark.parametrize("role", _NON_CONTAINER_ROLES)
+    def test_entry_label_on_a_non_repeating_section_is_rejected(self, role: dict[str, str]) -> None:
+        with pytest.raises(ValidationError, match="only valid for a repeating"):
+            make_create(entry_label="model", **role)
 
 
 # =================== SCHEMA-LEVEL UPDATE RULES (D5) ===================

@@ -310,7 +310,7 @@ class SectionCreateRequest(BaseModel):
     cardinality: SectionCardinality
     role: SectionRole
     parent_entity_type_id: UUID | None = None
-    entry_label: str | None = Field(default=None, max_length=100)
+    entry_label: SectionEntryLabel | None = None
     is_required: bool = False
 
     @model_validator(mode="after")
@@ -327,17 +327,15 @@ class SectionCreateRequest(BaseModel):
     @model_validator(mode="after")
     def _enforce_entry_label_rules(self) -> "SectionCreateRequest":
         """A repeating section is created WITH its entry noun — the
-        identification prompt and the run form read it — so a blank one is
-        refused on every role; a section that does not repeat cannot carry
-        one. The container always repeats ('many' is enforced, never chosen)."""
+        identification prompt and the run form read it — so a missing one is
+        refused on every role (``SectionEntryLabel`` already refuses a blank);
+        a section that does not repeat cannot carry one. The container always
+        repeats ('many' is enforced, never chosen)."""
         if self.role == "model_container" and self.cardinality != "many":
             raise ValueError("model_container cardinality must be 'many'")
-        if self.cardinality == "many":
-            noun = (self.entry_label or "").strip()
-            if not noun:
-                raise ValueError("entry_label is required on a repeating section")
-            self.entry_label = noun
-        elif self.entry_label is not None:
+        if self.cardinality == "many" and self.entry_label is None:
+            raise ValueError("entry_label is required on a repeating section")
+        if self.cardinality != "many" and self.entry_label is not None:
             raise ValueError("entry_label is only valid for a repeating section")
         return self
 

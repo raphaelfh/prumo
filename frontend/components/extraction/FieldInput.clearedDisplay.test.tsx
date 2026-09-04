@@ -15,7 +15,7 @@
 
 import { render as rtlRender, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -26,17 +26,6 @@ import type { ExtractionField } from '@/types/extraction';
 
 const render = (ui: React.ReactElement) =>
   rtlRender(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
-
-// Radix Select drives its listbox through pointer-capture APIs jsdom does not
-// implement; without these the trigger never opens and the re-pick cannot be
-// exercised at all. Scoped to this file — the assertion under test is the
-// re-pick, not the polyfill.
-beforeAll(() => {
-  Element.prototype.hasPointerCapture = vi.fn(() => false);
-  Element.prototype.setPointerCapture = vi.fn();
-  Element.prototype.releasePointerCapture = vi.fn();
-  Element.prototype.scrollIntoView = vi.fn();
-});
 
 const JUDGMENT: ExtractionField = {
   id: 'f1',

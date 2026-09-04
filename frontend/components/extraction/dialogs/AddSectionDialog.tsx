@@ -83,6 +83,7 @@ const getAddSectionSchema = () => z.object({
     .optional()
     .nullable(),
   entry_label: z.string()
+      .trim()
       .max(50, t('templateConfig', 'entryLabelMax50'))
     .optional(),
   cardinality: z.enum(['one', 'many'], {
@@ -92,7 +93,7 @@ const getAddSectionSchema = () => z.object({
 }).superRefine((data, ctx) => {
   // A repeating section is created WITH its entry noun (the server 422s a
   // blank one); a section that repeats once carries none.
-  if (data.cardinality === 'many' && !data.entry_label?.trim()) {
+  if (data.cardinality === 'many' && !data.entry_label) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['entry_label'],
@@ -155,8 +156,6 @@ export function AddSectionDialog({
   // useWatch instead of form.watch — the latter is incompatible with the
   // React Compiler (react-hooks/incompatible-library).
   const label = useWatch({control: form.control, name: 'label'});
-  // The entry-label field follows the cardinality: a group always repeats
-  // (its default is 'many'), the other modes repeat when the select says so.
   const cardinality = useWatch({control: form.control, name: 'cardinality'});
   const repeats = cardinality === 'many';
 
@@ -181,8 +180,8 @@ export function AddSectionDialog({
       role: ROLE_BY_MODE[mode.kind],
       parentEntityTypeId: mode.kind === 'perModel' ? mode.parentId : null,
       // The schema already refused a blank noun on a repeating section.
-      entryLabel: data.cardinality === 'many' ? data.entry_label?.trim() : undefined,
-      isRequired: mode.kind === 'group' ? false : data.is_required,
+      entryLabel: data.cardinality === 'many' ? data.entry_label : undefined,
+      isRequired: data.is_required,
     });
 
     if (!result.ok) {
