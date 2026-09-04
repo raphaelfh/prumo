@@ -170,8 +170,8 @@ async def create_section(
         cardinality=payload.cardinality,
         role=payload.role,
         parent_entity_type_id=payload.parent_entity_type_id,
-        # Post-validator value: 'model'-defaulted for containers, None
-        # for every other role (the schema rejects it there).
+        # Post-validator value: the trimmed noun on a repeating section,
+        # None on every other (the schema refuses it there).
         entry_label=payload.entry_label,
         is_required=payload.is_required,
         sort_order=next_sort_order,

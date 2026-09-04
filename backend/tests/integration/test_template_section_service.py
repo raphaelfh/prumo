@@ -212,32 +212,33 @@ class TestCreateRequestRoleParentRules:
             make_create(sort_order=99)
 
 
-# =================== SCHEMA-LEVEL CONTAINER CREATE RULES (D3) ===================
+# =================== SCHEMA-LEVEL ENTRY-NOUN CREATE RULES ===================
 
 
-class TestCreateRequestContainerRules:
+class TestCreateRequestEntryLabelRules:
     def test_container_with_cardinality_one_is_rejected(self) -> None:
         with pytest.raises(ValidationError, match="cardinality"):
-            make_create(role="model_container", cardinality="one")
+            make_create(role="model_container", cardinality="one", entry_label="model")
 
-    def test_container_entry_label_defaults_to_model(self) -> None:
-        req = make_create(role="model_container", cardinality="many")
-        assert req.entry_label == "model"
+    def test_container_without_entry_label_is_rejected(self) -> None:
+        """The container no longer defaults its noun to 'model'."""
+        with pytest.raises(ValidationError, match="entry_label is required"):
+            make_create(role="model_container", cardinality="many")
 
-    def test_container_blank_entry_label_defaults_to_model(self) -> None:
-        req = make_create(role="model_container", cardinality="many", entry_label="   ")
-        assert req.entry_label == "model"
+    def test_container_blank_entry_label_is_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="entry_label is required"):
+            make_create(role="model_container", cardinality="many", entry_label="   ")
 
-    def test_container_explicit_entry_label_respected(self) -> None:
+    def test_container_entry_label_is_kept_trimmed(self) -> None:
         req = make_create(role="model_container", cardinality="many", entry_label=" algorithm ")
         assert req.entry_label == "algorithm"
 
     def test_entry_label_on_a_non_repeating_study_section_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="entry_label"):
+        with pytest.raises(ValidationError, match="only valid for a repeating"):
             make_create(entry_label="model")
 
     def test_entry_label_on_a_non_repeating_model_section_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="entry_label"):
+        with pytest.raises(ValidationError, match="only valid for a repeating"):
             make_create(
                 role="model_section",
                 parent_entity_type_id=str(uuid.uuid4()),
@@ -245,8 +246,8 @@ class TestCreateRequestContainerRules:
             )
 
     def test_entry_label_on_a_repeating_section_is_kept_trimmed(self) -> None:
-        """Every repeating section is an entry group: the noun is legal on
-        any ``cardinality='many'`` section, not only the container."""
+        """Every repeating section is an entry group: the noun rides any
+        ``cardinality='many'`` section, not only the container."""
         req = make_create(cardinality="many", entry_label=" predictor ")
         assert req.entry_label == "predictor"
         child = make_create(
@@ -257,9 +258,21 @@ class TestCreateRequestContainerRules:
         )
         assert child.entry_label == "validation"
 
-    def test_blank_entry_label_on_a_repeating_section_means_none(self) -> None:
-        """Only the container has a 'model' default; elsewhere blank is unset."""
-        assert make_create(cardinality="many", entry_label="   ").entry_label is None
+    @pytest.mark.parametrize("entry_label", [None, "", "   "])
+    def test_repeating_section_without_entry_label_is_rejected_on_every_role(
+        self, entry_label: str | None
+    ) -> None:
+        """A repeating section is created WITH its noun — blank is refused,
+        never 'unset': the identification prompt has to name the entry."""
+        with pytest.raises(ValidationError, match="entry_label is required"):
+            make_create(cardinality="many", entry_label=entry_label)
+        with pytest.raises(ValidationError, match="entry_label is required"):
+            make_create(
+                role="model_section",
+                parent_entity_type_id=str(uuid.uuid4()),
+                cardinality="many",
+                entry_label=entry_label,
+            )
 
 
 # =================== SCHEMA-LEVEL UPDATE RULES (D5) ===================
@@ -413,36 +426,10 @@ async def test_create_second_model_container_refused(db_session: AsyncSession) -
                 label="Second Container",
                 cardinality="many",
                 role="model_container",
+                entry_label="model",
             ),
         )
     await db_session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_create_container_carries_default_entry_label(db_session: AsyncSession) -> None:
-    """D3 end-to-end: with the CHARMS container deleted, a new container
-    created without an explicit noun lands with entry_label='model'."""
-    template_id = await _fresh_clone(db_session)
-    container_id = await _section_id_by_role(db_session, template_id, "model_container")
-    await delete_section(
-        db_session,
-        project_id=SEED.secondary_project,
-        template_id=template_id,
-        section_id=container_id,
-    )
-
-    read = await create_section(
-        db_session,
-        project_id=SEED.secondary_project,
-        template_id=template_id,
-        payload=make_create(
-            name="groups", label="Groups", cardinality="many", role="model_container"
-        ),
-    )
-
-    assert read.entry_label == "model"
-    row = await db_session.get(ExtractionEntityType, read.id)
-    assert row is not None and row.entry_label == "model"
 
 
 @pytest.mark.asyncio
@@ -636,9 +623,11 @@ async def test_update_entry_label_on_repeating_study_section_accepted(
         db_session,
         project_id=SEED.secondary_project,
         template_id=template_id,
-        payload=make_create(name="arms", label="Study arms", cardinality="many"),
+        payload=make_create(
+            name="arms", label="Study arms", cardinality="many", entry_label="participant"
+        ),
     )
-    assert created.entry_label is None
+    assert created.entry_label == "participant"
 
     read = await _update(
         db_session, template_id, created.id, SectionUpdateRequest(entry_label="arm")

@@ -264,10 +264,9 @@ SectionLabel = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
 ]
 
-# The group entry noun on updates: when provided it must survive a trim
-# (a blanked input is a frontend no-op, never an API write). Create-side
-# the field is looser — blank collapses to the ``'model'`` default in
-# the container-rules validator instead of failing.
+# The entry noun on updates: when provided it must survive a trim (a
+# blanked input is a frontend no-op, never an API write). The create side
+# enforces the same non-blank rule in ``_enforce_entry_label_rules``.
 SectionEntryLabel = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
@@ -295,10 +294,12 @@ class SectionCreateRequest(BaseModel):
     frontend's read-then-write race. The ``ck_role_parent`` validator
     below mirrors the DB CHECK of the same name; parent OWNERSHIP
     (parent belongs to THIS template) is the service's BOLA job.
-    ``entry_label`` is a repeating section's entry noun (B-8, D3 —
-    unlocked from the container in the entry-group train): legal on any
-    ``cardinality='many'`` section; the container defaults it to
-    ``'model'`` and always repeats (``'many'`` is enforced, never chosen).
+    ``entry_label`` is a repeating section's entry noun (B-8, D3 — unlocked
+    from the container in the entry-group train): REQUIRED, non-blank, on
+    every ``cardinality='many'`` section, container included, and refused
+    on a section that does not repeat. Rows created before the noun was
+    required may still carry NULL; every reader falls back to
+    :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for them.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -324,21 +325,20 @@ class SectionCreateRequest(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _enforce_container_rules(self) -> "SectionCreateRequest":
-        """D3: the entry noun exists only on a repeating section. A group
-        always repeats — cardinality is forced to 'many' at create time —
-        and an omitted/blank noun collapses to its 'model' default; any
-        other repeating section keeps the noun it was given (blank means
-        none), and a section that does not repeat cannot carry one."""
-        if self.role == "model_container":
-            if self.cardinality != "many":
-                raise ValueError("model_container cardinality must be 'many'")
-            self.entry_label = (self.entry_label or "").strip() or "model"
-            return self
-        if self.entry_label is not None:
-            if self.cardinality != "many":
-                raise ValueError("entry_label is only valid for a repeating section")
-            self.entry_label = self.entry_label.strip() or None
+    def _enforce_entry_label_rules(self) -> "SectionCreateRequest":
+        """A repeating section is created WITH its entry noun — the
+        identification prompt and the run form read it — so a blank one is
+        refused on every role; a section that does not repeat cannot carry
+        one. The container always repeats ('many' is enforced, never chosen)."""
+        if self.role == "model_container" and self.cardinality != "many":
+            raise ValueError("model_container cardinality must be 'many'")
+        if self.cardinality == "many":
+            noun = (self.entry_label or "").strip()
+            if not noun:
+                raise ValueError("entry_label is required on a repeating section")
+            self.entry_label = noun
+        elif self.entry_label is not None:
+            raise ValueError("entry_label is only valid for a repeating section")
         return self
 
 
@@ -388,7 +388,7 @@ class SectionRead(BaseModel):
     cardinality: SectionCardinality
     role: SectionRole
     parent_entity_type_id: UUID | None = None
-    # Entry noun (B-8): set on repeating sections; containers default 'model'.
+    # Entry noun (B-8): every repeating section is created with one; legacy rows may be NULL.
     entry_label: str | None = None
     sort_order: int
     is_required: bool
