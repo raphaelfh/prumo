@@ -28,3 +28,7 @@ See `../telemetry.jsonl` (phase VERIFY) and `../summary.md`: `scripts/verify_all
 ## JUDGE
 
 Recorded in `../summary.md` once the verdict is in.
+
+## Reflexion (iteration 002)
+**What could still go wrong:** The recurrence guard is warn-tier, so a reintroduced `SuggestionResponse` would be reported, not blocked; and vulture cannot see dead Pydantic schemas, so the next dead DTO waits for a scan rather than a gate.
+**What I'd do differently next time:** Promote `suggestion_dtos` to the hard tier once the current five warn hits (the enum names in migration tests) are baselined, and consider a knip-like "unreferenced schema class" fitness rule for `app/schemas`.

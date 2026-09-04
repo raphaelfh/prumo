@@ -32,3 +32,7 @@ See `../telemetry.jsonl` (phase VERIFY) and `../summary.md`: `scripts/verify_all
 ## JUDGE
 
 Recorded in `../summary.md` once the verdict is in.
+
+## Reflexion (iteration 001)
+**What could still go wrong:** The string-typed code parameter means a misspelled code at a new call site fails only at runtime as a generic toast; the title table keeps the keys typechecked but not the callers.
+**What I'd do differently next time:** Have the scanner prompt for layered-arch name the lib-purity contract (`lib/error-utils.ts` "no toast, no UI") explicitly, so the first draft never puts a toast-firing helper under `lib/`.

@@ -18,7 +18,7 @@ Files: services/sectionExtractionService.ts (+ its test). Failing tests first: t
 
 ## DIFF
 
-Commit `008bed48` on `claude/entry-key-typed-refusal` (`git show 008bed48 --stat`).
+Commit `3c289b73` on `claude/entry-key-typed-refusal` (`git show 3c289b73 --stat`).
 
 ## GATE
 
@@ -27,3 +27,7 @@ See `../telemetry.jsonl` (phase VERIFY) and `../summary.md`: `scripts/verify_all
 ## JUDGE
 
 Recorded in `../summary.md` once the verdict is in.
+
+## Reflexion (iteration 003)
+**What could still go wrong:** Batch runs still swallow per-section failures into text, so a keyless group inside a batch shows the generic copy; this is the documented boundary, not a regression, but it is where the next confusion will come from.
+**What I'd do differently next time:** Nothing for this slice; the batch taxonomy is the entry-group trees spec's B1 concern.
