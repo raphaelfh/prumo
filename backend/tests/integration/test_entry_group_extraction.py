@@ -210,13 +210,14 @@ def _pinned_group(
     role: str = "study_section",
     parent: UUID | None = None,
     label: str = "Numeric performance",
+    entry_label: str | None = None,
 ) -> dict:
     return {
         "id": str(entity_type_id),
         "name": f"perf_{entity_type_id.hex[:8]}",
         "label": label,
         "description": "pinned description",
-        "entry_label": None,
+        "entry_label": entry_label,
         "parent_entity_type_id": str(parent) if parent else None,
         "cardinality": "many",
         "role": role,
@@ -382,6 +383,8 @@ async def test_repeats_get_their_own_instances_and_a_rerun_matches_them(
     assert "return its Validation type" in first_prompt
     assert "must be one of: apparent, internal, external" in first_prompt
     assert "belong to" not in first_prompt, "a top-level group has no parent to scope to"
+    # The live group carries no noun: the prompt reads it as the one fallback.
+    assert "identify every entry it describes" in first_prompt
 
     # Run 2: the model spells two entries differently, finds a third, and
     # reads a slightly different number this time.
@@ -400,6 +403,34 @@ async def test_repeats_get_their_own_instances_and_a_rerun_matches_them(
     assert "already been identified" in identification["prompts"][1].lower()
     assert "apparent" in identification["prompts"][1]
     assert "already been identified" not in identification["prompts"][0].lower()
+
+
+async def test_the_authored_noun_reaches_the_identification_prompt(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pinned group's ``entry_label`` names the entry in the prompt; only
+    a NULL noun falls back to ``DEFAULT_ENTRY_LABEL``."""
+    entity_type_id, key_id, value_id = await _group(db_session)
+    run = await _run_in_extract(db_session)
+    await _pin_run_to_snapshot(
+        db_session,
+        run_id=run.id,
+        template_id=SEED.primary_template,
+        profile_id=SEED.primary_profile,
+        schema={
+            "entity_types": [
+                _pinned_group(entity_type_id, key_id, value_id, key=True, entry_label="validation")
+            ]
+        },
+    )
+    await db_session.refresh(run)
+    service, _fake = _service(db_session)
+    identification = _fake_identification(monkeypatch, ["external"])
+
+    await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+
+    assert "identify every validation it describes" in identification["prompts"][0]
+    assert "identify every entry" not in identification["prompts"][0]
 
 
 async def test_nested_group_entries_are_scoped_by_their_parent(

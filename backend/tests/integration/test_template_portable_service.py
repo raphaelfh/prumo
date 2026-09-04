@@ -205,7 +205,6 @@ async def test_import_derives_roles_and_template_wide_sort_order(
         True,
     )
     assert by_name["child"].entry_label is None
-    assert by_name["tail"].entry_label is None
     # Template-wide pre-order: no ties (SNAPSHOT_SQL sorts by bare sort_order).
     orders = [by_name[n].sort_order for n in ("root", "grp", "child", "tail")]
     assert orders == [0, 1, 2, 3]

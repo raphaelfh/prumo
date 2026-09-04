@@ -383,13 +383,22 @@ class TestModelIdentification:
         extract.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_identify_models_prompt_is_parameterized_by_the_pinned_container(self, service):
+    @pytest.mark.parametrize(
+        ("noun", "expected"),
+        [("algorithm", "algorithm"), (None, "entry")],
+        ids=["authored", "legacy"],
+    )
+    async def test_identify_models_prompt_is_parameterized_by_the_pinned_container(
+        self, service, noun, expected
+    ):
         """Label, entry noun, key field and description all come from the
-        pinned container — one prompt serves every repeating group."""
+        pinned container — one prompt serves every repeating group. A pinned
+        container without a noun (pre-B-8 snapshot) reads as the one fallback,
+        'entry', never 'model'."""
         mock_entity = MagicMock()
         mock_entity.id = uuid4()
         service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
-        container = _live_container("algorithm")
+        container = _live_container(noun)
         container.description = "Only models validated on external data."
         captured: dict[str, str] = {}
 
@@ -413,9 +422,9 @@ class TestModelIdentification:
         ):
             await service._identify_models(pdf_text="ARTICLE", model="gpt-4o-mini", run=_fake_run())
 
-        assert "algorithm entries" in captured["system"]
+        assert f"{expected} entries" in captured["system"]
         assert 'for the section "Prediction Models"' in captured["user"]
-        assert "identify every algorithm" in captured["user"]
+        assert f"identify every {expected} it describes" in captured["user"]
         assert "return its Model Name" in captured["user"]
         assert "Section instructions: Only models validated on external data." in captured["user"]
 

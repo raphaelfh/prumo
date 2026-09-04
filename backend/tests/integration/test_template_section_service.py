@@ -229,13 +229,21 @@ class TestCreateRequestEntryLabelRules:
             make_create(role="model_container", cardinality="one", entry_label="model")
 
     @pytest.mark.parametrize("role", _EVERY_ROLE)
-    @pytest.mark.parametrize("entry_label", [None, "", "   "], ids=["absent", "empty", "blank"])
+    @pytest.mark.parametrize(
+        ("entry_label", "message"),
+        [
+            pytest.param(None, "required on a repeating section", id="absent"),
+            pytest.param("", "at least 1 character", id="empty"),
+            pytest.param("   ", "at least 1 character", id="blank"),
+        ],
+    )
     def test_repeating_section_without_entry_label_is_rejected(
-        self, role: dict[str, str], entry_label: str | None
+        self, role: dict[str, str], entry_label: str | None, message: str
     ) -> None:
         """A repeating section is created WITH its noun: the container no
-        longer defaults to 'model', and blank is refused, never 'unset'."""
-        with pytest.raises(ValidationError, match="entry_label"):
+        longer defaults to 'model'; an absent noun trips the model rule and a
+        blank one the ``SectionEntryLabel`` shape — refused, never 'unset'."""
+        with pytest.raises(ValidationError, match=message):
             make_create(cardinality="many", entry_label=entry_label, **role)
 
     @pytest.mark.parametrize("role", _EVERY_ROLE)
