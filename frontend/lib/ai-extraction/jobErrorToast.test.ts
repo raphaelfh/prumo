@@ -24,6 +24,15 @@ describe('jobErrorToast', () => {
     });
   });
 
+  it('maps MISSING_ENTITY_KEY to the entry-key title + the backend message', () => {
+    const message = "The repeating section 'Final predictors' declares no entry key.";
+    expect(jobErrorToast('MISSING_ENTITY_KEY', message)).toEqual({
+      title: 'sectionExtractionErrorNoEntryKey',
+      description: message,
+      duration: 8000,
+    });
+  });
+
   it('returns null for the generic code so the caller uses its own fallback', () => {
     expect(jobErrorToast('EXTRACTION_FAILED', 'something broke')).toBeNull();
   });

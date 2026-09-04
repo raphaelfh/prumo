@@ -73,6 +73,7 @@ export const extraction = {
     sectionExtractionErrorTitle: 'Extraction error',
     sectionExtractionErrorAuth: 'Authentication error',
     sectionExtractionErrorAuthDesc: 'Please sign in again.',
+    sectionExtractionErrorNoEntryKey: 'Entry key missing',
     // FullAIExtractionProgress
     fullAIProgressTitle: 'Full AI Extraction',
     fullAIProgressInProgress: 'AI extraction in progress…',

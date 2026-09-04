@@ -262,4 +262,26 @@ describe('useSectionExtraction (async job)', () => {
       }),
     );
   });
+
+  it('maps a MISSING_ENTITY_KEY failure code to the entry-key toast copy', async () => {
+    const message = "The repeating section 'Final predictors' declares no entry key.";
+    apiClientMock.mockResolvedValueOnce({job_id: 'job-sec-1'});
+    statusMock.mockResolvedValue({
+      ok: true,
+      data: makeStatus('failed', {error: message, errorCode: 'MISSING_ENTITY_KEY'}),
+    });
+
+    const {wrapper} = createWrapper();
+    const {result} = renderHook(() => useSectionExtraction(), {wrapper});
+
+    await act(async () => {
+      await result.current.extractSection(PARAMS);
+    });
+
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    expect(toast.error).toHaveBeenCalledWith(
+      'sectionExtractionErrorNoEntryKey',
+      expect.objectContaining({description: message, duration: 8000}),
+    );
+  });
 });
