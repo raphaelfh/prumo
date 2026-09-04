@@ -6,6 +6,7 @@ Two tiers:
 
 - **Hard** (4 entries) — re-introduction fails `scripts/fitness/check_legacy_concepts.py` and blocks the gate.
 - **Warn** (12 entries) — reported in the JSONL but does not fail. Graduates to hard once the false-positive rate is low enough.
+- **Reference docs** (`docs/reference/**/*.md`) — only fenced ```sql blocks are scanned, and a hit there is always warn tier: stale documentation is surfaced, never gate-blocking.
 
 ## Hard tier — gate-blocking
 

@@ -26,7 +26,7 @@ Bans reintroduction of the 16-entry legacy patterns blacklist (see `legacy-patte
 - **Hard tier (4 patterns)**: `name == 'prediction_models'` (Python), `name === 'prediction_models'` (TypeScript), `extracted_values` SQL identifier, `ai_suggestions` SQL identifier. A hit outside the literal allowlist fails the gate.
 - **Warn tier (12 patterns)**: the rest. Reported in stdout + JSONL but do not fail.
 
-The allowlist is a literal constant inside the script (not a separate file) so the contract stays single-file; covers historical-comment files (`seed.py`, `models/extraction.py`), the canary test dir (`backend/tests/unit/scripts/`), and archived migrations (`backend/alembic/versions/archive/`). Comment lines (Python `#`, JS/TS `//`, JSDoc `*`, Python docstring `"""`) are universally skipped — documentation referencing the legacy pattern is allowed. Wall-clock budget: < 1 s for full-repo scan.
+The allowlist is a literal constant inside the script (not a separate file) so the contract stays single-file; covers historical-comment files (`seed.py`, `models/extraction.py`), the canary test dir (`backend/tests/unit/scripts/`), and archived migrations (`backend/alembic/versions/archive/`). Comment lines (Python `#`, JS/TS `//`, JSDoc `*`, Python docstring `"""`) are universally skipped — documentation referencing the legacy pattern is allowed. Reference docs (`docs/reference/**/*.md`) are scanned too, inside fenced ```sql blocks only, and every hit there is warn tier: a stale documented query reaches the loop's backlog without blocking a code PR. Added 2026-09-04 after the CHARMS template doc queried `extracted_values` for months unseen — `.md` sat outside `SCAN_EXTS`. Wall-clock budget: < 1 s for full-repo scan.
 
 ### `check_copy_keys.py`
 
