@@ -137,9 +137,10 @@ def test_cardinality_one_model_section_fans_out_over_multiple_models():
 
     rows = tables[0].rows
     assert [r.values[0] for r in rows] == ["Logistic regression", "Cox model"]
+    # No container in the sections tuple -> the one fallback noun, 'entry'.
     assert [r.record_label for r in rows] == [
-        "Gaca, 2011 — Model 1",
-        "Gaca, 2011 — Model 2",
+        "Gaca, 2011 — Entry 1",
+        "Gaca, 2011 — Entry 2",
     ]
 
 
@@ -192,9 +193,9 @@ def test_model_section_stem_uses_container_entry_label():
     ]
 
 
-def test_model_section_stem_falls_back_to_model_without_entry_label():
-    """Pre-0051 snapshots carry no entry_label key (None) — legacy "Model N"
-    output must stay byte-identical."""
+def test_model_section_stem_falls_back_to_entry_without_entry_label():
+    """Pre-0051 snapshots carry no entry_label key (None) — the record stem
+    falls back to the one legacy noun, 'entry'."""
     field_id = uuid4()
     section = _model_section(field_id)
     article, value_map = _two_model_article(field_id)
@@ -204,6 +205,6 @@ def test_model_section_stem_falls_back_to_model_without_entry_label():
     )
 
     assert [r.record_label for r in tables[0].rows] == [
-        "Gaca, 2011 — Model 1",
-        "Gaca, 2011 — Model 2",
+        "Gaca, 2011 — Entry 1",
+        "Gaca, 2011 — Entry 2",
     ]

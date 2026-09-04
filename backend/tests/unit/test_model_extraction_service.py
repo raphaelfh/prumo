@@ -1008,19 +1008,20 @@ class TestInstanceLabelNoun:
         assert instance_cls.call_args.kwargs["key_value"] == "Model 1"
 
     @pytest.mark.asyncio
-    async def test_old_snapshot_without_entry_label_falls_back_to_model(self, service):
-        # Pre-0051 pinned snapshots parse with entry_label=None.
+    async def test_old_snapshot_without_entry_label_falls_back_to_entry(self, service):
+        # Pre-0051 pinned snapshots parse with entry_label=None — the one
+        # legacy fallback noun is 'entry', never 'model'.
         instance_cls = await self._create_instances(
             service, pinned_tree=[self._container(None)], models=[{}]
         )
-        assert instance_cls.call_args.kwargs["key_value"] == "Model 1"
+        assert instance_cls.call_args.kwargs["key_value"] == "Entry 1"
 
     @pytest.mark.asyncio
-    async def test_empty_pinned_tree_falls_back_to_model(self, service):
+    async def test_empty_pinned_tree_falls_back_to_entry(self, service):
         # No container in the pin -> the live row (served keyless-of-noun by
-        # the autouse fixture) -> "Model 1".
+        # the autouse fixture) -> "Entry 1".
         instance_cls = await self._create_instances(service, pinned_tree=[], models=[{}])
-        assert instance_cls.call_args.kwargs["key_value"] == "Model 1"
+        assert instance_cls.call_args.kwargs["key_value"] == "Entry 1"
 
     @pytest.mark.asyncio
     async def test_llm_named_model_ignores_noun(self, service):

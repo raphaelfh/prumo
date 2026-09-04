@@ -61,10 +61,13 @@ class ExtractionCardinality(str, PyEnum):
     MANY = "many"
 
 
-# Default entry noun of a model_container when none was authored (B-8 seeded
-# "model"): the AI instance label, the export record stem and the portable
-# importer all fall back to it, so it lives here once.
-DEFAULT_ENTRY_LABEL = "model"
+# The noun a repeating section's entries read as when ``entry_label`` is
+# NULL — rows created before the noun was required at creation and pre-B-8
+# snapshots. New sections are created with a noun (SectionCreateRequest)
+# and the seeded groups carry theirs (seed + 0068); the AI instance label,
+# the export record stem, the portable importer and the entry-group
+# pipeline all fall back to this one value, so it lives here once.
+DEFAULT_ENTRY_LABEL = "entry"
 
 
 class ExtractionEntityRole(str, PyEnum):
