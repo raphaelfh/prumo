@@ -1,7 +1,7 @@
 """Error-code taxonomy for async section extraction.
 
 The Celery extraction task can fail in a few distinct ways the frontend wants
-to surface differently (missing PDF, missing LLM key, everything else). This
+to surface differently (see ``ExtractionErrorCode`` for the full list). This
 module turns the *exception types* the pipeline raises into a stable
 ``ExtractionErrorCode`` and wraps them in ``ExtractionTaskError`` so the code
 survives the Celery JSON result boundary — the status endpoint reads it back
