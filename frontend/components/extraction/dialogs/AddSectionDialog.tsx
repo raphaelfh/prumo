@@ -6,10 +6,15 @@
  * - root ("New section"): the B-7 study-section form — cardinality
  *   select, description, required switch;
  * - group ("Add repeating group…"): Label + Entry label + Description;
- *   role model_container and cardinality 'many' are hard-coded (the
- *   server 422s anything else — the form never offers the impossible);
+ *   role model_container and cardinality 'many' are fixed (the server
+ *   422s anything else — the form never offers the impossible);
  * - perModel ("New per-{noun} section"): parent preset from the invoking
  *   group; cardinality select stays, worded per-{noun}.
+ *
+ * Every repeating section is created WITH its entry noun (entry-group
+ * train): the entry-label field renders whenever the form's cardinality is
+ * 'many' — always for a group, once the select says so in the other two
+ * modes — and the schema requires it non-blank then.
  *
  * Every mode offers the description: it is the section's AI instruction
  * (sent with every extraction of the section; for a repeating one also
@@ -46,6 +51,7 @@ import {createSection} from '@/services/templateService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {generateSnakeCaseName} from '@/lib/extraction/slug';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 // =================== MODES ===================
 
@@ -59,8 +65,9 @@ export type AddSectionMode =
 
 /** One superset shape across modes (react-hook-form needs a single form
  * type); honesty per mode lives in WHICH controls render and in the
- * submit mapping below — group mode hard-codes cardinality 'many' /
- * is_required false, and the server 422s any contract breach anyway. */
+ * submit mapping below — group mode fixes cardinality 'many' through its
+ * default value and is_required false, and the server 422s any contract
+ * breach anyway. */
 const getAddSectionSchema = () => z.object({
   name: z.string()
       .min(1, t('extraction', 'nameRequired'))
@@ -82,6 +89,16 @@ const getAddSectionSchema = () => z.object({
       required_error: t('extraction', 'cardinalityRequired'),
   }),
     is_required: z.boolean().default(false),
+}).superRefine((data, ctx) => {
+  // A repeating section is created WITH its entry noun (the server 422s a
+  // blank one); a section that repeats once carries none.
+  if (data.cardinality === 'many' && !data.entry_label?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['entry_label'],
+      message: t('templateConfig', 'entryLabelRequired'),
+    });
+  }
 });
 
 /* `is_required` carries a `.default()`, so the schema's input and output
@@ -120,7 +137,7 @@ export function AddSectionDialog({
 }: AddSectionDialogProps) {
   const [loading, setLoading] = useState(false);
   const [autoGenerateName, setAutoGenerateName] = useState(true);
-  const noun = mode.kind === 'perModel' ? mode.entryNoun : 'model';
+  const noun = mode.kind === 'perModel' ? mode.entryNoun : DEFAULT_ENTRY_NOUN;
 
   const form = useForm<AddSectionInput, unknown, AddSectionOutput>({
       resolver: zodResolver(getAddSectionSchema()),
@@ -138,6 +155,10 @@ export function AddSectionDialog({
   // useWatch instead of form.watch — the latter is incompatible with the
   // React Compiler (react-hooks/incompatible-library).
   const label = useWatch({control: form.control, name: 'label'});
+  // The entry-label field follows the cardinality: a group always repeats
+  // (its default is 'many'), the other modes repeat when the select says so.
+  const cardinality = useWatch({control: form.control, name: 'cardinality'});
+  const repeats = cardinality === 'many';
 
     // Auto-generate name when label changes
   useEffect(() => {
@@ -156,11 +177,11 @@ export function AddSectionDialog({
       name: data.name,
       label: data.label,
       description: data.description?.trim() || null,
-      cardinality: mode.kind === 'group' ? 'many' : data.cardinality,
+      cardinality: data.cardinality,
       role: ROLE_BY_MODE[mode.kind],
       parentEntityTypeId: mode.kind === 'perModel' ? mode.parentId : null,
-      // Blank → omit so the server defaults the noun to 'model' (D3).
-      entryLabel: mode.kind === 'group' ? data.entry_label?.trim() || undefined : undefined,
+      // The schema already refused a blank noun on a repeating section.
+      entryLabel: data.cardinality === 'many' ? data.entry_label?.trim() : undefined,
       isRequired: mode.kind === 'group' ? false : data.is_required,
     });
 
@@ -230,7 +251,7 @@ export function AddSectionDialog({
                     />
                   </FormControl>
                   <FormDescription>
-                      Name shown in the UI for users
+                      {t('extraction', 'sectionLabelHint')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -244,7 +265,7 @@ export function AddSectionDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="flex items-center gap-2">
-                      Technical name *
+                      {t('extraction', 'sectionNameLabel')}
                     <div className="flex items-center gap-1">
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -269,55 +290,8 @@ export function AddSectionDialog({
                     />
                   </FormControl>
                   <FormDescription>
-                      Unique internal name (snake_case). {autoGenerateName && 'Auto-generated.'}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Entry label — group mode only (D3): what one entry is
-                called; blank falls back to the server default "model". */}
-            {mode.kind === 'group' && (
-              <FormField
-                control={form.control}
-                name="entry_label"
-                render={({field}) => (
-                  <FormItem>
-                    <FormLabel>{t('templateConfig', 'entryLabelLabel')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={t('templateConfig', 'entryLabelPlaceholder')}
-                        {...field}
-                        value={field.value || ''}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t('templateConfig', 'entryLabelHint')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-
-            {/* Description — the section's AI instruction, in every mode */}
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                    <FormLabel>{t('extraction', 'sectionDescriptionOptional')}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                        placeholder={t('extraction', 'placeholderSectionDescription')}
-                      rows={3}
-                      {...field}
-                      value={field.value || ''}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t('templateConfig', 'sectionDescriptionHint')}
+                      {t('extraction', 'sectionNameHint')}{' '}
+                      {autoGenerateName && t('extraction', 'sectionNameAutoGenerated')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -383,6 +357,55 @@ export function AddSectionDialog({
             />
             )}
 
+            {/* Entry label — every repeating section is created with its noun:
+                what one entry is called in the prompts and on the run form.
+                The placeholder is the fallback a legacy blank reads as. */}
+            {repeats && (
+              <FormField
+                control={form.control}
+                name="entry_label"
+                render={({field}) => (
+                  <FormItem>
+                    <FormLabel>{t('templateConfig', 'entryLabelLabel')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={DEFAULT_ENTRY_NOUN}
+                        {...field}
+                        value={field.value || ''}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t('templateConfig', 'entryLabelHint')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {/* Description — the section's AI instruction, in every mode */}
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                    <FormLabel>{t('extraction', 'sectionDescriptionOptional')}</FormLabel>
+                  <FormControl>
+                    <Textarea
+                        placeholder={t('extraction', 'placeholderSectionDescription')}
+                      rows={3}
+                      {...field}
+                      value={field.value || ''}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('templateConfig', 'sectionDescriptionHint')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             {/* Required — root and per-model modes only */}
             {mode.kind !== 'group' && (
             <FormField
@@ -393,7 +416,7 @@ export function AddSectionDialog({
                   <div className="space-y-0.5">
                       <FormLabel className="text-base">{t('extraction', 'sectionRequiredLabel')}</FormLabel>
                     <FormDescription>
-                        When enabled, this section must be filled for all articles
+                        {t('extraction', 'sectionRequiredHint')}
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -421,7 +444,7 @@ export function AddSectionDialog({
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Creating...
+                      {t('extraction', 'creating')}
                   </>
                 ) : (
                   <>

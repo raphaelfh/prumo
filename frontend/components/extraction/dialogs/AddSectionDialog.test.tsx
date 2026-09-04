@@ -11,7 +11,7 @@
  */
 import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {beforeAll, beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/services/templateService', () => ({createSection: vi.fn()}));
 vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
@@ -21,6 +21,16 @@ import {createSection} from '@/services/templateService';
 import {TooltipProvider} from '@/components/ui/tooltip';
 
 import {AddSectionDialog, type AddSectionMode} from './AddSectionDialog';
+
+// Radix Select drives its listbox through pointer-capture APIs jsdom does not
+// implement; without these the cardinality trigger never opens. Scoped to
+// this file — the assertions under test are the form rules, not the polyfill.
+beforeAll(() => {
+  Element.prototype.hasPointerCapture = vi.fn(() => false);
+  Element.prototype.setPointerCapture = vi.fn();
+  Element.prototype.releasePointerCapture = vi.fn();
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 function renderDialog(mode: AddSectionMode) {
   const onOpenChange = vi.fn();
@@ -88,6 +98,34 @@ describe('AddSectionDialog — root mode (unchanged B-7 contract)', () => {
     );
     expect(onSectionAdded).toHaveBeenCalledTimes(1);
   });
+
+  it('asks for the entry label once the section repeats, requires it, and posts it', async () => {
+    const user = userEvent.setup();
+    renderDialog({kind: 'root'});
+    expect(screen.queryByText('Entry label')).toBeNull();
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('option', {name: /Multiple sections/}));
+    const entryLabel = await screen.findByPlaceholderText('entry');
+    await user.type(labelInput(), 'Study arms');
+    await submit();
+    expect(
+      await screen.findByText('Entry label is required for a repeating section'),
+    ).toBeInTheDocument();
+    expect(createSection).not.toHaveBeenCalled();
+    await user.type(entryLabel, ' arm ');
+    await submit();
+    await waitFor(() => expect(createSection).toHaveBeenCalledTimes(1));
+    expect(createSection).toHaveBeenCalledWith(
+      expect.objectContaining({role: 'study_section', cardinality: 'many', entryLabel: 'arm'}),
+    );
+  });
+
+  it('renders the technical-name hints through copy', () => {
+    renderDialog({kind: 'root'});
+    expect(screen.getByText('Technical name *')).toBeInTheDocument();
+    expect(screen.getByText(/Unique internal name \(snake_case\)\./)).toBeInTheDocument();
+    expect(screen.getByText(/Auto-generated\./)).toBeInTheDocument();
+  });
 });
 
 describe('AddSectionDialog — group mode (Add repeating group…)', () => {
@@ -97,7 +135,7 @@ describe('AddSectionDialog — group mode (Add repeating group…)', () => {
     // NO cardinality choice — a group ALWAYS repeats (D3).
     expect(screen.queryByText('Section type *')).toBeNull();
     expect(screen.queryByText('Required section')).toBeNull();
-    const entryLabel = screen.getByPlaceholderText('model');
+    const entryLabel = screen.getByPlaceholderText('entry');
     await userEvent.type(labelInput(), 'Models compared');
     await userEvent.type(entryLabel, 'algorithm');
     await submit();
@@ -115,18 +153,14 @@ describe('AddSectionDialog — group mode (Add repeating group…)', () => {
     );
   });
 
-  it('omits a BLANK entry label so the server defaults the noun', async () => {
+  it('refuses a blank entry label — there is no server default to fall back to', async () => {
     renderDialog({kind: 'group'});
     await userEvent.type(labelInput(), 'Models compared');
     await submit();
-    await waitFor(() => expect(createSection).toHaveBeenCalledTimes(1));
-    expect(createSection).toHaveBeenCalledWith(
-      expect.objectContaining({
-        role: 'model_container',
-        entryLabel: undefined,
-        description: null,
-      }),
-    );
+    expect(
+      await screen.findByText('Entry label is required for a repeating section'),
+    ).toBeInTheDocument();
+    expect(createSection).not.toHaveBeenCalled();
   });
 
   it('offers the description and posts it — the identifier has to be told something', async () => {
@@ -134,6 +168,7 @@ describe('AddSectionDialog — group mode (Add repeating group…)', () => {
     // reached the AI with no identification instruction at all.
     renderDialog({kind: 'group'});
     await userEvent.type(labelInput(), 'Models compared');
+    await userEvent.type(screen.getByPlaceholderText('entry'), 'model');
     await userEvent.type(
       screen.getByPlaceholderText('Section description'),
       '  One entry per model the paper reports.  ',
@@ -143,6 +178,7 @@ describe('AddSectionDialog — group mode (Add repeating group…)', () => {
     expect(createSection).toHaveBeenCalledWith(
       expect.objectContaining({
         role: 'model_container',
+        entryLabel: 'model',
         description: 'One entry per model the paper reports.',
       }),
     );

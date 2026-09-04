@@ -526,8 +526,8 @@ export interface CreateSectionParams {
   /** Owning group for a model_section (B-8); roots and containers omit
    * it — the endpoint enforces the role/parent pairing. */
   parentEntityTypeId?: string | null;
-  /** Repeating-group entry noun (B-8 D3) — model_container only; the
-   * server defaults a blank/omitted value to 'model'. */
+  /** Entry noun (B-8 D3, entry-group train): required by the server on
+   * every repeating section, refused on one that does not repeat. */
   entryLabel?: string | null;
   isRequired: boolean;
 }
