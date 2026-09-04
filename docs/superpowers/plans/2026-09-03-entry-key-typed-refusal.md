@@ -8,41 +8,41 @@ owner: '@raphaelfh'
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A keyless repeating group refuses with one machine-readable code, `MISSING_ENTITY_KEY`, on the async section path (job `error_code`) and on the sync models path (typed 409 envelope), and the reviewer reads the title "Entry key missing" with the backend's actionable description on both.
+**Goal:** A keyless repeating group refuses with one machine-readable code, `MISSING_ENTITY_KEY`, on the async single-section job path (job `error_code`) and on the sync models path (typed 409 envelope), and the reviewer reads the title "Entry key missing" with the backend's actionable description on both.
 
-**Architecture:** `MissingEntityKeyError` becomes an `AppError` (the `EngineRetiredError` shape: `code`, `status_code=409`, `details`), so the registered handler serves the typed envelope on the sync route once the models endpoint re-raises `AppError` ahead of its generic arm. The async taxonomy gains `ExtractionErrorCode.MISSING_ENTITY_KEY` with a type-based classify arm, so the job status carries the code. The frontend maps the code in `jobErrorToast` (job path) and reads the envelope code in `useModelExtraction` (sync path); both use one new copy key.
+**Architecture:** `MissingEntityKeyError` becomes an `AppError` (the `EngineRetiredError` shape: `code`, `status_code=409`), which constitution §VIII mandates for every custom exception; the registered handler serves the typed envelope on the sync route once the models endpoint re-raises `AppError` ahead of its narrower arms. The async taxonomy gains `ExtractionErrorCode.MISSING_ENTITY_KEY` with a type-based classify arm, so the job status carries the code. The frontend maps the code in `jobErrorToast` (one place for the title and the duration); the sync hook reaches it because `APIError` now carries the envelope code as its own `code`.
 
-**Tech Stack:** FastAPI + Pydantic v2 (backend), pytest (unit + integration via httpx ASGI), React 19 + TanStack Query + sonner (frontend), Vitest, openapi-typescript (`scripts/generate_api_types.sh`).
+**Tech Stack:** FastAPI + Pydantic v2 (backend), pytest (unit + integration via httpx ASGI), React 19 + sonner (frontend), Vitest, openapi-typescript (`scripts/generate_api_types.sh`).
 
-Spec: [`docs/superpowers/specs/2026-09-03-entry-group-followup-train-design.md`](../specs/2026-09-03-entry-group-followup-train-design.md) §4 (PR 1).
+Spec: [`docs/superpowers/specs/2026-09-03-entry-group-followup-train-design.md`](../specs/2026-09-03-entry-group-followup-train-design.md) §4 (PR 1). Revised 2026-09-03 after the five-lens adversarial panel (simplicity, test coverage, constitution, security, migration safety); the changes are recorded in §Panel at the end.
 
 ## Global Constraints
 
-- Zero new tables or columns. No Alembic migration in this PR.
+- Zero new tables or columns. No Alembic migration: `ExtractionErrorCode` is never persisted (verified: the only `error_code` column is `article_sync_events.error_code`, a plain string unrelated to this enum).
 - File-size ratchet: `backend/app/services/section_extraction_service.py` and `frontend/pages/ExtractionFullScreen.tsx` are not touched.
 - React Compiler: no `try/catch` value blocks inside components; the hook change stays inside the existing `.catch()` chain.
 - All user-facing text through `frontend/lib/copy/`; `scripts/fitness/check_copy_keys.py` is shrink-only (a new key must be referenced).
 - `npx knip --no-tag-hints` and `npx knip --production --no-tag-hints` at zero findings; no new `knip.jsonc` exception.
 - Vulture baseline never grows; mypy ratchet green.
-- `bash scripts/generate_api_types.sh` after the enum change; `frontend/types/api/{openapi.json,schema.d.ts}` committed (CI's api-contract job fails on diff).
+- `bash scripts/generate_api_types.sh` after the enum change; `frontend/types/api/{openapi.json,schema.d.ts}` committed (CI's api-contract job fails on diff). Tasks 4 and 5 fail `npm run typecheck` until that regeneration has happened, so keep the task order.
 - English only in code, comments, tests and commits. Conventional commits.
-- Backend commands run inside `backend/` with `uv run`; frontend commands run from the repo root. Integration tests need the local Supabase stack (`make start`); the whole backend suite is `make test-backend`.
+- Backend commands run inside `backend/` with `uv run`; frontend commands run from the repo root (the worktree root, never `backend/`). Integration tests need the local Supabase stack (`make start`); the whole backend suite is `make test-backend`.
 
 ---
 
 ### Task 1: `MissingEntityKeyError` becomes a typed 409 `AppError`
 
 **Files:**
-- Modify: `backend/app/services/entity_key.py:55-81` (imports + the class)
-- Test: `backend/tests/unit/test_entity_key.py`
+- Modify: `backend/app/services/entity_key.py:55-81` (imports + the class) and the `key_field_of` docstring at `:165-175`
+- Test: `backend/tests/unit/test_entity_key.py` (already imports `uuid4` and `MissingEntityKeyError`)
 
 **Interfaces:**
-- Consumes: `app.core.error_handler.AppError(code, message, status_code, details)` (existing; `llm_engine_service.py:35` imports it the same way).
-- Produces: `MissingEntityKeyError(entity_type_id: UUID, entity_type_label: str | None = None)` with attributes `code == "MISSING_ENTITY_KEY"`, `status_code == 409`, `details == {"entity_type_id": "<uuid>"}`, `entity_type_id`, `entity_type_label`; `str(err)` is the reviewer-facing message. Tasks 2, 3 and 6 rely on these names.
+- Consumes: `app.core.error_handler.AppError(code, message, status_code, details=None)` (existing; `llm_engine_service.py:35` imports it the same way).
+- Produces: `MissingEntityKeyError(entity_type_id: UUID, entity_type_label: str | None = None)` with `code == "MISSING_ENTITY_KEY"`, `status_code == 409`, `details is None`; `str(err)` is the reviewer-facing message. Tasks 2 and 3 rely on the class and its `code`.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `backend/tests/unit/test_entity_key.py` (add `from uuid import uuid4` at the top if the file does not import it yet):
+Append to `backend/tests/unit/test_entity_key.py`:
 
 ```python
 def test_missing_entity_key_error_is_a_typed_409() -> None:
@@ -51,15 +51,11 @@ def test_missing_entity_key_error_is_a_typed_409() -> None:
     route, and the worker classifies the same type for the job path."""
     from app.core.error_handler import AppError
 
-    et_id = uuid4()
-    err = MissingEntityKeyError(et_id, "Final predictors")
+    err = MissingEntityKeyError(uuid4(), "Final predictors")
 
     assert isinstance(err, AppError)
     assert err.code == "MISSING_ENTITY_KEY"
     assert err.status_code == 409
-    assert err.details == {"entity_type_id": str(et_id)}
-    assert err.entity_type_id == et_id
-    assert err.entity_type_label == "Final predictors"
     assert str(err) == (
         "The repeating section 'Final predictors' declares no entry key, so AI "
         "extraction cannot tell a new entry from one it already extracted. Ask a "
@@ -87,18 +83,18 @@ Replace the class (lines 63-81) with:
 class MissingEntityKeyError(AppError):
     """A repeating group declares no ``is_entity_key`` field.
 
-    Raised instead of duplicating in silence, before any write or LLM call.
-    The template inspector is where a manager satisfies it. The seed stamps
-    the global catalogue, the clone copies the flag (``CLONED_FIELD_COLUMNS``)
+    Raised instead of duplicating in silence, before any write or LLM call;
+    a manager satisfies it in the Configuration tab. The seed stamps the
+    global catalogue, the clone copies the flag (``CLONED_FIELD_COLUMNS``)
     and migrations 0059 and 0066 backfilled the rows that predate them, so
     the common path never reaches this.
 
-    An ``AppError`` (the ``EngineRetiredError`` shape): the registered handler
-    serves the typed envelope — ``error.code = "MISSING_ENTITY_KEY"``, HTTP
-    409 — on the sync models route, and ``classify_extraction_error`` maps
-    the same type to ``ExtractionErrorCode.MISSING_ENTITY_KEY`` for the job
-    path. The message names the section and the fix; the frontend shows it
-    verbatim under its own title.
+    An ``AppError`` (the ``EngineRetiredError`` shape): the registered
+    handler serves ``error.code = "MISSING_ENTITY_KEY"`` as HTTP 409 on the
+    sync models route, and ``classify_extraction_error`` maps the same type
+    to ``ExtractionErrorCode.MISSING_ENTITY_KEY`` for the job path. The
+    message names the section and the fix; the frontend shows it verbatim
+    under its own title.
     """
 
     def __init__(self, entity_type_id: UUID, entity_type_label: str | None = None) -> None:
@@ -114,17 +110,18 @@ class MissingEntityKeyError(AppError):
                 "in the Configuration tab."
             ),
             status_code=409,
-            details={"entity_type_id": str(entity_type_id)},
         )
 ```
 
 `{name!r}` is kept on purpose: `tests/integration/test_entry_group_extraction.py:453` asserts `"'Numeric performance'" in str(excinfo.value)`.
 
+In the `key_field_of` docstring (line ~173), replace "the message names the section as the template editor shows it" with "the message names the section as the Configuration tab shows it".
+
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd backend && uv run pytest tests/unit/test_entity_key.py -q`
 Expected: all PASS, including the new test.
-Run (needs the local stack): `cd backend && uv run pytest tests/integration/test_entry_group_extraction.py -q -k "keyless or MissingEntityKey or no_key"`
+Run (needs the local stack): `cd backend && uv run pytest tests/integration/test_entry_group_extraction.py -q -k keyless`
 Expected: PASS (the message still carries the quoted label).
 
 - [ ] **Step 5: Commit**
@@ -142,11 +139,11 @@ git commit -m "feat(extraction): MissingEntityKeyError is a typed 409 AppError (
 - Modify: `backend/app/schemas/extraction.py:521-546` (`ExtractionErrorCode`)
 - Modify: `backend/app/services/extraction_errors.py:52-77` (`classify_extraction_error`)
 - Regenerate: `frontend/types/api/openapi.json`, `frontend/types/api/schema.d.ts`
-- Test: `backend/tests/unit/test_extraction_errors.py`, `backend/tests/unit/test_run_section_extraction_task.py`
+- Test: `backend/tests/unit/test_extraction_errors.py`, `backend/tests/unit/test_run_section_extraction_task.py`, `backend/tests/integration/test_entry_group_extraction.py:442-456`
 
 **Interfaces:**
 - Consumes: `MissingEntityKeyError` from Task 1.
-- Produces: `ExtractionErrorCode.MISSING_ENTITY_KEY == "MISSING_ENTITY_KEY"`; `classify_extraction_error(MissingEntityKeyError(...))` returns `(ExtractionErrorCode.MISSING_ENTITY_KEY, str(exc))`; the frontend union `components['schemas']['ExtractionErrorCode']` includes `"MISSING_ENTITY_KEY"` (Task 5 relies on it for type-checking the `switch`).
+- Produces: `ExtractionErrorCode.MISSING_ENTITY_KEY == "MISSING_ENTITY_KEY"`; `classify_extraction_error(MissingEntityKeyError(...))` returns `(ExtractionErrorCode.MISSING_ENTITY_KEY, str(exc))`; the frontend union `components['schemas']['ExtractionErrorCode']` includes `"MISSING_ENTITY_KEY"` (Task 4's `switch` type-checks against it).
 
 - [ ] **Step 1: Write the failing classify test**
 
@@ -154,9 +151,9 @@ Add to `class TestClassifyExtractionError` in `backend/tests/unit/test_extractio
 
 ```python
     def test_missing_entity_key_maps_to_missing_entity_key(self) -> None:
-        """A keyless repeating group refuses before any LLM call (identity
-        spec §5.3). The typed code lets the run form show "Entry key missing"
-        instead of the generic failure; the message already names the fix."""
+        """A keyless repeating group refuses before any LLM call; the code
+        lets the run form show "Entry key missing" instead of the generic
+        failure, and the message already names the fix."""
         from uuid import uuid4
 
         from app.services.entity_key import MissingEntityKeyError
@@ -170,7 +167,7 @@ Add to `class TestClassifyExtractionError` in `backend/tests/unit/test_extractio
 
 - [ ] **Step 2: Write the failing task-level test**
 
-In `backend/tests/unit/test_run_section_extraction_task.py`, in the same class that defines `_run_with_side_effect` and `test_missing_llm_key_carries_missing_api_key_code`, add:
+In `backend/tests/unit/test_run_section_extraction_task.py`, inside `class TestRunSectionExtractionTaskErrorCode` (line 350, the class that defines `_run_with_side_effect`), add:
 
 ```python
     def test_missing_entity_key_carries_missing_entity_key_code(self):
@@ -184,19 +181,37 @@ In `backend/tests/unit/test_run_section_extraction_task.py`, in the same class t
         assert str(err) == str(exc)
 ```
 
-- [ ] **Step 3: Run both tests to verify they fail**
+- [ ] **Step 3: Extend the real-service integration test with the job code**
+
+In `backend/tests/integration/test_entry_group_extraction.py`, inside `test_a_keyless_repeating_group_is_refused_before_any_write_or_llm_call`, after the line `assert "'Numeric performance'" in str(excinfo.value)` add:
+
+```python
+    # The code the single-section job carries for this exact raise: the task
+    # wraps whatever the service raises through ``classify_extraction_error``
+    # (pinned by ``TestRunSectionExtractionTaskErrorCode``), so this is the
+    # real-pipeline half of the section-path proof.
+    from app.schemas.extraction import ExtractionErrorCode
+    from app.services.extraction_errors import classify_extraction_error
+
+    assert classify_extraction_error(excinfo.value)[0] is ExtractionErrorCode.MISSING_ENTITY_KEY
+```
+
+- [ ] **Step 4: Run the three tests to verify they fail**
 
 Run: `cd backend && uv run pytest tests/unit/test_extraction_errors.py tests/unit/test_run_section_extraction_task.py -q -k missing_entity_key`
 Expected: FAIL with `AttributeError: MISSING_ENTITY_KEY` (enum member missing).
+Run (needs the local stack): `cd backend && uv run pytest tests/integration/test_entry_group_extraction.py -q -k keyless`
+Expected: FAIL with the same `AttributeError`.
 
-- [ ] **Step 4: Add the enum member and its docstring bullet**
+- [ ] **Step 5: Add the enum member and its docstring bullet**
 
 In `backend/app/schemas/extraction.py`, inside the `ExtractionErrorCode` docstring, add after the `LLM_ENDPOINT_UNAVAILABLE` bullet:
 
 ```python
     - ``MISSING_ENTITY_KEY`` — a repeating section declares no
-      ``is_entity_key`` field (``MissingEntityKeyError``); refused before
-      any LLM call, the sync kickoff serves the same code as a 409.
+      ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
+      LLM call. Carried by the single-section job and, as a 409, by the sync
+      models kickoff; a batch run keeps reporting per-section text.
 ```
 
 and add the member before `EXTRACTION_FAILED`:
@@ -205,7 +220,7 @@ and add the member before `EXTRACTION_FAILED`:
     MISSING_ENTITY_KEY = "MISSING_ENTITY_KEY"
 ```
 
-- [ ] **Step 5: Add the classify arm**
+- [ ] **Step 6: Add the classify arm**
 
 In `backend/app/services/extraction_errors.py`, inside `classify_extraction_error`, extend the lazy import block:
 
@@ -217,18 +232,18 @@ and add, after the `EndpointUnavailableError` arm and before the `FileNotFoundEr
 
 ```python
     if isinstance(exc, MissingEntityKeyError):
-        # A keyless repeating group (identity spec §5.3): refused before any
-        # LLM call. The message names the section and the fix (a manager
-        # marks the entry key in the Configuration tab) — keep it verbatim.
+        # Keyless repeating group: the message already names the section and the fix.
         return ExtractionErrorCode.MISSING_ENTITY_KEY, str(exc).strip() or _GENERIC_MESSAGE
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [ ] **Step 7: Run the tests to verify they pass**
 
 Run: `cd backend && uv run pytest tests/unit/test_extraction_errors.py tests/unit/test_run_section_extraction_task.py tests/unit/test_section_extraction_endpoint.py -q`
 Expected: all PASS.
+Run (needs the local stack): `cd backend && uv run pytest tests/integration/test_entry_group_extraction.py -q -k keyless`
+Expected: PASS.
 
-- [ ] **Step 7: Regenerate the API contract**
+- [ ] **Step 8: Regenerate the API contract**
 
 Run from the repo root: `bash scripts/generate_api_types.sh`
 Expected output: `Generated frontend/types/api/{openapi.json,schema.d.ts}`.
@@ -237,24 +252,24 @@ Expected: both files changed; the grep prints the `ExtractionErrorCode` union li
 Run: `npm run typecheck`
 Expected: exit 0.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add backend/app/schemas/extraction.py backend/app/services/extraction_errors.py backend/tests/unit/test_extraction_errors.py backend/tests/unit/test_run_section_extraction_task.py frontend/types/api/openapi.json frontend/types/api/schema.d.ts
+git add backend/app/schemas/extraction.py backend/app/services/extraction_errors.py backend/tests/unit/test_extraction_errors.py backend/tests/unit/test_run_section_extraction_task.py backend/tests/integration/test_entry_group_extraction.py frontend/types/api/openapi.json frontend/types/api/schema.d.ts
 git commit -m "feat(extraction): MISSING_ENTITY_KEY in the async error taxonomy"
 ```
 
 ---
 
-### Task 3: The models endpoint re-raises `AppError` instead of flattening it into a 500
+### Task 3: The models endpoint lets a typed `AppError` reach its handler
 
 **Files:**
-- Modify: `backend/app/api/v1/endpoints/model_extraction.py` (imports; the `except` ladder of `extract_models`, which today ends with `except FileNotFoundError` and a final `except Exception as e:` arm that raises the generic 500)
-- Test: `backend/tests/unit/test_one_live_run_conflict_mapping.py` (direct coroutine, the ASGI blind spot), new `backend/tests/integration/test_missing_entity_key_envelope.py` (the envelope through the real app)
+- Modify: `backend/app/api/v1/endpoints/model_extraction.py` (imports; the `except` ladder of `extract_models`, whose first arm today is `except CreateRunInputError as e:` and whose last is a generic `except Exception as e:` that raises the 500)
+- Test: `backend/tests/unit/test_one_live_run_conflict_mapping.py` (direct coroutine — the ASGI diff-cover blind spot its module docstring names), `backend/tests/integration/test_llm_engine_kickoff_gate.py` (the envelope through the real app; the module already re-exports `client_as_manager` and `client_as_outsider` from `tests/integration/helpers/engine_setup.py` and defines `_models_payload()`)
 
 **Interfaces:**
-- Consumes: `MissingEntityKeyError` (Task 1); `_call_extract_models(payload, service, caller, credentials_error=None)` and `_model_extraction_payload(project_id, article_id, template_id)` helpers already defined in `test_one_live_run_conflict_mapping.py`; fixtures `client_as_manager` and `SEED` from `tests/integration/conftest.py`.
-- Produces: `POST /api/v1/extraction/models` answers `409 {"ok": false, "error": {"code": "MISSING_ENTITY_KEY", "message": ..., "details": {"entity_type_id": ...}}}` when the service raises.
+- Consumes: `MissingEntityKeyError` (Task 1); `_call_extract_models(payload, service, caller, credentials_error=None)` and `_model_extraction_payload(project_id, article_id, template_id)` from `test_one_live_run_conflict_mapping.py`.
+- Produces: `POST /api/v1/extraction/models` answers `409 {"ok": false, "error": {"code": "MISSING_ENTITY_KEY", "message": "...", "details": null}}` when the service raises; an outsider still gets 403 before the service is reached.
 
 - [ ] **Step 1: Write the failing direct-coroutine test**
 
@@ -272,9 +287,7 @@ async def test_extract_models_lets_missing_entity_key_through() -> None:
 
     project_id, article_id, template_id, caller = uuid4(), uuid4(), uuid4(), uuid4()
     service = MagicMock()
-    service.extract = AsyncMock(
-        side_effect=MissingEntityKeyError(uuid4(), "Prediction models")
-    )
+    service.extract = AsyncMock(side_effect=MissingEntityKeyError(uuid4(), "Prediction models"))
 
     with pytest.raises(MissingEntityKeyError) as exc_info:
         await _call_extract_models(
@@ -285,77 +298,58 @@ async def test_extract_models_lets_missing_entity_key_through() -> None:
     assert exc_info.value.code == "MISSING_ENTITY_KEY"
 ```
 
-- [ ] **Step 2: Write the failing integration test**
+- [ ] **Step 2: Write the failing integration tests**
 
-Create `backend/tests/integration/test_missing_entity_key_envelope.py`:
+Append to `backend/tests/integration/test_llm_engine_kickoff_gate.py` (add `from unittest.mock import AsyncMock, MagicMock, patch`, `from uuid import uuid4` and `from app.services.entity_key import MissingEntityKeyError` to its imports if absent):
 
 ```python
-"""A keyless repeating group refuses the sync models kickoff with the typed
-409 envelope (``error.code == "MISSING_ENTITY_KEY"``) — never the generic
-500 the route's broad ``except Exception`` used to produce.
-
-The service is patched to raise: the refusal itself is covered by the
-entry-group pipeline tests; this test pins the ROUTE + registered handler +
-envelope shape through the real ASGI app.
-"""
-
-from __future__ import annotations
-
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
-
-import pytest
-from httpx import AsyncClient
-
-from app.services.engine_credentials import EngineCredentials
-from app.services.entity_key import MissingEntityKeyError
-from tests.integration.conftest import SEED
-
-pytestmark = pytest.mark.asyncio
-
 _MODEL_EP = "app.api.v1.endpoints.model_extraction"
 
 
+def _keyless_service() -> MagicMock:
+    """A service whose kickoff refuses the way a keyless container does; the
+    refusal itself is pinned by the entry-group pipeline tests — these two
+    tests pin the ROUTE, the registered handler and the envelope shape."""
+    service = MagicMock()
+    service.extract = AsyncMock(side_effect=MissingEntityKeyError(uuid4(), "Prediction models"))
+    return service
+
+
+@pytest.mark.asyncio
 async def test_models_kickoff_on_keyless_group_is_typed_409(
     client_as_manager: AsyncClient,
 ) -> None:
-    entity_type_id = uuid4()
-    service = MagicMock()
-    service.extract = AsyncMock(
-        side_effect=MissingEntityKeyError(entity_type_id, "Prediction models")
-    )
-    with (
-        patch(
-            f"{_MODEL_EP}.resolve_engine_credentials",
-            AsyncMock(return_value=EngineCredentials(None, None, None, None)),
-        ),
-        patch(f"{_MODEL_EP}.create_storage_adapter", return_value=MagicMock()),
-        patch(f"{_MODEL_EP}.ModelExtractionService", return_value=service),
-    ):
-        r = await client_as_manager.post(
-            "/api/v1/extraction/models",
-            json={
-                "projectId": str(SEED.primary_project),
-                "articleId": str(SEED.primary_article),
-                "templateId": str(SEED.primary_template),
-            },
-        )
-
+    with patch(f"{_MODEL_EP}.ModelExtractionService", return_value=_keyless_service()):
+        r = await client_as_manager.post("/api/v1/extraction/models", json=_models_payload())
     assert r.status_code == 409, r.text
     body = r.json()
     assert body["ok"] is False
     assert body["error"]["code"] == "MISSING_ENTITY_KEY"
-    assert body["error"]["details"] == {"entity_type_id": str(entity_type_id)}
     assert "'Prediction models'" in body["error"]["message"]
     assert "Configuration tab" in body["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_outsider_on_keyless_group_gets_403_not_409(
+    client_as_outsider: AsyncClient,
+) -> None:
+    """Scope runs before the service: an outsider never learns the section
+    is keyless (or that the template exists)."""
+    service = _keyless_service()
+    with patch(f"{_MODEL_EP}.ModelExtractionService", return_value=service):
+        r = await client_as_outsider.post("/api/v1/extraction/models", json=_models_payload())
+    assert r.status_code == 403, r.text
+    service.extract.assert_not_awaited()
 ```
 
-- [ ] **Step 3: Run both tests to verify they fail**
+If the manager test fails before reaching the patched service because `resolve_engine_credentials` raises in the local environment, add `patch(f"{_MODEL_EP}.resolve_engine_credentials", AsyncMock(return_value=EngineCredentials(None, None, None, None)))` (import `EngineCredentials` from `app.services.engine_credentials`) to that test only, and say so in the commit body. The panel verified the seed project resolves the env-default engine without raising and that the storage adapter is only ever handed to the patched service.
+
+- [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `cd backend && uv run pytest tests/unit/test_one_live_run_conflict_mapping.py::test_extract_models_lets_missing_entity_key_through -q`
 Expected: FAIL — `HTTPException` (500) raised instead of `MissingEntityKeyError`.
-Run (needs the local stack): `cd backend && uv run pytest tests/integration/test_missing_entity_key_envelope.py -q`
-Expected: FAIL with `assert 500 == 409`.
+Run (needs the local stack): `cd backend && uv run pytest tests/integration/test_llm_engine_kickoff_gate.py -q -k keyless`
+Expected: the manager test FAILS with `assert 500 == 409`; the outsider test passes already (scope precedes the service).
 
 - [ ] **Step 4: Write the minimal implementation**
 
@@ -365,16 +359,24 @@ In `backend/app/api/v1/endpoints/model_extraction.py`, add the import:
 from app.core.error_handler import AppError
 ```
 
-Inside `extract_models`, insert this arm immediately before the final `except Exception as e:` arm (after the `except FileNotFoundError as e:` arm):
+Inside `extract_models`, insert this arm as the FIRST `except` of the ladder (immediately before `except CreateRunInputError as e:`):
 
 ```python
-    except AppError:
+    except AppError as e:
         # Typed refusals raised inside the service (``MissingEntityKeyError``:
         # 409 ``MISSING_ENTITY_KEY``) reach their registered handler and serve
-        # the typed envelope; the generic arm below would flatten them into a
-        # 500 no client can act on. Same reason the engine/endpoint resolvers
-        # sit above the try.
+        # the typed envelope. First in the ladder so no narrower arm below can
+        # flatten a dual-typed AppError into an HTTP_ERROR, and ahead of the
+        # generic arm that would make it a 500 no client can act on.
         await db.rollback()
+        logger.warning(
+            "model_extraction_refused",
+            trace_id=trace_id,
+            code=e.code,
+            project_id=str(payload.project_id),
+            article_id=str(payload.article_id),
+            template_id=str(payload.template_id),
+        )
         raise
 ```
 
@@ -382,13 +384,13 @@ Inside `extract_models`, insert this arm immediately before the final `except Ex
 
 Run: `cd backend && uv run pytest tests/unit/test_one_live_run_conflict_mapping.py -q`
 Expected: all PASS.
-Run (needs the local stack): `cd backend && uv run pytest tests/integration/test_missing_entity_key_envelope.py tests/integration/test_llm_engine_kickoff_gate.py -q`
+Run (needs the local stack): `cd backend && uv run pytest tests/integration/test_llm_engine_kickoff_gate.py -q`
 Expected: all PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/api/v1/endpoints/model_extraction.py backend/tests/unit/test_one_live_run_conflict_mapping.py backend/tests/integration/test_missing_entity_key_envelope.py
+git add backend/app/api/v1/endpoints/model_extraction.py backend/tests/unit/test_one_live_run_conflict_mapping.py backend/tests/integration/test_llm_engine_kickoff_gate.py
 git commit -m "fix(extraction): models kickoff serves the typed 409 for a keyless group"
 ```
 
@@ -398,12 +400,12 @@ git commit -m "fix(extraction): models kickoff serves the typed 409 for a keyles
 
 **Files:**
 - Modify: `frontend/lib/copy/extraction.ts:73-75`
-- Modify: `frontend/lib/ai-extraction/jobErrorToast.ts:31-45`
+- Modify: `frontend/lib/ai-extraction/jobErrorToast.ts` (the parameter type and the `switch`)
 - Test: `frontend/lib/ai-extraction/jobErrorToast.test.ts`, `frontend/test/hooks/useSectionExtraction.test.tsx`
 
 **Interfaces:**
 - Consumes: the regenerated `ExtractionErrorCode` union (Task 2).
-- Produces: copy key `t('extraction', 'sectionExtractionErrorNoEntryKey') === 'Entry key missing'`; `jobErrorToast('MISSING_ENTITY_KEY', msg)` returns `{title, description: msg, duration: 8000}`. Task 5 reuses the copy key.
+- Produces: copy key `t('extraction', 'sectionExtractionErrorNoEntryKey') === 'Entry key missing'`; `jobErrorToast(code: string | null | undefined, message: string): JobErrorToast | null`, where `'MISSING_ENTITY_KEY'` returns `{title, description: message, duration: 8000}`. Task 5 calls it with the string code the sync path reads.
 
 - [ ] **Step 1: Write the failing unit test**
 
@@ -453,7 +455,7 @@ Add to `describe('useSectionExtraction (async job)')` in `frontend/test/hooks/us
 Run: `npx vitest run frontend/lib/ai-extraction/jobErrorToast.test.ts frontend/test/hooks/useSectionExtraction.test.tsx`
 Expected: the two new cases FAIL (`null` returned; generic title used).
 
-- [ ] **Step 4: Add the copy key and the case**
+- [ ] **Step 4: Add the copy key, widen the parameter, add the case**
 
 In `frontend/lib/copy/extraction.ts`, after `sectionExtractionErrorAuthDesc: 'Please sign in again.',` add:
 
@@ -461,19 +463,37 @@ In `frontend/lib/copy/extraction.ts`, after `sectionExtractionErrorAuthDesc: 'Pl
     sectionExtractionErrorNoEntryKey: 'Entry key missing',
 ```
 
-In `frontend/lib/ai-extraction/jobErrorToast.ts`, add a case before `default:`:
+In `frontend/lib/ai-extraction/jobErrorToast.ts`, change the signature and the `switch` head to:
+
+```ts
+export function jobErrorToast(
+  code: string | null | undefined,
+  message: string,
+): JobErrorToast | null {
+  // Actionable failures hold the toast as long as the generic failure (8 s)
+  // so the user can read the remediation. Owning the duration here keeps both
+  // hooks consistent (no per-hook fallback drift).
+  const duration = 8000;
+  // The parameter is a string because the sync models path reads its code
+  // from the untyped error envelope; the switch stays typed by the generated
+  // union so a case label the backend does not emit fails typecheck.
+  switch (code as ExtractionErrorCode | null | undefined) {
+```
+
+and add a case before `default:`:
 
 ```ts
     case 'MISSING_ENTITY_KEY':
-      // A keyless repeating group refused before any LLM call. The backend
-      // message names the section and the fix (a manager marks the entry key
-      // in the Configuration tab), so surface it verbatim under its own title.
+      // Keyless repeating group: the backend message names the section and
+      // the fix, so surface it verbatim under its own title.
       return {
         title: t('extraction', 'sectionExtractionErrorNoEntryKey'),
         description: message,
         duration,
       };
 ```
+
+Update the module docstring's first paragraph to say the mapping serves both the job path and the sync models path.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
@@ -491,18 +511,45 @@ git commit -m "feat(extraction): 'Entry key missing' toast for MISSING_ENTITY_KE
 
 ---
 
-### Task 5: The sync models hook reads the envelope code
+### Task 5: The sync models hook reaches the same toast
 
 **Files:**
-- Modify: `frontend/lib/ai-extraction/errors.ts` (new helper after `getErrorCode`)
-- Modify: `frontend/hooks/extraction/useModelExtraction.ts:127-140` (the `.catch` branch)
-- Test: `frontend/test/hooks/useModelExtraction.test.tsx`
+- Modify: `frontend/lib/ai-extraction/errors.ts:55-64` (`APIError`)
+- Modify: `frontend/hooks/extraction/useModelExtraction.ts` (imports; the `.catch` branch at `:127-140`)
+- Test: new `frontend/lib/ai-extraction/errors.test.ts`, `frontend/test/hooks/useModelExtraction.test.tsx`
 
 **Interfaces:**
-- Consumes: `APIError(message, statusCode?, details?)` from `frontend/lib/ai-extraction/errors.ts` — `sectionExtractionService.extractModels` wraps the client's `ApiError` as `new APIError(error.message, error.status, {code: error.code, traceId})`, so the envelope code lives at `details.code` while `APIError.code` is the fixed `'API_ERROR'` class tag; the copy key from Task 4.
-- Produces: `getApiErrorCode(error: unknown): string | null`.
+- Consumes: `sectionExtractionService.extractModels` wraps the client's `ApiError` as `new APIError(error.message, error.status, {code: error.code, traceId})`; `getErrorCode(error)` (existing, returns `error.code` for any `AIExtractionError`); `jobErrorToast` from Task 4.
+- Produces: `APIError.code` is the envelope code when `details.code` is a string, else the `'API_ERROR'` class tag (nothing reads that tag; the two `getErrorCode` callers compare against `PDF_NOT_FOUND` / `AUTH_ERROR`, which no envelope emits, so the promotion is behaviour-neutral).
 
-- [ ] **Step 1: Write the failing hook test**
+- [ ] **Step 1: Write the failing `APIError` tests**
+
+Create `frontend/lib/ai-extraction/errors.test.ts`:
+
+```ts
+import {describe, expect, it} from 'vitest';
+
+import {APIError, getErrorCode} from '@/lib/ai-extraction/errors';
+
+describe('APIError', () => {
+  it('carries the backend envelope code when the details hold one', () => {
+    const err = new APIError('refused', 409, {code: 'MISSING_ENTITY_KEY', traceId: 'tr-1'});
+    expect(err.code).toBe('MISSING_ENTITY_KEY');
+    expect(getErrorCode(err)).toBe('MISSING_ENTITY_KEY');
+    expect(err.details).toEqual({statusCode: 409, code: 'MISSING_ENTITY_KEY', traceId: 'tr-1'});
+  });
+
+  it('falls back to the class tag without details', () => {
+    expect(new APIError('boom').code).toBe('API_ERROR');
+  });
+
+  it('falls back to the class tag when the details carry no string code', () => {
+    expect(new APIError('boom', 500, {originalError: 'x'}).code).toBe('API_ERROR');
+  });
+});
+```
+
+- [ ] **Step 2: Write the failing hook test and pin the generic fallback**
 
 In `frontend/test/hooks/useModelExtraction.test.tsx`, add the imports (the `sonner` module is already mocked in this file, so `toast.error` is a `vi.fn()`):
 
@@ -511,7 +558,14 @@ import { toast } from 'sonner';
 import { APIError } from '@/lib/ai-extraction/errors';
 ```
 
-and add to `describe('useModelExtraction promise contract')`:
+Inside the existing test `'a service failure rejects the caller promise (allSettled sees it)'`, after `expect(outcome!.status).toBe('rejected');` add:
+
+```ts
+    // The generic fallback still fires for an unclassified failure.
+    expect(toast.error).toHaveBeenCalledWith('modelExtractionErrorTitle: extraction failed');
+```
+
+and add to the same `describe`:
 
 ```ts
   it('a MISSING_ENTITY_KEY envelope shows the entry-key toast with the backend message', async () => {
@@ -532,72 +586,71 @@ and add to `describe('useModelExtraction promise contract')`:
   });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `npx vitest run frontend/test/hooks/useModelExtraction.test.tsx`
-Expected: the new case FAILS (`toast.error` was called with `'modelExtractionErrorTitle: ...'`).
+Run: `npx vitest run frontend/lib/ai-extraction/errors.test.ts frontend/test/hooks/useModelExtraction.test.tsx`
+Expected: the first `APIError` case FAILS (`'API_ERROR'` received); the new hook case FAILS (generic toast); the generic-fallback assertion passes already.
 
-- [ ] **Step 3: Add the helper**
+- [ ] **Step 4: Promote the envelope code in `APIError`**
 
-In `frontend/lib/ai-extraction/errors.ts`, after `getErrorCode`:
+In `frontend/lib/ai-extraction/errors.ts`, replace the `APIError` class body with:
 
 ```ts
-/**
- * The backend envelope's `error.code` behind a failed FastAPI call.
- *
- * `sectionExtractionService` wraps the client's `ApiError` as an `APIError`
- * whose own `code` is the fixed `'API_ERROR'` class tag; the envelope code
- * travels under `details.code`. `null` for anything else, so callers fall
- * back to their generic copy.
- */
-export function getApiErrorCode(error: unknown): string | null {
-  if (!isAIExtractionError(error)) {
-    return null;
+export class APIError extends AIExtractionError {
+  constructor(message: string, statusCode?: number, details?: Record<string, unknown>) {
+    // The backend envelope's `error.code` (carried under `details.code` by
+    // `sectionExtractionService`) is this error's code; the class tag is the
+    // fallback for failures without one (network, unknown shape).
+    const code = typeof details?.code === 'string' ? details.code : 'API_ERROR';
+    super(message, code, { statusCode, ...details });
+    this.name = 'APIError';
   }
-  const details = error.details;
-  if (typeof details !== 'object' || details === null) {
-    return null;
-  }
-  const code = (details as Record<string, unknown>).code;
-  return typeof code === 'string' ? code : null;
 }
 ```
 
-- [ ] **Step 4: Branch on it in the hook**
+- [ ] **Step 5: Branch through `jobErrorToast` in the hook**
 
-In `frontend/hooks/extraction/useModelExtraction.ts`, extend the import:
+In `frontend/hooks/extraction/useModelExtraction.ts`, add the import:
 
 ```ts
-import {AuthenticationError, getApiErrorCode, getErrorCode, getErrorMessage, PDFNotFoundError,} from "@/lib/ai-extraction/errors";
+import {jobErrorToast} from "@/lib/ai-extraction/jobErrorToast";
 ```
 
-and inside the `.catch((err: unknown) => { ... })` block, replace the `if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {` opener with:
+and inside the `.catch((err: unknown) => { ... })` block, replace
 
 ```ts
-          if (getApiErrorCode(err) === 'MISSING_ENTITY_KEY') {
-            // A keyless repeating group refused the kickoff (typed 409). The
-            // backend message names the section and the fix; same title and
-            // duration as the job path's toast.
-            toast.error(t('extraction', 'sectionExtractionErrorNoEntryKey'), {
-              description: message,
-              duration: 8000,
+          const errorCode = code || '';
+          if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
+```
+
+with
+
+```ts
+          const errorCode = code || '';
+          // A typed backend refusal (MISSING_ENTITY_KEY: a keyless repeating
+          // group) gets the job path's title and duration — one mapping.
+          const specific = jobErrorToast(code, message);
+          if (specific) {
+            toast.error(specific.title, {
+              description: specific.description,
+              duration: specific.duration,
             });
           } else if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
 ```
 
 (the rest of the ladder is unchanged).
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `npx vitest run frontend/test/hooks/useModelExtraction.test.tsx frontend/lib/ai-extraction`
+Run: `npx vitest run frontend/lib/ai-extraction frontend/test/hooks/useModelExtraction.test.tsx frontend/test/hooks/useSectionExtraction.test.tsx frontend/services/sectionExtractionService.test.ts`
 Expected: all PASS.
 Run: `npm run typecheck && npm run lint`
 Expected: exit 0 for both.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/lib/ai-extraction/errors.ts frontend/hooks/extraction/useModelExtraction.ts frontend/test/hooks/useModelExtraction.test.tsx
+git add frontend/lib/ai-extraction/errors.ts frontend/lib/ai-extraction/errors.test.ts frontend/hooks/extraction/useModelExtraction.ts frontend/test/hooks/useModelExtraction.test.tsx
 git commit -m "feat(extraction): sync models kickoff shows 'Entry key missing' on MISSING_ENTITY_KEY"
 ```
 
@@ -615,7 +668,7 @@ git commit -m "feat(extraction): sync models kickoff shows 'Entry key missing' o
 - [ ] **Step 1: Backend suite and ratchets**
 
 Run: `make test-backend`
-Expected: 0 failed (the count grows by the six new tests).
+Expected: 0 failed (the count grows by the seven new tests).
 Run: `make lint-backend`
 Expected: ruff check and format clean.
 Run: `cd backend && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec` (the exact `deadcode:vulture` gate from `scripts/verify_all.sh`)
@@ -639,15 +692,32 @@ Expected: green.
 Run: `make quality-scan`
 Expected: every gate OK. Any red halts the run; fix and re-run.
 
-- [ ] **Step 4: Docs parity statement**
+- [ ] **Step 4: PR body statements (the panel's declarations)**
 
-`docs/reference/extraction-hitl-architecture.md` has no row for the job error codes, and this PR changes no endpoint route and no table, so no doc change is needed; say so in the PR body under "Code ↔ doc parity". The enum's own docstring is the code-level reference.
+The PR body, template-shaped, states:
+
+1. Docs parity: `docs/reference/extraction-hitl-architecture.md` has no row for the job error codes and this PR changes no endpoint route and no table, so no doc change is needed; the enum docstring is the code-level reference.
+2. The section-path proof is two-part: the real keyless pipeline raise (`test_entry_group_extraction.py`, now asserting the classify result) plus the task-level wrapping test; there is no end-to-end eager job test because that harness mocks the service.
+3. The code surfaces on the single-section job and the sync models kickoff; a batch run keeps reporting per-section text and `BatchAllSectionsFailed`, unchanged.
+4. `except AppError` is wider than the one type reachable today on purpose: any typed refusal raised inside the service reaches its handler, and the generic arm already echoed `str(e)`.
+5. `MISSING_ENTITY_KEY` is slice-local (like `LLM_ENGINE_RETIRED`), not added to `ApiErrorCode`, which nothing consumes.
+6. Flagged, not touched: the unenqueued `extract_section_task` / `extract_models_task` entry points re-raise raw exceptions (the trees spec retires the model branch).
+7. `model_container` count under `backend/app/services`: unchanged by this PR (26).
 
 - [ ] **Step 5: Open the PR (auto-merge held; the docs PR #803 holds the merge-train slot)**
 
 ```bash
 git push -u origin claude/entry-key-typed-refusal
-gh pr create --base dev --title "feat(extraction): typed MISSING_ENTITY_KEY refusal for a keyless repeating group" --body "<template-shaped body quoting the gate outputs from Steps 1-3>"
+gh pr create --base dev --title "feat(extraction): typed MISSING_ENTITY_KEY refusal for a keyless repeating group" --body "<template-shaped body quoting the gate outputs from Steps 1-3 and the statements from Step 4>"
 ```
 
 Arm `gh pr merge <n> --auto --squash` only after #803 has merged.
+
+## Panel
+
+Five lenses reviewed the first draft (simplicity, test coverage, constitution/layering, security/RLS/BOLA, migration safety). Blocking findings and their resolution:
+
+- Simplicity: the `getApiErrorCode` helper duplicated `getErrorCode`; `APIError` now carries the envelope code itself (Task 5). The `details={"entity_type_id"}` payload had no reader; dropped (Task 1).
+- Test coverage: `client_as_manager` is re-exported per module from `tests/integration/helpers/engine_setup.py`, not a conftest fixture; the integration tests moved into `test_llm_engine_kickoff_gate.py` (Task 3).
+
+Non-blocking findings adopted: the `except AppError` arm goes first in the ladder with a structured log line; an outsider 403-before-409 case; the models hook reuses `jobErrorToast`; a real-service classify assertion on the section path; `errors.test.ts` for the promoted code; the generic-toast assertion in the plain-`Error` hook test; the enum docstring scoped to the single-section job; wording drift ("template editor") fixed in the touched docstrings; the seven PR-body statements above.
