@@ -22,6 +22,7 @@ from app.api.v1.endpoints._integrity import (
     is_one_live_run_conflict,
 )
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
+from app.core.error_handler import AppError
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
@@ -256,6 +257,22 @@ async def extract_models(
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
+    except AppError as e:
+        # Typed refusals raised inside the service (``MissingEntityKeyError``:
+        # 409 ``MISSING_ENTITY_KEY``) reach their registered handler and serve
+        # the typed envelope. First in the ladder so no narrower arm below can
+        # flatten a dual-typed AppError into an HTTP_ERROR, and ahead of the
+        # generic arm that would make it a 500 no client can act on.
+        await db.rollback()
+        logger.warning(
+            "model_extraction_refused",
+            trace_id=trace_id,
+            code=e.code,
+            project_id=str(payload.project_id),
+            article_id=str(payload.article_id),
+            template_id=str(payload.template_id),
+        )
+        raise
     except CreateRunInputError as e:
         rollback_start = perf_counter()
         await db.rollback()
