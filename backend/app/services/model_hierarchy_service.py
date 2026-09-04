@@ -60,7 +60,6 @@ class ModelHierarchyService:
         template_id: UUID,
         user_id: UUID,
         model_name: str,
-        modelling_method: str | None = None,
     ) -> ModelHierarchyResult:
         model_label = model_name.strip()
         if not model_label:
@@ -129,7 +128,7 @@ class ModelHierarchyService:
             self.db.add_all(children)
             await self.db.flush()
 
-        proposal_run_id = await self._record_initial_field_values(
+        proposal_run_id = await self._record_key_decision(
             project_id=project_id,
             article_id=article_id,
             template_id=template_id,
@@ -140,7 +139,6 @@ class ModelHierarchyService:
             # uniquified ("Cox Model (2)") and the append-only decision
             # value must match every visible surface.
             model_label=parent.label,
-            modelling_method=modelling_method,
         )
 
         return ModelHierarchyResult(
@@ -223,7 +221,7 @@ class ModelHierarchyService:
             candidate = f"{base_label} ({attempt})"
         raise ValueError("Could not derive a unique model label after multiple attempts")
 
-    async def _record_initial_field_values(
+    async def _record_key_decision(
         self,
         *,
         project_id: UUID,
@@ -233,35 +231,25 @@ class ModelHierarchyService:
         model_instance_id: UUID,
         user_id: UUID,
         model_label: str,
-        modelling_method: str | None,
     ) -> UUID | None:
-        """Record the dialog-provided values as per-user ReviewerDecisions.
+        """Record the dialog's one value — the name — as the reviewer's
+        decision on the container's entry key.
 
-        The name lands on the container's entry key (``is_entity_key``) —
-        the field the AI identifies a model by and the add dialog labels
-        its input with — never on a field picked by name: CHARMS keys on
+        The name lands on the field flagged ``is_entity_key`` — the field
+        the AI identifies a model by and the add dialog labels its input
+        with — never on a field picked by name: CHARMS keys on
         ``model_name``, the Multimodal lineage on ``mdl_name``. A keyless
-        container records no name (the instance label carries it). The
-        modelling method keeps its field-name contract — the dialog's
-        second input is CHARMS-shaped — and is skipped when empty or when
-        the template carries no such field. Returns the live extract-stage
-        run id when at least one decision landed, ``None`` otherwise (no
-        run open, nothing to record, or the run advanced out of extract
-        mid-flight).
+        container records nothing (the instance label carries the name).
+        Returns the live extract-stage run id when the decision landed,
+        ``None`` otherwise (no key field, no run open, or the run advanced
+        out of extract mid-flight).
         """
-        field_stmt = select(ExtractionField).where(
-            ExtractionField.entity_type_id == model_entity_type_id
+        key_stmt = select(ExtractionField).where(
+            ExtractionField.entity_type_id == model_entity_type_id,
+            ExtractionField.is_entity_key.is_(True),
         )
-        fields = list((await self.db.execute(field_stmt)).scalars().all())
-        key_field = next((f for f in fields if f.is_entity_key), None)
-        method_field = next((f for f in fields if f.name == "modelling_method"), None)
-
-        to_record: dict[UUID, str] = {}
-        if key_field is not None:
-            to_record[key_field.id] = model_label
-        if method_field is not None and modelling_method:
-            to_record[method_field.id] = modelling_method
-        if not to_record:
+        key_field = (await self.db.execute(key_stmt)).scalars().first()
+        if key_field is None:
             return None
 
         run_stmt = (
@@ -284,17 +272,15 @@ class ModelHierarchyService:
         # ReviewerDecision (blind-review write defense), not a shared proposal —
         # the form's /decisions path does the same. Recording it as a proposal
         # would leak this reviewer's value to peers via the shared proposal track.
-        review_service = ExtractionReviewService(self.db)
         try:
-            for field_id, value in to_record.items():
-                await review_service.record_decision(
-                    run_id=run.id,
-                    instance_id=model_instance_id,
-                    field_id=field_id,
-                    reviewer_id=user_id,
-                    decision="edit",
-                    value={"value": value},
-                )
+            await ExtractionReviewService(self.db).record_decision(
+                run_id=run.id,
+                instance_id=model_instance_id,
+                field_id=key_field.id,
+                reviewer_id=user_id,
+                decision="edit",
+                value={"value": model_label},
+            )
         except InvalidDecisionError:
             # The run advanced out of extract between lookup and record —
             # the model itself was created fine; losing the prefill must

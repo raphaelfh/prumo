@@ -3285,6 +3285,13 @@ export interface components {
         /**
          * CreateModelHierarchyRequest
          * @description Request to create one prediction-model hierarchy for an article.
+         *
+         *     The dialog asks for the name only; it becomes the instance label and
+         *     the decision on the container's entry key. ``extra="forbid"`` for the
+         *     reason ``ModelExtractionRequest`` gives: this body is validated once,
+         *     in the request cycle, so a stale tab that still sends
+         *     ``modellingMethod`` gets a loud 422 instead of silently losing a value
+         *     it typed.
          */
         CreateModelHierarchyRequest: {
             /**
@@ -3294,8 +3301,6 @@ export interface components {
             articleId: string;
             /** Modelname */
             modelName: string;
-            /** Modellingmethod */
-            modellingMethod?: string | null;
             /**
              * Projectid
              * Format: uuid

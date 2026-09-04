@@ -269,6 +269,31 @@ Docs: the `/api/v1/extraction/models/manual` row in the architecture
 reference and `last_reviewed`. Report the `model_container` occurrence
 count under `backend/app/services` in the PR body (26 before this PR).
 
+### 6.1 Amendments recorded at execution (2026-09-04)
+
+- The schema takes `extra="forbid"`, as `ModelExtractionRequest` and
+  `InstanceIdentityUpdateRequest` do in the same module (validated once,
+  in the request cycle): a stale tab that still sends `modellingMethod`
+  gets a loud 422 until it reloads, instead of silently losing a value it
+  typed. The new frontend against the old backend is unaffected (the old
+  field was optional).
+- `AddEntryDialog` loses the `children` slot the model dialog composed
+  through; the hierarchy barrel goes with its last composed export. The
+  page now mounts two `AddEntryDialog`s (the container's and the generic
+  `useAddEntry` one) that share literal input ids; a closed Radix dialog
+  renders no DOM and the UI never opens both, so the ids never coexist —
+  noted in the PR body, resolved for good when the trees spec unifies
+  creation.
+- `modelNameLabel` was the fifth key only the model dialog read; deleted
+  with the four the spec names. The keyless container's input now reads
+  "Label", as on every other keyless group.
+- The architecture reference carries no row for
+  `/api/v1/extraction/models/manual` (the endpoint is described in the
+  `extraction_entity_types` prose, which stays true); nothing to change
+  there.
+- `model_container` under `backend/app/services`: 23 before and after
+  (the spec's 26 predates #806).
+
 ## 7. PR 4 — Playwright coverage on a dedicated fixture project (item 6)
 
 Goal: the rename/re-key dialog and the group description field are

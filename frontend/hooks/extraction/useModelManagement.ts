@@ -62,7 +62,7 @@ interface UseModelManagementReturn {
   setActiveModelId: (id: string | null) => void;
   loading: boolean;
   error: string | null;
-  createModel: (modelName: string, modellingMethod: string) => Promise<CreateModelResult | null>;
+  createModel: (modelName: string) => Promise<CreateModelResult | null>;
   removeModel: (instanceId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
   getModelProgress: (instanceId: string) => Promise<Model['progress']>;
@@ -228,10 +228,7 @@ export function useModelManagement({
   }, [loadModels]);
 
     // Create new model (using service - simplified)
-  const createModel = async (
-    modelName: string,
-    modellingMethod: string
-  ): Promise<CreateModelResult | null> => {
+  const createModel = async (modelName: string): Promise<CreateModelResult | null> => {
     if (!user || !modelParentEntityTypeId) {
       toast.error(t('extraction', 'modelNotAuthenticatedOrInvalid'));
       return null;
@@ -242,7 +239,6 @@ export function useModelManagement({
       articleId,
       templateId,
       modelName: modelName.trim(),
-      modellingMethod: modellingMethod || null,
     }).catch((err: unknown) => {
       console.error('Error creating model:', err);
       toast.error(`${t('extraction', 'errors_createModel')}: ${err instanceof Error ? err.message : String(err)}`);

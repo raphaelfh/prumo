@@ -517,15 +517,21 @@ class TestSaveValueRequest:
 
 
 class TestRemainingConstruction:
-    def test_create_model_hierarchy_request(self) -> None:
-        req = CreateModelHierarchyRequest(
-            projectId=uuid4(),
-            articleId=uuid4(),
-            templateId=uuid4(),
-            modelName="Cox PH",
-        )
-        assert req.model_name == "Cox PH"
-        assert req.modelling_method is None
+    def test_create_model_hierarchy_request_carries_the_name_only(self) -> None:
+        """The dialog asks for the key only (follow-up train §6): the schema
+        has no ``modelling_method``, and a stale client's ``modellingMethod``
+        is refused loudly (``extra="forbid"``, the rule for every
+        request-cycle schema in this module) rather than silently dropped."""
+        assert "modelling_method" not in CreateModelHierarchyRequest.model_fields
+        payload = {
+            "projectId": str(uuid4()),
+            "articleId": str(uuid4()),
+            "templateId": str(uuid4()),
+            "modelName": "Cox PH",
+        }
+        assert CreateModelHierarchyRequest.model_validate(payload).model_name == "Cox PH"
+        with pytest.raises(ValidationError, match="modellingMethod"):
+            CreateModelHierarchyRequest.model_validate({**payload, "modellingMethod": "cox"})
 
     def test_model_hierarchy_child_response(self) -> None:
         child = ModelHierarchyChildResponse(

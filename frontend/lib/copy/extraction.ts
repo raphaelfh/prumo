@@ -348,15 +348,10 @@ export const extraction = {
     // AddSectionDialog
     selectTypePlaceholder: 'Select type',
     placeholderSectionNameExample: 'e.g. exclusion_criteria',
-    // ModelSelector / AddModelDialog
+    // ModelSelector
     selectModelPlaceholder: 'Select a {{noun}}…',
     modelNamePlaceholder: 'Enter a name for this {{noun}}…',
-    modelDescriptionPlaceholder: 'e.g. Supervised learning, Neural network…',
-    modelNameLabel: '{{noun}} name',
     modelNameHint: 'Choose a descriptive name to identify this {{noun}}',
-    modellingMethodLabel: 'Modelling method',
-    modellingMethodOptional: '(optional)',
-    modellingMethodHint: 'You can fill this in later during extraction',
     modelSelectorTitle: '{{noun}} entries',
     modelSelectorDesc: 'Select a {{noun}} to extract its data',
     modelExtractAITitle: 'Extract {{noun}} entries automatically with AI',
@@ -590,7 +585,7 @@ export const extraction = {
     extractingWithAI: 'Extracting with AI…',
     extractingAllSectionsWithAI: 'Extracting all sections with AI…',
     createInstanceBeforeExtract: 'Create an instance before extracting',
-    // AddModelDialog – validation & errors
+    // AddEntryDialog – validation & errors
     modelCreateError: 'Error creating {{noun}}',
     evidenceCitedAria: 'Cited evidence',
     // AISuggestionReviewPopover – rationale section label

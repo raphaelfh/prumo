@@ -64,6 +64,20 @@ describe('AddEntryDialog', () => {
     await user.click(screen.getByRole('button', {name: /Create validation/}));
     expect(await screen.findByText('boom')).toBeInTheDocument();
   });
+
+  it('asks for the key only — one input, on the container like on any group', () => {
+    render(
+      <AddEntryDialog
+        {...base}
+        entryLabel="model"
+        keyLabel="Model name"
+        existingKeys={[]}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    expect(screen.getByLabelText(/Model name/)).toBeInTheDocument();
+  });
 });
 
 describe('RenameEntryDialog', () => {

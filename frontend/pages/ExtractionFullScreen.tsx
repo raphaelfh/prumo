@@ -69,7 +69,7 @@ import {toConsensusValueEnvelope} from '@/lib/extraction/valueSemantics';
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
 import {RunPdfContent} from '@/components/runs/RunPdfContent';
 import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
-import {AddModelDialog, RemoveModelDialog} from '@/components/extraction/hierarchy';
+import {RemoveModelDialog} from '@/components/extraction/hierarchy/RemoveModelDialog';
 import {
   AddEntryDialog,
   RenameEntryDialog,
@@ -704,8 +704,8 @@ export default function ExtractionFullScreen() {
     setShowAddModelDialog(true);
   };
 
-  const handleConfirmAddModel = async (modelName: string, modellingMethod: string) => {
-    const result = await createModel(modelName, modellingMethod);
+  const handleConfirmAddModel = async (modelName: string) => {
+    const result = await createModel(modelName);
     if (result) {
       setShowAddModelDialog(false);
       // Reload the run view (child instances will be included).
@@ -1285,13 +1285,13 @@ export default function ExtractionFullScreen() {
       />
 
       {/* Dialogs */}
-      <AddModelDialog
+      <AddEntryDialog
         open={showAddModelDialog}
-        onConfirm={handleConfirmAddModel}
-        onCancel={() => setShowAddModelDialog(false)}
-        existingModels={models.map(m => m.modelName)}
         entryLabel={modelParentEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
         keyLabel={modelKeyField?.label ?? null}
+        existingKeys={models.map(m => m.modelName)}
+        onConfirm={handleConfirmAddModel}
+        onCancel={() => setShowAddModelDialog(false)}
       />
 
       <AddEntryDialog {...addEntry.dialogProps} />
