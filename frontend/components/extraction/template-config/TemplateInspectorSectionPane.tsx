@@ -35,6 +35,7 @@ import {t} from '@/lib/copy';
 
 import {KIND_COPY, Label, ReadOnlyValue} from './inspectorShared';
 import type {GridSection} from './templateTree';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 /**
  * The key the pane remounts on — same contract as `fieldContentKey`: an
@@ -54,9 +55,9 @@ export function sectionContentKey(section: GridSection): string {
   ]);
 }
 
-/** What the entry-label input shows: the group's resolved noun (its
- * 'model' default is real server state), any other section's own raw
- * noun — or '' while unset, with the default noun as the placeholder. */
+/** What the entry-label input shows: the group's resolved noun (a legacy
+ * group without one resolves to the fallback), any other section's own raw
+ * noun — or '' while unset, with the fallback noun as the placeholder. */
 function shownEntryLabel(section: GridSection): string {
   return section.kind === 'group' ? section.entryNoun : (section.ownEntryLabel ?? '');
 }
@@ -216,10 +217,8 @@ export function SectionInspectorForm({
               // Enter commits through the blur path (one commit).
               if (e.key === 'Enter') e.currentTarget.blur();
             }}
-            placeholder={t(
-              'templateConfig',
-              section.kind === 'group' ? 'entryLabelPlaceholder' : 'entryLabelPlaceholderEntry',
-            )}
+            // The fallback noun a legacy blank reads as — one word, spelled once.
+            placeholder={DEFAULT_ENTRY_NOUN}
             disabled={saving}
             className="h-7 text-[13px]"
           />

@@ -61,10 +61,14 @@ class ExtractionCardinality(str, PyEnum):
     MANY = "many"
 
 
-# Default entry noun of a model_container when none was authored (B-8 seeded
-# "model"): the AI instance label, the export record stem and the portable
-# importer all fall back to it, so it lives here once.
-DEFAULT_ENTRY_LABEL = "model"
+# The noun a repeating section's entries read as when ``entry_label`` is
+# NULL — rows created before the noun was required at creation and pre-B-8
+# snapshots. New sections are created with a noun (SectionCreateRequest)
+# and the seeded groups carry theirs (seed + 0068); the AI instance label,
+# the export record stem and the entry-group pipeline all fall back to this
+# one value, so it lives here once. Readers fall back; writers never
+# materialize it (the portable importer keeps a bundle's NULL verbatim).
+DEFAULT_ENTRY_LABEL = "entry"
 
 
 class ExtractionEntityRole(str, PyEnum):
@@ -295,8 +299,10 @@ class ExtractionEntityType(BaseModel):
     label: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Group entry noun interpolated into config-editor/run-view copy;
-    # meaningful only for role='model_container' rows, seeded "model" (B-8).
+    # Entry noun of a repeating section (cardinality 'many'), interpolated into
+    # the identification prompt and the config-editor/run-view copy. Required at
+    # creation since the entry-group train; NULL on legacy rows, which every
+    # reader resolves through DEFAULT_ENTRY_LABEL.
     entry_label: Mapped[str | None] = mapped_column(String, nullable=True)
 
     parent_entity_type_id: Mapped[UUID | None] = mapped_column(

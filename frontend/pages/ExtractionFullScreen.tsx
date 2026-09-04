@@ -21,6 +21,7 @@ import {toast} from 'sonner';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 import {useAiLinkMaps} from '@/hooks/runs/useAiLinkMaps';
 import {isRunEditable} from '@/lib/runs/editability';
 import {firstPendingInstanceId, scrollToSectionById} from '@/lib/runs/suggestionLocate';
@@ -801,7 +802,7 @@ export default function ExtractionFullScreen() {
     const entityType = entityTypes.find((et) => et.id === instance?.entity_type_id);
     await updateIdentity.mutateAsync({
       instanceId,
-      noun: entityType?.entry_label ?? 'entry',
+      noun: entityType?.entry_label ?? DEFAULT_ENTRY_NOUN,
       body: {
         projectId: projectId ?? '',
         articleId: articleId ?? '',
@@ -1289,7 +1290,7 @@ export default function ExtractionFullScreen() {
         onConfirm={handleConfirmAddModel}
         onCancel={() => setShowAddModelDialog(false)}
         existingModels={models.map(m => m.modelName)}
-        entryLabel={modelParentEntityType?.entry_label ?? 'model'}
+        entryLabel={modelParentEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
         keyLabel={modelKeyField?.label ?? null}
       />
 
@@ -1297,7 +1298,7 @@ export default function ExtractionFullScreen() {
 
       <RenameEntryDialog
         open={modelBeingRenamed !== null}
-        entryLabel={modelParentEntityType?.entry_label ?? 'model'}
+        entryLabel={modelParentEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
         keyLabel={modelKeyField?.label ?? null}
         initialLabel={modelBeingRenamed?.label ?? ''}
         initialKey={modelBeingRenamed ? displayEntryKey(modelBeingRenamed) : null}
@@ -1317,7 +1318,7 @@ export default function ExtractionFullScreen() {
 
       <RemoveModelDialog
         open={!!modelToRemove}
-        entryLabel={modelParentEntityType?.entry_label ?? 'model'}
+        entryLabel={modelParentEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
         modelName={modelToRemove?.name || ''}
         hasExtractedData={modelToRemove?.hasData || false}
         extractedFieldsCount={modelToRemove?.fieldsCount || 0}

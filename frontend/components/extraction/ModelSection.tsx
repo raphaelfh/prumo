@@ -27,6 +27,7 @@ import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/
 import type {EntryIdentityChanges} from './AddEntryDialog';
 import type {ExtractionProgress} from '@/hooks/extraction/useBatchSectionExtractionChunked';
 import type {AllModelsSectionsProgress} from '@/hooks/extraction/useBatchAllModelsSectionsExtraction';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 export interface ModelSectionProps {
   /** The model container entity type (cardinality='many'). */
@@ -147,8 +148,8 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
 
       <ModelSelector
         // B-8 D6: the entry noun is DATA — the container's entry_label
-        // (fallback 'model'); the heading is the container's label.
-        entryLabel={modelContainer.entry_label ?? 'model'}
+        // (fallback DEFAULT_ENTRY_NOUN); the heading is the container's label.
+        entryLabel={modelContainer.entry_label ?? DEFAULT_ENTRY_NOUN}
         title={modelContainer.label}
         models={models}
         activeModelId={activeModelId}

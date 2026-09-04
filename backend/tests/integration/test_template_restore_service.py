@@ -910,8 +910,21 @@ async def test_container_swap_is_refused(db_session: AsyncSession) -> None:
 async def test_era_drift_baseline_does_not_null_columns(db_session: AsyncSession) -> None:
     """A pre-0051 / pre-#462 baseline simply lacks ``entry_label`` and the
     ``allows_not_*`` keys. Absent must mean the canonical default (which
-    is role-aware for ``entry_label``), never NULL and never a crash."""
+    is role-aware for ``entry_label``), never NULL and never a crash.
+
+    A template that old never carried a noun outside the container: 0051
+    stamped 'model' on containers only, 0068 stamps global catalogue rows
+    only, and a clone's own baseline is written WITH the key. The fresh
+    CHARMS clone below inherits the seeded ``final_predictors`` noun, so
+    its live rows are first brought back to that era."""
     project_id, template_id, wide = await _fresh_charms(db_session)
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_entity_types SET entry_label = NULL "
+            "WHERE project_template_id = :tid AND role <> 'model_container'"
+        ),
+        {"tid": str(template_id)},
+    )
     baseline: dict[str, Any] = {
         **wide,
         "entity_types": [

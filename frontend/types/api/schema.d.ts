@@ -4570,8 +4570,9 @@ export interface components {
          * @description One ``extraction_entity_types`` row plus its fields and (for a group)
          *     its child sections. ``group`` ⇒ ``model_container``; nested ⇒
          *     ``model_section``; otherwise ``study_section``. ``entry_label`` is legal
-         *     on any repeating section (a group, or ``repeats``); the import defaults
-         *     it to ``"model"`` on a group and leaves it unset elsewhere.
+         *     on any repeating section (a group, or ``repeats``); the import keeps the
+         *     bundle's value verbatim, NULL included, and readers fall back to
+         *     :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL.
          */
         PortableSection: {
             /** Description */
@@ -5315,10 +5316,14 @@ export interface components {
          *     frontend's read-then-write race. The ``ck_role_parent`` validator
          *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
          *     (parent belongs to THIS template) is the service's BOLA job.
-         *     ``entry_label`` is a repeating section's entry noun (B-8, D3 —
-         *     unlocked from the container in the entry-group train): legal on any
-         *     ``cardinality='many'`` section; the container defaults it to
-         *     ``'model'`` and always repeats (``'many'`` is enforced, never chosen).
+         *     ``entry_label`` is a repeating section's entry noun (B-8, D3 — unlocked
+         *     from the container in the entry-group train): REQUIRED, non-blank, on
+         *     every ``cardinality='many'`` section, container included, and refused
+         *     on a section that does not repeat. The rule lives at this API boundary:
+         *     rows created before it may still carry NULL, the portable importer keeps
+         *     a bundle's NULL verbatim, and the column stays nullable until the
+         *     entry-group trees spec makes it NOT NULL; every reader falls back to
+         *     :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` meanwhile.
          */
         SectionCreateRequest: {
             /**

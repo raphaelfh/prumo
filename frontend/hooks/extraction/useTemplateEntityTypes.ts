@@ -30,8 +30,8 @@ export interface TemplateEntityTypeWithFields {
   role: string | null;
   cardinality: string | null;
   parent_entity_type_id: string | null;
-  /** Repeating-group entry noun (B-8) — null on non-containers;
-   * consumers interpolate with a 'model' fallback. */
+  /** Entry noun of a repeating section (B-8, entry-group train) — null on
+   * legacy rows; consumers interpolate through DEFAULT_ENTRY_NOUN. */
   entry_label: string | null;
   sort_order: number;
   /** Entity-level required flag (B-3b): supplied by the ACTIVE-snapshot

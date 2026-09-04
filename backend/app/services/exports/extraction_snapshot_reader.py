@@ -65,9 +65,9 @@ class SnapshotSection:
     sort_order: int
     fields: tuple[SnapshotField, ...]
     description: str | None = None
-    # Group entry noun (B-8) — set on model_container rows; None elsewhere
-    # and on pre-0051 snapshots (readers default, consumers fall back to
-    # "model").
+    # Entry noun of a repeating section (B-8, entry-group train); None on
+    # legacy rows and pre-0051 snapshots (readers default, consumers fall
+    # back to DEFAULT_ENTRY_LABEL).
     entry_label: str | None = None
 
 

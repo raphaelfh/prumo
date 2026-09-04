@@ -87,8 +87,9 @@ class PortableSection(BaseModel):
     """One ``extraction_entity_types`` row plus its fields and (for a group)
     its child sections. ``group`` ⇒ ``model_container``; nested ⇒
     ``model_section``; otherwise ``study_section``. ``entry_label`` is legal
-    on any repeating section (a group, or ``repeats``); the import defaults
-    it to ``"model"`` on a group and leaves it unset elsewhere."""
+    on any repeating section (a group, or ``repeats``); the import keeps the
+    bundle's value verbatim, NULL included, and readers fall back to
+    :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL."""
 
     model_config = ConfigDict(extra="forbid")
 

@@ -20,6 +20,7 @@
 import type {TemplateEntityTypeWithFields} from '@/hooks/extraction/useTemplateEntityTypes';
 import type {CreateSectionParams} from '@/services/templateService';
 import type {ExtractionFieldInsert} from '@/types/extraction';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 type SectionRole = CreateSectionParams['role'];
 
@@ -199,7 +200,11 @@ export async function replaySection(
       cardinality: section.cardinality,
       role: section.role,
       parentEntityTypeId,
-      entryLabel: section.entryLabel,
+      // The create rule requires a noun on a repeating section; a legacy row
+      // that carried none is replayed with the fallback every reader already
+      // uses, so Undo never 422s on a pre-0068 clone's group.
+      entryLabel:
+        section.cardinality === 'many' ? (section.entryLabel ?? DEFAULT_ENTRY_NOUN) : null,
       isRequired: section.isRequired,
     });
     if (!created.ok) return null;

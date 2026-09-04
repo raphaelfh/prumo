@@ -1322,7 +1322,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0067_snapshot_entity_key"
+    expected_head = "0068_seeded_entry_nouns"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 

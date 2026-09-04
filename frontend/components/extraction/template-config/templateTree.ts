@@ -14,6 +14,9 @@
  * (`metaKeys`), which the component resolves through `lib/copy`.
  */
 
+import {ENTITY_ROLE} from '@/lib/extraction/entityTypeRoles';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
+
 type TemplateSectionKind = 'root' | 'group' | 'groupChild';
 
 /** Copy keys in the `extraction` namespace. */
@@ -25,7 +28,6 @@ type TemplateSectionMetaKey =
 /** Which haystack produced a search hit — drives the "· in AI instruction" hints. */
 export type TemplateMatchHint = 'label' | 'key' | 'description' | 'aiInstruction' | 'options';
 
-const ROLE_MODEL_CONTAINER = 'model_container';
 const CARDINALITY_MANY = 'many';
 
 /** Copy keys in the `extraction` namespace naming each field type. */
@@ -61,7 +63,7 @@ export interface TemplateEntityTypeInput {
   /** NOT NULL server-side. Needed to restore a deleted section exactly. */
   is_required?: boolean;
   parent_entity_type_id?: string | null;
-  /** Repeating-group entry noun (B-8) — meaningful on groups only. */
+  /** Entry noun (B-8, entry-group train) — set on repeating sections; null on legacy rows. */
   entry_label?: string | null;
   sort_order?: number;
 }
@@ -145,9 +147,9 @@ export interface GridSection {
   hasDescription: boolean;
   metaKeys: TemplateSectionMetaKey[];
   /** Resolved entry noun for `{{noun}}` copy interpolation (B-8 D7): a
-   * group's own `entry_label ?? 'model'`; a groupChild inherits the
-   * PARENT group's resolved noun; roots carry the 'model' fallback
-   * (unused but total). */
+   * group's own `entry_label ?? DEFAULT_ENTRY_NOUN`; a groupChild inherits
+   * the PARENT group's resolved noun; roots carry the fallback (unused but
+   * total). */
   entryNoun: string;
   /** The section's OWN `entry_label` — what one entry of THIS section is
    * called (entry-group train: every repeating section may carry one, not
@@ -314,10 +316,10 @@ export function buildTemplateTree(
   }
 
   return roots.map((entityType) => {
-    const isGroup = entityType.role === ROLE_MODEL_CONTAINER;
+    const isGroup = entityType.role === ENTITY_ROLE.MODEL_CONTAINER;
     // D7: the group resolves its own noun; children inherit the PARENT
     // group's resolved value (their own entry_label is never consulted).
-    const entryNoun = (isGroup ? entityType.entry_label : null) ?? 'model';
+    const entryNoun = (isGroup ? entityType.entry_label : null) ?? DEFAULT_ENTRY_NOUN;
     const children = (childrenByParent.get(entityType.id) ?? []).map((child) =>
       toGridSection(
         child,

@@ -22,7 +22,7 @@ import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Pencil, Trash2} from 'lucide-react';
 import {t} from '@/lib/copy';
-import {displayEntryKey} from '@/lib/extraction/entryKey';
+import {DEFAULT_ENTRY_NOUN, displayEntryKey} from '@/lib/extraction/entryKey';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {
   Tooltip,
@@ -74,7 +74,7 @@ export function InstanceCard(props: InstanceCardProps) {
     onRemove,
     canRemove,
     projectId,
-    entryLabel = 'entry',
+    entryLabel = DEFAULT_ENTRY_NOUN,
     keyLabel = null,
     siblingKeys = [],
     onRename,

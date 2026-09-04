@@ -29,7 +29,6 @@ from sqlalchemy.orm import selectinload
 
 from app.core.error_handler import AppError
 from app.models.extraction import (
-    DEFAULT_ENTRY_LABEL,
     ExtractionCardinality,
     ExtractionEntityRole,
     ExtractionEntityType,
@@ -225,6 +224,7 @@ def _entity_type_row(
         if is_group
         else ExtractionEntityRole.STUDY_SECTION
     )
+    repeats = is_group or section.repeats
     return ExtractionEntityType(
         id=uuid4(),
         project_template_id=template_id,
@@ -232,16 +232,13 @@ def _entity_type_row(
         name=section.name,
         label=section.label,
         description=section.description,
-        entry_label=(
-            (section.entry_label or DEFAULT_ENTRY_LABEL)
-            if is_group
-            else (section.entry_label if section.repeats else None)
-        ),
+        # The bundle's noun verbatim, NULL included: a bundle authored before
+        # nouns round-trips losslessly, and every reader falls back to
+        # DEFAULT_ENTRY_LABEL for a NULL — never to 'model'.
+        entry_label=section.entry_label if repeats else None,
         parent_entity_type_id=parent_id,
         cardinality=(
-            ExtractionCardinality.MANY.value
-            if (is_group or section.repeats)
-            else ExtractionCardinality.ONE.value
+            ExtractionCardinality.MANY.value if repeats else ExtractionCardinality.ONE.value
         ),
         role=role.value,
         sort_order=sort_order,

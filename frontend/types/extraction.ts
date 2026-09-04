@@ -86,10 +86,10 @@ export interface ExtractionEntityType {
   sort_order: number;
   is_required: boolean;
   /**
-   * Repeating-group entry noun (B-8): set only on ``model_container``
-   * rows; consumers interpolate it with a ``'model'`` fallback.
-   * Required (not optional) so hand-written mirrors and adapters cannot
-   * silently drop it.
+   * Entry noun (B-8, entry-group train): set on every repeating section
+   * created since the noun became required; NULL on legacy rows, which
+   * consumers read through ``DEFAULT_ENTRY_NOUN``. Required (not optional)
+   * so hand-written mirrors and adapters cannot silently drop it.
    */
   entry_label: string | null;
   created_at: string;

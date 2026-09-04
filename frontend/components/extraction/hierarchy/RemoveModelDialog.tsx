@@ -27,6 +27,7 @@ import {Alert, AlertDescription} from '@/components/ui/alert';
 import {AlertTriangle, Info, Loader2, Trash2} from 'lucide-react';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {t} from '@/lib/copy';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 // =================== INTERFACES ===================
 
@@ -50,7 +51,7 @@ export function RemoveModelDialog({
   extractedFieldsCount = 0,
   onConfirm,
   onCancel,
-  entryLabel = 'model'
+  entryLabel = DEFAULT_ENTRY_NOUN
 }: RemoveModelDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
