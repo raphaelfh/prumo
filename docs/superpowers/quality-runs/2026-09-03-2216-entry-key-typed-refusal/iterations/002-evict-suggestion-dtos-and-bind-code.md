@@ -21,6 +21,15 @@ Files: schemas/extraction.py, schemas/__init__.py, services/entity_key.py, servi
 
 Commit `90597f82` on `claude/entry-key-typed-refusal` (`git show 90597f82 --stat`).
 
+## LOOPBACK 1
+
+Judge verdict on `90597f82`: DOES_NOT_RESOLVE — the no-run-row assertion was
+vacuous (the helper it used never creates a run). Fix in `b23419c3`: the refusal
+now drives `ModelExtractionService.extract` for real (article text stubbed,
+pinned tree empty), asserting zero run rows after the service's raise and
+after the route-mirroring rollback, with a positive control proving the same
+kickoff flushes a run row when the container is keyed.
+
 ## GATE
 
 See `../telemetry.jsonl` (phase VERIFY) and `../summary.md`: `scripts/verify_all.sh` after all three iterations.
