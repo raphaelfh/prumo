@@ -318,6 +318,27 @@ exercised end to end, on state no other spec shares.
 - Skips, not failures, when the required env keys are missing, as the
   sibling specs do.
 
+### 7.1 Amendments recorded at execution (2026-09-04)
+
+- The spec found a product bug on its first run: after a manual add, the
+  model selector stayed on its loading skeleton until an unrelated prop
+  changed. `ExtractionFormView`'s memo comparator watched `models.length`
+  and never `modelsLoading`, so the commit that ends the post-create load
+  (same length, loading true → false, models rebuilt with progress) was
+  skipped. Fixed in the same PR: the comparator compares `models` by
+  reference and includes `modelsLoading`; two unit tests pin it. The bug
+  predates the train (comparator from PR #5) and is in prod.
+- Test 1 registers only the created parent for teardown: every FK onto
+  `extraction_instances` is `ON DELETE CASCADE`, so the singleton children
+  and the decision rows follow it.
+- Test 2 runs the description restore in a `finally`, so an assertion
+  failure cannot leave the fixture's section text mutated (nothing re-syncs
+  an existing project's sections; a mutated description would compound on
+  every run).
+- The dedicated project is provisioned with one article carrying text; the
+  teardown's draft-marker reset covers it alongside the shared and import
+  projects.
+
 ## 8. Item 5 — re-key history
 
 Recorded decision: no reader in this train. The record satisfies
