@@ -16,11 +16,11 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { parseEnvelope } from "../_fixtures/api";
-import { loginViaUi } from "../_fixtures/auth";
-import { loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { authHeaders, parseEnvelope } from "../_fixtures/api";
+import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
+import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 import { recordResource } from "../_fixtures/registry";
-import { adminSelect } from "../_fixtures/supabase-admin";
+import { adminSelect, resolveActiveExtractionTemplateId } from "../_fixtures/supabase-admin";
 
 const REQUIRED = [
   "E2E_USER_EMAIL",
@@ -29,19 +29,24 @@ const REQUIRED = [
   "E2E_SUPABASE_SERVICE_ROLE_KEY",
 ];
 
-interface ManualModelResponse {
+type ManualModelResponse = {
   modelId: string;
   modelLabel: string;
-}
+};
 
-interface InstanceRow {
+type InstanceRow = {
   id: string;
   label: string;
   metadata: {
     entity_key?: string;
     entity_key_history?: Array<{ from: string | null; to: string }>;
   };
-}
+};
+
+type SectionRow = {
+  id: string;
+  description: string | null;
+};
 
 // Both tests drive the same project; serial keeps one login at a time.
 test.describe.configure({ mode: "serial" });
@@ -122,5 +127,83 @@ test.describe("Entry identity on a dedicated fixture project", () => {
     expect(history).toHaveLength(1);
     expect(history[0].from).toBe(keyBefore);
     expect(history[0].to).toBe(after.metadata.entity_key);
+  });
+
+  test("a manager edits a repeating section's description in the inspector", async ({
+    page,
+    request,
+  }) => {
+    const missing = missingEnvKeys(REQUIRED);
+    test.skip(missing.length > 0, `Missing required env: ${missing.join(", ")}`);
+    test.setTimeout(120_000);
+
+    const env = loadE2EEnv();
+    await loginViaUi(page);
+    const token = await resolveAuthToken(page);
+    const templateId = await resolveActiveExtractionTemplateId(env.identityProjectId!);
+    const [section] = await adminSelect<SectionRow>(
+      "extraction_entity_types",
+      `project_template_id=eq.${templateId}&name=eq.final_predictors&select=id,description`,
+    );
+    expect(section, "CHARMS ships final_predictors").toBeDefined();
+    const original = section.description ?? "";
+
+    await page.goto(
+      `${env.frontendUrl}/projects/${env.identityProjectId}?tab=extraction&extractionTab=configuration`,
+      { waitUntil: "domcontentloaded" },
+    );
+    // The label button is the row's select target; the collapse toggle and
+    // the actions menu carry the label inside a longer aria-label, so an
+    // exact match reaches the button alone.
+    await page
+      .getByTestId("template-grid-section-row")
+      .filter({ hasText: "Final Predictors" })
+      .getByRole("button", { name: "Final Predictors", exact: true })
+      .click();
+
+    const textarea = page.locator("#inspector-section-description");
+    await expect(textarea).toHaveValue(original);
+    const edited = `${original} (e2e ${Date.now()})`.trim();
+    // The restore runs whether or not the edit's assertions hold: nothing
+    // re-syncs an existing project's section text (ensureCharmsImported
+    // clones only when the template is missing), so a mutated description
+    // would otherwise compound on every run.
+    let restoreOk: boolean | undefined;
+    try {
+      const patched = page.waitForResponse(
+        (res) =>
+          res.url().includes(`/sections/${section.id}`) &&
+          res.request().method() === "PATCH" &&
+          res.ok(),
+        { timeout: 30_000 },
+      );
+      await textarea.fill(edited);
+      // The pane commits on blur (an immediate-commit control, no Save row).
+      await textarea.blur();
+      await patched;
+
+      const [after] = await adminSelect<SectionRow>(
+        "extraction_entity_types",
+        `id=eq.${section.id}&select=id,description`,
+      );
+      expect(after.description).toBe(edited);
+    } finally {
+      // Converge the fixture through the same PATCH the inspector uses.
+      const restore = await request.patch(
+        `${env.apiUrl}/api/v1/projects/${env.identityProjectId}/templates/${templateId}/sections/${section.id}`,
+        {
+          headers: authHeaders(token, createTraceId("e2e-entry-identity")),
+          data: { description: original },
+          timeout: 15_000,
+        },
+      );
+      restoreOk = restore.ok();
+    }
+    expect(restoreOk).toBe(true);
+    const [restored] = await adminSelect<SectionRow>(
+      "extraction_entity_types",
+      `id=eq.${section.id}&select=id,description`,
+    );
+    expect(restored.description).toBe(section.description);
   });
 });
