@@ -22,7 +22,7 @@ import {useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 
 import {t} from '@/lib/copy';
-import {showJobErrorToast} from '@/lib/ai-extraction/jobErrorToast';
+import {showExtractionErrorToast} from '@/hooks/extraction/helpers/showExtractionErrorToast';
 import {extractionKeys} from '@/lib/query-keys';
 import {
   extractForRun as extractForRunService,
@@ -74,7 +74,10 @@ export function useRunAIExtraction(options?: {
       const successful = jobResult?.successfulSections ?? 0;
       const total = jobResult?.totalSections ?? 0;
       toast.success(t('extraction', 'fullAICompleteSuccessTitle'), {
-        description: `${created} suggestion(s) created across ${successful}/${total} sections.`,
+        description: t('extraction', 'fullAICompleteSummary')
+          .replace('{{n}}', String(created))
+          .replace('{{ok}}', String(successful))
+          .replace('{{total}}', String(total)),
       });
       void queryClient.invalidateQueries({queryKey: extractionKeys.all});
       // Run onSuccess then clear state asynchronously to satisfy lint rule.
@@ -93,7 +96,7 @@ export function useRunAIExtraction(options?: {
       const msg = jobError ?? t('extraction', 'extractionJobFailedTitle');
       // A classified backend code gets specific copy; otherwise fall back to
       // the generic "AI extraction failed" toast.
-      if (!showJobErrorToast(jobErrorCode, msg)) {
+      if (!showExtractionErrorToast(jobErrorCode, msg)) {
         toast.error(t('extraction', 'extractionJobFailedTitle'), {
           description: msg,
           duration: 8000,

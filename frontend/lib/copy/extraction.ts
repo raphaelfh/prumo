@@ -72,8 +72,8 @@ export const extraction = {
     sectionExtractionSuccessTitle: 'Extraction completed! {{n}} suggestion(s) created for this section.',
     sectionExtractionErrorTitle: 'Extraction error',
     sectionExtractionErrorAuth: 'Authentication error',
-    sectionExtractionErrorAuthDesc: 'Please sign in again.',
     sectionExtractionErrorNoEntryKey: 'Entry key missing',
+    fullAICompleteSummary: '{{n}} suggestion(s) created across {{ok}}/{{total}} sections.',
     // FullAIExtractionProgress
     fullAIProgressTitle: 'Full AI Extraction',
     fullAIProgressInProgress: 'AI extraction in progress…',

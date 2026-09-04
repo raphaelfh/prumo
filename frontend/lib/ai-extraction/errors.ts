@@ -1,3 +1,5 @@
+import {t} from '@/lib/copy';
+
 /**
  * Custom error classes for AI Extraction
  *
@@ -20,33 +22,8 @@ class AIExtractionError extends Error {
 
 
 
-/**
- * Error when PDF is not found
- */
-export class PDFNotFoundError extends AIExtractionError {
-  constructor(articleId: string) {
-    super(
-        'PDF not found. Upload a PDF first.',
-      'PDF_NOT_FOUND',
-      { articleId }
-    );
-    this.name = 'PDFNotFoundError';
-  }
-}
 
 
-/**
- * Authentication error
- */
-export class AuthenticationError extends AIExtractionError {
-  constructor() {
-    super(
-        'User not authenticated',
-      'AUTH_ERROR'
-    );
-    this.name = 'AuthenticationError';
-  }
-}
 
 
 /**
@@ -85,7 +62,7 @@ export function getErrorMessage(error: unknown): string {
     return error.message;
   }
 
-    return 'Unknown error';
+    return t('common', 'errors_unknownError');
 }
 
 /**

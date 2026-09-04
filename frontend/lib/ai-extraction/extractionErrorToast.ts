@@ -1,6 +1,6 @@
 /**
- * Map a failed extraction's machine-readable error code to a specific toast,
- * for the async job path and the sync models kickoff alike.
+ * Map a failed extraction's machine-readable error code to specific toast
+ * copy, for the async job path and the sync models kickoff alike.
  *
  * The backend attaches a stable ``ExtractionErrorCode`` to job failures it
  * can classify by type (``run_section_extraction_task`` / the status
@@ -9,18 +9,15 @@
  * else (the generic ``EXTRACTION_FAILED``, or a missing/unknown code) yields
  * ``null`` so the calling hook falls back to its own generic toast.
  *
- * ``jobErrorToast`` is pure (no IO, no toast side effect) so the mapping is
- * unit-testable on its own; ``showJobErrorToast`` is the one place the hooks
- * fire it from, so title and duration never drift per hook.
+ * Pure (no IO, no toast): the mapping is unit-tested on its own, and hooks
+ * fire it through `hooks/extraction/helpers/showExtractionErrorToast`.
  */
-import {toast} from 'sonner';
-
 import {t} from '@/lib/copy';
 import type {components} from '@/types/api/schema';
 
 type ExtractionErrorCode = components['schemas']['ExtractionErrorCode'];
 
-export interface JobErrorToast {
+interface ExtractionErrorToast {
   title: string;
   description?: string;
   duration?: number;
@@ -41,24 +38,14 @@ function isMapped(code: string | null | undefined): code is keyof typeof TITLE_K
   return code != null && Object.hasOwn(TITLE_KEY, code);
 }
 
-export function jobErrorToast(
+export function extractionErrorToast(
   code: string | null | undefined,
   message: string,
-): JobErrorToast | null {
+): ExtractionErrorToast | null {
   if (!isMapped(code)) {
     return null;
   }
   // Actionable failures hold the toast as long as the generic failure (8 s)
   // so the user can read the remediation.
   return {title: t('extraction', TITLE_KEY[code]), description: message, duration: 8000};
-}
-
-/** Fire the mapped toast; `false` when the code has no specific copy. */
-export function showJobErrorToast(code: string | null | undefined, message: string): boolean {
-  const specific = jobErrorToast(code, message);
-  if (!specific) {
-    return false;
-  }
-  toast.error(specific.title, {description: specific.description, duration: specific.duration});
-  return true;
 }
