@@ -18,6 +18,7 @@ import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {type ModelExtractionRequest, SectionExtractionService,} from "@/services/sectionExtractionService";
 import {AuthenticationError, getErrorCode, getErrorMessage, PDFNotFoundError,} from "@/lib/ai-extraction/errors";
+import {jobErrorToast} from "@/lib/ai-extraction/jobErrorToast";
 
 /**
  * Tipo de retorno do hook
@@ -130,7 +131,15 @@ export function useModelExtraction(options?: {
           setError(message);
 
           const errorCode = code || '';
-          if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
+          // A typed backend refusal (MISSING_ENTITY_KEY: a keyless repeating
+          // group) gets the job path's title and duration — one mapping.
+          const specific = jobErrorToast(code, message);
+          if (specific) {
+            toast.error(specific.title, {
+              description: specific.description,
+              duration: specific.duration,
+            });
+          } else if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
             toast.error(t('extraction', 'modelExtractionErrorTitle'), {description: message});
           } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
             toast.error(t('extraction', 'modelExtractionAuthErrorTitle'), {
