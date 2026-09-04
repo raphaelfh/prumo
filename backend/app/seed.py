@@ -84,7 +84,11 @@ class _EntitySpec(NamedTuple):
     cardinality: str
     role: ExtractionEntityRole
     sort_order: int
-    # Group entry noun; only meaningful for MODEL_CONTAINER specs (B-8).
+    # Entry noun of a repeating section (cardinality 'many'); None otherwise.
+    # Reaches only a FRESH database (both seeds early-return on an existing
+    # template): migration 0068 stamps the two non-container nouns onto
+    # existing global rows, and ``test_seed_entry_nouns`` pins the two
+    # mechanisms together.
     entry_label: str | None = None
 
 
@@ -401,6 +405,7 @@ async def seed_charms(session: AsyncSession) -> None:
             "many",
             _section,
             8,
+            entry_label="predictor",
         ),
         _EntitySpec(
             _ET_MODEL_PERF,
@@ -2277,6 +2282,7 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             cardinality="many",
             role=_section,
             sort_order=13,
+            entry_label="validation",
         ),
     ]
     for spec in entity_types:
