@@ -6,8 +6,9 @@
  * its key field (`is_entity_key`). The add dialog asks for that value (the
  * label is the same text), lists the siblings already present as chips and
  * blocks an exact duplicate — the guards the model container's dialog had
- * (identity spec §1), now for every repeating section, the container
- * included since the follow-up train dropped its one extra input. The rename dialog
+ * (identity spec §1), now for every repeating section. The container uses
+ * this dialog too, since the follow-up train dropped its one extra input.
+ * The rename dialog
  * edits the label and the identity apart: re-keying is how a reviewer tells
  * the next AI re-run which entry a finding belongs to (§7 keeps merge out).
  *

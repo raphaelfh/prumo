@@ -382,6 +382,27 @@ class TestManualModelHierarchyEndpoints:
             assert response.status_code == 403
             svc_cls.return_value.create_model_hierarchy.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_manual_model_hierarchy_rejects_a_stale_modelling_method(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        """The dialog asks for the name only (follow-up train §6): a stale tab
+        still sending ``modellingMethod`` is a loud 422 (``extra="forbid"``),
+        never a silently-dropped value."""
+        response = await client.post(
+            "/api/v1/extraction/models/manual",
+            json={
+                "projectId": str(uuid4()),
+                "articleId": str(uuid4()),
+                "templateId": str(uuid4()),
+                "modelName": "Cox Model",
+                "modellingMethod": "logistic regression",
+            },
+        )
+
+        assert response.status_code == 422, response.text
+
 
 class TestManualModelHierarchyService:
     """Regression tests for cross-project model hierarchy invariants."""
