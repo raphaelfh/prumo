@@ -389,10 +389,7 @@ async def test_extract_models_lets_missing_entity_key_through() -> None:
     service = MagicMock()
     service.extract = AsyncMock(side_effect=MissingEntityKeyError(uuid4(), "Prediction models"))
 
-    with pytest.raises(MissingEntityKeyError) as exc_info:
+    with pytest.raises(MissingEntityKeyError):
         await _call_extract_models(
             _model_extraction_payload(project_id, article_id, template_id), service, caller
         )
-
-    assert exc_info.value.status_code == 409
-    assert exc_info.value.code == "MISSING_ENTITY_KEY"

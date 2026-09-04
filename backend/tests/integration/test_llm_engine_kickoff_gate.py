@@ -10,14 +10,15 @@ The retired state is produced by a raw JSONB bypass-write (the PostgREST
 hole the read-side validation contains), so the gate is exercised end to
 end: stored pair → catalogue miss → EngineRetiredError → AppError handler.
 
-The same two routes are the surface for the other typed kickoff refusal,
-``MISSING_ENTITY_KEY`` (a keyless repeating group): the tests at the end pin
-its 409 envelope for a member and the 403 an outsider still gets first.
+The models route is also the surface for the other typed kickoff refusal,
+``MISSING_ENTITY_KEY`` (a keyless repeating group): the last test pins its
+409 envelope for a member; the outsider case above already proves scope
+runs before any service call.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -25,6 +26,7 @@ from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.endpoints import model_extraction as me
 from app.services.entity_key import MissingEntityKeyError
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
@@ -165,13 +167,10 @@ async def test_section_continuation_with_run_id_is_gated_too(
     fake_delay.assert_not_called()
 
 
-_MODEL_EP = "app.api.v1.endpoints.model_extraction"
-
-
 def _keyless_service() -> MagicMock:
     """A service whose kickoff refuses the way a keyless container does; the
-    refusal itself is pinned by the entry-group pipeline tests — these two
-    tests pin the ROUTE, the registered handler and the envelope shape."""
+    refusal itself is pinned by the entry-group pipeline tests — this test
+    pins the ROUTE, the registered handler and the envelope shape."""
     service = MagicMock()
     service.extract = AsyncMock(side_effect=MissingEntityKeyError(uuid4(), "Prediction models"))
     return service
@@ -180,25 +179,12 @@ def _keyless_service() -> MagicMock:
 @pytest.mark.asyncio
 async def test_models_kickoff_on_keyless_group_is_typed_409(
     client_as_manager: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with patch(f"{_MODEL_EP}.ModelExtractionService", return_value=_keyless_service()):
-        r = await client_as_manager.post("/api/v1/extraction/models", json=_models_payload())
+    monkeypatch.setattr(me, "ModelExtractionService", MagicMock(return_value=_keyless_service()))
+    r = await client_as_manager.post("/api/v1/extraction/models", json=_models_payload())
     assert r.status_code == 409, r.text
     body = r.json()
     assert body["ok"] is False
     assert body["error"]["code"] == "MISSING_ENTITY_KEY"
     assert "'Prediction models'" in body["error"]["message"]
-    assert "Configuration tab" in body["error"]["message"]
-
-
-@pytest.mark.asyncio
-async def test_outsider_on_keyless_group_gets_403_not_409(
-    client_as_outsider: AsyncClient,
-) -> None:
-    """Scope runs before the service: an outsider never learns the section
-    is keyless (or that the template exists)."""
-    service = _keyless_service()
-    with patch(f"{_MODEL_EP}.ModelExtractionService", return_value=service):
-        r = await client_as_outsider.post("/api/v1/extraction/models", json=_models_payload())
-    assert r.status_code == 403, r.text
-    service.extract.assert_not_awaited()

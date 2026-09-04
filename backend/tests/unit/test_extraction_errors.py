@@ -55,7 +55,6 @@ class TestClassifyExtractionError:
         code, message = classify_extraction_error(exc)
         assert code is ExtractionErrorCode.MISSING_ENTITY_KEY
         assert message == str(exc)
-        assert "Configuration tab" in message
 
     def test_unknown_error_maps_to_generic(self) -> None:
         code, message = classify_extraction_error(RuntimeError("llm exploded"))

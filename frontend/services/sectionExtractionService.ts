@@ -137,7 +137,7 @@ export class SectionExtractionService {
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
-        throw new APIError(err.message, err.status, { code: err.code, traceId: err.traceId });
+        throw new APIError(err.message, err.status, { traceId: err.traceId }, err.code);
       }
       throw new APIError(err instanceof Error ? err.message : String(err), undefined, { originalError: String(err) });
     });
@@ -218,10 +218,7 @@ export class SectionExtractionService {
       };
     } catch (error) {
       if (error instanceof ApiError) {
-        throw new APIError(error.message, error.status, {
-          code: error.code,
-          traceId: error.traceId,
-        });
+        throw new APIError(error.message, error.status, { traceId: error.traceId }, error.code);
       }
       throw new APIError(
           error instanceof Error ? error.message : "Unknown error",
@@ -269,7 +266,7 @@ export class SectionExtractionService {
       },
     }).catch((err: unknown) => {
       if (err instanceof ApiError) {
-        throw new APIError(err.message, err.status, { code: err.code, traceId: err.traceId });
+        throw new APIError(err.message, err.status, { traceId: err.traceId }, err.code);
       }
       throw new APIError(err instanceof Error ? err.message : String(err), undefined, { originalError: String(err) });
     });

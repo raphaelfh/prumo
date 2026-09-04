@@ -124,7 +124,7 @@ describe('useModelExtraction promise contract', () => {
   it('a MISSING_ENTITY_KEY envelope shows the entry-key toast with the backend message', async () => {
     const message = "The repeating section 'Prediction models' declares no entry key.";
     h.serviceExtractModels.mockRejectedValue(
-      new APIError(message, 409, { code: 'MISSING_ENTITY_KEY', traceId: 'tr-1' }),
+      new APIError(message, 409, { traceId: 'tr-1' }, 'MISSING_ENTITY_KEY'),
     );
 
     const { result } = renderHook(() => useModelExtraction());

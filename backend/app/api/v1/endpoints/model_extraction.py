@@ -257,24 +257,10 @@ async def extract_models(
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
-    except AppError as e:
-        # Typed refusals raised inside the service (``MissingEntityKeyError``:
-        # 409 ``MISSING_ENTITY_KEY``) reach their registered handler and serve
-        # the typed envelope. First in the ladder so no narrower arm below can
-        # flatten a dual-typed AppError into an HTTP_ERROR, and ahead of the
-        # generic arm that would make it a 500 no client can act on.
+    except AppError:
+        # Typed refusals (``MissingEntityKeyError``: 409 ``MISSING_ENTITY_KEY``)
+        # reach their registered handler; keep this arm above ``except Exception``.
         await db.rollback()
-        logger.warning(
-            "model_extraction_refused",
-            trace_id=trace_id,
-            code=e.code,
-            project_id=str(payload.project_id),
-            article_id=str(payload.article_id),
-            template_id=str(payload.template_id),
-            # A 4xx refusal needs no traceback; a 5xx AppError keeps the one
-            # the generic arm would have recorded.
-            exc_info=e.status_code >= 500,
-        )
         raise
     except CreateRunInputError as e:
         rollback_start = perf_counter()

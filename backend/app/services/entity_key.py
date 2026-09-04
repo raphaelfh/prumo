@@ -70,12 +70,10 @@ class MissingEntityKeyError(AppError):
     and migrations 0059 and 0066 backfilled the rows that predate them, so
     the common path never reaches this.
 
-    An ``AppError`` (the ``EngineRetiredError`` shape): the registered
-    handler serves ``error.code = "MISSING_ENTITY_KEY"`` as HTTP 409 on the
-    sync models route, and ``classify_extraction_error`` maps the same type
-    to ``ExtractionErrorCode.MISSING_ENTITY_KEY`` for the job path. The
-    message names the section and the fix; the frontend shows it verbatim
-    under its own title.
+    An ``AppError`` like ``EngineRetiredError``: a typed 409
+    ``MISSING_ENTITY_KEY`` on the sync models route,
+    ``ExtractionErrorCode.MISSING_ENTITY_KEY`` on the job path. The message
+    names the section and the fix; the frontend shows it verbatim.
     """
 
     def __init__(self, entity_type_id: UUID, entity_type_label: str | None = None) -> None:

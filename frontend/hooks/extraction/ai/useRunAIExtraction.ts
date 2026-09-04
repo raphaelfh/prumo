@@ -22,7 +22,7 @@ import {useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 
 import {t} from '@/lib/copy';
-import {jobErrorToast} from '@/lib/ai-extraction/jobErrorToast';
+import {showJobErrorToast} from '@/lib/ai-extraction/jobErrorToast';
 import {extractionKeys} from '@/lib/query-keys';
 import {
   extractForRun as extractForRunService,
@@ -93,13 +93,7 @@ export function useRunAIExtraction(options?: {
       const msg = jobError ?? t('extraction', 'extractionJobFailedTitle');
       // A classified backend code gets specific copy; otherwise fall back to
       // the generic "AI extraction failed" toast.
-      const specific = jobErrorToast(jobErrorCode, msg);
-      if (specific) {
-        toast.error(specific.title, {
-          description: specific.description,
-          duration: specific.duration,
-        });
-      } else {
+      if (!showJobErrorToast(jobErrorCode, msg)) {
         toast.error(t('extraction', 'extractionJobFailedTitle'), {
           description: msg,
           duration: 8000,

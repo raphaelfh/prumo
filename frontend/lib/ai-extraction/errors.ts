@@ -53,11 +53,14 @@ export class AuthenticationError extends AIExtractionError {
  * Erro de rede/API
  */
 export class APIError extends AIExtractionError {
-  constructor(message: string, statusCode?: number, details?: Record<string, unknown>) {
-    // The backend envelope's `error.code` (carried under `details.code` by
-    // `sectionExtractionService`) is this error's code; the class tag is the
-    // fallback for failures without one (network, unknown shape).
-    const code = typeof details?.code === 'string' ? details.code : 'API_ERROR';
+  constructor(
+    message: string,
+    statusCode?: number,
+    details?: Record<string, unknown>,
+    // The backend envelope's `error.code` when the failure came through the
+    // FastAPI client; the class tag otherwise (network, unknown shape).
+    code = 'API_ERROR',
+  ) {
     super(message, code, { statusCode, ...details });
     this.name = 'APIError';
   }

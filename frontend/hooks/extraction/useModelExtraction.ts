@@ -18,7 +18,7 @@ import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {type ModelExtractionRequest, SectionExtractionService,} from "@/services/sectionExtractionService";
 import {getErrorCode, getErrorMessage} from "@/lib/ai-extraction/errors";
-import {jobErrorToast} from "@/lib/ai-extraction/jobErrorToast";
+import {showJobErrorToast} from "@/lib/ai-extraction/jobErrorToast";
 
 /**
  * Tipo de retorno do hook
@@ -130,15 +130,8 @@ export function useModelExtraction(options?: {
           setError(message);
 
           // A typed backend refusal (MISSING_ENTITY_KEY: a keyless repeating
-          // group) gets the job path's title and duration — one mapping;
-          // anything else falls to the generic toast.
-          const specific = jobErrorToast(getErrorCode(err), message);
-          if (specific) {
-            toast.error(specific.title, {
-              description: specific.description,
-              duration: specific.duration,
-            });
-          } else {
+          // group) gets the job path's copy; anything else the generic toast.
+          if (!showJobErrorToast(getErrorCode(err), message)) {
             toast.error(`${t('extraction', 'modelExtractionErrorTitle')}: ${message}`);
           }
 

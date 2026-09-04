@@ -105,7 +105,6 @@ export const extraction = {
     errors_batchAcceptSuggestions: 'Error accepting suggestions in batch',
     noSectionsForModel: 'No sections found for this model',
     modelExtractionErrorTitle: 'Extraction error',
-    modelExtractionAuthErrorTitle: 'Authentication error',
     noModelsExtractionComplete: 'Extraction completed but no prediction models were found in the article.',
     noModelsToExtractSections: 'No models to extract sections from. Extract models first.',
     extractionMayTakeMinutes: 'This may take a few minutes',
