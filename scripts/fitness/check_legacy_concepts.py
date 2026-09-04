@@ -7,6 +7,9 @@ codebase. Two tiers:
   HARD (4 patterns): hit anywhere outside the allowlist => exit 1.
   WARN (13 patterns): reported in stdout + JSONL, do not fail the gate.
 
+Reference docs (docs/reference/**/*.md) are scanned inside fenced ```sql
+blocks only, and every hit there is reported at warn tier.
+
 Usage:
   python check_legacy_concepts.py [--scope GLOB] [--repo-root PATH]
                                   [--jsonl-out PATH] [--emit-telemetry PATH]
@@ -23,13 +26,21 @@ import re
 import sys
 import time
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_REPO_ROOT = SCRIPT_DIR.parent.parent
 
 SCAN_EXTS = {".py", ".ts", ".tsx", ".sql", ".js", ".jsx"}
+# Reference docs are scanned too, but only inside fenced ```sql blocks and
+# only at warn tier: a documented query against a dropped table is stale
+# documentation rather than live code, and it used to be invisible here —
+# `.md` sat outside SCAN_EXTS, so the CHARMS template doc queried
+# `extracted_values` for months with every gate green.
+DOC_EXT = ".md"
+DOC_SQL_PREFIX = "docs/reference/"
+WALK_EXTS = SCAN_EXTS | {DOC_EXT}
 SKIP_DIR_NAMES = {
     "node_modules",
     "__pycache__",
@@ -257,7 +268,7 @@ def _iter_files(root: Path, scope: str | None) -> Iterable[Path]:
     if scope:
         # Allow scope to be a glob pattern relative to root.
         for p in root.glob(scope):
-            if p.is_file() and p.suffix in SCAN_EXTS:
+            if p.is_file() and p.suffix in WALK_EXTS:
                 yield p
             elif p.is_dir():
                 yield from _walk(p)
@@ -270,22 +281,44 @@ def _walk(start: Path) -> Iterable[Path]:
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIR_NAMES]
         for fn in filenames:
             p = Path(dirpath) / fn
-            if p.suffix in SCAN_EXTS:
+            if p.suffix in WALK_EXTS:
                 yield p
+
+
+def _sql_fences_only(text: str) -> str:
+    """Blank every line outside a fenced ```sql block, keeping line numbers."""
+    out: list[str] = []
+    in_sql = False
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            info = stripped[3:].split()
+            in_sql = not in_sql and bool(info) and info[0].lower() == "sql"
+            out.append("\n" if line.endswith("\n") else "")
+        else:
+            out.append(line if in_sql else ("\n" if line.endswith("\n") else ""))
+    return "".join(out)
 
 
 def scan(root: Path, scope: str | None) -> list[Finding]:
     findings: list[Finding] = []
     for path in _iter_files(root, scope):
         rel = str(path.relative_to(root))
+        is_doc = path.suffix == DOC_EXT
+        if is_doc and not rel.startswith(DOC_SQL_PREFIX):
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
+        if is_doc:
+            text = _sql_fences_only(text)
         lines = text.splitlines()
         for pat in (*HARD, *WARN):
             if _allowed(rel, pat.allowlist):
                 continue
+            # Docs never fail the gate: stale documentation is reported, not blocking.
+            tiered = replace(pat, tier="warn") if is_doc else pat
             for m in pat.regex.finditer(text):
                 line_no = text.count("\n", 0, m.start()) + 1
                 line_text = lines[line_no - 1] if 0 < line_no <= len(lines) else m.group()
@@ -296,7 +329,7 @@ def scan(root: Path, scope: str | None) -> list[Finding]:
                 stripped = line_text.lstrip()
                 if stripped.startswith(("#", "//", "*", "/*", '"""', "'''")):
                     continue
-                findings.append(Finding(pat, rel, line_no, line_text.strip()))
+                findings.append(Finding(tiered, rel, line_no, line_text.strip()))
     return findings
 
 
