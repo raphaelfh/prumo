@@ -4056,7 +4056,8 @@
         "type": "object"
       },
       "CreateModelHierarchyRequest": {
-        "description": "Request to create one prediction-model hierarchy for an article.",
+        "additionalProperties": false,
+        "description": "Request to create one prediction-model hierarchy for an article.\n\nThe dialog asks for the name only; it becomes the instance label and\nthe decision on the container's entry key. ``extra=\"forbid\"`` for the\nreason ``ModelExtractionRequest`` gives: this body is validated once,\nin the request cycle, so a stale tab that still sends\n``modellingMethod`` gets a loud 422 instead of silently losing a value\nit typed.",
         "properties": {
           "articleId": {
             "format": "uuid",
@@ -4066,17 +4067,6 @@
           "modelName": {
             "title": "Modelname",
             "type": "string"
-          },
-          "modellingMethod": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Modellingmethod"
           },
           "projectId": {
             "format": "uuid",

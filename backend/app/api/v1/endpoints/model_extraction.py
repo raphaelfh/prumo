@@ -66,8 +66,8 @@ async def create_manual_model_hierarchy(
     service = ModelHierarchyService(db)
 
     await ensure_project_member(db, payload.project_id, current_user_sub)
-    # Manual creation records ReviewerDecisions (model_name /
-    # modelling_method), so it carries the same reviewer gate as
+    # Manual creation records a ReviewerDecision (the name, on the
+    # container's entry key), so it carries the same reviewer gate as
     # POST /runs/{id}/decisions — a read-only viewer is a member but
     # must not author audit-trail rows.
     await ensure_project_reviewer(db, payload.project_id, current_user_sub)
@@ -79,7 +79,6 @@ async def create_manual_model_hierarchy(
             template_id=payload.template_id,
             user_id=current_user_sub,
             model_name=payload.model_name,
-            modelling_method=payload.modelling_method,
         )
         await db.commit()
         return ApiResponse.success(

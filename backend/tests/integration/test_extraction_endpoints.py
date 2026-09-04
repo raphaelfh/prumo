@@ -335,7 +335,6 @@ class TestManualModelHierarchyEndpoints:
                     "articleId": str(uuid4()),
                     "templateId": str(uuid4()),
                     "modelName": "Cox Model",
-                    "modellingMethod": "logistic regression",
                 },
             )
 
@@ -353,7 +352,7 @@ class TestManualModelHierarchyEndpoints:
         client: AsyncClient,
     ) -> None:
         """A member who is not a reviewer must never reach the service: the
-        endpoint records ReviewerDecisions (model_name / modelling_method),
+        endpoint records a ReviewerDecision (the name, on the entry key),
         so it carries the same reviewer gate as POST /runs/{id}/decisions —
         a read-only viewer must not author audit-trail rows."""
         from fastapi import HTTPException
