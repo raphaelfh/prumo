@@ -1,4 +1,4 @@
-"""Error-code taxonomy for async section extraction.
+"""Error-code taxonomy for extraction failures.
 
 The Celery extraction task can fail in a few distinct ways the frontend wants
 to surface differently (see ``ExtractionErrorCode`` for the full list). This

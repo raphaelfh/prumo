@@ -17,6 +17,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.schemas.extraction import ExtractionErrorCode
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
 from app.services.entity_key import (
     HISTORY_KEY,
@@ -193,7 +194,7 @@ def test_missing_entity_key_error_is_a_typed_409() -> None:
     err = MissingEntityKeyError(uuid4(), "Final predictors")
 
     assert isinstance(err, AppError)
-    assert err.code == "MISSING_ENTITY_KEY"
+    assert err.code == ExtractionErrorCode.MISSING_ENTITY_KEY.value == "MISSING_ENTITY_KEY"
     assert err.status_code == 409
     assert str(err) == (
         "The repeating section 'Final predictors' declares no entry key, so AI "

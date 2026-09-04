@@ -54,6 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
 from app.models.extraction import ExtractionInstance
+from app.schemas.extraction import ExtractionErrorCode
 
 # JSONB keys under ``extraction_instances.metadata``.
 STORE_KEY = "entity_key"
@@ -81,7 +82,7 @@ class MissingEntityKeyError(AppError):
         self.entity_type_label = entity_type_label
         name = entity_type_label or str(entity_type_id)
         super().__init__(
-            code="MISSING_ENTITY_KEY",
+            code=ExtractionErrorCode.MISSING_ENTITY_KEY.value,
             message=(
                 f"The repeating section {name!r} declares no entry key, so AI "
                 "extraction cannot tell a new entry from one it already extracted. "

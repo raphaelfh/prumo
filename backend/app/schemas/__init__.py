@@ -32,16 +32,13 @@ from app.schemas.extraction import (
     ExtractionFieldSchema,
     ExtractionOptions,
     ExtractionTemplateSchema,
-    FieldSuggestion,
     IdentifiedModel,
     InstanceResponse,
     ModelExtractionRequest,
     ModelExtractionResult,
-    ReviewSuggestionRequest,
     SaveValueRequest,
     SectionExtractionRequest,
     SingleSectionResult,
-    SuggestionResponse,
     ValueResponse,
 )
 from app.schemas.user_api_key import (
@@ -104,7 +101,6 @@ __all__ = [
     "ModelExtractionResult",
     "IdentifiedModel",
     "ExtractionOptions",
-    "FieldSuggestion",
     "ExtractionTemplateSchema",
     "ExtractionEntityTypeSchema",
     "ExtractionFieldSchema",
@@ -112,8 +108,6 @@ __all__ = [
     "InstanceResponse",
     "SaveValueRequest",
     "ValueResponse",
-    "SuggestionResponse",
-    "ReviewSuggestionRequest",
     # User API Keys
     "CreateAPIKeyRequest",
     "UpdateAPIKeyRequest",

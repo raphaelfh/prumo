@@ -78,19 +78,6 @@ class EvidencePassage(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class FieldSuggestion(BaseModel):
-    """Sugestao de valor for um field."""
-
-    field_id: UUID = Field(..., alias="fieldId")
-    field_name: str = Field(..., alias="fieldName")
-    suggested_value: Any = Field(..., alias="suggestedValue")
-    confidence_score: float | None = Field(default=None, alias="confidenceScore", ge=0, le=1)
-    reasoning: str | None = None
-    evidence: list[EvidencePassage] = []
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
 # =================== SECTION EXTRACTION SCHEMAS ===================
 
 
@@ -490,32 +477,7 @@ class ValueResponse(BaseModel):
 # =================== SUGGESTION SCHEMAS ===================
 
 
-class SuggestionResponse(BaseModel):
-    """Response de suggestion de IA for extraction."""
-
-    id: UUID
-    extraction_run_id: UUID = Field(..., alias="extractionRunId")
-    instance_id: UUID | None = Field(default=None, alias="instanceId")
-    field_id: UUID = Field(..., alias="fieldId")
-    suggested_value: Any = Field(..., alias="suggestedValue")
-    confidence_score: float | None = Field(default=None, alias="confidenceScore")
-    reasoning: str | None = None
-    status: Literal["pending", "accepted", "rejected"]
-    created_at: datetime = Field(..., alias="createdAt")
-
-    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
-
-
-class ReviewSuggestionRequest(BaseModel):
-    """Request for revisar suggestion."""
-
-    status: Literal["accepted", "rejected"]
-    modified_value: Any | None = Field(default=None, alias="modifiedValue")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-# =================== ASYNC SECTION EXTRACTION JOB SCHEMAS ===================
+# =================== EXTRACTION JOB SCHEMAS ===================
 
 
 class ExtractionErrorCode(str, Enum):

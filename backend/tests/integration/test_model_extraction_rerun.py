@@ -158,5 +158,20 @@ async def test_an_unkeyed_container_is_refused_not_duplicated(
     db_session: AsyncSession,
 ) -> None:
     entity_type_id = await _model_container(db_session, with_key=False)
+    runs_before = await _run_count(db_session)
     with pytest.raises(MissingEntityKeyError):
         await _run_extraction(_service(db_session), entity_type_id, ["XGBoost"])
+    # The models route answers the typed 409 with ``rollback; raise``: the run
+    # the service resolved and started on the way to the refusal must not
+    # survive it (nothing was committed, so the rollback leaves no row).
+    await db_session.rollback()
+    assert await _run_count(db_session) == runs_before
+
+
+async def _run_count(db: AsyncSession) -> int:
+    return (
+        await db.execute(
+            text("SELECT count(*) FROM public.extraction_runs WHERE article_id = :art"),
+            {"art": SEED.primary_article},
+        )
+    ).scalar_one()
