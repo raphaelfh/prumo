@@ -81,21 +81,37 @@ async def test_snapshot_carries_role_and_all_field_columns(
 
 @pytest.mark.asyncio
 async def test_snapshot_carries_entry_label(db_session: AsyncSession) -> None:
-    """B-8: the group entry noun is pinned in the snapshot — 'model' for
-    the seeded CHARMS container, null for every other section (nullable
-    entity keys are emitted unconditionally, D2)."""
+    """B-8 / entry-group train: every entity type's entry noun is pinned in
+    the snapshot exactly as the live row carries it — 'model' on the seeded
+    CHARMS container, the seeded noun on ``final_predictors`` (0068), NULL on
+    the sections that repeat once — and nullable entity keys are emitted
+    unconditionally (D2). Compared against the live rows rather than a
+    literal so the test reads the same on a catalogue seeded before 0068."""
     await clean_project_clones(db_session, SEED.secondary_project)
     clone = await clone_charms(db_session, SEED.secondary_project, SEED.primary_profile)
+    live_nouns = {
+        str(row_id): noun
+        for row_id, noun in (
+            await db_session.execute(
+                text(
+                    "SELECT id, entry_label FROM public.extraction_entity_types "
+                    "WHERE project_template_id = :tid"
+                ),
+                {"tid": str(clone.project_template_id)},
+            )
+        ).all()
+    }
 
     snapshot = await build_template_version_snapshot(db_session, clone.project_template_id)
     entity_types = snapshot["entity_types"]
     assert any(et["role"] == "model_container" for et in entity_types)
     for et in entity_types:
         assert "entry_label" in et, f"entity_type {et.get('name')} missing entry_label"
+        assert et["entry_label"] == live_nouns[et["id"]], et["name"]
         if et["role"] == "model_container":
             assert et["entry_label"] == "model"
-        else:
-            assert et["entry_label"] is None
+        elif et["cardinality"] != "many":
+            assert et["entry_label"] is None, et["name"]
     await db_session.rollback()
 
 
