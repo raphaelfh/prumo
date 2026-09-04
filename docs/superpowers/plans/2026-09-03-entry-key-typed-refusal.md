@@ -618,10 +618,10 @@ Run: `make test-backend`
 Expected: 0 failed (the count grows by the six new tests).
 Run: `make lint-backend`
 Expected: ruff check and format clean.
-Run: `cd backend && uv run vulture app --min-confidence 60 --exclude "*/migrations/*" | wc -l` (or the exact ratchet command in `scripts/vulture_baseline.py --help`) and `uv run python ../scripts/vulture_baseline.py --check`
-Expected: baseline unchanged (no backend code deleted, none added dead).
-Run: `cd backend && uv run mypy app` (the ratchet the CI job runs; see `Makefile` target `typecheck-backend` if it differs)
-Expected: no new errors.
+Run: `cd backend && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec` (the exact `deadcode:vulture` gate from `scripts/verify_all.sh`)
+Expected: exit 0; findings are a subset of the baseline (no backend code deleted, none added dead, baseline untouched).
+Run: `cd backend && uv run mypy app --ignore-missing-imports > mypy.out || true; uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline --input mypy.out` (the CI mypy ratchet, from the usage block in `scripts/mypy_baseline.py`)
+Expected: exit 0; no error outside the baseline.
 
 - [ ] **Step 2: Frontend suite and dead-code gates**
 
