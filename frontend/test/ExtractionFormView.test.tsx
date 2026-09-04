@@ -51,8 +51,19 @@ vi.mock('@/components/extraction/SectionAccordion', () => ({
   ),
 }));
 
+// Thin observer, like the accordion mock: exposes the two props the memo
+// comparator must let through after a model is created (see the
+// post-create load block below).
 vi.mock('@/components/extraction/hierarchy/ModelSelector', () => ({
-  ModelSelector: () => <div data-testid="model-selector" />,
+  ModelSelector: (props: any) => (
+    <div
+      data-testid="model-selector"
+      data-loading={String(props.loading)}
+      data-progress={props.models
+        .map((m: any) => m.progress?.percentage ?? '')
+        .join(',')}
+    />
+  ),
 }));
 
 vi.mock('@/components/extraction/BatchExtractionProgress', () => ({
@@ -502,5 +513,61 @@ describe('ExtractionFormView → showPDF collapses the section rail', () => {
 
     expect(within(nav).queryByText(STUDY_SECTION.label)).not.toBeInTheDocument();
     expect(nav).toHaveClass('w-11');
+  });
+});
+
+describe('ExtractionFormView → post-create model load (memo comparator)', () => {
+  // After a manual add, useModelManagement re-derives the models from the
+  // refetched run view: ``modelsLoading`` flips true → false and ``models``
+  // is rebuilt with progress at the SAME length. A comparator that only
+  // watched ``models.length`` (and never ``modelsLoading``) bailed on that
+  // commit, so the selector sat on its loading skeleton until an unrelated
+  // prop changed — caught by extraction-entry-identity.ui.e2e.ts.
+  const instances = [
+    { id: 'model-1', entity_type_id: 'pred-et', label: 'Logistic' },
+  ] as any[];
+  const shared = () =>
+    baseProps({
+      modelParentEntityType: MODEL_PARENT,
+      modelChildSections: [CHILD_SECTION],
+      instances,
+      activeModelId: 'model-1',
+    });
+
+  it('re-renders the selector when only the loading flag flips', () => {
+    const props = shared();
+    const models = [{ instanceId: 'model-1', modelName: 'Logistic' }];
+    const { rerender } = render(
+      <ExtractionFormView {...props} models={models} modelsLoading={true} />,
+    );
+    expect(screen.getByTestId('model-selector')).toHaveAttribute('data-loading', 'true');
+
+    rerender(<ExtractionFormView {...props} models={models} modelsLoading={false} />);
+    expect(screen.getByTestId('model-selector')).toHaveAttribute('data-loading', 'false');
+  });
+
+  it('re-renders the selector when the models are rebuilt with progress at the same length', () => {
+    const props = shared();
+    const { rerender } = render(
+      <ExtractionFormView
+        {...props}
+        models={[{ instanceId: 'model-1', modelName: 'Logistic' }]}
+      />,
+    );
+    expect(screen.getByTestId('model-selector')).toHaveAttribute('data-progress', '');
+
+    rerender(
+      <ExtractionFormView
+        {...props}
+        models={[
+          {
+            instanceId: 'model-1',
+            modelName: 'Logistic',
+            progress: { completed: 1, total: 2, percentage: 50 },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId('model-selector')).toHaveAttribute('data-progress', '50');
   });
 });
