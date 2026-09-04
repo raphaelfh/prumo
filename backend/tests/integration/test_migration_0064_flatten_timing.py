@@ -15,9 +15,7 @@ the half a manager typed.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -25,13 +23,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.conftest import SEED
+from tests.integration.helpers.migrations import load_migration
 
-_MIG_PATH = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "0064_flatten_picots_timing.py"
-)
-_spec = importlib.util.spec_from_file_location("mig0064", _MIG_PATH)
-_mig = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mig)
+_mig = load_migration("0064_flatten_picots_timing.py")
 
 
 def _item(description: str = "", inclusion=None, exclusion=None) -> dict:

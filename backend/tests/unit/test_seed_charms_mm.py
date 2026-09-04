@@ -21,7 +21,7 @@ from app.models.extraction import (
     ExtractionTemplateGlobal,
 )
 from app.seed import seed_charms_mm
-from tests.unit.conftest import CapturingSession, ExistingTemplateSession
+from tests.unit.conftest import CapturingSession, ExistingTemplateSession, seeded
 
 # The authoritative roster: section -> field names, in seeded order.
 #
@@ -130,21 +130,12 @@ _ROSTER: dict[str, list[str]] = {
 _TOTAL_FIELDS = 66
 
 
-async def _seed() -> CapturingSession:
+async def _fields_by_section() -> dict[str, list[ExtractionField]]:
     session = CapturingSession()
     await seed_charms_mm(session)
-    return session
-
-
-def _of(session: CapturingSession, cls: type) -> list:
-    return [o for o in session.added if isinstance(o, cls)]
-
-
-async def _fields_by_section() -> dict[str, list[ExtractionField]]:
-    session = await _seed()
-    names = {et.id: et.name for et in _of(session, ExtractionEntityType)}
+    names = {et.id: et.name for et in session.added_of(ExtractionEntityType)}
     out: dict[str, list[ExtractionField]] = {}
-    for f in _of(session, ExtractionField):
+    for f in session.added_of(ExtractionField):
         out.setdefault(names[f.entity_type_id], []).append(f)
     return out
 
@@ -156,14 +147,14 @@ async def _fields_by_section() -> dict[str, list[ExtractionField]]:
 
 @pytest.mark.asyncio
 async def test_seeds_exactly_one_template() -> None:
-    templates = _of(await _seed(), ExtractionTemplateGlobal)
+    templates = await seeded(seed_charms_mm, ExtractionTemplateGlobal)
     assert len(templates) == 1
     assert templates[0].framework == "CHARMS"
 
 
 @pytest.mark.asyncio
 async def test_entity_type_tree_shape() -> None:
-    ets = _of(await _seed(), ExtractionEntityType)
+    ets = await seeded(seed_charms_mm, ExtractionEntityType)
     assert len(ets) == 14
 
     by_role: dict[str, list[ExtractionEntityType]] = {}
@@ -180,7 +171,7 @@ async def test_role_parent_coherence() -> None:
     """Mirrors the DB CHECK ``ck_extraction_entity_types_role_parent`` and the
     deferred ``trg_check_model_section_parent_role`` trigger, neither of which
     the DB-free fake can reach."""
-    ets = _of(await _seed(), ExtractionEntityType)
+    ets = await seeded(seed_charms_mm, ExtractionEntityType)
     container = next(e for e in ets if e.role == ExtractionEntityRole.MODEL_CONTAINER.value)
 
     assert container.parent_entity_type_id is None
@@ -197,7 +188,7 @@ async def test_role_parent_coherence() -> None:
 async def test_numeric_performance_is_the_only_repeating_model_section() -> None:
     """It repeats per validation type (apparent / internal / external); every
     other per-model section is 1:1 with the model."""
-    ets = _of(await _seed(), ExtractionEntityType)
+    ets = await seeded(seed_charms_mm, ExtractionEntityType)
     many = [
         e
         for e in ets
@@ -208,7 +199,7 @@ async def test_numeric_performance_is_the_only_repeating_model_section() -> None
 
 @pytest.mark.asyncio
 async def test_entity_types_are_not_required() -> None:
-    ets = _of(await _seed(), ExtractionEntityType)
+    ets = await seeded(seed_charms_mm, ExtractionEntityType)
     assert ets, "seed produced no entity types"
     assert all(not et.is_required for et in ets)
 
@@ -234,7 +225,7 @@ async def test_field_roster_matches_the_spec() -> None:
 
 @pytest.mark.asyncio
 async def test_total_field_count() -> None:
-    assert len(_of(await _seed(), ExtractionField)) == _TOTAL_FIELDS
+    assert len(await seeded(seed_charms_mm, ExtractionField)) == _TOTAL_FIELDS
 
 
 @pytest.mark.asyncio
@@ -245,7 +236,7 @@ async def test_sort_order_is_dense_and_zero_based_per_section() -> None:
 
 @pytest.mark.asyncio
 async def test_choice_fields_have_allowed_values_and_others_do_not() -> None:
-    fields = _of(await _seed(), ExtractionField)
+    fields = await seeded(seed_charms_mm, ExtractionField)
     assert fields, "seed produced no fields"
     for f in fields:
         if f.field_type in ("select", "multiselect"):
@@ -256,7 +247,7 @@ async def test_choice_fields_have_allowed_values_and_others_do_not() -> None:
 
 @pytest.mark.asyncio
 async def test_every_field_carries_an_llm_prompt() -> None:
-    fields = _of(await _seed(), ExtractionField)
+    fields = await seeded(seed_charms_mm, ExtractionField)
     assert fields, "seed produced no fields"
     for f in fields:
         assert f.llm_description, f.name
@@ -268,7 +259,7 @@ async def test_every_field_is_required() -> None:
     instrument's "if absent, NI" into an explicitly recorded answer rather
     than a silent blank (constitution IX); the finalize gate counts a
     no_information marker as filled."""
-    fields = _of(await _seed(), ExtractionField)
+    fields = await seeded(seed_charms_mm, ExtractionField)
     assert fields, "seed produced no fields"
     assert all(f.is_required for f in fields)
 
@@ -277,7 +268,7 @@ async def test_every_field_is_required() -> None:
 async def test_disposition_opt_ins_are_minimal_and_targeted() -> None:
     """ADR-0016: no_information is universal and needs no flag. Only the
     fields whose prompts genuinely invoke NA / not-evaluated opt in."""
-    fields = {f.name: f for f in _of(await _seed(), ExtractionField)}
+    fields = {f.name: f for f in await seeded(seed_charms_mm, ExtractionField)}
 
     assert fields["eval_external_source"].allows_not_applicable
     for name in ("perf_calibration", "pnum_calib_slope", "pnum_calib_intercept"):
@@ -291,7 +282,7 @@ async def test_disposition_opt_ins_are_minimal_and_targeted() -> None:
 async def test_confidence_intervals_are_paired_number_fields() -> None:
     """Spec decision: prumo has no ``number_ci`` type, so each interval is a
     point estimate plus two bound fields."""
-    fields = {f.name: f for f in _of(await _seed(), ExtractionField)}
+    fields = {f.name: f for f in await seeded(seed_charms_mm, ExtractionField)}
     for stem in ("pnum_auc", "pnum_cindex"):
         assert fields[stem].field_type == "number", stem
         for bound in ("_ci_low", "_ci_high"):
@@ -300,7 +291,7 @@ async def test_confidence_intervals_are_paired_number_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_controlled_vocabularies_match_the_protocol() -> None:
-    fields = {f.name: f for f in _of(await _seed(), ExtractionField)}
+    fields = {f.name: f for f in await seeded(seed_charms_mm, ExtractionField)}
 
     modalities = fields["mm_modalities"]
     assert modalities.field_type == "multiselect"
@@ -360,7 +351,7 @@ async def test_modality_prompts_embed_the_protocol_definition() -> None:
     """``mm_modalities`` / ``mm_n_domains`` carry the modality definition
     inline so the classification does not depend on the extraction wrapper
     retrieving the right passage of the protocol."""
-    fields = {f.name: f for f in _of(await _seed(), ExtractionField)}
+    fields = {f.name: f for f in await seeded(seed_charms_mm, ExtractionField)}
     for name in ("mm_modalities", "mm_n_domains"):
         prompt = fields[name].llm_description.lower()
         assert "provenance" in prompt, name

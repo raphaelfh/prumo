@@ -8,8 +8,6 @@ on rows this test creates.
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,14 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import ExtractionEntityType, ExtractionTemplateGlobal
 from tests.factories.template_factory import TemplateFactory
 from tests.integration.conftest import SEED
+from tests.integration.helpers.migrations import load_migration
 
-_MIG_PATH = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "0068_seeded_entry_nouns.py"
-)
-_spec = importlib.util.spec_from_file_location("mig0068", _MIG_PATH)
-assert _spec is not None and _spec.loader is not None
-_mig = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mig)
+_mig = load_migration("0068_seeded_entry_nouns.py")
 
 
 async def _global_template(db: AsyncSession) -> UUID:

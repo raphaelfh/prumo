@@ -33,16 +33,10 @@ from app.seed import (
 )
 from app.seed_probast_ai import seed_probast_ai
 from app.seed_probast_ai_data import _PAI_SIGNALING
-from tests.unit.conftest import CapturingSession
+from tests.unit.conftest import seeded
 
 _DISPOSITION_STRINGS = {"No information", "Not applicable", "Not evaluated", "NI", "NA"}
 _SENTINEL_EID = "00000000-0000-0000-0000-000000000000"
-
-
-async def _seeded_fields(seed_fn) -> list[ExtractionField]:
-    session = CapturingSession()
-    await seed_fn(session)
-    return [obj for obj in session.added if isinstance(obj, ExtractionField)]
 
 
 def test_yes_no_constants_carry_no_dispositions() -> None:
@@ -82,7 +76,7 @@ async def test_no_seeded_field_carries_a_disposition_value(seed_fn) -> None:
     restores "NI" as the instrument's own fifth signaling ANSWER, which is a
     different thing from the retired in-band disposition string this test
     guards against."""
-    fields = await _seeded_fields(seed_fn)
+    fields = await seeded(seed_fn, ExtractionField)
     assert fields, "seed produced no fields"
     for f in fields:
         values = {v["value"] if isinstance(v, dict) else v for v in (f.allowed_values or [])}
@@ -102,7 +96,7 @@ async def test_probast_ai_owns_ni_as_an_answer_with_the_marker_turned_off() -> N
     and it is also what keeps ``disposition_to_marker`` from rewriting the
     answer into a marker the form refuses to render.
     """
-    fields = await _seeded_fields(seed_probast_ai)
+    fields = await seeded(seed_probast_ai, ExtractionField)
     assert fields, "seed produced no fields"
     carrying_ni = []
     for f in fields:
@@ -123,7 +117,7 @@ async def test_charms_opt_in_flags_set_on_former_disposition_fields() -> None:
     """The two CHARMS fields that used the Not-applicable set and the three that
     used the Not-evaluated set carry the matching opt-in flag; no CHARMS field
     accidentally enables both."""
-    fields = await _seeded_fields(seed_charms)
+    fields = await seeded(seed_charms, ExtractionField)
     assert sum(f.allows_not_applicable for f in fields) == 2
     assert sum(f.allows_not_evaluated for f in fields) == 3
 
@@ -132,7 +126,7 @@ async def test_charms_opt_in_flags_set_on_former_disposition_fields() -> None:
 async def test_probast_signaling_fields_allow_not_applicable() -> None:
     """Every PROBAST signaling question (which historically offered NA) enables
     the not_applicable disposition; the domain-judgment fields do not."""
-    fields = await _seeded_fields(seed_probast)
+    fields = await seeded(seed_probast, ExtractionField)
     signaling = [f for f in fields if f.allowed_values == _PROBAST_SIGNALING]
     assert signaling, "expected PROBAST signaling fields"
     assert all(f.allows_not_applicable for f in signaling)
@@ -144,7 +138,7 @@ async def test_probast_ai_na_restricted_to_conditional_rows() -> None:
     conditional (asterisked) items — six field rows after triplication
     (spec 2026-08-22 §5). The other 36 signaling rows and every judgment
     field carry no disposition flag."""
-    fields = await _seeded_fields(seed_probast_ai)
+    fields = await seeded(seed_probast_ai, ExtractionField)
     # 2.1.0's answer set is v2-local (five answers, NI included), so selecting
     # on the shared four-answer constant would match nothing and pass vacuously.
     signaling = [f for f in fields if f.allowed_values == _PAI_SIGNALING]
@@ -167,7 +161,7 @@ async def test_probast_ai_na_restricted_to_conditional_rows() -> None:
 async def test_quadas2_has_no_disposition_flags() -> None:
     """QUADAS-2 never offered NA/NI (it uses substantive Unclear), so no field
     opts into a disposition flag."""
-    fields = await _seeded_fields(seed_quadas2)
+    fields = await seeded(seed_quadas2, ExtractionField)
     assert fields
     assert not any(f.allows_not_applicable or f.allows_not_evaluated for f in fields)
 
