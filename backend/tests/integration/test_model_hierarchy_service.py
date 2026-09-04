@@ -108,7 +108,6 @@ async def test_create_model_hierarchy_creates_parent_and_singleton_children(
         template_id=clone.project_template_id,
         user_id=SEED.primary_profile,
         model_name="Cox Model",
-        modelling_method=None,
     )
 
     assert result.model_label == "Cox Model"
@@ -166,9 +165,12 @@ async def test_create_model_hierarchy_creates_parent_and_singleton_children(
 
 
 @pytest.mark.asyncio
-async def test_create_model_hierarchy_records_name_and_method_decisions(
+async def test_create_model_hierarchy_records_only_the_name_on_the_key(
     db_session: AsyncSession,
 ) -> None:
+    """The dialog asks for the key only (follow-up train §6): exactly one
+    decision lands, on the container's entry key, and no field is ever
+    picked by name."""
     clone, article_id, session = await _clone_with_open_session(db_session)
 
     result = await ModelHierarchyService(db_session).create_model_hierarchy(
@@ -177,27 +179,13 @@ async def test_create_model_hierarchy_records_name_and_method_decisions(
         template_id=clone.project_template_id,
         user_id=SEED.primary_profile,
         model_name="Cox Model",
-        modelling_method="logistic regression",
     )
 
     assert result.proposal_run_id == session.run_id
 
     fields = await _container_field_ids_by_name(db_session, clone.project_template_id)
-    decisions = {
-        row.field_id: row.value
-        for row in (
-            await db_session.execute(
-                select(ExtractionReviewerDecision).where(
-                    ExtractionReviewerDecision.run_id == session.run_id,
-                    ExtractionReviewerDecision.instance_id == result.model_id,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    }
-    assert decisions[fields["model_name"]] == {"value": "Cox Model"}
-    assert decisions[fields["modelling_method"]] == {"value": "logistic regression"}
+    decisions = await _decisions_for(db_session, session.run_id, result.model_id)
+    assert decisions == {fields["model_name"]: {"value": "Cox Model"}}
 
 
 @pytest.mark.asyncio
@@ -215,7 +203,6 @@ async def test_recorded_model_name_matches_the_deduplicated_label(
         template_id=clone.project_template_id,
         user_id=SEED.primary_profile,
         model_name="Cox Model",
-        modelling_method=None,
     )
     await create()
     second = await create()
@@ -299,22 +286,19 @@ async def test_the_name_is_recorded_on_the_entry_key_not_on_a_field_named_model_
         template_id=clone.project_template_id,
         user_id=SEED.primary_profile,
         model_name="Cox Model",
-        modelling_method="logistic regression",
     )
 
     fields = await _container_field_ids_by_name(db_session, clone.project_template_id)
     decisions = await _decisions_for(db_session, session.run_id, result.model_id)
-    assert decisions[fields["mdl_name"]] == {"value": "Cox Model"}
-    assert fields["model_name"] not in decisions
-    assert decisions[fields["modelling_method"]] == {"value": "logistic regression"}
+    assert decisions == {fields["mdl_name"]: {"value": "Cox Model"}}
 
 
 @pytest.mark.asyncio
-async def test_a_keyless_container_still_creates_the_model_and_records_no_name(
+async def test_a_keyless_container_still_creates_the_model_and_records_nothing(
     db_session: AsyncSession,
 ) -> None:
     """Without a key there is no field that holds the name: the instance label
-    carries it, the method still lands, and creation does not refuse (the
+    carries it, no decision is recorded, and creation does not refuse (the
     AI path is what refuses a keyless group, not the manual dialog)."""
     clone, article_id, session = await _clone_with_open_session(db_session)
     await _move_container_key(db_session, clone.project_template_id, to_field=None)
@@ -325,11 +309,8 @@ async def test_a_keyless_container_still_creates_the_model_and_records_no_name(
         template_id=clone.project_template_id,
         user_id=SEED.primary_profile,
         model_name="Cox Model",
-        modelling_method="logistic regression",
     )
 
     assert result.model_label == "Cox Model"
-    fields = await _container_field_ids_by_name(db_session, clone.project_template_id)
-    decisions = await _decisions_for(db_session, session.run_id, result.model_id)
-    assert fields["model_name"] not in decisions
-    assert decisions[fields["modelling_method"]] == {"value": "logistic regression"}
+    assert result.proposal_run_id is None
+    assert await _decisions_for(db_session, session.run_id, result.model_id) == {}
