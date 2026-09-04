@@ -6,7 +6,7 @@
  * active one.
  *
  * B-8 D6: the entry noun is DATA — the container's `entry_label` arrives
- * as the `entryLabel` prop (default 'model') and interpolates the
+ * as the `entryLabel` prop (default DEFAULT_ENTRY_NOUN) and interpolates the
  * `{{noun}}` copy at render time; `title` carries the container's LABEL
  * (better than a pluralized noun for the heading).
  *
@@ -33,6 +33,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 // =================== INTERFACES ===================
 
@@ -88,7 +89,7 @@ export function ModelSelector({
   extractingAllSections = false,
   onExtractAllSectionsForAllModels,
   extractingAllSectionsForAllModels = false,
-  entryLabel = 'model',
+  entryLabel = DEFAULT_ENTRY_NOUN,
   title,
 }: ModelSelectorProps) {
   // Read-only run: add/remove/AI-extract affordances hide (published view).

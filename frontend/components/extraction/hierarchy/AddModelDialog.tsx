@@ -19,6 +19,7 @@ import {AddEntryDialog} from '@/components/extraction/AddEntryDialog';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {t} from '@/lib/copy';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 // =================== INTERFACES ===================
 
@@ -40,7 +41,7 @@ export function AddModelDialog({
   onConfirm,
   onCancel,
   existingModels,
-  entryLabel = 'model',
+  entryLabel = DEFAULT_ENTRY_NOUN,
   keyLabel,
 }: AddModelDialogProps) {
   const [modellingMethod, setModellingMethod] = useState('');

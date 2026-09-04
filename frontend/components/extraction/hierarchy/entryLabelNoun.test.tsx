@@ -42,9 +42,9 @@ describe('run-view noun interpolation (B-8 D6)', () => {
     expect(screen.getByTitle('Add new scenario manually')).toBeInTheDocument();
   });
 
-  it('ModelSelector falls back to the "model" noun without the prop', () => {
+  it('ModelSelector falls back to the "entry" noun without the prop', () => {
     render(<ModelSelector {...selectorBase} models={[]} activeModelId={null} />);
-    expect(screen.getByText('No model added yet')).toBeInTheDocument();
+    expect(screen.getByText('No entry added yet')).toBeInTheDocument();
   });
 
   it('AddModelDialog interpolates the noun into title, labels and submit', () => {

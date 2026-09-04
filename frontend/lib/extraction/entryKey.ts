@@ -45,3 +45,11 @@ export function isDuplicateEntryKey(value: string, existing: readonly string[]):
   const wanted = normalizeEntryKey(value);
   return existing.some((other) => normalizeEntryKey(other) === wanted);
 }
+
+/**
+ * The noun a repeating section's entries read as when its `entry_label` is
+ * null — rows created before the noun was required at creation. Mirrors the
+ * backend's `DEFAULT_ENTRY_LABEL`; every `{{noun}}` fallback and the noun
+ * input's placeholder resolve here.
+ */
+export const DEFAULT_ENTRY_NOUN = 'entry';

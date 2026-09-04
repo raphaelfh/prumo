@@ -242,7 +242,7 @@ describe('buildTemplateTree', () => {
     expect(tree[2].ownEntryLabel).toBeNull();
   });
 
-  it('falls back entryNoun to "model" when entry_label is null or absent', () => {
+  it('falls back entryNoun to "entry" when entry_label is null or absent', () => {
     const tree = buildTemplateTree(
       [
         section({
@@ -268,18 +268,18 @@ describe('buildTemplateTree', () => {
       [],
     );
 
-    expect(tree[0].entryNoun).toBe('model');
-    expect(tree[0].children[0].entryNoun).toBe('model');
-    expect(tree[1].entryNoun).toBe('model');
+    expect(tree[0].entryNoun).toBe('entry');
+    expect(tree[0].children[0].entryNoun).toBe('entry');
+    expect(tree[1].entryNoun).toBe('entry');
   });
 
-  it('gives root sections the total fallback entryNoun "model" (unused but total)', () => {
+  it('gives root sections the total fallback entryNoun "entry" (unused but total)', () => {
     const tree = buildTemplateTree(
       [section({id: 'root', entry_label: null, sort_order: 1})],
       [],
     );
 
-    expect(tree[0].entryNoun).toBe('model');
+    expect(tree[0].entryNoun).toBe('entry');
   });
 
   it('treats an orphaned child (parent missing) as a root rather than dropping it', () => {

@@ -18,7 +18,7 @@ import {useRef} from 'react';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {InstanceCard} from './InstanceCard';
 import type {EntryIdentityChanges} from './AddEntryDialog';
-import {entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
+import {DEFAULT_ENTRY_NOUN, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {SectionAIExtractButton} from '@/components/extraction/ai/shared/SectionAIExtractButton';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
@@ -80,7 +80,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
   // The field identifying one entry (0059) labels the rename dialog's key
   // input; the entry noun (B-8) names the entry in its copy.
   const keyField = keyFieldOf(fields);
-  const entryLabel = entityType.entry_label ?? 'entry';
+  const entryLabel = entityType.entry_label ?? DEFAULT_ENTRY_NOUN;
 
     // Calculate progress for this section
   const requiredFields = fields.filter(f => f.is_required);
