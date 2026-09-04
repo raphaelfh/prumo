@@ -5315,10 +5315,12 @@ export interface components {
          *     frontend's read-then-write race. The ``ck_role_parent`` validator
          *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
          *     (parent belongs to THIS template) is the service's BOLA job.
-         *     ``entry_label`` is a repeating section's entry noun (B-8, D3 —
-         *     unlocked from the container in the entry-group train): legal on any
-         *     ``cardinality='many'`` section; the container defaults it to
-         *     ``'model'`` and always repeats (``'many'`` is enforced, never chosen).
+         *     ``entry_label`` is a repeating section's entry noun (B-8, D3 — unlocked
+         *     from the container in the entry-group train): REQUIRED, non-blank, on
+         *     every ``cardinality='many'`` section, container included, and refused
+         *     on a section that does not repeat. Rows created before the noun was
+         *     required may still carry NULL; every reader falls back to
+         *     :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for them.
          */
         SectionCreateRequest: {
             /**

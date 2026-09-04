@@ -84,11 +84,8 @@ class _EntitySpec(NamedTuple):
     cardinality: str
     role: ExtractionEntityRole
     sort_order: int
-    # Entry noun of a repeating section (cardinality 'many'); None otherwise.
-    # Reaches only a FRESH database (both seeds early-return on an existing
-    # template): migration 0068 stamps the two non-container nouns onto
-    # existing global rows, and ``test_seed_entry_nouns`` pins the two
-    # mechanisms together.
+    # Entry noun of a repeating section ('many'); None otherwise. Reaches only a
+    # fresh database — 0068 stamps existing rows; ``test_seed_entry_nouns`` pins both.
     entry_label: str | None = None
 
 
