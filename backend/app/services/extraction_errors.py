@@ -1,7 +1,7 @@
-"""Error-code taxonomy for async section extraction.
+"""Error-code taxonomy for extraction failures.
 
 The Celery extraction task can fail in a few distinct ways the frontend wants
-to surface differently (missing PDF, missing LLM key, everything else). This
+to surface differently (see ``ExtractionErrorCode`` for the full list). This
 module turns the *exception types* the pipeline raises into a stable
 ``ExtractionErrorCode`` and wraps them in ``ExtractionTaskError`` so the code
 survives the Celery JSON result boundary — the status endpoint reads it back
@@ -49,6 +49,7 @@ def classify_extraction_error(exc: BaseException) -> tuple[ExtractionErrorCode, 
     # Lazy import: ``app.llm.provider`` pulls in pydantic-ai model classes, and
     # this module is imported on the API process too (only for the enum/type).
     from app.llm.provider import MissingLLMKeyError
+    from app.services.entity_key import MissingEntityKeyError
     from app.services.llm_endpoint_service import EndpointUnavailableError
     from app.services.llm_engine_service import EngineRetiredError
 
@@ -68,6 +69,10 @@ def classify_extraction_error(exc: BaseException) -> tuple[ExtractionErrorCode, 
         # model-dropped endpoint, ``decrypt_key`` for a key that no longer
         # decrypts. The message already says how to recover.
         return ExtractionErrorCode.LLM_ENDPOINT_UNAVAILABLE, str(exc).strip() or _GENERIC_MESSAGE
+
+    if isinstance(exc, MissingEntityKeyError):
+        # Keyless repeating group: the message already names the section and the fix.
+        return ExtractionErrorCode.MISSING_ENTITY_KEY, str(exc).strip() or _GENERIC_MESSAGE
 
     if isinstance(exc, FileNotFoundError):
         # The raw message is "No PDF for article <uuid>"; surface the friendly,

@@ -27,9 +27,16 @@ vi.mock('sonner', () => ({
   toast: {success: vi.fn(), error: vi.fn(), warning: vi.fn()},
 }));
 
-vi.mock('@/lib/copy', () => ({
-  t: (_ns: string, key: string) => key,
-}));
+vi.mock('@/lib/copy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/copy')>();
+  return {
+    ...actual,
+    // Keys echo back so titles are asserted by key; the completion summary
+    // resolves for real so its `{{n}}` interpolation stays under test.
+    t: (ns: 'extraction', key: string) =>
+      key === 'fullAICompleteSummary' ? actual.t(ns, key as 'fullAICompleteSummary') : key,
+  };
+});
 
 // Mock the job-status service function directly so we control poll responses.
 vi.mock('@/services/extractionRunService', async (importOriginal) => {

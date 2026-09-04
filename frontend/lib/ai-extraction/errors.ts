@@ -1,3 +1,5 @@
+import {t} from '@/lib/copy';
+
 /**
  * Custom error classes for AI Extraction
  *
@@ -20,45 +22,23 @@ class AIExtractionError extends Error {
 
 
 
-/**
- * Error when PDF is not found
- */
-export class PDFNotFoundError extends AIExtractionError {
-  constructor(articleId: string) {
-    super(
-        'PDF not found. Upload a PDF first.',
-      'PDF_NOT_FOUND',
-      { articleId }
-    );
-    this.name = 'PDFNotFoundError';
-  }
-}
 
 
-/**
- * Authentication error
- */
-export class AuthenticationError extends AIExtractionError {
-  constructor() {
-    super(
-        'User not authenticated',
-      'AUTH_ERROR'
-    );
-    this.name = 'AuthenticationError';
-  }
-}
 
 
 /**
  * Erro de rede/API
  */
 export class APIError extends AIExtractionError {
-  constructor(message: string, statusCode?: number, details?: Record<string, unknown>) {
-    super(
-      message,
-      'API_ERROR',
-      { statusCode, ...details }
-    );
+  constructor(
+    message: string,
+    statusCode?: number,
+    details?: Record<string, unknown>,
+    // The backend envelope's `error.code` when the failure came through the
+    // FastAPI client; the class tag otherwise (network, unknown shape).
+    code = 'API_ERROR',
+  ) {
+    super(message, code, { statusCode, ...details });
     this.name = 'APIError';
   }
 }
@@ -82,7 +62,7 @@ export function getErrorMessage(error: unknown): string {
     return error.message;
   }
 
-    return 'Unknown error';
+    return t('common', 'errors_unknownError');
 }
 
 /**

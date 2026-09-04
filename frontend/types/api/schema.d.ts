@@ -3628,10 +3628,14 @@ export interface components {
          *       serve: row deleted, unverified, model dropped
          *       (``resolve_project_engine``), or its key no longer decrypts
          *       (``EndpointUnavailableError``; enqueue-time validation is a 409).
+         *     - ``MISSING_ENTITY_KEY`` — a repeating section declares no
+         *       ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
+         *       LLM call. Carried by the single-section job and, as a 409, by the sync
+         *       models kickoff; a batch run keeps reporting per-section text.
          *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
          * @enum {string}
          */
-        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "EXTRACTION_FAILED";
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "EXTRACTION_FAILED";
         /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.

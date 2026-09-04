@@ -13,6 +13,7 @@ orthogonal to the behaviour under test.
 from __future__ import annotations
 
 import json
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
@@ -21,6 +22,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.extractor import LlmUsage
 from app.services.entity_key import MissingEntityKeyError
 from app.services.model_extraction_service import ModelExtractionService
 from tests.integration.conftest import SEED
@@ -154,9 +156,81 @@ async def test_the_identity_is_materialized_on_the_instance(
     assert metadata["entity_key"] == "xgboost"
 
 
+def _kickoff_patches(entity_type_id: UUID) -> list:
+    """Drive ``extract`` for real up to identification: the article text
+    comes from a stub instead of storage, the pinned tree is empty so the
+    container resolves to the live row under test."""
+    return [
+        patch(
+            "app.services.model_extraction_service.build_prompt_input",
+            AsyncMock(return_value=("Model A is a logistic regression.", None)),
+        ),
+        patch(
+            "app.services.model_extraction_service.entity_types_for_version",
+            AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            ModelExtractionService,
+            "_get_model_container_entity_type_id",
+            AsyncMock(return_value=str(entity_type_id)),
+        ),
+    ]
+
+
+async def _kickoff(service: ModelExtractionService) -> None:
+    await service.extract(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        template_id=SEED.primary_template,
+    )
+
+
+async def _run_count(db: AsyncSession) -> int:
+    return (
+        await db.execute(
+            text("SELECT count(*) FROM public.extraction_runs WHERE article_id = :art"),
+            {"art": SEED.primary_article},
+        )
+    ).scalar_one()
+
+
+async def test_a_kickoff_flushes_its_run_row_before_identifying(
+    db_session: AsyncSession,
+) -> None:
+    """Positive control for the refusal test below: on a fresh coordinate the
+    real kickoff creates and flushes the run before identification, so a run
+    row is what a refusal has to leave behind — or not."""
+    entity_type_id = await _model_container(db_session, with_key=True)
+    assert await _run_count(db_session) == 0
+    with ExitStack() as stack:
+        for p in _kickoff_patches(entity_type_id):
+            stack.enter_context(p)
+        stack.enter_context(
+            patch.object(
+                ModelExtractionService,
+                "_identify_models",
+                AsyncMock(return_value=([{"name": "XGBoost"}], LlmUsage())),
+            )
+        )
+        await _kickoff(_service(db_session))
+    assert await _run_count(db_session) == 1
+
+
 async def test_an_unkeyed_container_is_refused_not_duplicated(
     db_session: AsyncSession,
 ) -> None:
+    """A keyless container refuses before any write or LLM call, and no run
+    row survives the refusal: the service rolls back and fails the run it
+    resolved on the way, and the models route answers the typed 409 with
+    ``rollback; raise`` on top — mirrored here after the raise."""
     entity_type_id = await _model_container(db_session, with_key=False)
-    with pytest.raises(MissingEntityKeyError):
-        await _run_extraction(_service(db_session), entity_type_id, ["XGBoost"])
+    assert await _run_count(db_session) == 0
+    with ExitStack() as stack:
+        for p in _kickoff_patches(entity_type_id):
+            stack.enter_context(p)
+        with pytest.raises(MissingEntityKeyError):
+            await _kickoff(_service(db_session))
+    assert await _count(db_session, entity_type_id) == 0
+    assert await _run_count(db_session) == 0, "the service's rollback_and_fail left a run row"
+    await db_session.rollback()
+    assert await _run_count(db_session) == 0

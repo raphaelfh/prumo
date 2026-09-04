@@ -29,6 +29,8 @@ vi.mock('@/lib/copy', () => ({
   t: (_ns: string, key: string) => key,
 }));
 
+import { toast } from 'sonner';
+import { APIError } from '@/lib/ai-extraction/errors';
 import { useModelExtraction } from '@/hooks/extraction/useModelExtraction';
 
 interface Deferred<T> {
@@ -115,5 +117,24 @@ describe('useModelExtraction promise contract', () => {
     });
     expect(outcome).not.toBeNull();
     expect(outcome!.status).toBe('rejected');
+    // The generic fallback still fires for an unclassified failure.
+    expect(toast.error).toHaveBeenCalledWith('modelExtractionErrorTitle: extraction failed');
+  });
+
+  it('a MISSING_ENTITY_KEY envelope shows the entry-key toast with the backend message', async () => {
+    const message = "The repeating section 'Prediction models' declares no entry key.";
+    h.serviceExtractModels.mockRejectedValue(
+      new APIError(message, 409, { traceId: 'tr-1' }, 'MISSING_ENTITY_KEY'),
+    );
+
+    const { result } = renderHook(() => useModelExtraction());
+    await act(async () => {
+      await Promise.allSettled([result.current.extractModels(REQUEST)]);
+    });
+
+    expect(toast.error).toHaveBeenCalledWith('sectionExtractionErrorNoEntryKey', {
+      description: message,
+      duration: 8000,
+    });
   });
 });

@@ -13,26 +13,32 @@ import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
 // Hoist mocks before imports
 // ---------------------------------------------------------------------------
 
-const {apiClientMock, getExtractionJobStatusMock} = vi.hoisted(() => ({
-  apiClientMock: vi.fn(),
-  getExtractionJobStatusMock: vi.fn(),
-}));
+const {apiClientMock, getExtractionJobStatusMock, modelExtractionClientMock, MockApiError} = vi.hoisted(
+  () => ({
+    apiClientMock: vi.fn(),
+    getExtractionJobStatusMock: vi.fn(),
+    modelExtractionClientMock: vi.fn(),
+    // Stands in for the client's ApiError (the service branches on instanceof);
+    // hoisted so tests can construct it with this shape.
+    MockApiError: class MockApiError extends Error {
+      public status?: number;
+      public code?: string;
+      public traceId?: string;
+      constructor(message: string, status?: number, code?: string, traceId?: string) {
+        super(message);
+        this.name = 'ApiError';
+        this.status = status;
+        this.code = code;
+        this.traceId = traceId;
+      }
+    },
+  }),
+);
 
 vi.mock('@/integrations/api/client', () => ({
   apiClient: apiClientMock,
-  ApiError: class ApiError extends Error {
-    public status?: number;
-    public code?: string;
-    public traceId?: string;
-    constructor(message: string, status?: number, code?: string, traceId?: string) {
-      super(message);
-      this.name = 'ApiError';
-      this.status = status;
-      this.code = code;
-      this.traceId = traceId;
-    }
-  },
-  modelExtractionClient: vi.fn(),
+  ApiError: MockApiError,
+  modelExtractionClient: modelExtractionClientMock,
 }));
 
 vi.mock('./extractionRunService', () => ({
@@ -183,6 +189,33 @@ describe('SectionExtractionService.extractSection', () => {
     expect(outcome.status).toBe('rejected');
     if (outcome.status === 'rejected') {
       expect(outcome.reason?.message).toBe('backend error');
+    }
+  });
+
+  it('carries the classified job code on the thrown APIError when the job fails', async () => {
+    getExtractionJobStatusMock.mockResolvedValue({
+      ok: true,
+      data: {
+        jobId: JOB_ID,
+        status: 'failed',
+        error: "The repeating section 'Final predictors' declares no entry key.",
+        errorCode: 'MISSING_ENTITY_KEY',
+        result: null,
+      },
+    });
+
+    const [outcome] = await Promise.allSettled([
+      SectionExtractionService.extractSection({
+        projectId: 'p1',
+        articleId: 'a1',
+        templateId: 't1',
+        entityTypeId: 'et-1',
+      }),
+      vi.advanceTimersByTimeAsync(0),
+    ]);
+    expect(outcome.status).toBe('rejected');
+    if (outcome.status === 'rejected') {
+      expect(outcome.reason).toMatchObject({name: 'APIError', code: 'MISSING_ENTITY_KEY'});
     }
   });
 
@@ -372,5 +405,26 @@ describe('SectionExtractionService.extractAllSections', () => {
         }),
       }),
     );
+  });
+});
+
+describe('SectionExtractionService.extractModels', () => {
+  it('carries the envelope code of a typed refusal on the thrown APIError', async () => {
+    modelExtractionClientMock.mockRejectedValueOnce(
+      new MockApiError(
+        "The repeating section 'Prediction models' declares no entry key.",
+        409,
+        'MISSING_ENTITY_KEY',
+        'tr-1',
+      ),
+    );
+
+    await expect(
+      SectionExtractionService.extractModels({projectId: 'p1', articleId: 'a1', templateId: 't1'}),
+    ).rejects.toMatchObject({
+      name: 'APIError',
+      code: 'MISSING_ENTITY_KEY',
+      details: {statusCode: 409, traceId: 'tr-1'},
+    });
   });
 });

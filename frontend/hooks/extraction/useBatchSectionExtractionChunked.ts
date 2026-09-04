@@ -21,7 +21,8 @@ import {useState} from "react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import type {BatchSectionExtractionRequest} from "@/types/ai-extraction";
-import {AuthenticationError, getErrorCode, getErrorMessage, PDFNotFoundError,} from "@/lib/ai-extraction/errors";
+import {getErrorCode, getErrorMessage} from "@/lib/ai-extraction/errors";
+import {showExtractionErrorToast} from "@/hooks/extraction/helpers/showExtractionErrorToast";
 import {getModelChildSections, type ModelChildSection} from "./helpers/getModelChildSections";
 import {processSectionsInChunks} from "./helpers/processSectionsInChunks";
 
@@ -212,15 +213,8 @@ export function useBatchSectionExtractionChunked(options?: {
           const code = getErrorCode(err);
           setError(message);
 
-          // Toast de erro
-          const errorCode = code || '';
-          if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
-            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {description: message});
-          } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
-            toast.error(t('extraction', 'sectionExtractionErrorAuth'), {
-              description: t('extraction', 'sectionExtractionErrorAuthDesc'),
-            });
-          } else {
+          // A classified failure gets its specific copy; anything else the generic toast.
+          if (!showExtractionErrorToast(code, message)) {
             toast.error(`${t('extraction', 'sectionExtractionErrorTitle')}: ${message}`, {duration: 8000});
           }
 

@@ -17,6 +17,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.schemas.extraction import ExtractionErrorCode
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
 from app.services.entity_key import (
     HISTORY_KEY,
@@ -182,3 +183,22 @@ def test_rekey_replaces_the_metadata_object_so_the_orm_sees_the_change() -> None
     rekey_instance(instance, key_value="B", actor_id=uuid4())
     assert instance.metadata_ is not original
     assert STORE_KEY in original and original[STORE_KEY] == "a", "the old dict is untouched"
+
+
+def test_missing_entity_key_error_is_a_typed_409() -> None:
+    """The refusal is an ``AppError`` (spec A §4): the registered handler
+    serves ``error.code == "MISSING_ENTITY_KEY"`` with HTTP 409 on the sync
+    route, and the worker classifies the same type for the job path."""
+    from app.core.error_handler import AppError
+
+    err = MissingEntityKeyError(uuid4(), "Final predictors")
+
+    assert isinstance(err, AppError)
+    assert err.code == ExtractionErrorCode.MISSING_ENTITY_KEY.value == "MISSING_ENTITY_KEY"
+    assert err.status_code == 409
+    assert str(err) == (
+        "The repeating section 'Final predictors' declares no entry key, so AI "
+        "extraction cannot tell a new entry from one it already extracted. Ask a "
+        "project manager to mark one of its fields as the entry key in the "
+        "Configuration tab."
+    )

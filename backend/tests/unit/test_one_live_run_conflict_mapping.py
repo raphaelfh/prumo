@@ -374,3 +374,22 @@ async def test_reopen_run_reraises_other_integrity_error() -> None:
             db=AsyncMock(),
             current_user_sub=uuid4(),
         )
+
+
+@pytest.mark.asyncio
+async def test_extract_models_lets_missing_entity_key_through() -> None:
+    """``MissingEntityKeyError`` is an ``AppError`` (typed 409
+    ``MISSING_ENTITY_KEY``), not a ``ValueError``: inside the route's broad
+    ``except Exception`` it became the generic 500 "Model extraction failed"
+    no client could act on. The route must let it reach the registered
+    handler, the way the endpoint-unavailable error does."""
+    from app.services.entity_key import MissingEntityKeyError
+
+    project_id, article_id, template_id, caller = uuid4(), uuid4(), uuid4(), uuid4()
+    service = MagicMock()
+    service.extract = AsyncMock(side_effect=MissingEntityKeyError(uuid4(), "Prediction models"))
+
+    with pytest.raises(MissingEntityKeyError):
+        await _call_extract_models(
+            _model_extraction_payload(project_id, article_id, template_id), service, caller
+        )

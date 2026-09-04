@@ -32,9 +32,11 @@ from app.llm.extractor import LlmUsage
 from app.llm.prompts import EntryScope
 from app.llm.prompts.entry_identification import EntryIdentificationOutput, IdentifiedEntry
 from app.models.extraction import ExtractionRun, ExtractionRunStage
+from app.schemas.extraction import ExtractionErrorCode
 from app.services import entry_group_extraction as pipeline
 from app.services import section_extraction_service as ses
 from app.services.entity_key import MissingEntityKeyError, normalize_key, stamp
+from app.services.extraction_errors import classify_extraction_error
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
 from tests.integration.test_pinned_prompt_structure import _pin_run_to_snapshot
@@ -451,6 +453,11 @@ async def test_a_keyless_repeating_group_is_refused_before_any_write_or_llm_call
         await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
 
     assert "'Numeric performance'" in str(excinfo.value)
+    # The code the single-section job carries for this exact raise: the task
+    # wraps whatever the service raises through ``classify_extraction_error``
+    # (pinned by ``TestRunSectionExtractionTaskErrorCode``), so this is the
+    # real-pipeline half of the section-path proof.
+    assert classify_extraction_error(excinfo.value)[0] is ExtractionErrorCode.MISSING_ENTITY_KEY
     assert await _entries(db_session, entity_type_id) == []
     assert identification["prompts"] == [], "no identification call was spent"
     assert fake.scopes == [], "no extraction call was spent"
