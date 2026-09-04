@@ -12,11 +12,10 @@ mechanisms that must agree on one list.
 
 from __future__ import annotations
 
-import pathlib
-
 import pytest
 
 from app.seed import ENTITY_KEY_FIELDS
+from tests.integration.helpers.migrations import migration_source
 
 EXPECTED = frozenset(
     {
@@ -52,7 +51,7 @@ def test_migration_backfill_names_the_same_coordinates(migration: str) -> None:
     databases get it and production silently does not. 0066 re-runs 0059's
     statement for the clones that lost the flag, so it carries the same list.
     """
-    sql = (pathlib.Path(__file__).parents[2] / "alembic" / "versions" / migration).read_text()
+    sql = migration_source(migration)
     for entity_type, field in ENTITY_KEY_FIELDS:
         assert f"'{entity_type}'" in sql, f"backfill is missing entity type {entity_type}"
         assert f"'{field}'" in sql, f"backfill is missing field {field}"

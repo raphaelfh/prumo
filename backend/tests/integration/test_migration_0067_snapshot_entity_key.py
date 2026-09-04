@@ -9,9 +9,7 @@ the secondary project's CHARMS, whose live rows carry the seeded keys.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -19,15 +17,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.integration.helpers.migrations import load_migration
 from tests.integration.helpers.template_fixtures import entry_key_holders, fresh_charms
 
-_MIG_PATH = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "0067_snapshot_entity_key.py"
-)
-_spec = importlib.util.spec_from_file_location("mig0067", _MIG_PATH)
-assert _spec is not None and _spec.loader is not None
-_mig = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mig)
+_mig = load_migration("0067_snapshot_entity_key.py")
 
 KEY = "is_entity_key"
 
