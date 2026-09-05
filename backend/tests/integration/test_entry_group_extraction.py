@@ -29,7 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.extractor import LlmUsage
-from app.llm.prompts import EntryScope
+from app.llm.prompts import Ancestor, Scope, render_entry_scope_section
 from app.llm.prompts.entry_identification import EntryIdentificationOutput, IdentifiedEntry
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.schemas.extraction import ExtractionErrorCode
@@ -38,7 +38,8 @@ from app.services import section_extraction_service as ses
 from app.services.entity_key import MissingEntityKeyError, normalize_key, stamp
 from app.services.extraction_errors import classify_extraction_error
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, first_entity_type_id
+from tests.integration.helpers.template_fixtures import add_instance, fresh_charms
 from tests.integration.test_pinned_prompt_structure import _pin_run_to_snapshot
 
 pytestmark = pytest.mark.asyncio
@@ -61,8 +62,11 @@ async def _group(
     role: str = "study_section",
     parent: UUID | None = None,
     label: str = "Numeric performance",
+    cardinality: str = "many",
+    entry_label: str | None = None,
 ) -> tuple[UUID, UUID, UUID]:
-    """A ``cardinality='many'`` section: a select key + one value field.
+    """A section, repeating by default: a select key + one value field. With
+    ``cardinality='one'`` the key is inert and the section is a singleton.
 
     Returns ``(entity_type_id, key_field_id, value_field_id)``.
     """
@@ -71,8 +75,8 @@ async def _group(
         text(
             "INSERT INTO public.extraction_entity_types "
             "(id, project_template_id, name, label, cardinality, role, sort_order, "
-            " parent_entity_type_id) "
-            "VALUES (:id, :tpl, :name, :label, 'many', :role, 90, :parent)"
+            " parent_entity_type_id, entry_label) "
+            "VALUES (:id, :tpl, :name, :label, :cardinality, :role, 90, :parent, :entry_label)"
         ),
         {
             "id": entity_type_id,
@@ -81,6 +85,8 @@ async def _group(
             "label": label,
             "role": role,
             "parent": parent,
+            "cardinality": cardinality,
+            "entry_label": entry_label,
         },
     )
     key_id, value_id = uuid4(), uuid4()
@@ -138,14 +144,16 @@ async def _container(db: AsyncSession) -> UUID:
     return entity_type_id
 
 
-async def _instance(db: AsyncSession, entity_type_id: UUID, key_value: str) -> UUID:
+async def _instance(
+    db: AsyncSession, entity_type_id: UUID, key_value: str, *, parent: UUID | None = None
+) -> UUID:
     instance_id = uuid4()
     await db.execute(
         text(
             "INSERT INTO public.extraction_instances "
             "(id, project_id, article_id, template_id, entity_type_id, label, sort_order, "
-            " metadata, created_by) "
-            "VALUES (:id, :proj, :art, :tpl, :et, :label, 0, CAST(:md AS jsonb), :usr)"
+            " metadata, created_by, parent_instance_id) "
+            "VALUES (:id, :proj, :art, :tpl, :et, :label, 0, CAST(:md AS jsonb), :usr, :parent)"
         ),
         {
             "id": instance_id,
@@ -156,6 +164,7 @@ async def _instance(db: AsyncSession, entity_type_id: UUID, key_value: str) -> U
             "label": key_value,
             "md": json.dumps(stamp({"ai_extracted": True}, key_value)),
             "usr": SEED.primary_profile,
+            "parent": parent,
         },
     )
     await db.flush()
@@ -259,7 +268,7 @@ class _FakeExtractor:
     test can assert what each call was told."""
 
     def __init__(self) -> None:
-        self.scopes: list[EntryScope | None] = []
+        self.scopes: list[Scope | None] = []
         self.offset = 0.0
 
 
@@ -272,9 +281,15 @@ def _service(db: AsyncSession) -> tuple[ses.SectionExtractionService, _FakeExtra
     fake = _FakeExtractor()
 
     async def fake_extract(**kwargs: Any) -> tuple[dict[str, Any], LlmUsage]:
-        scope: EntryScope | None = kwargs.get("entry_scope")
+        scope: Scope | None = kwargs.get("entry_scope")
         fake.scopes.append(scope)
-        value = round(C_STAT[normalize_key(scope.key_value)] + fake.offset, 2) if scope else 0.5
+        # A singleton's scope has no key: the flat 0.5. An entry's key still maps
+        # through C_STAT — a mis-scoped entry must stay a wrong number.
+        value = (
+            round(C_STAT[normalize_key(scope.key_value)] + fake.offset, 2)
+            if scope and scope.key_value
+            else 0.5
+        )
         return (
             {
                 "c_statistic": {
@@ -459,10 +474,13 @@ async def test_nested_group_entries_are_scoped_by_their_parent(
     # list: asked under A, the prompt rules out what the article reports
     # for anything but A — or B's validations would land under A.
     asked_a, asked_b = identification["prompts"]
-    assert 'belong to "XGBoost"' in asked_a and "LightGBM" not in asked_a
-    assert 'belong to "LightGBM"' in asked_b and "XGBoost" not in asked_b
+    assert 'belong to model "XGBoost"' in asked_a and "LightGBM" not in asked_a
+    assert 'belong to model "LightGBM"' in asked_b and "XGBoost" not in asked_b
     # The per-entry prompt names the parent so the model reads the right block.
-    assert [s.parent_label for s in fake.scopes if s] == ["XGBoost", "LightGBM"]
+    assert [s.ancestors for s in fake.scopes if s] == [
+        (Ancestor("model", "XGBoost"),),
+        (Ancestor("model", "LightGBM"),),
+    ]
 
     # Re-running under A matches A's repeat — never B's.
     await service.extract_section(
@@ -470,6 +488,185 @@ async def test_nested_group_entries_are_scoped_by_their_parent(
     )
     assert len(await _entries(db_session, child, parent=parent_a)) == 1
     assert len(await _entries(db_session, child, parent=parent_b)) == 1
+
+
+async def test_a_singleton_under_an_entry_is_scoped_to_that_entry(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trees spec §1: 'Model Development' for model B used to be extracted
+    from a prompt that never mentioned model B. The singleton's call now
+    carries the chain it belongs to, and its proposal lands on the instance
+    under that entry."""
+    container = await _container(db_session)
+    xgboost = await _instance(db_session, container, "XGBoost")
+    development, _key_id, value_id = await _group(
+        db_session,
+        role="model_section",
+        parent=container,
+        cardinality="one",
+        label="Model development",
+    )
+    run = await _run_in_extract(db_session)
+    service, fake = _service(db_session)
+    identification = _fake_identification(monkeypatch, [])
+
+    result = await service.extract_section(
+        **_coord(), entity_type_id=development, parent_instance_id=xgboost, run_id=run.id
+    )
+
+    assert result.suggestions_created == 1
+    (scope,) = fake.scopes
+    assert scope == Scope(entry_label="model", ancestors=(Ancestor("model", "XGBoost"),))
+    assert identification["prompts"] == [], "a singleton is never identified"
+    (materialized,) = await _entries(db_session, development, parent=xgboost)
+    assert await _proposed(db_session, materialized[0], value_id) == [0.5]
+
+
+async def test_a_section_at_depth_three_names_the_whole_chain(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A singleton under a validation under a model: the block reads
+    ``model "XGBoost" › validation "external"``, outermost first, and a
+    group asked under that validation is identified within the same chain.
+
+    Trees B5: rebuild as a real entity-type chain once
+    ``ck_extraction_entity_types_role_parent`` is dropped — until then the
+    leaf and the subgroup are role-legal children of the container whose
+    INSTANCES hang under the validation entry (nothing on
+    ``extraction_instances`` couples the two), which is the path the walk
+    reads.
+    """
+    container = await _container(db_session)
+    validations, _key_id, _value_id = await _group(
+        db_session, role="model_section", parent=container, entry_label="validation"
+    )
+    xgboost = await _instance(db_session, container, "XGBoost")
+    external = await _instance(db_session, validations, "external", parent=xgboost)
+    leaf, _leaf_key, leaf_value = await _group(
+        db_session,
+        role="model_section",
+        parent=container,
+        cardinality="one",
+        label="Calibration plot",
+    )
+    run = await _run_in_extract(db_session)
+    service, fake = _service(db_session)
+    identification = _fake_identification(monkeypatch, ["apparent"])
+
+    await service.extract_section(
+        **_coord(), entity_type_id=leaf, parent_instance_id=external, run_id=run.id
+    )
+    (scope,) = fake.scopes
+    assert scope == Scope(
+        entry_label="validation",
+        ancestors=(Ancestor("model", "XGBoost"), Ancestor("validation", "external")),
+    )
+    block = render_entry_scope_section(scope)
+    assert "This section belongs to the validation identified below." in block
+    assert '- Within: model "XGBoost" › validation "external"' in block
+    (calibration,) = await _entries(db_session, leaf, parent=external)
+    assert await _proposed(db_session, calibration[0], leaf_value) == [0.5]
+
+    # A group hanging under the depth-two entry: its identification is scoped
+    # to the same chain, its entry carries it too, and the value lands under
+    # that entry (the fake maps a validation-type key to its C-statistic).
+    subgroups, _sub_key, sub_value = await _group(
+        db_session, role="model_section", parent=container, entry_label="subgroup"
+    )
+    await service.extract_section(
+        **_coord(), entity_type_id=subgroups, parent_instance_id=external, run_id=run.id
+    )
+    assert len(identification["prompts"]) == 1
+    assert 'belong to model "XGBoost" › validation "external"' in identification["prompts"][0]
+    assert fake.scopes[-1] is not None
+    assert fake.scopes[-1].key_value == "apparent"
+    assert fake.scopes[-1].ancestors == scope.ancestors
+    (entry,) = await _entries(db_session, subgroups, parent=external)
+    assert await _proposed(db_session, entry[0], sub_value) == [C_STAT["apparent"]]
+
+
+class _PromptCaptured(Exception):
+    """Raised by the prompt-capturing fake so the call stops at the seam."""
+
+
+async def test_the_chain_reaches_the_prompt_the_model_receives(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seam the fake elsewhere replaces: ``_extract_with_llm`` renders the
+    section prompt with the scope the pipeline built, so the block is in the
+    text the model receives — not only in a test-side re-render."""
+    container = await _container(db_session)
+    xgboost = await _instance(db_session, container, "XGBoost")
+    development, _key_id, _value_id = await _group(
+        db_session,
+        role="model_section",
+        parent=container,
+        cardinality="one",
+        label="Model development",
+    )
+    run = await _run_in_extract(db_session)
+    service = ses.SectionExtractionService(
+        db=db_session, user_id=str(SEED.primary_profile), storage=MagicMock(), trace_id="chain"
+    )
+    service._assemble_prompt_text = AsyncMock(return_value="ARTICLE")  # type: ignore[method-assign]
+    captured: dict[str, str] = {}
+
+    async def capture(**kwargs: Any) -> None:
+        captured["user_prompt"] = kwargs["user_prompt"]
+        raise _PromptCaptured
+
+    monkeypatch.setattr(ses, "extract_structured", capture)
+    monkeypatch.setattr(ses, "build_model", lambda *_a, **_k: MagicMock())
+
+    with pytest.raises(_PromptCaptured):
+        await service.extract_section(
+            **_coord(), entity_type_id=development, parent_instance_id=xgboost, run_id=run.id
+        )
+
+    prompt = captured["user_prompt"]
+    assert "This section belongs to the model identified below." in prompt
+    assert '- Within: model "XGBoost"' in prompt
+    assert prompt.index("XGBoost") < prompt.index("Article text:")
+
+
+async def test_a_stranger_parent_is_refused_before_any_llm_call(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BOLA on the walk: a parent instance from another project's coordinate
+    is refused by the run-scoped getter — for a singleton child and a group
+    child alike — before identification or extraction spends a call, and
+    before any instance is written under it."""
+    container = await _container(db_session)
+    development, _k, _v = await _group(
+        db_session,
+        role="model_section",
+        parent=container,
+        cardinality="one",
+        label="Model development",
+    )
+    validations, _k2, _v2 = await _group(
+        db_session, role="model_section", parent=container, entry_label="validation"
+    )
+    foreign_project, foreign_template, _ = await fresh_charms(db_session)
+    stranger = await add_instance(
+        db_session,
+        project_id=foreign_project,
+        template_id=foreign_template,
+        entity_type_id=await first_entity_type_id(db_session, foreign_template),
+    )
+    run = await _run_in_extract(db_session)
+    service, fake = _service(db_session)
+    identification = _fake_identification(monkeypatch, ["apparent"])
+
+    for child in (development, validations):
+        with pytest.raises(ValueError, match=f"Parent instance not found: {stranger}"):
+            await service.extract_section(
+                **_coord(), entity_type_id=child, parent_instance_id=stranger, run_id=run.id
+            )
+
+    assert fake.scopes == [], "no extraction call was spent"
+    assert identification["prompts"] == [], "no identification call was spent"
+    assert await _entries(db_session, validations, parent=stranger) == []
 
 
 async def test_a_keyless_repeating_group_is_refused_before_any_write_or_llm_call(
@@ -606,5 +803,5 @@ async def test_the_per_model_batch_routes_a_nested_group_through_the_pipeline(
     entries = await _entries(db_session, child, parent=parent_a)
     assert [key for _, key in entries] == ["internal", "external"]
     assert result.total_suggestions_created == 2
-    assert [s.parent_label for s in fake.scopes if s] == ["XGBoost", "XGBoost"]
+    assert [s.ancestors for s in fake.scopes if s] == [(Ancestor("model", "XGBoost"),)] * 2
     assert await _proposed(db_session, entries[0][0], value_id) == [C_STAT["internal"]]

@@ -1,6 +1,6 @@
 ---
-status: approved
-last_reviewed: 2026-09-03
+status: shipped
+last_reviewed: 2026-09-05
 owner: '@raphaelfh'
 ---
 
@@ -16,6 +16,11 @@ owner: '@raphaelfh'
 > Execution runs through `/ship-spec <this file> --to dev`, one PR per
 > section below, in order. Every PR passes the cleanup gate in §9 on top
 > of the ship-spec hardening.
+>
+> **Shipped 2026-09-05.** PR 0 #805, PR 1 #804, PR 2 #806, PR 3 #809,
+> PR 4 #810 (plus #811 for the pager-spec reload race the promotion
+> preflight surfaced); promoted to `main` as `9fdaf91a` (#812), prod
+> `alembic_version` at 0068. Item 2 continues in the trees spec.
 
 ## 1. Starting position
 

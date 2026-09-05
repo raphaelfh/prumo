@@ -1,7 +1,8 @@
 """Prompt for extracting one template section from an article."""
 
 from app.llm.prompts import (
-    EntryScope,
+    Ancestor,
+    Scope,
     content_version,
     render_entry_scope_section,
     render_general_instructions_section,
@@ -45,7 +46,8 @@ VERSION = content_version(
     _USER_TEMPLATE,
     render_review_context_section("x"),
     render_general_instructions_section("x"),
-    render_entry_scope_section(EntryScope("x", "x", "x", "x")),
+    render_entry_scope_section(Scope("x", "x", "x", (Ancestor("x", "x"),))),
+    render_entry_scope_section(Scope("x", ancestors=(Ancestor("x", "x"),))),
 )
 
 
@@ -57,7 +59,7 @@ def render(
     memory_context: list[dict[str, str]] | None = None,
     general_instructions: str | None = None,
     review_context: str | None = None,
-    entry_scope: EntryScope | None = None,
+    entry_scope: Scope | None = None,
 ) -> str:
     return _USER_TEMPLATE.format(
         entity_name=entity_name,

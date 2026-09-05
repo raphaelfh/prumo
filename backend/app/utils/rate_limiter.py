@@ -1,7 +1,7 @@
 """
 Rate Limiter.
 
-Configuracao do SlowAPI for rate limiting.
+SlowAPI configuration for rate limiting.
 
 The key function prefers the authenticated principal (Authorization bearer
 token) over the remote IP, so multiple users behind the same proxy or local

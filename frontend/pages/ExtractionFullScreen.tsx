@@ -467,9 +467,9 @@ export default function ExtractionFullScreen() {
     // multi-reviewer blind fix).
     //
     // No-op until the session is open and the run is in a writable
-    // stage. The hook flushes pending edits on unmount, ``pagehide``,
-    // and visibility changes so navigating mid-debounce never drops a
-    // save.
+    // stage. The hook flushes pending edits on unmount, on the in-place
+    // run switch (article pager), ``pagehide``, and visibility changes so
+    // navigating mid-debounce never drops a save.
   const { saveState, lastSavedAt, saveNow } = useAutoSaveProposals({
     runId: activeRunId,
     stage,
@@ -487,9 +487,17 @@ export default function ExtractionFullScreen() {
     // surfaced as a spurious "Error saving data automatically" toast on
     // opening a consolidated run. Mirrors the QA full-screen gate;
     // ``!isFinalized`` alone let ``consensus`` through.
+    // The bootstrap ``loading`` flag is deliberately NOT part of this gate:
+    // it flips on every article change, and the hook's run-switch flush
+    // captures ``enabled`` as of the switch — gating on it dropped the
+    // pending edit whenever the next article's session resolved before its
+    // bootstrap reads. ``activeRunId`` + ``valuesInitialized`` already make
+    // this a no-op until the run is open and first hydrated; on an in-place
+    // run switch the old edit is carried by the hook's run-keyed flush, and
+    // the debounce it transiently arms against the new run is cleared when
+    // ``useExtractedValues`` replaces ``values`` in the next microtask.
     enabled:
       !!activeRunId &&
-      !loading &&
       valuesInitialized &&
       isRunEditable(stage) &&
       // Viewer writes 403 server-side; never fire them (forms render
