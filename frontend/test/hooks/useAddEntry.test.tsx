@@ -129,6 +129,26 @@ describe('useAddEntry', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
   });
 
+  it('selects the entry it just created, in the slot it created it in', async () => {
+    // Regression: `useModelManagement.createModel` selected the new model
+    // implicitly. Without it the form keeps showing the previously-active
+    // entry, so the reviewer's next action lands on the wrong one — the
+    // Spec A e2e caught this, no unit test did.
+    createEntry.mockResolvedValue({instanceId: 'inst-new', label: 'XGBoost'});
+    const onEntryCreated = vi.fn();
+    const {hook} = setup({onEntryCreated});
+
+    act(() => hook.result.current.open('et-nested', 'inst-active-model'));
+    await act(async () => {
+      await hook.result.current.dialogProps.onConfirm('Age');
+    });
+
+    expect(onEntryCreated).toHaveBeenCalledWith(
+      {entityTypeId: 'et-nested', parentInstanceId: 'inst-active-model'},
+      'inst-new',
+    );
+  });
+
   it('passes the enclosing entry as parentInstanceId for a nested group', async () => {
     createEntry.mockResolvedValue({instanceId: 'inst-nested', label: 'Age'});
     const {hook} = setup();

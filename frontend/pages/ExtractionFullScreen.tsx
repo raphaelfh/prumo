@@ -80,6 +80,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 
 // Additional hooks
 import {useAddEntry} from '@/hooks/extraction/useAddEntry';
+import {entrySlotKey} from '@/hooks/extraction/useEntryGroup';
 import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
 import {displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
@@ -712,6 +713,11 @@ export default function ExtractionFullScreen() {
     entityTypes,
     instances,
     onCreated: refetchRun,
+    onEntryCreated: (target, instanceId) =>
+      setActiveEntry(
+        entrySlotKey(articleId ?? '', target.entityTypeId, target.parentInstanceId),
+        instanceId,
+      ),
   });
   const handleAddInstance = addEntry.open;
 

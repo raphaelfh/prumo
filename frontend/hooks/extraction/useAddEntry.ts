@@ -33,6 +33,19 @@ export interface UseAddEntryArgs {
   instances: ExtractionInstance[];
   /** Re-derives the instances after a create (the run view refetch). */
   onCreated: () => Promise<unknown>;
+  /**
+   * Select the entry that was just created, in the slot it was created in.
+   *
+   * `useModelManagement.createModel` did this implicitly
+   * (`setActiveModelId(newModel.instanceId)`), and dropping it was a real
+   * regression: the form kept showing the previously-active entry, so the
+   * reviewer's next action — rename, extract, fill — landed on the wrong
+   * one. Caught by the Spec A e2e, not by any unit test.
+   */
+  onEntryCreated?: (
+    target: {entityTypeId: string; parentInstanceId: string | null},
+    instanceId: string,
+  ) => void;
 }
 
 interface Target {
@@ -54,6 +67,7 @@ export function useAddEntry(args: UseAddEntryArgs): UseAddEntryReturn {
     entityTypes,
     instances,
     onCreated,
+    onEntryCreated,
   } = args;
   const [target, setTarget] = useState<Target | null>(null);
 
@@ -121,6 +135,7 @@ export function useAddEntry(args: UseAddEntryArgs): UseAddEntryReturn {
     // action (constitution §IX). The awaited refetch below hydrates the
     // field from the decision the server already wrote.
     extractionLogger.info('useAddEntry', 'Entry created', {instanceId: result.instanceId});
+    onEntryCreated?.(target, result.instanceId);
     setTarget(null);
     await onCreated();
     toast.success(`${result.label} ${t('pages', 'extractionScreenInstanceAddedSuccess')}`);
