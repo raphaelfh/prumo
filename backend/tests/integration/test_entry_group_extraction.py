@@ -38,7 +38,8 @@ from app.services import section_extraction_service as ses
 from app.services.entity_key import MissingEntityKeyError, normalize_key, stamp
 from app.services.extraction_errors import classify_extraction_error
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, first_entity_type_id
+from tests.integration.helpers.template_fixtures import add_instance, fresh_charms
 from tests.integration.test_pinned_prompt_structure import _pin_run_to_snapshot
 
 pytestmark = pytest.mark.asyncio
@@ -516,9 +517,6 @@ async def test_a_singleton_under_an_entry_is_scoped_to_that_entry(
     assert result.suggestions_created == 1
     (scope,) = fake.scopes
     assert scope == Scope(entry_label="model", ancestors=(Ancestor("model", "XGBoost"),))
-    assert "This section belongs to the model identified below." in render_entry_scope_section(
-        scope
-    )
     assert identification["prompts"] == [], "a singleton is never identified"
     (materialized,) = await _entries(db_session, development, parent=xgboost)
     assert await _proposed(db_session, materialized[0], value_id) == [0.5]
@@ -531,7 +529,7 @@ async def test_a_section_at_depth_three_names_the_whole_chain(
     ``model "XGBoost" › validation "external"``, outermost first, and a
     group asked under that validation is identified within the same chain.
 
-    B5: rebuild as a real entity-type chain once
+    Trees B5: rebuild as a real entity-type chain once
     ``ck_extraction_entity_types_role_parent`` is dropped — until then the
     leaf and the subgroup are role-legal children of the container whose
     INSTANCES hang under the validation entry (nothing on
@@ -559,11 +557,13 @@ async def test_a_section_at_depth_three_names_the_whole_chain(
         **_coord(), entity_type_id=leaf, parent_instance_id=external, run_id=run.id
     )
     (scope,) = fake.scopes
-    assert scope is not None and scope.ancestors == (
-        Ancestor("model", "XGBoost"),
-        Ancestor("validation", "external"),
+    assert scope == Scope(
+        entry_label="validation",
+        ancestors=(Ancestor("model", "XGBoost"), Ancestor("validation", "external")),
     )
-    assert '- Within: model "XGBoost" › validation "external"' in render_entry_scope_section(scope)
+    block = render_entry_scope_section(scope)
+    assert "This section belongs to the validation identified below." in block
+    assert '- Within: model "XGBoost" › validation "external"' in block
     (calibration,) = await _entries(db_session, leaf, parent=external)
     assert await _proposed(db_session, calibration[0], leaf_value) == [0.5]
 
@@ -583,6 +583,90 @@ async def test_a_section_at_depth_three_names_the_whole_chain(
     assert fake.scopes[-1].ancestors == scope.ancestors
     (entry,) = await _entries(db_session, subgroups, parent=external)
     assert await _proposed(db_session, entry[0], sub_value) == [C_STAT["apparent"]]
+
+
+class _PromptCaptured(Exception):
+    """Raised by the prompt-capturing fake so the call stops at the seam."""
+
+
+async def test_the_chain_reaches_the_prompt_the_model_receives(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The seam the fake elsewhere replaces: ``_extract_with_llm`` renders the
+    section prompt with the scope the pipeline built, so the block is in the
+    text the model receives — not only in a test-side re-render."""
+    container = await _container(db_session)
+    xgboost = await _instance(db_session, container, "XGBoost")
+    development, _key_id, _value_id = await _group(
+        db_session,
+        role="model_section",
+        parent=container,
+        cardinality="one",
+        label="Model development",
+    )
+    run = await _run_in_extract(db_session)
+    service = ses.SectionExtractionService(
+        db=db_session, user_id=str(SEED.primary_profile), storage=MagicMock(), trace_id="chain"
+    )
+    service._assemble_prompt_text = AsyncMock(return_value="ARTICLE")  # type: ignore[method-assign]
+    captured: dict[str, str] = {}
+
+    async def capture(**kwargs: Any) -> None:
+        captured["user_prompt"] = kwargs["user_prompt"]
+        raise _PromptCaptured
+
+    monkeypatch.setattr(ses, "extract_structured", capture)
+    monkeypatch.setattr(ses, "build_model", lambda *_a, **_k: MagicMock())
+
+    with pytest.raises(_PromptCaptured):
+        await service.extract_section(
+            **_coord(), entity_type_id=development, parent_instance_id=xgboost, run_id=run.id
+        )
+
+    prompt = captured["user_prompt"]
+    assert "This section belongs to the model identified below." in prompt
+    assert '- Within: model "XGBoost"' in prompt
+    assert prompt.index("XGBoost") < prompt.index("Article text:")
+
+
+async def test_a_stranger_parent_is_refused_before_any_llm_call(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BOLA on the walk: a parent instance from another project's coordinate
+    is refused by the run-scoped getter — for a singleton child and a group
+    child alike — before identification or extraction spends a call, and
+    before any instance is written under it."""
+    container = await _container(db_session)
+    development, _k, _v = await _group(
+        db_session,
+        role="model_section",
+        parent=container,
+        cardinality="one",
+        label="Model development",
+    )
+    validations, _k2, _v2 = await _group(
+        db_session, role="model_section", parent=container, entry_label="validation"
+    )
+    foreign_project, foreign_template, _ = await fresh_charms(db_session)
+    stranger = await add_instance(
+        db_session,
+        project_id=foreign_project,
+        template_id=foreign_template,
+        entity_type_id=await first_entity_type_id(db_session, foreign_template),
+    )
+    run = await _run_in_extract(db_session)
+    service, fake = _service(db_session)
+    identification = _fake_identification(monkeypatch, ["apparent"])
+
+    for child in (development, validations):
+        with pytest.raises(ValueError, match=f"Parent instance not found: {stranger}"):
+            await service.extract_section(
+                **_coord(), entity_type_id=child, parent_instance_id=stranger, run_id=run.id
+            )
+
+    assert fake.scopes == [], "no extraction call was spent"
+    assert identification["prompts"] == [], "no identification call was spent"
+    assert await _entries(db_session, validations, parent=stranger) == []
 
 
 async def test_a_keyless_repeating_group_is_refused_before_any_write_or_llm_call(

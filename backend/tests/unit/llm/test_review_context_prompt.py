@@ -67,25 +67,18 @@ GOLDEN_QUALITY_ASSESSMENT = (
 #: still proves the renderer is inert on empty input.
 GOLDEN_ENTRY_IDENTIFICATION = 'Analyze the following scientific article and identify every model it describes for the section "prediction models".\n\nFor each model, return its Model name exactly as the article states it — this is what tells one model apart from another.\n\nArticle text:\nA\n'
 
-#: Content hashes of the three prompts before the block existed. The block
-#: changes production prompts, so §IX requires new runs to record a new
-#: version — these must all move. ``entry_identification`` replaced
-#: ``model_identification`` (the hash is that module's last version): a
-#: parameterized prompt is a different prompt, and new runs must say so.
-PRE_CHANGE_VERSIONS = {
-    "section_extraction": "d1d4d2483a3b",
-    "quality_assessment": "6f04461c6f23",
-    "entry_identification": "046fd17ca366",
-}
-
-#: The three hashes on ``dev`` before the trees train's B1 (captured at
-#: ``bf93a278``). B1 changes production prompts — a singleton under an entry
-#: gains the scope block, the parent clause becomes a chain — so §IX requires
-#: new runs to record a new version for all three.
-PRE_B1_VERSIONS = {
-    "section_extraction": "bb62071982f1",
-    "quality_assessment": "19018644da80",
-    "entry_identification": "f7cacd2a4efb",
+#: Every hash a run may have recorded before a production-prompt change:
+#: the three prompts before the review-context block existed
+#: (``entry_identification`` replaced ``model_identification`` — the hash is
+#: that module's last version: a parameterized prompt is a different
+#: prompt), and the three on ``dev`` ``bf93a278`` before the trees train's B1
+#: gave a singleton under an entry the scope block and made the parent
+#: clause a chain. §IX: a changed prompt is a new version, so VERSION may
+#: equal none of these.
+RETIRED_VERSIONS = {
+    "section_extraction": {"d1d4d2483a3b", "bb62071982f1"},
+    "quality_assessment": {"6f04461c6f23", "19018644da80"},
+    "entry_identification": {"046fd17ca366", "f7cacd2a4efb"},
 }
 
 
@@ -157,17 +150,8 @@ def test_the_block_stands_alone_without_a_template_instruction() -> None:
     [section_extraction, quality_assessment, entry_identification],
     ids=lambda m: m.NAME,
 )
-def test_version_moved_from_the_pre_change_hash(module) -> None:
-    assert PRE_CHANGE_VERSIONS[module.NAME] != module.VERSION
-
-
-@pytest.mark.parametrize(
-    "module",
-    [section_extraction, quality_assessment, entry_identification],
-    ids=lambda m: m.NAME,
-)
-def test_version_moved_from_the_pre_b1_hash(module) -> None:
-    assert PRE_B1_VERSIONS[module.NAME] != module.VERSION
+def test_version_moved_from_every_retired_hash(module) -> None:
+    assert module.VERSION not in RETIRED_VERSIONS[module.NAME]
 
 
 @pytest.mark.parametrize(

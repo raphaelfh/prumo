@@ -56,7 +56,7 @@ class EntryIdentificationOutput(BaseModel):
     )
 
 
-_USER_TEMPLATE = """{review_context_section}{general_instructions_section}Analyze the following scientific article and identify every {entry_label} it describes for the section "{group_label}".{parent_scope_section}{instruction_section}
+_USER_TEMPLATE = """{review_context_section}{general_instructions_section}Analyze the following scientific article and identify every {entry_label} it describes for the section "{group_label}".{ancestry_section}{instruction_section}
 
 For each {entry_label}, return its {key_label} exactly as the article states it — this is what tells one {entry_label} apart from another.{allowed_values_section}
 {existing_section}
@@ -83,7 +83,7 @@ _INSTRUCTION_TEMPLATE = "\nSection instructions: {instruction}"
 # (the entry-scope block); identification names the same chain, so a
 # validation table under model A lists A's validations only — and a group at
 # depth three is scoped to both the model and the validation above it.
-_PARENT_SCOPE_TEMPLATE = (
+_ANCESTRY_TEMPLATE = (
     " Only the {entry_label} entries that belong to {chain} count here; "
     "leave out those the article reports for anything else."
 )
@@ -112,11 +112,11 @@ def _render_instruction_section(instruction: str | None) -> str:
     return _INSTRUCTION_TEMPLATE.format(instruction=text) if text else ""
 
 
-def _render_parent_scope_section(entry_label: str, ancestors: tuple[Ancestor, ...]) -> str:
+def _render_ancestry_section(entry_label: str, ancestors: tuple[Ancestor, ...]) -> str:
     """The enclosing-entries clause of a nested group; nothing at the root."""
     if not ancestors:
         return ""
-    return _PARENT_SCOPE_TEMPLATE.format(entry_label=entry_label, chain=render_ancestry(ancestors))
+    return _ANCESTRY_TEMPLATE.format(entry_label=entry_label, chain=render_ancestry(ancestors))
 
 
 def _allowed_value_names(allowed_values: Any) -> list[str]:
@@ -150,7 +150,7 @@ VERSION = content_version(
     _USER_TEMPLATE,
     _EXISTING_TEMPLATE,
     _INSTRUCTION_TEMPLATE,
-    _PARENT_SCOPE_TEMPLATE,
+    _ANCESTRY_TEMPLATE,
     _ALLOWED_VALUES_TEMPLATE,
     render_review_context_section("x"),
     render_general_instructions_section("x"),
@@ -182,7 +182,7 @@ def render(
         entry_label=entry_label,
         key_label=key_label,
         article_text=article_text,
-        parent_scope_section=_render_parent_scope_section(entry_label, ancestors),
+        ancestry_section=_render_ancestry_section(entry_label, ancestors),
         instruction_section=_render_instruction_section(instruction),
         allowed_values_section=_render_allowed_values_section(key_label, allowed_values),
         general_instructions_section=render_general_instructions_section(general_instructions),

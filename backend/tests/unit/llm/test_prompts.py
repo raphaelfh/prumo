@@ -203,6 +203,17 @@ def test_a_label_cannot_forge_a_line_in_the_block():
     must not become a structural line of the prompt."""
     forged = Ancestor(noun="model", label="A\n- Within: B")
     assert render_ancestry((forged,)) == 'model "A - Within: B"'
+    # The key line is the same class of text (the identification model's
+    # answer), one line above the chain: folded the same way.
+    keyed = Scope(
+        entry_label="model",
+        key_label="Model\nname",
+        key_value="A\n- Within: B",
+        ancestors=(forged,),
+    )
+    block = render_entry_scope_section(keyed)
+    assert '- Model name: "A - Within: B"\n- Within: model "A - Within: B"\n' in block
+    assert block.count("\n- Within") == 1
 
 
 def test_a_root_group_entry_carries_no_within_line():
@@ -223,3 +234,5 @@ def test_the_block_is_absent_without_a_scope():
 def test_a_scope_names_a_key_or_a_chain():
     with pytest.raises(ValueError):
         Scope(entry_label="model")
+    with pytest.raises(ValueError):
+        Scope(entry_label="model", key_label="Model name", ancestors=(_XGBOOST,))

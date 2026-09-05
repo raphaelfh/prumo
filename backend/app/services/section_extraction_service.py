@@ -356,18 +356,11 @@ class SectionExtractionService(LoggerMixin):
             # invisible until publish re-pins). Falls back to the live row
             # when the id is not in the pin (re-pin race) — today's behavior.
             phase_start = perf_counter()
-            pinned_tree = await self._pinned_entity_types(run)
-            entity_type: Any = next((et for et in pinned_tree if et.id == entity_type_id), None)
-            fields_override: list[Any] | None = None
-            if entity_type is None:
-                entity_type = await self._get_entity_type(
-                    entity_type_id, project_template_id=run.template_id
-                )
-            else:
-                fields_override = await self._live_field_intersection(entity_type)
-                if fields_override is None:
-                    # Pinned but deleted live — mirrors the live path's error.
-                    raise ValueError(f"Entity type not found: {entity_type_id}")
+            entity_type, from_pin = await self._entity_type_on_run(run, entity_type_id)
+            fields_override = await self._live_field_intersection(entity_type) if from_pin else None
+            if from_pin and fields_override is None:
+                # Pinned but deleted live — mirrors the live path's error.
+                raise ValueError(f"Entity type not found: {entity_type_id}")
             phase_durations_ms["fetch_entity_type"] = (perf_counter() - phase_start) * 1000
 
             # 5-7. Extract → verify → record, once per instance the section
@@ -689,6 +682,19 @@ class SectionExtractionService(LoggerMixin):
             self.db, version_id=run.version_id, template_id=run.template_id
         )
 
+    async def _entity_type_on_run(
+        self, run: ExtractionRun, entity_type_id: UUID
+    ) -> tuple[Any, bool]:
+        """``(row, from_pin)``: the pinned row when the id is in the run's pin,
+        else the template-scoped live row (re-pin race) — never a bare get.
+        The one lookup the single-section path and the ancestry walk share."""
+        pinned = await self._pinned_entity_types(run)
+        entity_type: Any = next((et for et in pinned if et.id == entity_type_id), None)
+        if entity_type is not None:
+            return entity_type, True
+        live = await self._get_entity_type(entity_type_id, project_template_id=run.template_id)
+        return live, False
+
     async def _live_field_intersection(self, entity_type: Any) -> list[Any] | None:
         """Snapshot fields ∩ live field ids for one pinned entity type.
 
@@ -736,9 +742,12 @@ class SectionExtractionService(LoggerMixin):
         instances = await self._instances.get_by_article(article_id, entity_type_id)
         if not instances:
             return None
-        # A singleton section is 1:1 per (article, entity_type) — the first
-        # match IS the instance. Repeating groups never reach this: they
-        # resolve one instance per entry (``extract_into_instances``).
+        # One instance per (article, entity_type, parent_instance): the first
+        # match is the ROOT singleton's — only the full-run sweep reaches this,
+        # and it passes no parent. Trees B2: thread the parent through once
+        # the recursion lets a nested singleton reach this guard. Repeating
+        # groups never do: they resolve one instance per entry
+        # (``extract_into_instances``).
         return instances[0]
 
     async def _fields_with_recent_human_proposal(

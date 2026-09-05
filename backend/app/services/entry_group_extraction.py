@@ -32,10 +32,9 @@ from uuid import UUID
 
 from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.prompts import Ancestor, Scope, entry_identification
-from app.models.extraction import DEFAULT_ENTRY_LABEL
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.entity_key import existing_keys, key_field_of, resolve_instance
-from app.services.entry_ancestry import ancestry_of
+from app.services.entry_ancestry import ancestry_of, noun_of
 
 if TYPE_CHECKING:
     from app.models.extraction import ExtractionRun
@@ -144,11 +143,11 @@ async def _extract_entry_group(
     validation, and each gets its own instance under its own parent, with
     the prompt naming the whole chain above it.
     """
-    # Re-verified on the way up, like the singleton auto-create: the instances
-    # written below carry ``parent_instance_id`` as a foreign key.
+    # Re-verified on the way up, ahead of the LLM call; the instances written
+    # below carry ``parent_instance_id`` as a foreign key and check it again.
     ancestors = await ancestry_of(service, run, parent_instance_id)
 
-    entry_label = getattr(entity_type, "entry_label", None) or DEFAULT_ENTRY_LABEL
+    entry_label = noun_of(entity_type)
     names, usage = await _identify_entries(
         service,
         run=run,
@@ -259,9 +258,7 @@ async def _extract_singleton(
     prompt_context: RunPromptContext | None,
     skip_fields_with_human_proposals: bool,
 ) -> SectionOutcome:
-    """Extract → verify → record against the section's one instance. Under an
-    entry, the prompt names the chain the instance belongs to; at the root
-    there is nothing to scope to."""
+    """Extract → verify → record against the section's one instance."""
     if skip_fields_with_human_proposals and fields:
         instance = await service._find_instance_for_entity_type(
             article_id=run.article_id, entity_type_id=entity_type.id
@@ -270,12 +267,10 @@ async def _extract_singleton(
             fields = await _fields_left_for(service, run, instance.id, fields)
             if not fields:
                 return SectionOutcome(skipped=True)
-    scope: Scope | None = None
-    if parent_instance_id is not None:
-        # The chain this singleton belongs to — re-verified on the way up,
-        # ahead of the LLM call rather than at the instance write.
-        ancestors = await ancestry_of(service, run, parent_instance_id)
-        scope = Scope(entry_label=ancestors[-1].noun, ancestors=ancestors)
+    # The chain this singleton belongs to, re-verified on the way up ahead of
+    # the LLM call; empty at the root, where there is nothing to scope to.
+    ancestors = await ancestry_of(service, run, parent_instance_id)
+    scope = Scope(entry_label=ancestors[-1].noun, ancestors=ancestors) if ancestors else None
     extracted_data, usage = await service._extract_with_llm(
         pdf_text=pdf_text,
         entity_type=entity_type,

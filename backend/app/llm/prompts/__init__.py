@@ -80,14 +80,21 @@ class Scope:
     ancestors: tuple[Ancestor, ...] = ()
 
     def __post_init__(self) -> None:
+        if (self.key_label is None) != (self.key_value is None):
+            raise ValueError("a scope's key needs both its label and its value")
         if self.key_value is None and not self.ancestors:
             raise ValueError("a scope names a key, a chain of entries, or both")
 
 
+def _one_line(text: str) -> str:
+    """Reviewer-edited or model-returned text, folded so it cannot forge a
+    line of the block it is interpolated into."""
+    return " ".join(text.split())
+
+
 def render_ancestry(ancestors: tuple[Ancestor, ...]) -> str:
-    """``model "XGBoost" › validation "external"`` — outermost first. Labels
-    are reviewer-edited text: folded to one line so none can forge a line."""
-    return " › ".join(f'{a.noun} "{" ".join(a.label.split())}"' for a in ancestors)
+    """``model "XGBoost" › validation "external"`` — outermost first."""
+    return " › ".join(f'{a.noun} "{_one_line(a.label)}"' for a in ancestors)
 
 
 def render_entry_scope_section(scope: Scope | None) -> str:
@@ -100,7 +107,7 @@ def render_entry_scope_section(scope: Scope | None) -> str:
             f"that describe the {scope.entry_label} identified below; ignore values that "
             f"describe a different {scope.entry_label}."
         )
-        lines = [f'- {scope.key_label}: "{scope.key_value}"']
+        lines = [f'- {_one_line(scope.key_label or "")}: "{_one_line(scope.key_value)}"']
     else:
         header = (
             f"This section belongs to the {scope.entry_label} identified below. Extract "
