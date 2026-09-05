@@ -23,7 +23,7 @@ from app.infrastructure.storage import StorageAdapter
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
 from app.llm.extractor import LlmUsage, extract_structured
-from app.llm.prompts import Ancestor, EntryScope
+from app.llm.prompts import Ancestor, Scope
 from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
@@ -1253,7 +1253,7 @@ class SectionExtractionService(LoggerMixin):
         fields_override: list[Any] | None = None,
         prompt_context: RunPromptContext | None = None,
         field_filter: LlmFieldFilter = LlmFieldFilter(),
-        entry_scope: EntryScope | None = None,
+        entry_scope: Scope | None = None,
     ) -> tuple[dict[str, Any], LlmUsage]:
         """Run extraction using the typed LLM call layer.
 
@@ -1266,8 +1266,8 @@ class SectionExtractionService(LoggerMixin):
         assessor-owned coordinates and out-of-scope sections — subtracted
         HERE, the one seam every extraction path funnels through (including
         the re-pin fallback that carries no override), so neither reaches
-        the model. ``entry_scope`` names the entry of a repeating group this
-        call is about, so the prompt asks for ONE entry's values.
+        the model. ``entry_scope`` names the entry, or the enclosing entries,
+        this call is about, so the prompt asks for ONE instance's values.
         Returns ({field_name: {value, confidence, reasoning, evidence}},
         usage) — oversized templates are split into multiple calls and
         merged transparently. Side effect: stashes the section-snapshot

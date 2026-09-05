@@ -29,7 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.extractor import LlmUsage
-from app.llm.prompts import EntryScope
+from app.llm.prompts import Ancestor, Scope
 from app.llm.prompts.entry_identification import EntryIdentificationOutput, IdentifiedEntry
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.schemas.extraction import ExtractionErrorCode
@@ -259,7 +259,7 @@ class _FakeExtractor:
     test can assert what each call was told."""
 
     def __init__(self) -> None:
-        self.scopes: list[EntryScope | None] = []
+        self.scopes: list[Scope | None] = []
         self.offset = 0.0
 
 
@@ -272,9 +272,15 @@ def _service(db: AsyncSession) -> tuple[ses.SectionExtractionService, _FakeExtra
     fake = _FakeExtractor()
 
     async def fake_extract(**kwargs: Any) -> tuple[dict[str, Any], LlmUsage]:
-        scope: EntryScope | None = kwargs.get("entry_scope")
+        scope: Scope | None = kwargs.get("entry_scope")
         fake.scopes.append(scope)
-        value = round(C_STAT[normalize_key(scope.key_value)] + fake.offset, 2) if scope else 0.5
+        # A singleton's scope has no key: the flat 0.5. An entry's key still maps
+        # through C_STAT — a mis-scoped entry must stay a wrong number.
+        value = (
+            round(C_STAT[normalize_key(scope.key_value)] + fake.offset, 2)
+            if scope and scope.key_value
+            else 0.5
+        )
         return (
             {
                 "c_statistic": {
@@ -459,10 +465,13 @@ async def test_nested_group_entries_are_scoped_by_their_parent(
     # list: asked under A, the prompt rules out what the article reports
     # for anything but A — or B's validations would land under A.
     asked_a, asked_b = identification["prompts"]
-    assert 'belong to "XGBoost"' in asked_a and "LightGBM" not in asked_a
-    assert 'belong to "LightGBM"' in asked_b and "XGBoost" not in asked_b
+    assert 'belong to model "XGBoost"' in asked_a and "LightGBM" not in asked_a
+    assert 'belong to model "LightGBM"' in asked_b and "XGBoost" not in asked_b
     # The per-entry prompt names the parent so the model reads the right block.
-    assert [s.parent_label for s in fake.scopes if s] == ["XGBoost", "LightGBM"]
+    assert [s.ancestors for s in fake.scopes if s] == [
+        (Ancestor("model", "XGBoost"),),
+        (Ancestor("model", "LightGBM"),),
+    ]
 
     # Re-running under A matches A's repeat — never B's.
     await service.extract_section(
@@ -606,5 +615,5 @@ async def test_the_per_model_batch_routes_a_nested_group_through_the_pipeline(
     entries = await _entries(db_session, child, parent=parent_a)
     assert [key for _, key in entries] == ["internal", "external"]
     assert result.total_suggestions_created == 2
-    assert [s.parent_label for s in fake.scopes if s] == ["XGBoost", "XGBoost"]
+    assert [s.ancestors for s in fake.scopes if s] == [(Ancestor("model", "XGBoost"),)] * 2
     assert await _proposed(db_session, entries[0][0], value_id) == [C_STAT["internal"]]

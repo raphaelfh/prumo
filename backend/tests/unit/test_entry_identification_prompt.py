@@ -12,6 +12,7 @@ names can align them when shown what exists.
 
 from __future__ import annotations
 
+from app.llm.prompts import Ancestor
 from app.llm.prompts.entry_identification import render, system_prompt
 
 
@@ -84,15 +85,20 @@ def test_prompt_omits_the_block_on_a_first_run() -> None:
         assert "already been identified" not in _render(existing_keys=keys).lower()
 
 
-def test_a_nested_group_is_scoped_to_its_parent_entry() -> None:
+def test_a_nested_group_is_scoped_to_its_enclosing_entries() -> None:
     """Extraction per entry was already scoped to the parent (the entry-scope
     block); identification was not, so model A's validation table listed
-    model B's validations too — and each got an instance under A."""
-    out = _render(parent_label="XGBoost")
-    assert 'Only the validation entries that belong to "XGBoost" count here' in out
-    assert "leave out those the article reports for anything else" in out
+    model B's validations too — and each got an instance under A. The clause
+    now names the whole chain, so a group at depth three is scoped to both
+    the model and the validation it hangs under."""
+    one = _render(ancestors=(Ancestor("model", "XGBoost"),))
+    assert 'Only the validation entries that belong to model "XGBoost" count here' in one
+    assert "leave out those the article reports for anything else" in one
+
+    two = _render(ancestors=(Ancestor("model", "XGBoost"), Ancestor("validation", "external")))
+    assert 'belong to model "XGBoost" › validation "external" count here' in two
 
 
 def test_a_top_level_group_carries_no_parent_clause() -> None:
-    for absent in (None, ""):
-        assert "belong to" not in _render(parent_label=absent)
+    assert "belong to" not in _render(ancestors=())
+    assert "belong to" not in _render()

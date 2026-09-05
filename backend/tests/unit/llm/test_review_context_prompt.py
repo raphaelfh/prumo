@@ -78,6 +78,16 @@ PRE_CHANGE_VERSIONS = {
     "entry_identification": "046fd17ca366",
 }
 
+#: The three hashes on ``dev`` before the trees train's B1 (captured at
+#: ``bf93a278``). B1 changes production prompts — a singleton under an entry
+#: gains the scope block, the parent clause becomes a chain — so §IX requires
+#: new runs to record a new version for all three.
+PRE_B1_VERSIONS = {
+    "section_extraction": "bb62071982f1",
+    "quality_assessment": "19018644da80",
+    "entry_identification": "f7cacd2a4efb",
+}
+
 
 def _render_section(**kwargs: object) -> str:
     return section_extraction.render(
@@ -156,6 +166,15 @@ def test_version_moved_from_the_pre_change_hash(module) -> None:
     [section_extraction, quality_assessment, entry_identification],
     ids=lambda m: m.NAME,
 )
+def test_version_moved_from_the_pre_b1_hash(module) -> None:
+    assert PRE_B1_VERSIONS[module.NAME] != module.VERSION
+
+
+@pytest.mark.parametrize(
+    "module",
+    [section_extraction, quality_assessment, entry_identification],
+    ids=lambda m: m.NAME,
+)
 def test_the_canary_actually_hashes_the_shared_renderer(module, monkeypatch) -> None:
     """Mutating the renderer must move VERSION.
 
@@ -177,15 +196,23 @@ def test_the_canary_actually_hashes_the_shared_renderer(module, monkeypatch) -> 
 
 
 @pytest.mark.parametrize(
-    "module",
-    [section_extraction, quality_assessment],
-    ids=lambda m: m.NAME,
+    ("module", "renderer"),
+    [
+        (section_extraction, "render_entry_scope_section"),
+        (quality_assessment, "render_entry_scope_section"),
+        (section_extraction, "render_ancestry"),
+        (quality_assessment, "render_ancestry"),
+        (entry_identification, "render_ancestry"),
+    ],
+    ids=lambda v: v if isinstance(v, str) else v.NAME,
 )
-def test_the_entry_scope_canary_is_live_too(module, monkeypatch) -> None:
-    """Same proof for the entry-scope renderer: a repeating group's per-entry
-    prompt is production output, so editing its wording must move VERSION."""
+def test_the_scope_and_ancestry_canaries_are_live(module, renderer, monkeypatch) -> None:
+    """Same proof for the scope block and the chain it names: a repeating
+    group's per-entry prompt, a nested singleton's prompt and the
+    identification clause are production output, so editing either
+    renderer's wording must move every VERSION that interpolates it."""
     before = module.VERSION
-    monkeypatch.setattr(prompts, "render_entry_scope_section", lambda _scope: "MUTATED")
+    monkeypatch.setattr(prompts, renderer, lambda _arg: "MUTATED")
     try:
         importlib.reload(module)
         assert before != module.VERSION

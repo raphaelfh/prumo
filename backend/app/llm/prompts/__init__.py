@@ -62,33 +62,53 @@ Use this context to maintain consistency and avoid contradictions with previousl
 
 
 @dataclass(frozen=True)
-class EntryScope:
-    """Which entry of a repeating group ONE extraction call is about.
+class Scope:
+    """Which instance ONE extraction call is about, and where it sits.
 
-    A ``cardinality='many'`` section is extracted once per entry, and the
-    prompt has to say which one or every instance receives the same values.
-    ``key_label``/``key_value`` are the group's declared key
-    (``is_entity_key``) as identified for this entry; ``entry_label`` is the
-    group's noun; ``parent_label`` names the enclosing entry of a nested
-    group (the model a validation block belongs to), ``None`` at top level.
+    A repeating group is extracted once per entry, and the prompt has to say
+    which one or every instance receives the same values: ``entry_label`` is
+    the group's noun and ``key_label``/``key_value`` its declared key
+    (``is_entity_key``) as identified for this entry. A singleton under an
+    entry carries no key of its own: ``entry_label`` is then the noun of the
+    entry it belongs to, and the pair stays ``None``. ``ancestors`` is the
+    chain of enclosing entries, outermost first, empty at the root.
     """
 
     entry_label: str
-    key_label: str
-    key_value: str
-    parent_label: str | None = None
+    key_label: str | None = None
+    key_value: str | None = None
+    ancestors: tuple[Ancestor, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.key_value is None and not self.ancestors:
+            raise ValueError("a scope names a key, a chain of entries, or both")
 
 
-def render_entry_scope_section(scope: EntryScope | None) -> str:
-    """The per-entry scoping block; empty when the section does not repeat."""
+def render_ancestry(ancestors: tuple[Ancestor, ...]) -> str:
+    """``model "XGBoost" › validation "external"`` — outermost first. Labels
+    are reviewer-edited text: folded to one line so none can forge a line."""
+    return " › ".join(f'{a.noun} "{" ".join(a.label.split())}"' for a in ancestors)
+
+
+def render_entry_scope_section(scope: Scope | None) -> str:
+    """The scoping block; empty when the call is about a root singleton."""
     if scope is None:
         return ""
-    lines = [f'- {scope.key_label}: "{scope.key_value}"']
-    if scope.parent_label:
-        lines.append(f'- Belongs to: "{scope.parent_label}"')
+    if scope.key_value is not None:
+        header = (
+            f"This section repeats once per {scope.entry_label}. Extract ONLY the values "
+            f"that describe the {scope.entry_label} identified below; ignore values that "
+            f"describe a different {scope.entry_label}."
+        )
+        lines = [f'- {scope.key_label}: "{scope.key_value}"']
+    else:
+        header = (
+            f"This section belongs to the {scope.entry_label} identified below. Extract "
+            f"ONLY the values that describe that {scope.entry_label}; ignore values that "
+            f"describe a different {scope.entry_label}."
+        )
+        lines = []
+    if scope.ancestors:
+        lines.append(f"- Within: {render_ancestry(scope.ancestors)}")
     listed = "\n".join(lines)
-    return (
-        f"\nThis section repeats once per {scope.entry_label}. Extract ONLY the values "
-        f"that describe the {scope.entry_label} identified below; ignore values that "
-        f"describe a different {scope.entry_label}.\n{listed}\n"
-    )
+    return f"\n{header}\n{listed}\n"
