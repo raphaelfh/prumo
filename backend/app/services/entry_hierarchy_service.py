@@ -314,6 +314,12 @@ class EntryHierarchyService:
             .where(
                 ExtractionEntityType.parent_entity_type_id == parent_entity_type_id,
                 ExtractionEntityType.cardinality == ExtractionCardinality.ONE.value,
+                # Also pin the template. Nothing in the schema forces a
+                # section's parent into the same template, and the row this
+                # walk reaches is the one whose id lands in the instances it
+                # writes — so the bound template is named here rather than
+                # inherited from the parent link.
+                ExtractionEntityType.project_template_id == template_id,
             )
             .order_by(ExtractionEntityType.sort_order.asc())
         )
