@@ -22,7 +22,7 @@ from uuid import UUID
 
 from app.llm.claim_value import value_str_for_claim
 from app.llm.extractor import LlmUsage
-from app.llm.prompts import EntryScope, quality_assessment, section_extraction
+from app.llm.prompts import Scope, quality_assessment, section_extraction
 from app.llm.provider import build_model
 from app.llm.verify import VerifyVerdict, run_verify_pass
 from app.schemas.llm_target import LlmTarget
@@ -67,7 +67,7 @@ def render_section_prompts(
     article_marker: str,
     memory_context: list[dict[str, str]] | None,
     prompt_context: RunPromptContext | None,
-    entry_scope: EntryScope | None = None,
+    entry_scope: Scope | None = None,
 ) -> tuple[str, str, str, str, str]:
     """(prompt_name, prompt_version, system_prompt, user_prompt, section_instruction).
 
@@ -79,8 +79,8 @@ def render_section_prompts(
     ``prompt_context`` is unpacked HERE rather than by the caller: the prompt
     modules take plain strings (no schema import), and doing it at the one
     seam keeps ``section_extraction_service`` — which sits on its file-size
-    ratchet cap — free of the extra lines. ``entry_scope`` names the entry of
-    a repeating group this call is about (None for a singleton section).
+    ratchet cap — free of the extra lines. ``entry_scope`` names the entry, or
+    the enclosing entries, this call is about (None for a root singleton).
     """
     context = prompt_context or RunPromptContext()
     if kind == "quality_assessment":

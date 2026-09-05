@@ -31,10 +31,10 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from app.llm.extractor import LlmUsage, extract_structured
-from app.llm.prompts import EntryScope, entry_identification
-from app.models.extraction import DEFAULT_ENTRY_LABEL
+from app.llm.prompts import Ancestor, Scope, entry_identification
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.entity_key import existing_keys, key_field_of, resolve_instance
+from app.services.entry_ancestry import ancestry_of, noun_of
 
 if TYPE_CHECKING:
     from app.models.extraction import ExtractionRun
@@ -65,7 +65,7 @@ async def _identify_entries(
     key_field: Any,
     entry_label: str,
     parent_instance_id: UUID | None,
-    parent_label: str | None,
+    ancestors: tuple[Ancestor, ...],
     article_text: str,
     prompt_context: RunPromptContext | None,
 ) -> tuple[list[str], LlmUsage]:
@@ -73,10 +73,10 @@ async def _identify_entries(
 
     The prompt is parameterized by the PINNED group: its label, its entry
     noun, the key field (label + choices) and its description as the
-    instruction — and, for a nested group, scoped to the parent entry the
-    way the grounding list already is, so model A's validation table does
-    not list model B's validations. Reads instances only for the grounding
-    list — never a reviewer-scoped value (spec §5.1.1).
+    instruction — and, for a nested group, scoped to the chain of enclosing
+    entries the way the grounding list already is, so model A's validation
+    table does not list model B's validations. Reads instances only for the
+    grounding list — never a reviewer-scoped value (spec §5.1.1).
     """
     already = sorted(
         (
@@ -102,7 +102,7 @@ async def _identify_entries(
             general_instructions=context.general_instructions,
             review_context=context.review_context,
             existing_keys=already,
-            parent_label=parent_label,
+            ancestors=ancestors,
         ),
         model=service._wire_model(),
         prompt_name=entry_identification.NAME,
@@ -140,17 +140,14 @@ async def _extract_entry_group(
     returned it — resolving it first is what makes a keyless group refuse
     before this function spends an LLM call. Nested groups are scoped by
     ``parent_instance_id``: two models may each own an ``internal``
-    validation, and each gets its own instance under its own parent.
+    validation, and each gets its own instance under its own parent, with
+    the prompt naming the whole chain above it.
     """
-    parent = None
-    if parent_instance_id is not None:
-        # Re-verified here, like the singleton auto-create: the instances
-        # written below carry this id as a foreign key.
-        parent = await service._instances.get_on_run(parent_instance_id, run)
-        if parent is None:
-            raise ValueError(f"Parent instance not found: {parent_instance_id}")
+    # Re-verified on the way up, ahead of the LLM call; the instances written
+    # below carry ``parent_instance_id`` as a foreign key and check it again.
+    ancestors = await ancestry_of(service, run, parent_instance_id)
 
-    entry_label = getattr(entity_type, "entry_label", None) or DEFAULT_ENTRY_LABEL
+    entry_label = noun_of(entity_type)
     names, usage = await _identify_entries(
         service,
         run=run,
@@ -158,7 +155,7 @@ async def _extract_entry_group(
         key_field=key_field,
         entry_label=entry_label,
         parent_instance_id=parent_instance_id,
-        parent_label=parent.label if parent is not None else None,
+        ancestors=ancestors,
         article_text=pdf_text,
         prompt_context=prompt_context,
     )
@@ -192,11 +189,11 @@ async def _extract_entry_group(
             entry_fields = await _fields_left_for(service, run, instance.id, fields)
             if not entry_fields:
                 continue
-        scope = EntryScope(
+        scope = Scope(
             entry_label=entry_label,
             key_label=key_field.label,
             key_value=name,
-            parent_label=parent.label if parent is not None else None,
+            ancestors=ancestors,
         )
         extracted, call_usage = await service._extract_with_llm(
             pdf_text=pdf_text,
@@ -270,6 +267,10 @@ async def _extract_singleton(
             fields = await _fields_left_for(service, run, instance.id, fields)
             if not fields:
                 return SectionOutcome(skipped=True)
+    # The chain this singleton belongs to, re-verified on the way up ahead of
+    # the LLM call; empty at the root, where there is nothing to scope to.
+    ancestors = await ancestry_of(service, run, parent_instance_id)
+    scope = Scope(entry_label=ancestors[-1].noun, ancestors=ancestors) if ancestors else None
     extracted_data, usage = await service._extract_with_llm(
         pdf_text=pdf_text,
         entity_type=entity_type,
@@ -279,6 +280,7 @@ async def _extract_singleton(
         memory_context=memory_context,
         prompt_context=prompt_context,
         field_filter=await service._field_filter(run),
+        entry_scope=scope,
     )
     verdicts, usage = await service._maybe_verify(
         run.id, entity_type.id, run.kind, pdf_text, extracted_data, usage

@@ -67,15 +67,18 @@ GOLDEN_QUALITY_ASSESSMENT = (
 #: still proves the renderer is inert on empty input.
 GOLDEN_ENTRY_IDENTIFICATION = 'Analyze the following scientific article and identify every model it describes for the section "prediction models".\n\nFor each model, return its Model name exactly as the article states it — this is what tells one model apart from another.\n\nArticle text:\nA\n'
 
-#: Content hashes of the three prompts before the block existed. The block
-#: changes production prompts, so §IX requires new runs to record a new
-#: version — these must all move. ``entry_identification`` replaced
-#: ``model_identification`` (the hash is that module's last version): a
-#: parameterized prompt is a different prompt, and new runs must say so.
-PRE_CHANGE_VERSIONS = {
-    "section_extraction": "d1d4d2483a3b",
-    "quality_assessment": "6f04461c6f23",
-    "entry_identification": "046fd17ca366",
+#: Every hash a run may have recorded before a production-prompt change:
+#: the three prompts before the review-context block existed
+#: (``entry_identification`` replaced ``model_identification`` — the hash is
+#: that module's last version: a parameterized prompt is a different
+#: prompt), and the three on ``dev`` ``bf93a278`` before the trees train's B1
+#: gave a singleton under an entry the scope block and made the parent
+#: clause a chain. §IX: a changed prompt is a new version, so VERSION may
+#: equal none of these.
+RETIRED_VERSIONS = {
+    "section_extraction": {"d1d4d2483a3b", "bb62071982f1"},
+    "quality_assessment": {"6f04461c6f23", "19018644da80"},
+    "entry_identification": {"046fd17ca366", "f7cacd2a4efb"},
 }
 
 
@@ -147,8 +150,8 @@ def test_the_block_stands_alone_without_a_template_instruction() -> None:
     [section_extraction, quality_assessment, entry_identification],
     ids=lambda m: m.NAME,
 )
-def test_version_moved_from_the_pre_change_hash(module) -> None:
-    assert PRE_CHANGE_VERSIONS[module.NAME] != module.VERSION
+def test_version_moved_from_every_retired_hash(module) -> None:
+    assert module.VERSION not in RETIRED_VERSIONS[module.NAME]
 
 
 @pytest.mark.parametrize(
@@ -177,15 +180,23 @@ def test_the_canary_actually_hashes_the_shared_renderer(module, monkeypatch) -> 
 
 
 @pytest.mark.parametrize(
-    "module",
-    [section_extraction, quality_assessment],
-    ids=lambda m: m.NAME,
+    ("module", "renderer"),
+    [
+        (section_extraction, "render_entry_scope_section"),
+        (quality_assessment, "render_entry_scope_section"),
+        (section_extraction, "render_ancestry"),
+        (quality_assessment, "render_ancestry"),
+        (entry_identification, "render_ancestry"),
+    ],
+    ids=lambda v: v if isinstance(v, str) else v.NAME,
 )
-def test_the_entry_scope_canary_is_live_too(module, monkeypatch) -> None:
-    """Same proof for the entry-scope renderer: a repeating group's per-entry
-    prompt is production output, so editing its wording must move VERSION."""
+def test_the_scope_and_ancestry_canaries_are_live(module, renderer, monkeypatch) -> None:
+    """Same proof for the scope block and the chain it names: a repeating
+    group's per-entry prompt, a nested singleton's prompt and the
+    identification clause are production output, so editing either
+    renderer's wording must move every VERSION that interpolates it."""
     before = module.VERSION
-    monkeypatch.setattr(prompts, "render_entry_scope_section", lambda _scope: "MUTATED")
+    monkeypatch.setattr(prompts, renderer, lambda _arg: "MUTATED")
     try:
         importlib.reload(module)
         assert before != module.VERSION
