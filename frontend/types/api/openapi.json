@@ -830,6 +830,54 @@
         "title": "ApiResponse[DiscardDraftResponse]",
         "type": "object"
       },
+      "ApiResponse_EntryCreateResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntryCreateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[EntryCreateResponse]",
+        "type": "object"
+      },
       "ApiResponse_ExportCancelResponse_": {
         "properties": {
           "data": {
@@ -4406,6 +4454,90 @@
         "title": "DownloadAttachmentResponse",
         "type": "object"
       },
+      "EntryCreateRequest": {
+        "additionalProperties": false,
+        "description": "Create one entry of a repeating section (spec \u00a77).\n\n``extra=\"forbid\"`` for the reason every sibling gives: this body is\nvalidated once, in the request cycle, so a stale tab sending a retired\nfield gets a loud 422 instead of silently losing a value it typed.\n\n``label`` is the human-facing name; ``entity_key`` is the identity an AI\nre-run matches against. A section that declares an ``is_entity_key``\nfield requires the key; one that does not must omit it.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "entityKey": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitykey"
+          },
+          "entityTypeId": {
+            "format": "uuid",
+            "title": "Entitytypeid",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 200,
+            "title": "Label",
+            "type": "string"
+          },
+          "parentInstanceId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentinstanceid"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "articleId",
+          "templateId",
+          "entityTypeId",
+          "label"
+        ],
+        "title": "EntryCreateRequest",
+        "type": "object"
+      },
+      "EntryCreateResponse": {
+        "description": "The created entry.\n\nDeliberately narrower than spec \u00a77's ``(instance, descendants,\nproposalRunId)``: the caller refetches the run view after a create, so\nthe descendant list and the run id are payload with no consumer \u2014 the\nretired ``childInstances`` field had none in its whole lifetime. The\nlabel IS read (the success toast names the entry).",
+        "properties": {
+          "instanceId": {
+            "format": "uuid",
+            "title": "Instanceid",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instanceId",
+          "label"
+        ],
+        "title": "EntryCreateResponse",
+        "type": "object"
+      },
       "ErrorDetail": {
         "description": "Standardized error details.",
         "properties": {
@@ -4679,13 +4811,14 @@
         "type": "string"
       },
       "ExtractionErrorCode": {
-        "description": "Stable, machine-readable code for a terminal extraction failure.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_project_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
+        "description": "Stable code for a terminal extraction failure, or for a typed\nsynchronous refusal on the extraction write paths.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_project_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``ENTRY_KEY_DUPLICATE`` \u2014 manual entry creation named an identity the\n  coordinate already holds (``EntryKeyDuplicateError``), refused as a 409\n  rather than silently renaming the entry the way the retired model path\n  did (\"Cox Model (2)\").\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
         "enum": [
           "PDF_NOT_FOUND",
           "MISSING_API_KEY",
           "ENGINE_RETIRED",
           "LLM_ENDPOINT_UNAVAILABLE",
           "MISSING_ENTITY_KEY",
+          "ENTRY_KEY_DUPLICATE",
           "EXTRACTION_FAILED"
         ],
         "title": "ExtractionErrorCode",
@@ -11532,6 +11665,53 @@
         "summary": "Get Suggestions History",
         "tags": [
           "articles"
+        ]
+      }
+    },
+    "/api/v1/extraction/instances": {
+      "post": {
+        "description": "Creates the entry and its singleton children in one transaction. A nested group requires parentInstanceId; a root group refuses one. A duplicate entry key answers a typed 409 ENTRY_KEY_DUPLICATE.",
+        "operationId": "create_entry_api_v1_extraction_instances_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EntryCreateResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create one entry of a repeating section",
+        "tags": [
+          "Extraction Instances"
         ]
       }
     },

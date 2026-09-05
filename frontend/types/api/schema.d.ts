@@ -307,6 +307,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/extraction/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create one entry of a repeating section
+         * @description Creates the entry and its singleton children in one transaction. A nested group requires parentInstanceId; a root group refuses one. A duplicate entry key answers a typed 409 ENTRY_KEY_DUPLICATE.
+         */
+        post: operations["create_entry_api_v1_extraction_instances_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/extraction/instances/{instance_id}": {
         parameters: {
             query?: never;
@@ -2044,6 +2064,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[EntryCreateResponse] */
+        ApiResponse_EntryCreateResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["EntryCreateResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ExportCancelResponse] */
         ApiResponse_ExportCancelResponse_: {
             /** @description Dados da resposta */
@@ -3486,6 +3523,65 @@ export interface components {
             size: number;
         };
         /**
+         * EntryCreateRequest
+         * @description Create one entry of a repeating section (spec §7).
+         *
+         *     ``extra="forbid"`` for the reason every sibling gives: this body is
+         *     validated once, in the request cycle, so a stale tab sending a retired
+         *     field gets a loud 422 instead of silently losing a value it typed.
+         *
+         *     ``label`` is the human-facing name; ``entity_key`` is the identity an AI
+         *     re-run matches against. A section that declares an ``is_entity_key``
+         *     field requires the key; one that does not must omit it.
+         */
+        EntryCreateRequest: {
+            /**
+             * Articleid
+             * Format: uuid
+             */
+            articleId: string;
+            /** Entitykey */
+            entityKey?: string | null;
+            /**
+             * Entitytypeid
+             * Format: uuid
+             */
+            entityTypeId: string;
+            /** Label */
+            label: string;
+            /** Parentinstanceid */
+            parentInstanceId?: string | null;
+            /**
+             * Projectid
+             * Format: uuid
+             */
+            projectId: string;
+            /**
+             * Templateid
+             * Format: uuid
+             */
+            templateId: string;
+        };
+        /**
+         * EntryCreateResponse
+         * @description The created entry.
+         *
+         *     Deliberately narrower than spec §7's ``(instance, descendants,
+         *     proposalRunId)``: the caller refetches the run view after a create, so
+         *     the descendant list and the run id are payload with no consumer — the
+         *     retired ``childInstances`` field had none in its whole lifetime. The
+         *     label IS read (the success toast names the entry).
+         */
+        EntryCreateResponse: {
+            /**
+             * Instanceid
+             * Format: uuid
+             */
+            instanceId: string;
+            /** Label */
+            label: string;
+        };
+        /**
          * ErrorDetail
          * @description Standardized error details.
          */
@@ -3618,7 +3714,8 @@ export interface components {
         ExtractionArticleScope: "current_list" | "selected_only";
         /**
          * ExtractionErrorCode
-         * @description Stable, machine-readable code for a terminal extraction failure.
+         * @description Stable code for a terminal extraction failure, or for a typed
+         *     synchronous refusal on the extraction write paths.
          *
          *     Carried on ``ExtractionJobStatusResponse.error_code`` so the frontend can
          *     pick specific, actionable toast copy without parsing the human ``error``
@@ -3637,10 +3734,14 @@ export interface components {
          *       ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
          *       LLM call. Carried by the single-section job and, as a 409, by the sync
          *       models kickoff; a batch run keeps reporting per-section text.
+         *     - ``ENTRY_KEY_DUPLICATE`` — manual entry creation named an identity the
+         *       coordinate already holds (``EntryKeyDuplicateError``), refused as a 409
+         *       rather than silently renaming the entry the way the retired model path
+         *       did ("Cox Model (2)").
          *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
          * @enum {string}
          */
-        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "EXTRACTION_FAILED";
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "ENTRY_KEY_DUPLICATE" | "EXTRACTION_FAILED";
         /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.
@@ -6951,6 +7052,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_list_AISuggestionHistoryItem__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_entry_api_v1_extraction_instances_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_EntryCreateResponse_"];
                 };
             };
             /** @description Validation Error */
