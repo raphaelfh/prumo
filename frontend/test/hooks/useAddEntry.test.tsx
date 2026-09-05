@@ -9,6 +9,14 @@
 import {act, renderHook, waitFor} from '@testing-library/react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+// The CI vitest job runs with NO VITE_ env. `@/integrations/api/client`
+// imports the supabase client at module load, which calls `createClient('')`
+// and throws `supabaseUrl is required` — so `importActual` below cannot load
+// it unmocked. This is the repo's convention (see useModelManagement.test).
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {auth: {getSession: async () => ({data: {session: null}})}},
+}));
+
 // Mocks define their fakes INLINE and are imported back below. A factory
 // that closes over a top-level `const` is hoisted above that declaration,
 // which vitest rejects — it passed locally and failed in CI.
