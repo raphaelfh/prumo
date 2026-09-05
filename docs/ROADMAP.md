@@ -18,6 +18,7 @@ This file records only the **top-level milestones** (one bullet each) — the
 
 ## Current cycle (2026-Q2)
 
+- [ ] **Entry-group trees** — any repeating section owns children at any depth, several root groups, no `role` (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`, six slices). B1 (ancestry on the three prompts) shipped 2026-09-05; B2–B6 queued.
 - [ ] **Structured PDF parsing + grounded extraction** — layout-aware parse at ingest, page-anchored evidence, verbatim-verified citations (ADR-0011, ADR-0013).
 - [ ] **Quality of extracted data** — refine extraction prompts, add evidence-linked citations, surface page-anchored references in the PDF viewer.
 - [ ] **Multi-reviewer reliability** — close the open bugs around inviting reviewers, concurrent assessment, and final-reviewer assignment.

@@ -9,10 +9,10 @@ owner: '@raphaelfh'
 ## Current focus
 
 - See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the live cycle — the
-  source of truth; don't re-pin a date here. Now: grounded extraction on
-  stored markdown (ADR-0013 **shipped**, #400; ADR-0011 still
-  **proposed**). The *extraction* read-path consolidation shipped (#228,
-  #324); other app-schema reads still use PostgREST.
+  source of truth; don't re-pin a date here. Now: the entry-group trees
+  train (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`,
+  six slices; B1 shipped). ADR-0011 still **proposed**; app-schema reads
+  other than extraction still use PostgREST.
 - Project history lives in `git log` and `docs/adr/` — do not append
   changelogs to this file. Keep this section to ≤ 5 lines.
 
