@@ -15,15 +15,14 @@
  * has moved into ``ModelSection``.
  */
 
-import {memo, useRef} from 'react';
-import {ModelSection} from './ModelSection';
-import type {Model} from './hierarchy/ModelSelector';
+import {useRef} from 'react';
+import {EntrySection} from './entries/EntrySection';
+import {EntryFormProvider, type EntryFormContextValue} from './entries/EntryFormContext';
 import {SectionAccordion} from './SectionAccordion';
 import SectionNavRail from '@/components/extraction/SectionNavRail';
 import {buildSectionRegistry} from '@/lib/extraction/sectionRegistry';
 import {useActiveSection} from '@/hooks/extraction/useActiveSection';
 import {useJumpToNextPendingField} from '@/hooks/extraction/useJumpToNextPendingField';
-import {useExtractionFormAIActions} from '@/hooks/extraction/useExtractionFormAIActions';
 import type {
   ExtractionEntityTypeWithFields,
   ExtractionInstance,
@@ -33,9 +32,12 @@ import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/
 import type {EntryIdentityChanges} from './AddEntryDialog';
 
 export interface ExtractionFormViewProps {
-  studyLevelSections: ExtractionEntityTypeWithFields[];
-  modelParentEntityType: ExtractionEntityTypeWithFields | undefined;
-  modelChildSections: ExtractionEntityTypeWithFields[];
+  /** Every section of the template. Roots are derived, not passed. */
+  entityTypes: ExtractionEntityTypeWithFields[];
+  activeEntries: Record<string, string>;
+  setActiveEntry: (slot: string, entryId: string) => void;
+  handleOpenRenameDialog: (instanceId: string) => void;
+  handleOpenRemoveDialog: (instanceId: string) => void;
   instances: ExtractionInstance[];
   values: Record<string, ExtractionValue>;
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
@@ -44,16 +46,8 @@ export interface ExtractionFormViewProps {
   selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  models: Model[];
-  activeModelId: string | null;
-  setActiveModelId: (id: string) => void;
-  onAddModel: () => void;
-  onRemoveModel: (id: string) => void;
-  onRenameModel?: (id: string) => void;
-  onRefreshModels: () => Promise<void>;
   onRefreshInstances: () => Promise<void>;
-  getInstancesForModel: (entityTypeId: string, modelId: string) => ExtractionInstance[];
-  handleAddInstance: (entityTypeId: string) => void;
+  handleAddInstance: (entityTypeId: string, parentInstanceId: string | null) => void;
   handleRemoveInstance: (instanceId: string) => void;
   handleRenameInstance?: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
   projectId: string;
@@ -65,7 +59,6 @@ export interface ExtractionFormViewProps {
    * accumulate on the session run instead of orphan new runs.
    */
   runId?: string | null;
-  modelsLoading: boolean;
   /** Callback to refresh values/suggestions after AI extraction. */
   onExtractionComplete?: () => void;
   /** When true (PDF panel open / narrow), the section rail collapses to a dot strip. */
@@ -73,29 +66,15 @@ export interface ExtractionFormViewProps {
 }
 
 function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
-  const ai = useExtractionFormAIActions({
-    projectId: props.projectId,
-    articleId: props.articleId,
-    templateId: props.templateId,
-    runId: props.runId,
-    // Run-pinned child sections (derived from the run view upstream): the
-    // AI dispatch loop must match the snapshot the backend extracts from,
-    // not the live entity-type rows (B-5b).
-    sections: props.modelChildSections,
-    activeModelId: props.activeModelId,
-    models: props.models,
-    onRefreshModels: props.onRefreshModels,
-    onRefreshInstances: props.onRefreshInstances,
-    onExtractionComplete: props.onExtractionComplete,
-  });
 
+  const roots = props.entityTypes.filter((et) => !et.parent_entity_type_id);
   const sectionRegistry = buildSectionRegistry({
-    studyLevelSections: props.studyLevelSections,
-    modelParentEntityType: props.modelParentEntityType,
-    modelChildSections: props.modelChildSections,
+    roots,
+    entityTypes: props.entityTypes,
     instances: props.instances,
     values: props.values,
-    activeModelId: props.activeModelId,
+    activeEntries: props.activeEntries,
+    articleId: props.articleId,
   });
   const sectionIds = sectionRegistry.map((s) => s.id);
   const { activeId, registerSection, scrollToSection } = useActiveSection(sectionIds);
@@ -103,6 +82,32 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
   // anything the rail or surrounding chrome might render.
   const formColumnRef = useRef<HTMLDivElement>(null);
   const jumpToNextPending = useJumpToNextPendingField(formColumnRef);
+
+  const form: EntryFormContextValue = {
+    projectId: props.projectId,
+    articleId: props.articleId,
+    templateId: props.templateId,
+    runId: props.runId ?? undefined,
+    entityTypes: props.entityTypes,
+    instances: props.instances,
+    values: props.values,
+    updateValue: props.updateValue,
+    aiSuggestions: props.aiSuggestions,
+    acceptSuggestion: props.acceptSuggestion,
+    rejectSuggestion: props.rejectSuggestion,
+    selectSuggestion: props.selectSuggestion,
+    getSuggestionsHistory: props.getSuggestionsHistory,
+    onExtractionComplete: props.onExtractionComplete,
+    onRefreshInstances: props.onRefreshInstances,
+    registerSection,
+    onAddEntry: props.handleAddInstance,
+    onRemoveInstance: props.handleRemoveInstance,
+    onRenameInstance: props.handleRenameInstance ?? (async () => {}),
+    onOpenRenameDialog: props.handleOpenRenameDialog,
+    onOpenRemoveDialog: props.handleOpenRemoveDialog,
+    activeEntries: props.activeEntries,
+    setActiveEntry: props.setActiveEntry,
+  };
 
   return (
     <div className="flex gap-4">
@@ -113,120 +118,59 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
         collapsed={props.showPDF}
         onJumpToNextPending={jumpToNextPending}
       />
-      <div ref={formColumnRef} className="min-w-0 flex-1 space-y-4">
-        {props.studyLevelSections.map(entityType => {
-          const typeInstances = props.instances.filter(i => i.entity_type_id === entityType.id);
-          return (
-            <div
-              key={entityType.id}
-              ref={(el) => registerSection(entityType.id, el)}
-              tabIndex={-1}
-              className="scroll-mt-4 outline-hidden"
-            >
-              <SectionAccordion
-                entityType={entityType}
-                instances={typeInstances}
-                fields={entityType.fields}
-                values={props.values}
-                onValueChange={props.updateValue}
-                projectId={props.projectId}
-                articleId={props.articleId}
-                templateId={props.templateId}
-                runId={props.runId}
-                aiSuggestions={props.aiSuggestions}
-                onAcceptAI={props.acceptSuggestion}
-                onRejectAI={props.rejectSuggestion}
-                selectSuggestion={props.selectSuggestion}
-                getSuggestionsHistory={props.getSuggestionsHistory}
-                onAddInstance={() => props.handleAddInstance(entityType.id)}
-                onRemoveInstance={props.handleRemoveInstance}
-                onRenameInstance={props.handleRenameInstance}
-                onExtractionComplete={props.onExtractionComplete}
-              />
-            </div>
-          );
-        })}
-
-        {props.modelParentEntityType && (
-          <div
-            ref={(el) => registerSection(props.modelParentEntityType!.id, el)}
-            tabIndex={-1}
-            className="scroll-mt-4 outline-hidden"
-          >
-            <ModelSection
-              modelContainer={props.modelParentEntityType}
-              modelChildren={props.modelChildSections}
-              instances={props.instances}
-              activeModelId={props.activeModelId}
-              setActiveModelId={props.setActiveModelId}
-              models={props.models}
-              modelsLoading={props.modelsLoading}
-              onAddModel={props.onAddModel}
-              onRemoveModel={props.onRemoveModel}
-              onRenameModel={props.onRenameModel}
-              values={props.values}
-              updateValue={props.updateValue}
-              aiSuggestions={props.aiSuggestions}
-              acceptSuggestion={props.acceptSuggestion}
-              selectSuggestion={props.selectSuggestion}
-              rejectSuggestion={props.rejectSuggestion}
-              getSuggestionsHistory={props.getSuggestionsHistory}
-              getInstancesForModel={props.getInstancesForModel}
-              handleAddInstance={props.handleAddInstance}
-              handleRemoveInstance={props.handleRemoveInstance}
-              handleRenameInstance={props.handleRenameInstance}
-              projectId={props.projectId}
-              articleId={props.articleId}
-              templateId={props.templateId}
-              runId={props.runId}
-              onExtractModels={ai.handleExtractModels}
-              extractingModels={ai.extractingModels}
-              onExtractAllSections={ai.handleExtractAllSections}
-              extractingAllSections={ai.extractingAllSections}
-              extractionProgress={ai.extractionProgress}
-              onExtractAllSectionsForAllModels={ai.handleExtractAllSectionsForAllModels}
-              extractingAllSectionsForAllModels={ai.extractingAllSectionsForAllModels}
-              allModelsProgress={ai.allModelsProgress}
-              onExtractionComplete={props.onExtractionComplete}
-              registerSection={registerSection}
-            />
-          </div>
-        )}
-      </div>
+      {/*
+        The Provider sits here, and this component is NOT memoized. Inside a
+        memo boundary its comparator would gate the whole context: one
+        bail-out and no consumer at any depth updates again.
+      */}
+      <EntryFormProvider value={form}>
+        <div ref={formColumnRef} className="min-w-0 flex-1 space-y-4">
+          {roots.map((entityType) =>
+            entityType.cardinality === 'many' ? (
+              <EntrySection key={entityType.id} group={entityType} parentInstanceId={null} />
+            ) : (
+              <div
+                key={entityType.id}
+                ref={(el) => registerSection(entityType.id, el)}
+                tabIndex={-1}
+                className="scroll-mt-4 outline-hidden"
+              >
+                <SectionAccordion
+                  entityType={entityType}
+                  instances={props.instances.filter((i) => i.entity_type_id === entityType.id)}
+                  fields={entityType.fields}
+                  values={props.values}
+                  onValueChange={props.updateValue}
+                  projectId={props.projectId}
+                  articleId={props.articleId}
+                  templateId={props.templateId}
+                  runId={props.runId ?? undefined}
+                  aiSuggestions={props.aiSuggestions}
+                  onAcceptAI={props.acceptSuggestion}
+                  onRejectAI={props.rejectSuggestion}
+                  selectSuggestion={props.selectSuggestion}
+                  getSuggestionsHistory={props.getSuggestionsHistory}
+                  onAddInstance={() => props.handleAddInstance(entityType.id, null)}
+                  onRemoveInstance={props.handleRemoveInstance}
+                  onRenameInstance={props.handleRenameInstance}
+                  onExtractionComplete={props.onExtractionComplete}
+                />
+              </div>
+            ),
+          )}
+        </div>
+      </EntryFormProvider>
     </div>
   );
 }
 
-// kept: custom comparator — compiler does not replicate arePropsEqual.
-// Re-renders only on props that change visuals (aiSuggestions by
-// reference + key count, published after each extraction; showPDF
-// toggles the section rail collapsed state).
-// Compared props: values, instances, studyLevelSections, modelChildSections,
-// activeModelId, modelParentEntityType, models, modelsLoading, showPDF,
-// runId, aiSuggestions. ``models`` by reference and ``modelsLoading`` at
-// all: after a manual add the hook rebuilds the models with progress at
-// the SAME length while its loading flag flips back, and a comparator
-// that watched only the length left the selector on its skeleton.
-export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, nextProps) => {
-  const aiSuggestionsChanged =
-    prevProps.aiSuggestions !== nextProps.aiSuggestions ||
-    Object.keys(prevProps.aiSuggestions).length !== Object.keys(nextProps.aiSuggestions).length;
-
-  return (
-    prevProps.values === nextProps.values &&
-    prevProps.instances === nextProps.instances &&
-    prevProps.studyLevelSections === nextProps.studyLevelSections &&
-    prevProps.modelChildSections === nextProps.modelChildSections &&
-    prevProps.activeModelId === nextProps.activeModelId &&
-    prevProps.modelParentEntityType === nextProps.modelParentEntityType &&
-    prevProps.models === nextProps.models &&
-    prevProps.modelsLoading === nextProps.modelsLoading &&
-    prevProps.showPDF === nextProps.showPDF &&
-    // ``runId`` gates AI extraction onto the session run; a stale value here
-    // would let the handlers fork a parallel run (the orphaning bug).
-    prevProps.runId === nextProps.runId &&
-    !aiSuggestionsChanged
-  );
-});
-
-ExtractionFormView.displayName = 'ExtractionFormView';
+/**
+ * Exported unmemoized, deliberately.
+ *
+ * The old `memo` + comparator existed for `models`/`modelsLoading` churn from
+ * `useModelManagement`, which no longer exists. It also cannot do its job any
+ * more: context consumers re-render through `memo` regardless, so it would
+ * only retain the power to block a prop it does not list — and it now hosts
+ * the EntryFormProvider, where a bail-out would freeze the entire form.
+ */
+export const ExtractionFormView = ExtractionFormViewComponent;

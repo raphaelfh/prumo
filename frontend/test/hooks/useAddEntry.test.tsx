@@ -90,8 +90,6 @@ function setup(overrides: Partial<Parameters<typeof useAddEntry>[0]> = {}) {
       templateId: 't-1',
       entityTypes: [ROOT_GROUP, NESTED_GROUP],
       instances: [ACTIVE_MODEL],
-      modelParentEntityTypeId: 'et-root',
-      activeModelId: 'inst-active-model',
       onCreated,
       ...overrides,
     }),
@@ -110,7 +108,7 @@ describe('useAddEntry', () => {
     createEntry.mockResolvedValue({instanceId: 'inst-new', label: 'XGBoost'});
     const {hook, onCreated} = setup();
 
-    act(() => hook.result.current.open('et-root'));
+    act(() => hook.result.current.open('et-root', null));
     await act(async () => {
       await hook.result.current.dialogProps.onConfirm('XGBoost');
     });
@@ -131,11 +129,31 @@ describe('useAddEntry', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
   });
 
+  it('selects the entry it just created, in the slot it created it in', async () => {
+    // Regression: `useModelManagement.createModel` selected the new model
+    // implicitly. Without it the form keeps showing the previously-active
+    // entry, so the reviewer's next action lands on the wrong one — the
+    // Spec A e2e caught this, no unit test did.
+    createEntry.mockResolvedValue({instanceId: 'inst-new', label: 'XGBoost'});
+    const onEntryCreated = vi.fn();
+    const {hook} = setup({onEntryCreated});
+
+    act(() => hook.result.current.open('et-nested', 'inst-active-model'));
+    await act(async () => {
+      await hook.result.current.dialogProps.onConfirm('Age');
+    });
+
+    expect(onEntryCreated).toHaveBeenCalledWith(
+      {entityTypeId: 'et-nested', parentInstanceId: 'inst-active-model'},
+      'inst-new',
+    );
+  });
+
   it('passes the enclosing entry as parentInstanceId for a nested group', async () => {
     createEntry.mockResolvedValue({instanceId: 'inst-nested', label: 'Age'});
     const {hook} = setup();
 
-    act(() => hook.result.current.open('et-nested'));
+    act(() => hook.result.current.open('et-nested', 'inst-active-model'));
     await act(async () => {
       await hook.result.current.dialogProps.onConfirm('Age');
     });
@@ -159,7 +177,7 @@ describe('useAddEntry', () => {
     createEntry.mockRejectedValue(new ApiError('ENTRY_KEY_DUPLICATE', 'already exists', 409));
     const {hook, onCreated} = setup();
 
-    act(() => hook.result.current.open('et-root'));
+    act(() => hook.result.current.open('et-root', null));
     await act(async () => {
       // Pin text ONLY the copy key carries: asserting on "already exists"
       // would also match the raw server message and pass with the typed
@@ -178,7 +196,7 @@ describe('useAddEntry', () => {
     createEntry.mockRejectedValue(new ApiError('EXTRACTION_FAILED', 'boom', 500));
     const {hook, onCreated} = setup();
 
-    act(() => hook.result.current.open('et-root'));
+    act(() => hook.result.current.open('et-root', null));
     await act(async () => {
       await expect(
         hook.result.current.dialogProps.onConfirm('XGBoost'),
@@ -188,10 +206,12 @@ describe('useAddEntry', () => {
     expect(onCreated).not.toHaveBeenCalled();
   });
 
-  it('refuses to open a nested group with no active parent entry', () => {
-    const {hook} = setup({activeModelId: null});
+  it('refuses to open a nested group with no parent entry', () => {
+    const {hook} = setup();
 
-    act(() => hook.result.current.open('et-nested'));
+    // The parent is now the caller's to supply; passing none is the error,
+    // rather than the hook guessing at the first instance of the type.
+    act(() => hook.result.current.open('et-nested', null));
 
     expect(hook.result.current.dialogProps.open).toBe(false);
     expect(toastError).toHaveBeenCalled();

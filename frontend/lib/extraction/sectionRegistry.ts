@@ -13,16 +13,25 @@ export interface SectionNavItem {
   requiredTotal: number;
   requiredFilled: number;
   state: SectionNavState;
-  level: 0 | 1;
+  /** Nesting depth. Was `0 | 1` while the tree was capped at two levels. */
+  level: number;
 }
 
 export interface BuildSectionRegistryArgs {
-  studyLevelSections: ExtractionEntityTypeWithFields[];
-  modelParentEntityType?: ExtractionEntityTypeWithFields;
-  modelChildSections: ExtractionEntityTypeWithFields[];
+  /** Sections with no parent, in sort order. */
+  roots: ExtractionEntityTypeWithFields[];
+  /** Every section of the template, so the walk can find children. */
+  entityTypes: ExtractionEntityTypeWithFields[];
   instances: ExtractionInstance[];
   values: Record<string, ExtractionValue>;
-  activeModelId: string | null;
+  /**
+   * Which entry is active in each rendered group, keyed by
+   * `entrySlotKey(article, group, parent)`. A group's children are described
+   * against its ACTIVE entry, so the rail and the global percentage measure
+   * what the form is showing — the semantic the two-level version had.
+   */
+  activeEntries: Record<string, string>;
+  articleId: string;
 }
 
 function groupByEntityType(
@@ -45,7 +54,7 @@ function toState(filled: number, total: number): SectionNavState {
 
 function sectionItem(
   et: ExtractionEntityTypeWithFields,
-  level: 0 | 1,
+  level: number,
   values: Record<string, ExtractionValue>,
   byType: Map<string, ExtractionInstance[]>,
   parentInstanceId?: string | null,
@@ -71,22 +80,73 @@ function sectionItem(
   };
 }
 
+/** The entry a group is currently showing in one parent slot, if any. */
+function activeEntryOf(
+  args: BuildSectionRegistryArgs,
+  byType: Map<string, ExtractionInstance[]>,
+  groupId: string,
+  parentInstanceId: string | null,
+): string | null {
+  const slot = `active-entry-${args.articleId}-${groupId}-${parentInstanceId ?? 'root'}`;
+  const stored = args.activeEntries[slot];
+  const entries = (byType.get(groupId) ?? []).filter(
+    (i) => (i.parent_instance_id ?? null) === parentInstanceId,
+  );
+  // Mirror the form: a stored id that no longer exists falls back to the
+  // first entry, so the rail never describes a subtree nothing is showing.
+  if (stored && entries.some((e) => e.id === stored)) return stored;
+  return entries[0]?.id ?? null;
+}
+
 export function buildSectionRegistry(args: BuildSectionRegistryArgs): SectionNavItem[] {
   // Group instances by entity type once (O(N)) so each section is an O(bucket)
   // lookup instead of an O(N) rescan per section.
   const byType = groupByEntityType(args.instances);
+  const childrenOf = new Map<string, ExtractionEntityTypeWithFields[]>();
+  for (const et of args.entityTypes) {
+    if (!et.parent_entity_type_id) continue;
+    const bucket = childrenOf.get(et.parent_entity_type_id);
+    if (bucket) bucket.push(et);
+    else childrenOf.set(et.parent_entity_type_id, [et]);
+  }
+
   const items: SectionNavItem[] = [];
-  for (const et of args.studyLevelSections) {
-    items.push(sectionItem(et, 0, args.values, byType));
-  }
-  if (args.modelParentEntityType) {
-    items.push(sectionItem(args.modelParentEntityType, 0, args.values, byType));
-    if (args.activeModelId !== null) {
-      for (const child of args.modelChildSections) {
-        items.push(sectionItem(child, 1, args.values, byType, args.activeModelId));
-      }
-    }
-  }
+  const seen = new Set<string>();
+
+  const walk = (
+    et: ExtractionEntityTypeWithFields,
+    level: number,
+    parentInstanceId: string | null,
+  ): void => {
+    // The parent link is data; a cycle would otherwise hang the nav rail.
+    if (seen.has(et.id)) return;
+    seen.add(et.id);
+
+    items.push(
+      sectionItem(
+        et,
+        level,
+        args.values,
+        byType,
+        parentInstanceId === null && !et.parent_entity_type_id ? undefined : parentInstanceId,
+      ),
+    );
+
+    const children = childrenOf.get(et.id) ?? [];
+    if (children.length === 0) return;
+    // Only a repeating section scopes its children to one entry; a singleton
+    // has exactly one instance in this slot.
+    const scope =
+      et.cardinality === 'many'
+        ? activeEntryOf(args, byType, et.id, parentInstanceId)
+        : ((byType.get(et.id) ?? []).find(
+            (i) => (i.parent_instance_id ?? null) === parentInstanceId,
+          )?.id ?? null);
+    if (scope === null) return;
+    for (const child of children) walk(child, level + 1, scope);
+  };
+
+  for (const root of args.roots) walk(root, 0, null);
   return items;
 }
 

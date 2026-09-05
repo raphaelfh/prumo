@@ -53,6 +53,7 @@ const REQUEST = { projectId: 'p1', articleId: 'a1', templateId: 't1' };
 const SERVICE_RESULT = {
   data: {
     runId: 'run-1',
+    // Wire shape: the backend still says modelName (retires in B6).
     modelsCreated: [{ instanceId: 'inst-1', modelName: 'CatBoost' }],
     metadata: { tokensTotal: 10 },
   },
@@ -102,7 +103,7 @@ describe('useModelExtraction promise contract', () => {
     });
 
     expect(onSuccess).toHaveBeenCalledWith('run-1', 1, [
-      { instanceId: 'inst-1', modelName: 'CatBoost' },
+      { instanceId: 'inst-1', entryName: 'CatBoost' },
     ]);
   });
 

@@ -17,7 +17,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import {t} from "@/lib/copy";
-import type { Model } from "@/components/extraction/hierarchy/ModelSelector";
+import type { Entry } from "@/components/extraction/entries/types";
 import { getModelChildSections, type ModelChildSection } from "./helpers/getModelChildSections";
 import { processSectionsInChunks } from "./helpers/processSectionsInChunks";
 import type { ExtractionProgress } from "./useBatchSectionExtractionChunked";
@@ -36,7 +36,7 @@ interface AllModelsSectionsParams {
   projectId: string;
   articleId: string;
   templateId: string;
-  models: Model[];
+  models: Entry[];
   /** Active session run to extract into — reused so decisions aren't orphaned. */
   runId?: string;
   /**
@@ -75,7 +75,7 @@ export interface UseBatchAllModelsSectionsExtractionReturn {
  *   projectId,
  *   articleId,
  *   templateId,
- *   models: [{ instanceId: '...', modelName: 'CatBoost' }, ...]
+ *   models: [{ instanceId: '...', entryName: 'CatBoost' }, ...]
  * });
  * ```
  *
@@ -123,7 +123,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         // Processar cada modelo sequencialmente
         for (const [i, model] of models.entries()) {
             console.warn(`[useBatchAllModelsSectionsExtraction] Processing model ${i + 1}/${models.length}`, {
-            modelName: model.modelName,
+            entryName: model.entryName,
             instanceId: model.instanceId,
           });
 
@@ -131,7 +131,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
           const currentProgress: AllModelsSectionsProgress = {
             currentModel: i + 1,
             totalModels: models.length,
-            currentModelName: model.modelName,
+            currentModelName: model.entryName,
             sectionProgress: null,
           };
           setProgress(currentProgress);
@@ -156,7 +156,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
                   );
 
             if (sections.length === 0) {
-                console.warn(`[useBatchAllModelsSectionsExtraction] No sections found for model ${model.modelName}`);
+                console.warn(`[useBatchAllModelsSectionsExtraction] No sections found for model ${model.entryName}`);
               return { totalSuggestionsCreated: 0, totalTokensUsed: 0, totalDurationMs: 0, skipped: true };
             }
 
@@ -176,7 +176,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
                 const updatedProgress: AllModelsSectionsProgress = {
                   currentModel: i + 1,
                   totalModels: models.length,
-                  currentModelName: model.modelName,
+                  currentModelName: model.entryName,
                   sectionProgress,
                 };
                 setProgress(updatedProgress);
@@ -198,7 +198,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
             totalDurationMs += modelResult.totalDurationMs;
             successfulModels++;
               console.warn(`[useBatchAllModelsSectionsExtraction] Model ${i + 1} completed`, {
-              modelName: model.modelName,
+              entryName: model.entryName,
               suggestionsCreated: modelResult.totalSuggestionsCreated,
               tokensUsed: modelResult.totalTokensUsed,
             });

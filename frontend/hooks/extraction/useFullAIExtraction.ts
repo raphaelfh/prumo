@@ -205,7 +205,7 @@ export function useFullAIExtraction(options?: {
         }
 
           console.warn('[useFullAIExtraction] Found', models.length, 'model(s)', {
-          modelNames: models.map(m => m.modelName),
+          modelNames: models.map(m => m.entryName),
         });
 
           // PHASE 3: Extract sections from all models

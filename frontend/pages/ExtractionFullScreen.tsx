@@ -20,7 +20,6 @@ import {useNavigate, useParams} from 'react-router';
 import {toast} from 'sonner';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {extractionLogger} from '@/lib/extraction/observability';
-import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 import {useAiLinkMaps} from '@/hooks/runs/useAiLinkMaps';
 import {isRunEditable} from '@/lib/runs/editability';
@@ -69,7 +68,7 @@ import {toConsensusValueEnvelope} from '@/lib/extraction/valueSemantics';
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
 import {RunPdfContent} from '@/components/runs/RunPdfContent';
 import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
-import {RemoveModelDialog} from '@/components/extraction/hierarchy/RemoveModelDialog';
+import {RemoveEntryDialog} from '@/components/extraction/entries/RemoveEntryDialog';
 import {
   AddEntryDialog,
   RenameEntryDialog,
@@ -80,12 +79,13 @@ import {deriveCanReopenExtraction} from '@/lib/extraction/reopenExtraction';
 import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtractionProgress';
 
 // Additional hooks
-import {useModelManagement} from '@/hooks/extraction/useModelManagement';
 import {useAddEntry} from '@/hooks/extraction/useAddEntry';
+import {entrySlotKey} from '@/hooks/extraction/useEntryGroup';
 import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
 import {displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
+import {isValueEmpty} from '@/lib/extraction/valueSemantics';
 import {createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
 
 const SCROLL_CONTAINERS_TO_PRESERVE = [
@@ -157,7 +157,6 @@ export default function ExtractionFullScreen() {
   const [isProgressMinimized, setIsProgressMinimized] = useState(false);
   
   // Hierarchy state
-  const [showAddModelDialog, setShowAddModelDialog] = useState(false);
   const [modelToRemove, setModelToRemove] = useState<{
     id: string; 
     name: string;
@@ -604,80 +603,10 @@ export default function ExtractionFullScreen() {
     });
   };
 
-  // Partition entity types into study-level + model container + per-model
-  // children by structural role. The partition function is the single
-  // source of truth — no more ``name === 'prediction_models'`` lookups
-  // sprinkled across the codebase.
-  const {
-    studyLevel: studyLevelSections,
-    modelContainer: modelParentEntityType,
-    modelChildren: modelChildSections,
-  } = useEntityTypePartition(entityTypes);
-
-  // The model-container instances, sourced from the view-derived
-  // ``instances`` and shaped to ``ModelInstanceRow``. Passed to
-  // useModelManagement so it derives models from the view instead of
-  // issuing its own ``extraction_instances`` read. ``undefined`` until a
-  // container entity type exists so the hook keeps its standalone behavior.
-  const modelInstances = useMemo(
-    () =>
-      modelParentEntityType
-        ? instances
-            .filter((i) => i.entity_type_id === modelParentEntityType.id)
-            .map((i) => ({
-              id: i.id,
-              label: i.label,
-              sort_order: i.sort_order,
-              created_at: i.created_at,
-            }))
-        : undefined,
-    [instances, modelParentEntityType],
-  );
-
-  // Restore preference for the active model (persisted below). A
-  // per-article mount snapshot, deliberately not live: the hook applies
-  // it only when no current selection survives a load. Guarded read —
-  // localStorage can throw in restricted contexts (SidebarContext
-  // precedent).
-  const initialModelId = useMemo(() => {
-    if (!articleId) return null;
-    try {
-      return localStorage.getItem(`active-model-${articleId}`);
-    } catch {
-      return null;
-    }
-  }, [articleId]);
-
-  // Hook for model management
-  const {
-    models,
-    activeModelId,
-    setActiveModelId,
-    loading: modelsLoading,
-    createModel,
-    removeModel,
-    refreshModels,
-    getModelProgress
-  } = useModelManagement({
-    projectId: projectId || '',
-    articleId: articleId || '',
-    templateId: template?.id || '',
-    modelParentEntityTypeId: modelParentEntityType?.id || null,
-    modelInstances,
-    initialModelId,
-    enabled: !!template && !!modelParentEntityType
-  });
-
-    // Persist active model in localStorage (guarded like the read above).
-  useEffect(() => {
-    if (activeModelId && articleId) {
-      try {
-        localStorage.setItem(`active-model-${articleId}`, activeModelId);
-      } catch {
-        // Restricted context — losing the preference is fine.
-      }
-    }
-  }, [activeModelId, articleId]);
+  // No partition, no model hook. The form derives roots from the tree and
+  // each `EntrySection` owns its own entries; what stays here is the small
+  // amount the PAGE still owns — the dialogs, and the active-entry map the
+  // nav rail needs (see `activeEntries` above).
 
     // Redirect on critical error
   useEffect(() => {
@@ -686,12 +615,6 @@ export default function ExtractionFullScreen() {
       navigate(`/projects/${projectId}?tab=extraction`);
     }
   }, [dataError, projectId, navigate]);
-
-  const getInstancesForModel = (entityTypeId: string, modelId: string) => {
-    return instances.filter(
-      i => i.entity_type_id === entityTypeId && i.parent_instance_id === modelId
-    );
-  };
 
     // Function to reload the run view (and thus the derived instances).
     // Used after model / instance mutations and AI extraction.
@@ -707,34 +630,30 @@ export default function ExtractionFullScreen() {
     navigate(`/projects/${projectId}/extraction/${newArticleId}`);
   };
 
-  // Handlers for model management
-  const handleAddModel = () => {
-    setShowAddModelDialog(true);
-  };
-
-  const handleConfirmAddModel = async (modelName: string) => {
-    const result = await createModel(modelName);
-    if (result) {
-      setShowAddModelDialog(false);
-      // Reload the run view (child instances will be included).
-      // refreshModels() is NOT called — the createModel hook already updated local state.
-      await preserveScroll(refetchRun);
+  /**
+   * Open the remove dialog for one entry of a repeating section.
+   *
+   * Generalized from the model-only handler: any group's entry cascades
+   * through its subtree, so the dialog names how much data goes with it.
+   * The count comes from the values already in memory — the RPC that used
+   * to answer this went with `useModelManagement`.
+   */
+  const handleOpenRemoveDialog = (instanceId: string) => {
+    const instance = instances.find((i) => i.id === instanceId);
+    if (!instance) return;
+    const subtree = new Set<string>([instanceId]);
+    for (const i of instances) {
+      if (i.parent_instance_id && subtree.has(i.parent_instance_id)) subtree.add(i.id);
     }
-  };
-
-  const handleRemoveModel = async (instanceId: string) => {
-    const model = models.find(m => m.instanceId === instanceId);
-    if (!model) return;
-
-      // Check if there is extracted data
-    const progress = await getModelProgress(instanceId);
-    const hasData = !!(progress && progress.completed > 0);
-
-    setModelToRemove({ 
-      id: instanceId, 
-      name: model.modelName,
-      hasData,
-      fieldsCount: progress?.completed || 0
+    const fieldsCount = Object.entries(values).filter(
+      ([key, value]) =>
+        subtree.has(key.slice(0, key.indexOf('_'))) && !isValueEmpty(value),
+    ).length;
+    setModelToRemove({
+      id: instanceId,
+      name: instance.label ?? '',
+      hasData: fieldsCount > 0,
+      fieldsCount,
     });
   };
 
@@ -743,7 +662,7 @@ export default function ExtractionFullScreen() {
 
     extractionLogger.info('removeModelHandler', 'Starting model removal', {
       modelId: modelToRemove.id,
-      modelName: modelToRemove.name,
+      entryName: modelToRemove.name,
       hasData: modelToRemove.hasData,
       fieldsCount: modelToRemove.fieldsCount,
     });
@@ -753,10 +672,10 @@ export default function ExtractionFullScreen() {
 
     // removeModel resolves/rejects — use .then().catch() so there is no
     // try/catch or throw in this component function.
-    await removeModel(modelIdToRemove).then(async () => {
+    await extractionInstanceService.removeInstance(modelIdToRemove).then(async () => {
       extractionLogger.info('removeModelHandler', 'Model removed successfully', {
         modelId: modelIdToRemove,
-        modelName: modelNameToRemove,
+        entryName: modelNameToRemove,
       });
 
       // Close dialog immediately after successful removal
@@ -774,7 +693,7 @@ export default function ExtractionFullScreen() {
     }).catch((error: unknown) => {
       extractionLogger.error('removeModelHandler', 'Failed to remove model', error instanceof Error ? error : undefined, {
         modelId: modelIdToRemove,
-        modelName: modelNameToRemove,
+        entryName: modelNameToRemove,
       });
       // Re-throw so the dialog can display the error — CONCERN: this
       // throw is at the top level of handleConfirmRemoveModel (not inside
@@ -793,9 +712,12 @@ export default function ExtractionFullScreen() {
     templateId: template?.id,
     entityTypes,
     instances,
-    modelParentEntityTypeId: modelParentEntityType?.id ?? null,
-    activeModelId,
     onCreated: refetchRun,
+    onEntryCreated: (target, instanceId) =>
+      setActiveEntry(
+        entrySlotKey(articleId ?? '', target.entityTypeId, target.parentInstanceId),
+        instanceId,
+      ),
   });
   const handleAddInstance = addEntry.open;
 
@@ -804,6 +726,12 @@ export default function ExtractionFullScreen() {
   // by the hook) re-derives labels and identities.
   const updateIdentity = useUpdateInstanceIdentity(activeRunId);
   const [modelToRename, setModelToRename] = useState<string | null>(null);
+  // Which entry each rendered group is showing. Held here, not inside the
+  // sections, because the nav rail scopes a nested section's progress to the
+  // entry the form is showing and cannot read state that lives inside them.
+  const [activeEntries, setActiveEntries] = useState<Record<string, string>>({});
+  const setActiveEntry = (slot: string, entryId: string) =>
+    setActiveEntries((prev) => (prev[slot] === entryId ? prev : {...prev, [slot]: entryId}));
   const handleRenameInstance = async (instanceId: string, changes: EntryIdentityChanges) => {
     const instance = instances.find((i) => i.id === instanceId);
     const entityType = entityTypes.find((et) => et.id === instance?.entity_type_id);
@@ -819,8 +747,13 @@ export default function ExtractionFullScreen() {
       },
     });
   };
-  const modelKeyField = modelParentEntityType ? keyFieldOf(modelParentEntityType.fields) : null;
   const modelBeingRenamed = instances.find((i) => i.id === modelToRename) ?? null;
+  // The noun and the key field come from the entry's OWN section, so a
+  // nested group's dialog says "predictor" where the root's says "model".
+  const renamedEntityType = entityTypes.find((et) => et.id === modelBeingRenamed?.entity_type_id);
+  const removedEntityType = entityTypes.find(
+    (et) => et.id === instances.find((i) => i.id === modelToRemove?.id)?.entity_type_id,
+  );
 
   const handleRemoveInstance = async (instanceId: string) => {
     // Check if there are extracted values
@@ -1150,9 +1083,6 @@ export default function ExtractionFullScreen() {
         viewMode={viewMode}
         showPDF={pdf.isOpen}
         formViewProps={{
-          studyLevelSections,
-          modelParentEntityType,
-          modelChildSections,
           instances,
           values,
           updateValue,
@@ -1161,15 +1091,12 @@ export default function ExtractionFullScreen() {
           selectSuggestion,
           rejectSuggestion,
           getSuggestionsHistory,
-          models,
-          activeModelId,
-          setActiveModelId,
-          onAddModel: handleAddModel,
-          onRemoveModel: handleRemoveModel,
-          onRenameModel: setModelToRename,
-          onRefreshModels: refreshModels,
           onRefreshInstances: handleRefreshInstances,
-          getInstancesForModel,
+          entityTypes,
+          activeEntries,
+          setActiveEntry,
+          handleOpenRenameDialog: setModelToRename,
+          handleOpenRemoveDialog,
           handleAddInstance,
           handleRemoveInstance,
           handleRenameInstance,
@@ -1177,7 +1104,6 @@ export default function ExtractionFullScreen() {
           articleId: articleId || '',
           templateId: template?.id || '',
           runId: activeRunId,
-          modelsLoading,
           onExtractionComplete: handleExtractionComplete,
         }}
         compareViewProps={{
@@ -1292,27 +1218,19 @@ export default function ExtractionFullScreen() {
       />
 
       {/* Dialogs */}
-      <AddEntryDialog
-        open={showAddModelDialog}
-        entryLabel={modelParentEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
-        keyLabel={modelKeyField?.label ?? null}
-        existingKeys={models.map(m => m.modelName)}
-        onConfirm={handleConfirmAddModel}
-        onCancel={() => setShowAddModelDialog(false)}
-      />
 
       <AddEntryDialog {...addEntry.dialogProps} />
 
       <RenameEntryDialog
         open={modelBeingRenamed !== null}
-        entryLabel={modelParentEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
-        keyLabel={modelKeyField?.label ?? null}
+        entryLabel={renamedEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
+        keyLabel={renamedEntityType ? (keyFieldOf(renamedEntityType.fields)?.label ?? null) : null}
         initialLabel={modelBeingRenamed?.label ?? ''}
         initialKey={modelBeingRenamed ? displayEntryKey(modelBeingRenamed) : null}
         siblingKeys={instances
           .filter(
             (i) =>
-              i.entity_type_id === modelParentEntityType?.id && i.id !== modelToRename,
+              i.entity_type_id === modelBeingRenamed?.entity_type_id && i.id !== modelToRename,
           )
           .map((i) => entryKeyOf(i) ?? i.label)}
         onConfirm={async (changes) => {
@@ -1323,10 +1241,10 @@ export default function ExtractionFullScreen() {
         onCancel={() => setModelToRename(null)}
       />
 
-      <RemoveModelDialog
+      <RemoveEntryDialog
         open={!!modelToRemove}
-        entryLabel={modelParentEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
-        modelName={modelToRemove?.name || ''}
+        entryLabel={removedEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
+        entryName={modelToRemove?.name || ''}
         hasExtractedData={modelToRemove?.hasData || false}
         extractedFieldsCount={modelToRemove?.fieldsCount || 0}
         onConfirm={handleConfirmRemoveModel}

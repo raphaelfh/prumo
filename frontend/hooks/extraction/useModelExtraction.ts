@@ -54,7 +54,7 @@ export function useModelExtraction(options?: {
   onSuccess?: (
     runId: string,
     modelsCreated: number,
-    createdModels: Array<{instanceId: string; modelName: string}>,
+    createdModels: Array<{instanceId: string; entryName: string}>,
   ) => void;
 }): UseModelExtractionReturn {
   const [loading, setLoading] = useState(false);
@@ -107,7 +107,9 @@ export function useModelExtraction(options?: {
               modelsCreated,
               result.data.modelsCreated.map(m => ({
                 instanceId: m.instanceId,
-                modelName: m.modelName,
+                // The wire still says modelName (the model pipeline retires
+                // in B6); the run form's type does not.
+                entryName: m.modelName,
               })),
             )
           ).catch(err => {
