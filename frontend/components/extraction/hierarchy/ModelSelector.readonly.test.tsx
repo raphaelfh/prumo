@@ -7,7 +7,7 @@ import { ModelSelector } from './ModelSelector';
 import { RunEditabilityProvider } from '@/components/runs/RunEditabilityContext';
 
 const baseProps = {
-  models: [{ instanceId: 'm1', modelName: 'Model A' }],
+  models: [{ instanceId: 'm1', entryName: 'Model A' }],
   activeModelId: 'm1',
   onSelectModel: vi.fn(),
   onAddModel: vi.fn(),

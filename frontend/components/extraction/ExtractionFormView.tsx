@@ -17,7 +17,7 @@
 
 import {memo, useRef} from 'react';
 import {ModelSection} from './ModelSection';
-import type {Model} from './hierarchy/ModelSelector';
+import type {Entry} from './entries/types';
 import {SectionAccordion} from './SectionAccordion';
 import SectionNavRail from '@/components/extraction/SectionNavRail';
 import {buildSectionRegistry} from '@/lib/extraction/sectionRegistry';
@@ -44,7 +44,7 @@ export interface ExtractionFormViewProps {
   selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  models: Model[];
+  models: Entry[];
   activeModelId: string | null;
   setActiveModelId: (id: string) => void;
   onAddModel: () => void;

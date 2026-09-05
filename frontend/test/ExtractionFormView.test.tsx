@@ -243,7 +243,7 @@ describe('ExtractionFormView → model parent (BUG #7 regression)', () => {
           modelParentEntityType: MODEL_PARENT,
           instances,
           activeModelId: 'model-1',
-          models: [{ instanceId: 'model-1', modelName: 'Logistic' }],
+          models: [{ instanceId: 'model-1', entryName: 'Logistic' }],
         })}
       />,
     );
@@ -260,7 +260,7 @@ describe('ExtractionFormView → model parent (BUG #7 regression)', () => {
           modelParentEntityType: MODEL_PARENT,
           instances,
           activeModelId: 'model-1',
-          models: [{ instanceId: 'model-1', modelName: 'Logistic' }],
+          models: [{ instanceId: 'model-1', entryName: 'Logistic' }],
         })}
       />,
     );
@@ -282,8 +282,8 @@ describe('ExtractionFormView → model parent (BUG #7 regression)', () => {
           instances,
           activeModelId: 'model-2',
           models: [
-            { instanceId: 'model-1', modelName: 'Logistic' },
-            { instanceId: 'model-2', modelName: 'XGBoost' },
+            { instanceId: 'model-1', entryName: 'Logistic' },
+            { instanceId: 'model-2', entryName: 'XGBoost' },
           ],
         })}
       />,
@@ -302,7 +302,7 @@ describe('ExtractionFormView → model parent (BUG #7 regression)', () => {
           modelParentEntityType: emptyParent,
           instances: [{ id: 'model-1', entity_type_id: 'pred-et', label: 'L' }],
           activeModelId: 'model-1',
-          models: [{ instanceId: 'model-1', modelName: 'L' }],
+          models: [{ instanceId: 'model-1', entryName: 'L' }],
         })}
       />,
     );
@@ -338,7 +338,7 @@ describe('ExtractionFormView → model child sections', () => {
           modelChildSections: [CHILD_SECTION],
           instances,
           activeModelId: 'model-1',
-          models: [{ instanceId: 'model-1', modelName: 'L' }],
+          models: [{ instanceId: 'model-1', entryName: 'L' }],
           getInstancesForModel,
         })}
       />,
@@ -358,7 +358,7 @@ describe('ExtractionFormView → model child sections', () => {
           modelChildSections: [CHILD_SECTION],
           instances,
           activeModelId: 'model-1',
-          models: [{ instanceId: 'model-1', modelName: 'L' }],
+          models: [{ instanceId: 'model-1', entryName: 'L' }],
         })}
       />,
     );
@@ -402,7 +402,7 @@ describe('ExtractionFormView → model child sections', () => {
           modelParentEntityType: MODEL_PARENT,
           modelChildSections: [CHILD_SECTION],
           activeModelId: 'model-1',
-          models: [{ instanceId: 'model-1', modelName: 'L' }],
+          models: [{ instanceId: 'model-1', entryName: 'L' }],
         })}
       />,
     );
@@ -427,7 +427,7 @@ describe('ExtractionFormView → combined render order', () => {
           modelChildSections: [CHILD_SECTION],
           instances,
           activeModelId: 'model-1',
-          models: [{ instanceId: 'model-1', modelName: 'L' }],
+          models: [{ instanceId: 'model-1', entryName: 'L' }],
         })}
       />,
     );
@@ -536,7 +536,7 @@ describe('ExtractionFormView → post-create model load (memo comparator)', () =
 
   it('re-renders the selector when only the loading flag flips', () => {
     const props = shared();
-    const models = [{ instanceId: 'model-1', modelName: 'Logistic' }];
+    const models = [{ instanceId: 'model-1', entryName: 'Logistic' }];
     const { rerender } = render(
       <ExtractionFormView {...props} models={models} modelsLoading={true} />,
     );
@@ -551,7 +551,7 @@ describe('ExtractionFormView → post-create model load (memo comparator)', () =
     const { rerender } = render(
       <ExtractionFormView
         {...props}
-        models={[{ instanceId: 'model-1', modelName: 'Logistic' }]}
+        models={[{ instanceId: 'model-1', entryName: 'Logistic' }]}
       />,
     );
     expect(screen.getByTestId('model-selector')).toHaveAttribute('data-progress', '');
@@ -562,7 +562,7 @@ describe('ExtractionFormView → post-create model load (memo comparator)', () =
         models={[
           {
             instanceId: 'model-1',
-            modelName: 'Logistic',
+            entryName: 'Logistic',
             progress: { completed: 1, total: 2, percentage: 50 },
           },
         ]}

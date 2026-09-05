@@ -16,7 +16,8 @@ import type {ReactElement} from 'react';
 import {Separator} from '@/components/ui/separator';
 import {BatchAllModelsSectionsProgress} from './BatchAllModelsSectionsProgress';
 import {BatchExtractionProgress} from './BatchExtractionProgress';
-import {ModelSelector, type Model} from './hierarchy/ModelSelector';
+import {ModelSelector} from './hierarchy/ModelSelector';
+import type {Entry} from './entries/types';
 import {SectionAccordion} from './SectionAccordion';
 import type {
   ExtractionEntityTypeWithFields,
@@ -41,7 +42,7 @@ export interface ModelSectionProps {
   setActiveModelId: (id: string) => void;
 
   /** Model picker data + create/remove handlers. */
-  models: Model[];
+  models: Entry[];
   modelsLoading: boolean;
   onAddModel: () => void;
   onRemoveModel: (id: string) => void;

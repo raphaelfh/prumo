@@ -34,21 +34,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
+import type {Entry} from '../entries/types';
 
 // =================== INTERFACES ===================
 
-export interface Model {
-  instanceId: string;
-  modelName: string;
-  progress?: {
-    completed: number;
-    total: number;
-    percentage: number;
-  };
-}
 
 interface ModelSelectorProps {
-  models: Model[];
+  models: Entry[];
   activeModelId: string | null;
   onSelectModel: (instanceId: string) => void;
   onAddModel: () => void;
@@ -101,7 +93,7 @@ export function ModelSelector({
   const nounCap = entryLabel.charAt(0).toUpperCase() + entryLabel.slice(1);
 
   // Renderizar badge de progresso (semantic tokens; flips correctly in dark mode)
-  const renderProgressBadge = (progress?: Model['progress']) => {
+  const renderProgressBadge = (progress?: Entry['progress']) => {
     if (!progress) return null;
 
     const { percentage, completed, total } = progress;
@@ -256,7 +248,7 @@ export function ModelSelector({
             {models.map((model) => (
               <SelectItem key={model.instanceId} value={model.instanceId}>
                 <div className="flex items-center gap-2">
-                  <span>{model.modelName}</span>
+                  <span>{model.entryName}</span>
                   {renderProgressBadge(model.progress)}
                 </div>
               </SelectItem>
@@ -296,7 +288,7 @@ export function ModelSelector({
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
                 <p className="text-xs text-muted-foreground">{t('extraction', 'modelActiveLabel').replace('{{noun}}', entryLabel)}</p>
-              <p className="font-medium text-foreground mt-0.5 truncate">{activeModel.modelName}</p>
+              <p className="font-medium text-foreground mt-0.5 truncate">{activeModel.entryName}</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {activeModel.progress && (

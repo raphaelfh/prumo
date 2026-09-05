@@ -121,7 +121,7 @@ function renderModelSection(overrides: Partial<ModelSectionProps> = {}) {
       instances={instances}
       activeModelId="m1"
       setActiveModelId={vi.fn()}
-      models={[{ instanceId: 'm1', modelName: 'Model A' }]}
+      models={[{ instanceId: 'm1', entryName: 'Model A' }]}
       modelsLoading={false}
       onAddModel={vi.fn()}
       onRemoveModel={vi.fn()}
@@ -178,8 +178,8 @@ describe('ModelSection container accordion', () => {
   it('shows the total entry count on the container badge, not the active-only count', () => {
     renderModelSection({
       models: [
-        { instanceId: 'm1', modelName: 'Model A' },
-        { instanceId: 'm2', modelName: 'Model B' },
+        { instanceId: 'm1', entryName: 'Model A' },
+        { instanceId: 'm2', entryName: 'Model B' },
       ],
     });
     expect(screen.getByText('Multiple (2)')).toBeInTheDocument();

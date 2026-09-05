@@ -151,7 +151,7 @@ describe('useModelManagement → createModel guard rails', () => {
     });
 
     expect(result.current.models).toHaveLength(1);
-    expect(result.current.models[0].modelName).toBe('XGBoost');
+    expect(result.current.models[0].entryName).toBe('XGBoost');
     expect(result.current.activeModelId).toBe('parent-inst');
     expect(outcome?.instanceId).toBe('parent-inst');
   });
@@ -261,7 +261,7 @@ describe('useModelManagement → modelInstances prop (view-sourced)', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(mockLoadModelInstances).not.toHaveBeenCalled();
-    expect(result.current.models.map((m) => m.modelName)).toEqual(['LogReg', 'XGBoost']);
+    expect(result.current.models.map((m) => m.entryName)).toEqual(['LogReg', 'XGBoost']);
     // Progress RPC still runs per supplied model.
     expect(mockFetchModelProgress).toHaveBeenCalledWith('a-1', 'm-1');
     expect(mockFetchModelProgress).toHaveBeenCalledWith('a-1', 'm-2');
@@ -338,7 +338,7 @@ describe('useModelManagement → overlapping load staleness (prod flapping 2026-
       second.resolve({ ok: true, data: [modelRow('m-2', 'XGBoost')] });
     });
     await waitFor(() =>
-      expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']),
+      expect(result.current.models.map((m) => m.entryName)).toEqual(['XGBoost']),
     );
 
     // The stale a-1 load now resolves LAST with a different model set.
@@ -348,7 +348,7 @@ describe('useModelManagement → overlapping load staleness (prod flapping 2026-
     });
 
     // It must NOT overwrite the current article's state.
-    expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']);
+    expect(result.current.models.map((m) => m.entryName)).toEqual(['XGBoost']);
     expect(result.current.activeModelId).toBe('m-2');
     expect(result.current.loading).toBe(false);
   });
@@ -372,7 +372,7 @@ describe('useModelManagement → overlapping load staleness (prod flapping 2026-
       second.resolve({ ok: true, data: [modelRow('m-2', 'XGBoost')] });
     });
     await waitFor(() =>
-      expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']),
+      expect(result.current.models.map((m) => m.entryName)).toEqual(['XGBoost']),
     );
 
     // Stale a-1 load fails after a-2 already succeeded.
@@ -382,7 +382,7 @@ describe('useModelManagement → overlapping load staleness (prod flapping 2026-
     });
 
     expect(result.current.error).toBeNull();
-    expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']);
+    expect(result.current.models.map((m) => m.entryName)).toEqual(['XGBoost']);
   });
 
   it('drops a stale modelInstances-prop load superseded DURING the progress fan-out', async () => {
@@ -414,7 +414,7 @@ describe('useModelManagement → overlapping load staleness (prod flapping 2026-
       p2.resolve({ completed: 1, total: 2, percentage: 50 });
     });
     await waitFor(() =>
-      expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']),
+      expect(result.current.models.map((m) => m.entryName)).toEqual(['XGBoost']),
     );
 
     // The stale first load's progress resolves LAST — must not clobber.
@@ -423,7 +423,7 @@ describe('useModelManagement → overlapping load staleness (prod flapping 2026-
       await Promise.resolve();
     });
 
-    expect(result.current.models.map((m) => m.modelName)).toEqual(['XGBoost']);
+    expect(result.current.models.map((m) => m.entryName)).toEqual(['XGBoost']);
     expect(result.current.activeModelId).toBe('m-2');
     expect(mockLoadModelInstances).not.toHaveBeenCalled();
   });
@@ -445,7 +445,7 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
 
     const { result } = renderHook(() => useModelManagement(baseProps));
     await waitFor(() =>
-      expect(result.current.models.map((m) => m.modelName)).toEqual(['Alpha']),
+      expect(result.current.models.map((m) => m.entryName)).toEqual(['Alpha']),
     );
     expect(result.current.activeModelId).toBe('m-A');
 
@@ -465,7 +465,7 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
     await act(async () => {
       await result.current.createModel('Beta');
     });
-    expect(result.current.models.map((m) => m.modelName)).toEqual(['Alpha', 'Beta']);
+    expect(result.current.models.map((m) => m.entryName)).toEqual(['Alpha', 'Beta']);
     expect(result.current.activeModelId).toBe('m-B');
 
     // The refresh's progress resolves LAST with its pre-create snapshot.
@@ -475,7 +475,7 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
     });
 
     // Beta must survive; the stale refresh must not reset the active model.
-    expect(result.current.models.map((m) => m.modelName)).toEqual(['Alpha', 'Beta']);
+    expect(result.current.models.map((m) => m.entryName)).toEqual(['Alpha', 'Beta']);
     expect(result.current.activeModelId).toBe('m-B');
   });
 
@@ -485,7 +485,7 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
 
     const { result } = renderHook(() => useModelManagement(baseProps));
     await waitFor(() =>
-      expect(result.current.models.map((m) => m.modelName)).toEqual(['Alpha']),
+      expect(result.current.models.map((m) => m.entryName)).toEqual(['Alpha']),
     );
 
     // Refresh parks in the fan-out with snapshot = [Alpha].

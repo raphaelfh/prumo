@@ -15,7 +15,7 @@ import {RemoveModelDialog} from './RemoveModelDialog';
  */
 
 const selectorBase = {
-  models: [{instanceId: 'm1', modelName: 'Sepsis at 48h'}],
+  models: [{instanceId: 'm1', entryName: 'Sepsis at 48h'}],
   activeModelId: 'm1',
   onSelectModel: vi.fn(),
   onAddModel: vi.fn(),

@@ -424,6 +424,29 @@ endpoint disappears.
      resolver becomes shared, give it a `key_field_for(run_or_template)`
      form with the live fallback, so a draft that moves `is_entity_key`
      cannot make the two paths disagree about the same section.
+   **Carried over from B3** (the run form ships recursive; `role` does not
+   leave the frontend until here):
+   - `getTopLevelSections` still filters `role='study_section'`.
+     `parent IS NULL AND cardinality='one'` is NOT equivalent: a manager can
+     create a root `study_section` with `cardinality='many'`
+     (`AddSectionDialog`), and `extraction-multi-instance.e2e.ts` does. The
+     replacement must keep that section in the form.
+   - `useFullAIExtraction.fetchModelParentEntityTypeId` returns `results[0]`
+     and leans on 0016's partial unique index on `role='model_container'`.
+     `parent IS NULL AND cardinality='many'` has no uniqueness, so a second
+     root group — the thing this train enables — is silently dropped. Needs a
+     real multi-root answer, not a swapped predicate.
+   - `runViewAdapters.ts` still maps `role`, and `types/extraction.ts`
+     declares it required. Dropping only the adapter mapping is SILENT (the
+     backend still sends it); dropping the type cascades into ~15 spec files.
+     Do both together, here, with `RunViewEntityType.role`.
+   - `entityTypeRoles.ts` keeps only `ENTITY_ROLE` after B3, for
+     `templateTree.ts`. Delete the file with its last reader.
+   - A nested group that OWNS children is unrepresentable until 0069 drops
+     the parent trigger, so B3's `EntrySection` recursion is exercised only
+     as root-group-with-children → nested-childless-group. Add the depth-three
+     case to the e2e here.
+
    - §11 assigns "browser-side instance insert **and cardinality RPC**" to
      B2, but only the browser CALL retired: `check_cardinality_one` survives
      as a SECURITY DEFINER function granted to `authenticated`, with an

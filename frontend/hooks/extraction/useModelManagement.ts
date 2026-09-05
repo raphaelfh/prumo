@@ -21,7 +21,7 @@ import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {extractionInstanceService, loadModelInstances, fetchModelProgress} from '@/services/extractionInstanceService';
 import type {ModelInstanceRow} from '@/services/extractionInstanceService';
-import type {Model} from '@/components/extraction/hierarchy/ModelSelector';
+import type {Entry} from '@/components/extraction/entries/types';
 
 // =================== INTERFACES ===================
 
@@ -32,7 +32,7 @@ interface UseModelManagementProps {
   /** ID of the template's model container entity type (role='model_container'). */
   modelParentEntityTypeId: string | null;
   /**
-   * Model-container instances supplied by the caller (derived from the
+   * Entry-container instances supplied by the caller (derived from the
    * server RunView). When provided, the hook uses these directly and
    * skips the ``loadModelInstances`` Supabase read — the run-open page is
    * the source of truth. When undefined the hook self-loads (standalone
@@ -52,15 +52,15 @@ interface UseModelManagementProps {
 }
 
 interface UseModelManagementReturn {
-  models: Model[];
+  models: Entry[];
   activeModelId: string | null;
   setActiveModelId: (id: string | null) => void;
   loading: boolean;
   error: string | null;
-  createModel: (modelName: string) => Promise<Model | null>;
+  createModel: (entryName: string) => Promise<Entry | null>;
   removeModel: (instanceId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
-  getModelProgress: (instanceId: string) => Promise<Model['progress']>;
+  getModelProgress: (instanceId: string) => Promise<Entry['progress']>;
 }
 
 // =================== HOOK ===================
@@ -75,7 +75,7 @@ export function useModelManagement({
   enabled = true
 }: UseModelManagementProps): UseModelManagementReturn {
   const { user } = useAuth();
-  const [models, setModels] = useState<Model[]>([]);
+  const [models, setModels] = useState<Entry[]>([]);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +112,7 @@ export function useModelManagement({
   }, [activeModelId]);
 
     // Calculate progress for a model (using optimized SQL function).
-  const getModelProgress = async (instanceId: string): Promise<Model['progress']> =>
+  const getModelProgress = async (instanceId: string): Promise<Entry['progress']> =>
     fetchModelProgress(articleId, instanceId);
 
     // Claim the next load generation for an optimistic mutation. A local
@@ -182,7 +182,7 @@ export function useModelManagement({
           const progress = await getModelProgress(instance.id);
           return {
             instanceId: instance.id,
-            modelName: instance.label ?? 'Unnamed model',
+            entryName: instance.label ?? 'Unnamed model',
             progress
           };
         })
@@ -223,7 +223,7 @@ export function useModelManagement({
   }, [loadModels]);
 
     // Create new model (using service - simplified)
-  const createModel = async (modelName: string): Promise<Model | null> => {
+  const createModel = async (entryName: string): Promise<Entry | null> => {
     if (!user || !modelParentEntityTypeId) {
       toast.error(t('extraction', 'modelNotAuthenticatedOrInvalid'));
       return null;
@@ -237,8 +237,8 @@ export function useModelManagement({
       articleId,
       templateId,
       entityTypeId: modelParentEntityTypeId,
-      label: modelName.trim(),
-      entityKey: modelName.trim(),
+      label: entryName.trim(),
+      entityKey: entryName.trim(),
     }).catch((err: unknown) => {
       console.error('Error creating model:', err);
       toast.error(`${t('extraction', 'errors_createModel')}: ${err instanceof Error ? err.message : String(err)}`);
@@ -247,10 +247,10 @@ export function useModelManagement({
 
     if (!result) return null;
 
-    // Create Model object
-    const newModel: Model = {
+    // Create Entry object
+    const newModel: Entry = {
       instanceId: result.instanceId,
-      modelName: result.label,
+      entryName: result.label,
       progress: { completed: 0, total: 0, percentage: 0 }
     };
 
@@ -279,13 +279,13 @@ export function useModelManagement({
     // Supersede any in-flight load first so its stale snapshot cannot
     // resurrect the model we are about to remove.
     supersedeInFlightLoads();
-    let removedModelName = 'Model';
-    let updatedModels: Model[] = [];
+    let removedModelName = 'Entry';
+    let updatedModels: Entry[] = [];
 
     setModels(prev => {
       const model = prev.find(m => m.instanceId === instanceId);
       if (model) {
-        removedModelName = model.modelName;
+        removedModelName = model.entryName;
       }
 
       const filteredModels = prev.filter(m => m.instanceId !== instanceId);
