@@ -228,7 +228,9 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
             onValueChange={onSelectEntry}
             className="min-w-0 flex-1"
           >
-            <TabsList className="flex w-full flex-wrap justify-start gap-1 h-auto">
+            {/* Content-width, left-aligned: a full-width list stretches a lone
+                tab into something that reads as a table row, not a tab. */}
+            <TabsList className="inline-flex max-w-full flex-wrap justify-start gap-1 h-auto">
               {entries.map((entry) => (
                 <TabsTrigger
                   key={entry.instanceId}
