@@ -207,7 +207,7 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
 async function resetDraftMarkers(url: string, key: string): Promise<void> {
   const response = await fetch(
     `${url}/rest/v1/project_extraction_templates` +
-      `?project_id=in.(${F.PROJECT_ID},${F.IMPORT_PROJECT_ID})`,
+      `?project_id=in.(${F.PROJECT_ID},${F.IMPORT_PROJECT_ID},${F.IDENTITY_PROJECT_ID})`,
     {
       method: "PATCH",
       headers: {
