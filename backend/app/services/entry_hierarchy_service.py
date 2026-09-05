@@ -189,7 +189,10 @@ class EntryHierarchyService:
                 # value must match every visible surface.
                 value=entry.label,
             )
-        return EntryCreateResponse(instance_id=entry.id, label=entry.label)
+        # Built with the ALIAS, not the field name. `populate_by_name` accepts
+        # either at runtime, but mypy's pydantic plugin only knows the alias,
+        # and a `call-arg` baseline entry is legacy this slice would be adding.
+        return EntryCreateResponse(instanceId=entry.id, label=entry.label)
 
     async def _bind_coordinate(
         self,

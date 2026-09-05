@@ -9,27 +9,31 @@
 import {act, renderHook, waitFor} from '@testing-library/react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-import {ApiError} from '@/integrations/api/client';
-import {useAddEntry} from '@/hooks/extraction/useAddEntry';
-import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/extraction';
-
-const createEntry = vi.fn();
-const toastError = vi.fn();
-const toastSuccess = vi.fn();
-
+// Mocks define their fakes INLINE and are imported back below. A factory
+// that closes over a top-level `const` is hoisted above that declaration,
+// which vitest rejects — it passed locally and failed in CI.
+// `importActual` keeps the REAL `ApiError`, so `instanceof` in the hook
+// tests the class the hook actually sees rather than a hand-mirrored copy.
 vi.mock('@/integrations/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/integrations/api/client')>(
     '@/integrations/api/client',
   );
-  return {...actual, createEntry: (...args: unknown[]) => createEntry(...args)};
+  return {...actual, createEntry: vi.fn()};
 });
 
 vi.mock('sonner', () => ({
-  toast: {
-    error: (...args: unknown[]) => toastError(...args),
-    success: (...args: unknown[]) => toastSuccess(...args),
-  },
+  toast: {error: vi.fn(), success: vi.fn()},
 }));
+
+import {toast} from 'sonner';
+
+import {ApiError, createEntry as createEntryImport} from '@/integrations/api/client';
+import {useAddEntry} from '@/hooks/extraction/useAddEntry';
+import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/extraction';
+
+const createEntry = vi.mocked(createEntryImport);
+const toastError = vi.mocked(toast.error);
+const toastSuccess = vi.mocked(toast.success);
 
 const KEY_FIELD = {
   id: 'f-key',
