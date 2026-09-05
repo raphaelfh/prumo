@@ -29,7 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.extractor import LlmUsage
-from app.llm.prompts import Ancestor, Scope
+from app.llm.prompts import Ancestor, Scope, render_entry_scope_section
 from app.llm.prompts.entry_identification import EntryIdentificationOutput, IdentifiedEntry
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.schemas.extraction import ExtractionErrorCode
@@ -61,8 +61,11 @@ async def _group(
     role: str = "study_section",
     parent: UUID | None = None,
     label: str = "Numeric performance",
+    cardinality: str = "many",
+    entry_label: str | None = None,
 ) -> tuple[UUID, UUID, UUID]:
-    """A ``cardinality='many'`` section: a select key + one value field.
+    """A section, repeating by default: a select key + one value field. With
+    ``cardinality='one'`` the key is inert and the section is a singleton.
 
     Returns ``(entity_type_id, key_field_id, value_field_id)``.
     """
@@ -71,8 +74,8 @@ async def _group(
         text(
             "INSERT INTO public.extraction_entity_types "
             "(id, project_template_id, name, label, cardinality, role, sort_order, "
-            " parent_entity_type_id) "
-            "VALUES (:id, :tpl, :name, :label, 'many', :role, 90, :parent)"
+            " parent_entity_type_id, entry_label) "
+            "VALUES (:id, :tpl, :name, :label, :cardinality, :role, 90, :parent, :entry_label)"
         ),
         {
             "id": entity_type_id,
@@ -81,6 +84,8 @@ async def _group(
             "label": label,
             "role": role,
             "parent": parent,
+            "cardinality": cardinality,
+            "entry_label": entry_label,
         },
     )
     key_id, value_id = uuid4(), uuid4()
@@ -138,14 +143,16 @@ async def _container(db: AsyncSession) -> UUID:
     return entity_type_id
 
 
-async def _instance(db: AsyncSession, entity_type_id: UUID, key_value: str) -> UUID:
+async def _instance(
+    db: AsyncSession, entity_type_id: UUID, key_value: str, *, parent: UUID | None = None
+) -> UUID:
     instance_id = uuid4()
     await db.execute(
         text(
             "INSERT INTO public.extraction_instances "
             "(id, project_id, article_id, template_id, entity_type_id, label, sort_order, "
-            " metadata, created_by) "
-            "VALUES (:id, :proj, :art, :tpl, :et, :label, 0, CAST(:md AS jsonb), :usr)"
+            " metadata, created_by, parent_instance_id) "
+            "VALUES (:id, :proj, :art, :tpl, :et, :label, 0, CAST(:md AS jsonb), :usr, :parent)"
         ),
         {
             "id": instance_id,
@@ -156,6 +163,7 @@ async def _instance(db: AsyncSession, entity_type_id: UUID, key_value: str) -> U
             "label": key_value,
             "md": json.dumps(stamp({"ai_extracted": True}, key_value)),
             "usr": SEED.primary_profile,
+            "parent": parent,
         },
     )
     await db.flush()
@@ -479,6 +487,102 @@ async def test_nested_group_entries_are_scoped_by_their_parent(
     )
     assert len(await _entries(db_session, child, parent=parent_a)) == 1
     assert len(await _entries(db_session, child, parent=parent_b)) == 1
+
+
+async def test_a_singleton_under_an_entry_is_scoped_to_that_entry(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trees spec §1: 'Model Development' for model B used to be extracted
+    from a prompt that never mentioned model B. The singleton's call now
+    carries the chain it belongs to, and its proposal lands on the instance
+    under that entry."""
+    container = await _container(db_session)
+    xgboost = await _instance(db_session, container, "XGBoost")
+    development, _key_id, value_id = await _group(
+        db_session,
+        role="model_section",
+        parent=container,
+        cardinality="one",
+        label="Model development",
+    )
+    run = await _run_in_extract(db_session)
+    service, fake = _service(db_session)
+    identification = _fake_identification(monkeypatch, [])
+
+    result = await service.extract_section(
+        **_coord(), entity_type_id=development, parent_instance_id=xgboost, run_id=run.id
+    )
+
+    assert result.suggestions_created == 1
+    (scope,) = fake.scopes
+    assert scope == Scope(entry_label="model", ancestors=(Ancestor("model", "XGBoost"),))
+    assert "This section belongs to the model identified below." in render_entry_scope_section(
+        scope
+    )
+    assert identification["prompts"] == [], "a singleton is never identified"
+    (materialized,) = await _entries(db_session, development, parent=xgboost)
+    assert await _proposed(db_session, materialized[0], value_id) == [0.5]
+
+
+async def test_a_section_at_depth_three_names_the_whole_chain(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A singleton under a validation under a model: the block reads
+    ``model "XGBoost" › validation "external"``, outermost first, and a
+    group asked under that validation is identified within the same chain.
+
+    B5: rebuild as a real entity-type chain once
+    ``ck_extraction_entity_types_role_parent`` is dropped — until then the
+    leaf and the subgroup are role-legal children of the container whose
+    INSTANCES hang under the validation entry (nothing on
+    ``extraction_instances`` couples the two), which is the path the walk
+    reads.
+    """
+    container = await _container(db_session)
+    validations, _key_id, _value_id = await _group(
+        db_session, role="model_section", parent=container, entry_label="validation"
+    )
+    xgboost = await _instance(db_session, container, "XGBoost")
+    external = await _instance(db_session, validations, "external", parent=xgboost)
+    leaf, _leaf_key, leaf_value = await _group(
+        db_session,
+        role="model_section",
+        parent=container,
+        cardinality="one",
+        label="Calibration plot",
+    )
+    run = await _run_in_extract(db_session)
+    service, fake = _service(db_session)
+    identification = _fake_identification(monkeypatch, ["apparent"])
+
+    await service.extract_section(
+        **_coord(), entity_type_id=leaf, parent_instance_id=external, run_id=run.id
+    )
+    (scope,) = fake.scopes
+    assert scope is not None and scope.ancestors == (
+        Ancestor("model", "XGBoost"),
+        Ancestor("validation", "external"),
+    )
+    assert '- Within: model "XGBoost" › validation "external"' in render_entry_scope_section(scope)
+    (calibration,) = await _entries(db_session, leaf, parent=external)
+    assert await _proposed(db_session, calibration[0], leaf_value) == [0.5]
+
+    # A group hanging under the depth-two entry: its identification is scoped
+    # to the same chain, its entry carries it too, and the value lands under
+    # that entry (the fake maps a validation-type key to its C-statistic).
+    subgroups, _sub_key, sub_value = await _group(
+        db_session, role="model_section", parent=container, entry_label="subgroup"
+    )
+    await service.extract_section(
+        **_coord(), entity_type_id=subgroups, parent_instance_id=external, run_id=run.id
+    )
+    assert len(identification["prompts"]) == 1
+    assert 'belong to model "XGBoost" › validation "external"' in identification["prompts"][0]
+    assert fake.scopes[-1] is not None
+    assert fake.scopes[-1].key_value == "apparent"
+    assert fake.scopes[-1].ancestors == scope.ancestors
+    (entry,) = await _entries(db_session, subgroups, parent=external)
+    assert await _proposed(db_session, entry[0], sub_value) == [C_STAT["apparent"]]
 
 
 async def test_a_keyless_repeating_group_is_refused_before_any_write_or_llm_call(

@@ -259,7 +259,9 @@ async def _extract_singleton(
     prompt_context: RunPromptContext | None,
     skip_fields_with_human_proposals: bool,
 ) -> SectionOutcome:
-    """Extract → verify → record against the section's one instance."""
+    """Extract → verify → record against the section's one instance. Under an
+    entry, the prompt names the chain the instance belongs to; at the root
+    there is nothing to scope to."""
     if skip_fields_with_human_proposals and fields:
         instance = await service._find_instance_for_entity_type(
             article_id=run.article_id, entity_type_id=entity_type.id
@@ -268,6 +270,12 @@ async def _extract_singleton(
             fields = await _fields_left_for(service, run, instance.id, fields)
             if not fields:
                 return SectionOutcome(skipped=True)
+    scope: Scope | None = None
+    if parent_instance_id is not None:
+        # The chain this singleton belongs to — re-verified on the way up,
+        # ahead of the LLM call rather than at the instance write.
+        ancestors = await ancestry_of(service, run, parent_instance_id)
+        scope = Scope(entry_label=ancestors[-1].noun, ancestors=ancestors)
     extracted_data, usage = await service._extract_with_llm(
         pdf_text=pdf_text,
         entity_type=entity_type,
@@ -277,6 +285,7 @@ async def _extract_singleton(
         memory_context=memory_context,
         prompt_context=prompt_context,
         field_filter=await service._field_filter(run),
+        entry_scope=scope,
     )
     verdicts, usage = await service._maybe_verify(
         run.id, entity_type.id, run.kind, pdf_text, extracted_data, usage
