@@ -49,7 +49,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
@@ -192,6 +192,40 @@ def key_field_of(entity_type: _EntryGroup) -> Any | None:
     return key
 
 
+def _at_coordinate(
+    *, article_id: UUID, entity_type_id: UUID, parent_instance_id: UUID | None
+) -> list[ColumnElement[bool]]:
+    """The ``(article, entity_type, parent_instance)`` coordinate an identity
+    is unique within.
+
+    One implementation, because its two readers have to agree:
+    :func:`existing_keys` builds the list of entries the prompt tells the model
+    it already has, and :func:`match_or_none` decides what a finding lands on.
+    Let those drift and the model is grounded on one row set but matched
+    against another — the duplicate entry this module exists to prevent.
+
+    A root entry sits under SQL NULL and needs no branch of its own: by the
+    time this builds, ``parent_instance_id`` is a Python value, and SQLAlchemy
+    compiles ``== None`` to ``IS NULL`` when it renders the statement.
+    """
+    return [
+        ExtractionInstance.article_id == article_id,
+        ExtractionInstance.entity_type_id == entity_type_id,
+        ExtractionInstance.parent_instance_id == parent_instance_id,
+    ]
+
+
+def _holds_key(key_value: str) -> ColumnElement[bool]:
+    """Matches the instance whose materialized slot IS this identity.
+
+    The SQL sibling of :func:`key_of`, folded by the same
+    :func:`normalize_key`. Containment reads the slot and only it: a retired
+    key inside ``entity_key_history`` is history, not identity, and a pre-0059
+    row carries no slot to match at all.
+    """
+    return ExtractionInstance.metadata_.contains({STORE_KEY: normalize_key(key_value)})
+
+
 async def resolve_instance(
     db: AsyncSession,
     *,
@@ -223,9 +257,7 @@ async def resolve_instance(
         parent_instance_id=parent_instance_id,
     )
     if existing is not None:
-        instance = await db.get(ExtractionInstance, existing)
-        if instance is not None:
-            return instance, False
+        return existing, False
     instance = ExtractionInstance(
         project_id=project_id,
         article_id=article_id,
@@ -256,13 +288,11 @@ async def existing_keys(
     rather than guessing which one it meant.
     """
     stmt = select(ExtractionInstance).where(
-        ExtractionInstance.article_id == article_id,
-        ExtractionInstance.entity_type_id == entity_type_id,
-    )
-    stmt = stmt.where(
-        ExtractionInstance.parent_instance_id == parent_instance_id
-        if parent_instance_id is not None
-        else ExtractionInstance.parent_instance_id.is_(None)
+        *_at_coordinate(
+            article_id=article_id,
+            entity_type_id=entity_type_id,
+            parent_instance_id=parent_instance_id,
+        )
     )
     found: dict[str, UUID] = {}
     for instance in (await db.execute(stmt)).scalars().all():
@@ -279,12 +309,31 @@ async def match_or_none(
     entity_type_id: UUID,
     key_value: str,
     parent_instance_id: UUID | None = None,
-) -> UUID | None:
-    """The instance already holding this identity, if any."""
-    keys = await existing_keys(
-        db,
-        article_id=article_id,
-        entity_type_id=entity_type_id,
-        parent_instance_id=parent_instance_id,
+) -> ExtractionInstance | None:
+    """The instance already holding this identity, if any.
+
+    One row, not the coordinate's whole key map: a group of N entries costs N
+    single-row lookups here, where reading it through :func:`existing_keys`
+    cost N scans of the coordinate that each hydrated every sibling.
+
+    It hands back the row rather than its id so :func:`resolve_instance` can
+    keep what the match already loaded; asking for the id and fetching the
+    row from it is two round trips for one entry, because the identity map
+    holds these rows weakly and has dropped them by then.
+
+    Two siblings can hold one normalized key: ``update_instance_identity``
+    re-keys without a uniqueness check, so which one answers is arbitrary.
+    """
+    stmt = (
+        select(ExtractionInstance)
+        .where(
+            *_at_coordinate(
+                article_id=article_id,
+                entity_type_id=entity_type_id,
+                parent_instance_id=parent_instance_id,
+            ),
+            _holds_key(key_value),
+        )
+        .limit(1)
     )
-    return keys.get(normalize_key(key_value))
+    return (await db.execute(stmt)).scalars().first()
