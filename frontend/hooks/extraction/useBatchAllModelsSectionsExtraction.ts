@@ -17,6 +17,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import {t} from "@/lib/copy";
+import type { Model } from "@/components/extraction/hierarchy/ModelSelector";
 import { getModelChildSections, type ModelChildSection } from "./helpers/getModelChildSections";
 import { processSectionsInChunks } from "./helpers/processSectionsInChunks";
 import type { ExtractionProgress } from "./useBatchSectionExtractionChunked";
@@ -35,7 +36,7 @@ interface AllModelsSectionsParams {
   projectId: string;
   articleId: string;
   templateId: string;
-  models: Array<{ instanceId: string; modelName: string }>;
+  models: Model[];
   /** Active session run to extract into — reused so decisions aren't orphaned. */
   runId?: string;
   /**

@@ -147,6 +147,13 @@ test.describe("Entry identity on a dedicated fixture project", () => {
     );
     expect(section, "CHARMS ships final_predictors").toBeDefined();
     const original = section.description ?? "";
+    const readDescription = async () => {
+      const [row] = await adminSelect<SectionRow>(
+        "extraction_entity_types",
+        `id=eq.${section.id}&select=id,description`,
+      );
+      return row.description;
+    };
 
     await page.goto(
       `${env.frontendUrl}/projects/${env.identityProjectId}?tab=extraction&extractionTab=configuration`,
@@ -182,11 +189,7 @@ test.describe("Entry identity on a dedicated fixture project", () => {
       await textarea.blur();
       await patched;
 
-      const [after] = await adminSelect<SectionRow>(
-        "extraction_entity_types",
-        `id=eq.${section.id}&select=id,description`,
-      );
-      expect(after.description).toBe(edited);
+      expect(await readDescription()).toBe(edited);
     } finally {
       // Converge the fixture through the same PATCH the inspector uses.
       const restore = await request.patch(
@@ -200,10 +203,6 @@ test.describe("Entry identity on a dedicated fixture project", () => {
       restoreOk = restore.ok();
     }
     expect(restoreOk).toBe(true);
-    const [restored] = await adminSelect<SectionRow>(
-      "extraction_entity_types",
-      `id=eq.${section.id}&select=id,description`,
-    );
-    expect(restored.description).toBe(section.description);
+    expect(await readDescription()).toBe(section.description);
   });
 });
