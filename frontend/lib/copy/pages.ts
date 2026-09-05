@@ -47,7 +47,7 @@ export const pages = {
     extractionScreenSelectModelFirst: 'Select a model before adding this section',
     extractionScreenParentNotFound: 'Parent instance not found. Create the parent section first.',
     extractionScreenInstanceAddedSuccess: 'added successfully',
-    extractionScreenInstanceAlreadyExists: 'Instance already exists',
+    extractionScreenEntryKeyDuplicate: 'An entry with that key already exists here. Open it instead, or use a different key.',
     extractionScreenConfirmRemoveInstance: 'This instance has extracted values. Are you sure you want to remove it?',
     extractionScreenInstanceRemoved: 'Instance removed successfully',
     extractionScreenErrorRemoveInstance: 'Error removing instance',

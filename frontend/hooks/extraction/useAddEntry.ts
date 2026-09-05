@@ -5,21 +5,23 @@
  * ceiling) when the bare `createInstance` call became a dialog. Owns which
  * section the dialog is open for, resolves the parent entry for a nested
  * section (the active model), lists the sibling identities for the chips
- * and the duplicate block, and on confirm creates the instance with the
- * identity materialized (`metadata.entity_key`, identity spec §5.1.1) and
- * records the key value as this reviewer's value of the key field through
- * the form's own write path. A keyless section gets a plain label and no
- * stamp — the human path never refuses.
+ * and the duplicate block, and on confirm calls
+ * `POST /api/v1/extraction/instances`, which materializes the identity and
+ * the singleton children in one transaction. The key value is then written
+ * as this reviewer's value of the key field through the form's own write
+ * path. A keyless section gets a plain label — the human path never refuses
+ * for want of a key; the server's typed 409 is the backstop for a duplicate
+ * this tab's sibling list could not see.
  */
 import {useState} from 'react';
 import {toast} from 'sonner';
 
 import type {AddEntryDialogProps} from '@/components/extraction/AddEntryDialog';
 import {t} from '@/lib/copy';
-import {DEFAULT_ENTRY_NOUN, entryKeyOf, keyFieldOf, normalizeEntryKey} from '@/lib/extraction/entryKey';
+import {DEFAULT_ENTRY_NOUN, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
 import {extractionLogger} from '@/lib/extraction/observability';
-import {getRequiredUserId} from '@/services/authService';
-import {extractionInstanceService} from '@/services/extractionInstanceService';
+import {ApiError, createEntry} from '@/integrations/api/client';
+import {toResult} from '@/lib/error-utils';
 import type {
   ExtractionEntityTypeWithFields,
   ExtractionInstance,
@@ -105,39 +107,39 @@ export function useAddEntry(args: UseAddEntryArgs): UseAddEntryReturn {
 
   const confirm = async (keyValue: string) => {
     if (!target || !entityType || !projectId || !articleId || !templateId) return;
-    const userResult = await getRequiredUserId();
-    if (!userResult.ok) {
-      toast.error(t('common', 'errors_userNotAuthenticated'));
-      return;
-    }
-    const result = await extractionInstanceService.createInstance({
+    // The server takes the author from the JWT, materializes the identity and
+    // creates the singleton children in one transaction. The endpoint either
+    // creates or refuses — there is no "already existed" outcome to branch on.
+    const result = await createEntry({
       projectId,
       articleId,
       templateId,
       entityTypeId: entityType.id,
-      entityType,
       parentInstanceId: target.parentInstanceId,
       label: keyValue,
-      metadata: keyField
-        ? {entity_key: normalizeEntryKey(keyValue), created_via: 'run_form'}
-        : {created_via: 'run_form'},
-      userId: userResult.data,
+      entityKey: keyField ? keyValue : null,
     });
-    if (result.wasCreated && keyField) {
+    if (keyField) {
       // The key value IS the reviewer's answer to the key field.
-      updateValue(result.instance.id, keyField.id, keyValue);
+      updateValue(result.instanceId, keyField.id, keyValue);
     }
-    extractionLogger.info('useAddEntry', 'Instance created', {
-      instanceId: result.instance.id,
-      wasCreated: result.wasCreated,
-    });
+    extractionLogger.info('useAddEntry', 'Entry created', {instanceId: result.instanceId});
     setTarget(null);
     await onCreated();
-    toast.success(
-      result.wasCreated
-        ? `${result.instance.label} ${t('pages', 'extractionScreenInstanceAddedSuccess')}`
-        : t('pages', 'extractionScreenInstanceAlreadyExists'),
-    );
+    toast.success(`${result.label} ${t('pages', 'extractionScreenInstanceAddedSuccess')}`);
+  };
+
+  const confirmOrReport = async (keyValue: string) => {
+    const outcome = await toResult(() => confirm(keyValue), 'useAddEntry.confirm');
+    if (outcome.ok) return;
+    const error = outcome.error;
+    // The server is the backstop for a duplicate the dialog's own list could
+    // not see (a peer added the same entry since this tab loaded).
+    if (error instanceof ApiError && error.code === 'ENTRY_KEY_DUPLICATE') {
+      toast.error(t('pages', 'extractionScreenEntryKeyDuplicate'));
+      return;
+    }
+    toast.error(error instanceof Error ? error.message : t('common', 'errors_serverError'));
   };
 
   return {
@@ -147,7 +149,7 @@ export function useAddEntry(args: UseAddEntryArgs): UseAddEntryReturn {
       entryLabel: entityType?.entry_label ?? DEFAULT_ENTRY_NOUN,
       keyLabel: keyField?.label ?? null,
       existingKeys: siblings.map((i) => entryKeyOf(i) ?? i.label),
-      onConfirm: confirm,
+      onConfirm: confirmOrReport,
       onCancel: () => setTarget(null),
     },
   };

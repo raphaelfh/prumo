@@ -135,48 +135,6 @@ export async function queryBuilder<T>(
   return { data: (data || []) as T[], error };
 }
 
-/**
- * Query builder for single result (returns T | null)
- */
-export async function queryBuilderSingle<T>(
-  table: string,
-  options: Omit<QueryOptions, 'single'> = {}
-): Promise<RepositoryResult<T>> {
-  const result = await queryBuilder<T>(table, { ...options, single: true });
-  return { 
-    data: result.data ? (result.data[0] as T) : null, 
-    error: result.error 
-  };
-}
-
-/**
- * Standardized insert helper
- *
- * NOTE: Uses type assertion due to strict Supabase typing.
- */
-export async function insertOne<T>(
-  table: string,
-  data: Partial<T>,
-  context = 'insert'
-): Promise<T> {
-
-    const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
-    .insert(data)
-    .select()
-    .single();
-
-  if (error) {
-    handleSupabaseError(error, context);
-  }
-
-  if (!result) {
-      throw new SupabaseRepositoryError(`Failed to insert into ${table}: no data returned`);
-  }
-
-  return result as T;
-}
-
-
 
 /**
  * Standardized delete helper

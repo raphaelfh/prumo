@@ -382,6 +382,22 @@ export async function createManualModelHierarchy(
   });
 }
 
+// Create one entry of a repeating section, with its singleton children, in
+// one transaction. Replaces the browser-side PostgREST insert: the key value
+// is recorded as a ReviewerDecision, which only the server may author.
+export type EntryCreateRequest = components['schemas']['EntryCreateRequest'];
+
+export type EntryCreateResponse = components['schemas']['EntryCreateResponse'];
+
+export async function createEntry(
+  body: EntryCreateRequest
+): Promise<EntryCreateResponse> {
+  return apiClient<EntryCreateResponse>("/api/v1/extraction/instances", {
+    method: "POST",
+    body,
+  });
+}
+
 // Rename / re-key one entry of a repeating section (the run form's rename
 // dialog). Shapes from the generated contract, like the manual-model call.
 export type InstanceIdentityUpdateRequest =
