@@ -8,7 +8,6 @@ from uuid import UUID
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.article import Article
 from app.models.extraction import (
     ExtractionInstance,
     ExtractionRun,
@@ -30,6 +29,7 @@ from app.models.extraction_workflow import (
 )
 from app.services._extraction_run_lock import load_run_for_update
 from app.services.advisory_locks import take_advisory_xact_lock
+from app.services.article_read_service import ArticleNotFoundError, owned_article
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_config_service import HitlConfigService
@@ -170,12 +170,15 @@ class RunLifecycleService:
         # BOLA defense: verify both the article and the template belong to the
         # requested project before materialising any state. Returns the same
         # error message for "does not exist" and "wrong project" to avoid
-        # leaking which UUIDs are valid in other projects.
-        article = await self.db.get(Article, article_id)
-        if article is None or article.project_id != project_id:
+        # leaking which UUIDs are valid in other projects. The predicate has
+        # one implementation, and it puts the scope in the WHERE clause — a
+        # bare ``db.get`` loads the foreign row before rejecting it.
+        try:
+            await owned_article(self.db, project_id=project_id, article_id=article_id)
+        except ArticleNotFoundError as exc:
             raise CreateRunInputError(
                 f"article {article_id} does not belong to project {project_id}"
-            )
+            ) from exc
 
         # Resolve template (for kind) — must exist and belong to the same
         # project. FOR SHARE so the active-version resolution below
