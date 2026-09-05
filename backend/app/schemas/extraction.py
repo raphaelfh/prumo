@@ -215,25 +215,6 @@ SectionExtractionResponseData = Annotated[
 # =================== MODEL EXTRACTION SCHEMAS ===================
 
 
-class CreateModelHierarchyRequest(BaseModel):
-    """Request to create one prediction-model hierarchy for an article.
-
-    The dialog asks for the name only; it becomes the instance label and
-    the decision on the container's entry key. ``extra="forbid"`` for the
-    reason ``ModelExtractionRequest`` gives: this body is validated once,
-    in the request cycle, so a stale tab that still sends
-    ``modellingMethod`` gets a loud 422 instead of silently losing a value
-    it typed.
-    """
-
-    project_id: UUID = Field(..., alias="projectId")
-    article_id: UUID = Field(..., alias="articleId")
-    template_id: UUID = Field(..., alias="templateId")
-    model_name: str = Field(..., alias="modelName")
-
-    model_config = ConfigDict(populate_by_name=True, extra="forbid")
-
-
 class InstanceIdentityUpdateRequest(BaseModel):
     """Rename and/or re-key one extraction instance (the run form's rename
     dialog). ``entity_key`` is the identity an AI re-run matches against; the
@@ -303,28 +284,6 @@ class EntryCreateResponse(BaseModel):
 
     instance_id: UUID = Field(..., alias="instanceId")
     label: str
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class ModelHierarchyChildResponse(BaseModel):
-    """Child instance created under the parent model instance."""
-
-    id: UUID
-    entity_type_id: UUID = Field(..., alias="entityTypeId")
-    parent_instance_id: UUID = Field(..., alias="parentInstanceId")
-    label: str
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class CreateModelHierarchyResponse(BaseModel):
-    """Response for one-shot hierarchy creation."""
-
-    model_id: UUID = Field(..., alias="modelId")
-    model_label: str = Field(..., alias="modelLabel")
-    child_instances: list[ModelHierarchyChildResponse] = Field(alias="childInstances")
-    proposal_run_id: UUID | None = Field(default=None, alias="proposalRunId")
 
     model_config = ConfigDict(populate_by_name=True)
 

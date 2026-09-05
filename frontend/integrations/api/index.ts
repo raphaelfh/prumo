@@ -11,6 +11,4 @@
 export {
   apiClient,
   createEntry,
-  createManualModelHierarchy,
-  type ManualModelHierarchyChild,
 } from "./client";

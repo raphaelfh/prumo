@@ -4,8 +4,7 @@ frontend/hooks/extraction/helpers/queryEntityTypes.ts:15
 frontend/hooks/extraction/helpers/queryEntityTypes.ts:17
 frontend/lib/supabase/baseRepository.ts:82
 frontend/lib/supabase/baseRepository.ts:102
-frontend/lib/supabase/baseRepository.ts:163
-frontend/lib/supabase/baseRepository.ts:192
+frontend/lib/supabase/baseRepository.ts:150
 frontend/services/articlesExportService.ts:11
 frontend/services/extractionDataService.ts:61
 frontend/services/extractionDataService.ts:62

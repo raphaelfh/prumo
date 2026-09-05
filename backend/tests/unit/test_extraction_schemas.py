@@ -22,8 +22,8 @@ from app.schemas.extraction import (
     CitationAnchor,
     CreatedModelInfo,
     CreateInstanceRequest,
-    CreateModelHierarchyRequest,
-    CreateModelHierarchyResponse,
+    EntryCreateRequest,
+    EntryCreateResponse,
     EvidencePassage,
     ExtractionEntityTypeSchema,
     ExtractionFieldSchema,
@@ -35,7 +35,6 @@ from app.schemas.extraction import (
     ModelExtractionRequest,
     ModelExtractionResult,
     ModelExtractionRunStats,
-    ModelHierarchyChildResponse,
     PDFRect,
     PDFTextRange,
     PositionV1,
@@ -517,39 +516,44 @@ class TestSaveValueRequest:
 
 
 class TestRemainingConstruction:
-    def test_create_model_hierarchy_request_carries_the_name_only(self) -> None:
+    def test_entry_create_request_carries_the_name_only(self) -> None:
         """The dialog asks for the key only (follow-up train §6): the schema
         has no ``modelling_method``, and a stale client's ``modellingMethod``
         is refused loudly (``extra="forbid"``, the rule for every
         request-cycle schema in this module) rather than silently dropped."""
-        assert "modelling_method" not in CreateModelHierarchyRequest.model_fields
+        assert "modelling_method" not in EntryCreateRequest.model_fields
         payload = {
             "projectId": str(uuid4()),
             "articleId": str(uuid4()),
             "templateId": str(uuid4()),
-            "modelName": "Cox PH",
+            "entityTypeId": str(uuid4()),
+            "label": "Cox PH",
+            "entityKey": "Cox PH",
         }
-        assert CreateModelHierarchyRequest.model_validate(payload).model_name == "Cox PH"
+        assert EntryCreateRequest.model_validate(payload).label == "Cox PH"
         with pytest.raises(ValidationError, match="modellingMethod"):
-            CreateModelHierarchyRequest.model_validate({**payload, "modellingMethod": "cox"})
+            EntryCreateRequest.model_validate({**payload, "modellingMethod": "cox"})
 
-    def test_model_hierarchy_child_response(self) -> None:
-        child = ModelHierarchyChildResponse(
-            id=uuid4(),
-            entityTypeId=uuid4(),
-            parentInstanceId=uuid4(),
-            label="Predictors",
-        )
-        assert child.label == "Predictors"
+    def test_entry_create_request_refuses_a_blank_label_or_key(self) -> None:
+        """A smuggled empty string must never become an entry's name, nor a
+        key that matches nothing on the next AI run."""
+        payload = {
+            "projectId": str(uuid4()),
+            "articleId": str(uuid4()),
+            "templateId": str(uuid4()),
+            "entityTypeId": str(uuid4()),
+            "label": "Cox PH",
+        }
+        with pytest.raises(ValidationError, match="label"):
+            EntryCreateRequest.model_validate({**payload, "label": "   "})
+        with pytest.raises(ValidationError, match="entityKey"):
+            EntryCreateRequest.model_validate({**payload, "entityKey": "  "})
+        # Omitted (keyless section) is fine; blank is not.
+        assert EntryCreateRequest.model_validate(payload).entity_key is None
 
-    def test_create_model_hierarchy_response(self) -> None:
-        resp = CreateModelHierarchyResponse(
-            modelId=uuid4(),
-            modelLabel="Model A",
-            childInstances=[],
-        )
-        assert resp.proposal_run_id is None
-        assert resp.child_instances == []
+    def test_entry_create_response(self) -> None:
+        resp = EntryCreateResponse(instanceId=uuid4(), label="Model A")
+        assert resp.label == "Model A"
 
     def test_model_extraction_request(self) -> None:
         req = ModelExtractionRequest(

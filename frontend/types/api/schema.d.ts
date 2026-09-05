@@ -367,26 +367,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/extraction/models/manual": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create one prediction model hierarchy
-         * @description Creates the parent prediction model and required singleton children in one transaction.
-         */
-        post: operations["create_manual_model_hierarchy_api_v1_extraction_models_manual_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/extraction/sections": {
         parameters: {
             query?: never;
@@ -2013,23 +1993,6 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[CreateModelHierarchyResponse] */
-        ApiResponse_CreateModelHierarchyResponse_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["CreateModelHierarchyResponse"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
         /** ApiResponse[DeleteAPIKeyResult] */
         ApiResponse_DeleteAPIKeyResult_: {
             /** @description Dados da resposta */
@@ -3320,53 +3283,6 @@ export interface components {
             } | null;
         };
         /**
-         * CreateModelHierarchyRequest
-         * @description Request to create one prediction-model hierarchy for an article.
-         *
-         *     The dialog asks for the name only; it becomes the instance label and
-         *     the decision on the container's entry key. ``extra="forbid"`` for the
-         *     reason ``ModelExtractionRequest`` gives: this body is validated once,
-         *     in the request cycle, so a stale tab that still sends
-         *     ``modellingMethod`` gets a loud 422 instead of silently losing a value
-         *     it typed.
-         */
-        CreateModelHierarchyRequest: {
-            /**
-             * Articleid
-             * Format: uuid
-             */
-            articleId: string;
-            /** Modelname */
-            modelName: string;
-            /**
-             * Projectid
-             * Format: uuid
-             */
-            projectId: string;
-            /**
-             * Templateid
-             * Format: uuid
-             */
-            templateId: string;
-        };
-        /**
-         * CreateModelHierarchyResponse
-         * @description Response for one-shot hierarchy creation.
-         */
-        CreateModelHierarchyResponse: {
-            /** Childinstances */
-            childInstances: components["schemas"]["ModelHierarchyChildResponse"][];
-            /**
-             * Modelid
-             * Format: uuid
-             */
-            modelId: string;
-            /** Modellabel */
-            modelLabel: string;
-            /** Proposalrunid */
-            proposalRunId?: string | null;
-        };
-        /**
          * CreateProjectTemplateRequest
          * @description Name a template that starts with no sections; the tree is built after.
          *
@@ -4489,29 +4405,6 @@ export interface components {
             tokensPrompt: number;
             /** Tokenstotal */
             tokensTotal: number;
-        };
-        /**
-         * ModelHierarchyChildResponse
-         * @description Child instance created under the parent model instance.
-         */
-        ModelHierarchyChildResponse: {
-            /**
-             * Entitytypeid
-             * Format: uuid
-             */
-            entityTypeId: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Label */
-            label: string;
-            /**
-             * Parentinstanceid
-             * Format: uuid
-             */
-            parentInstanceId: string;
         };
         /**
          * OpaqueValueState
@@ -7153,39 +7046,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ModelExtractionResult_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_manual_model_hierarchy_api_v1_extraction_models_manual_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateModelHierarchyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_CreateModelHierarchyResponse_"];
                 };
             };
             /** @description Validation Error */

@@ -359,29 +359,6 @@ export async function modelExtractionClient<T>(
   });
 }
 
-// Request shape from the generated contract too — the snake_case copy
-// only worked through Pydantic's populate_by_name leniency.
-export type ManualModelHierarchyRequest =
-  components['schemas']['CreateModelHierarchyRequest'];
-
-// Response shapes come from the generated contract (camelCase aliases) —
-// a hand-mirrored snake_case copy here shipped `model_label: undefined`
-// all the way to the success toast (envelope-drift incident class).
-export type ManualModelHierarchyChild =
-  components['schemas']['ModelHierarchyChildResponse'];
-
-export type ManualModelHierarchyResponse =
-  components['schemas']['CreateModelHierarchyResponse'];
-
-export async function createManualModelHierarchy(
-  body: ManualModelHierarchyRequest
-): Promise<ManualModelHierarchyResponse> {
-  return apiClient<ManualModelHierarchyResponse>("/api/v1/extraction/models/manual", {
-    method: "POST",
-    body,
-  });
-}
-
 // Create one entry of a repeating section, with its singleton children, in
 // one transaction. Replaces the browser-side PostgREST insert: the key value
 // is recorded as a ReviewerDecision, which only the server may author.

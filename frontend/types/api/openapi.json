@@ -686,54 +686,6 @@
         "title": "ApiResponse[CreateAPIKeyResponse]",
         "type": "object"
       },
-      "ApiResponse_CreateModelHierarchyResponse_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CreateModelHierarchyResponse"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[CreateModelHierarchyResponse]",
-        "type": "object"
-      },
       "ApiResponse_DeleteAPIKeyResult_": {
         "properties": {
           "data": {
@@ -4103,79 +4055,6 @@
         "title": "CreateDecisionRequest",
         "type": "object"
       },
-      "CreateModelHierarchyRequest": {
-        "additionalProperties": false,
-        "description": "Request to create one prediction-model hierarchy for an article.\n\nThe dialog asks for the name only; it becomes the instance label and\nthe decision on the container's entry key. ``extra=\"forbid\"`` for the\nreason ``ModelExtractionRequest`` gives: this body is validated once,\nin the request cycle, so a stale tab that still sends\n``modellingMethod`` gets a loud 422 instead of silently losing a value\nit typed.",
-        "properties": {
-          "articleId": {
-            "format": "uuid",
-            "title": "Articleid",
-            "type": "string"
-          },
-          "modelName": {
-            "title": "Modelname",
-            "type": "string"
-          },
-          "projectId": {
-            "format": "uuid",
-            "title": "Projectid",
-            "type": "string"
-          },
-          "templateId": {
-            "format": "uuid",
-            "title": "Templateid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "projectId",
-          "articleId",
-          "templateId",
-          "modelName"
-        ],
-        "title": "CreateModelHierarchyRequest",
-        "type": "object"
-      },
-      "CreateModelHierarchyResponse": {
-        "description": "Response for one-shot hierarchy creation.",
-        "properties": {
-          "childInstances": {
-            "items": {
-              "$ref": "#/components/schemas/ModelHierarchyChildResponse"
-            },
-            "title": "Childinstances",
-            "type": "array"
-          },
-          "modelId": {
-            "format": "uuid",
-            "title": "Modelid",
-            "type": "string"
-          },
-          "modelLabel": {
-            "title": "Modellabel",
-            "type": "string"
-          },
-          "proposalRunId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Proposalrunid"
-          }
-        },
-        "required": [
-          "modelId",
-          "modelLabel",
-          "childInstances"
-        ],
-        "title": "CreateModelHierarchyResponse",
-        "type": "object"
-      },
       "CreateProjectTemplateRequest": {
         "additionalProperties": false,
         "description": "Name a template that starts with no sections; the tree is built after.\n\n``extra=\"forbid\"``: ``is_active``, ``project_id`` and ``created_by`` are\nthe server's to set \u2014 the invariants in ``template_create_service`` are\nexactly what a client-supplied field set would break.",
@@ -6399,38 +6278,6 @@
           "tokensTotal"
         ],
         "title": "ModelExtractionRunStats",
-        "type": "object"
-      },
-      "ModelHierarchyChildResponse": {
-        "description": "Child instance created under the parent model instance.",
-        "properties": {
-          "entityTypeId": {
-            "format": "uuid",
-            "title": "Entitytypeid",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "parentInstanceId": {
-            "format": "uuid",
-            "title": "Parentinstanceid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "entityTypeId",
-          "parentInstanceId",
-          "label"
-        ],
-        "title": "ModelHierarchyChildResponse",
         "type": "object"
       },
       "OpaqueValueState": {
@@ -11816,53 +11663,6 @@
           }
         ],
         "summary": "Extrair modelos de predicao",
-        "tags": [
-          "Model Extraction"
-        ]
-      }
-    },
-    "/api/v1/extraction/models/manual": {
-      "post": {
-        "description": "Creates the parent prediction model and required singleton children in one transaction.",
-        "operationId": "create_manual_model_hierarchy_api_v1_extraction_models_manual_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateModelHierarchyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CreateModelHierarchyResponse_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Create one prediction model hierarchy",
         "tags": [
           "Model Extraction"
         ]
