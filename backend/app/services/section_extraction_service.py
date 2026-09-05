@@ -23,7 +23,7 @@ from app.infrastructure.storage import StorageAdapter
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
 from app.llm.extractor import LlmUsage, extract_structured
-from app.llm.prompts import EntryScope
+from app.llm.prompts import Ancestor, EntryScope
 from app.llm.provider import build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
@@ -190,6 +190,8 @@ class SectionExtractionService(LoggerMixin):
         # Stashed by _extract_with_llm; _maybe_verify builds _run_provenance.
         self._snapshot_inputs: SectionSnapshotInputs | None = None
         self._run_provenance: dict[str, Any] | None = None
+        # Enclosing-entry chains per (run, instance) — ``entry_ancestry``.
+        self._ancestry: dict[tuple[UUID, UUID], tuple[Ancestor, ...]] = {}
         # Engine for every LLM call here: the env-default candidate until a
         # caller passes a resolved one; ``freeze_run_engine`` rebinds it to
         # the run's pinned target before any LLM call.

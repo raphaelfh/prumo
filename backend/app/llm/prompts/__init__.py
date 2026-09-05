@@ -15,6 +15,16 @@ def content_version(*parts: str) -> str:
     return digest[:12]
 
 
+@dataclass(frozen=True)
+class Ancestor:
+    """One enclosing entry of the instance a prompt is about: the noun of its
+    group and the entry's label, e.g. ``model "XGBoost"``. Chains read
+    outermost first (see ``app.services.entry_ancestry``)."""
+
+    noun: str
+    label: str
+
+
 def render_review_context_section(review_context: str | None) -> str:
     """Project-level review question (from the run-pinned review context).
 
