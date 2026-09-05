@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-08-30
+last_reviewed: 2026-09-05
 owner: '@raphaelfh'
 ---
 
 # Roadmap
 
-> **Status:** Stable · Last reviewed: 2026-08-30 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-09-05 · Owner: @raphaelfh
 
 The day-to-day roadmap with status, priority, owner, and target dates lives
 on the GitHub Project:
@@ -46,6 +46,7 @@ Carved out of the template-config redesign (`docs/superpowers/specs/2026-08-05-t
 
 ## Recently shipped (2026-Q2)
 
+- ✅ Entry-group identity + follow-up train — every repeating section is an entry group with a versioned entry key (`is_entity_key`, migrations `0059`/`0066`/`0067`) and a required entry noun (migration `0068`); AI identification, resolution and extraction once per entry; typed `MISSING_ENTITY_KEY` refusal; the manual add dialog asks for the key only; rename/re-key with append-only history; identity E2E on a dedicated fixture project (2026-09-03 → 2026-09-05, #798–#812). Next: the entry-group trees spec (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`).
 - ✅ PICOT in the AI context — the project's structured review question (`projects.picots_config_ai_review`) now renders into every LLM call as a `Review question and scope:` block, pinned per run under `results.provenance.review_context`; one editor behind a manager-gated `PUT /projects/:id/ai-context`, plus the AI-instruction editor QA templates never had (migration `0064`) (2026-08-30).
 - ✅ Table-cell + figure citations — native fitz table-cell grid with cell-scoped entailment (migration `0036`); `figure` region blocks + a "Verify manually" badge for ungroundable values (migration `0037`); P3/P4 of the grounded-extraction citation work (2026-06-29).
 - ✅ Stored-markdown ingestion + deterministic citation highlight — `content_markdown` written atomically with blocks (migration `0033`); PyMuPDF free default; highlight anchored by `(page, block_index)`; `pypdf` path removed (2026-06-24).
