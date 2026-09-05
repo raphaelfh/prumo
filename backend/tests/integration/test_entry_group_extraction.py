@@ -347,14 +347,20 @@ async def _entries(
 
 
 async def _proposed(db: AsyncSession, instance_id: UUID, field_id: UUID) -> list[float]:
+    """The values proposed on one field of one instance, as a sorted multiset.
+
+    Inside the test's transaction ``created_at`` is not an order: rows
+    written by two calls can share it (the #608 class — an unordered scan
+    is not a contract), so callers assert WHICH values landed on the
+    instance, never in what order."""
     rows = await db.execute(
         text(
             "SELECT proposed_value->'value' AS v FROM public.extraction_proposal_records "
-            "WHERE instance_id = :iid AND field_id = :fid ORDER BY created_at"
+            "WHERE instance_id = :iid AND field_id = :fid"
         ),
         {"iid": instance_id, "fid": field_id},
     )
-    return [float(row.v) for row in rows]
+    return sorted(float(row.v) for row in rows)
 
 
 def _coord(**overrides: Any) -> dict[str, Any]:
@@ -410,10 +416,9 @@ async def test_repeats_get_their_own_instances_and_a_rerun_matches_them(
     second = await _entries(db_session, entity_type_id)
     assert [key for _, key in second] == ["apparent", "internal", "external"]
     assert [iid for iid, _ in second[:2]] == [iid for iid, _ in first], "matched, not forked"
-    assert await _proposed(db_session, first[1][0], value_id) == [
-        C_STAT["internal"],
-        round(C_STAT["internal"] + 0.01, 2),
-    ], "the re-run appended to the same instance"
+    assert await _proposed(db_session, first[1][0], value_id) == sorted(
+        [C_STAT["internal"], round(C_STAT["internal"] + 0.01, 2)]
+    ), "the re-run appended to the same instance"
     # Grounding: the second identification saw what the article already had.
     assert "already been identified" in identification["prompts"][1].lower()
     assert "apparent" in identification["prompts"][1]
