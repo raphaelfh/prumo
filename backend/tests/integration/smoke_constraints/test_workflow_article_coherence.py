@@ -68,6 +68,7 @@ class _Fixture(NamedTuple):
     instance_article: UUID
     field_id: UUID
     template_id: UUID
+    template_kind: str
     version_id: UUID
     profile_id: UUID
 
@@ -80,19 +81,27 @@ async def _discover(session: AsyncSession) -> _Fixture | None:
     the dominant integration-test idiom. The autouse seed guarantees at
     least one such instance in CI.
     """
+    # The template is joined for its ``kind``: the composite FK
+    # ``fk_extraction_runs_template_kind_coherence`` requires the run's
+    # ``(template_id, kind)`` pair to exist in ``project_extraction_templates``,
+    # so the run built by ``_make_run`` must mirror the picked template's own
+    # kind instead of assuming ``extraction`` — otherwise the fixture blows up
+    # on any database whose first article-bound instance is quality-assessment.
     inst = (
         await session.execute(
             text(
-                "SELECT id, article_id, template_id, project_id, entity_type_id "
-                "FROM public.extraction_instances "
-                "WHERE article_id IS NOT NULL "
+                "SELECT i.id, i.article_id, i.template_id, i.project_id, "
+                "i.entity_type_id, t.kind "
+                "FROM public.extraction_instances i "
+                "JOIN public.project_extraction_templates t ON t.id = i.template_id "
+                "WHERE i.article_id IS NOT NULL "
                 "LIMIT 1"
             )
         )
     ).first()
     if inst is None:
         return None
-    instance_id, instance_article, template_id, project_id, entity_type_id = inst
+    instance_id, instance_article, template_id, project_id, entity_type_id, template_kind = inst
 
     field_id = (
         await session.execute(
@@ -121,6 +130,7 @@ async def _discover(session: AsyncSession) -> _Fixture | None:
         instance_article=instance_article,
         field_id=field_id,
         template_id=template_id,
+        template_kind=template_kind,
         version_id=version_id,
         profile_id=profile_id,
     )
@@ -128,8 +138,16 @@ async def _discover(session: AsyncSession) -> _Fixture | None:
 
 async def _make_run(session: AsyncSession, fx: _Fixture, *, article_id: UUID) -> UUID:
     """Insert an extraction_run for ``article_id`` under the fixture's
-    template/project. Returns the new run id. (``status`` has only a
-    Python-side ORM default, so a raw INSERT must set it explicitly.)
+    template/project, carrying that template's own ``kind``. Returns the new
+    run id. (``status`` has only a Python-side ORM default, so a raw INSERT
+    must set it explicitly.)
+
+    The stage is terminal (``cancelled``) because the happy path builds a run
+    at the *instance's own* coordinate, where the partial unique index
+    ``uq_one_live_extraction_run_per_coord`` already forbids a second live
+    (pending/extract/consensus) run — any project with work in flight has one.
+    The coherence trigger only compares ``article_id``, so the stage is
+    immaterial to what these tests assert.
     """
     run_id = uuid4()
     await session.execute(
@@ -137,8 +155,8 @@ async def _make_run(session: AsyncSession, fx: _Fixture, *, article_id: UUID) ->
             "INSERT INTO public.extraction_runs "
             "(id, project_id, article_id, template_id, version_id, kind, stage, "
             " status, created_by) "
-            "VALUES (:rid, :pid, :aid, :tid, :vid, 'extraction', 'pending', "
-            " 'pending', :prof)"
+            "VALUES (:rid, :pid, :aid, :tid, :vid, CAST(:kind AS template_kind), "
+            " 'cancelled', 'pending', :prof)"
         ),
         {
             "rid": run_id,
@@ -146,6 +164,7 @@ async def _make_run(session: AsyncSession, fx: _Fixture, *, article_id: UUID) ->
             "aid": article_id,
             "tid": fx.template_id,
             "vid": fx.version_id,
+            "kind": fx.template_kind,
             "prof": fx.profile_id,
         },
     )
