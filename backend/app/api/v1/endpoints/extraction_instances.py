@@ -32,6 +32,7 @@ from app.services.entry_hierarchy_service import (
     EntryHierarchyService,
     EntryKeyDuplicateError,
     EntryTargetNotFoundError,
+    InvalidEntryTargetError,
 )
 from app.services.instance_identity_service import (
     InstanceNotFoundError,
@@ -84,9 +85,12 @@ async def create_entry(
     except EntryTargetNotFoundError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except ValueError as exc:
-        # InvalidEntryTargetError and its siblings: the body is well formed
-        # but names a target that cannot hold an entry.
+    except InvalidEntryTargetError as exc:
+        # The body is well formed but names a target that cannot hold an
+        # entry. Deliberately NOT a bare `except ValueError`: an unrelated
+        # ValueError from below is a bug, and answering 422 with its internal
+        # message echoed in `detail` would both mis-state the cause and leak
+        # it. Anything else reaches the 500 handler.
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)

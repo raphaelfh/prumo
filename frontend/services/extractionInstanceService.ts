@@ -1,35 +1,20 @@
 /**
- * Service layer for extraction instance management
+ * Reads and deletes for extraction instances.
  *
- * Centralizes create, update and delete logic for instances,
- * providing a unified interface and avoiding code duplication.
- *
- * Phase 3: Full observability (logging + metrics).
+ * Creation is NOT here: it lives behind
+ * `POST /api/v1/extraction/instances` (trees B2), because the key value is
+ * recorded as a ReviewerDecision and only the server may author an audit
+ * row. Session-open singletons come from `hitl_session_service`. What
+ * remains is the PostgREST cascade delete plus a few model-container reads.
  *
  * @module services/extractionInstanceService
  */
 
 import {supabase} from '@/integrations/supabase/client';
 import {extractionLogger, performanceTracker} from '@/lib/extraction/observability';
-import {
-  deleteOne,
-  handleSupabaseError,
-  queryBuilder,
-  SupabaseRepositoryError
-} from '@/lib/supabase/baseRepository';
-import type {ExtractionInstance} from '@/types/extraction';
+import {deleteOne, SupabaseRepositoryError} from '@/lib/supabase/baseRepository';
 
 // =================== INTERFACES ===================
-
-export interface GetInstancesParams {
-  articleId: string;
-  templateId: string;
-  options?: {
-    entityTypeId?: string;
-    parentInstanceId?: string | null;
-    includeChildren?: boolean;
-  };
-}
 
 // =================== SERVICE CLASS ===================
 
@@ -68,53 +53,6 @@ export class ExtractionInstanceService {
       }
 
         throw new Error(`Failed to remove instance: ${message}`, { cause: error });
-    }
-  }
-
-  /**
-   * Fetches instances with filter options
-   */
-  async getInstances(params: GetInstancesParams): Promise<ExtractionInstance[]> {
-    const { articleId, templateId, options = {} } = params;
-
-    try {
-        // Build filters for queryBuilder
-      const filters: Record<string, unknown> = {
-        article_id: articleId,
-        template_id: templateId,
-      };
-
-      if (options.entityTypeId) {
-        filters.entity_type_id = options.entityTypeId;
-      }
-
-      if (options.parentInstanceId !== undefined) {
-        filters.parent_instance_id = options.parentInstanceId;
-      }
-
-        // Use baseRepository queryBuilder
-      const { data, error } = await queryBuilder<ExtractionInstance>(
-        'extraction_instances',
-        {
-          select: '*',
-          filters,
-          orderBy: { column: 'sort_order', ascending: true },
-        }
-      );
-
-      if (error) {
-        handleSupabaseError(error, 'getInstances');
-      }
-
-      return data || [];
-
-    } catch (error: unknown) {
-      if (error instanceof SupabaseRepositoryError) {
-        throw error;
-      }
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        console.error('Error fetching instances:', error);
-        throw new Error(`Failed to fetch instances: ${message}`, { cause: error });
     }
   }
 

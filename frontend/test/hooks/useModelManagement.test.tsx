@@ -153,7 +153,7 @@ describe('useModelManagement → createModel guard rails', () => {
     expect(result.current.models).toHaveLength(1);
     expect(result.current.models[0].modelName).toBe('XGBoost');
     expect(result.current.activeModelId).toBe('parent-inst');
-    expect(outcome?.model.instanceId).toBe('parent-inst');
+    expect(outcome?.instanceId).toBe('parent-inst');
   });
 
   it('returns null and toasts when the backend call fails (does not throw)', async () => {

@@ -795,7 +795,6 @@ export default function ExtractionFullScreen() {
     instances,
     modelParentEntityTypeId: modelParentEntityType?.id ?? null,
     activeModelId,
-    updateValue,
     onCreated: refetchRun,
   });
   const handleAddInstance = addEntry.open;

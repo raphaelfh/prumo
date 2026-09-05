@@ -51,17 +51,13 @@ interface UseModelManagementProps {
   enabled?: boolean;
 }
 
-interface CreateModelResult {
-  model: Model;
-}
-
 interface UseModelManagementReturn {
   models: Model[];
   activeModelId: string | null;
   setActiveModelId: (id: string | null) => void;
   loading: boolean;
   error: string | null;
-  createModel: (modelName: string) => Promise<CreateModelResult | null>;
+  createModel: (modelName: string) => Promise<Model | null>;
   removeModel: (instanceId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
   getModelProgress: (instanceId: string) => Promise<Model['progress']>;
@@ -227,7 +223,7 @@ export function useModelManagement({
   }, [loadModels]);
 
     // Create new model (using service - simplified)
-  const createModel = async (modelName: string): Promise<CreateModelResult | null> => {
+  const createModel = async (modelName: string): Promise<Model | null> => {
     if (!user || !modelParentEntityTypeId) {
       toast.error(t('extraction', 'modelNotAuthenticatedOrInvalid'));
       return null;
@@ -266,7 +262,7 @@ export function useModelManagement({
 
     toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.label));
 
-    return {model: newModel};
+    return newModel;
   };
 
     // Remove model (using service - simplified)

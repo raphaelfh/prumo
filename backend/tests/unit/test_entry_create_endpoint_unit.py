@@ -169,17 +169,21 @@ async def test_an_invalid_target_becomes_422(
 
 
 @pytest.mark.asyncio
-async def test_a_bare_value_error_also_becomes_422(
+async def test_an_unrelated_value_error_is_not_dressed_up_as_a_422(
     monkeypatch: pytest.MonkeyPatch, gates: dict[str, AsyncMock]
 ) -> None:
-    """The except clause catches ValueError, not only the named subclass —
-    a service refusal added later must not escape as a 500."""
+    """Only the named refusal maps to 422.
+
+    A bare `except ValueError` would turn a genuine bug into a 422 whose
+    `detail` echoes an internal message — the wrong status AND a leak. An
+    unrecognised error must reach the 500 handler untouched.
+    """
     del gates  # side-effect fixture: both auth gates pass
-    _service(monkeypatch, ValueError("something the service refused"))
+    _service(monkeypatch, ValueError("an internal invariant broke"))
     db = AsyncMock()
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ValueError) as exc:
         await _handler(request=_request(), payload=_payload(), db=db, current_user_sub=CALLER)
 
-    assert exc.value.status_code == 422
-    db.rollback.assert_awaited_once()
+    assert not isinstance(exc.value, HTTPException)
+    db.commit.assert_not_awaited()

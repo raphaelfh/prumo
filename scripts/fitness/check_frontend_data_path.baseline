@@ -2,9 +2,7 @@
 # line numbers refreshed by the dead-code sweep (two sites deleted outright)
 frontend/hooks/extraction/helpers/queryEntityTypes.ts:15
 frontend/hooks/extraction/helpers/queryEntityTypes.ts:17
-frontend/lib/supabase/baseRepository.ts:82
-frontend/lib/supabase/baseRepository.ts:102
-frontend/lib/supabase/baseRepository.ts:150
+frontend/lib/supabase/baseRepository.ts:76
 frontend/services/articlesExportService.ts:11
 frontend/services/extractionDataService.ts:61
 frontend/services/extractionDataService.ts:62

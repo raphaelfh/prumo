@@ -159,9 +159,7 @@ def scan(repo_root: Path) -> tuple[dict[str, list[str]], list[str]]:
                 continue
             model, columns = sig
             key = f"{model}{{{','.join(columns)}}}"
-            fn = next(
-                (name for lo, hi, name in spans if lo <= node.lineno <= hi), "<module>"
-            )
+            fn = next((name for lo, hi, name in spans if lo <= node.lineno <= hi), "<module>")
             site = f"{rel}::{fn}"
             if site not in by_signature[key]:
                 by_signature[key].append(site)
@@ -265,9 +263,7 @@ def main() -> int:
                 "file": r.split("::")[-2] if "::" in r else r.split(":")[0],
                 "line": 0,
                 "evidence": r,
-                "suggested_action": (
-                    "Import the existing guard instead of re-typing its WHERE."
-                ),
+                "suggested_action": ("Import the existing guard instead of re-typing its WHERE."),
                 "source": f"fitness:check_scope_guards:{r.split('::')[0]}",
             }
             for r in regressions
@@ -300,6 +296,7 @@ def main() -> int:
             "\nAn ownership predicate is written ONCE. Import the existing guard "
             "(app/services/project_template_active_service.owned_template, "
             "template_section_service.owned_section, "
+            "article_read_service.owned_article, "
             "repositories/extraction_repository.get_in_coordinate) instead of "
             "re-typing its WHERE. If this really is a new pair, add the guard in "
             "one place and baseline it with a reason."

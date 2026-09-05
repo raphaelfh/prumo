@@ -147,7 +147,9 @@ class EntryHierarchyService:
         # The entry and its singleton children land in one transaction: the
         # caller commits, so a failure anywhere below leaves no half-built
         # entry for a reviewer to find.
-        provenance: dict[str, Any] = {"created_via": "manual"}
+        metadata: dict[str, Any] = {"created_via": "manual"}
+        if key_field is not None:
+            metadata = stamp(metadata, key_value)
         entry = ExtractionInstance(
             project_id=project_id,
             article_id=article_id,
@@ -160,7 +162,7 @@ class EntryHierarchyService:
                 entity_type_id=entity_type_id,
                 parent_instance_id=parent_instance_id,
             ),
-            metadata_=stamp(provenance, key_value) if key_field is not None else dict(provenance),
+            metadata_=metadata,
             created_by=user_id,
         )
         self.db.add(entry)
@@ -297,6 +299,15 @@ class EntryHierarchyService:
 
         A nested GROUP gets no instance here: its entries are created by its
         own call to :meth:`create_entry` (§7.5).
+
+        Label and ``sort_order`` deliberately match
+        ``hitl_session_service._backfill_child_singletons``, which maintains
+        this same invariant on every session open. Two formulas for one row
+        type are user-visible ("Cox Model - Calibration" beside "Cox Model -
+        Outcome 1" inside one entry), and a flat ``sort_order=0`` ties every
+        child in each ``ORDER BY sort_order`` read — the failure
+        :meth:`_next_sort_order` exists to avoid. Folding the two into one
+        materializer is the real fix and is filed separately.
         """
         stmt = (
             select(ExtractionEntityType)
@@ -314,8 +325,8 @@ class EntryHierarchyService:
                     template_id=template_id,
                     entity_type_id=child_type.id,
                     parent_instance_id=parent_instance_id,
-                    label=f"{parent_label} - {child_type.label}",
-                    sort_order=0,
+                    label=f"{parent_label} - {child_type.label} 1",
+                    sort_order=child_type.sort_order,
                     metadata_={"created_via": "manual"},
                     created_by=user_id,
                 )
@@ -333,9 +344,9 @@ class EntryHierarchyService:
         stmt = select(func.coalesce(func.max(ExtractionInstance.sort_order), -1)).where(
             ExtractionInstance.article_id == article_id,
             ExtractionInstance.entity_type_id == entity_type_id,
-            ExtractionInstance.parent_instance_id.is_(None)
-            if parent_instance_id is None
-            else ExtractionInstance.parent_instance_id == parent_instance_id,
+            # `== None` renders as IS NULL for a None operand, so the
+            # root and nested cases need no branch here.
+            ExtractionInstance.parent_instance_id == parent_instance_id,
         )
         return int((await self.db.execute(stmt)).scalar_one()) + 1
 

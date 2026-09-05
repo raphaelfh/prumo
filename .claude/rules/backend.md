@@ -55,8 +55,11 @@ guard that drifted or was never made.
 - **Row-in-parent** → the named guard for that pair:
   `project_template_active_service.owned_template`,
   `template_section_service.owned_section`,
+  `article_read_service.owned_article`,
   `ExtractionInstanceRepository.get_in_coordinate`. Need a new pair? Add
-  ONE guard and import it — never copy a sibling.
+  ONE guard and import it — never copy a sibling. This list is load-bearing:
+  the CI gate matches WHERE-clause shapes, so it cannot see a
+  `db.get`-then-compare copy — the enumeration is what prevents copy #3.
 - **The request coordinate** for the AI kickoff endpoints →
   `api/deps/scope.assert_kickoff_scope`. Both kickoff endpoints share it;
   `/extraction/models` shipped without the binding precisely because the

@@ -70,7 +70,6 @@ const ACTIVE_MODEL = {
 } as unknown as ExtractionInstance;
 
 function setup(overrides: Partial<Parameters<typeof useAddEntry>[0]> = {}) {
-  const updateValue = vi.fn();
   const onCreated = vi.fn().mockResolvedValue(undefined);
   const hook = renderHook(() =>
     useAddEntry({
@@ -81,12 +80,11 @@ function setup(overrides: Partial<Parameters<typeof useAddEntry>[0]> = {}) {
       instances: [ACTIVE_MODEL],
       modelParentEntityTypeId: 'et-root',
       activeModelId: 'inst-active-model',
-      updateValue,
       onCreated,
       ...overrides,
     }),
   );
-  return {hook, updateValue, onCreated};
+  return {hook, onCreated};
 }
 
 beforeEach(() => {
@@ -98,7 +96,7 @@ beforeEach(() => {
 describe('useAddEntry', () => {
   it('creates the entry through the typed endpoint, not a browser insert', async () => {
     createEntry.mockResolvedValue({instanceId: 'inst-new', label: 'XGBoost'});
-    const {hook, updateValue, onCreated} = setup();
+    const {hook, onCreated} = setup();
 
     act(() => hook.result.current.open('et-root'));
     await act(async () => {
@@ -114,15 +112,16 @@ describe('useAddEntry', () => {
       label: 'XGBoost',
       entityKey: 'XGBoost',
     });
-    // The key value IS this reviewer's answer to the key field.
-    expect(updateValue).toHaveBeenCalledWith('inst-new', 'f-key', 'XGBoost');
+    // The SERVER records the key as the reviewer's decision inside the
+    // create transaction; writing it again locally would let autosave POST
+    // a second, identical row into an append-only trail.
     expect(onCreated).toHaveBeenCalled();
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
   });
 
   it('passes the enclosing entry as parentInstanceId for a nested group', async () => {
     createEntry.mockResolvedValue({instanceId: 'inst-nested', label: 'Age'});
-    const {hook, updateValue} = setup();
+    const {hook} = setup();
 
     act(() => hook.result.current.open('et-nested'));
     await act(async () => {
@@ -138,41 +137,42 @@ describe('useAddEntry', () => {
         entityKey: null,
       }),
     );
-    expect(updateValue).not.toHaveBeenCalled();
   });
 
-  it('surfaces the server duplicate refusal as its own message', async () => {
-    createEntry.mockRejectedValue(
-      new ApiError('ENTRY_KEY_DUPLICATE', 'already exists', 409),
-    );
+  it('REJECTS on the duplicate refusal, with the message the dialog shows', async () => {
+    // AddEntryDialog sets `loading` before awaiting onConfirm and clears it
+    // ONLY in its catch. A handled-here failure leaves the dialog stuck on
+    // "Creating…" with Cancel disabled and onOpenChange refusing to close —
+    // so rejecting is the contract, not an implementation detail.
+    createEntry.mockRejectedValue(new ApiError('ENTRY_KEY_DUPLICATE', 'already exists', 409));
     const {hook, onCreated} = setup();
 
     act(() => hook.result.current.open('et-root'));
     await act(async () => {
-      await hook.result.current.dialogProps.onConfirm('Cox Model');
+      // Pin text ONLY the copy key carries: asserting on "already exists"
+      // would also match the raw server message and pass with the typed
+      // branch deleted.
+      await expect(
+        hook.result.current.dialogProps.onConfirm('Cox Model'),
+      ).rejects.toThrow(/Open it instead/);
     });
 
-    // Pin text that ONLY the copy key carries. Asserting on "already
-    // exists" would also match the raw server message, so the test would
-    // pass with the typed branch deleted.
-    expect(toastError).toHaveBeenCalledWith(
-      expect.stringContaining('Open it instead'),
-    );
-    // A refusal must not look like a success: no refetch, no success toast.
+    // A refusal must not look like a success.
     expect(onCreated).not.toHaveBeenCalled();
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
-  it('reports any other failure instead of swallowing it', async () => {
+  it('rethrows any other failure rather than swallowing it', async () => {
     createEntry.mockRejectedValue(new ApiError('EXTRACTION_FAILED', 'boom', 500));
     const {hook, onCreated} = setup();
 
     act(() => hook.result.current.open('et-root'));
     await act(async () => {
-      await hook.result.current.dialogProps.onConfirm('XGBoost');
+      await expect(
+        hook.result.current.dialogProps.onConfirm('XGBoost'),
+      ).rejects.toThrow('boom');
     });
 
-    expect(toastError).toHaveBeenCalled();
     expect(onCreated).not.toHaveBeenCalled();
   });
 

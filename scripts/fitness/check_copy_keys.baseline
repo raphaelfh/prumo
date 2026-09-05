@@ -44,6 +44,7 @@ frontend/lib/copy/common.ts:errors_loadFailed
 frontend/lib/copy/common.ts:errors_networkError
 frontend/lib/copy/common.ts:errors_notFound
 frontend/lib/copy/common.ts:errors_saveFailed
+frontend/lib/copy/common.ts:errors_serverError
 frontend/lib/copy/common.ts:errors_unauthorized
 frontend/lib/copy/common.ts:errors_userNotProjectMember
 frontend/lib/copy/common.ts:feedbackSuccessDesc

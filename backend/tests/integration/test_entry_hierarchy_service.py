@@ -174,9 +174,14 @@ async def test_a_root_group_entry_is_created_with_its_singleton_children(
     )
     assert {i.entity_type_id for i in written} == set(singleton_children)
     assert all(i.metadata_.get("created_via") == "manual" for i in written)
-    # Descendant label format: no trailing counter (the old path wrote " 1").
+    # Label and sort_order match ``hitl_session_service``'s backfill, which
+    # maintains this same invariant on every session open — two formulas for
+    # one row type would be visible inside a single entry.
     some = written[0]
-    assert some.label == f"Cox Model - {singleton_children[some.entity_type_id]}"
+    assert some.label == f"Cox Model - {singleton_children[some.entity_type_id]} 1"
+    # sort_order carries the child's template order, never a flat 0, which
+    # would tie every child in each ORDER BY sort_order read.
+    assert len({i.sort_order for i in written}) == len(written)
 
 
 @pytest.mark.asyncio

@@ -56,8 +56,6 @@ vi.mock('@/hooks/extraction/useSectionExtraction', () => ({
 vi.mock('@/services/extractionInstanceService', () => ({
   updateInstanceLabel: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/services/authService', () => ({
-}));
 vi.mock('@/integrations/supabase/client', () => {
   const builder: Record<string, unknown> = {
     select: () => builder,
