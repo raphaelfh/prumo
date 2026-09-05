@@ -204,7 +204,10 @@ async def _call_extract_models(payload, service, caller, credentials_error=None)
     request = MagicMock()
     request.state.trace_id = None
     with (
-        patch(f"{_MODEL_EP}.ensure_project_member", AsyncMock()),
+        # No ``ensure_project_member`` patch: this route binds its coordinate
+        # through ``assert_kickoff_scope``. The patch that used to sit here
+        # was vestigial — the name existed on this module only because the
+        # retired ``/manual`` route imported it (Trees B2).
         # Pin the C1b/F4 resolver explicitly: left unpatched on a MagicMock db
         # it happens to fall back to the env default today, but an
         # EngineRetired raise here would 409 and make the one-live-run 409

@@ -24,18 +24,6 @@ export function getCurrentUserId(): Promise<ErrorResult<string | null>> {
   }, 'authService.getCurrentUserId');
 }
 
-/**
- * Fetch the current authenticated user's id, throwing (within toResult) if
- * not authenticated. Used by accept/reject flows that require a reviewer id.
- */
-export function getRequiredUserId(): Promise<ErrorResult<string>> {
-  return toResult(async () => {
-    const {data: {user}} = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-    return user.id;
-  }, 'authService.getRequiredUserId');
-}
-
 // ---------------------------------------------------------------------------
 // ApiKeysSection: session access token
 // ---------------------------------------------------------------------------

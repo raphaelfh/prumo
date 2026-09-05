@@ -15,7 +15,7 @@
  */
 
 import {useEffect, useRef, useState} from 'react';
-import {createManualModelHierarchy, type ManualModelHierarchyChild} from '@/integrations/api';
+import {createEntry} from '@/integrations/api';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
@@ -51,18 +51,13 @@ interface UseModelManagementProps {
   enabled?: boolean;
 }
 
-interface CreateModelResult {
-  model: Model;
-  childInstances: ManualModelHierarchyChild[];
-}
-
 interface UseModelManagementReturn {
   models: Model[];
   activeModelId: string | null;
   setActiveModelId: (id: string | null) => void;
   loading: boolean;
   error: string | null;
-  createModel: (modelName: string) => Promise<CreateModelResult | null>;
+  createModel: (modelName: string) => Promise<Model | null>;
   removeModel: (instanceId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
   getModelProgress: (instanceId: string) => Promise<Model['progress']>;
@@ -228,17 +223,22 @@ export function useModelManagement({
   }, [loadModels]);
 
     // Create new model (using service - simplified)
-  const createModel = async (modelName: string): Promise<CreateModelResult | null> => {
+  const createModel = async (modelName: string): Promise<Model | null> => {
     if (!user || !modelParentEntityTypeId) {
       toast.error(t('extraction', 'modelNotAuthenticatedOrInvalid'));
       return null;
     }
 
-    const result = await createManualModelHierarchy({
+    // Trees B2: one endpoint creates an entry for any group, with its
+    // singleton children, in one transaction. The model container is just a
+    // root group whose entity type id the caller already holds.
+    const result = await createEntry({
       projectId,
       articleId,
       templateId,
-      modelName: modelName.trim(),
+      entityTypeId: modelParentEntityTypeId,
+      label: modelName.trim(),
+      entityKey: modelName.trim(),
     }).catch((err: unknown) => {
       console.error('Error creating model:', err);
       toast.error(`${t('extraction', 'errors_createModel')}: ${err instanceof Error ? err.message : String(err)}`);
@@ -249,8 +249,8 @@ export function useModelManagement({
 
     // Create Model object
     const newModel: Model = {
-      instanceId: result.modelId,
-      modelName: result.modelLabel,
+      instanceId: result.instanceId,
+      modelName: result.label,
       progress: { completed: 0, total: 0, percentage: 0 }
     };
 
@@ -260,13 +260,9 @@ export function useModelManagement({
     setModels(prev => [...prev, newModel]);
     setActiveModelId(newModel.instanceId);
 
-    toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.modelLabel));
-    console.warn(`✅ Hierarchy created: 1 parent + ${result.childInstances.length} children`);
+    toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.label));
 
-    return {
-      model: newModel,
-      childInstances: result.childInstances,
-    };
+    return newModel;
   };
 
     // Remove model (using service - simplified)

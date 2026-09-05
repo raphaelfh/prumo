@@ -215,25 +215,6 @@ SectionExtractionResponseData = Annotated[
 # =================== MODEL EXTRACTION SCHEMAS ===================
 
 
-class CreateModelHierarchyRequest(BaseModel):
-    """Request to create one prediction-model hierarchy for an article.
-
-    The dialog asks for the name only; it becomes the instance label and
-    the decision on the container's entry key. ``extra="forbid"`` for the
-    reason ``ModelExtractionRequest`` gives: this body is validated once,
-    in the request cycle, so a stale tab that still sends
-    ``modellingMethod`` gets a loud 422 instead of silently losing a value
-    it typed.
-    """
-
-    project_id: UUID = Field(..., alias="projectId")
-    article_id: UUID = Field(..., alias="articleId")
-    template_id: UUID = Field(..., alias="templateId")
-    model_name: str = Field(..., alias="modelName")
-
-    model_config = ConfigDict(populate_by_name=True, extra="forbid")
-
-
 class InstanceIdentityUpdateRequest(BaseModel):
     """Rename and/or re-key one extraction instance (the run form's rename
     dialog). ``entity_key`` is the identity an AI re-run matches against; the
@@ -260,24 +241,49 @@ class InstanceIdentityUpdateRequest(BaseModel):
         return self
 
 
-class ModelHierarchyChildResponse(BaseModel):
-    """Child instance created under the parent model instance."""
+class EntryCreateRequest(BaseModel):
+    """Create one entry of a repeating section (spec §7).
 
-    id: UUID
+    ``extra="forbid"`` for the reason every sibling gives: this body is
+    validated once, in the request cycle, so a stale tab sending a retired
+    field gets a loud 422 instead of silently losing a value it typed.
+
+    ``label`` is the human-facing name; ``entity_key`` is the identity an AI
+    re-run matches against. A section that declares an ``is_entity_key``
+    field requires the key; one that does not must omit it.
+    """
+
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    template_id: UUID = Field(..., alias="templateId")
     entity_type_id: UUID = Field(..., alias="entityTypeId")
-    parent_instance_id: UUID = Field(..., alias="parentInstanceId")
+    parent_instance_id: UUID | None = Field(default=None, alias="parentInstanceId")
+    label: str = Field(..., max_length=200)
+    entity_key: str | None = Field(default=None, alias="entityKey", max_length=500)
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    @model_validator(mode="after")
+    def _non_blank(self) -> "EntryCreateRequest":
+        if not self.label.strip():
+            raise ValueError("label may not be blank")
+        if self.entity_key is not None and not self.entity_key.strip():
+            raise ValueError("entityKey may be omitted but not blank")
+        return self
+
+
+class EntryCreateResponse(BaseModel):
+    """The created entry.
+
+    Deliberately narrower than spec §7's ``(instance, descendants,
+    proposalRunId)``: the caller refetches the run view after a create, so
+    the descendant list and the run id are payload with no consumer — the
+    retired ``childInstances`` field had none in its whole lifetime. The
+    label IS read (the success toast names the entry).
+    """
+
+    instance_id: UUID = Field(..., alias="instanceId")
     label: str
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class CreateModelHierarchyResponse(BaseModel):
-    """Response for one-shot hierarchy creation."""
-
-    model_id: UUID = Field(..., alias="modelId")
-    model_label: str = Field(..., alias="modelLabel")
-    child_instances: list[ModelHierarchyChildResponse] = Field(alias="childInstances")
-    proposal_run_id: UUID | None = Field(default=None, alias="proposalRunId")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -488,7 +494,8 @@ class ValueResponse(BaseModel):
 
 
 class ExtractionErrorCode(str, Enum):
-    """Stable, machine-readable code for a terminal extraction failure.
+    """Stable code for a terminal extraction failure, or for a typed
+    synchronous refusal on the extraction write paths.
 
     Carried on ``ExtractionJobStatusResponse.error_code`` so the frontend can
     pick specific, actionable toast copy without parsing the human ``error``
@@ -507,6 +514,10 @@ class ExtractionErrorCode(str, Enum):
       ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
       LLM call. Carried by the single-section job and, as a 409, by the sync
       models kickoff; a batch run keeps reporting per-section text.
+    - ``ENTRY_KEY_DUPLICATE`` — manual entry creation named an identity the
+      coordinate already holds (``EntryKeyDuplicateError``), refused as a 409
+      rather than silently renaming the entry the way the retired model path
+      did ("Cox Model (2)").
     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
     """
 
@@ -515,6 +526,7 @@ class ExtractionErrorCode(str, Enum):
     ENGINE_RETIRED = "ENGINE_RETIRED"
     LLM_ENDPOINT_UNAVAILABLE = "LLM_ENDPOINT_UNAVAILABLE"
     MISSING_ENTITY_KEY = "MISSING_ENTITY_KEY"
+    ENTRY_KEY_DUPLICATE = "ENTRY_KEY_DUPLICATE"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
 
 

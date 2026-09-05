@@ -404,6 +404,30 @@ endpoint disappears.
    group through the UI. Verify: migration roundtrip; service, grid and
    portable tests; e2e nested creation on the Spec A fixture project;
    `grep` for `role` in the touched packages at zero.
+
+   **Carried over from B2** (recorded here because this list, not B2's plan
+   doc, is what B5's run reads):
+   - `entry_hierarchy_service._materialize_singletons` is a FLAT loop.
+     0016's CHECK + trigger made a singleton's children unrepresentable, so
+     recursion would have selected zero rows and been untestable. Once 0069
+     drops them, add the recursion **and** the depth bound the
+     self-referential `parent_entity_type_id` FK then needs — nothing else
+     stops a cycle turning one POST into unbounded INSERTs.
+   - That materializer is a **second implementation** of
+     `hitl_session_service._backfill_child_singletons`. B2 aligned their
+     label and `sort_order` so they agree today; fold them into one
+     materializer before adding recursion, or the recursion lands in only
+     one of the two.
+   - `entry_hierarchy_service` reads the **live** entity-type row while the
+     AI path reads the run-**pinned** tree (`entity_key.key_field_of`).
+     Entry creation has no run, so B2 could not reach a pin. When the pinned
+     resolver becomes shared, give it a `key_field_for(run_or_template)`
+     form with the live fallback, so a draft that moves `is_entity_key`
+     cannot make the two paths disagree about the same section.
+   - §11 assigns "browser-side instance insert **and cardinality RPC**" to
+     B2, but only the browser CALL retired: `check_cardinality_one` survives
+     as a SECURITY DEFINER function granted to `authenticated`, with an
+     admin-RPC e2e probe as its only caller. Drop the function in 0069.
 6. **B6 — retirement sweep.** Goal: the model pipeline and every row of
    §11 are gone and cannot return. Verify: the retired-symbols fitness
    check green; both knip modes; the vulture baseline at its new floor;

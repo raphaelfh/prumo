@@ -32,7 +32,7 @@ vi.mock('@/integrations/supabase/client', () => {
 });
 
 vi.mock('@/integrations/api', () => ({
-  createManualModelHierarchy: vi.fn(),
+  createEntry: vi.fn(),
 }));
 
 const mockLoadModelInstances = vi.fn();
@@ -47,7 +47,7 @@ vi.mock('@/services/extractionInstanceService', () => ({
 }));
 
 import { supabase } from '@/integrations/supabase/client';
-import { createManualModelHierarchy } from '@/integrations/api';
+import { createEntry } from '@/integrations/api';
 import { extractionInstanceService } from '@/services/extractionInstanceService';
 import { useModelManagement } from '@/hooks/extraction/useModelManagement';
 
@@ -90,10 +90,10 @@ beforeEach(() => {
 });
 
 describe('useModelManagement → createModel guard rails', () => {
-  // The hook delegates the full hierarchy creation (parent + sub-section
-  // children + the name recorded on the entry key) to the backend endpoint
-  // ``POST /api/v1/extraction/models/manual`` exposed via
-  // ``createManualModelHierarchy``; the dialog asks for the name only.
+  // The hook delegates the whole creation (the entry + its singleton
+  // children + the name recorded on the entry key) to
+  // ``POST /api/v1/extraction/instances`` via ``createEntry``; the dialog
+  // asks for the name only. The model container is just a root group.
 
   it('returns null and toasts when modelParentEntityTypeId is missing', async () => {
     mockLoadModelsToEmpty();
@@ -105,17 +105,16 @@ describe('useModelManagement → createModel guard rails', () => {
       outcome = await result.current.createModel('Whatever');
     });
     expect(outcome).toBeNull();
-    expect(createManualModelHierarchy).not.toHaveBeenCalled();
+    expect(createEntry).not.toHaveBeenCalled();
   });
 
-  it('delegates to createManualModelHierarchy with trimmed model_name + scoped ids', async () => {
+  it('delegates to createEntry with a trimmed label + key and the group id', async () => {
     mockLoadModelsToEmpty();
-    // The wire shape is the generated CreateModelHierarchyResponse
-    // (camelCase aliases) — proven in-process against the real endpoint.
-    (createManualModelHierarchy as any).mockResolvedValue({
-      modelId: 'parent-inst',
-      modelLabel: 'LogReg',
-      childInstances: [],
+    // The wire shape is the generated EntryCreateResponse (camelCase
+    // aliases) — proven in-process against the real endpoint.
+    (createEntry as any).mockResolvedValue({
+      instanceId: 'parent-inst',
+      label: 'LogReg',
     });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
@@ -123,27 +122,26 @@ describe('useModelManagement → createModel guard rails', () => {
       await result.current.createModel('  LogReg  ');
     });
 
-    expect(createManualModelHierarchy).toHaveBeenCalledWith({
+    // The name is both the label and the key: the container declares an
+    // entry key, so an AI re-run must be able to match this row.
+    expect(createEntry).toHaveBeenCalledWith({
       projectId: 'p-1',
       articleId: 'a-1',
       templateId: 't-1',
-      modelName: 'LogReg',
+      entityTypeId: 'pred-et',
+      label: 'LogReg',
+      entityKey: 'LogReg',
     });
   });
 
-  it('adds the new model to local state on success and maps child_instances', async () => {
+  it('adds the new model to local state and activates it', async () => {
     mockLoadModelsToEmpty();
-    (createManualModelHierarchy as any).mockResolvedValue({
-      modelId: 'parent-inst',
-      modelLabel: 'XGBoost',
-      childInstances: [
-        {
-          id: 'child-1',
-          entityTypeId: 'et-section-1',
-          parentInstanceId: 'parent-inst',
-          label: 'Performance',
-        },
-      ],
+    // The singleton children are created server-side in the same
+    // transaction; the caller refetches the run view rather than reading
+    // them off the response, so the endpoint does not return them.
+    (createEntry as any).mockResolvedValue({
+      instanceId: 'parent-inst',
+      label: 'XGBoost',
     });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
@@ -155,19 +153,12 @@ describe('useModelManagement → createModel guard rails', () => {
     expect(result.current.models).toHaveLength(1);
     expect(result.current.models[0].modelName).toBe('XGBoost');
     expect(result.current.activeModelId).toBe('parent-inst');
-    expect(outcome?.childInstances).toEqual([
-      {
-        id: 'child-1',
-        entityTypeId: 'et-section-1',
-        parentInstanceId: 'parent-inst',
-        label: 'Performance',
-      },
-    ]);
+    expect(outcome?.instanceId).toBe('parent-inst');
   });
 
   it('returns null and toasts when the backend call fails (does not throw)', async () => {
     mockLoadModelsToEmpty();
-    (createManualModelHierarchy as any).mockRejectedValue(new Error('rls denied'));
+    (createEntry as any).mockRejectedValue(new Error('rls denied'));
 
     const { result } = renderHook(() => useModelManagement(baseProps));
     let outcome: any;
@@ -467,10 +458,9 @@ describe('useModelManagement → optimistic mutation vs in-flight load', () => {
     await waitFor(() => expect(mockFetchModelProgress).toHaveBeenCalledTimes(2));
 
     // While the refresh is parked, the user creates Beta.
-    (createManualModelHierarchy as any).mockResolvedValue({
-      modelId: 'm-B',
-      modelLabel: 'Beta',
-      childInstances: [],
+    (createEntry as any).mockResolvedValue({
+      instanceId: 'm-B',
+      label: 'Beta',
     });
     await act(async () => {
       await result.current.createModel('Beta');

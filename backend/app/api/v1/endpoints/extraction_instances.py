@@ -1,4 +1,7 @@
-"""Extraction instance identity endpoint.
+"""Extraction instance endpoints.
+
+``POST /api/v1/extraction/instances`` — create one entry of a repeating
+section, with its singleton children, in one transaction.
 
 ``PATCH /api/v1/extraction/instances/{instance_id}`` — rename and/or re-key
 one entry of a repeating section. The client sends the coordinate it holds
@@ -19,8 +22,18 @@ from app.api.deps.security import (
 )
 from app.core.deps import DbSession
 from app.schemas.common import ApiResponse
-from app.schemas.extraction import InstanceIdentityUpdateRequest
+from app.schemas.extraction import (
+    EntryCreateRequest,
+    EntryCreateResponse,
+    InstanceIdentityUpdateRequest,
+)
 from app.schemas.extraction_run import RunViewInstance
+from app.services.entry_hierarchy_service import (
+    EntryHierarchyService,
+    EntryKeyDuplicateError,
+    EntryTargetNotFoundError,
+    InvalidEntryTargetError,
+)
 from app.services.instance_identity_service import (
     InstanceNotFoundError,
     update_instance_identity,
@@ -28,6 +41,62 @@ from app.services.instance_identity_service import (
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
+
+
+@router.post(
+    "",
+    response_model=ApiResponse[EntryCreateResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Create one entry of a repeating section",
+    description=(
+        "Creates the entry and its singleton children in one transaction. "
+        "A nested group requires parentInstanceId; a root group refuses one. "
+        "A duplicate entry key answers a typed 409 ENTRY_KEY_DUPLICATE."
+    ),
+)
+@limiter.limit("60/minute")
+async def create_entry(
+    request: Request,  # noqa: ARG001 — read by the rate limiter
+    payload: EntryCreateRequest,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[EntryCreateResponse]:
+    trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
+    await ensure_project_member(db, payload.project_id, current_user_sub)
+    # Creating an entry records the key value as a ReviewerDecision, so it
+    # carries the same reviewer gate as the PATCH below and as
+    # POST /runs/{id}/decisions: a read-only viewer is a member but must
+    # not author audit-trail rows.
+    await ensure_project_reviewer(db, payload.project_id, current_user_sub)
+    try:
+        created = await EntryHierarchyService(db).create_entry(
+            project_id=payload.project_id,
+            article_id=payload.article_id,
+            template_id=payload.template_id,
+            entity_type_id=payload.entity_type_id,
+            parent_instance_id=payload.parent_instance_id,
+            label=payload.label,
+            entity_key=payload.entity_key,
+            user_id=current_user_sub,
+        )
+    except EntryKeyDuplicateError:
+        await db.rollback()
+        raise  # AppError -> the global handler's typed 409 envelope
+    except EntryTargetNotFoundError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidEntryTargetError as exc:
+        # The body is well formed but names a target that cannot hold an
+        # entry. Deliberately NOT a bare `except ValueError`: an unrelated
+        # ValueError from below is a bug, and answering 422 with its internal
+        # message echoed in `detail` would both mis-state the cause and leak
+        # it. Anything else reaches the 500 handler.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await db.commit()
+    return ApiResponse.success(created, trace_id=trace_id)
 
 
 @router.patch(
