@@ -77,7 +77,25 @@ export function useExtractionSession({
     articleId !== prevOpenKey.articleId ||
     projectTemplateId !== prevOpenKey.projectTemplateId
   ) {
+    // A session describes exactly ONE (project, article, template) triple, so
+    // when that identity changes the session in state belongs to the article
+    // we just navigated away from. Drop it: the article pagers navigate
+    // in place (#657/#671), and keeping the old session left ``activeRunId``
+    // — and every read keyed on it — silently addressing the PREVIOUS run
+    // until the new open() committed. On a failed open it never committed at
+    // all, so the page rendered the previous article's form and swallowed the
+    // error. Clearing makes that state unrepresentable instead of asking each
+    // consumer to defend against it. ``enabled`` alone is NOT identity (it
+    // toggles while the template resolves), so it must not clear the session.
+    const identityChanged =
+      !!prevOpenKey &&
+      (projectId !== prevOpenKey.projectId ||
+        articleId !== prevOpenKey.articleId ||
+        projectTemplateId !== prevOpenKey.projectTemplateId);
     setPrevOpenKey({ enabled, projectId, articleId, projectTemplateId });
+    if (identityChanged) {
+      setSession(null);
+    }
     if (willOpen) {
       setLoading(true);
       setError(null);
