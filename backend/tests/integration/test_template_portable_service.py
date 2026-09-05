@@ -191,16 +191,20 @@ async def test_import_derives_roles_and_template_wide_sort_order(
     )
     # The noun rides every repeating section, not only the group (entry-group train).
     assert by_name["root"].entry_label == "arm"
+    # A repeating section imported without a noun keeps NULL — the bundle
+    # round-trips losslessly and every reader falls back to the one fallback
+    # noun ('entry'); the container's old 'model' default is gone.
     assert (by_name["grp"].role, by_name["grp"].cardinality, by_name["grp"].entry_label) == (
         "model_container",
         "many",
-        "model",
+        None,
     )
     assert (by_name["child"].role, by_name["child"].cardinality, by_name["child"].has_parent) == (
         "model_section",
         "many",
         True,
     )
+    assert by_name["child"].entry_label is None
     # Template-wide pre-order: no ties (SNAPSHOT_SQL sorts by bare sort_order).
     orders = [by_name[n].sort_order for n in ("root", "grp", "child", "tail")]
     assert orders == [0, 1, 2, 3]

@@ -1,11 +1,11 @@
 ---
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-09-04
 owner: '@raphaelfh'
 template_version: '1.1.0'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> **Status:** Stable · Owner: @raphaelfh
 > Reflects the CHARMS template state after the 2026-05-17 study-level / per-model split (template version 1.1.0).
 
 # CHARMS v1.1 — Complete Template
@@ -297,17 +297,25 @@ RETURNING id INTO model_b_id;
 
 ## Useful queries
 
+Instances point at the **project** lineage of the template (the clone made
+when the catalogue template is imported), so resolve a section through the
+instance rather than through the global catalogue row. Values are per run:
+`extraction_published_states` holds the canonical value of each
+`(run, instance, field)` once consensus publishes it, and a reviewer's
+in-flight value is the `extraction_reviewer_decisions` row that
+`extraction_reviewer_states.current_decision_id` points at. The run is the
+article's extraction run (`extraction_runs`, `kind = 'extraction'`); at most
+one is live per `(project, article, template)`.
+
 ### List every model for an article
 
 ```sql
-SELECT id, label 
-FROM extraction_instances
-WHERE article_id = '<article_id>'
-  AND entity_type_id = (
-    SELECT id FROM extraction_entity_types 
-    WHERE name = 'prediction_models'
-    AND template_id = (SELECT id FROM extraction_templates_global WHERE name = 'CHARMS v1.1')
-  );
+SELECT ei.id, ei.label
+FROM extraction_instances ei
+JOIN extraction_entity_types et ON et.id = ei.entity_type_id
+WHERE ei.article_id = '<article_id>'
+  AND et.role = 'model_container'
+ORDER BY ei.sort_order;
 ```
 
 ### List the children of a model
@@ -320,18 +328,16 @@ WHERE ei.parent_instance_id = '<model_id>'
 ORDER BY et.sort_order, ei.sort_order;
 ```
 
-### List extracted values for a model
+### List the published values for a model
 
 ```sql
-SELECT f.name, f.label, ev.value
-FROM extracted_values ev
-JOIN extraction_fields f ON f.id = ev.field_id
-JOIN extraction_instances ei ON ei.id = ev.instance_id
-WHERE ei.id IN (
-  SELECT id FROM extraction_instances
-  WHERE parent_instance_id = '<model_id>' OR id = '<model_id>'
-)
-ORDER BY f.sort_order;
+SELECT f.name, f.label, ps.value, ps.version, ps.published_at
+FROM extraction_published_states ps
+JOIN extraction_fields f ON f.id = ps.field_id
+JOIN extraction_instances ei ON ei.id = ps.instance_id
+WHERE ps.run_id = '<run_id>'
+  AND (ei.id = '<model_id>' OR ei.parent_instance_id = '<model_id>')
+ORDER BY ei.sort_order, f.sort_order;
 ```
 
 ## Statistics

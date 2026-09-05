@@ -169,6 +169,12 @@ describe('ModelSection container accordion', () => {
     ).toBeInTheDocument();
   });
 
+  it('reads a legacy container without a noun as "entry", never "model"', () => {
+    renderModelSection({ modelContainer: { ...containerType, entry_label: null } });
+    expect(screen.getByText('Active entry')).toBeInTheDocument();
+    expect(screen.queryByText('Active model')).toBeNull();
+  });
+
   it('shows the total entry count on the container badge, not the active-only count', () => {
     renderModelSection({
       models: [

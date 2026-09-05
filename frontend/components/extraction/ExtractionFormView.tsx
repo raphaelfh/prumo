@@ -17,6 +17,7 @@
 
 import {memo, useRef} from 'react';
 import {ModelSection} from './ModelSection';
+import type {Model} from './hierarchy/ModelSelector';
 import {SectionAccordion} from './SectionAccordion';
 import SectionNavRail from '@/components/extraction/SectionNavRail';
 import {buildSectionRegistry} from '@/lib/extraction/sectionRegistry';
@@ -43,7 +44,7 @@ export interface ExtractionFormViewProps {
   selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  models: Array<{ instanceId: string; modelName: string }>;
+  models: Model[];
   activeModelId: string | null;
   setActiveModelId: (id: string) => void;
   onAddModel: () => void;
@@ -201,7 +202,11 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
 // reference + key count, published after each extraction; showPDF
 // toggles the section rail collapsed state).
 // Compared props: values, instances, studyLevelSections, modelChildSections,
-// activeModelId, modelParentEntityType, models.length, showPDF, aiSuggestions.
+// activeModelId, modelParentEntityType, models, modelsLoading, showPDF,
+// runId, aiSuggestions. ``models`` by reference and ``modelsLoading`` at
+// all: after a manual add the hook rebuilds the models with progress at
+// the SAME length while its loading flag flips back, and a comparator
+// that watched only the length left the selector on its skeleton.
 export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, nextProps) => {
   const aiSuggestionsChanged =
     prevProps.aiSuggestions !== nextProps.aiSuggestions ||
@@ -214,7 +219,8 @@ export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, 
     prevProps.modelChildSections === nextProps.modelChildSections &&
     prevProps.activeModelId === nextProps.activeModelId &&
     prevProps.modelParentEntityType === nextProps.modelParentEntityType &&
-    prevProps.models.length === nextProps.models.length &&
+    prevProps.models === nextProps.models &&
+    prevProps.modelsLoading === nextProps.modelsLoading &&
     prevProps.showPDF === nextProps.showPDF &&
     // ``runId`` gates AI extraction onto the session run; a stale value here
     // would let the handlers fork a parallel run (the orphaning bug).

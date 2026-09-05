@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // The shared button's hook talks to TanStack; stub it so this stays a pure
 // render test (no QueryClient needed).
@@ -13,14 +13,6 @@ import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { qa } from "@/lib/copy/qa";
-
-// Radix Select needs the pointer-capture surface jsdom lacks.
-beforeAll(() => {
-  Element.prototype.hasPointerCapture = vi.fn(() => false);
-  Element.prototype.setPointerCapture = vi.fn();
-  Element.prototype.releasePointerCapture = vi.fn();
-  Element.prototype.scrollIntoView = vi.fn();
-});
 
 const BASE_ENTITY = {
   id: "qa-dom",

@@ -10,6 +10,7 @@
  * any new AI action just plugs into the same callback chain.
  */
 
+import type {Model} from '@/components/extraction/hierarchy/ModelSelector';
 import type {ModelChildSection} from './helpers/getModelChildSections';
 import {useBatchAllModelsSectionsExtraction} from './useBatchAllModelsSectionsExtraction';
 import {useBatchSectionExtractionChunked} from './useBatchSectionExtractionChunked';
@@ -36,7 +37,7 @@ export interface UseExtractionFormAIActionsProps {
    */
   sections?: ModelChildSection[];
   activeModelId: string | null;
-  models: Array<{instanceId: string; modelName: string}>;
+  models: Model[];
   onRefreshModels: () => Promise<void>;
   onRefreshInstances: () => Promise<void>;
   onExtractionComplete?: () => void;

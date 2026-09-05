@@ -15,6 +15,8 @@ export type E2EEnvConfig = {
   projectId?: string;
   importProjectId?: string;
   portableProjectId?: string;
+  identityProjectId?: string;
+  identityArticleId?: string;
   articleId?: string;
   templateId?: string;
   entityTypeId?: string;
@@ -43,6 +45,8 @@ export function loadE2EEnv(): E2EEnvConfig {
     projectId: process.env.E2E_PROJECT_ID || F.PROJECT_ID,
     importProjectId: process.env.E2E_IMPORT_PROJECT_ID || F.IMPORT_PROJECT_ID,
     portableProjectId: process.env.E2E_PORTABLE_PROJECT_ID || F.PORTABLE_PROJECT_ID,
+    identityProjectId: process.env.E2E_IDENTITY_PROJECT_ID || F.IDENTITY_PROJECT_ID,
+    identityArticleId: process.env.E2E_IDENTITY_ARTICLE_ID || F.IDENTITY_ARTICLE_ID,
     articleId: process.env.E2E_ARTICLE_ID || F.ARTICLE_ID,
     templateId: process.env.E2E_TEMPLATE_ID,
     entityTypeId: process.env.E2E_ENTITY_TYPE_ID,

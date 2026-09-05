@@ -86,3 +86,10 @@ global.IntersectionObserver = class IntersectionObserver {
     }),
   }),
 } as unknown;
+
+// Radix Select drives its listbox through pointer-capture APIs jsdom does not
+// implement; without these no Select trigger opens under test.
+Element.prototype.hasPointerCapture = () => false;
+Element.prototype.setPointerCapture = () => undefined;
+Element.prototype.releasePointerCapture = () => undefined;
+Element.prototype.scrollIntoView = () => undefined;

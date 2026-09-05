@@ -1,13 +1,16 @@
-"""Shared unit-test doubles.
+"""Shared unit-test doubles and the seed-recording helper built on them.
 
 Imported explicitly by the ``test_seed_*`` modules
-(``from tests.unit.conftest import CapturingSession``), matching the
+(``from tests.unit.conftest import CapturingSession, seeded``), matching the
 ``tests.integration.conftest`` import convention used elsewhere.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
+
+T = TypeVar("T")
 
 
 class CapturingSession:
@@ -32,6 +35,10 @@ class CapturingSession:
     def add(self, obj: object) -> None:
         self.added.append(obj)
 
+    def added_of(self, cls: type[T]) -> list[T]:
+        """The ``add``ed objects of one ORM class, in seeded order."""
+        return [o for o in self.added if isinstance(o, cls)]
+
     #: What ``execute``'s result reports from ``scalar_one_or_none`` — the shape
     #: the converging seeder's "is the catalogue referenced?" probe reads.
     scalar_result: Any = None
@@ -42,6 +49,20 @@ class CapturingSession:
 
     async def flush(self) -> None:
         return None
+
+
+async def seeded(seed_fn: Callable[[Any], Awaitable[None]], cls: type[T]) -> list[T]:
+    """Run ``seed_fn`` against a fresh recording session; return what it
+    ``add``ed of ``cls``.
+
+    A seed that finds its template already in the database skips or
+    converges onto it, so a database-backed assertion would describe
+    whichever seed last ran against the shared local stack. This reads
+    the seed's *declared* shape instead.
+    """
+    session = CapturingSession()
+    await seed_fn(session)
+    return session.added_of(cls)
 
 
 class _Result:

@@ -14,9 +14,7 @@ Covers every branch the diff-cover gate needs:
 
 from __future__ import annotations
 
-import importlib.util
 import json
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -25,13 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
+from tests.integration.helpers.migrations import load_migration
 
-_MIG_PATH = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "0039_absent_reason_backfill.py"
-)
-_spec = importlib.util.spec_from_file_location("mig0039", _MIG_PATH)
-_mig = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mig)
+_mig = load_migration("0039_absent_reason_backfill.py")
 
 _NO_INFO = {"value": None, "absent_reason": "no_information"}
 _NOT_APPLICABLE = {"value": None, "absent_reason": "not_applicable"}

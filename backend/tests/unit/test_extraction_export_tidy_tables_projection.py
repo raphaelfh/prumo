@@ -100,7 +100,8 @@ def test_many_cardinality_section_fans_out_per_instance():
     tables = _build_tidy_tables((model,), (article,), value_map, ExportMode.CONSENSUS)
     table = tables[0]
     assert len(table.rows) == 2
-    assert table.rows[0].record_label.endswith("Model 1")
+    # No container in the sections tuple -> the one fallback noun, 'entry'.
+    assert table.rows[0].record_label.endswith("Entry 1")
     assert table.rows[0].values == ("Logistic regression",)
     assert table.rows[1].values == ("Cox model",)
 

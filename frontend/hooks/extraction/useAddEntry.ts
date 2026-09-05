@@ -16,7 +16,7 @@ import {toast} from 'sonner';
 
 import type {AddEntryDialogProps} from '@/components/extraction/AddEntryDialog';
 import {t} from '@/lib/copy';
-import {entryKeyOf, keyFieldOf, normalizeEntryKey} from '@/lib/extraction/entryKey';
+import {DEFAULT_ENTRY_NOUN, entryKeyOf, keyFieldOf, normalizeEntryKey} from '@/lib/extraction/entryKey';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {getRequiredUserId} from '@/services/authService';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
@@ -144,7 +144,7 @@ export function useAddEntry(args: UseAddEntryArgs): UseAddEntryReturn {
     open,
     dialogProps: {
       open: target !== null,
-      entryLabel: entityType?.entry_label ?? 'entry',
+      entryLabel: entityType?.entry_label ?? DEFAULT_ENTRY_NOUN,
       keyLabel: keyField?.label ?? null,
       existingKeys: siblings.map((i) => entryKeyOf(i) ?? i.label),
       onConfirm: confirm,

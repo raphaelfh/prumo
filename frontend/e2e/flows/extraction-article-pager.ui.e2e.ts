@@ -109,11 +109,22 @@ test.describe("Extraction article pager", () => {
     // This is not a wait — it does not give the autosave debounce any time.
     await field.blur();
 
-    // Deliberately do NOT wait out the autosave debounce.
+    // Deliberately do NOT wait out the autosave debounce: the navigation
+    // itself must flush the pending edit against the ORIGINAL run, and the
+    // POST must be observed before the reload below, or the run view could
+    // be read back before the decision lands.
+    const flushed = page.waitForResponse(
+      (res) =>
+        /\/api\/v1\/runs\/[^/]+\/decisions$/.test(res.url()) &&
+        res.request().method() === "POST" &&
+        res.ok(),
+      { timeout: 10000 },
+    );
     const urlBefore = page.url();
     await page.keyboard.press(key);
     await expect.poll(() => page.url(), { timeout: 10000 }).not.toBe(urlBefore);
     expect(page.url()).toContain("/extraction/");
+    await flushed;
 
     // Back to the original article: the probe must still be there.
     await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);

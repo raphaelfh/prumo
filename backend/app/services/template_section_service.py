@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.integrity import violates_constraint
 from app.models.extraction import (
+    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionInstance,
 )
@@ -151,7 +152,7 @@ async def create_section(
         parent = await owned_section(
             db, template_id=template_id, section_id=payload.parent_entity_type_id
         )
-        if parent.role != "model_container":
+        if parent.role != ExtractionEntityRole.MODEL_CONTAINER.value:
             raise SectionParentRoleError(
                 "A model_section's parent must be the template's model_container"
             )
@@ -170,8 +171,8 @@ async def create_section(
         cardinality=payload.cardinality,
         role=payload.role,
         parent_entity_type_id=payload.parent_entity_type_id,
-        # Post-validator value: 'model'-defaulted for containers, None
-        # for every other role (the schema rejects it there).
+        # Post-validator value: the trimmed noun on a repeating section,
+        # None on every other (the schema refuses it there).
         entry_label=payload.entry_label,
         is_required=payload.is_required,
         sort_order=next_sort_order,

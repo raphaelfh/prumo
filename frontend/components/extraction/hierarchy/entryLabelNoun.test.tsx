@@ -1,7 +1,6 @@
 import {render, screen} from '@testing-library/react';
 import {describe, expect, it, vi} from 'vitest';
 
-import {AddModelDialog} from './AddModelDialog';
 import {ModelSelector} from './ModelSelector';
 import {RemoveModelDialog} from './RemoveModelDialog';
 
@@ -42,28 +41,9 @@ describe('run-view noun interpolation (B-8 D6)', () => {
     expect(screen.getByTitle('Add new scenario manually')).toBeInTheDocument();
   });
 
-  it('ModelSelector falls back to the "model" noun without the prop', () => {
+  it('ModelSelector falls back to the "entry" noun without the prop', () => {
     render(<ModelSelector {...selectorBase} models={[]} activeModelId={null} />);
-    expect(screen.getByText('No model added yet')).toBeInTheDocument();
-  });
-
-  it('AddModelDialog interpolates the noun into title, labels and submit', () => {
-    render(
-      <AddModelDialog
-        open
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-        existingModels={['Sepsis at 48h']}
-        entryLabel="scenario"
-      />,
-    );
-    expect(
-      screen.getByRole('heading', {name: /Add new scenario/}),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText(/Scenario name/)).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', {name: /Create scenario/}),
-    ).toBeInTheDocument();
+    expect(screen.getByText('No entry added yet')).toBeInTheDocument();
   });
 
   it('RemoveModelDialog interpolates the noun into title and description', () => {

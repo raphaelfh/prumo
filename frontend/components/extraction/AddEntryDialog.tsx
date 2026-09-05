@@ -6,7 +6,9 @@
  * its key field (`is_entity_key`). The add dialog asks for that value (the
  * label is the same text), lists the siblings already present as chips and
  * blocks an exact duplicate — the guards the model container's dialog had
- * (identity spec §1), now for every repeating section. The rename dialog
+ * (identity spec §1), now for every repeating section. The container uses
+ * this dialog too, since the follow-up train dropped its one extra input.
+ * The rename dialog
  * edits the label and the identity apart: re-keying is how a reviewer tells
  * the next AI re-run which entry a finding belongs to (§7 keeps merge out).
  *
@@ -17,7 +19,7 @@
  * Copy interpolates `{{noun}}` at each call site (B-8 D7); the key field's
  * label is DATA and is shown as-is.
  */
-import {useState, type FormEvent, type ReactNode} from 'react';
+import {useState, type FormEvent} from 'react';
 
 import {Alert, AlertDescription} from '@/components/ui/alert';
 import {Button} from '@/components/ui/button';
@@ -121,8 +123,6 @@ export interface AddEntryDialogProps {
   existingKeys: string[];
   onConfirm: (keyValue: string) => Promise<void>;
   onCancel: () => void;
-  /** Extra inputs a caller composes in (the model dialog's modelling method). */
-  children?: ReactNode;
 }
 
 export function AddEntryDialog({
@@ -132,7 +132,6 @@ export function AddEntryDialog({
   existingKeys,
   onConfirm,
   onCancel,
-  children,
 }: AddEntryDialogProps) {
   const [value, setValue] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -199,8 +198,6 @@ export function AddEntryDialog({
               />
               <KeyHint noun={entryLabel} keyLabel={keyLabel} />
             </div>
-
-            {children}
 
             <ErrorAlert error={error} />
             <SiblingChips keys={existingKeys} />

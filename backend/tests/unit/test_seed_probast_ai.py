@@ -27,7 +27,7 @@ from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID, seed_probast_ai
 from app.seed_probast_ai_data import _PAI_SIGNALING
 from app.services.derived_judgment_service import is_recommendation, spec_coordinates
 from app.services.value_semantics import ABSENT_REASON_LABELS
-from tests.unit.conftest import CapturingSession, ConvergingSession
+from tests.unit.conftest import CapturingSession, ConvergingSession, seeded
 
 
 async def _seed() -> CapturingSession:
@@ -36,14 +36,10 @@ async def _seed() -> CapturingSession:
     return session
 
 
-def _of(session: CapturingSession, cls: type) -> list[Any]:
-    return [o for o in session.added if isinstance(o, cls)]
-
-
 def _fields_by_section(session: CapturingSession) -> dict[str, list[Any]]:
-    ets = {et.id: et.name for et in _of(session, ExtractionEntityType)}
+    ets = {et.id: et.name for et in session.added_of(ExtractionEntityType)}
     out: dict[str, list[Any]] = {name: [] for name in ets.values()}
-    for f in _of(session, ExtractionField):
+    for f in session.added_of(ExtractionField):
         out[ets[f.entity_type_id]].append(f)
     for rows in out.values():
         rows.sort(key=lambda f: f.sort_order)
@@ -79,8 +75,7 @@ _NA_ROWS: set[tuple[str, str]] = {
 
 @pytest.mark.asyncio
 async def test_template_row() -> None:
-    session = await _seed()
-    [tpl] = _of(session, ExtractionTemplateGlobal)
+    [tpl] = await seeded(seed_probast_ai, ExtractionTemplateGlobal)
     assert tpl.id == UUID("00ba0000-0000-0000-0000-000000000002")
     assert tpl.name == "PROBAST+AI"
     assert tpl.version == "2.2.0"
@@ -90,8 +85,7 @@ async def test_template_row() -> None:
 
 @pytest.mark.asyncio
 async def test_thirteen_flat_sections_under_v2_uuids() -> None:
-    session = await _seed()
-    ets = sorted(_of(session, ExtractionEntityType), key=lambda e: e.sort_order)
+    ets = sorted(await seeded(seed_probast_ai, ExtractionEntityType), key=lambda e: e.sort_order)
     assert [et.name for et in ets] == list(_EXPECTED_COUNTS)
     assert [et.sort_order for et in ets] == list(range(1, 14))
     for et in ets:
@@ -127,7 +121,7 @@ async def test_na_restricted_to_the_six_conditional_rows() -> None:
     }
     assert flagged == _NA_ROWS
     # not_evaluated is never seeded on this template.
-    assert not any(f.allows_not_evaluated for f in _of(session, ExtractionField))
+    assert not any(f.allows_not_evaluated for f in session.added_of(ExtractionField))
 
 
 def _signaling_rows(session: CapturingSession) -> list[tuple[str, Any]]:
@@ -213,8 +207,7 @@ async def test_the_marker_is_off_everywhere_the_answer_set_carries_the_concept()
     unclassifiable study with no representable answer, and would make the
     "an absent-reason marker excludes nothing" branch of §1 unreachable.
     """
-    session = await _seed()
-    fields = _of(session, ExtractionField)
+    fields = await seeded(seed_probast_ai, ExtractionField)
     assert len(fields) == 95
     assert [f.name for f in fields if f.allows_no_information] == ["study_type"]
 
@@ -354,8 +347,7 @@ async def test_applicability_is_ai_proposable_with_first_order_prompt() -> None:
 
 @pytest.mark.asyncio
 async def test_derived_spec_shape() -> None:
-    session = await _seed()
-    [tpl] = _of(session, ExtractionTemplateGlobal)
+    [tpl] = await seeded(seed_probast_ai, ExtractionTemplateGlobal)
     spec = tpl.schema_["derived_judgments"]
     assert len(spec) == 12
     recommendations = [e for e in spec if is_recommendation(e)]
@@ -417,7 +409,7 @@ async def test_scope_rules_declare_the_two_single_part_study_types() -> None:
     therefore absent — the conservative default for anything unrecognized.
     """
     session = await _seed()
-    [tpl] = _of(session, ExtractionTemplateGlobal)
+    [tpl] = session.added_of(ExtractionTemplateGlobal)
     rules = tpl.schema_["scope_rules"]
     assert set(rules["excludes"]) == {"development_only", "evaluation_only"}
     assert rules["excludes"]["development_only"] == [
@@ -449,7 +441,7 @@ async def test_scope_rule_coordinates_resolve_to_seeded_sections() -> None:
     hide the form's entry point, making the classification unreachable.
     """
     session = await _seed()
-    [tpl] = _of(session, ExtractionTemplateGlobal)
+    [tpl] = session.added_of(ExtractionTemplateGlobal)
     by_section = _fields_by_section(session)
     seeded_fields = {(sec, f.name) for sec, rows in by_section.items() for f in rows}
     rules = tpl.schema_["scope_rules"]
@@ -471,10 +463,12 @@ async def test_every_spec_coordinate_resolves_to_a_seeded_field() -> None:
     silently nulls a judgment forever, because the seed never UPDATEs an
     existing template."""
     session = await _seed()
-    [tpl] = _of(session, ExtractionTemplateGlobal)
-    seeded = {(sec, f.name) for sec, rows in _fields_by_section(session).items() for f in rows}
+    [tpl] = session.added_of(ExtractionTemplateGlobal)
+    seeded_fields = {
+        (sec, f.name) for sec, rows in _fields_by_section(session).items() for f in rows
+    }
     for coord in spec_coordinates(tpl.schema_["derived_judgments"]):
-        assert coord in seeded, coord
+        assert coord in seeded_fields, coord
 
 
 @pytest.mark.asyncio
@@ -482,8 +476,8 @@ async def test_field_ids_are_deterministic() -> None:
     """Converging replaces the children every boot, so their identity must be
     derived, not random: ``_field`` leaves ``id`` to ``uuid4``, which would
     churn 95 global UUIDs per deploy and make "same data → same rows" false."""
-    first = _of(await _seed(), ExtractionField)
-    second = _of(await _seed(), ExtractionField)
+    first = await seeded(seed_probast_ai, ExtractionField)
+    second = await seeded(seed_probast_ai, ExtractionField)
     ids = [f.id for f in first]
     assert ids == [f.id for f in second]
     assert len(set(ids)) == 95
@@ -506,7 +500,7 @@ async def test_converges_onto_an_existing_row_instead_of_skipping() -> None:
 
     # The row is mutated, never re-added: deleting and re-inserting it would
     # SET NULL every clone's global_template_id and break clone dedupe.
-    assert _of(session, ExtractionTemplateGlobal) == []
+    assert session.added_of(ExtractionTemplateGlobal) == []
     assert session.existing.version == "2.2.0"
     assert "scope_rules" in session.existing.schema_
     assert "derived_judgments" in session.existing.schema_
@@ -516,8 +510,8 @@ async def test_converges_onto_an_existing_row_instead_of_skipping() -> None:
     # Children are REPLACED: one delete, then the full tree re-inserted.
     deletes = [s for s in session.executed if "DELETE" in str(s).upper()]
     assert len(deletes) == 1
-    assert len(_of(session, ExtractionEntityType)) == 13
-    assert len(_of(session, ExtractionField)) == 95
+    assert len(session.added_of(ExtractionEntityType)) == 13
+    assert len(session.added_of(ExtractionField)) == 95
 
 
 @pytest.mark.asyncio
@@ -534,10 +528,10 @@ async def test_converging_produces_the_same_tree_as_a_fresh_insert() -> None:
             sorted((f.id, f.name, f.is_required, f.allows_no_information) for f in fields),
         )
 
-    assert _shape(_of(converged, ExtractionEntityType), _of(converged, ExtractionField)) == _shape(
-        _of(fresh, ExtractionEntityType), _of(fresh, ExtractionField)
-    )
-    [tpl] = _of(fresh, ExtractionTemplateGlobal)
+    assert _shape(
+        converged.added_of(ExtractionEntityType), converged.added_of(ExtractionField)
+    ) == _shape(fresh.added_of(ExtractionEntityType), fresh.added_of(ExtractionField))
+    [tpl] = fresh.added_of(ExtractionTemplateGlobal)
     assert converged.existing.schema_ == tpl.schema_
     assert converged.existing.version == tpl.version
 
@@ -559,8 +553,8 @@ async def test_a_referenced_catalogue_skips_the_replace_instead_of_wedging() -> 
     await seed_probast_ai(session)
 
     assert not [s for s in session.executed if "DELETE" in str(s).upper()]
-    assert _of(session, ExtractionEntityType) == []
-    assert _of(session, ExtractionField) == []
+    assert session.added_of(ExtractionEntityType) == []
+    assert session.added_of(ExtractionField) == []
     # The row's own columns still converge — only the tree is left alone.
     assert session.existing.version == "2.2.0"
     assert "scope_rules" in session.existing.schema_

@@ -113,6 +113,12 @@ describe('entry label on every repeating section (entry-group train)', () => {
     expect(input.placeholder).toBe('entry');
   });
 
+  it('advertises the same fallback placeholder on a group — the "model" default is gone', () => {
+    renderPane(section({kind: 'group', entryNoun: 'model'}));
+    const input = screen.getByLabelText('Entry label') as HTMLInputElement;
+    expect(input.placeholder).toBe('entry');
+  });
+
   it('commits the noun through the section PATCH on blur', async () => {
     const user = userEvent.setup();
     renderPane(section({ownEntryLabel: null}));

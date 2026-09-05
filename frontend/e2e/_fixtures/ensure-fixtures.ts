@@ -180,4 +180,12 @@ export async function ensureFixtures(): Promise<void> {
   await ensureProject(F.PORTABLE_PROJECT_ID, "E2E Portable Project", ownerId);
   await ensureMembership(F.PORTABLE_PROJECT_ID, ownerId, "manager");
   await ensureCharmsImported(F.PORTABLE_PROJECT_ID, ownerToken);
+
+  // Entry-identity flow: its own CHARMS project + article, because the spec
+  // leaves a draft marker and a created entry behind.
+  await ensureProject(F.IDENTITY_PROJECT_ID, "E2E Identity Project", ownerId);
+  await ensureMembership(F.IDENTITY_PROJECT_ID, ownerId, "manager");
+  await ensureArticle(F.IDENTITY_ARTICLE_ID, F.IDENTITY_PROJECT_ID, "E2E Identity Article");
+  await ensureArticleText(F.IDENTITY_PROJECT_ID, F.IDENTITY_ARTICLE_ID);
+  await ensureCharmsImported(F.IDENTITY_PROJECT_ID, ownerToken);
 }

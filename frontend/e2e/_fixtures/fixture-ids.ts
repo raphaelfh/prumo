@@ -61,6 +61,14 @@ export const IMPORT_PROJECT_ID = "e2e00001-0000-4000-8000-000000000001";
  * template specs never flip each other's active template. */
 export const PORTABLE_PROJECT_ID = "e2e00001-0000-4000-8000-000000000002";
 
+/** Dedicated project for the entry-identity UI spec (rename/re-key + section
+ * description). Provisioned WITH CHARMS; separate from the shared project
+ * because a description edit stamps the template's `config_draft_since` and
+ * a created entry lives until teardown — state the shared project's siblings
+ * assume clean. */
+export const IDENTITY_PROJECT_ID = "e2e00001-0000-4000-8000-000000000003";
+export const IDENTITY_ARTICLE_ID = "f00dc63a-6b47-42c3-8a93-af69eb28a1c5";
+
 /** Fixed global-catalogue ids (match backend/app/seed.py). */
 export const CHARMS_GLOBAL_TEMPLATE_ID = "000c0000-0000-0000-0000-000000000001";
 export const PROBAST_GLOBAL_TEMPLATE_ID = "00b00000-0000-0000-0000-000000000001";

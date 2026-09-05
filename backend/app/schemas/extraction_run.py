@@ -241,8 +241,9 @@ class RunViewEntityType(BaseModel):
     name: str
     label: str
     description: str | None = None
-    # Group entry noun (B-8); pre-B-8 snapshots lack the key -> None and
-    # consumers fall back to "model".
+    # Entry noun of a repeating section (B-8, entry-group train); pre-B-8
+    # snapshots lack the key -> None and consumers fall back to
+    # DEFAULT_ENTRY_LABEL ("entry").
     entry_label: str | None = None
     parent_entity_type_id: UUID | None = None
     cardinality: str

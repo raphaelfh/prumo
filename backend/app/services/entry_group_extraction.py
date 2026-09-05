@@ -32,16 +32,13 @@ from uuid import UUID
 
 from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.prompts import EntryScope, entry_identification
+from app.models.extraction import DEFAULT_ENTRY_LABEL
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.entity_key import existing_keys, key_field_of, resolve_instance
 
 if TYPE_CHECKING:
     from app.models.extraction import ExtractionRun
     from app.services.section_extraction_service import SectionExtractionService
-
-#: Noun for a repeating section whose ``entry_label`` is unset (pre-B-8
-#: snapshots; the container defaults to ``model`` at create time instead).
-DEFAULT_ENTRY_NOUN = "entry"
 
 
 @dataclass(frozen=True)
@@ -153,7 +150,7 @@ async def _extract_entry_group(
         if parent is None:
             raise ValueError(f"Parent instance not found: {parent_instance_id}")
 
-    entry_label = getattr(entity_type, "entry_label", None) or DEFAULT_ENTRY_NOUN
+    entry_label = getattr(entity_type, "entry_label", None) or DEFAULT_ENTRY_LABEL
     names, usage = await _identify_entries(
         service,
         run=run,

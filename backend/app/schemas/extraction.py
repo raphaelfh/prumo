@@ -216,15 +216,22 @@ SectionExtractionResponseData = Annotated[
 
 
 class CreateModelHierarchyRequest(BaseModel):
-    """Request to create one prediction-model hierarchy for an article."""
+    """Request to create one prediction-model hierarchy for an article.
+
+    The dialog asks for the name only; it becomes the instance label and
+    the decision on the container's entry key. ``extra="forbid"`` for the
+    reason ``ModelExtractionRequest`` gives: this body is validated once,
+    in the request cycle, so a stale tab that still sends
+    ``modellingMethod`` gets a loud 422 instead of silently losing a value
+    it typed.
+    """
 
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     template_id: UUID = Field(..., alias="templateId")
     model_name: str = Field(..., alias="modelName")
-    modelling_method: str | None = Field(default=None, alias="modellingMethod")
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 class InstanceIdentityUpdateRequest(BaseModel):

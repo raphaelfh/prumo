@@ -280,4 +280,28 @@ describe('replaySection', () => {
 
     expect(await replaySection(snapshot, d)).toBeNull();
   });
+
+  it('posts the fallback noun for a legacy repeating section whose row carried none', async () => {
+    // Every clone made before 0068 still has NULL on final_predictors /
+    // numeric_performance; the create rule now requires a noun, so the
+    // replay must supply the one every reader already falls back to —
+    // otherwise Undo 422s and the deleted subtree is gone for good.
+    const legacy = {
+      ...GROUP,
+      id: 'legacy',
+      name: 'final_predictors',
+      role: 'model_section',
+      parent_entity_type_id: null,
+      entry_label: null,
+      fields: [],
+    } as unknown as TemplateEntityTypeWithFields;
+    const snapshot = captureSection([legacy], 'legacy')!;
+    const d = deps();
+
+    await replaySection(snapshot, d);
+
+    expect(d.createSection).toHaveBeenCalledWith(
+      expect.objectContaining({cardinality: 'many', entryLabel: 'entry'}),
+    );
+  });
 });

@@ -133,8 +133,8 @@ class SectionDescriptor:
     description: str | None = None
     # Machine name from the snapshot; see FieldDescriptor.name.
     name: str = ""
-    # Group entry noun from the pinned snapshot (B-8) — set on
-    # model_container rows; None elsewhere and on pre-0051 snapshots.
+    # Entry noun of a repeating section from the pinned snapshot (B-8,
+    # entry-group train); None on legacy rows and pre-0051 snapshots.
     entry_label: str | None = None
 
 

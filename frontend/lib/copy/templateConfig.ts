@@ -188,14 +188,10 @@ export const templateConfig = {
   dragLockedFiltering: 'Clear search to reorder',
   dragLockedPending: 'Wait for the new field to finish saving',
   dragPickedUp: 'Picked up {{field}}',
-  entryLabelHint:
-    'What reviewers call one entry of this section (e.g. model, arm, validation). Blank keeps the default shown as the placeholder.',
+  entryLabelHint: 'What reviewers call one entry of this section (e.g. model, arm, validation).',
   entryLabelLabel: 'Entry label',
   entryLabelMax50: 'Entry label must have at most 50 characters',
-  entryLabelPlaceholder: 'model',
-  // A repeating section that is not the group has no server default: the
-  // prompts and the run form fall back to this noun until one is set.
-  entryLabelPlaceholderEntry: 'entry',
+  entryLabelRequired: 'Entry label is required for a repeating section',
   errors_cardinalityInUse:
     'This section cannot be set to repeat once: it already has multiple entries under at least one group entry. Remove the extra entries first.',
   errors_deleteSectionInUse:
@@ -379,7 +375,7 @@ export const templateConfig = {
     'Field types are text, number, date, select, multiselect and boolean. There is no textarea.',
     'Spell the field keys type and required. The longer field_type and is_required spellings are rejected.',
     'A section with group: true repeats. Only a top-level section may be a group, and a file may contain at most one.',
-    'Sections nest only inside a group, and entry_label is only allowed on a group.',
+    'Sections nest only inside a group. entry_label (what one entry is called) is allowed on any section that repeats — a group, or repeats: true.',
     'Limits: 100 sections per level, 200 fields per section, 2000 fields in total.',
   ],
   importPromptIntro:
