@@ -123,7 +123,7 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
         activeEntryId={activeEntryId}
         onSelectEntry={setActiveEntryId}
         onAddEntry={() => form.onAddEntry(group.id, parentInstanceId)}
-        onRemoveEntry={form.onRemoveInstance}
+        onRemoveEntry={form.onOpenRemoveDialog}
         onRenameEntry={form.onOpenRenameDialog}
         onIdentifyEntries={ai.handleExtractModels}
         onExtractAllSections={activeEntryId ? ai.handleExtractAllSections : undefined}

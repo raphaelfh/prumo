@@ -18,7 +18,6 @@
 import {useRef} from 'react';
 import {EntrySection} from './entries/EntrySection';
 import {EntryFormProvider, type EntryFormContextValue} from './entries/EntryFormContext';
-import type {Entry} from './entries/types';
 import {SectionAccordion} from './SectionAccordion';
 import SectionNavRail from '@/components/extraction/SectionNavRail';
 import {buildSectionRegistry} from '@/lib/extraction/sectionRegistry';
@@ -35,12 +34,10 @@ import type {EntryIdentityChanges} from './AddEntryDialog';
 export interface ExtractionFormViewProps {
   /** Every section of the template. Roots are derived, not passed. */
   entityTypes: ExtractionEntityTypeWithFields[];
-  studyLevelSections: ExtractionEntityTypeWithFields[];
-  modelParentEntityType: ExtractionEntityTypeWithFields | undefined;
-  modelChildSections: ExtractionEntityTypeWithFields[];
   activeEntries: Record<string, string>;
   setActiveEntry: (slot: string, entryId: string) => void;
   handleOpenRenameDialog: (instanceId: string) => void;
+  handleOpenRemoveDialog: (instanceId: string) => void;
   instances: ExtractionInstance[];
   values: Record<string, ExtractionValue>;
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
@@ -49,15 +46,7 @@ export interface ExtractionFormViewProps {
   selectSuggestion: (instanceId: string, fieldId: string, proposalRecordId: string, value: unknown, confidence: number) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  models: Entry[];
-  activeModelId: string | null;
-  setActiveModelId: (id: string) => void;
-  onAddModel: () => void;
-  onRemoveModel: (id: string) => void;
-  onRenameModel?: (id: string) => void;
-  onRefreshModels: () => Promise<void>;
   onRefreshInstances: () => Promise<void>;
-  getInstancesForModel: (entityTypeId: string, modelId: string) => ExtractionInstance[];
   handleAddInstance: (entityTypeId: string, parentInstanceId: string | null) => void;
   handleRemoveInstance: (instanceId: string) => void;
   handleRenameInstance?: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
@@ -70,7 +59,6 @@ export interface ExtractionFormViewProps {
    * accumulate on the session run instead of orphan new runs.
    */
   runId?: string | null;
-  modelsLoading: boolean;
   /** Callback to refresh values/suggestions after AI extraction. */
   onExtractionComplete?: () => void;
   /** When true (PDF panel open / narrow), the section rail collapses to a dot strip. */
@@ -116,6 +104,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     onRemoveInstance: props.handleRemoveInstance,
     onRenameInstance: props.handleRenameInstance ?? (async () => {}),
     onOpenRenameDialog: props.handleOpenRenameDialog,
+    onOpenRemoveDialog: props.handleOpenRemoveDialog,
     activeEntries: props.activeEntries,
     setActiveEntry: props.setActiveEntry,
   };

@@ -10,5 +10,4 @@
 
 export {
   apiClient,
-  createEntry,
 } from "./client";

@@ -44,7 +44,6 @@ export const pages = {
     extractionScreenRunErrorDesc: 'The extraction session could not be loaded. This is usually temporary — please try again.',
     extractionScreenRetry: 'Try again',
     extractionScreenYou: 'You',
-    extractionScreenSelectModelFirst: 'Select a model before adding this section',
     extractionScreenParentNotFound: 'Parent instance not found. Create the parent section first.',
     extractionScreenInstanceAddedSuccess: 'added successfully',
     extractionScreenEntryKeyDuplicate: 'An entry with that key already exists here. Open it instead, or use a different key.',

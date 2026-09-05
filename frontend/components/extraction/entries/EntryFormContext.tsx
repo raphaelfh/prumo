@@ -80,6 +80,13 @@ export interface EntryFormContextValue {
    * selector's pencil has no changes to hand over yet.
    */
   onOpenRenameDialog: (instanceId: string) => void;
+  /**
+   * Open the remove dialog for one ENTRY. Distinct from
+   * `onRemoveInstance`, which is the card list's inline confirm: removing an
+   * entry cascades through its whole subtree, so §8 gates it on what that
+   * subtree holds rather than on a window.confirm.
+   */
+  onOpenRemoveDialog: (instanceId: string) => void;
 
   /**
    * Which entry is active in each rendered group, keyed by
