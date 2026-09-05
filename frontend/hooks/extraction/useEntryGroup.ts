@@ -17,7 +17,7 @@
  * @hook
  */
 
-import {useMemo, useState} from 'react';
+import {useMemo} from 'react';
 
 import type {Entry} from '@/components/extraction/entries/types';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
@@ -40,6 +40,14 @@ export interface UseEntryGroupArgs {
   instances: ExtractionInstance[];
   values: Record<string, ExtractionValue>;
   entityTypes: ExtractionEntityTypeWithFields[];
+  /**
+   * Which entry is active, per `(group, parent)` slot. Held ABOVE the hook
+   * so the nav rail can scope a nested section's progress to the entry the
+   * form is actually showing — the registry cannot see state that lives
+   * inside each rendered section.
+   */
+  activeEntries: Record<string, string>;
+  setActiveEntry: (slot: string, entryId: string) => void;
 }
 
 export interface UseEntryGroupReturn {
@@ -51,8 +59,8 @@ export interface UseEntryGroupReturn {
   noun: string;
 }
 
-/** `localStorage` slot for one (article, group, parent) triple. */
-function storageKey(articleId: string, groupId: string, parentInstanceId: string | null): string {
+/** The slot one rendered group occupies: (article, group, parent). */
+export function entrySlotKey(articleId: string, groupId: string, parentInstanceId: string | null): string {
   return `active-entry-${articleId}-${groupId}-${parentInstanceId ?? 'root'}`;
 }
 
@@ -112,7 +120,7 @@ function subtreeInstanceIds(
 
 export function useEntryGroup(args: UseEntryGroupArgs): UseEntryGroupReturn {
   const {articleId, group, parentInstanceId, instances, values, entityTypes} = args;
-  const [explicitId, setExplicitId] = useState<string | null>(null);
+  const {activeEntries, setActiveEntry} = args;
 
   const entries = useMemo(
     () =>
@@ -127,13 +135,13 @@ export function useEntryGroup(args: UseEntryGroupArgs): UseEntryGroupReturn {
     [instances, group.id, parentInstanceId],
   );
 
-  const key = storageKey(articleId, group.id, parentInstanceId);
+  const key = entrySlotKey(articleId, group.id, parentInstanceId);
 
   // The existence check guards the RESTORED id ONLY. Applying it to an
   // explicit selection would snap a just-created entry back to the first one
   // until the run-view refetch lands.
   const activeEntryId =
-    explicitId ??
+    activeEntries[key] ??
     (() => {
       const stored = readStored(key);
       if (stored && entries.some((e) => e.id === stored)) return stored;
@@ -141,7 +149,7 @@ export function useEntryGroup(args: UseEntryGroupArgs): UseEntryGroupReturn {
     })();
 
   const setActiveEntryId = (id: string) => {
-    setExplicitId(id);
+    setActiveEntry(key, id);
     writeStored(key, id);
   };
 

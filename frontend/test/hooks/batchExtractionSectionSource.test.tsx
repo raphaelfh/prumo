@@ -113,8 +113,8 @@ describe('useBatchAllModelsSectionsExtraction — section source', () => {
     articleId: 'a1',
     templateId: 't1',
     models: [
-      {instanceId: 'm1', modelName: 'CatBoost'},
-      {instanceId: 'm2', modelName: 'XGBoost'},
+      {instanceId: 'm1', entryName: 'CatBoost'},
+      {instanceId: 'm2', entryName: 'XGBoost'},
     ],
     runId: 'r1',
   };

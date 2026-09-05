@@ -15,7 +15,7 @@ vi.mock('@/hooks/extraction/useModelExtraction', () => ({
     onSuccess: (
       runId: string,
       n: number,
-      createdModels: Array<{instanceId: string; modelName: string}>,
+      createdModels: Array<{instanceId: string; entryName: string}>,
     ) => Promise<void>;
   }) => {
     (globalThis as Record<string, unknown>).__modelExtractionOnSuccess = onSuccess;
@@ -40,7 +40,7 @@ const baseProps = () => ({
   articleId: 'a',
   templateId: 't',
   activeModelId: 'm-1' as string | null,
-  models: [{instanceId: 'm-1', modelName: 'Logistic'}],
+  models: [{instanceId: 'm-1', entryName: 'Logistic'}],
   onRefreshModels: vi.fn().mockResolvedValue(undefined),
   onRefreshInstances: vi.fn().mockResolvedValue(undefined),
   onExtractionComplete: vi.fn(),
@@ -98,7 +98,7 @@ describe('useExtractionFormAIActions', () => {
     const cb = (globalThis as Record<string, unknown>).__modelExtractionOnSuccess as (
       r: string,
       n: number,
-      createdModels: Array<{instanceId: string; modelName: string}>,
+      createdModels: Array<{instanceId: string; entryName: string}>,
     ) => Promise<void>;
     await act(() => cb('run-1', 2, []));
     expect(props.onRefreshModels).toHaveBeenCalled();
@@ -111,11 +111,11 @@ describe('useExtractionFormAIActions', () => {
     const cb = (globalThis as Record<string, unknown>).__modelExtractionOnSuccess as (
       r: string,
       n: number,
-      createdModels: Array<{instanceId: string; modelName: string}>,
+      createdModels: Array<{instanceId: string; entryName: string}>,
     ) => Promise<void>;
     const created = [
-      {instanceId: 'inst-new-1', modelName: 'CatBoost'},
-      {instanceId: 'inst-new-2', modelName: 'XGBoost'},
+      {instanceId: 'inst-new-1', entryName: 'CatBoost'},
+      {instanceId: 'inst-new-2', entryName: 'XGBoost'},
     ];
     await act(() => cb('run-1', 2, created));
     expect(extractAllSectionsForAllModels).toHaveBeenCalledWith({
@@ -132,7 +132,7 @@ describe('useExtractionFormAIActions', () => {
     const cb = (globalThis as Record<string, unknown>).__modelExtractionOnSuccess as (
       r: string,
       n: number,
-      createdModels: Array<{instanceId: string; modelName: string}>,
+      createdModels: Array<{instanceId: string; entryName: string}>,
     ) => Promise<void>;
     await act(() => cb('run-1', 0, []));
     expect(extractAllSectionsForAllModels).not.toHaveBeenCalled();
@@ -162,9 +162,9 @@ describe('useExtractionFormAIActions', () => {
     const cb = (globalThis as Record<string, unknown>).__modelExtractionOnSuccess as (
       r: string,
       n: number,
-      createdModels: Array<{instanceId: string; modelName: string}>,
+      createdModels: Array<{instanceId: string; entryName: string}>,
     ) => Promise<void>;
-    await act(() => cb('run-1', 1, [{instanceId: 'inst-new-1', modelName: 'CatBoost'}]));
+    await act(() => cb('run-1', 1, [{instanceId: 'inst-new-1', entryName: 'CatBoost'}]));
     expect(extractAllSectionsForAllModels).toHaveBeenCalledWith(
       expect.objectContaining({sections: RUN_VIEW_SECTIONS}),
     );

@@ -200,6 +200,13 @@ const QA_DOMAIN = {
 // vary. Data + hook wiring is layered on top per scenario.
 function baseExtractionProps() {
   return {
+    // The tree is the input now; roots are derived from it. Scenarios below
+    // still describe themselves with the legacy trio, so the harness folds
+    // them into `entityTypes`.
+    entityTypes: [],
+    activeEntries: {},
+    setActiveEntry: vi.fn(),
+    handleOpenRenameDialog: vi.fn(),
     studyLevelSections: [],
     modelParentEntityType: undefined,
     modelChildSections: [],
@@ -247,6 +254,11 @@ function ExtractionHarness(cfg: ExtractionHarnessConfig) {
   return (
     <ExtractionFormView
       {...(baseExtractionProps() as any)}
+      entityTypes={[
+        ...((cfg.studyLevelSections ?? []) as any[]),
+        ...(cfg.modelParentEntityType ? [cfg.modelParentEntityType as any] : []),
+        ...((cfg.modelChildSections ?? []) as any[]),
+      ]}
       studyLevelSections={(cfg.studyLevelSections ?? []) as any}
       modelParentEntityType={cfg.modelParentEntityType as any}
       modelChildSections={(cfg.modelChildSections ?? []) as any}

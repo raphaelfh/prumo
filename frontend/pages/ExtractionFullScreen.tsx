@@ -69,7 +69,7 @@ import {toConsensusValueEnvelope} from '@/lib/extraction/valueSemantics';
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
 import {RunPdfContent} from '@/components/runs/RunPdfContent';
 import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
-import {RemoveModelDialog} from '@/components/extraction/hierarchy/RemoveModelDialog';
+import {RemoveEntryDialog} from '@/components/extraction/entries/RemoveEntryDialog';
 import {
   AddEntryDialog,
   RenameEntryDialog,
@@ -712,8 +712,8 @@ export default function ExtractionFullScreen() {
     setShowAddModelDialog(true);
   };
 
-  const handleConfirmAddModel = async (modelName: string) => {
-    const result = await createModel(modelName);
+  const handleConfirmAddModel = async (entryName: string) => {
+    const result = await createModel(entryName);
     if (result) {
       setShowAddModelDialog(false);
       // Reload the run view (child instances will be included).
@@ -732,7 +732,7 @@ export default function ExtractionFullScreen() {
 
     setModelToRemove({ 
       id: instanceId, 
-      name: model.modelName,
+      name: model.entryName,
       hasData,
       fieldsCount: progress?.completed || 0
     });
@@ -743,7 +743,7 @@ export default function ExtractionFullScreen() {
 
     extractionLogger.info('removeModelHandler', 'Starting model removal', {
       modelId: modelToRemove.id,
-      modelName: modelToRemove.name,
+      entryName: modelToRemove.name,
       hasData: modelToRemove.hasData,
       fieldsCount: modelToRemove.fieldsCount,
     });
@@ -756,7 +756,7 @@ export default function ExtractionFullScreen() {
     await removeModel(modelIdToRemove).then(async () => {
       extractionLogger.info('removeModelHandler', 'Model removed successfully', {
         modelId: modelIdToRemove,
-        modelName: modelNameToRemove,
+        entryName: modelNameToRemove,
       });
 
       // Close dialog immediately after successful removal
@@ -774,7 +774,7 @@ export default function ExtractionFullScreen() {
     }).catch((error: unknown) => {
       extractionLogger.error('removeModelHandler', 'Failed to remove model', error instanceof Error ? error : undefined, {
         modelId: modelIdToRemove,
-        modelName: modelNameToRemove,
+        entryName: modelNameToRemove,
       });
       // Re-throw so the dialog can display the error — CONCERN: this
       // throw is at the top level of handleConfirmRemoveModel (not inside
@@ -793,8 +793,6 @@ export default function ExtractionFullScreen() {
     templateId: template?.id,
     entityTypes,
     instances,
-    modelParentEntityTypeId: modelParentEntityType?.id ?? null,
-    activeModelId,
     onCreated: refetchRun,
   });
   const handleAddInstance = addEntry.open;
@@ -804,6 +802,12 @@ export default function ExtractionFullScreen() {
   // by the hook) re-derives labels and identities.
   const updateIdentity = useUpdateInstanceIdentity(activeRunId);
   const [modelToRename, setModelToRename] = useState<string | null>(null);
+  // Which entry each rendered group is showing. Held here, not inside the
+  // sections, because the nav rail scopes a nested section's progress to the
+  // entry the form is showing and cannot read state that lives inside them.
+  const [activeEntries, setActiveEntries] = useState<Record<string, string>>({});
+  const setActiveEntry = (slot: string, entryId: string) =>
+    setActiveEntries((prev) => (prev[slot] === entryId ? prev : {...prev, [slot]: entryId}));
   const handleRenameInstance = async (instanceId: string, changes: EntryIdentityChanges) => {
     const instance = instances.find((i) => i.id === instanceId);
     const entityType = entityTypes.find((et) => et.id === instance?.entity_type_id);
@@ -1170,6 +1174,10 @@ export default function ExtractionFullScreen() {
           onRefreshModels: refreshModels,
           onRefreshInstances: handleRefreshInstances,
           getInstancesForModel,
+          entityTypes,
+          activeEntries,
+          setActiveEntry,
+          handleOpenRenameDialog: setModelToRename,
           handleAddInstance,
           handleRemoveInstance,
           handleRenameInstance,
@@ -1296,7 +1304,7 @@ export default function ExtractionFullScreen() {
         open={showAddModelDialog}
         entryLabel={modelParentEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
         keyLabel={modelKeyField?.label ?? null}
-        existingKeys={models.map(m => m.modelName)}
+        existingKeys={models.map(m => m.entryName)}
         onConfirm={handleConfirmAddModel}
         onCancel={() => setShowAddModelDialog(false)}
       />
@@ -1323,10 +1331,10 @@ export default function ExtractionFullScreen() {
         onCancel={() => setModelToRename(null)}
       />
 
-      <RemoveModelDialog
+      <RemoveEntryDialog
         open={!!modelToRemove}
         entryLabel={modelParentEntityType?.entry_label ?? DEFAULT_ENTRY_NOUN}
-        modelName={modelToRemove?.name || ''}
+        entryName={modelToRemove?.name || ''}
         hasExtractedData={modelToRemove?.hasData || false}
         extractedFieldsCount={modelToRemove?.fieldsCount || 0}
         onConfirm={handleConfirmRemoveModel}

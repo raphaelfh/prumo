@@ -23,6 +23,7 @@
  */
 import {createContext, useContext, type ReactNode} from 'react';
 
+import type {EntryIdentityChanges} from '@/components/extraction/AddEntryDialog';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import type {
   ExtractionEntityTypeWithFields,
@@ -59,6 +60,8 @@ export interface EntryFormContextValue {
     fieldId: string,
   ) => Promise<AISuggestionHistoryItem[]>;
   onExtractionComplete?: () => void;
+  /** Re-derive the run view after a create/remove/extract. */
+  onRefreshInstances: () => Promise<void>;
 
   /** Scroll-spy + nav rail registration, for sections at any depth. */
   registerSection?: (entityTypeId: string, el: HTMLElement | null) => void;
@@ -70,7 +73,23 @@ export interface EntryFormContextValue {
    */
   onAddEntry: (entityTypeId: string, parentInstanceId: string | null) => void;
   onRemoveInstance: (instanceId: string) => void;
-  onRenameInstance: (instanceId: string) => void;
+  onRenameInstance: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
+  /**
+   * Open the rename/re-key dialog for one entry. Distinct from
+   * `onRenameInstance`, which APPLIES the change the dialog collected — the
+   * selector's pencil has no changes to hand over yet.
+   */
+  onOpenRenameDialog: (instanceId: string) => void;
+
+  /**
+   * Which entry is active in each rendered group, keyed by
+   * `entrySlotKey(article, group, parent)`. Held here, not inside each
+   * section, because the nav rail scopes a nested section's progress to the
+   * entry the form is showing — and a registry cannot read state that lives
+   * inside the sections it is describing.
+   */
+  activeEntries: Record<string, string>;
+  setActiveEntry: (slot: string, entryId: string) => void;
 
   readOnly?: boolean;
 }

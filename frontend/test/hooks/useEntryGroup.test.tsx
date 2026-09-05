@@ -64,17 +64,30 @@ const OTHER = inst('o-1', 'et-other', null, 0);
 
 const ALL = [MODEL_A, MODEL_B, PRED_A1, PRED_B1, OTHER];
 
+/**
+ * The active-entry map lives ABOVE the hook (the nav rail needs it), so the
+ * harness holds it the way the provider does.
+ */
 function setup(group: ExtractionEntityTypeWithFields, parentInstanceId: string | null) {
-  return renderHook(() =>
-    useEntryGroup({
-      articleId: 'a-1',
-      group,
-      parentInstanceId,
-      instances: ALL,
-      values: {},
-      entityTypes: [GROUP, NESTED],
-    }),
+  const active: Record<string, string> = {};
+  const hook = renderHook(
+    (props: {active: Record<string, string>}) =>
+      useEntryGroup({
+        articleId: 'a-1',
+        group,
+        parentInstanceId,
+        instances: ALL,
+        values: {},
+        entityTypes: [GROUP, NESTED],
+        activeEntries: props.active,
+        setActiveEntry: (slot, id) => {
+          active[slot] = id;
+          hook.rerender({active: {...active}});
+        },
+      }),
+    {initialProps: {active}},
   );
+  return hook;
 }
 
 beforeEach(() => {

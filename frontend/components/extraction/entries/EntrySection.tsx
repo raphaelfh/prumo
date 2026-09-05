@@ -18,6 +18,7 @@ import type {ReactElement} from 'react';
 
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 import {useEntryGroup} from '@/hooks/extraction/useEntryGroup';
+import {useExtractionFormAIActions} from '@/hooks/extraction/useExtractionFormAIActions';
 import type {ExtractionEntityTypeWithFields} from '@/types/extraction';
 
 import {SectionAccordion} from '../SectionAccordion';
@@ -28,13 +29,6 @@ export interface EntrySectionProps {
   group: ExtractionEntityTypeWithFields;
   /** The enclosing entry, or null for a root group. */
   parentInstanceId: string | null;
-  /** "Identify {noun}s with AI" for this group, when the caller offers it. */
-  onIdentifyEntries?: () => void;
-  onExtractAllSections?: () => void;
-  onExtractAllSectionsForAllEntries?: () => void;
-  identifying?: boolean;
-  extractingAllSections?: boolean;
-  extractingAllSectionsForAllEntries?: boolean;
 }
 
 export function EntrySection(props: EntrySectionProps): ReactElement {
@@ -44,16 +38,36 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
   // silent hazard in `.claude/rules/frontend.md` § React Compiler.
   const form = useEntryForm();
 
-  const {entries, entryCards, activeEntryId, setActiveEntryId, noun} = useEntryGroup({
+  const {entries, entryCards, activeEntryId, setActiveEntryId} = useEntryGroup({
     articleId: form.articleId,
     group,
     parentInstanceId,
     instances: form.instances,
     values: form.values,
     entityTypes: form.entityTypes,
+    activeEntries: form.activeEntries,
+    setActiveEntry: form.setActiveEntry,
   });
 
   const children = form.entityTypes.filter((et) => et.parent_entity_type_id === group.id);
+
+  // Per-group AI actions. §8 puts "Identify {noun}s with AI" and "Extract all
+  // sections for this/every {noun}" on EVERY group's selector, so the hook
+  // instantiates per section rather than once at the form. `onRefreshModels`
+  // collapsed into `onRefreshInstances`: it only ever re-ran
+  // `useModelManagement`'s load, and there is no load any more.
+  const ai = useExtractionFormAIActions({
+    projectId: form.projectId,
+    articleId: form.articleId,
+    templateId: form.templateId,
+    runId: form.runId,
+    sections: children,
+    activeModelId: activeEntryId,
+    models: entryCards,
+    onRefreshModels: form.onRefreshInstances,
+    onRefreshInstances: form.onRefreshInstances,
+    onExtractionComplete: form.onExtractionComplete,
+  });
 
   const accordionPlumbing = {
     values: form.values,
@@ -110,13 +124,13 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
         onSelectEntry={setActiveEntryId}
         onAddEntry={() => form.onAddEntry(group.id, parentInstanceId)}
         onRemoveEntry={form.onRemoveInstance}
-        onRenameEntry={form.onRenameInstance}
-        onIdentifyEntries={props.onIdentifyEntries}
-        onExtractAllSections={activeEntryId ? props.onExtractAllSections : undefined}
-        onExtractAllSectionsForAllEntries={props.onExtractAllSectionsForAllEntries}
-        identifying={props.identifying}
-        extractingAllSections={props.extractingAllSections}
-        extractingAllSectionsForAllEntries={props.extractingAllSectionsForAllEntries}
+        onRenameEntry={form.onOpenRenameDialog}
+        onIdentifyEntries={ai.handleExtractModels}
+        onExtractAllSections={activeEntryId ? ai.handleExtractAllSections : undefined}
+        onExtractAllSectionsForAllEntries={ai.handleExtractAllSectionsForAllModels}
+        identifying={ai.extractingModels}
+        extractingAllSections={ai.extractingAllSections}
+        extractingAllSectionsForAllEntries={ai.extractingAllSectionsForAllModels}
         readOnly={form.readOnly}
       />
 

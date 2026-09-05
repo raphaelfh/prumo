@@ -31,9 +31,6 @@ export interface UseAddEntryArgs {
   templateId: string | undefined;
   entityTypes: ExtractionEntityTypeWithFields[];
   instances: ExtractionInstance[];
-  /** The model container's id, so a per-model section resolves its parent to the active model. */
-  modelParentEntityTypeId: string | null;
-  activeModelId: string | null;
   /** Re-derives the instances after a create (the run view refetch). */
   onCreated: () => Promise<unknown>;
 }
@@ -45,7 +42,7 @@ interface Target {
 
 export interface UseAddEntryReturn {
   /** Open the dialog for a section (the `onAddInstance` handler). */
-  open: (entityTypeId: string) => void;
+  open: (entityTypeId: string, parentInstanceId: string | null) => void;
   dialogProps: AddEntryDialogProps;
 }
 
@@ -56,8 +53,6 @@ export function useAddEntry(args: UseAddEntryArgs): UseAddEntryReturn {
     templateId,
     entityTypes,
     instances,
-    modelParentEntityTypeId,
-    activeModelId,
     onCreated,
   } = args;
   const [target, setTarget] = useState<Target | null>(null);
@@ -72,29 +67,23 @@ export function useAddEntry(args: UseAddEntryArgs): UseAddEntryReturn {
       )
     : [];
 
-  const open = (entityTypeId: string) => {
+  /**
+   * The parent is passed in by the enclosing `EntrySection` (its active
+   * entry). It used to be inferred here, and the inference was wrong for
+   * anything but the single model container: the fallback branch took
+   * `instances.find(entity_type_id === parent type)` — the FIRST instance of
+   * the parent type — so adding under the second entry created under the
+   * first.
+   */
+  const open = (entityTypeId: string, parentInstanceId: string | null) => {
     const et = entityTypes.find((candidate) => candidate.id === entityTypeId);
     if (!et) {
       extractionLogger.warn('useAddEntry', 'Entity type not found', {entityTypeId});
       return;
     }
-    let parentInstanceId: string | null = null;
-    if (et.parent_entity_type_id) {
-      if (et.parent_entity_type_id === modelParentEntityTypeId) {
-        // A per-model section repeats under the active model.
-        if (!activeModelId) {
-          toast.error(t('pages', 'extractionScreenSelectModelFirst'));
-          return;
-        }
-        parentInstanceId = activeModelId;
-      } else {
-        const parent = instances.find((i) => i.entity_type_id === et.parent_entity_type_id);
-        if (!parent) {
-          toast.error(t('pages', 'extractionScreenParentNotFound'));
-          return;
-        }
-        parentInstanceId = parent.id;
-      }
+    if (et.parent_entity_type_id && !parentInstanceId) {
+      toast.error(t('pages', 'extractionScreenParentNotFound'));
+      return;
     }
     setTarget({entityTypeId, parentInstanceId});
   };

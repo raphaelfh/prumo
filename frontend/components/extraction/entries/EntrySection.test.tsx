@@ -87,6 +87,10 @@ function ctx(over: Partial<EntryFormContextValue> = {}): EntryFormContextValue {
     onAddEntry: vi.fn(),
     onRemoveInstance: vi.fn(),
     onRenameInstance: vi.fn(),
+    onOpenRenameDialog: vi.fn(),
+    onRefreshInstances: vi.fn(async () => {}),
+    activeEntries: {},
+    setActiveEntry: vi.fn(),
     ...over,
   } as EntryFormContextValue;
 }
@@ -103,8 +107,23 @@ function wrap(value: EntryFormContextValue) {
   );
 }
 
+/**
+ * The active-entry map lives above the sections (the nav rail needs it), so
+ * the harness holds it and re-renders on change — the provider's job.
+ */
 function renderSection(over: Partial<EntryFormContextValue> = {}) {
-  return render(wrap(ctx(over)));
+  const active: Record<string, string> = {};
+  const value = () =>
+    ctx({
+      ...over,
+      activeEntries: {...active},
+      setActiveEntry: (slot: string, id: string) => {
+        active[slot] = id;
+        result.rerender(wrap(value()));
+      },
+    });
+  const result = render(wrap(value()));
+  return result;
 }
 
 beforeEach(() => {

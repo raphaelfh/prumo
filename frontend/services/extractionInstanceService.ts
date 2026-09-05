@@ -151,7 +151,7 @@ export async function fetchModelProgress(
 
 export interface ExtractedModelRef {
   instanceId: string;
-  modelName: string;
+  entryName: string;
 }
 
 /**
@@ -174,7 +174,7 @@ export function loadExtractedModels(
     if (error) throw error;
     return (data ?? []).map((i) => ({
       instanceId: i.id,
-      modelName: i.label ?? 'Unnamed model',
+      entryName: i.label ?? 'Unnamed model',
     }));
   }, 'loadExtractedModels');
 }
