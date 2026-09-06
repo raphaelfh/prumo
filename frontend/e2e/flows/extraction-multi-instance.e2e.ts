@@ -106,6 +106,9 @@ test.describe("Extraction multi-instance + all field types", () => {
           name: `study_summary_one_${Date.now()}`,
           label: "Study summary (one)",
           cardinality: "one",
+          // Present and NULL, not absent: PostgREST refuses a bulk insert
+          // whose objects do not share one key set (PGRST102).
+          entry_label: null,
           sort_order: 101,
           is_required: false,
         },
