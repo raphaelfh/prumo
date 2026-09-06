@@ -55,9 +55,7 @@ async def _allow_nounless_repeating(db_session: AsyncSession) -> None:
 
 
 async def _add(db: AsyncSession, **cols: object) -> UUID:
-    row = ExtractionEntityType(
-        **{"id": uuid4(), "label": "x", "cardinality": "many", **cols}
-    )
+    row = ExtractionEntityType(**{"id": uuid4(), "label": "x", "cardinality": "many", **cols})
     db.add(row)
     await db.flush()
     return row.id

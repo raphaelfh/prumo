@@ -288,7 +288,6 @@ async def restore_snapshot(
         if eid in live_entities and _live_columns(live_entities[eid], _ENTITY_KEYS) != columns
     ]
 
-
     delete_field_ids = [
         fid
         for fid, row in live_fields.items()

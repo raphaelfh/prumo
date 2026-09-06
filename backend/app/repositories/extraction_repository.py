@@ -134,9 +134,7 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
             query = query.where(ExtractionEntityType.project_template_id == template_id)
         else:
             query = query.where(ExtractionEntityType.template_id == template_id)
-        query = query.order_by(
-            ExtractionEntityType.sort_order, ExtractionEntityType.id
-        ).limit(1)
+        query = query.order_by(ExtractionEntityType.sort_order, ExtractionEntityType.id).limit(1)
 
         query_start = perf_counter()
         result = await self.db.execute(query)

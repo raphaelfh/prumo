@@ -529,9 +529,7 @@ async def test_update_description_on_any_shape(db_session: AsyncSession) -> None
     only label / entry_label / cardinality were."""
     template_id = await _fresh_clone(db_session)
     for nested, repeats in ((False, False), (False, True), (True, False)):
-        section_id = await _first_section(
-            db_session, template_id, nested=nested, repeats=repeats
-        )
+        section_id = await _first_section(db_session, template_id, nested=nested, repeats=repeats)
 
         read = await _update(
             db_session,

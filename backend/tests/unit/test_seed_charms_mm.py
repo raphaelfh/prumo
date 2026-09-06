@@ -200,9 +200,7 @@ async def test_numeric_performance_is_the_only_repeating_child() -> None:
     """It repeats per validation type (apparent / internal / external); every
     other per-entry section is 1:1 with its entry."""
     ets = await seeded(seed_charms_mm, ExtractionEntityType)
-    many = [
-        e for e in ets if e.parent_entity_type_id is not None and e.cardinality == "many"
-    ]
+    many = [e for e in ets if e.parent_entity_type_id is not None and e.cardinality == "many"]
     assert [e.name for e in many] == ["numeric_performance"]
 
 

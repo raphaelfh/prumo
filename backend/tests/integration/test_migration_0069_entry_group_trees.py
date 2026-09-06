@@ -38,9 +38,7 @@ _INSERT = text(
 
 async def _project_template_id(db: AsyncSession) -> UUID | None:
     return (
-        await db.execute(
-            text("SELECT id FROM public.project_extraction_templates LIMIT 1")
-        )
+        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
     ).scalar()
 
 

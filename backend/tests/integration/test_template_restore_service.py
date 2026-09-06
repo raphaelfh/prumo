@@ -903,9 +903,7 @@ async def test_a_swapped_root_group_now_restores(db_session: AsyncSession) -> No
         entry_label="model",
     )
 
-    await _restore(
-        db_session, project_id=project_id, template_id=template_id, baseline=baseline
-    )
+    await _restore(db_session, project_id=project_id, template_id=template_id, baseline=baseline)
 
     names = {
         row

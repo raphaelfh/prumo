@@ -441,7 +441,12 @@ _ERROR_CASES: list[tuple[str, _Caller, Exception, int]] = [
     ("create_section", _call_create_section, SectionParentMustRepeatError("bad parent"), 422),
     ("update_section", _call_update_section, ProjectTemplateNotFoundError("nope"), 404),
     ("update_section", _call_update_section, SectionNotFoundError("nope"), 404),
-    ("update_section", _call_update_section, SectionEntryLabelCardinalityError("repeating only"), 422),
+    (
+        "update_section",
+        _call_update_section,
+        SectionEntryLabelCardinalityError("repeating only"),
+        422,
+    ),
     ("update_section", _call_update_section, SectionOwnsChildrenError("owns children"), 422),
     ("update_section", _call_update_section, SectionCardinalityInUseError("in use"), 409),
     ("delete_section", _call_delete_section, ProjectTemplateNotFoundError("nope"), 404),

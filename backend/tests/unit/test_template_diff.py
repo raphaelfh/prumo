@@ -214,7 +214,8 @@ def test_pre_0051_baseline_still_reports_an_unrelated_rename() -> None:
     edited = _rename_field(live, field_id, "Age (years)")
 
     attributes = {
-        c.attribute for c in diff_snapshots(_pre_0051(live), edited, fields_with_values=NO_VALUES).changes
+        c.attribute
+        for c in diff_snapshots(_pre_0051(live), edited, fields_with_values=NO_VALUES).changes
     }
     assert attributes == {"entry_label", "label"}
 
