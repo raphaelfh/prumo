@@ -103,8 +103,7 @@ async def test_snapshot_carries_entry_label(db_session: AsyncSession) -> None:
     snapshot = await build_template_version_snapshot(db_session, clone.project_template_id)
     entity_types = snapshot["entity_types"]
     assert any(
-        et["cardinality"] == "many" and et["parent_entity_type_id"] is None
-        for et in entity_types
+        et["cardinality"] == "many" and et["parent_entity_type_id"] is None for et in entity_types
     )
     for et in entity_types:
         assert "entry_label" in et, f"entity_type {et.get('name')} missing entry_label"

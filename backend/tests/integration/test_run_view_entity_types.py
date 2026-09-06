@@ -112,6 +112,6 @@ async def test_entity_types_live_fallback_for_narrow_snapshot(
         db_session, RunSummaryResponse.model_validate(refetched)
     )
     assert entity_types, "live fallback must yield the entity_types tree"
-    assert all(
-        et.cardinality in ("one", "many") for et in entity_types
-    ), "fallback reads structure from the live table"
+    assert all(et.cardinality in ("one", "many") for et in entity_types), (
+        "fallback reads structure from the live table"
+    )
