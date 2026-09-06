@@ -414,6 +414,11 @@ async def test_entry_identification_uses_pinned_label_and_instruction(
     )
 
     service = _service(db_session, profile_id)
+    # Identification wires its own model — `_extract_with_llm` is stubbed but
+    # `_wire_model` is not, and `build_model` raises without an API key. That
+    # is a CI-only failure: a developer's `.env` supplies the key and the test
+    # passes locally for a reason CI does not have.
+    service._wire_model = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
     await service.extract_section(
         project_id=project_id,
         article_id=article_id,
