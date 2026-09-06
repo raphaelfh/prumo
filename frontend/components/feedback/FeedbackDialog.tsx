@@ -1,9 +1,9 @@
 /**
- * Feedback dialog — bugs, suggestions, questions, with optional
- * getDisplayMedia screenshot/clip uploaded to Supabase Storage.
+ * Feedback dialog — bugs, suggestions, questions, with one optional image or
+ * video attached from disk and uploaded to Supabase Storage.
  */
-import { useEffect, useState } from 'react';
-import { MessageSquare, Camera, Video, X } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
+import { MessageSquare, Paperclip, X } from 'lucide-react';
 
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -15,10 +15,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFeedback } from '@/hooks/useFeedback';
-import { useScreenCapture } from '@/hooks/useScreenCapture';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { checkFeedbackMedia, FEEDBACK_MEDIA_ACCEPT, type FeedbackMediaSpec } from '@/lib/feedback-media';
+import { FeedbackService } from '@/services/feedbackService';
 import { t } from '@/lib/copy';
 import type { FeedbackAttachmentInput, FeedbackSeverity, FeedbackType } from '@/types/feedback';
 
@@ -27,11 +27,9 @@ interface FeedbackDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const BUCKET = 'feedback-media';
-
-interface PendingCapture {
-  kind: 'image' | 'video';
-  blob: Blob;
+interface PendingAttachment {
+  file: File;
+  spec: FeedbackMediaSpec;
   previewUrl: string;
 }
 
@@ -40,58 +38,49 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const [summary, setSummary] = useState('');
   const [description, setDescription] = useState('');
   const [severity, setSeverity] = useState<FeedbackSeverity | undefined>();
-  const [capture, setCapture] = useState<PendingCapture | null>(null);
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  // The object already stored for a given File. Keyed on the File itself, so
+  // picking a different one invalidates it without any manual clearing: a
+  // failed submit then retries the API call instead of re-sending up to 50 MB.
+  const [uploaded, setUploaded] = useState<{file: File; input: FeedbackAttachmentInput} | null>(null);
+  const fileInputId = useId();
 
-  // Revoke the preview object URL when the capture is replaced or the
-  // dialog unmounts, so blob URLs don't leak.
+  // Revoke the preview object URL when the attachment is replaced, cleared,
+  // or the dialog unmounts, so blob URLs don't leak.
   useEffect(() => {
-    if (!capture) return;
-    return () => URL.revokeObjectURL(capture.previewUrl);
-  }, [capture]);
+    if (!attachment) return;
+    return () => URL.revokeObjectURL(attachment.previewUrl);
+  }, [attachment]);
 
   const { submitFeedback, submitting } = useFeedback();
-  const { isSupported, capturing, captureStill, recordClip } = useScreenCapture();
   const { user } = useAuth();
   const { toast } = useToast();
 
   const isDescriptionValid = description.trim().length >= 10;
+  // Valid only while it still describes the file currently attached.
+  const storedAttachment = attachment && uploaded?.file === attachment.file ? uploaded.input : null;
+  const busy = submitting || uploading;
 
-  const onCapture = async (kind: 'image' | 'video') => {
-    const blob = kind === 'image' ? await captureStill() : await recordClip(30);
-    if (!blob) {
-      toast({
-        title: t('navigation', 'feedbackCaptureFailed'),
-        variant: 'destructive',
-      });
+  const onPickFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = event.target.files?.[0];
+    // Clear the input so re-picking the same file after a rejection still fires.
+    event.target.value = '';
+    if (!picked) return;
+
+    const check = checkFeedbackMedia(picked);
+    if (!check.ok) {
+      setAttachmentError(t('navigation', check.reason === 'size' ? 'feedbackAttachTooLarge' : 'feedbackAttachWrongType'));
       return;
     }
-    setCapture({ kind, blob, previewUrl: URL.createObjectURL(blob) });
-  };
-
-  const clearCapture = () => {
-    if (capture) URL.revokeObjectURL(capture.previewUrl);
-    setCapture(null);
-  };
-
-  const uploadCapture = async (): Promise<FeedbackAttachmentInput[]> => {
-    if (!capture || !user) return [];
-    const ext = capture.kind === 'image' ? 'webp' : 'webm';
-    const key = `${user.id}/${crypto.randomUUID()}.${ext}`;
-    const { error } = await supabase.storage.from(BUCKET).upload(key, capture.blob, {
-      contentType: capture.blob.type,
-    });
-    if (error) throw new Error(error.message);
-    return [{
-      kind: capture.kind,
-      storage_key: key,
-      content_type: capture.blob.type,
-      size_bytes: capture.blob.size,
-    }];
+    setAttachmentError(null);
+    setAttachment({ file: picked, spec: check.spec, previewUrl: URL.createObjectURL(picked) });
   };
 
   const resetAndClose = () => {
     setType('bug'); setSummary(''); setDescription(''); setSeverity(undefined);
-    clearCapture();
+    setAttachment(null); setAttachmentError(null); setUploaded(null);
     onOpenChange(false);
   };
 
@@ -99,21 +88,26 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     e.preventDefault();
     if (!isDescriptionValid) return;
 
-    let attachments: FeedbackAttachmentInput[];
-    try {
-      attachments = await uploadCapture();
-    } catch (err) {
-      toast({
-        title: t('navigation', 'feedbackCaptureFailed'),
-        description: err instanceof Error ? err.message : undefined,
-        variant: 'destructive',
-      });
-      return;
+    let stored = storedAttachment;
+    if (attachment && user && !stored) {
+      setUploading(true);
+      const result = await FeedbackService.uploadAttachment(attachment.file, user.id, attachment.spec);
+      setUploading(false);
+      if (!result.ok) {
+        toast({
+          title: t('navigation', 'feedbackAttachUploadFailed'),
+          description: result.error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+      stored = result.data;
+      setUploaded({file: attachment.file, input: stored});
     }
 
     const ok = await submitFeedback(
       { type, summary: summary || undefined, description, severity: type === 'bug' ? severity : undefined },
-      attachments,
+      stored ? [stored] : [],
     );
     if (ok) resetAndClose();
   };
@@ -202,46 +196,52 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
             </div>
 
             <div className="space-y-2">
-              <div className="flex gap-2">
-                <Button
-                  type="button" variant="outline" size="sm"
-                  disabled={!isSupported || capturing}
-                  onClick={() => onCapture('image')}
-                >
-                  <Camera className="h-4 w-4 mr-1" /> {t('navigation', 'feedbackAttachScreenshot')}
+              <Label htmlFor={fileInputId}>{t('navigation', 'feedbackAttachLabel')}</Label>
+              <div className="flex items-center gap-2">
+                <Button asChild variant="outline" size="sm">
+                  {/* `relative`: the sr-only input inside is absolutely positioned —
+                      without a positioned ancestor it adds phantom page scroll. */}
+                  <label htmlFor={fileInputId} className="relative shrink-0 cursor-pointer">
+                    <Paperclip strokeWidth={1.5} aria-hidden="true" />
+                    {t('navigation', 'feedbackAttachChoose')}
+                    <input
+                      id={fileInputId}
+                      type="file"
+                      accept={FEEDBACK_MEDIA_ACCEPT}
+                      className="sr-only"
+                      data-testid="feedback-media-input"
+                      onChange={onPickFile}
+                    />
+                  </label>
                 </Button>
-                <Button
-                  type="button" variant="outline" size="sm"
-                  disabled={!isSupported || capturing}
-                  onClick={() => onCapture('video')}
-                >
-                  <Video className="h-4 w-4 mr-1" /> {t('navigation', 'feedbackRecordClip')}
-                </Button>
-              </div>
-              {capture && (
-                <div className="flex items-center gap-2 rounded-md border p-2">
-                  {capture.kind === 'image'
-                    ? <img src={capture.previewUrl} alt="" className="h-16 w-auto rounded" />
-                    : <video src={capture.previewUrl} className="h-16 w-auto rounded" controls />}
-                  <Button type="button" variant="ghost" size="sm" onClick={clearCapture}>
-                    <X className="h-4 w-4 mr-1" /> {t('navigation', 'feedbackCaptureRemove')}
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {attachment?.file.name ?? t('navigation', 'feedbackAttachNone')}
+                </span>
+                {attachment && (
+                  <Button type="button" variant="ghost" size="xs" onClick={() => setAttachment(null)}>
+                    <X className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> {t('navigation', 'feedbackAttachRemove')}
                   </Button>
+                )}
+              </div>
+              {attachment && (
+                <div className="rounded-md border p-2">
+                  {attachment.spec.kind === 'image'
+                    ? <img src={attachment.previewUrl} alt="" className="h-16 w-auto rounded" />
+                    : <video src={attachment.previewUrl} className="h-16 w-auto rounded" controls />}
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                {isSupported
-                  ? t('navigation', 'feedbackCaptureNotice')
-                  : t('navigation', 'feedbackCaptureUnsupported')}
+              <p className={`text-xs ${attachmentError ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {attachmentError ?? t('navigation', 'feedbackAttachNotice')}
               </p>
             </div>
           </div>
 
           <DialogFooter>
-            <Button size="sm" type="button" variant="outline" onClick={resetAndClose} disabled={submitting}>
+            <Button size="sm" type="button" variant="outline" onClick={resetAndClose} disabled={busy}>
               {t('common', 'cancel')}
             </Button>
-            <Button size="sm" type="submit" disabled={submitting || !isDescriptionValid}>
-              {submitting ? t('navigation', 'feedbackSubmitting') : t('navigation', 'feedbackSubmit')}
+            <Button size="sm" type="submit" disabled={busy || !isDescriptionValid}>
+              {busy ? t('navigation', 'feedbackSubmitting') : t('navigation', 'feedbackSubmit')}
             </Button>
           </DialogFooter>
         </form>

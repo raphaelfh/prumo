@@ -5063,6 +5063,15 @@
       "FeedbackAttachmentIn": {
         "properties": {
           "content_type": {
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "image/gif",
+              "video/mp4",
+              "video/webm",
+              "video/quicktime"
+            ],
             "title": "Content Type",
             "type": "string"
           },

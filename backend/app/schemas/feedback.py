@@ -9,12 +9,20 @@ FeedbackType = Literal["bug", "suggestion", "question", "other"]
 FeedbackSeverity = Literal["low", "medium", "high", "critical"]
 AttachmentKind = Literal["image", "video"]
 
-_ALLOWED_CONTENT_TYPES = {
+# A Literal, not a validated str, so the set reaches the frontend through the
+# generated OpenAPI contract (frontend/types/api/schema.d.ts) and
+# frontend/lib/feedback-media.ts keys its table off it — a disagreement is then
+# a type error, not a runtime surprise. The `feedback-media` bucket's
+# allowed_mime_types is the one copy that still has to be kept in step by hand.
+FeedbackContentType = Literal[
     "image/png",
-    "image/webp",
     "image/jpeg",
+    "image/webp",
+    "image/gif",
+    "video/mp4",
     "video/webm",
-}
+    "video/quicktime",
+]
 
 
 class FeedbackContextIn(BaseModel):
@@ -30,15 +38,8 @@ class FeedbackContextIn(BaseModel):
 class FeedbackAttachmentIn(BaseModel):
     kind: AttachmentKind
     storage_key: str = Field(min_length=1)
-    content_type: str
+    content_type: FeedbackContentType
     size_bytes: int | None = Field(default=None, ge=0)
-
-    @field_validator("content_type")
-    @classmethod
-    def _check_content_type(cls, v: str) -> str:
-        if v not in _ALLOWED_CONTENT_TYPES:
-            raise ValueError(f"content_type not allowed: {v}")
-        return v
 
 
 class FeedbackCreate(BaseModel):
