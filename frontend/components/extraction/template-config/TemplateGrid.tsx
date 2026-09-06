@@ -710,9 +710,6 @@ export function TemplateGrid({
           <AddSectionMenuRow
             columnCount={columnCount}
             focus={focus}
-            existingGroupLabel={
-              sections.find((s) => s.repeats)?.label ?? null
-            }
             onAddSection={onAddSection}
             onAddGroup={onAddGroup}
           />

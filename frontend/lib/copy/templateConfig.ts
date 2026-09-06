@@ -10,7 +10,6 @@ export const templateConfig = {
   addGroupDialogDesc:
     'A repeating group collects the entries reviewers add in the run view; the sections inside it repeat once per entry.',
   addGroupDialogTitle: 'Add repeating group',
-  addGroupExistsTooltip: 'This template already has a repeating group ({{label}}).',
   addRepeatingGroup: 'Add repeating group…',
   addSectionDialogDesc: 'Create a custom section to extract project-specific data.',
   addSectionMenu: 'Add section',
