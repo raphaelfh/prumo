@@ -186,6 +186,11 @@ def instance_for(
             None,
         )
         if parent is None:
+            # A dangling parent — unreachable while the FK holds, and NOT
+            # reachable through the output-shape filter, which keys on sheet
+            # BUILDER identity and never narrows `layout.sections`. Answering
+            # "no instance" renders a blank cell, which is what every other
+            # unresolvable coordinate here does.
             return None
         parent_instance_id = instance_for(parent, article, column, sections)
         if parent_instance_id is None:
