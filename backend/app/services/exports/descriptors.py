@@ -1,5 +1,12 @@
 """Tree-derived export descriptors (trees B4, spec §10).
 
+Lives directly under ``exports/`` rather than in ``exports/extraction/``
+for the reason ``extraction_scope_marking`` gives: that package's
+``__init__`` imports ``workbook``, which imports this service at module
+level, so a module-level import of anything inside it from the service
+closes a cycle. Verified rather than assumed — the import fails with
+``cannot import name 'AIProposalRow' from partially initialized module``.
+
 The export used to partition an article's instances by ``role``: every
 child-section instance into one flat ``model_instances`` tuple, everything
 else into ``section_instances`` keyed by entity type. Neither key records

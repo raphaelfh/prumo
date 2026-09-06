@@ -13,7 +13,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.models.extraction import ExtractionCardinality, ExtractionEntityRole
-from app.services.exports.extraction.descriptors import (
+from app.services.exports.descriptors import (
     EntryColumn,
     build_columns,
     instance_for,
@@ -115,9 +115,12 @@ def test_a_root_many_study_section_still_widens_the_axis() -> None:
 def test_a_nested_group_widens_only_its_own_entry_columns() -> None:
     """§10: the fan-out width under an entry is its largest nested entry count.
 
-    Unrepresentable in the database until 0069 drops 0016's parent trigger
-    (B5), but the builders are pure functions over descriptors, so the shape
-    is testable here — which is the point of doing exports before the schema.
+    Not a future shape — seeded CHARMS already ships one. ``final_predictors``
+    (``seed.py``) names ``prediction_models`` as its parent with
+    ``cardinality="many"``, so every CHARMS project has a repeating group
+    inside a repeating group today. Its MANY-ness is simply masked, because
+    ``matrix._resolve_instance_id`` tests ``role`` before cardinality and
+    sends it to the flat tuple with the singletons.
     """
     g, nested = uuid4(), uuid4()
     e1, e2 = uuid4(), uuid4()

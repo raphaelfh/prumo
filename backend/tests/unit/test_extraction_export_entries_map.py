@@ -16,7 +16,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.models.extraction import ExtractionInstance
-from app.services.exports.extraction.descriptors import build_entries
+from app.services.exports.descriptors import build_entries
 
 
 def _inst(entity_type_id, parent_instance_id=None, sort_order=0, iid=None):
