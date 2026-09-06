@@ -10,9 +10,9 @@
  *    (replacing plain Remove); roots and per-model sections keep the
  *    original set. Each group block closes with a dialog-opening
  *    "＋ New per-{noun} section" ghost, and the template-level ghost is
- *    now a `＋▾` menu whose "Add repeating group…" disables (with a
- *    named-tooltip reason) once a group exists — one container per
- *    template is a DB partial-unique invariant, not a preference.
+ *    now a `＋▾` menu offering "Add repeating group…" unconditionally —
+ *    0069 dropped the one-container partial-unique indexes, so a
+ *    template may hold as many root groups as it likes.
  * 2. Panel: the new callbacks thread through TemplateConfigGridPanel.
  *
  * Copy is deliberately NOT mocked — the `{{noun}}` interpolation at the
@@ -276,18 +276,13 @@ describe('template-level ＋▾ menu (B-8 D8/D12)', () => {
     expect(onAddGroup).toHaveBeenCalledTimes(1);
   });
 
-  it('disables Add repeating group… when a group exists, naming it in the tooltip reason', async () => {
+  it('still offers Add repeating group… when a group ALREADY exists (trees: many roots)', async () => {
     const {onAddGroup} = renderGrid();
     await userEvent.click(screen.getByTestId('template-grid-add-section'));
     const item = await screen.findByRole('menuitem', {name: 'Add repeating group…'});
-    expect(item).toHaveAttribute('aria-disabled', 'true');
-    // The reason names the existing group so the refusal teaches the rule.
-    await userEvent.hover(item.parentElement as HTMLElement);
-    expect(
-      (await screen.findAllByText(/already has a repeating group/)).length,
-    ).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Prediction models/).length).toBeGreaterThan(1);
-    expect(onAddGroup).not.toHaveBeenCalled();
+    expect(item).not.toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(item);
+    expect(onAddGroup).toHaveBeenCalledTimes(1);
   });
 
   it('stays hidden while filtering (ghost-row rule unchanged)', () => {
@@ -339,12 +334,12 @@ describe('TemplateConfigGridPanel — new callback threading (B-8 T5)', () => {
     expect(sectionActions.onAddPerGroupSection).toHaveBeenCalledWith(
       expect.objectContaining({id: 'grp'}),
     );
-    // A group exists → the bottom menu's group item is disabled.
+    // A group already exists, and the bottom menu still offers another.
     await userEvent.click(screen.getByTestId('template-grid-add-section'));
     const menu = await screen.findByRole('menu');
-    expect(
+    await userEvent.click(
       within(menu).getByRole('menuitem', {name: 'Add repeating group…'}),
-    ).toHaveAttribute('aria-disabled', 'true');
-    expect(onAddGroup).not.toHaveBeenCalled();
+    );
+    expect(onAddGroup).toHaveBeenCalledTimes(1);
   });
 });
