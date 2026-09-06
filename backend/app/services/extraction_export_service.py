@@ -59,6 +59,7 @@ from app.services.derived_judgment_service import (
     scope_filtered_values,
     warn_dangling_spec_refs,
 )
+from app.services.exports.descriptors import build_entries
 from app.services.exports.extraction_scope_marking import (
     NOT_APPLICABLE,
     article_values_by_coord,
@@ -968,12 +969,41 @@ class ExtractionExportService(LoggerMixin):
 
         # Bulk-fetch instances for the kept runs to compute model fan-out
         # and study-section instance ids in one round-trip.
+        descriptors = await self._build_article_descriptors(
+            article_ids=kept_articles,
+            runs_by_article=runs_by_article,
+            template_id=template_id,
+            kept_run_ids=kept_run_ids,
+        )
+
+        return descriptors, omitted
+
+    async def _build_article_descriptors(
+        self,
+        *,
+        article_ids: list[UUID],
+        runs_by_article: dict[UUID, ExtractionRun],
+        template_id: UUID,
+        kept_run_ids: list[UUID],
+    ) -> list[ArticleDescriptor]:
+        """Turn an article's instances into its column descriptor.
+
+        Was three byte-identical copies — consensus, single-user and
+        all-users each partitioned instances by role inline.
+
+        ``entries`` is the tree-shaped one and takes EVERY instance,
+        containers included: a container instance carries no values of its
+        own, which is why the role partition dropped it, but it is the
+        parent key its children are grouped under and the axis the sheet
+        fans out on. The two flat fields beside it are the old projections
+        and go when their last reader does.
+        """
         instances_by_run = await self._load_instances_for_runs(kept_run_ids)
         entity_by_id = await self._load_entity_type_role_map(template_id)
-        headers = await self._load_article_headers(kept_articles)
+        headers = await self._load_article_headers(article_ids)
 
         descriptors: list[ArticleDescriptor] = []
-        for aid in kept_articles:
+        for aid in article_ids:
             run = runs_by_article[aid]
             insts = instances_by_run.get(run.id, [])
             model_instances: list[UUID] = []
@@ -983,10 +1013,7 @@ class ExtractionExportService(LoggerMixin):
                 if role is ExtractionEntityRole.MODEL_SECTION:
                     model_instances.append(inst.id)
                 elif role is ExtractionEntityRole.STUDY_SECTION:
-                    # Ordered list per entity_type — many-cardinality study
-                    # sections keep ALL instances (spec §5.2 fan-out source).
                     section_instances.setdefault(inst.entity_type_id, []).append(inst.id)
-                # model_container instances carry no values themselves.
 
             descriptors.append(
                 ArticleDescriptor(
@@ -996,10 +1023,10 @@ class ExtractionExportService(LoggerMixin):
                     version_id=run.version_id,
                     model_instances=tuple(model_instances),
                     section_instances={k: tuple(v) for k, v in section_instances.items()},
+                    entries=build_entries(insts),
                 )
             )
-
-        return descriptors, omitted
+        return descriptors
 
     async def _load_instances_for_runs(
         self,
@@ -1213,36 +1240,12 @@ class ExtractionExportService(LoggerMixin):
             return [], omitted
 
         kept_run_ids = [runs_by_article[aid].id for aid in kept_article_ids]
-        instances_by_run = await self._load_instances_for_runs(kept_run_ids)
-        entity_by_id = await self._load_entity_type_role_map(template_id)
-        headers = await self._load_article_headers(kept_article_ids)
-
-        descriptors: list[ArticleDescriptor] = []
-        for aid in kept_article_ids:
-            run = runs_by_article[aid]
-            insts = instances_by_run.get(run.id, [])
-            model_instances: list[UUID] = []
-            section_instances: dict[UUID, list[UUID]] = {}
-            for inst in insts:
-                role = entity_by_id.get(inst.entity_type_id)
-                if role is ExtractionEntityRole.MODEL_SECTION:
-                    model_instances.append(inst.id)
-                elif role is ExtractionEntityRole.STUDY_SECTION:
-                    # Ordered list per entity_type — many-cardinality study
-                    # sections keep ALL instances (spec §5.2 fan-out source).
-                    section_instances.setdefault(inst.entity_type_id, []).append(inst.id)
-                # model_container instances carry no values themselves.
-
-            descriptors.append(
-                ArticleDescriptor(
-                    article_id=aid,
-                    header_label=headers.get(aid) or _short_id(aid),
-                    run_id=run.id,
-                    version_id=run.version_id,
-                    model_instances=tuple(model_instances),
-                    section_instances={k: tuple(v) for k, v in section_instances.items()},
-                )
-            )
+        descriptors = await self._build_article_descriptors(
+            article_ids=kept_article_ids,
+            runs_by_article=runs_by_article,
+            template_id=template_id,
+            kept_run_ids=kept_run_ids,
+        )
         return descriptors, omitted
 
     async def _build_single_user_value_map(
@@ -1464,36 +1467,12 @@ class ExtractionExportService(LoggerMixin):
             return [], omitted
 
         kept_run_ids = [runs_by_article[aid].id for aid in kept_article_ids]
-        instances_by_run = await self._load_instances_for_runs(kept_run_ids)
-        entity_by_id = await self._load_entity_type_role_map(template_id)
-        headers = await self._load_article_headers(kept_article_ids)
-
-        descriptors: list[ArticleDescriptor] = []
-        for aid in kept_article_ids:
-            run = runs_by_article[aid]
-            insts = instances_by_run.get(run.id, [])
-            model_instances: list[UUID] = []
-            section_instances: dict[UUID, list[UUID]] = {}
-            for inst in insts:
-                role = entity_by_id.get(inst.entity_type_id)
-                if role is ExtractionEntityRole.MODEL_SECTION:
-                    model_instances.append(inst.id)
-                elif role is ExtractionEntityRole.STUDY_SECTION:
-                    # Ordered list per entity_type — many-cardinality study
-                    # sections keep ALL instances (spec §5.2 fan-out source).
-                    section_instances.setdefault(inst.entity_type_id, []).append(inst.id)
-                # model_container instances carry no values themselves.
-
-            descriptors.append(
-                ArticleDescriptor(
-                    article_id=aid,
-                    header_label=headers.get(aid) or _short_id(aid),
-                    run_id=run.id,
-                    version_id=run.version_id,
-                    model_instances=tuple(model_instances),
-                    section_instances={k: tuple(v) for k, v in section_instances.items()},
-                )
-            )
+        descriptors = await self._build_article_descriptors(
+            article_ids=kept_article_ids,
+            runs_by_article=runs_by_article,
+            template_id=template_id,
+            kept_run_ids=kept_run_ids,
+        )
         return descriptors, omitted
 
     async def _list_reviewers_for_runs(
