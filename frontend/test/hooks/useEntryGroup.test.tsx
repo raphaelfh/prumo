@@ -154,6 +154,43 @@ describe('useEntryGroup', () => {
     expect(setup(nounless, null).result.current.noun).toBe('entry');
   });
 
+  it('scores each entry card on its OWN subtree, not the group', () => {
+    // The card's percentage is the canonical metric scoped to the entry's
+    // subtree. It used to read the group's filled values against the entry's
+    // own slot count, so an untouched second model showed 100%.
+    const req = (id: string) => ({id, is_required: true});
+    const models = {...GROUP, fields: [req('f-auc')]} as unknown as ExtractionEntityTypeWithFields;
+    const predictors = {
+      ...NESTED,
+      fields: [req('f-name')],
+    } as unknown as ExtractionEntityTypeWithFields;
+
+    const {result} = renderHook(() =>
+      useEntryGroup({
+        articleId: 'a-1',
+        group: models,
+        parentInstanceId: null,
+        instances: ALL,
+        // Model A is filled down to its nested predictor; model B is untouched.
+        values: {'m-a_f-auc': 'x', 'p-a1_f-name': 'y'} as never,
+        entityTypes: [models, predictors],
+        activeEntries: {},
+        setActiveEntry: () => {},
+      }),
+    );
+
+    const [cardA, cardB] = result.current.entryCards;
+    // A's own value AND its nested predictor's — the subtree still counts.
+    expect(cardA).toMatchObject({
+      instanceId: 'm-a',
+      progress: {completed: 2, total: 2, percentage: 100},
+    });
+    expect(cardB).toMatchObject({
+      instanceId: 'm-b',
+      progress: {completed: 0, total: 2, percentage: 0},
+    });
+  });
+
   it('survives a localStorage that throws', () => {
     const original = window.localStorage.getItem;
     // A private window / blocked site data throws on access; the hook runs
