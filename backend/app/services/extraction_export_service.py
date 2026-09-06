@@ -158,6 +158,10 @@ class ArticleDescriptor:
     model_instances: tuple[UUID, ...]
     # entity_type_id (study/section) → ORDERED instance ids for the run.
     section_instances: dict[UUID, tuple[UUID, ...]]
+    # (entity_type_id, parent_instance_id) → ORDERED instance ids. The two
+    # fields above are the flat projections of this one and are deleted at
+    # the end of trees B4; see `exports/extraction/descriptors.py`.
+    entries: dict[tuple[UUID, UUID | None], tuple[UUID, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
