@@ -124,7 +124,6 @@ async def test_provider_chains_empty_snapshot_to_live(db_session: AsyncSession) 
     )
 
     assert tree, "empty snapshot must fall back to live rows"
-    assert all(et.role in ("study_section", "model_container", "model_section") for et in tree)
 
 
 @pytest.mark.asyncio
@@ -156,7 +155,6 @@ async def test_provider_chains_heterogeneous_snapshot_to_live(
     )
 
     assert tree, "heterogeneous snapshot must fall back to live, not raise"
-    assert all(et.role for et in tree)
 
 
 @pytest.mark.asyncio

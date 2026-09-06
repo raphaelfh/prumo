@@ -923,8 +923,13 @@ async def test_a_swapped_root_group_now_restores(db_session: AsyncSession) -> No
 @pytest.mark.asyncio
 async def test_era_drift_baseline_does_not_null_columns(db_session: AsyncSession) -> None:
     """A pre-0051 / pre-#462 baseline simply lacks ``entry_label`` and the
-    ``allows_not_*`` keys. Absent must mean the canonical default (which
-    is role-aware for ``entry_label``), never NULL and never a crash.
+    ``allows_not_*`` keys. Absent must mean the canonical default (which is
+    cardinality-aware for ``entry_label``), never NULL and never a crash.
+
+    "Never NULL" stopped being a style point at 0069: the noun CHECK makes
+    a repeating section with a NULL noun unrepresentable, so a restore that
+    wrote one would abort with a CheckViolation — turning "discard my draft"
+    into a 500 for every template old enough to predate the noun.
 
     A template that old never carried a noun outside the container: 0051
     stamped 'model' on containers only, 0068 stamps global catalogue rows
@@ -934,8 +939,14 @@ async def test_era_drift_baseline_does_not_null_columns(db_session: AsyncSession
     project_id, template_id, wide = await _fresh_charms(db_session)
     await db_session.execute(
         text(
-            "UPDATE public.extraction_entity_types SET entry_label = NULL "
-            "WHERE project_template_id = :tid AND NOT (cardinality = 'many' AND parent_entity_type_id IS NULL)"
+            # The era floor, per cardinality. 0069 forbids a repeating
+            # section from holding a NULL noun, so "pre-0051" for one of
+            # those is not NULL — it is the canonical default, which is
+            # exactly what 0069's own backfill wrote for these rows. A
+            # non-repeating section still carries no noun at all.
+            "UPDATE public.extraction_entity_types "
+            "SET entry_label = CASE WHEN cardinality = 'many' THEN 'entry' END "
+            "WHERE project_template_id = :tid"
         ),
         {"tid": str(template_id)},
     )
@@ -991,7 +1002,12 @@ async def test_era_drift_baseline_does_not_null_columns(db_session: AsyncSession
             {"id": str(await _entity_id(db_session, template_id, "prediction_models"))},
         )
     ).scalar_one()
-    assert entry_label == "model"
+    # NOT NULL is the assertion, not the specific word. "model" was
+    # determinable only from `role == 'model_container'` — 0051's backfill
+    # keyed on exactly that — and there is no role to key on. What 0069
+    # makes load-bearing, and what a restore must never break, is that a
+    # repeating section comes out of this with SOME noun.
+    assert entry_label is not None
     await _assert_restored(
         db_session,
         template_id=template_id,

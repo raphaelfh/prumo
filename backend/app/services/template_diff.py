@@ -50,6 +50,7 @@ from uuid import UUID
 
 from app.domain.template_change import ChangeTier
 from app.llm.claim_value import normalize_options
+from app.models.extraction import DEFAULT_ENTRY_LABEL, ExtractionCardinality
 
 _PATH_SEPARATOR = " → "
 
@@ -100,7 +101,7 @@ ENTITY_ATTRIBUTE_DEFAULTS: dict[str, Any] = {
     "name": None,
     "label": None,
     "description": None,
-    ENTRY_LABEL_KEY: None,  # role-aware, see _normalize_entity
+    ENTRY_LABEL_KEY: None,  # cardinality-aware, see _normalize_entity
     "parent_entity_type_id": None,
     "cardinality": "one",
     "is_required": False,
@@ -319,12 +320,22 @@ def _index(
 
 def _normalize_entity(raw: dict[str, Any]) -> dict[str, Any]:
     """Fill absent keys with their canonical defaults (present-but-null stays null)."""
-    # The pre-0051 noun rule left with `role` (spec §5): it keyed on
-    # `role == 'model_container'`, and there is no role to key on. A
-    # baseline that lacks the noun now simply lacks it, and the diff says
-    # so — which is honest, since 0069 backfills every repeating section to
-    # 'entry' and a manager can rename it.
-    return {key: raw.get(key, default) for key, default in ENTITY_ATTRIBUTE_DEFAULTS.items()}
+    # The pre-0051 noun rule keyed on `role == 'model_container'` and could
+    # only ever describe the one container 0016 allowed. It is now keyed on
+    # the thing that actually requires a noun: repeating.
+    #
+    # This is NOT cosmetic. `_normalize_entity` feeds the RESTORE writer, and
+    # 0069 makes a repeating section with a NULL noun unrepresentable
+    # (`ck_extraction_entity_types_noun_on_repeating`). A pre-0051 baseline
+    # simply LACKS the key, so defaulting it to None would write NULL onto a
+    # repeating live row and abort the restore with a CheckViolation —
+    # turning "Discard my draft" into a 500 for every template old enough to
+    # predate the noun. Absent means the canonical default, which is what
+    # 0069's own backfill wrote for exactly these rows.
+    data = {key: raw.get(key, default) for key, default in ENTITY_ATTRIBUTE_DEFAULTS.items()}
+    if data[ENTRY_LABEL_KEY] is None and data["cardinality"] == ExtractionCardinality.MANY.value:
+        data[ENTRY_LABEL_KEY] = DEFAULT_ENTRY_LABEL
+    return data
 
 
 def _normalize_field(raw: dict[str, Any]) -> dict[str, Any]:

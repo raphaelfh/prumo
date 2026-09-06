@@ -1013,8 +1013,11 @@ async def test_clone_handles_unordered_sort_order(
                 LEFT JOIN public.extraction_entity_types parent
                   ON parent.id = child.parent_entity_type_id
                 WHERE child.project_template_id = :tid
-                  AND child.role = 'model_section'
-                  AND (parent.id IS NULL OR parent.NOT (cardinality = 'many' AND parent_entity_type_id IS NULL))
+                  AND child.parent_entity_type_id IS NOT NULL
+                  -- 0069's invariant: a parent must REPEAT. It was "the
+                  -- parent must be the one model_container", which only
+                  -- 0016's single-container schema could express.
+                  AND (parent.id IS NULL OR parent.cardinality <> 'many')
                 """
             ),
             {"tid": tpl_id},

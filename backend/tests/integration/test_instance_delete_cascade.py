@@ -90,9 +90,10 @@ async def _build_hitl_graph(db: AsyncSession) -> _Graph:
         text(
             "INSERT INTO public.extraction_entity_types "
             "(id, project_template_id, name, label, cardinality,"
-            " parent_entity_type_id, sort_order, is_required) "
+            " parent_entity_type_id, sort_order, is_required, entry_label) "
+            # 0069: a repeating section always carries the word for one entry.
             "VALUES (:id, :tid, 'delete_cascade_section', 'Delete Cascade Section', "
-            " 'many', NULL, 99, false)"
+            " 'many', NULL, 99, false, 'entry')"
         ),
         {"id": str(graph.entity_type_id), "tid": str(template_id)},
     )

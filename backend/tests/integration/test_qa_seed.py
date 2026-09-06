@@ -137,7 +137,7 @@ async def test_probast_ai_has_thirteen_flat_sections(db_session: AsyncSession) -
         await db_session.execute(
             text(
                 """
-                SELECT et.role, et.cardinality, et.parent_entity_type_id
+                SELECT et.cardinality, et.parent_entity_type_id
                 FROM public.extraction_entity_types et
                 JOIN public.extraction_templates_global t ON t.id = et.template_id
                 WHERE t.name = 'PROBAST+AI'
@@ -146,7 +146,9 @@ async def test_probast_ai_has_thirteen_flat_sections(db_session: AsyncSession) -
         )
     ).all()
     assert len(rows) == 13
-    assert all(r[0] == "study_section" and r[1] == "one" and r[2] is None for r in rows)
+    # Was (role, cardinality, parent). `role` left the schema in 0069, so
+    # "flat" is stated as what it always meant: singletons, no parents.
+    assert all(r[0] == "one" and r[1] is None for r in rows)
 
 
 @pytest.mark.asyncio

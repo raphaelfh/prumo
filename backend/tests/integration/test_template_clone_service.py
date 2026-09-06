@@ -142,7 +142,8 @@ async def test_clone_carries_entry_label(db_session: AsyncSession) -> None:
         await db_session.execute(
             select(ExtractionEntityType).where(
                 ExtractionEntityType.project_template_id == result.project_template_id,
-                ExtractionEntityType.role == "model_container",
+                ExtractionEntityType.cardinality == "many",
+                ExtractionEntityType.parent_entity_type_id.is_(None),
             )
         )
     ).scalar_one()
@@ -155,7 +156,9 @@ async def test_clone_carries_entry_label(db_session: AsyncSession) -> None:
         )
     ).scalar_one()
     snapshot_container = next(
-        et for et in v1_schema["entity_types"] if et["role"] == "model_container"
+        et
+        for et in v1_schema["entity_types"]
+        if et["cardinality"] == "many" and et["parent_entity_type_id"] is None
     )
     assert snapshot_container["entry_label"] == "model"
     await db_session.rollback()

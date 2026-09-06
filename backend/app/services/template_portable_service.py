@@ -29,6 +29,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.error_handler import AppError
 from app.models.extraction import (
+    DEFAULT_ENTRY_LABEL,
     ExtractionCardinality,
     ExtractionEntityType,
     ExtractionField,
@@ -230,10 +231,13 @@ def _entity_type_row(
         name=section.name,
         label=section.label,
         description=section.description,
-        # The bundle's noun verbatim, NULL included: a bundle authored before
-        # nouns round-trips losslessly, and every reader falls back to
-        # DEFAULT_ENTRY_LABEL for a NULL — never to 'model'.
-        entry_label=section.entry_label if repeats else None,
+        # A repeating section without a noun defaults to `entry` on import
+        # (spec §5). It used to keep the bundle's NULL verbatim, on the
+        # reasoning that readers fall back anyway; 0069 makes that row
+        # unrepresentable, so importing a bundle authored before nouns would
+        # abort on `ck_extraction_entity_types_noun_on_repeating` instead of
+        # round-tripping. A section that does not repeat still carries none.
+        entry_label=(section.entry_label or DEFAULT_ENTRY_LABEL) if repeats else None,
         parent_entity_type_id=parent_id,
         cardinality=(
             ExtractionCardinality.MANY.value if repeats else ExtractionCardinality.ONE.value

@@ -144,12 +144,13 @@ async def test_import_activates_new_and_deactivates_previous(db_session: AsyncSe
     ).scalar_one()
     assert [et["name"] for et in snapshot["entity_types"]] == ["sec1"]
     assert [f["name"] for f in snapshot["entity_types"][0]["fields"]] == ["f1"]
-    assert snapshot["entity_types"][0]["role"] == "study_section"
+    assert snapshot["entity_types"][0]["cardinality"] == "one"
+    assert snapshot["entity_types"][0]["parent_entity_type_id"] is None
     assert snapshot["entity_types"][0]["fields"][0]["validation_schema"] == {}
 
 
 @pytest.mark.asyncio
-async def test_import_derives_roles_and_template_wide_sort_order(
+async def test_import_derives_structure_and_template_wide_sort_order(
     db_session: AsyncSession,
 ) -> None:
     project_id = SEED.secondary_project
@@ -177,34 +178,29 @@ async def test_import_derives_roles_and_template_wide_sort_order(
     )
     rows = await db_session.execute(
         text(
-            "SELECT name, role, cardinality, entry_label, sort_order, "
+            "SELECT name, cardinality, entry_label, sort_order, "
             "parent_entity_type_id IS NOT NULL AS has_parent "
             "FROM public.extraction_entity_types WHERE project_template_id = :tid"
         ),
         {"tid": str(result.project_template_id)},
     )
     by_name = {r.name: r for r in rows}
-    assert (by_name["root"].role, by_name["root"].cardinality, by_name["root"].has_parent) == (
-        "study_section",
-        "many",
-        False,
-    )
+    assert (by_name["root"].cardinality, by_name["root"].has_parent) == ("many", False)
     # The noun rides every repeating section, not only the group (entry-group train).
     assert by_name["root"].entry_label == "arm"
-    # A repeating section imported without a noun keeps NULL — the bundle
-    # round-trips losslessly and every reader falls back to the one fallback
-    # noun ('entry'); the container's old 'model' default is gone.
-    assert (by_name["grp"].role, by_name["grp"].cardinality, by_name["grp"].entry_label) == (
-        "model_container",
-        "many",
-        None,
-    )
-    assert (by_name["child"].role, by_name["child"].cardinality, by_name["child"].has_parent) == (
-        "model_section",
+    # A repeating section imported WITHOUT a noun gets the default (spec §5).
+    # It used to keep the bundle's NULL, on the reasoning that readers fall
+    # back anyway — 0069 makes that row unrepresentable, so a pre-noun bundle
+    # would now abort the import on `ck_..._noun_on_repeating` rather than
+    # round-trip.
+    assert (by_name["grp"].cardinality, by_name["grp"].entry_label) == ("many", "entry")
+    assert (by_name["child"].cardinality, by_name["child"].has_parent) == (
         "many",
         True,
     )
-    assert by_name["child"].entry_label is None
+    # It repeats too, so it gets the default noun rather than NULL — 0069
+    # forbids a repeating section from carrying none, whatever its depth.
+    assert by_name["child"].entry_label == "entry"
     # Template-wide pre-order: no ties (SNAPSHOT_SQL sorts by bare sort_order).
     orders = [by_name[n].sort_order for n in ("root", "grp", "child", "tail")]
     assert orders == [0, 1, 2, 3]

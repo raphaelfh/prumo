@@ -1,7 +1,7 @@
 """The frozen template-version snapshot must carry every column the run-open
-form renders from — role (study/model partition), plus the field columns that
+form renders from — cardinality and the parent edge, plus the field columns that
 drive units, validation, and the 'other' option. Both builders share one SQL
-fragment so they can never drift again (role was once added to clone but not
+fragment so they can never drift again (a column was once added to clone but not
 lifecycle)."""
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ _ENTITY_KEYS = {
     "entry_label",
     "parent_entity_type_id",
     "cardinality",
-    "role",
     "sort_order",
     "is_required",
     "fields",
@@ -49,7 +48,7 @@ _FIELD_KEYS = {
 
 
 @pytest.mark.asyncio
-async def test_snapshot_carries_role_and_all_field_columns(
+async def test_snapshot_carries_structure_and_all_field_columns(
     db_session: AsyncSession,
 ) -> None:
     template_id = (
@@ -72,7 +71,6 @@ async def test_snapshot_carries_role_and_all_field_columns(
         assert set(et.keys()) >= _ENTITY_KEYS, (
             f"entity_type missing keys: {_ENTITY_KEYS - set(et.keys())}"
         )
-        assert et["role"] in ("study_section", "model_container", "model_section")
         for f in et["fields"]:
             assert set(f.keys()) >= _FIELD_KEYS, (
                 f"field missing keys: {_FIELD_KEYS - set(f.keys())}"
@@ -104,11 +102,14 @@ async def test_snapshot_carries_entry_label(db_session: AsyncSession) -> None:
 
     snapshot = await build_template_version_snapshot(db_session, clone.project_template_id)
     entity_types = snapshot["entity_types"]
-    assert any(et["role"] == "model_container" for et in entity_types)
+    assert any(
+        et["cardinality"] == "many" and et["parent_entity_type_id"] is None
+        for et in entity_types
+    )
     for et in entity_types:
         assert "entry_label" in et, f"entity_type {et.get('name')} missing entry_label"
         assert et["entry_label"] == live_nouns[et["id"]], et["name"]
-        if et["role"] == "model_container":
+        if et["cardinality"] == "many" and et["parent_entity_type_id"] is None:
             assert et["entry_label"] == "model"
         elif et["cardinality"] != "many":
             assert et["entry_label"] is None, et["name"]

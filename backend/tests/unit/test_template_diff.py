@@ -205,7 +205,11 @@ def test_pre_0051_baseline_reports_the_noun_it_lacks() -> None:
     _, _, live = _modern_tree()
     change = _only(diff_snapshots(_pre_0051(live), live, fields_with_values=NO_VALUES))
     assert change.attribute == "entry_label"
-    assert change.before is None
+    # `entry` — the canonical default, not NULL. 0051's backfill knew to say
+    # "model", but it keyed on `role == 'model_container'` and there is no
+    # role to key on; what matters is that an absent key never means NULL,
+    # because the restore writer would then abort on 0069's noun CHECK.
+    assert change.before == "entry"
 
 
 def test_pre_0051_baseline_still_reports_an_unrelated_rename() -> None:

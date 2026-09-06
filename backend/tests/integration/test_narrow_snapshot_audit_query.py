@@ -23,12 +23,16 @@ from app.services.narrow_snapshot_audit import (
 )
 from tests.integration.helpers.template_fixtures import fresh_charms
 
+# The era probe is `cardinality` since trees B5 — 0069 removed `role`, which
+# it used to key on. PRE_0017 omits it (that IS the era); PRE_0026 carries it
+# and is narrow only in its FIELDS, which is the era 0026's backfill skipped.
 PRE_0017 = {"entity_types": [{"id": "sec-1", "label": "Old", "fields": [{"id": "f-1"}]}]}
 PRE_0026 = {
     "entity_types": [
         {
             "id": "sec-2",
             "label": "Newer",
+            "cardinality": "one",
             "fields": [{"id": "f-2", "name": "x"}],
         }
     ]
@@ -61,13 +65,13 @@ async def test_a_planted_pre_0017_baseline_is_found(db_session: AsyncSession) ->
 
     assert [f.template_id for f in findings] == [template_id]
     assert findings[0].project_id == project_id
-    assert findings[0].classification.era is NarrowEra.PRE_0017_NO_ROLE
+    assert findings[0].classification.era is NarrowEra.PRE_0017_NO_STRUCTURE
     assert findings[0].classification.narrow_entity_type_ids == ("sec-1",)
 
 
 @pytest.mark.asyncio
 async def test_a_planted_pre_0026_baseline_is_found(db_session: AsyncSession) -> None:
-    """The era 0026's own backfill skipped, because it keyed on the role probe."""
+    """The era 0026's own backfill skipped, because it keyed on the same probe."""
     _, template_id, _ = await fresh_charms(db_session)
     await _set_active_schema(db_session, template_id, PRE_0026)
 
@@ -108,7 +112,7 @@ async def test_the_report_names_the_remedy(db_session: AsyncSession) -> None:
     report = format_findings(findings, total=1)
 
     assert str(template_id) in report
-    assert NarrowEra.PRE_0017_NO_ROLE.label in report
+    assert NarrowEra.PRE_0017_NO_STRUCTURE.label in report
     assert "Republish the current configuration" in report
     assert "1 template(s) of 1" in report
 

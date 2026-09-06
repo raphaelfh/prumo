@@ -796,7 +796,13 @@ async def test_cardinality_many_to_one_with_two_entries_is_refused(
     section = await _entity_id(db_session, template_id, "model_development")
     container = await _entity_id(db_session, template_id, "prediction_models")
     await db_session.execute(
-        text("UPDATE public.extraction_entity_types SET cardinality = 'many' WHERE id = :id"),
+        # The noun rides along: 0069's `ck_..._noun_on_repeating` means a
+        # section cannot become repeating without the word for one entry.
+        text(
+            "UPDATE public.extraction_entity_types "
+            "SET cardinality = 'many', entry_label = coalesce(entry_label, 'entry') "
+            "WHERE id = :id"
+        ),
         {"id": str(section)},
     )
     await db_session.flush()
