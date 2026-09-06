@@ -64,6 +64,44 @@ today's code; that failure is the characterization.
 
 ---
 
+## What the adversarial panel changed
+
+Recorded because the plan above was wrong in ways worth keeping visible.
+
+1. **The nested repeating group is not a future shape.** Seeded CHARMS
+   ships one: `final_predictors` (`backend/app/seed.py`) names
+   `prediction_models` as its parent with `cardinality="many"`. Its
+   MANY-ness is masked only because `matrix._resolve_instance_id` tested
+   `role` before cardinality. So the tree resolution had to be general
+   from the start, not deferred to B5.
+2. **The module location closes an import cycle.**
+   `exports/extraction/__init__` imports `workbook`, which imports the
+   service, so a module-level import back from the service fails with
+   `cannot import name 'AIProposalRow' from partially initialized
+   module`. Reproduced, then `descriptors.py` moved up beside
+   `extraction_scope_marking.py`.
+3. **Four consumers the plan missed:** `_build_tidy_tables`,
+   `_build_appraisal_model`, `article_values_by_coord` and
+   `_load_ai_proposal_rows` — plus THREE byte-identical copies of the
+   descriptor loop, not one.
+4. **Column geometry is per-branch, not a single index.** Width is
+   Σ over root entries of that entry's own largest nested count. An entry
+   with three nested entries beside one with a single nested entry gives
+   four columns — not `max(3,1)` and not `3 x 2`.
+5. **`repeats` was not added.** §10 words it as a new field;
+   `cardinality is MANY` already says it, and a second field derived from
+   the first can disagree with it.
+
+## Result
+
+- Golden characterization passes: one entry is ONE sub-column with every
+  section readable in it.
+- `ExtractionEntityRole` at ZERO in the export package (§13 B4 verify).
+- `extraction_export_service.py` 2356 -> 2274; ratchet tightened.
+- 2803 unit tests; vulture 30<=30; mypy 73<=73; scope-guards 13, none new.
+
+---
+
 ### Task 1: Golden workbook characterization (fails first)
 
 **Files:**

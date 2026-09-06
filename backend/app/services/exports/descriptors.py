@@ -240,7 +240,9 @@ def _ancestry(
     section: SectionDescriptor, sections: Sequence[SectionDescriptor]
 ) -> list[SectionDescriptor]:
     """``section`` and its ancestors, root first."""
-    chain, current, seen = [], section, set()
+    chain: list[SectionDescriptor] = []
+    seen: set[UUID] = set()
+    current: SectionDescriptor | None = section
     while current is not None and current.entity_type_id not in seen:
         chain.append(current)
         seen.add(current.entity_type_id)
