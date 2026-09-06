@@ -342,30 +342,6 @@ async def test_section_extraction_run_id_403_for_non_member(
     assert res.status_code == 403, res.text
 
 
-@pytest.mark.asyncio
-async def test_model_extraction_403_for_non_member(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    outsider_user: UUID,
-) -> None:
-    fx = await _pick_extraction_article_template_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip(
-            "Need an extraction article/template in a project the outsider does not belong to"
-        )
-    project_id, article_id, template_id = fx
-
-    res = await db_client.post(
-        "/api/v1/extraction/models",
-        json={
-            "projectId": str(project_id),
-            "articleId": str(article_id),
-            "templateId": str(template_id),
-        },
-    )
-    assert res.status_code == 403, res.text
-
-
 async def _first_repeating_section(db: AsyncSession, template_id: UUID) -> UUID | None:
     """The template's first ``cardinality='many'`` section, or None.
 

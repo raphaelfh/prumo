@@ -22,18 +22,15 @@
  * ```
  */
 
-import {ApiError, apiClient, modelExtractionClient} from '@/integrations/api/client';
+import {ApiError, apiClient} from '@/integrations/api/client';
 import type {
     BatchSectionExtractionRequest,
     BatchSectionExtractionResponse,
     BatchSectionResult,
-    ModelExtractionRequest,
-    ModelExtractionResponse,
     SectionExtractionRequest,
     SectionExtractionResponse,
 } from "@/types/ai-extraction";
 import {APIError, getErrorCode} from "@/lib/ai-extraction/errors";
-import {t} from "@/lib/copy";
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import {getExtractionJobStatus} from './extractionRunService';
 import type {components} from '@/types/api/schema';
@@ -45,8 +42,6 @@ type ExtractionJobResult = components['schemas']['ExtractionJobResult'];
 export type {
   SectionExtractionRequest,
   SectionExtractionResponse,
-  ModelExtractionRequest,
-  ModelExtractionResponse,
 };
 
 /** Maps a SectionOutcome (snake_case wire format) to BatchSectionResult (camelCase). */
@@ -169,65 +164,6 @@ export class SectionExtractionService {
       },
       traceId,
     };
-  }
-
-  /**
-   * Extracts prediction models from the article automatically via FastAPI
-   *
-   * FLOW:
-   * 1. Generate trace ID for traceability
-   * 2. Send POST to FastAPI backend (model-extraction)
-   * 3. Parse response with robust error handling
-   * 4. Return list of created models
-   *
-   * @param request - Extraction params (projectId, articleId, templateId)
-   * @returns Response with runId, created models and metadata
-   * @throws APIError if extraction fails
-   */
-  static async extractModels(request: ModelExtractionRequest): Promise<ModelExtractionResponse> {
-    const traceId = crypto.randomUUID();
-
-      console.warn('[SectionExtractionService] Starting model extraction via FastAPI', {
-      traceId,
-      request,
-    });
-
-    try {
-        // NOTE: apiClient returns responseData.data directly, not {ok, data}
-        // So the type here is the inner content of ModelExtractionResponse['data']
-      type ModelExtractionData = NonNullable<ModelExtractionResponse['data']>;
-
-      const data = await modelExtractionClient<ModelExtractionData>({
-        projectId: request.projectId,
-        articleId: request.articleId,
-        templateId: request.templateId,
-        // Reuse the session run when provided so model extraction never forks a
-        // parallel run that would orphan the reviewer's decisions.
-        runId: request.runId,
-        // C1a: no `model` key — the engine is server-owned.
-      });
-
-        console.warn('[SectionExtractionService] Model extraction via FastAPI completed', {
-        runId: data?.runId,
-        modelsCreated: data?.modelsCreated?.length || 0,
-      });
-
-      // Construir resposta no formato esperado pelo hook
-      return {
-        ok: true,
-        data: data,
-        traceId,
-      };
-    } catch (error) {
-      if (error instanceof ApiError) {
-        throw new APIError(error.message, error.status, { traceId: error.traceId }, error.code);
-      }
-      throw new APIError(
-          error instanceof Error ? error.message : t('common', 'errors_unknownError'),
-        undefined,
-        { originalError: String(error) },
-      );
-    }
   }
 
   /**

@@ -346,18 +346,6 @@ export async function zoteroClient<T>(
   });
 }
 
-/**
- * Client for model extraction endpoints.
- */
-export async function modelExtractionClient<T>(
-  body: Record<string, unknown>
-): Promise<T> {
-  return apiClient<T>("/api/v1/extraction/models", {
-    method: "POST",
-    body,
-    timeout: 120000,
-  });
-}
 
 // Create one entry of a repeating section, with its singleton children, in
 // one transaction. Replaces the browser-side PostgREST insert: the key value

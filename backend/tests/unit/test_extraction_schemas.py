@@ -20,7 +20,6 @@ from pydantic import TypeAdapter, ValidationError
 from app.schemas.extraction import (
     BatchSectionResult,
     CitationAnchor,
-    CreatedModelInfo,
     CreateInstanceRequest,
     EntryCreateRequest,
     EntryCreateResponse,
@@ -30,11 +29,7 @@ from app.schemas.extraction import (
     ExtractionOptions,
     ExtractionTemplateSchema,
     HybridCitationAnchor,
-    IdentifiedModel,
     InstanceResponse,
-    ModelExtractionRequest,
-    ModelExtractionResult,
-    ModelExtractionRunStats,
     PDFRect,
     PDFTextRange,
     PositionV1,
@@ -542,33 +537,6 @@ class TestRemainingConstruction:
         resp = EntryCreateResponse(instanceId=uuid4(), label="Model A")
         assert resp.label == "Model A"
 
-    def test_model_extraction_request(self) -> None:
-        req = ModelExtractionRequest(
-            projectId=uuid4(),
-            articleId=uuid4(),
-            templateId=uuid4(),
-        )
-        assert req.options is None
-
-    def test_identified_model(self) -> None:
-        m = IdentifiedModel(modelName="Logistic")
-        assert m.performance_metrics == {}
-        assert m.model_type is None
-
-    def test_created_model_info(self) -> None:
-        info = CreatedModelInfo(instanceId="i1", modelName="Cox")
-        assert info.instance_id == "i1"
-
-    def test_model_extraction_run_stats(self) -> None:
-        stats = ModelExtractionRunStats(
-            duration=1,
-            modelsFound=2,
-            tokensPrompt=3,
-            tokensCompletion=4,
-            tokensTotal=7,
-        )
-        assert stats.tokens_total == 7
-
     def test_create_instance_request(self) -> None:
         req = CreateInstanceRequest(
             projectId=uuid4(),
@@ -639,19 +607,3 @@ class TestRemainingConstruction:
         )
         assert res.mode == "batch"
         assert res.sections == []
-
-    def test_model_extraction_result_light_construction(self) -> None:
-        res = ModelExtractionResult(
-            extractionRunId="r1",
-            modelsCreated=[],
-            totalModels=0,
-            childInstancesCreated=0,
-            metadata=ModelExtractionRunStats(
-                duration=1,
-                modelsFound=0,
-                tokensPrompt=0,
-                tokensCompletion=0,
-                tokensTotal=0,
-            ),
-        )
-        assert res.total_models == 0

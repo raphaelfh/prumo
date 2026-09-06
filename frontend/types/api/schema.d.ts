@@ -347,26 +347,6 @@ export interface paths {
         patch: operations["update_instance_api_v1_extraction_instances__instance_id__patch"];
         trace?: never;
     };
-    "/api/v1/extraction/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Extrair modelos de predicao
-         * @description Identifica and extrai automaticamente modelos de predicao do article.
-         */
-        post: operations["extract_models_api_v1_extraction_models_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/extraction/sections": {
         parameters: {
             query?: never;
@@ -2283,23 +2263,6 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[ModelExtractionResult] */
-        ApiResponse_ModelExtractionResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["ModelExtractionResult"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
         /** ApiResponse[OpenHITLSessionResponse] */
         ApiResponse_OpenHITLSessionResponse_: {
             /** @description Dados da resposta */
@@ -3326,18 +3289,6 @@ export interface components {
             project_template_id: string;
         };
         /**
-         * CreatedModelInfo
-         * @description One prediction-model instance created by model extraction.
-         */
-        CreatedModelInfo: {
-            /** Instanceid */
-            instanceId: string;
-            /** Modelname */
-            modelName: string;
-            /** Modellingmethod */
-            modellingMethod?: string | null;
-        };
-        /**
          * DeleteAPIKeyResult
          * @description Payload de ``DELETE /user-api-keys/{id}``.
          */
@@ -4351,61 +4302,6 @@ export interface components {
              * @default true
              */
             ready: boolean;
-        };
-        /**
-         * ModelExtractionRequest
-         * @description Request for extraction de modelos de predicao.
-         */
-        ModelExtractionRequest: {
-            /**
-             * Articleid
-             * Format: uuid
-             */
-            articleId: string;
-            options?: components["schemas"]["ExtractionOptions"] | null;
-            /**
-             * Projectid
-             * Format: uuid
-             */
-            projectId: string;
-            /** Runid */
-            runId?: string | null;
-            /**
-             * Templateid
-             * Format: uuid
-             */
-            templateId: string;
-        };
-        /**
-         * ModelExtractionResult
-         * @description Resultado da extraction de modelos.
-         */
-        ModelExtractionResult: {
-            /** Childinstancescreated */
-            childInstancesCreated: number;
-            /** Extractionrunid */
-            extractionRunId: string;
-            metadata: components["schemas"]["ModelExtractionRunStats"];
-            /** Modelscreated */
-            modelsCreated: components["schemas"]["CreatedModelInfo"][];
-            /** Totalmodels */
-            totalModels: number;
-        };
-        /**
-         * ModelExtractionRunStats
-         * @description Timing/token metadata attached to a model-extraction response.
-         */
-        ModelExtractionRunStats: {
-            /** Duration */
-            duration: number;
-            /** Modelsfound */
-            modelsFound: number;
-            /** Tokenscompletion */
-            tokensCompletion: number;
-            /** Tokensprompt */
-            tokensPrompt: number;
-            /** Tokenstotal */
-            tokensTotal: number;
         };
         /**
          * OpaqueValueState
@@ -7013,39 +6909,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_RunViewInstance_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    extract_models_api_v1_extraction_models_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ModelExtractionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_ModelExtractionResult_"];
                 };
             };
             /** @description Validation Error */

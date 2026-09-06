@@ -3,15 +3,16 @@
  * everything" flow): Phase 2 (load extracted models) must not run until
  * Phase 1's model extraction has actually completed.
  *
- * The fire-and-forget bug (#269 refactor dropped the ``return`` on the
- * ``doExtract()`` chain in ``useModelExtraction``) made Phase 1 settle
- * immediately, so Phase 2 read the models table before the new models
- * existed — pre-existing models got their sections extracted, freshly
- * extracted ones never did, and the UI showed an "extraction complete"
- * with nothing visibly extracted.
+ * The fire-and-forget bug (#269 refactor dropped the ``return`` on a
+ * ``doExtract()`` chain) made Phase 1 settle immediately, so Phase 2 read
+ * the instances table before the new entries existed — pre-existing ones
+ * got their sections extracted, freshly identified ones never did, and the
+ * UI showed an "extraction complete" with nothing visibly extracted.
  *
- * Uses the REAL ``useModelExtraction`` (the composition under test) with a
- * deferred service response; the sibling batch/top-level hooks stay mocked.
+ * Phase 1 is `SectionExtractionService.extractSection` against the first
+ * root group since trees B6 retired the model endpoint; the deferred
+ * service response is what makes the ordering observable, and the sibling
+ * batch/top-level hooks stay mocked.
  */
 
 import { act, renderHook } from '@testing-library/react';
@@ -25,7 +26,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/services/sectionExtractionService', () => ({
-  SectionExtractionService: { extractModels: h.serviceExtractModels },
+  SectionExtractionService: { extractSection: h.serviceExtractModels },
 }));
 vi.mock('@/services/extractionInstanceService', () => ({
   loadExtractedModels: h.loadExtractedModels,

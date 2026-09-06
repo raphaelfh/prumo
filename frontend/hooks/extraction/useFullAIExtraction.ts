@@ -2,8 +2,8 @@
  * Full AI Extraction hook
  *
  * React hook to manage full AI extraction:
- * 1. Extracts models from the article (using AI)
- * 2. For each extracted model, extracts all sections automatically
+ * 1. Identifies the entries of the template's FIRST root group (using AI)
+ * 2. For each identified entry, extracts all sections automatically
  *
  * Focus: Full extraction orchestration (models + sections).
  * Reuses existing hooks to keep DRY.
@@ -18,7 +18,8 @@
 import {useState} from "react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
-import {useModelExtraction} from "./useModelExtraction";
+import {showExtractionErrorToast} from "./helpers/showExtractionErrorToast";
+import {SectionExtractionService} from "@/services/sectionExtractionService";
 import type {AllModelsSectionsProgress} from "./useBatchAllModelsSectionsExtraction";
 import {useBatchAllModelsSectionsExtraction} from "./useBatchAllModelsSectionsExtraction";
 import type {TopLevelSectionsProgress} from "./useTopLevelSectionsExtraction";
@@ -85,7 +86,6 @@ export function useFullAIExtraction(options?: {
   const [progress, setProgress] = useState<FullAIExtractionProgress | null>(null);
 
     // Hook for model extraction
-  const { extractModels: extractModelsHook } = useModelExtraction();
 
     // Hook for top-level section extraction
   const { extractTopLevelSections } = useTopLevelSectionsExtraction({
@@ -117,9 +117,11 @@ export function useFullAIExtraction(options?: {
    * explicitly the FIRST now, with the ordering spelled out, mirroring the
    * backend's ``ExtractionEntityTypeRepository.get_root_group``.
    *
-   * That is the right answer for THIS caller and only this one: the model
-   * identification pipeline is single-group by construction and retires in
-   * trees B6. Anything else that wants "the groups" wants all of them.
+   * That is the right answer for THIS caller and only this one: this batch
+   * path is single-group by construction — it was built around the one
+   * container 0016 allowed, and generalizing it to every root group is a
+   * change of behaviour, not a refactor. Anything else that wants "the
+   * groups" wants all of them.
    */
   const fetchModelParentEntityTypeId = async (
     templateId: string
@@ -157,19 +159,30 @@ export function useFullAIExtraction(options?: {
       const doExtract = async () => {
         const { projectId, articleId, templateId, runId } = params;
 
-          // PHASE 1: Extract models and top-level sections in parallel
-          console.warn('[useFullAIExtraction] Phase 1: Extracting models and top-level sections in parallel...');
+        // The group is resolved BEFORE phase 1 now: identification is a
+        // section extraction against that group, so its id is an input to
+        // phase 1 rather than a phase-2 lookup. `POST /extraction/models`
+        // needed no id — it could only ever mean the one container 0016
+        // allowed — and it is retired (trees B6).
+        const modelParentEntityTypeId = await fetchModelParentEntityTypeId(templateId);
+
+          // PHASE 1: Identify the group's entries and extract top-level sections in parallel
+          console.warn('[useFullAIExtraction] Phase 1: Identifying entries and extracting top-level sections in parallel...');
         setProgress({
           stage: 'extracting_models',
         });
 
         // Run both extractions in parallel. allSettled (not all) so a
         // rejection in one branch does not orphan the other still-running
-        // request. Each sub-hook surfaces its OWN error toast, so a Phase-1
-        // failure is handled here and never reaches the catch below — that is
-        // what removes the double error toast (#102).
+        // request.
         const [modelsSettled, topLevelSettled] = await Promise.allSettled([
-          extractModelsHook({ projectId, articleId, templateId, runId }),
+          SectionExtractionService.extractSection({
+            projectId,
+            articleId,
+            templateId,
+            entityTypeId: modelParentEntityTypeId,
+            runId,
+          }),
           extractTopLevelSections({ projectId, articleId, templateId, runId }),
         ]);
 
@@ -177,21 +190,26 @@ export function useFullAIExtraction(options?: {
           topLevelSettled.status === 'fulfilled' ? topLevelSettled.value : null;
 
         if (modelsSettled.status === 'rejected') {
-          // Model extraction gates phases 2-3 and already toasted its own
-          // error. Refresh whatever the top-level phase produced, then stop —
-          // no second toast.
-          setError(
-            modelsSettled.reason instanceof Error
-              ? modelsSettled.reason.message
-              : String(modelsSettled.reason),
-          );
+          // Identification gates phases 2-3. The retired model hook toasted
+          // its own failure; the service does not, so the toast is raised
+          // here — one toast, from the branch that owns the failure, and the
+          // typed one when the error carries a code the helper recognises.
+          const reason = modelsSettled.reason;
+          const message = reason instanceof Error ? reason.message : String(reason);
+          const code =
+            typeof reason === 'object' && reason !== null && 'code' in reason
+              ? String((reason as {code: unknown}).code)
+              : null;
+          if (!showExtractionErrorToast(code, message)) {
+            toast.error(`${t('extraction', 'modelExtractionErrorTitle')}: ${message}`);
+          }
+          setError(message);
           if (options?.onSuccess) await options.onSuccess();
           setProgress(null);
           return;
         }
 
-        // PHASE 2: Fetch extracted models
-        const modelParentEntityTypeId = await fetchModelParentEntityTypeId(templateId);
+        // PHASE 2: Fetch the identified entries
         const modelsResult = await loadExtractedModels(articleId, modelParentEntityTypeId);
 
         if (!modelsResult.ok) {

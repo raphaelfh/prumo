@@ -342,18 +342,25 @@ async def test_child_entity_types_come_from_the_pinned_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_model_identification_uses_pinned_label_and_instruction(
+async def test_entry_identification_uses_pinned_label_and_instruction(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Model identification: the container label, entry noun, key field and
-    description come from the pinned tree and the template-level ✨
-    instruction (phase-A gap) leads the prompt."""
-    from app.services.model_extraction_service import ModelExtractionService
+    """Entry identification: the group label, entry noun, key field and
+    description come from the PINNED tree, and the template-level instruction
+    leads the prompt.
 
+    Was ``test_model_identification_uses_pinned_label_and_instruction``,
+    driving the retired ``ModelExtractionService._identify_models``. The
+    behaviour outlived the service — ``entry_group_extraction`` identifies
+    every repeating group the same way — so the guard moved rather than
+    retiring with the file that happened to hold it (trees B6). It now goes
+    through the PUBLIC seam (``extract_section``), which is what a caller
+    actually reaches.
+    """
     fx = await _coords(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
-    _project_id, _article_id, template_id, profile_id, _instance_id, field_a_id = fx
+    project_id, article_id, template_id, profile_id, _instance_id, field_a_id = fx
 
     entity_type_id = (
         await db_session.execute(
@@ -402,22 +409,24 @@ async def test_model_identification_uses_pinned_label_and_instruction(
         return output, LlmUsage()
 
     monkeypatch.setattr(
-        "app.services.model_extraction_service.extract_structured",
+        "app.services.entry_group_extraction.extract_structured",
         fake_extract_structured,
     )
-    monkeypatch.setattr(
-        "app.services.model_extraction_service.build_model",
-        lambda *_a, **_k: MagicMock(),
+
+    service = _service(db_session, profile_id)
+    await service.extract_section(
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        entity_type_id=entity_type_id,
+        run_id=run.id,
     )
 
-    service = ModelExtractionService(
-        db=db_session,
-        user_id=str(profile_id),
-        storage=MagicMock(),
-        trace_id="test-pinned-models",
+    assert "user_prompt" in captured, (
+        "identification never ran — the pinned section must repeat AND declare "
+        "an entry key, or extract_into_instances takes the singleton branch and "
+        "this test asserts nothing"
     )
-    await service._identify_models("ARTICLE", "gpt-test", run)
-
     assert "PINNED MODELS LABEL" in captured["user_prompt"]
     assert "identify every algorithm" in captured["user_prompt"]
     assert "return its pinned_key" in captured["user_prompt"]

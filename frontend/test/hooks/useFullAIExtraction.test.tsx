@@ -14,6 +14,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
+  // Phase 1 is a section extraction against the first root group (trees B6).
   extractModels: vi.fn(),
   extractTopLevelSections: vi.fn(),
   extractAllSectionsForAllModels: vi.fn(),
@@ -21,8 +22,8 @@ const h = vi.hoisted(() => ({
   modelsResult: { data: [] as Array<{ id: string; label: string }>, error: null as unknown },
 }));
 
-vi.mock('@/hooks/extraction/useModelExtraction', () => ({
-  useModelExtraction: () => ({ extractModels: h.extractModels }),
+vi.mock('@/services/sectionExtractionService', () => ({
+  SectionExtractionService: { extractSection: h.extractModels },
 }));
 vi.mock('@/hooks/extraction/useTopLevelSectionsExtraction', () => ({
   useTopLevelSectionsExtraction: () => ({ extractTopLevelSections: h.extractTopLevelSections }),
