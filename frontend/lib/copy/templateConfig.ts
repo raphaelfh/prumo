@@ -14,8 +14,8 @@ export const templateConfig = {
   addRepeatingGroup: 'Add repeating group…',
   addSectionDialogDesc: 'Create a custom section to extract project-specific data.',
   addSectionMenu: 'Add section',
-  cardinalityOncePerModel: 'Once per {{noun}}',
-  cardinalityRepeatsPerModel: 'Repeats per {{noun}}',
+  cardinalityOncePerEntry: 'Once per {{noun}}',
+  cardinalityRepeatsPerEntry: 'Repeats per {{noun}}',
   cardinalityRootInfo:
     'Single for data that appears once per article; multiple allows several instances (e.g. a list or table).',
   cardinalityRootMultipleHint: 'Multiple occurrences per article (e.g. Authors, Groups)',
@@ -272,7 +272,6 @@ export const templateConfig = {
   historyRestoreKept:
     '{{n}} item(s) could not be brought back because they hold recorded answers.',
   errors_restoreVersion: 'Could not restore that version',
-  inspectorGroupAlwaysRepeats: 'A group always repeats',
   inspectorGroupKindLine: 'Repeating group — reviewers add one entry per {{noun}}',
   inspectorInsideGroup: 'Inside {{group}}',
   inspectorPlacementLabel: 'Placement',
@@ -296,8 +295,8 @@ export const templateConfig = {
   moveDialogHeading: 'Sections',
   moveDialogPlaceholder: 'Move {{field}} to…',
   moveDialogTitle: 'Move field to a section',
-  newPerModelSection: 'New per-{{noun}} section',
-  perModelDialogDesc:
+  newPerGroupSection: 'New per-{{noun}} section',
+  perGroupDialogDesc:
     'Lives inside {{group}} — reviewers fill it once for each {{noun}}.',
   // Capitalized inspector variants — the extraction-namespace meta keys
   // ('repeats per article') are lowercase inline-meta styling.

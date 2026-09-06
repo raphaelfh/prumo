@@ -35,6 +35,10 @@ import {cn} from '@/lib/utils';
 
 import type {GridField, MoveTargetSection} from './templateTree';
 
+/** Literal classes indexed by depth — a computed `pl-[${n}]` is never
+ * compiled by Tailwind, so the list would render flat with no error. */
+const MOVE_TARGET_INDENT = ['', 'pl-6', 'pl-10', 'pl-14', 'pl-[72px]'] as const;
+
 export function MoveToSectionDialog({
   field,
   targets,
@@ -86,7 +90,7 @@ export function MoveToSectionDialog({
                       if (field) onMove(field, target.id);
                       onClose();
                     }}
-                    className={cn('text-xs', target.kind === 'groupChild' && 'pl-6')}
+                    className={cn('text-xs', MOVE_TARGET_INDENT[Math.min(target.depth, MOVE_TARGET_INDENT.length - 1)])}
                   >
                     {target.label}
                   </CommandItem>

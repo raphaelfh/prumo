@@ -49,7 +49,7 @@ import {stubStructuralHistory} from '@/test/helpers/structuralHistoryStub';
 const sectionActions: TemplateSectionActions = {
   onCommitRename: vi.fn(),
   onDelete: vi.fn(),
-  onAddPerModelSection: vi.fn(),
+  onAddPerGroupSection: vi.fn(),
 };
 
 const field = (id: string, entityTypeId: string, label: string, sortOrder: number) => ({

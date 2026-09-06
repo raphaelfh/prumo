@@ -444,7 +444,7 @@ function ConfigSurface({forceDiffOpen = false}: {forceDiffOpen?: boolean}) {
         sectionActions={{
           onCommitRename: vi.fn(),
           onDelete: vi.fn(),
-          onAddPerModelSection: vi.fn(),
+          onAddPerGroupSection: vi.fn(),
         }}
         onAddSection={vi.fn()}
         onAddGroup={vi.fn()}

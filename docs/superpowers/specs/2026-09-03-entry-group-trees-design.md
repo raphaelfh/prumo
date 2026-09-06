@@ -405,6 +405,18 @@ endpoint disappears.
    portable tests; e2e nested creation on the Spec A fixture project;
    `grep` for `role` in the touched packages at zero.
 
+   **Split in execution (2026-09-06).** B5 shipped as #827 — the schema,
+   the services, the exports' readers, the portable format, the seeds and
+   the run form. The **Config tab half is B5b** (plan:
+   `docs/superpowers/plans/2026-09-06-trees-b5b-config-tree.md`), because
+   §9 is its own ~18-file surface in `template-config/` and #827 was
+   already 113 files. The split is visible rather than silent:
+   `buildTemplateTree` is still the two-level builder 0016's CHECK
+   justified, so a grandchild renders nowhere on the Config tab until B5b
+   — and `templateTree.ts`'s header says exactly that. Everything that
+   WRITES the tree is depth-agnostic as of #827, and one promotion at the
+   end of the train means production never sees the gap.
+
    **Carried over from B2** (recorded here because this list, not B2's plan
    doc, is what B5's run reads):
    - `entry_hierarchy_service._materialize_singletons` is a FLAT loop.

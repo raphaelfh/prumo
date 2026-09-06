@@ -179,7 +179,7 @@ describe('AddSectionDialog — group mode (Add repeating group…)', () => {
 
 describe('AddSectionDialog — per-model mode (New per-{noun} section)', () => {
   const mode: AddSectionMode = {
-    kind: 'perModel',
+    kind: 'perGroup',
     parentId: 'grp',
     parentLabel: 'Prediction models',
     entryNoun: 'algorithm',

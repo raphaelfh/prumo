@@ -22,13 +22,12 @@
 
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
-type TemplateSectionKind = 'root' | 'group' | 'groupChild';
 
 /** Copy keys in the `extraction` namespace. */
 type TemplateSectionMetaKey =
   | 'sectionMetaRepeatingGroup'
   | 'sectionMetaRepeatsPerArticle'
-  | 'sectionMetaRepeatsPerModel';
+  | 'sectionMetaRepeatsPerEntry';
 
 /** Which haystack produced a search hit — drives the "· in AI instruction" hints. */
 export type TemplateMatchHint = 'label' | 'key' | 'description' | 'aiInstruction' | 'options';
@@ -146,19 +145,31 @@ export interface GridSection {
   id: string;
   label: string;
   key: string;
-  kind: TemplateSectionKind;
+  /** 0 for a root section, +1 per level of nesting. Unbounded since 0069
+   * dropped the CHECK that capped the tree at two levels. Replaces the
+   * three-way `kind`, together with `repeats` and `ownsChildren`: a
+   * section can now be a group AND a group's child at once, which the
+   * three kinds could not say. */
+  depth: number;
+  /** `cardinality === 'many'` — the section is filled once per ENTRY of
+   * itself, and so may own children and offers the add-child ghost. */
+  repeats: boolean;
+  ownsChildren: boolean;
   description: string | null;
   hasDescription: boolean;
   metaKeys: TemplateSectionMetaKey[];
-  /** Resolved entry noun for `{{noun}}` copy interpolation (B-8 D7): a
-   * group's own `entry_label ?? DEFAULT_ENTRY_NOUN`; a groupChild inherits
-   * the PARENT group's resolved noun; roots carry the fallback (unused but
-   * total). */
+  /** What ONE ENTRY OF THIS SECTION is called: `entry_label ??
+   * DEFAULT_ENTRY_NOUN`. Meaningful only when `repeats` — it names the
+   * scope this section opens ("New per-{{noun}} section"). */
   entryNoun: string;
-  /** The section's OWN `entry_label` — what one entry of THIS section is
-   * called (entry-group train: every repeating section may carry one, not
-   * only the group). Distinct from `entryNoun`, which for a groupChild is
-   * the parent group's noun ("repeats per model"). Null when unset. */
+  /** What one entry of the nearest REPEATING ANCESTOR is called — the
+   * scope this section sits IN ("repeats per {{noun}}"). Null at article
+   * scope. Was conflated into `entryNoun`, which two levels could get
+   * away with because a section was never both a group and a child. */
+  scopeNoun: string | null;
+  /** The section's OWN `entry_label`, unresolved — null when unset, which
+   * the inspector renders as an empty noun field rather than the
+   * fallback. */
   ownEntryLabel: string | null;
   /** Raw cardinality ('one' | 'many' on the wire, absent → 'one') — the
    * inspector's Repeats affordances read and edit it (B-8 T6). */
@@ -186,24 +197,24 @@ export interface FilteredTemplateTree {
 export interface MoveTargetSection {
   id: string;
   label: string;
-  kind: TemplateSectionKind;
+  /** Indents the option in the combobox — the list is flat, so depth is
+   * the only thing that still shows where a destination sits. */
+  depth: number;
   fieldCount: number;
 }
 
-/** Every section as a move destination, roots and children in tree
- * order — fields carry no placement constraints, so all are legal. */
+/** Every section as a move destination, in tree order (a section
+ * immediately followed by its whole subtree) — fields carry no placement
+ * constraints, so all are legal. Recursive since 0069: a two-level
+ * flatten silently dropped every grandchild from the picker, so a field
+ * could not be moved INTO one. */
 export function deriveMoveTargets(sections: GridSection[]): MoveTargetSection[] {
-  return sections.flatMap((section) =>
-    [section, ...section.children].map(({id, label, kind, fieldCount}) => ({
-      id,
-      label,
-      kind,
-      fieldCount,
-    })),
-  );
+  return sections.flatMap((section) => [
+    {id: section.id, label: section.label, depth: section.depth, fieldCount: section.fieldCount},
+    ...deriveMoveTargets(section.children),
+  ]);
 }
 
-/** Case- and diacritic-insensitive fold, applied to BOTH sides of a match. */
 export function normalizeForSearch(value: string): string {
   return value
     .normalize('NFD')
@@ -245,36 +256,32 @@ function toGridField(input: TemplateFieldInput): GridField {
   };
 }
 
-function metaKeysFor(
-  kind: TemplateSectionKind,
-  cardinality: string | null | undefined,
-): TemplateSectionMetaKey[] {
-  // Only the non-default is labelled: "one per article" is the norm and
-  // stays silent, so the eye lands on the sections that behave differently.
-  if (kind === 'group') return ['sectionMetaRepeatingGroup'];
-  if (cardinality !== CARDINALITY_MANY) return [];
-  return kind === 'groupChild'
-    ? ['sectionMetaRepeatsPerModel']
-    : ['sectionMetaRepeatsPerArticle'];
-}
-
 function toGridSection(
   entityType: TemplateEntityTypeInput,
-  kind: TemplateSectionKind,
-  entryNoun: string,
-  fields: GridField[],
-  children: GridSection[],
+  node: {
+    depth: number;
+    repeats: boolean;
+    entryNoun: string;
+    scopeNoun: string | null;
+    fields: GridField[];
+    children: GridSection[];
+  },
 ): GridSection {
   const description = entityType.description?.trim() ? entityType.description : null;
+  const {depth, repeats, entryNoun, scopeNoun, fields, children} = node;
+  const ownsChildren = children.length > 0;
   return {
     id: entityType.id,
     label: entityType.label ?? entityType.name,
     key: entityType.name,
-    kind,
+    depth,
+    repeats,
+    ownsChildren,
     description,
     hasDescription: description !== null,
-    metaKeys: metaKeysFor(kind, entityType.cardinality),
+    metaKeys: metaKeysFor({repeats, ownsChildren, scopeNoun}),
     entryNoun,
+    scopeNoun,
     ownEntryLabel: entityType.entry_label ?? null,
     cardinality: entityType.cardinality ?? 'one',
     fields,
@@ -285,12 +292,31 @@ function toGridSection(
   };
 }
 
+function metaKeysFor(
+  section: {repeats: boolean; ownsChildren: boolean; scopeNoun: string | null},
+): TemplateSectionMetaKey[] {
+  // Only the non-default is labelled: "one per article" is the norm and
+  // stays silent, so the eye lands on the sections that behave differently.
+  if (section.repeats && section.ownsChildren) return ['sectionMetaRepeatingGroup'];
+  if (!section.repeats) return [];
+  // A repeating section INSIDE another entry repeats per that entry; one
+  // at article scope repeats per article. Keyed on the scope, not on a
+  // kind — since 0069 a section can be both a group and a child.
+  return section.scopeNoun !== null
+    ? ['sectionMetaRepeatsPerEntry']
+    : ['sectionMetaRepeatsPerArticle'];
+}
+
 /**
- * Build the ordered two-level tree the grid renders.
+ * Build the ordered tree the grid renders, at any depth.
  *
  * A child whose parent is missing from the input is surfaced as a root
  * rather than dropped — losing a section silently would be worse than
- * showing it in the wrong place.
+ * showing it in the wrong place. A parent CYCLE is salvaged the same way:
+ * its members are unreachable from any real root, so the first one left
+ * unvisited is surfaced as a root and `seen` stops the walk when it comes
+ * back around. Neither is reachable through the API; a builder that hangs
+ * the Config tab is worse than one that shows an odd tree.
  */
 export function buildTemplateTree(
   entityTypes: TemplateEntityTypeInput[],
@@ -319,32 +345,37 @@ export function buildTemplateTree(
     }
   }
 
-  return roots.map((entityType) => {
-    // A group is a section that REPEATS and owns children (spec §11); was
-    // `role === 'model_container'`, which could only ever be the one root
-    // container 0016 allowed.
-    const isGroup =
-      entityType.cardinality === 'many' && (childrenByParent.get(entityType.id)?.length ?? 0) > 0;
-    // D7: the group resolves its own noun; children inherit the PARENT
-    // group's resolved value (their own entry_label is never consulted).
-    const entryNoun = (isGroup ? entityType.entry_label : null) ?? DEFAULT_ENTRY_NOUN;
-    const children = (childrenByParent.get(entityType.id) ?? []).map((child) =>
-      toGridSection(
-        child,
-        'groupChild',
-        entryNoun,
-        fieldsByEntityType.get(child.id) ?? [],
-        [],
-      ),
-    );
-    return toGridSection(
-      entityType,
-      isGroup ? 'group' : 'root',
+  const seen = new Set<string>();
+
+  const build = (
+    entityType: TemplateEntityTypeInput,
+    depth: number,
+    scopeNoun: string | null,
+  ): GridSection => {
+    seen.add(entityType.id);
+    const repeats = entityType.cardinality === CARDINALITY_MANY;
+    const entryNoun = entityType.entry_label ?? DEFAULT_ENTRY_NOUN;
+    // A section's children sit inside ONE ENTRY of it when it repeats;
+    // otherwise they stay in whatever scope it is in.
+    const childScope = repeats ? entryNoun : scopeNoun;
+    const children = (childrenByParent.get(entityType.id) ?? [])
+      .filter((child) => !seen.has(child.id))
+      .map((child) => build(child, depth + 1, childScope));
+    return toGridSection(entityType, {
+      depth,
+      repeats,
       entryNoun,
-      fieldsByEntityType.get(entityType.id) ?? [],
+      scopeNoun,
+      fields: fieldsByEntityType.get(entityType.id) ?? [],
       children,
-    );
-  });
+    });
+  };
+
+  const tree = roots.map((entityType) => build(entityType, 0, null));
+  for (const entityType of ordered) {
+    if (!seen.has(entityType.id)) tree.push(build(entityType, 0, null));
+  }
+  return tree;
 }
 
 function fieldMatchHint(field: GridField, terms: string[]): TemplateMatchHint | null {
@@ -383,10 +414,13 @@ function sectionSelfMatches(section: GridSection, terms: string[]): boolean {
 /** Every section id in the tree, roots and their children. */
 export function collectSectionIds(sections: GridSection[]): Set<string> {
   const ids = new Set<string>();
-  for (const section of sections) {
-    ids.add(section.id);
-    for (const child of section.children) ids.add(child.id);
-  }
+  const walk = (nodes: GridSection[]): void => {
+    for (const section of nodes) {
+      ids.add(section.id);
+      walk(section.children);
+    }
+  };
+  walk(sections);
   return ids;
 }
 
@@ -394,22 +428,37 @@ export function findField(sections: GridSection[], fieldId: string): GridField |
   for (const section of sections) {
     const own = section.fields.find((f) => f.id === fieldId);
     if (own) return own;
-    for (const child of section.children) {
-      const nested = child.fields.find((f) => f.id === fieldId);
-      if (nested) return nested;
-    }
+    const nested = findField(section.children, fieldId);
+    if (nested) return nested;
   }
   return null;
 }
 
+/** Recursive since 0069: the two-level lookup this replaces returned null
+ * for a grandchild, so selecting one in the grid opened an empty
+ * inspector. */
 export function findSection(
   sections: GridSection[],
   sectionId: string,
 ): GridSection | null {
   for (const section of sections) {
     if (section.id === sectionId) return section;
-    const child = section.children.find((c) => c.id === sectionId);
-    if (child) return child;
+    const nested = findSection(section.children, sectionId);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+/** The section that owns `sectionId`, or null when it is a root. */
+export function findParentSection(
+  sections: GridSection[],
+  sectionId: string,
+  parent: GridSection | null = null,
+): GridSection | null {
+  for (const section of sections) {
+    if (section.id === sectionId) return parent;
+    const found = findParentSection(section.children, sectionId, section);
+    if (found) return found;
   }
   return null;
 }
