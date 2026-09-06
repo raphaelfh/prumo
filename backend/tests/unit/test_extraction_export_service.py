@@ -17,7 +17,6 @@ Coverage targets (in priority order):
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
@@ -142,6 +141,7 @@ def _make_instance(
     inst.article_id = article_id or uuid4()
     inst.entity_type_id = entity_type_id or uuid4()
     inst.template_id = template_id or uuid4()
+    inst.parent_instance_id = None
     inst.sort_order = 0
     return inst
 
@@ -509,12 +509,6 @@ class TestResolveArticlesForConsensus:
         svc._load_instances_for_runs = AsyncMock(
             return_value={run.id: [inst_study, inst_model1, inst_model2]}
         )
-        svc._load_entity_type_role_map = AsyncMock(
-            return_value={
-                study_entity_id: ExtractionEntityRole.STUDY_SECTION,
-                model_entity_id: ExtractionEntityRole.MODEL_SECTION,
-            }
-        )
         svc._load_article_headers = AsyncMock(return_value={aid: "Test, 2023"})
 
         articles, omitted = await svc._resolve_articles_for_consensus(
@@ -525,8 +519,13 @@ class TestResolveArticlesForConsensus:
 
         assert len(articles) == 1
         desc = articles[0]
-        assert len(desc.model_instances) == 2
-        assert study_entity_id in desc.section_instances
+        # Grouped by (entity_type, parent) rather than partitioned by role,
+        # so the two model instances are one key and the study one another.
+        # Compared as SETS: both fixtures share `sort_order=0`, so
+        # `build_entries` orders them by id — random per run. The ordering
+        # contract itself is pinned in test_extraction_export_entries_map.py.
+        assert set(desc.entries[(model_entity_id, None)]) == {inst_model1.id, inst_model2.id}
+        assert desc.entries[(study_entity_id, None)] == (inst_study.id,)
         assert omitted == {}
 
 
@@ -737,7 +736,7 @@ class TestLoadAiProposalRows:
         self,
         run_id: UUID | None = None,
         article_id: UUID | None = None,
-        model_instances: tuple[UUID, ...] = (),
+        group_entries: dict[UUID, tuple[UUID, ...]] | None = None,
         study_instances: dict | None = None,
     ) -> ArticleDescriptor:
         return ArticleDescriptor(
@@ -745,10 +744,12 @@ class TestLoadAiProposalRows:
             header_label="Test Article",
             run_id=run_id or uuid4(),
             version_id=None,
-            model_instances=model_instances,
             # Fan the one-instance-per-section shorthand out to the ordered
             # tuples ArticleDescriptor actually carries.
-            section_instances={sid: (iid,) for sid, iid in (study_instances or {}).items()},
+            entries={
+                **{(sid, None): (iid,) for sid, iid in (study_instances or {}).items()},
+                **{(sid, None): ids for sid, ids in (group_entries or {}).items()},
+            },
         )
 
     @pytest.mark.asyncio
@@ -761,8 +762,7 @@ class TestLoadAiProposalRows:
                 header_label="No Run",
                 run_id=None,
                 version_id=None,
-                model_instances=(),
-                section_instances={},
+                entries={},
             ),
         )
         result = await svc._load_ai_proposal_rows(
@@ -821,7 +821,6 @@ class TestLoadAiProposalRows:
         section_with_id = SectionDescriptor(
             entity_type_id=entity_type_id,
             label="Demographics",
-            role=ExtractionEntityRole.STUDY_SECTION,
             parent_entity_type_id=None,
             fields=(
                 FieldDescriptor(
@@ -2069,30 +2068,6 @@ class TestLoadInstancesForRuns:
 # ===========================================================================
 
 
-class TestLoadEntityTypeRoleMap:
-    @pytest.mark.asyncio
-    async def test_returns_correct_role_map(self):
-        """Rows are mapped to entity_type_id → ExtractionEntityRole."""
-        svc = _make_service()
-        eid = uuid4()
-        # B-3a: no active snapshot version → the live-table branch runs and
-        # every original assertion below is preserved unchanged.
-        svc._template_versions_repo = MagicMock(
-            return_value=SimpleNamespace(get_active=AsyncMock(return_value=None))
-        )
-        svc.db.execute = AsyncMock(
-            return_value=_rows_result([(eid, ExtractionEntityRole.STUDY_SECTION.value)])
-        )
-
-        result = await svc._load_entity_type_role_map(uuid4())
-        assert result[eid] == ExtractionEntityRole.STUDY_SECTION
-
-
-# ===========================================================================
-# Service: _load_article_headers
-# ===========================================================================
-
-
 class TestLoadArticleHeaders:
     @pytest.mark.asyncio
     async def test_empty_article_ids_returns_empty(self):
@@ -2472,16 +2447,16 @@ class TestListReviewersForRuns:
 
 
 # ===========================================================================
-# Service: _load_ai_proposal_rows — model_instances index coverage
+# Service: _load_ai_proposal_rows — instance index coverage
 # ===========================================================================
 
 
 class TestAiProposalRowsModelInstances:
-    """Tests for the model_instances indexing path in _load_ai_proposal_rows."""
+    """Tests for the instance indexing path in _load_ai_proposal_rows."""
 
     @pytest.mark.asyncio
     async def test_model_instance_index_assigned_correctly(self):
-        """model_instances are indexed 1-based in instance_index_by_id."""
+        """Sibling entries are indexed 1-based in instance_index_by_id."""
         svc = _make_service()
         run_id = uuid4()
         article_id = uuid4()
@@ -2498,8 +2473,7 @@ class TestAiProposalRowsModelInstances:
             header_label="Test Article",
             run_id=run_id,
             version_id=None,
-            model_instances=(model_instance_id1, model_instance_id2),
-            section_instances={},
+            entries={(entity_type_id, None): (model_instance_id1, model_instance_id2)},
         )
 
         proposal_row = (proposal_id, run_id, model_instance_id1, field_id, "v", None, None, ts)

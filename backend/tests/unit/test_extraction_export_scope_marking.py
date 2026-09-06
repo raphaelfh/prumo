@@ -19,7 +19,6 @@ from uuid import UUID, uuid4
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.exports.extraction_scope_marking import mark_out_of_scope_values
@@ -74,12 +73,10 @@ def _section(
     fields: tuple[FieldDescriptor, ...],
     *,
     cardinality: ExtractionCardinality = ExtractionCardinality.ONE,
-    role: ExtractionEntityRole = ExtractionEntityRole.STUDY_SECTION,
 ) -> SectionDescriptor:
     return SectionDescriptor(
         entity_type_id=entity_type_id,
         label=name.replace("_", " ").title(),
-        role=role,
         parent_entity_type_id=None,
         fields=fields,
         cardinality=cardinality,
@@ -114,11 +111,10 @@ def _article(
         header_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={
-            _SCOPE_SECTION: (scope_inst,),
-            _DEV_SECTION: (dev_inst,),
-            _EVAL_SECTION: eval_insts,
+        entries={
+            (_SCOPE_SECTION, None): (scope_inst,),
+            (_DEV_SECTION, None): (dev_inst,),
+            (_EVAL_SECTION, None): eval_insts,
         },
     )
 
@@ -268,8 +264,7 @@ def test_an_article_with_no_run_is_skipped() -> None:
         header_label="No run",
         run_id=None,
         version_id=None,
-        model_instances=(),
-        section_instances={},
+        entries={},
     )
     value_map: dict[tuple[Any, ...], Any] = {}
 

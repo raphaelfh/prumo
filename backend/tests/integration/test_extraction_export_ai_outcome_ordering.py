@@ -26,7 +26,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
-    ExtractionEntityRole,
     ExtractionFieldType,
     ExtractionRun,
     TemplateKind,
@@ -183,13 +182,11 @@ async def test_ai_superseded_outcome_is_deterministic_on_equal_created_at(
         header_label="Article",
         run_id=run.id,
         version_id=None,
-        model_instances=(),
-        section_instances={entity_type_id: (instance_id,)},
+        entries={(entity_type_id, None): (instance_id,)},
     )
     section = SectionDescriptor(
         entity_type_id=entity_type_id,
         label="Section",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(
             FieldDescriptor(

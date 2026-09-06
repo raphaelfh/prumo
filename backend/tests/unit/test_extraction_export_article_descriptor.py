@@ -15,8 +15,7 @@ def test_article_descriptor_carries_version_id_and_ordered_instances() -> None:
         header_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=uuid4(),
-        model_instances=(),
-        section_instances={section_a: (i1, i2, i3)},
+        entries={(section_a, None): (i1, i2, i3)},
     )
-    assert a.section_instances[section_a] == (i1, i2, i3)
+    assert a.entries[(section_a, None)] == (i1, i2, i3)
     assert a.version_id is not None

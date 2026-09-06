@@ -13,7 +13,10 @@ from uuid import UUID, uuid4
 import pytest
 from openpyxl import load_workbook
 
-from app.models.extraction import ExtractionEntityRole, ExtractionFieldType
+from app.models.extraction import (
+    ExtractionCardinality,
+    ExtractionFieldType,
+)
 from app.services.exports.extraction.workbook import build_workbook
 from app.services.extraction_export_service import (
     ArticleDescriptor,
@@ -40,18 +43,18 @@ def _field(label: str, ftype: ExtractionFieldType) -> FieldDescriptor:
 
 def _section(
     label: str,
-    role: ExtractionEntityRole,
     fields: list[FieldDescriptor] | None = None,
     parent: UUID | None = None,
+    cardinality: ExtractionCardinality = ExtractionCardinality.ONE,
 ) -> SectionDescriptor:
     eid = uuid4()
     f = tuple(fields or ())
     return SectionDescriptor(
         entity_type_id=eid,
         label=label,
-        role=role,
         parent_entity_type_id=parent,
         fields=f,
+        cardinality=cardinality,
     )
 
 
@@ -59,7 +62,7 @@ def _article(
     header: str,
     *,
     study_instances: dict[UUID, UUID],
-    model_instances: tuple[UUID, ...] = (),
+    group_entries: dict[UUID, tuple[UUID, ...]] | None = None,
     run_id: UUID | None = None,
 ) -> ArticleDescriptor:
     return ArticleDescriptor(
@@ -67,10 +70,12 @@ def _article(
         header_label=header,
         run_id=run_id if run_id is not None else uuid4(),
         version_id=None,
-        model_instances=model_instances,
         # Fan the one-instance-per-section shorthand out to the ordered
         # tuples ArticleDescriptor actually carries.
-        section_instances={sid: (iid,) for sid, iid in study_instances.items()},
+        entries={
+            **{(sid, None): (iid,) for sid, iid in study_instances.items()},
+            **{(sid, None): ids for sid, ids in (group_entries or {}).items()},
+        },
     )
 
 
@@ -155,7 +160,7 @@ def test_single_article_single_section_single_field_consensus():
     # The builder now owns hierarchical numbering (§9), so fixtures carry the
     # bare labels and we assert on the builder-generated "1." / "1.1" prefixes.
     f = _field("Source of data", ExtractionFieldType.TEXT)
-    section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("Source of data", [f])
     inst_id = uuid4()
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
     field_id = section.fields[0].field_id
@@ -188,8 +193,15 @@ def test_multi_instance_article_repeats_study_section_values():
     # Two sections: one study_section ("Author"), one model_section ("Model perf").
     study_field = _field("Author", ExtractionFieldType.TEXT)
     model_field = _field("Modelling method", ExtractionFieldType.TEXT)
-    study = _section("Study", ExtractionEntityRole.STUDY_SECTION, [study_field])
-    model = _section("Model development", ExtractionEntityRole.MODEL_SECTION, [model_field])
+    study = _section("Study", [study_field])
+    # Was a MODEL_SECTION with no parent, which only fanned out because role
+    # was read before structure. The repeating root gives the same two
+    # sub-columns from a shape the schema can actually hold.
+    model = _section(
+        "Model development",
+        [model_field],
+        cardinality=ExtractionCardinality.MANY,
+    )
 
     study_inst = uuid4()
     model_inst_a = uuid4()
@@ -197,7 +209,7 @@ def test_multi_instance_article_repeats_study_section_values():
     article = _article(
         "Gaca, 2011",
         study_instances={study.entity_type_id: study_inst},
-        model_instances=(model_inst_a, model_inst_b),
+        group_entries={model.entity_type_id: (model_inst_a, model_inst_b)},
     )
     study_fid = study.fields[0].field_id
     model_fid = model.fields[0].field_id
@@ -252,7 +264,7 @@ def test_multi_instance_article_repeats_study_section_values():
 
 def test_section_header_rows_have_bold_font_and_grey_fill():
     f = _field("Source", ExtractionFieldType.TEXT)
-    section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("Source of data", [f])
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: uuid4()})
     data = build_workbook(_layout(sections=(section,), articles=(article,)))
     ws = _open(data)["CHARMS"]
@@ -287,7 +299,7 @@ def test_section_header_rows_have_bold_font_and_grey_fill():
 )
 def test_format_cell_per_field_type(ftype, raw_value, expected):
     f = _field("F", ftype)
-    section = _section("S", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("S", [f])
     inst = uuid4()
     article = _article("X", study_instances={section.entity_type_id: inst})
     data = build_workbook(
@@ -303,7 +315,7 @@ def test_format_cell_per_field_type(ftype, raw_value, expected):
 
 def test_none_value_renders_blank_cell():
     f = _field("F", ExtractionFieldType.TEXT)
-    section = _section("S", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("S", [f])
     article = _article("X", study_instances={section.entity_type_id: uuid4()})
     # No value in value_map → cell is blank.
     data = build_workbook(_layout(sections=(section,), articles=(article,)))
@@ -364,7 +376,7 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
     )
 
     f = _field("Source", ExtractionFieldType.TEXT)
-    section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("Source of data", [f])
     inst_id = uuid4()
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
     reviewer_a_id = _uuid4()
@@ -524,7 +536,6 @@ def test_workbook_emits_sheets_in_section4_order():
     """README → Summary → matrix → tidy tables → Data dictionary → Dropdown lists."""
     from app.models.extraction import (
         ExtractionCardinality,
-        ExtractionEntityRole,
         ExtractionFieldType,
     )
     from app.services.exports.extraction.workbook import build_workbook
@@ -547,7 +558,6 @@ def test_workbook_emits_sheets_in_section4_order():
     section = SectionDescriptor(
         entity_type_id=eid,
         label="Study",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(
             FieldDescriptor(
@@ -567,8 +577,7 @@ def test_workbook_emits_sheets_in_section4_order():
         header_label="Gaca, 2011",
         run_id=run,
         version_id=None,
-        model_instances=(),
-        section_instances={eid: (inst,)},
+        entries={(eid, None): (inst,)},
     )
     fm = FrontMatter(
         project_name="P",
