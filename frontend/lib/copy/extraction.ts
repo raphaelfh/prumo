@@ -114,8 +114,6 @@ export const extraction = {
     fullAIPartialTitle: 'Extraction partially complete',
     fullAIPartialTopLevelFailed: 'Prediction models were extracted, but study-level sections failed and were not saved. Re-run extraction to retry them.',
     fullAIErrorPrefix: 'Error in full AI extraction',
-    modelExtractionSuccessTitle: 'Extraction complete! {{n}} model(s) found and created.',
-    modelExtractionSuccessTokens: '{{n}} tokens used',
     noModelsFoundTitle: 'No models found',
     errors_loadExtractionData: 'Error loading data',
     errors_loadExtractedValues: 'Error loading extracted values',

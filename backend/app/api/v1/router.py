@@ -21,7 +21,6 @@ from app.api.v1.endpoints import (
     llm_endpoints,
     llm_engine,
     manager_review_visibility,
-    model_extraction,
     parser_settings,
     project_templates,
     section_extraction,
@@ -37,12 +36,6 @@ api_router.include_router(
     zotero_import.router,
     prefix="/zotero",
     tags=["Zotero Integration"],
-)
-
-api_router.include_router(
-    model_extraction.router,
-    prefix="/extraction/models",
-    tags=["Model Extraction"],
 )
 
 api_router.include_router(

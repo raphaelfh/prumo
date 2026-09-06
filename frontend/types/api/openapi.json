@@ -1502,54 +1502,6 @@
         "title": "ApiResponse[ManagerReviewVisibilityRead]",
         "type": "object"
       },
-      "ApiResponse_ModelExtractionResult_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ModelExtractionResult"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[ModelExtractionResult]",
-        "type": "object"
-      },
       "ApiResponse_OpenHITLSessionResponse_": {
         "properties": {
           "data": {
@@ -4132,36 +4084,6 @@
         "title": "CreateRunRequest",
         "type": "object"
       },
-      "CreatedModelInfo": {
-        "description": "One prediction-model instance created by model extraction.",
-        "properties": {
-          "instanceId": {
-            "title": "Instanceid",
-            "type": "string"
-          },
-          "modelName": {
-            "title": "Modelname",
-            "type": "string"
-          },
-          "modellingMethod": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Modellingmethod"
-          }
-        },
-        "required": [
-          "instanceId",
-          "modelName"
-        ],
-        "title": "CreatedModelInfo",
-        "type": "object"
-      },
       "DeleteAPIKeyResult": {
         "description": "Payload de ``DELETE /user-api-keys/{id}``.",
         "properties": {
@@ -6158,126 +6080,6 @@
           }
         },
         "title": "MarkReadyRequest",
-        "type": "object"
-      },
-      "ModelExtractionRequest": {
-        "additionalProperties": false,
-        "description": "Request for extraction de modelos de predicao.",
-        "properties": {
-          "articleId": {
-            "format": "uuid",
-            "title": "Articleid",
-            "type": "string"
-          },
-          "options": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ExtractionOptions"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "projectId": {
-            "format": "uuid",
-            "title": "Projectid",
-            "type": "string"
-          },
-          "runId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Runid"
-          },
-          "templateId": {
-            "format": "uuid",
-            "title": "Templateid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "projectId",
-          "articleId",
-          "templateId"
-        ],
-        "title": "ModelExtractionRequest",
-        "type": "object"
-      },
-      "ModelExtractionResult": {
-        "description": "Resultado da extraction de modelos.",
-        "properties": {
-          "childInstancesCreated": {
-            "title": "Childinstancescreated",
-            "type": "integer"
-          },
-          "extractionRunId": {
-            "title": "Extractionrunid",
-            "type": "string"
-          },
-          "metadata": {
-            "$ref": "#/components/schemas/ModelExtractionRunStats"
-          },
-          "modelsCreated": {
-            "items": {
-              "$ref": "#/components/schemas/CreatedModelInfo"
-            },
-            "title": "Modelscreated",
-            "type": "array"
-          },
-          "totalModels": {
-            "title": "Totalmodels",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "extractionRunId",
-          "modelsCreated",
-          "totalModels",
-          "childInstancesCreated",
-          "metadata"
-        ],
-        "title": "ModelExtractionResult",
-        "type": "object"
-      },
-      "ModelExtractionRunStats": {
-        "description": "Timing/token metadata attached to a model-extraction response.",
-        "properties": {
-          "duration": {
-            "title": "Duration",
-            "type": "integer"
-          },
-          "modelsFound": {
-            "title": "Modelsfound",
-            "type": "integer"
-          },
-          "tokensCompletion": {
-            "title": "Tokenscompletion",
-            "type": "integer"
-          },
-          "tokensPrompt": {
-            "title": "Tokensprompt",
-            "type": "integer"
-          },
-          "tokensTotal": {
-            "title": "Tokenstotal",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "duration",
-          "modelsFound",
-          "tokensPrompt",
-          "tokensCompletion",
-          "tokensTotal"
-        ],
-        "title": "ModelExtractionRunStats",
         "type": "object"
       },
       "OpaqueValueState": {
@@ -11592,53 +11394,6 @@
         "summary": "Rename or re-key one extraction instance",
         "tags": [
           "Extraction Instances"
-        ]
-      }
-    },
-    "/api/v1/extraction/models": {
-      "post": {
-        "description": "Identifica and extrai automaticamente modelos de predicao do article.",
-        "operationId": "extract_models_api_v1_extraction_models_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ModelExtractionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ModelExtractionResult_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Extrair modelos de predicao",
-        "tags": [
-          "Model Extraction"
         ]
       }
     },

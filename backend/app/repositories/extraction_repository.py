@@ -30,36 +30,6 @@ class ExtractionTemplateRepository(BaseRepository[ProjectExtractionTemplate]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, ProjectExtractionTemplate)
 
-    async def get_with_entity_types(
-        self,
-        template_id: UUID | str,
-    ) -> ProjectExtractionTemplate | None:
-        """
-        Fetch template with entity types loaded.
-
-        Args:
-            template_id: Template ID.
-
-        Returns:
-            Template with entity types or None.
-        """
-        if isinstance(template_id, str):
-            template_id = UUID(template_id)
-
-        query_start = perf_counter()
-        result = await self.db.execute(
-            select(ProjectExtractionTemplate)
-            .options(selectinload(ProjectExtractionTemplate.entity_types))
-            .where(ProjectExtractionTemplate.id == template_id)
-        )
-        logger.debug(
-            "repository_query_db_latency",
-            repository=self.__class__.__name__,
-            operation="get_with_entity_types",
-            db_duration_ms=(perf_counter() - query_start) * 1000,
-        )
-        return result.scalar_one_or_none()
-
 
 class GlobalTemplateRepository(BaseRepository[ExtractionTemplateGlobal]):
     """Repository for global extraction templates."""
@@ -103,87 +73,6 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
             db_duration_ms=(perf_counter() - query_start) * 1000,
         )
         return result.scalar_one_or_none()
-
-    async def get_root_group(
-        self,
-        template_id: UUID | str,
-        is_project_template: bool = True,
-    ) -> ExtractionEntityType | None:
-        """The template's FIRST root entry group, by sort order.
-
-        Replaces ``get_by_role('model_container', ...)``, which leaned on
-        0016's partial unique index to return at most one row. 0069 drops
-        that index — a template may hold several root groups — so this is
-        explicitly "the first", with an ORDER BY and a LIMIT rather than a
-        `scalar_one_or_none` that would now raise on a perfectly legal
-        template.
-
-        Its one caller is the model identification pipeline, which is
-        single-group by construction and retires in trees B6. Nothing new
-        should call this: a caller that wants "the groups" wants all of
-        them.
-        """
-        if isinstance(template_id, str):
-            template_id = UUID(template_id)
-
-        query = select(ExtractionEntityType).where(
-            ExtractionEntityType.parent_entity_type_id.is_(None),
-            ExtractionEntityType.cardinality == "many",
-        )
-        if is_project_template:
-            query = query.where(ExtractionEntityType.project_template_id == template_id)
-        else:
-            query = query.where(ExtractionEntityType.template_id == template_id)
-        query = query.order_by(ExtractionEntityType.sort_order, ExtractionEntityType.id).limit(1)
-
-        query_start = perf_counter()
-        result = await self.db.execute(query)
-        logger.debug(
-            "repository_query_db_latency",
-            repository=self.__class__.__name__,
-            operation="get_root_group",
-            db_duration_ms=(perf_counter() - query_start) * 1000,
-        )
-        return result.scalar_one_or_none()
-
-    async def get_children(
-        self,
-        parent_entity_type_id: UUID | str,
-        cardinality: str | None = None,
-    ) -> list[ExtractionEntityType]:
-        """
-        Fetch child entity types with eager loading of fields.
-
-        Args:
-            parent_entity_type_id: Parent entity type ID.
-            cardinality: Optional cardinality filter.
-
-        Returns:
-            List of child entity types with fields preloaded.
-        """
-        if isinstance(parent_entity_type_id, str):
-            parent_entity_type_id = UUID(parent_entity_type_id)
-
-        query = (
-            select(ExtractionEntityType)
-            .where(ExtractionEntityType.parent_entity_type_id == parent_entity_type_id)
-            .options(selectinload(ExtractionEntityType.fields))  # Eager load fields
-        )
-
-        if cardinality:
-            query = query.where(ExtractionEntityType.cardinality == cardinality)
-
-        query = query.order_by(ExtractionEntityType.sort_order)
-
-        query_start = perf_counter()
-        result = await self.db.execute(query)
-        logger.debug(
-            "repository_query_db_latency",
-            repository=self.__class__.__name__,
-            operation="get_children",
-            db_duration_ms=(perf_counter() - query_start) * 1000,
-        )
-        return list(result.scalars().all())
 
 
 class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
@@ -290,33 +179,3 @@ class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
             article_id=run.article_id,
             template_id=run.template_id,
         )
-
-    async def get_children(
-        self,
-        parent_instance_id: UUID | str,
-    ) -> list[ExtractionInstance]:
-        """
-        List child instances.
-
-        Args:
-            parent_instance_id: Parent instance ID.
-
-        Returns:
-            Child instance list.
-        """
-        if isinstance(parent_instance_id, str):
-            parent_instance_id = UUID(parent_instance_id)
-
-        query_start = perf_counter()
-        result = await self.db.execute(
-            select(ExtractionInstance)
-            .where(ExtractionInstance.parent_instance_id == parent_instance_id)
-            .order_by(ExtractionInstance.sort_order)
-        )
-        logger.debug(
-            "repository_query_db_latency",
-            repository=self.__class__.__name__,
-            operation="get_children",
-            db_duration_ms=(perf_counter() - query_start) * 1000,
-        )
-        return list(result.scalars().all())

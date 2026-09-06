@@ -53,18 +53,20 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
 
   // Per-group AI actions. §8 puts "Identify {noun}s with AI" and "Extract all
   // sections for this/every {noun}" on EVERY group's selector, so the hook
-  // instantiates per section rather than once at the form. `onRefreshModels`
-  // collapsed into `onRefreshInstances`: it only ever re-ran
-  // `useModelManagement`'s load, and there is no load any more.
+  // instantiates per section rather than once at the form — and now carries
+  // the coordinate that makes that true: identification targets THIS group
+  // under THIS parent entry, not the one container the retired endpoint
+  // could name.
   const ai = useExtractionFormAIActions({
     projectId: form.projectId,
     articleId: form.articleId,
     templateId: form.templateId,
+    entityTypeId: group.id,
+    parentInstanceId,
     runId: form.runId,
     sections: children,
     activeModelId: activeEntryId,
     models: entryCards,
-    onRefreshModels: form.onRefreshInstances,
     onRefreshInstances: form.onRefreshInstances,
     onExtractionComplete: form.onExtractionComplete,
   });
@@ -125,10 +127,10 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
         onAddEntry={() => form.onAddEntry(group.id, parentInstanceId)}
         onRemoveEntry={form.onOpenRemoveDialog}
         onRenameEntry={form.onOpenRenameDialog}
-        onIdentifyEntries={ai.handleExtractModels}
+        onIdentifyEntries={ai.handleIdentifyEntries}
         onExtractAllSections={activeEntryId ? ai.handleExtractAllSections : undefined}
         onExtractAllSectionsForAllEntries={ai.handleExtractAllSectionsForAllModels}
-        identifying={ai.extractingModels}
+        identifying={ai.identifying}
         extractingAllSections={ai.extractingAllSections}
         extractingAllSectionsForAllEntries={ai.extractingAllSectionsForAllModels}
         readOnly={form.readOnly}

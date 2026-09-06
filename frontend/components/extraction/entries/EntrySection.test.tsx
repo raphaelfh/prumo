@@ -19,6 +19,12 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {auth: {getSession: async () => ({data: {session: null}})}},
 }));
 
+const extractSectionAsync = vi.fn(async () => ({ok: true as const, data: {jobId: 'job-1'}}));
+vi.mock('@/services/sectionExtractionService', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  extractSectionAsync: (...args: unknown[]) => extractSectionAsync(...(args as [])),
+}));
+
 function et(over: Record<string, unknown>): ExtractionEntityTypeWithFields {
   return {
     id: 'x',
@@ -209,5 +215,51 @@ describe('EntrySection — React Compiler hazard', () => {
     );
 
     expect(screen.getByText('Hypertension')).toBeInTheDocument();
+  });
+});
+
+describe('EntrySection — per-group Identify (trees B6)', () => {
+  // 0069 makes a nested group that OWNS children representable, and that is
+  // the only shape where the bug is visible: the selector (and so the
+  // Identify control) renders on a group WITH children.
+  const NESTED_CHILD = et({
+    id: 'et-pred-detail',
+    name: 'predictor_detail',
+    label: 'Predictor Detail',
+    parent_entity_type_id: 'et-pred',
+  });
+  const DEEP_INSTANCES = [
+    ...INSTANCES,
+    inst('pd-a', 'et-pred-detail', 'p-a', 'Age detail'),
+  ];
+
+  it('targets the group it was clicked on, not the template model container', async () => {
+    // The bug: `onIdentifyEntries` called the model-container-only endpoint,
+    // which takes no entity type — so on the NESTED group it identified the
+    // ROOT group's entries. EntrySection renders once per group, so the
+    // handler has to carry the group it belongs to.
+    extractSectionAsync.mockClear();
+    renderSection({
+      entityTypes: [GROUP, DEV, PREDICTORS, NESTED_CHILD],
+      instances: DEEP_INSTANCES,
+    });
+
+    // The first model is active by default, which is what renders
+    // `final_predictors` beneath it. Scope to the NESTED group's own block —
+    // the root group has an identically-shaped control.
+    const nested = screen.getByText('Final Predictors').closest('[class*="scroll-mt-4"]');
+    await userEvent.click(
+      within(nested as HTMLElement).getByRole('button', {
+        name: 'Extract predictor entries automatically with AI',
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole('menuitem', {name: 'Extract predictor entries only'}),
+    );
+
+    expect(extractSectionAsync).toHaveBeenCalledTimes(1);
+    expect(extractSectionAsync).toHaveBeenCalledWith(
+      expect.objectContaining({entityTypeId: 'et-pred', parentInstanceId: 'm-a'}),
+    );
   });
 });

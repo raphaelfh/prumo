@@ -38,9 +38,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.f
 vi.mock('@/hooks/extraction/useJustUpdatedValue', () => ({ useJustUpdatedValue: () => false }));
 
 // ExtractionFormView / SectionAccordion side-effect hooks — no-ops in tests.
-vi.mock('@/hooks/extraction/useModelExtraction', () => ({
-  useModelExtraction: () => ({ extractModels: vi.fn(), loading: false }),
-}));
+
 vi.mock('@/hooks/extraction/useBatchSectionExtractionChunked', () => ({
   useBatchSectionExtractionChunked: () => ({ extractAllSections: vi.fn(), loading: false, progress: null }),
 }));
