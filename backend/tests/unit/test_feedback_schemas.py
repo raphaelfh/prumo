@@ -39,6 +39,26 @@ def test_attachment_mime_allowlist() -> None:
         FeedbackAttachmentIn(kind="image", storage_key="k", content_type="application/pdf")
 
 
+@pytest.mark.parametrize(
+    "kind,content_type",
+    [
+        ("image", "image/png"),
+        ("image", "image/jpeg"),
+        ("image", "image/gif"),
+        ("video", "video/mp4"),
+        ("video", "video/webm"),
+        ("video", "video/quicktime"),
+    ],
+)
+def test_attachment_accepts_every_pickable_format(kind: str, content_type: str) -> None:
+    """The dialog attaches a file from disk, so the ordinary camera and
+    screen-recorder formats must pass — not just what getDisplayMedia used to
+    produce. Mirrors frontend/lib/feedback-media.ts and the bucket allow-list.
+    """
+    att = FeedbackAttachmentIn(kind=kind, storage_key="k", content_type=content_type)
+    assert att.content_type == content_type
+
+
 def test_too_many_attachments_rejected() -> None:
     att = {"kind": "image", "storage_key": "k", "content_type": "image/png"}
     with pytest.raises(ValidationError):

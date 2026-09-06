@@ -3,11 +3,12 @@ import { Button, type ButtonProps } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 /**
- * The one header action button: a 28px ghost icon button with a 44px touch
- * target (the `icon` size), muted-foreground default, and the shared header
- * hover/focus treatment. Every header affordance — notifications, feedback,
- * help, the kebab, the panel toggles — composes this so they stay identical
- * in size, hover, and focus across the run header and the Topbar.
+ * The one chrome icon button: a 28px ghost icon button with a 44px touch
+ * target (the `icon` size), muted-foreground default, and the shared
+ * hover/focus treatment. Every chrome affordance — notifications, help, the
+ * kebab, the panel toggles, the sidebar-footer bug report — composes this so
+ * they stay identical in size, hover, and focus across the run header, the
+ * Topbar, and the sidebar footer.
  *
  * Icons auto-size to 16px (Button base `[&_svg]:size-4`); pass lucide icons with
  * `strokeWidth={1.5}` for the frontend-ux icon weight. Usable as a Radix trigger

@@ -1,6 +1,11 @@
 /**
  * UI copy for navigation. English only.
  */
+
+// Spelled out by both the attachment hint and its wrong-type error, so the
+// accepted formats are written once rather than drifting between the two.
+const FEEDBACK_FORMATS = 'PNG, JPEG, WebP, GIF, MP4, WebM or MOV';
+
 export const navigation = {
     notifications: 'Notifications',
     notificationsAriaBackgroundActive:
@@ -67,12 +72,14 @@ export const navigation = {
     feedbackSubmitting: 'Sending…',
     feedbackSummaryLabel: 'Summary (optional)',
     feedbackSummaryPlaceholder: 'One-line title',
-    feedbackAttachScreenshot: 'Attach screenshot',
-    feedbackRecordClip: 'Record clip',
-    feedbackCaptureRemove: 'Remove',
-    feedbackCaptureNotice: 'Captures are shared with the Prumo team in Linear.',
-    feedbackCaptureFailed: 'Capture was cancelled or failed.',
-    feedbackCaptureUnsupported: 'Screen capture is not supported in this browser.',
+    feedbackAttachLabel: 'Attachment (optional)',
+    feedbackAttachChoose: 'Attach image or video',
+    feedbackAttachNone: 'No file selected',
+    feedbackAttachRemove: 'Remove',
+    feedbackAttachNotice: `${FEEDBACK_FORMATS} — images up to 10 MB, videos up to 50 MB. Attachments are shared with the Prumo team in Linear.`,
+    feedbackAttachWrongType: `That file type is not supported. Attach a ${FEEDBACK_FORMATS} file.`,
+    feedbackAttachTooLarge: 'That file is too large. Images must be under 10 MB and videos under 50 MB.',
+    feedbackAttachUploadFailed: 'Could not upload the attachment.',
     feedbackSuccessSent: 'Thanks — your report was sent.',
     viewsExtractionAria: 'Extraction views',
     viewsQualityAria: 'Quality assessment views',

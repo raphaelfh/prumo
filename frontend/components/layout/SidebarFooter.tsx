@@ -1,7 +1,8 @@
 /**
- * Sidebar footer: user menu (left, fills) + theme toggle (right).
+ * Sidebar footer: user menu (left, fills) + feedback + theme toggle (right).
  */
 import React from 'react';
+import {FeedbackButton} from '@/components/feedback/FeedbackButton';
 import {ThemeToggle} from './ThemeToggle';
 import {UserMenu} from './UserMenu';
 
@@ -10,7 +11,7 @@ export const SidebarFooter: React.FC = () => (
     <div className="flex-1 min-w-0">
       <UserMenu />
     </div>
+    <FeedbackButton />
     <ThemeToggle />
   </div>
 );
-
