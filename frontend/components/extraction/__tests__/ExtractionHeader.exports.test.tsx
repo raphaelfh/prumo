@@ -35,16 +35,18 @@ const base = {
 };
 
 describe('ExtractionHeader (post legacy-cascade)', () => {
-  it('folds feedback + help into the kebab at narrow header widths', async () => {
-    // The full-screen run page has no global Topbar, so notifications/feedback/
-    // help moved into the run header. Feedback + help are inline when the header
-    // is wide and fold into the kebab when narrow (Utility/useHeaderCompact). In
-    // jsdom getBoundingClientRect is zero-width, so the header reads as narrow
-    // here and the menu always renders with the folded items.
+  it('folds help into the kebab at narrow header widths, and offers no feedback item', async () => {
+    // The full-screen run page has no global Topbar, so notifications/help moved
+    // into the run header. Help is inline when the header is wide and folds into
+    // the kebab when narrow (Utility/useHeaderCompact). In jsdom
+    // getBoundingClientRect is zero-width, so the header reads as narrow here and
+    // the menu always renders with the folded item. Feedback is NOT here: the bug
+    // report has one home, the sidebar footer, reached on this screen by opening
+    // the collapsed sidebar (⌘B).
     render(<MemoryRouter><ExtractionHeader {...base} /></MemoryRouter>);
     await userEvent.click(screen.getByRole('button', { name: /more/i }));
-    expect(screen.getByRole('menuitem', { name: /send feedback/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /help and shortcuts/i })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /send feedback/i })).not.toBeInTheDocument();
   });
 
   it('renders the More menu (without an Export Data item) when it has items', async () => {

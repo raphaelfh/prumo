@@ -10,7 +10,6 @@ import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/compon
 import {useUserProfile} from '@/hooks/useNavigation';
 import {SidebarContext} from '@/contexts/SidebarContext';
 import {ProjectContext} from '@/contexts/ProjectContext';
-import {FeedbackButton} from '@/components/feedback/FeedbackButton';
 import {HeaderShell} from '@/components/layout/HeaderShell';
 import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
 import {useScrolled} from '@/components/layout/useScrolled';
@@ -62,7 +61,6 @@ export const Topbar: React.FC<TopbarProps> = ({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="text-header-title font-medium text-foreground">{t('navigation', 'topbarBrand')}</span>
         </div>
-        <FeedbackButton />
       </HeaderShell>
     );
   }
@@ -136,10 +134,9 @@ export const Topbar: React.FC<TopbarProps> = ({
         {isProjectPage && <SectionViewSwitcher />}
       </div>
 
-      {/* Right Section — Notifications + Feedback */}
+      {/* Right Section — Notifications */}
       <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
         <NotificationCenter />
-        <FeedbackButton />
       </div>
     </HeaderShell>
   );

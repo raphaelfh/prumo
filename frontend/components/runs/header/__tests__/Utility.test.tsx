@@ -16,14 +16,6 @@ vi.mock('@/components/navigation/NotificationCenter', () => ({
   NotificationCenter: () => <button type="button" aria-label="notif-stub" />,
 }));
 
-// FeedbackDialog imports the supabase storage client (same env-less-CI reason).
-// Stub it to a presence marker; the REAL FeedbackButton/Help still render so the
-// inline-vs-folded behaviour is exercised for real.
-vi.mock('@/components/feedback/FeedbackDialog', () => ({
-  FeedbackDialog: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="feedback-dialog" /> : null,
-}));
-
 // useHeaderCompact measures the nearest <header>'s width via getBoundingClientRect.
 // Drive that width to exercise the wide (inline) and narrow (folded) tiers.
 function setHeaderWidth(width: number) {
@@ -61,20 +53,21 @@ describe('run header Utility', () => {
   });
 
   describe('wide header (room for inline icons)', () => {
-    it('shows feedback + help inline, not in a kebab', () => {
+    it('shows help inline, with no feedback icon beside it, and no kebab', () => {
       setHeaderWidth(1200);
       renderUtility();
-      expect(screen.getByRole('button', { name: 'sendFeedback' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'helpButton' })).toBeInTheDocument();
+      // The bug report is not a run-header affordance; the kebab arrays below
+      // pin its absence from the menu, this pins it out of the inline cluster.
+      expect(screen.queryByRole('button', { name: 'sendFeedback' })).not.toBeInTheDocument();
       // No business items + everything inline => no kebab at all.
       expect(screen.queryByRole('button', { name: 'more' })).not.toBeInTheDocument();
     });
 
-    it('still shows business items in the kebab, without folding feedback/help into it', async () => {
+    it('still shows business items in the kebab, without folding help into it', async () => {
       setHeaderWidth(1200);
       renderUtility(<RunHeader.MenuItem onSelect={() => {}}>compareToggle</RunHeader.MenuItem>);
-      // Feedback + help stay inline.
-      expect(screen.getByRole('button', { name: 'sendFeedback' })).toBeInTheDocument();
+      // Help stays inline.
       expect(screen.getByRole('button', { name: 'helpButton' })).toBeInTheDocument();
       // Kebab holds only the business item.
       await userEvent.click(screen.getByRole('button', { name: 'more' }));
@@ -84,31 +77,20 @@ describe('run header Utility', () => {
   });
 
   describe('narrow header (folds into the kebab)', () => {
-    it('hides the inline feedback + help icons and folds them into the kebab', async () => {
+    it('hides the inline help icon and folds it into the kebab', async () => {
       setHeaderWidth(400);
       renderUtility();
-      expect(screen.queryByRole('button', { name: 'sendFeedback' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'helpButton' })).not.toBeInTheDocument();
       await userEvent.click(screen.getByRole('button', { name: 'more' }));
-      expect(screen.getByRole('menuitem', { name: 'sendFeedback' })).toBeInTheDocument();
       expect(screen.getByRole('menuitem', { name: 'helpButton' })).toBeInTheDocument();
     });
 
-    it('orders business items above the folded feedback/help items', async () => {
+    it('orders business items above the folded help item', async () => {
       setHeaderWidth(400);
       renderUtility(<RunHeader.MenuItem onSelect={() => {}}>compareToggle</RunHeader.MenuItem>);
       await userEvent.click(screen.getByRole('button', { name: 'more' }));
       const items = screen.getAllByRole('menuitem').map((el) => el.textContent);
-      expect(items).toEqual(['compareToggle', 'sendFeedback', 'helpButton']);
-    });
-
-    it('opens the feedback dialog from the folded item', async () => {
-      setHeaderWidth(400);
-      renderUtility();
-      await userEvent.click(screen.getByRole('button', { name: 'more' }));
-      expect(screen.queryByTestId('feedback-dialog')).not.toBeInTheDocument();
-      await userEvent.click(screen.getByRole('menuitem', { name: 'sendFeedback' }));
-      expect(screen.getByTestId('feedback-dialog')).toBeInTheDocument();
+      expect(items).toEqual(['compareToggle', 'helpButton']);
     });
 
     it('opens the help dialog (shortcuts + glossary) from the folded item', async () => {

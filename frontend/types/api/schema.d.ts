@@ -3833,8 +3833,11 @@ export interface components {
         };
         /** FeedbackAttachmentIn */
         FeedbackAttachmentIn: {
-            /** Content Type */
-            content_type: string;
+            /**
+             * Content Type
+             * @enum {string}
+             */
+            content_type: "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "video/mp4" | "video/webm" | "video/quicktime";
             /**
              * Kind
              * @enum {string}

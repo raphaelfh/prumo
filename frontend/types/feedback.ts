@@ -1,6 +1,6 @@
 export type FeedbackType = 'bug' | 'suggestion' | 'question' | 'other';
 export type FeedbackSeverity = 'low' | 'medium' | 'high' | 'critical';
-type FeedbackAttachmentKind = 'image' | 'video';
+export type FeedbackAttachmentKind = 'image' | 'video';
 
 interface ViewportSize {
   width: number;
