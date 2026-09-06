@@ -3,7 +3,7 @@
 Runs without a database: ``seed_charms_mm`` only calls ``get`` + ``add``
 (see :class:`tests.unit.conftest.CapturingSession`). The real-database
 concerns the fake cannot reach — PG enum validity, FKs, and the deferred
-``trg_check_model_section_parent_role`` trigger — are covered by CI's
+``trg_check_section_parent_repeats`` trigger — are covered by CI's
 ``python -m app.seed`` run against a fresh database.
 
 Design reference:
@@ -15,7 +15,6 @@ from __future__ import annotations
 import pytest
 
 from app.models.extraction import (
-    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ExtractionTemplateGlobal,
@@ -154,45 +153,55 @@ async def test_seeds_exactly_one_template() -> None:
 
 @pytest.mark.asyncio
 async def test_entity_type_tree_shape() -> None:
+    """The seeded tree, described by structure rather than by role.
+
+    Was three role bucket counts (7 study / 1 container / 6 model_section).
+    0069 removed `role`, so the same tree is stated as roots vs children,
+    which is what it always meant.
+    """
     ets = await seeded(seed_charms_mm, ExtractionEntityType)
     assert len(ets) == 14
 
-    by_role: dict[str, list[ExtractionEntityType]] = {}
-    for et in ets:
-        by_role.setdefault(et.role, []).append(et)
+    roots = [e for e in ets if e.parent_entity_type_id is None]
+    children = [e for e in ets if e.parent_entity_type_id is not None]
+    root_groups = [e for e in roots if e.cardinality == "many"]
 
-    assert len(by_role[ExtractionEntityRole.STUDY_SECTION.value]) == 7
-    assert len(by_role[ExtractionEntityRole.MODEL_CONTAINER.value]) == 1
-    assert len(by_role[ExtractionEntityRole.MODEL_SECTION.value]) == 6
+    assert len(roots) == 8
+    assert len(children) == 6
+    assert len(root_groups) == 1
 
 
 @pytest.mark.asyncio
-async def test_role_parent_coherence() -> None:
-    """Mirrors the DB CHECK ``ck_extraction_entity_types_role_parent`` and the
-    deferred ``trg_check_model_section_parent_role`` trigger, neither of which
-    the DB-free fake can reach."""
+async def test_every_child_hangs_off_a_section_that_repeats() -> None:
+    """The invariant 0069's `trg_check_section_parent_repeats` enforces.
+
+    Replaces `test_role_parent_coherence`, which mirrored 0016's
+    `ck_extraction_entity_types_role_parent` CHECK and its trigger. Neither
+    the CHECK nor the trigger is reachable from the DB-free fake, which is
+    why the seed asserts it here.
+    """
     ets = await seeded(seed_charms_mm, ExtractionEntityType)
-    container = next(e for e in ets if e.role == ExtractionEntityRole.MODEL_CONTAINER.value)
-
-    assert container.parent_entity_type_id is None
-    assert container.cardinality == "many"
+    by_id = {e.id: e for e in ets}
 
     for et in ets:
-        if et.role == ExtractionEntityRole.STUDY_SECTION.value:
-            assert et.parent_entity_type_id is None, et.name
-        if et.role == ExtractionEntityRole.MODEL_SECTION.value:
-            assert et.parent_entity_type_id == container.id, et.name
+        if et.parent_entity_type_id is None:
+            continue
+        parent = by_id[et.parent_entity_type_id]
+        assert parent.cardinality == "many", f"{et.name} hangs off a singleton"
+
+    # And every repeating section carries the noun 0069 makes a CHECK.
+    for et in ets:
+        if et.cardinality == "many":
+            assert et.entry_label, f"{et.name} repeats without a noun"
 
 
 @pytest.mark.asyncio
-async def test_numeric_performance_is_the_only_repeating_model_section() -> None:
+async def test_numeric_performance_is_the_only_repeating_child() -> None:
     """It repeats per validation type (apparent / internal / external); every
-    other per-model section is 1:1 with the model."""
+    other per-entry section is 1:1 with its entry."""
     ets = await seeded(seed_charms_mm, ExtractionEntityType)
     many = [
-        e
-        for e in ets
-        if e.role == ExtractionEntityRole.MODEL_SECTION.value and e.cardinality == "many"
+        e for e in ets if e.parent_entity_type_id is not None and e.cardinality == "many"
     ]
     assert [e.name for e in many] == ["numeric_performance"]
 

@@ -682,7 +682,7 @@ async def test_clone_preserves_entity_type_hierarchy(
         await db_session.execute(
             text(
                 "SELECT id FROM public.extraction_entity_types "
-                "WHERE project_template_id = :tid AND role = 'model_container'"
+                "WHERE project_template_id = :tid AND cardinality = 'many' AND parent_entity_type_id IS NULL"
             ),
             {"tid": tpl_id},
         )
@@ -691,7 +691,7 @@ async def test_clone_preserves_entity_type_hierarchy(
         await db_session.execute(
             text(
                 "SELECT COUNT(*) FROM public.extraction_entity_types "
-                "WHERE parent_entity_type_id = :pet AND role = 'model_section'"
+                "WHERE parent_entity_type_id = :pet AND parent_entity_type_id IS NOT NULL"
             ),
             {"pet": str(pred_id)},
         )
@@ -708,7 +708,7 @@ async def test_clone_preserves_entity_type_hierarchy(
                 text(
                     "SELECT name FROM public.extraction_entity_types "
                     "WHERE project_template_id = :tid "
-                    "AND role = 'study_section'"
+                    "AND cardinality = 'one' AND parent_entity_type_id IS NULL"
                 ),
                 {"tid": tpl_id},
             )
@@ -977,16 +977,17 @@ async def test_clone_handles_unordered_sort_order(
     await _wipe_charms_clone(db_session, project_id=project_id, article_id=None)
 
     # Invert sort_order on the global rows: children get the lowest
-    # numbers, container in the middle, study-level last. ``ORDER BY
-    # sort_order`` will now hand the clone the children first.
+    # numbers, the root group in the middle, root singletons last. ``ORDER
+    # BY sort_order`` will now hand the clone the children first. Keyed on
+    # structure since 0069 removed `role`; the partition is identical.
     await db_session.execute(
         text(
             """
             UPDATE public.extraction_entity_types
-            SET sort_order = CASE role
-                WHEN 'model_section' THEN sort_order - 100
-                WHEN 'study_section' THEN sort_order + 100
-                ELSE sort_order
+            SET sort_order = CASE
+                WHEN parent_entity_type_id IS NOT NULL THEN sort_order - 100
+                WHEN cardinality = 'many' THEN sort_order
+                ELSE sort_order + 100
             END
             WHERE template_id = :tid
             """
@@ -1013,7 +1014,7 @@ async def test_clone_handles_unordered_sort_order(
                   ON parent.id = child.parent_entity_type_id
                 WHERE child.project_template_id = :tid
                   AND child.role = 'model_section'
-                  AND (parent.id IS NULL OR parent.role <> 'model_container')
+                  AND (parent.id IS NULL OR parent.NOT (cardinality = 'many' AND parent_entity_type_id IS NULL))
                 """
             ),
             {"tid": tpl_id},
@@ -1060,7 +1061,7 @@ async def test_cannot_insert_two_model_containers_per_template(
                     (project_template_id, name, label, cardinality, role,
                      sort_order, is_required)
                 VALUES (:tid, 'second_container', 'Second Container',
-                        'many', 'model_container', 999, false)
+                        'many', 999, false)
                 """
             ),
             {"tid": str(clone_row)},
@@ -1114,7 +1115,7 @@ async def test_model_section_without_container_parent_rejected(
             text(
                 """
                 SELECT id FROM public.extraction_entity_types
-                WHERE project_template_id = :tid AND role = 'study_section'
+                WHERE project_template_id = :tid AND cardinality = 'one' AND parent_entity_type_id IS NULL
                 LIMIT 1
                 """
             ),
@@ -1131,7 +1132,7 @@ async def test_model_section_without_container_parent_rejected(
                     (project_template_id, name, label, cardinality, role,
                      parent_entity_type_id, sort_order, is_required)
                 VALUES (:tid, 'orphan_section', 'Orphan Section',
-                        'one', 'model_section', :pet, 999, false)
+                        'one', :pet, 999, false)
                 """
             ),
             {"tid": str(clone_row), "pet": str(bogus_parent)},

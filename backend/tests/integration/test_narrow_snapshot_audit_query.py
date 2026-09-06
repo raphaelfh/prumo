@@ -29,7 +29,6 @@ PRE_0026 = {
         {
             "id": "sec-2",
             "label": "Newer",
-            "role": "study_section",
             "fields": [{"id": "f-2", "name": "x"}],
         }
     ]

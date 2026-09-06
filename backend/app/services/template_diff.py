@@ -83,11 +83,9 @@ NESTING_KEY = "fields"
 #: Compared as a set of option codes, not as an opaque attribute (D1).
 OPTION_KEY = "allowed_values"
 
-_MODEL_CONTAINER_ROLE = "model_container"
 # What 0051 stamped onto every container — the value a pre-0051 baseline that
 # lacks the key describes. A historical constant, NOT the runtime fallback
 # (``app.models.extraction.DEFAULT_ENTRY_LABEL`` reads ``entry``).
-_B8_CONTAINER_NOUN = "model"
 ENTRY_LABEL_KEY = "entry_label"
 #: Identity of a repeating-group entry (0059). Versioned config: the snapshot
 #: carries it, a move is two SEMANTIC changes, and restore round-trips it.
@@ -105,7 +103,6 @@ ENTITY_ATTRIBUTE_DEFAULTS: dict[str, Any] = {
     ENTRY_LABEL_KEY: None,  # role-aware, see _normalize_entity
     "parent_entity_type_id": None,
     "cardinality": "one",
-    "role": None,
     "is_required": False,
 }
 
@@ -152,7 +149,6 @@ ATTRIBUTE_TIERS: dict[str, ChangeTier] = {
     "field_type": ChangeTier.SEMANTIC,
     "is_required": ChangeTier.SEMANTIC,
     "cardinality": ChangeTier.SEMANTIC,
-    "role": ChangeTier.SEMANTIC,
     "unit": ChangeTier.SEMANTIC,
     "allowed_units": ChangeTier.SEMANTIC,
     "validation_schema": ChangeTier.SEMANTIC,
@@ -323,12 +319,12 @@ def _index(
 
 def _normalize_entity(raw: dict[str, Any]) -> dict[str, Any]:
     """Fill absent keys with their canonical defaults (present-but-null stays null)."""
-    data = {key: raw.get(key, default) for key, default in ENTITY_ATTRIBUTE_DEFAULTS.items()}
-    if ENTRY_LABEL_KEY not in raw and data["role"] == _MODEL_CONTAINER_ROLE:
-        # 0051 seeded every repeating group to "model"; a pre-0051 baseline
-        # that simply lacks the key describes the same tree.
-        data[ENTRY_LABEL_KEY] = _B8_CONTAINER_NOUN
-    return data
+    # The pre-0051 noun rule left with `role` (spec §5): it keyed on
+    # `role == 'model_container'`, and there is no role to key on. A
+    # baseline that lacks the noun now simply lacks it, and the diff says
+    # so — which is honest, since 0069 backfills every repeating section to
+    # 'entry' and a manager can rename it.
+    return {key: raw.get(key, default) for key, default in ENTITY_ATTRIBUTE_DEFAULTS.items()}
 
 
 def _normalize_field(raw: dict[str, Any]) -> dict[str, Any]:

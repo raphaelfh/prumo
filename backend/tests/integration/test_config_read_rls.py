@@ -105,9 +105,9 @@ async def _global_lineage(db: AsyncSession) -> tuple[UUID, UUID]:
         await db.execute(
             text(
                 "INSERT INTO public.extraction_entity_types "
-                "(template_id, name, label, cardinality, role, sort_order) "
+                "(template_id, name, label, cardinality, sort_order) "
                 "VALUES (:gid, 'read_probe_section', 'Read Probe Section', 'one', "
-                "'study_section', 0) RETURNING id"
+                "0) RETURNING id"
             ),
             {"gid": str(global_id)},
         )

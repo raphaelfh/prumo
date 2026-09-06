@@ -101,7 +101,6 @@ from app.services.extraction_snapshot import (
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_diff import TemplateChange, diff_snapshots
 from app.services.template_restore_service import (
-    ContainerSwapUnsupportedError,
     RestoreOutcome,
     restore_snapshot,
 )
@@ -734,8 +733,6 @@ async def reconcile_to_baseline(
             snapshot=baseline,
             skip_entity_type_ids=blocked.skip_entity_type_ids,
         )
-    except ContainerSwapUnsupportedError as exc:
-        _refuse(exc, project_id=project_id, template_id=template_id, user_id=user_id)
     except DBAPIError as exc:
         _reraise_if_raced(exc, project_id=project_id, template_id=template_id, user_id=user_id)
         raise

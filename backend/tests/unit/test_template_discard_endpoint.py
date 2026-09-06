@@ -28,7 +28,6 @@ from app.services.template_discard_service import (
     NarrowBaselineError,
     OrphanAcknowledgementRequiredError,
 )
-from app.services.template_restore_service import ContainerSwapUnsupportedError
 from app.services.template_version_read_service import NoActiveTemplateVersionError
 
 
@@ -110,7 +109,6 @@ async def test_missing_template_maps_to_404(monkeypatch, error: Exception) -> No
     [
         (NarrowBaselineError("legacy"), "NARROW_BASELINE"),
         (DiscardBlockedByCardinalityError("two entries"), "CARDINALITY_DOWNGRADE_BLOCKED"),
-        (ContainerSwapUnsupportedError("swapped"), "CONTAINER_SWAP_UNSUPPORTED"),
         (OrphanAcknowledgementRequiredError("orphans"), "ORPHAN_ACK_REQUIRED"),
         (DiscardRacedError("raced"), "DISCARD_RACED"),
     ],

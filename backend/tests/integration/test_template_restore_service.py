@@ -43,7 +43,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.template_diff import diff_snapshots
 from app.services.template_restore_service import (
-    ContainerSwapUnsupportedError,
     RestoreOutcome,
     restore_snapshot,
 )
@@ -406,9 +405,9 @@ async def _add_section(
         text(
             "INSERT INTO public.extraction_entity_types "
             "(id, project_template_id, template_id, name, label, parent_entity_type_id, "
-            " cardinality, role, sort_order, is_required, entry_label) "
+            " cardinality, sort_order, is_required, entry_label) "
             "VALUES (:id, :tid, NULL, :name, :label, :parent, CAST(:card AS extraction_cardinality),"
-            " CAST(:role AS extraction_entity_role), :o, false, :entry)"
+            " :o, false, :entry)"
         ),
         {
             "id": str(entity_id),
@@ -417,7 +416,6 @@ async def _add_section(
             "label": name,
             "parent": str(parent_id) if parent_id else None,
             "card": cardinality,
-            "role": role,
             "o": sort_order,
             "entry": entry_label,
         },
@@ -881,10 +879,19 @@ async def test_deleted_model_section_and_its_container_are_recreated(
 
 
 @pytest.mark.asyncio
-async def test_container_swap_is_refused(db_session: AsyncSession) -> None:
-    """D3: one container per project is a partial unique index, so a draft
-    that replaced the container cannot be reconciled by the phase order.
-    Refuse before writing anything."""
+async def test_a_swapped_root_group_now_restores(db_session: AsyncSession) -> None:
+    """Was `test_container_swap_is_refused` — the refusal is gone with 0069.
+
+    D3 refused this because one container per project was a partial unique
+    index, so recreating the baseline's group while the draft's replacement
+    still existed collided (23505). 0069 drops that index: a template may
+    hold several root groups, so the two coexist for the length of the
+    restore and the delete pass removes the draft's.
+
+    Asserting the restore SUCCEEDS, not merely that the exception is gone:
+    deleting a refusal without checking what replaces it is how a refusal
+    becomes a silent corruption.
+    """
     project_id, template_id, baseline = await _fresh_charms(db_session)
     container_id = await _entity_id(db_session, template_id, "prediction_models")
     await _delete_section(db_session, container_id)
@@ -892,18 +899,28 @@ async def test_container_swap_is_refused(db_session: AsyncSession) -> None:
         db_session,
         template_id,
         "b9c1_other_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
     )
-    capture = await _capture(db_session, template_id)
 
-    with pytest.raises(ContainerSwapUnsupportedError):
-        await _restore(
-            db_session, project_id=project_id, template_id=template_id, baseline=baseline
-        )
+    await _restore(
+        db_session, project_id=project_id, template_id=template_id, baseline=baseline
+    )
 
-    assert await _capture(db_session, template_id) == capture, "refusal must write nothing"
+    names = {
+        row
+        for (row,) in (
+            await db_session.execute(
+                text(
+                    "SELECT name FROM public.extraction_entity_types "
+                    "WHERE project_template_id = :tid"
+                ),
+                {"tid": str(template_id)},
+            )
+        ).all()
+    }
+    assert "prediction_models" in names, "the baseline's group is back"
+    assert "b9c1_other_container" not in names, "the draft's replacement is gone"
 
 
 @pytest.mark.asyncio
@@ -921,7 +938,7 @@ async def test_era_drift_baseline_does_not_null_columns(db_session: AsyncSession
     await db_session.execute(
         text(
             "UPDATE public.extraction_entity_types SET entry_label = NULL "
-            "WHERE project_template_id = :tid AND role <> 'model_container'"
+            "WHERE project_template_id = :tid AND NOT (cardinality = 'many' AND parent_entity_type_id IS NULL)"
         ),
         {"tid": str(template_id)},
     )
@@ -1088,13 +1105,17 @@ async def test_kept_field_name_makes_a_baseline_field_unrestorable(
 
 
 @pytest.mark.asyncio
-async def test_container_swap_is_refused_when_the_new_container_is_skipped(
+async def test_a_kept_root_group_survives_a_restore_beside_the_baseline_one(
     db_session: AsyncSession,
 ) -> None:
-    """The D3 guard reads the PRE-skip view. A draft-added container the
-    caller kept is still the incumbent on
-    ``uq_extraction_entity_types_one_container_per_project``, so dropping it
-    from the delete set must not silence the refusal."""
+    """The other half of the retired D3 guard.
+
+    It read the PRE-skip view because a draft-added container the caller
+    KEPT was still the incumbent on the one-container unique index. With
+    that index gone, keeping it is simply a template with two root groups —
+    the shape this whole train exists to allow — so the restore brings the
+    baseline's group back and leaves the kept one alone.
+    """
     project_id, template_id, baseline = await _fresh_charms(db_session)
     await _delete_section(
         db_session, await _entity_id(db_session, template_id, "prediction_models")
@@ -1103,22 +1124,32 @@ async def test_container_swap_is_refused_when_the_new_container_is_skipped(
         db_session,
         template_id,
         "b9c1_kept_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
     )
-    capture = await _capture(db_session, template_id)
 
-    with pytest.raises(ContainerSwapUnsupportedError):
-        await _restore(
-            db_session,
-            project_id=project_id,
-            template_id=template_id,
-            baseline=baseline,
-            skip_entity_type_ids=frozenset({kept_container}),
-        )
+    await _restore(
+        db_session,
+        project_id=project_id,
+        template_id=template_id,
+        baseline=baseline,
+        skip_entity_type_ids=frozenset({kept_container}),
+    )
 
-    assert await _capture(db_session, template_id) == capture, "refusal must write nothing"
+    names = {
+        row
+        for (row,) in (
+            await db_session.execute(
+                text(
+                    "SELECT name FROM public.extraction_entity_types "
+                    "WHERE project_template_id = :tid AND cardinality = 'many' "
+                    "AND parent_entity_type_id IS NULL"
+                ),
+                {"tid": str(template_id)},
+            )
+        ).all()
+    }
+    assert names == {"prediction_models", "b9c1_kept_container"}
 
 
 @pytest.mark.asyncio

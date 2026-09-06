@@ -424,14 +424,14 @@ async def _seed_minimum_graph(session: AsyncSession) -> None:
     )
 
     # --- Entity type + field + instance in the primary template ---
-    # study_section role, no parent (the simplest valid shape).
+    # A root singleton, the simplest valid shape.
     await session.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, "
+            "(id, project_template_id, name, label, cardinality, "
             " parent_entity_type_id, sort_order, is_required) "
             "VALUES (:id, :tid, 'participants', 'Participants', 'one', "
-            " 'study_section', NULL, 0, false) "
+            " NULL, 0, false) "
             "ON CONFLICT (id) DO NOTHING"
         ),
         {

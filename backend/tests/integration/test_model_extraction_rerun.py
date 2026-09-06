@@ -36,8 +36,8 @@ async def _model_container(db: AsyncSession, *, with_key: bool) -> UUID:
     await db.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, sort_order, entry_label) "
-            "VALUES (:id, :tpl, :name, 'Prediction Models', 'many', 'model_container', 95, 'model')"
+            "(id, project_template_id, name, label, cardinality, sort_order, entry_label) "
+            "VALUES (:id, :tpl, :name, 'Prediction Models', 'many', 95, 'model')"
         ),
         {
             "id": entity_type_id,

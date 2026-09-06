@@ -95,10 +95,10 @@ async def _seed_duplicate_live_runs(conn: asyncpg.Connection) -> None:
     )
     await conn.execute(
         "INSERT INTO public.extraction_entity_types "
-        "(id, project_template_id, name, label, cardinality, role, "
+        "(id, project_template_id, name, label, cardinality,"
         " parent_entity_type_id, sort_order, is_required) "
         "VALUES ($1, $2, 'participants', 'Participants', 'one', "
-        "'study_section', NULL, 0, false)",
+        "NULL, 0, false)",
         _ENTITY_TYPE,
         _TEMPLATE,
     )

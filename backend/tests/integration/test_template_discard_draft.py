@@ -45,7 +45,6 @@ from app.services.template_discard_service import (
     OrphanAcknowledgementRequiredError,
     discard_draft,
 )
-from app.services.template_restore_service import ContainerSwapUnsupportedError
 from app.services.template_version_read_service import NoActiveTemplateVersionError
 from app.services.template_version_service import TemplateVersionService
 from tests.integration.conftest import (
@@ -429,7 +428,6 @@ async def test_draft_added_ancestor_of_a_blocked_node_is_kept(
         db_session,
         template_id,
         "b9c1_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
         sort_order=98,
@@ -438,7 +436,6 @@ async def test_draft_added_ancestor_of_a_blocked_node_is_kept(
         db_session,
         template_id,
         "b9c1_child",
-        role="model_section",
         parent_id=container,
         sort_order=99,
     )
@@ -523,7 +520,6 @@ async def test_the_sweep_never_cascades_through_a_nested_instance(
         db_session,
         template_id,
         "b9c1_nested_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
         sort_order=98,
@@ -532,7 +528,6 @@ async def test_the_sweep_never_cascades_through_a_nested_instance(
         db_session,
         template_id,
         "b9c1_nested_child",
-        role="model_section",
         parent_id=container,
         sort_order=99,
     )
@@ -624,7 +619,6 @@ async def test_instance_blocked_section_keeps_its_draft_added_children(
         db_session,
         template_id,
         "b9c1_parent_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
         sort_order=98,
@@ -633,7 +627,6 @@ async def test_instance_blocked_section_keeps_its_draft_added_children(
         db_session,
         template_id,
         "b9c1_subtree_child",
-        role="model_section",
         parent_id=container,
         sort_order=99,
     )
@@ -834,37 +827,18 @@ async def test_cardinality_many_to_one_with_two_entries_is_refused(
 
 
 @pytest.mark.asyncio
-async def test_container_swap_is_refused(db_session: AsyncSession) -> None:
-    """The writer's D3 structural refusal, surfaced as a typed 409."""
-    project_id, template_id, _ = await _fresh_charms(db_session)
-    await _delete_section(
-        db_session, await _entity_id(db_session, template_id, "prediction_models")
-    )
-    await _add_section(
-        db_session,
-        template_id,
-        "b9c1_new_container",
-        role="model_container",
-        cardinality="many",
-        entry_label="model",
-    )
-
-    with pytest.raises(ContainerSwapUnsupportedError):
-        await _discard(db_session, project_id=project_id, template_id=template_id)
-
-
-@pytest.mark.asyncio
-async def test_container_swap_is_refused_even_when_the_new_container_is_kept(
+async def test_a_swapped_root_group_discards_instead_of_refusing(
     db_session: AsyncSession,
 ) -> None:
-    """D3's guard read the delete set AFTER D4 had filtered the skip set out
-    of it, so a draft-added container that owns instances never set the
-    flag: the refusal did not fire, phase 1 re-inserted the baseline
-    container, and ``uq_extraction_entity_types_one_container_per_project``
-    turned the actionable 409 into an untyped 500.
+    """Was two `ContainerSwapUnsupportedError` tests; 0069 retires both.
 
-    The guard must read the PRE-skip view — every live container absent
-    from the baseline counts, kept or not."""
+    The refusal existed only because recreating the baseline's group while
+    the draft's replacement still existed collided on
+    `uq_extraction_entity_types_one_container_per_project`. That index is
+    gone — several root groups are legal — so Discard just runs, and the
+    stronger of the two old cases is kept: the replacement OWNS INSTANCES,
+    which is what made D3's guard read the pre-skip view.
+    """
     project_id, template_id, _ = await _fresh_charms(db_session)
     await _delete_section(
         db_session, await _entity_id(db_session, template_id, "prediction_models")
@@ -873,7 +847,6 @@ async def test_container_swap_is_refused_even_when_the_new_container_is_kept(
         db_session,
         template_id,
         "b9c1_kept_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
     )
@@ -881,8 +854,22 @@ async def test_container_swap_is_refused_even_when_the_new_container_is_kept(
         db_session, project_id=project_id, template_id=template_id, entity_type_id=new_container
     )
 
-    with pytest.raises(ContainerSwapUnsupportedError):
-        await _discard(db_session, project_id=project_id, template_id=template_id)
+    await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    names = {
+        row
+        for (row,) in (
+            await db_session.execute(
+                text(
+                    "SELECT name FROM public.extraction_entity_types "
+                    "WHERE project_template_id = :tid AND cardinality = 'many' "
+                    "AND parent_entity_type_id IS NULL"
+                ),
+                {"tid": str(template_id)},
+            )
+        ).all()
+    }
+    assert "prediction_models" in names, "Discard restored the baseline's group"
 
 
 @pytest.mark.asyncio

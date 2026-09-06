@@ -67,13 +67,12 @@ from app.services.template_field_service import (
     update_field,
 )
 from app.services.template_section_service import (
-    OneContainerError,
     SectionCardinalityInUseError,
-    SectionCardinalityRoleError,
-    SectionEntryLabelRoleError,
+    SectionEntryLabelCardinalityError,
     SectionInUseError,
     SectionNotFoundError,
-    SectionParentRoleError,
+    SectionOwnsChildrenError,
+    SectionParentMustRepeatError,
     create_section,
     delete_section,
     update_section,
@@ -328,10 +327,8 @@ async def create_template_section(
         )
     except (ProjectTemplateNotFoundError, SectionNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-    except SectionParentRoleError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except OneContainerError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    except SectionParentMustRepeatError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except DBAPIError as e:
         if is_deadlock(e):
             raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
@@ -375,7 +372,7 @@ async def update_template_section(
         )
     except (ProjectTemplateNotFoundError, SectionNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-    except (SectionEntryLabelRoleError, SectionCardinalityRoleError) as e:
+    except (SectionEntryLabelCardinalityError, SectionOwnsChildrenError) as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except SectionCardinalityInUseError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e

@@ -22,9 +22,9 @@ Deliberate scope cuts:
 - Section request/response schemas (B-7 task 3) are APPENDED at the end
   of this module — the section-name rules mirror the AddSectionDialog
   Zod (looser than ``FieldName``: uppercase and a leading underscore are
-  legal), and ``SectionCreateRequest`` mirrors the DB's
-  ``ck_extraction_entity_types_role_parent`` CHECK so an invalid
-  role/parent combination never reaches the service.
+  legal). ``SectionCreateRequest`` no longer mirrors a role/parent CHECK
+  — 0069 dropped it; whether a named parent may own children (it must
+  repeat) needs the parent ROW, so it is the service's rule.
 """
 
 from datetime import datetime
@@ -244,10 +244,10 @@ class TemplateFieldReorderResponse(BaseModel):
 
 # =================== SECTION SCHEMAS (B-7 task 3) ===================
 
-# Re-declared from ExtractionCardinality / ExtractionEntityRole
-# (app.models.extraction) — see the layering note in the module docstring.
+# Re-declared from ExtractionCardinality (app.models.extraction) — see the
+# layering note in the module docstring. ``SectionRole`` left with 0069:
+# structure is the parent link plus cardinality.
 SectionCardinality = Literal["one", "many"]
-SectionRole = Literal["study_section", "model_container", "model_section"]
 
 # Mirrors the AddSectionDialog Zod rules (frontend/components/extraction/
 # dialogs/AddSectionDialog.tsx): section names are looser than field
@@ -286,13 +286,12 @@ SectionDescription = Annotated[
 class SectionCreateRequest(BaseModel):
     """Create a section (entity type) in the path template.
 
-    ``role`` is REQUIRED with no default — the column deliberately has no
-    server_default (migration 0016 step 4) so an insert that omits the
-    structural role fails loudly instead of silently becoming a
-    study_section. ``sort_order`` is deliberately ABSENT: the server
-    computes max+1 template-wide inside the INSERT itself, killing the
-    frontend's read-then-write race. The ``ck_role_parent`` validator
-    below mirrors the DB CHECK of the same name; parent OWNERSHIP
+    ``role`` is gone (0069): a section's place in the tree is its
+    ``parent_entity_type_id`` plus its ``cardinality``. ``sort_order`` is
+    deliberately ABSENT: the server computes max+1 template-wide inside
+    the INSERT itself, killing the frontend's read-then-write race.
+    Whether the named parent may HAVE children — it must repeat — is the
+    service's job, because it needs the parent row; parent OWNERSHIP
     (parent belongs to THIS template) is the service's BOLA job.
     ``entry_label`` is a repeating section's entry noun (B-8, D3 — unlocked
     from the container in the entry-group train): REQUIRED, non-blank, on
@@ -310,31 +309,17 @@ class SectionCreateRequest(BaseModel):
     label: SectionLabel
     description: str | None = Field(default=None, max_length=500)
     cardinality: SectionCardinality
-    role: SectionRole
     parent_entity_type_id: UUID | None = None
     entry_label: SectionEntryLabel | None = None
     is_required: bool = False
 
     @model_validator(mode="after")
-    def _enforce_role_parent(self) -> "SectionCreateRequest":
-        """Mirror ck_extraction_entity_types_role_parent: roots carry no
-        parent; a model_section always names one."""
-        if self.role == "model_section":
-            if self.parent_entity_type_id is None:
-                raise ValueError("model_section requires parent_entity_type_id")
-        elif self.parent_entity_type_id is not None:
-            raise ValueError(f"{self.role} must not set parent_entity_type_id")
-        return self
-
-    @model_validator(mode="after")
     def _enforce_entry_label_rules(self) -> "SectionCreateRequest":
         """A repeating section is created WITH its entry noun — the
         identification prompt and the run form read it — so a missing one is
-        refused on every role (``SectionEntryLabel`` already refuses a blank);
-        a section that does not repeat cannot carry one. The container always
-        repeats ('many' is enforced, never chosen)."""
-        if self.role == "model_container" and self.cardinality != "many":
-            raise ValueError("model_container cardinality must be 'many'")
+        refused on every section (``SectionEntryLabel`` already refuses a
+        blank); a section that does not repeat cannot carry one. 0069 makes
+        the same rule a CHECK, so this is the readable half of a pair."""
         if self.cardinality == "many" and self.entry_label is None:
             raise ValueError("entry_label is required on a repeating section")
         if self.cardinality != "many" and self.entry_label is not None:
@@ -343,10 +328,10 @@ class SectionCreateRequest(BaseModel):
 
 
 class SectionUpdateRequest(BaseModel):
-    """Partial section update: ``label`` and ``description`` (any role),
-    ``entry_label`` (repeating sections only) and ``cardinality``
-    (per-model sections only) — the role rules live in the service, which
-    owns the row (B-8, D5). At least one field must be provided, and
+    """Partial section update: ``label`` and ``description`` (any
+    section), ``entry_label`` (repeating sections only) and
+    ``cardinality`` (any section since 0069) — the rules live in the
+    service, which owns the row and its children. At least one field must be provided, and
     explicit nulls are rejected (omit instead) so a smuggled ``{"label":
     null}`` can never blank a column; a description is cleared by sending
     it blank. Replaces the label-only SectionRenameRequest; the pre-B-8
@@ -386,7 +371,6 @@ class SectionRead(BaseModel):
     label: str
     description: str | None = None
     cardinality: SectionCardinality
-    role: SectionRole
     parent_entity_type_id: UUID | None = None
     # Entry noun (B-8): every repeating section is created with one; legacy rows may be NULL.
     entry_label: str | None = None

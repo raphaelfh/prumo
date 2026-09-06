@@ -33,7 +33,7 @@ async def _global_template(db: AsyncSession) -> UUID:
 
 async def _add(db: AsyncSession, **cols: object) -> UUID:
     row = ExtractionEntityType(
-        **{"id": uuid4(), "label": "x", "role": "study_section", "cardinality": "many", **cols}
+        **{"id": uuid4(), "label": "x", "cardinality": "many", **cols}
     )
     db.add(row)
     await db.flush()

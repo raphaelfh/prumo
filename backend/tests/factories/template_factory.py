@@ -24,7 +24,6 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
-    ExtractionEntityRole,
     ExtractionEntityType,
     ProjectExtractionTemplate,
     TemplateKind,
@@ -39,7 +38,6 @@ def make_entity_type(
     name: str,
     label: str | None = None,
     cardinality: Literal["one", "many"] = "one",
-    role: ExtractionEntityRole = ExtractionEntityRole.STUDY_SECTION,
     parent_entity_type_id: UUID | None = None,
     sort_order: int = 0,
     is_required: bool = False,
@@ -63,7 +61,6 @@ def make_entity_type(
         # explicitly.
         label=label if label is not None else name,
         cardinality=cardinality,
-        role=role.value,
         parent_entity_type_id=parent_entity_type_id,
         sort_order=sort_order,
         is_required=is_required,

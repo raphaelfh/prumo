@@ -46,7 +46,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ExtractionFieldType,
@@ -415,7 +414,6 @@ def _entity_type(
         project_template_id=template_id,
         name=label.lower(),
         label=label,
-        role=ExtractionEntityRole.STUDY_SECTION.value,
         cardinality=ExtractionCardinality.ONE.value,
         parent_entity_type_id=None,
         sort_order=sort_order,

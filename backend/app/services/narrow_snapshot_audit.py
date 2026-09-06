@@ -51,16 +51,16 @@ class NarrowEra(Enum):
     the most severe remedy, not a fourth one.
     """
 
-    PRE_0017_NO_ROLE = (
-        "pre-0017 (no role)",
+    PRE_0017_NO_STRUCTURE = (
+        "pre-0017 (no structural key)",
         "Republish the current configuration. The stored baseline predates "
-        "`role` entirely, so nothing can be restored from it — the live "
-        "tree is the only trustworthy source.",
+        "the structural keys entirely, so nothing can be restored from it — "
+        "the live tree is the only trustworthy source.",
     )
     PRE_0026_NARROW_FIELDS = (
         "pre-0026 (narrow fields)",
         "Republish the current configuration. Migration 0026's backfill "
-        "keyed on the role probe and skipped exactly these rows, so their "
+        "keyed on the same era probe and skipped exactly these rows, so their "
         "fields never gained llm_description/allow_other. Restoring one "
         "would default those across the project.",
     )
@@ -95,23 +95,23 @@ def classify_baseline(schema_: dict[str, Any] | None) -> BaselineClassification:
         # Empty is restorable, even though snapshot_is_narrow() says narrow.
         return BaselineClassification(era=NarrowEra.EMPTY, restorable=True)
 
-    missing_role: list[str] = []
+    missing_structure: list[str] = []
     narrow_fields: list[str] = []
     for entity_type in entity_types:
         node_id = str(entity_type.get("id", "?"))
-        if "role" not in entity_type:
-            missing_role.append(node_id)
+        if "cardinality" not in entity_type:
+            missing_structure.append(node_id)
             continue
         for field in entity_type.get("fields") or []:
             if "llm_description" not in field or "allow_other" not in field:
                 narrow_fields.append(node_id)
                 break
 
-    if missing_role:
+    if missing_structure:
         return BaselineClassification(
-            era=NarrowEra.PRE_0017_NO_ROLE,
+            era=NarrowEra.PRE_0017_NO_STRUCTURE,
             restorable=False,
-            narrow_entity_type_ids=tuple(missing_role + narrow_fields),
+            narrow_entity_type_ids=tuple(missing_structure + narrow_fields),
         )
     if narrow_fields:
         return BaselineClassification(

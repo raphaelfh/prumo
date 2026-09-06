@@ -65,7 +65,6 @@ def _snapshot_entity(
         "description": "pinned entity description",
         "parent_entity_type_id": parent,
         "cardinality": "one",
-        "role": role,
         "sort_order": 0,
         "is_required": False,
         "fields": fields or [],
@@ -232,8 +231,8 @@ async def test_extract_for_run_iterates_the_pinned_top_level_set(
     await db_session.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, sort_order) "
-            "VALUES (:id, :tid, 'live_extra', 'Live extra', 'one', 'study_section', 99)"
+            "(id, project_template_id, name, label, cardinality, sort_order) "
+            "VALUES (:id, :tid, 'live_extra', 'Live extra', 'one', 99)"
         ),
         {"id": str(live_extra_id), "tid": str(template_id)},
     )
@@ -255,7 +254,6 @@ async def test_extract_for_run_iterates_the_pinned_top_level_set(
                 _snapshot_entity(
                     str(uuid.uuid4()),
                     "pinned_child_not_top_level",
-                    role="model_section",
                     parent=str(entity_type_id),
                 ),
             ]
@@ -302,9 +300,9 @@ async def test_child_entity_types_come_from_the_pinned_snapshot(
     await db_session.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, sort_order, "
+            "(id, project_template_id, name, label, cardinality, sort_order, "
             " parent_entity_type_id) "
-            "VALUES (:id, :tid, 'live_child', 'Live child', 'one', 'model_section', 1, :parent)"
+            "VALUES (:id, :tid, 'live_child', 'Live child', 'one', 1, :parent)"
         ),
         {
             "id": str(live_child_id),
@@ -326,7 +324,6 @@ async def test_child_entity_types_come_from_the_pinned_snapshot(
                 _snapshot_entity(
                     pinned_child_id,
                     "pinned_child",
-                    role="model_section",
                     parent=str(entity_type_id),
                 ),
             ]
@@ -377,7 +374,6 @@ async def test_model_identification_uses_pinned_label_and_instruction(
                     **_snapshot_entity(
                         str(entity_type_id),
                         "models",
-                        role="model_container",
                         fields=[
                             {
                                 **_snapshot_field(str(field_a_id), "pinned_key"),

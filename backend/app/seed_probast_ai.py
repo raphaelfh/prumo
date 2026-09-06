@@ -64,7 +64,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
-    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ExtractionInstance,
@@ -741,7 +740,6 @@ async def seed_probast_ai(session: AsyncSession) -> None:
                     description,
                     None,
                     "one",
-                    ExtractionEntityRole.STUDY_SECTION,
                     order,
                 ),
                 template_id=_PROBAST_AI_TEMPLATE_ID,

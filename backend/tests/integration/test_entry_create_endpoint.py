@@ -137,7 +137,7 @@ async def test_a_foreign_parent_answers_404(
     del as_reviewer  # the fixture overrides auth; its value is unused
     parent_type_id, _k, _v = await _group(db_session)
     nested_type_id, _nk, _nv = await _group(
-        db_session, role="model_section", parent=parent_type_id, label="Nested"
+        db_session, parent=parent_type_id, label="Nested"
     )
     await db_session.commit()
 

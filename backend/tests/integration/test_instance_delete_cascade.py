@@ -89,10 +89,10 @@ async def _build_hitl_graph(db: AsyncSession) -> _Graph:
     await db.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, "
+            "(id, project_template_id, name, label, cardinality,"
             " parent_entity_type_id, sort_order, is_required) "
             "VALUES (:id, :tid, 'delete_cascade_section', 'Delete Cascade Section', "
-            " 'many', 'study_section', NULL, 99, false)"
+            " 'many', NULL, 99, false)"
         ),
         {"id": str(graph.entity_type_id), "tid": str(template_id)},
     )

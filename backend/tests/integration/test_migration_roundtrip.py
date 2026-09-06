@@ -559,7 +559,7 @@ async def test_migration_0063_deletes_the_orphaned_probast_ai_v1_row(
                 "(id, template_id, name, label, role, cardinality, sort_order) "
                 "VALUES ('00ba0000-0000-0000-0000-0000000000aa', "
                 "        '00ba0000-0000-0000-0000-000000000001', 'dev_d1', 'D1', "
-                "        'study_section', 'one', 0)"
+                "        'one', 0)"
             )
         )
         await migration_session.commit()
@@ -980,15 +980,15 @@ _HEAL_FIXTURE_STATEMENTS = (
     f"('{_H_GLOBAL_TPL}', 'heal-0050-global', 'CUSTOM', '1.0', 'extraction', "
     "true, '{}'::jsonb)",
     "INSERT INTO public.extraction_entity_types "
-    "(id, project_template_id, name, label, cardinality, role, "
+    "(id, project_template_id, name, label, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
     f"('{_H_SECTION}', '{_H_TEMPLATE}', 'heal_section', 'Heal Section', 'one', "
-    "'study_section', NULL, 0, false)",
+    "NULL, 0, false)",
     "INSERT INTO public.extraction_entity_types "
-    "(id, template_id, name, label, cardinality, role, "
+    "(id, template_id, name, label, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
     f"('{_H_GLOBAL_SECTION}', '{_H_GLOBAL_TPL}', 'heal_global_section', "
-    "'Heal Global Section', 'one', 'study_section', NULL, 0, false)",
+    "'Heal Global Section', 'one', NULL, 0, false)",
     # Project section: three 'dup_probe' rows + a pre-existing 'dup_probe_2'
     # that must NOT collide with the healed names (collision-proof case).
     "INSERT INTO public.extraction_fields "
@@ -1143,20 +1143,20 @@ _B8_FIXTURE_STATEMENTS = (
     f"('{_B8_GLOBAL_TPL}', 'entry-label-0051-global', 'CUSTOM', '1.0', 'extraction', "
     "true, '{}'::jsonb)",
     "INSERT INTO public.extraction_entity_types "
-    "(id, project_template_id, name, label, cardinality, role, "
+    "(id, project_template_id, name, label, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
     f"('{_B8_CONTAINER}', '{_B8_TEMPLATE}', 'prediction_models', 'Prediction Models', "
-    "'many', 'model_container', NULL, 0, false)",
+    "'many', NULL, 0, false)",
     "INSERT INTO public.extraction_entity_types "
-    "(id, project_template_id, name, label, cardinality, role, "
+    "(id, project_template_id, name, label, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
     f"('{_B8_SECTION}', '{_B8_TEMPLATE}', 'population', 'Population', "
-    "'one', 'study_section', NULL, 1, false)",
+    "'one', NULL, 1, false)",
     "INSERT INTO public.extraction_entity_types "
-    "(id, template_id, name, label, cardinality, role, "
+    "(id, template_id, name, label, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
     f"('{_B8_GLOBAL_CONTAINER}', '{_B8_GLOBAL_TPL}', 'prediction_models', "
-    "'Prediction Models', 'many', 'model_container', NULL, 0, false)",
+    "'Prediction Models', 'many', NULL, 0, false)",
 )
 
 

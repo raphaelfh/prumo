@@ -82,7 +82,6 @@ def _entity_type(cardinality: str, fields: list[RunViewField]) -> RunViewEntityT
         name="numeric_performance",
         label="Numeric performance",
         cardinality=cardinality,
-        role="study_section",
         sort_order=0,
         is_required=False,
         fields=fields,

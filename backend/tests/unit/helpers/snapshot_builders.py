@@ -60,7 +60,6 @@ def entity_node(entity_id: UUID, *fields: dict[str, Any], **over: Any) -> dict[s
         "entry_label": None,
         "parent_entity_type_id": None,
         "cardinality": "one",
-        "role": "study_section",
         "sort_order": 0,
         "is_required": False,
         "fields": [dict(f, sort_order=i) for i, f in enumerate(fields)],

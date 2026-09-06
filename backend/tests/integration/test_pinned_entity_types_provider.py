@@ -34,7 +34,6 @@ def _wide_entity_type(
         "description": "pinned description",
         "parent_entity_type_id": parent,
         "cardinality": "one",
-        "role": role,
         "sort_order": 0,
         "is_required": False,
         "fields": fields or [],

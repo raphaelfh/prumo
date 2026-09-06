@@ -58,7 +58,6 @@ SNAPSHOT_SQL = text(
                         'entry_label', et.entry_label,
                         'parent_entity_type_id', et.parent_entity_type_id,
                         'cardinality', et.cardinality,
-                        'role', et.role,
                         'sort_order', et.sort_order,
                         'is_required', et.is_required,
                         'fields', COALESCE(
@@ -155,17 +154,26 @@ async def build_template_version_snapshot(
 def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
     """Detect snapshots the run view / prompts cannot trust structurally.
 
-    Narrow = empty, ANY element lacking ``role``, or ANY field lacking a
-    wide-builder key. Three eras motivate the three probes:
+    Narrow = empty, ANY element lacking ``cardinality``, or ANY field
+    lacking a wide-builder key. Three eras motivate the three probes:
 
-    - pre-0017: no ``role`` at all;
-    - 0017-patched pre-0016 rows and 0016→0026-era clone snapshots:
-      ``role`` present (0017 injected it in place) but the FIELD objects
-      predate the wide builder — migration 0026's backfill keys on the
-      role probe and skips exactly these, so ``model_validate`` would
+    - pre-0017: no structural key at all;
+    - 0017-patched pre-0016 rows and 0016→0026-era clone snapshots: the
+      structural key is present (0017 injected it in place) but the FIELD
+      objects predate the wide builder — migration 0026's backfill keys on
+      the same probe and skips exactly these, so ``model_validate`` would
       serve them with ``llm_description``/``allow_other`` silently
       defaulted where the pre-B-2 code read live rows;
     - heterogeneous mixes of the above.
+
+    The era probe is ``cardinality``, NOT ``role``. It was ``role`` until
+    trees B5, and 0069 removes that key from every snapshot the writer
+    produces — so leaving the probe alone would classify EVERY newly
+    published snapshot as pre-0017 and chain it to the live fallback,
+    silently unpinning every run from the tree it was pinned to. Both keys
+    were written by the same builder in the same era, so ``cardinality``
+    dates a snapshot exactly as ``role`` did, and it is not going away:
+    it is now the structure.
 
     Per-element, per-field: one narrow member chains the whole tree to
     the live fallback. Empty is narrow so the fallback repopulates it —
@@ -175,7 +183,7 @@ def snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
     if not entity_types:
         return True
     for et in entity_types:
-        if "role" not in et:
+        if "cardinality" not in et:
             return True
         for field in et.get("fields") or []:
             if "llm_description" not in field or "allow_other" not in field:
