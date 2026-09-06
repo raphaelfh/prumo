@@ -474,7 +474,6 @@ describe('TemplateDiscardDialog — outcomes', () => {
   it.each([
     ['NARROW_BASELINE', templateConfig.discardRefusedNarrowBaseline],
     ['CARDINALITY_DOWNGRADE_BLOCKED', templateConfig.discardRefusedCardinality],
-    ['CONTAINER_SWAP_UNSUPPORTED', templateConfig.discardRefusedContainerSwap],
     ['DISCARD_RACED', templateConfig.discardRefusedRaced],
   ] as const)(
     '%s → the dialog stays open on LOCAL copy, never the server prose',

@@ -8,7 +8,6 @@
 
 import type {
   ExtractionCardinality,
-  ExtractionEntityRole,
   ExtractionEntityTypeWithFields,
   ExtractionField,
   ExtractionFieldType,
@@ -80,7 +79,6 @@ export function entityTypesFromRunView(
     description: et.description,
     parent_entity_type_id: et.parent_entity_type_id,
     cardinality: et.cardinality as ExtractionCardinality,
-    role: et.role as ExtractionEntityRole,
     sort_order: et.sort_order,
     is_required: et.is_required,
     entry_label: et.entry_label,

@@ -70,10 +70,10 @@ async def _clone_in_sentinel_project(db: AsyncSession) -> tuple[UUID, UUID, UUID
     await db.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, "
+            "(id, project_template_id, name, label, cardinality,"
             " parent_entity_type_id, sort_order, is_required) "
             "VALUES (:id, :tid, 'stray_section', 'Stray Section', 'one', "
-            " 'study_section', NULL, 0, false)"
+            " NULL, 0, false)"
         ),
         {"id": str(entity_type_id), "tid": str(template_id)},
     )

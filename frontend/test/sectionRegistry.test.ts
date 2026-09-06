@@ -14,10 +14,10 @@ function field(id: string, required: boolean) {
     sort_order: 0, created_at: '',
   };
 }
-function entity(id: string, role: ExtractionEntityTypeWithFields['role'], cardinality: 'one' | 'many', fields: ReturnType<typeof field>[], parent: string | null = null): ExtractionEntityTypeWithFields {
+function entity(id: string, cardinality: 'one' | 'many', fields: ReturnType<typeof field>[], parent: string | null = null): ExtractionEntityTypeWithFields {
   return {
     id, template_id: 't', name: id, label: `Label ${id}`, description: null,
-    parent_entity_type_id: parent, cardinality, role, sort_order: 0,
+    parent_entity_type_id: parent, cardinality, sort_order: 0,
     is_required: true, entry_label: null, created_at: '',
     fields: fields.map(f => ({ ...f, entity_type_id: id })),
   };
@@ -32,7 +32,7 @@ function instance(id: string, entity_type_id: string, parent_instance_id: string
 
 describe('buildSectionRegistry', () => {
   it('marks a study section complete when all required fields are filled', () => {
-    const et = entity('s1', 'study_section', 'one', [field('f1', true), field('f2', true)]);
+    const et = entity('s1', 'one', [field('f1', true), field('f2', true)]);
     const args: BuildSectionRegistryArgs = {
       roots: [et], entityTypes: [et], articleId: 'a1', instances: [instance('i1', 's1')],
       values: { i1_f1: 'x', i1_f2: 'y' }, activeEntries: {},
@@ -42,7 +42,7 @@ describe('buildSectionRegistry', () => {
   });
 
   it('marks in_progress when partially filled and empty when none filled', () => {
-    const et = entity('s1', 'study_section', 'one', [field('f1', true), field('f2', true)]);
+    const et = entity('s1', 'one', [field('f1', true), field('f2', true)]);
     const partial = buildSectionRegistry({ roots: [et], entityTypes: [et], articleId: 'a1', instances: [instance('i1', 's1')], values: { i1_f1: 'x' }, activeEntries: {}})[0];
     const empty = buildSectionRegistry({ roots: [et], entityTypes: [et], articleId: 'a1', instances: [instance('i1', 's1')], values: {}, activeEntries: {}})[0];
     expect(partial.state).toBe('in_progress');
@@ -50,9 +50,9 @@ describe('buildSectionRegistry', () => {
   });
 
   it('omits a nested row while the group has no entries', () => {
-    const study = entity('s1', 'study_section', 'one', [field('f1', true)]);
-    const group = entity('mc', 'model_container', 'many', []);
-    const child = entity('cs', 'model_section', 'many', [field('cf', true)], 'mc');
+    const study = entity('s1', 'one', [field('f1', true)]);
+    const group = entity('mc', 'many', []);
+    const child = entity('cs', 'many', [field('cf', true)], 'mc');
     const items = buildSectionRegistry({
       roots: [study, group], entityTypes: [study, group, child], articleId: 'a1',
       // No instance of the group, so there is no entry to scope a child to.
@@ -64,9 +64,9 @@ describe('buildSectionRegistry', () => {
   });
 
   it('scopes a nested row to the entry the form is showing', () => {
-    const study = entity('s1', 'study_section', 'one', [field('f1', true)]);
-    const group = entity('mc', 'model_container', 'many', []);
-    const child = entity('cs', 'model_section', 'many', [field('cf', true)], 'mc');
+    const study = entity('s1', 'one', [field('f1', true)]);
+    const group = entity('mc', 'many', []);
+    const child = entity('cs', 'many', [field('cf', true)], 'mc');
     const instances = [
       instance('i1', 's1'),
       instance('m1', 'mc'), instance('m2', 'mc'),
@@ -103,8 +103,8 @@ describe('buildSectionRegistry', () => {
     // checked the field's entity type alone — so a section could read complete
     // while the entry on screen was empty, and `requiredFilled` could exceed
     // `requiredTotal`. It now narrows both sides.
-    const group = entity('mc', 'model_container', 'many', []);
-    const child = entity('cs', 'model_section', 'many', [field('cf', true)], 'mc');
+    const group = entity('mc', 'many', []);
+    const child = entity('cs', 'many', [field('cf', true)], 'mc');
     const args = {
       roots: [group], entityTypes: [group, child], articleId: 'a1',
       instances: [
@@ -138,9 +138,9 @@ describe('buildSectionRegistry', () => {
   it('walks deeper than two levels', () => {
     // The old builder was typed `level: 0 | 1`. Depth three is what B5's
     // schema change makes representable; the registry is ready for it.
-    const group = entity('g1', 'model_container', 'many', []);
-    const nested = entity('g2', 'model_section', 'many', [], 'g1');
-    const leaf = entity('leaf', 'model_section', 'one', [field('lf', true)], 'g2');
+    const group = entity('g1', 'many', []);
+    const nested = entity('g2', 'many', [], 'g1');
+    const leaf = entity('leaf', 'one', [field('lf', true)], 'g2');
     const items = buildSectionRegistry({
       roots: [group], entityTypes: [group, nested, leaf], articleId: 'a1',
       instances: [instance('e1', 'g1'), instance('e2', 'g2', 'e1'), instance('l1', 'leaf', 'e2')],

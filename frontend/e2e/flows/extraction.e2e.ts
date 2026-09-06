@@ -5,7 +5,7 @@ import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 import {
   resolveActiveExtractionTemplateId,
-  resolveStudySectionEntityTypeId,
+  resolveLeafSectionEntityTypeId,
 } from "../_fixtures/supabase-admin";
 
 // Section extraction is async: POST returns 202 + { job_id }; the result is
@@ -67,7 +67,7 @@ test.describe("Extraction flow (UI + API)", () => {
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-extraction");
     const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
-    const entityTypeId = await resolveStudySectionEntityTypeId(templateId);
+    const entityTypeId = await resolveLeafSectionEntityTypeId(templateId);
 
     const modelResponse = await request.post(`${env.apiUrl}/api/v1/extraction/models`, {
       headers: authHeaders(token, traceId),
@@ -128,7 +128,7 @@ test.describe("Extraction flow (UI + API)", () => {
 
     const token = await resolveAuthToken(page);
     const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
-    const entityTypeId = await resolveStudySectionEntityTypeId(templateId);
+    const entityTypeId = await resolveLeafSectionEntityTypeId(templateId);
     const response = await request.post(`${env.apiUrl}/api/v1/extraction/sections`, {
       headers: authHeaders(token, createTraceId("e2e-extraction-dispatch")),
       data: {

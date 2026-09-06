@@ -34,7 +34,6 @@ def _claims(**overrides: Any) -> dict[str, Any]:
     claims: dict[str, Any] = {
         "sub": TEST_SUB,
         "email": "user@example.com",
-        "role": "authenticated",
         "aud": "authenticated",
         "iss": _issuer(),
         "iat": now,

@@ -710,7 +710,6 @@ _SCALAR_ATTRIBUTES = frozenset(
         "description",
         "entry_label",
         "cardinality",
-        "role",
         "is_required",
         "field_type",
         "unit",

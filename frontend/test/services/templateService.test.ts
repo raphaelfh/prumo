@@ -85,7 +85,6 @@ describe('createSection — typed create endpoint', () => {
     label: 'Outcomes',
     description: 'Outcome measures',
     cardinality: 'many',
-    role: 'study_section',
     isRequired: true,
   } as const;
 
@@ -104,7 +103,6 @@ describe('createSection — typed create endpoint', () => {
           label: 'Outcomes',
           description: 'Outcome measures',
           cardinality: 'many',
-          role: 'study_section',
           parent_entity_type_id: null,
           entry_label: null,
           is_required: true,
@@ -120,7 +118,6 @@ describe('createSection — typed create endpoint', () => {
     apiClientMock.mockResolvedValue({id: 'sec-new'});
     await createSection({
       ...PARAMS,
-      role: 'model_container',
       entryLabel: 'algorithm',
     });
     expect(
@@ -131,7 +128,6 @@ describe('createSection — typed create endpoint', () => {
     apiClientMock.mockResolvedValue({id: 'sec-child'});
     await createSection({
       ...PARAMS,
-      role: 'model_section',
       parentEntityTypeId: 'grp-1',
     });
     expect(
@@ -148,7 +144,7 @@ describe('createSection — typed create endpoint', () => {
     ).toBeNull();
 
     apiClientMock.mockRejectedValue(
-      new ApiError('HTTP_ERROR', 'template already has a model_container', 409),
+      new ApiError('HTTP_ERROR', 'entry key already used in this section', 409),
     );
     const result = await createSection(PARAMS);
     expect(result.ok).toBe(false);

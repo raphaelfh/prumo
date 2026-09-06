@@ -56,11 +56,19 @@ async def test_calculate_model_progress_is_security_definer(db_session: AsyncSes
     assert any("search_path=" in entry for entry in proconfig)
 
 
-async def test_check_cardinality_one_signature_locked(db_session: AsyncSession) -> None:
-    """Contract: ``check_cardinality_one(p_article_id, p_entity_type_id,
-    p_parent_instance_id)``. Called from
-    ``extractionInstanceService.createInstance`` before INSERT to
-    short-circuit cardinality='one' duplication."""
+async def test_check_cardinality_one_stays_retired(db_session: AsyncSession) -> None:
+    """Retired by 0069, and it must STAY retired.
+
+    The contract this pinned — `check_cardinality_one(p_article_id,
+    p_entity_type_id, p_parent_instance_id)` — served
+    `extractionInstanceService.createInstance`, which trees B2 replaced with
+    `POST /api/v1/extraction/instances`. B2 removed only the browser CALL,
+    leaving a SECURITY DEFINER function granted to `authenticated` with an
+    admin-RPC probe as its only caller; 0069 drops the function itself.
+
+    Inverted rather than deleted: a dropped SECURITY DEFINER function that
+    quietly comes back is exactly the kind of privileged surface nobody
+    notices, and this is the test that would notice."""
     args = (
         await db_session.execute(
             text(
@@ -69,10 +77,7 @@ async def test_check_cardinality_one_signature_locked(db_session: AsyncSession) 
             )
         )
     ).scalar()
-    assert args is not None
-    assert "p_article_id" in args
-    assert "p_entity_type_id" in args
-    assert "p_parent_instance_id" in args
+    assert args is None, "check_cardinality_one must stay dropped (0069)"
 
 
 async def test_is_project_reviewer_helper_exists(db_session: AsyncSession) -> None:

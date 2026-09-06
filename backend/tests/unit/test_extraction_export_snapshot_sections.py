@@ -29,7 +29,6 @@ def _container_view(payload: dict) -> RunViewEntityType:
         "label": "Prediction models",
         "parent_entity_type_id": None,
         "cardinality": "many",
-        "role": "model_container",
         "sort_order": 0,
         "is_required": False,
         "fields": [],

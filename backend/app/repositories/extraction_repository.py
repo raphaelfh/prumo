@@ -104,44 +104,44 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
         )
         return result.scalar_one_or_none()
 
-    async def get_by_role(
+    async def get_root_group(
         self,
-        role: str,
         template_id: UUID | str,
         is_project_template: bool = True,
     ) -> ExtractionEntityType | None:
-        """
-        Fetch the single entity type for a given role within a template.
+        """The template's FIRST root entry group, by sort order.
 
-        The partial unique index from migration 0016
-        (``uq_extraction_entity_types_one_container_per_*``) enforces at
-        most one ``model_container`` per template, so this returns at
-        most one row without needing a defensive ``LIMIT 1``. Returns
-        ``None`` when the template has no entity type with the given
-        role (e.g. QA templates have no ``model_container``).
+        Replaces ``get_by_role('model_container', ...)``, which leaned on
+        0016's partial unique index to return at most one row. 0069 drops
+        that index — a template may hold several root groups — so this is
+        explicitly "the first", with an ORDER BY and a LIMIT rather than a
+        `scalar_one_or_none` that would now raise on a perfectly legal
+        template.
 
-        Args:
-            role: ``ExtractionEntityRole`` value (e.g.
-                ``'model_container'``).
-            template_id: Template ID (global or project, per the flag).
-            is_project_template: ``True`` for project clones (default);
-                ``False`` for the global catalogue.
+        Its one caller is the model identification pipeline, which is
+        single-group by construction and retires in trees B6. Nothing new
+        should call this: a caller that wants "the groups" wants all of
+        them.
         """
         if isinstance(template_id, str):
             template_id = UUID(template_id)
 
-        query = select(ExtractionEntityType).where(ExtractionEntityType.role == role)
+        query = select(ExtractionEntityType).where(
+            ExtractionEntityType.parent_entity_type_id.is_(None),
+            ExtractionEntityType.cardinality == "many",
+        )
         if is_project_template:
             query = query.where(ExtractionEntityType.project_template_id == template_id)
         else:
             query = query.where(ExtractionEntityType.template_id == template_id)
+        query = query.order_by(ExtractionEntityType.sort_order, ExtractionEntityType.id).limit(1)
 
         query_start = perf_counter()
         result = await self.db.execute(query)
         logger.debug(
             "repository_query_db_latency",
             repository=self.__class__.__name__,
-            operation="get_by_role",
+            operation="get_root_group",
             db_duration_ms=(perf_counter() - query_start) * 1000,
         )
         return result.scalar_one_or_none()

@@ -24,7 +24,6 @@ from app.llm.prompts import entry_identification
 from app.llm.provider import build_model
 from app.models.extraction import (
     DEFAULT_ENTRY_LABEL,
-    ExtractionEntityRole,
     ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
@@ -456,24 +455,24 @@ class ModelExtractionService(LoggerMixin):
         """
         Fetch the entity_type_id of the template's model container.
 
-        Looks up by structural ``role='model_container'`` (the schema
-        guarantees at most one per template). Falls back to the global
-        catalogue if the project clone lookup misses, so callers can pass
-        either id flavour without branching.
+        Looks up the FIRST root repeating section by ``(sort_order, id)``.
+        Was ``role='model_container'``, which 0069 retired along with the
+        partial unique index that made it singular — a template may now hold
+        several root groups, and this pipeline retires in B6. Falls back to
+        the global catalogue if the project clone lookup misses, so callers
+        can pass either id flavour without branching.
 
         Returns:
             entity_type_id or None if the template has no model container.
         """
-        entity_type = await self._entity_types.get_by_role(
-            ExtractionEntityRole.MODEL_CONTAINER.value,
+        entity_type = await self._entity_types.get_root_group(
             template_id,
             is_project_template=True,
         )
         if entity_type:
             return str(entity_type.id)
 
-        entity_type = await self._entity_types.get_by_role(
-            ExtractionEntityRole.MODEL_CONTAINER.value,
+        entity_type = await self._entity_types.get_root_group(
             template_id,
             is_project_template=False,
         )
@@ -493,8 +492,14 @@ class ModelExtractionService(LoggerMixin):
         pinned_tree = await entity_types_for_version(
             self.db, version_id=run.version_id, template_id=run.template_id
         )
+        # First root group by sort order, matching `get_root_group`. This
+        # pipeline is single-group by construction and retires in trees B6.
         container = next(
-            (et for et in pinned_tree if et.role == ExtractionEntityRole.MODEL_CONTAINER.value),
+            (
+                et
+                for et in sorted(pinned_tree, key=lambda e: (e.sort_order, str(e.id)))
+                if et.parent_entity_type_id is None and et.cardinality == "many"
+            ),
             None,
         )
         if container is not None:

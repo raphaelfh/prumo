@@ -46,7 +46,6 @@ function tree() {
         name: 'study',
         label: 'Study',
         description: null,
-        role: 'study_section',
         cardinality: 'one',
         parent_entity_type_id: null,
         sort_order: 0,
@@ -68,7 +67,6 @@ function tree() {
         name: 'models',
         label: 'Models',
         description: null,
-        role: 'model_container',
         cardinality: 'many',
         parent_entity_type_id: null,
         sort_order: 1,
@@ -98,7 +96,6 @@ describe('useActiveTemplateStructure (B-3b)', () => {
     // The B-3a projection fields all survive.
     expect(byId.get('et-models')).toMatchObject({
       name: 'models',
-      role: 'model_container',
       cardinality: 'many',
       sort_order: 1,
     });

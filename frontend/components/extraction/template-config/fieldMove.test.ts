@@ -39,7 +39,7 @@ describe('deriveSectionOrder', () => {
     const tree = buildTemplateTree(
       [
         {id: 's1', name: 's', label: 'S', sort_order: 1},
-        {id: 'g1', name: 'g', label: 'G', role: 'model_container', sort_order: 2},
+        {id: 'g1', name: 'g', label: 'G', sort_order: 2},
         {id: 'c1', name: 'c', label: 'C', parent_entity_type_id: 'g1', sort_order: 1},
       ],
       [
@@ -177,7 +177,7 @@ describe('applySectionOrder — the optimistic order overlay (panel decision 7)'
     buildTemplateTree(
       [
         {id: 's1', name: 's', label: 'S', sort_order: 1},
-        {id: 'g1', name: 'g', label: 'G', role: 'model_container', sort_order: 2},
+        {id: 'g1', name: 'g', label: 'G', sort_order: 2},
         {id: 'c1', name: 'c', label: 'C', parent_entity_type_id: 'g1', sort_order: 1},
       ],
       [

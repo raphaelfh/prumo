@@ -258,7 +258,6 @@ const entityTypesOf = (fields: ReturnType<typeof field>[]) =>
   sections.map((section) => ({
     ...section,
     description: null,
-    role: 'study_section',
     cardinality: 'one',
     parent_entity_type_id: null,
     fields: fields.filter((f) => f.entity_type_id === section.id),

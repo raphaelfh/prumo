@@ -58,7 +58,6 @@ beforeEach(() => {
       id: 'sec-new',
       name: 'outcomes',
       label: 'Outcomes',
-      role: 'study_section',
       cardinality: 'one',
       is_required: false,
       project_template_id: 't1',
@@ -69,7 +68,7 @@ beforeEach(() => {
 });
 
 describe('AddSectionDialog — root mode (unchanged B-7 contract)', () => {
-  it('keeps the cardinality select and posts role study_section', async () => {
+  it('keeps the cardinality select and posts a parentless section', async () => {
     const {onSectionAdded} = renderDialog({kind: 'root'});
     expect(screen.getByText('Section type *')).toBeInTheDocument();
     expect(screen.queryByText('Entry label')).toBeNull();
@@ -82,7 +81,6 @@ describe('AddSectionDialog — root mode (unchanged B-7 contract)', () => {
         templateId: 't1',
         name: 'study_basics',
         label: 'Study basics',
-        role: 'study_section',
         cardinality: 'one',
         parentEntityTypeId: null,
       }),
@@ -107,7 +105,7 @@ describe('AddSectionDialog — root mode (unchanged B-7 contract)', () => {
     await submit();
     await waitFor(() => expect(createSection).toHaveBeenCalledTimes(1));
     expect(createSection).toHaveBeenCalledWith(
-      expect.objectContaining({role: 'study_section', cardinality: 'many', entryLabel: 'arm'}),
+      expect.objectContaining({cardinality: 'many', entryLabel: 'arm'}),
     );
   });
 
@@ -140,7 +138,6 @@ describe('AddSectionDialog — group mode (Add repeating group…)', () => {
       expect.objectContaining({
         name: 'models_compared',
         label: 'Models compared',
-        role: 'model_container',
         cardinality: 'many',
         entryLabel: 'algorithm',
         parentEntityTypeId: null,
@@ -173,7 +170,6 @@ describe('AddSectionDialog — group mode (Add repeating group…)', () => {
     await waitFor(() => expect(createSection).toHaveBeenCalledTimes(1));
     expect(createSection).toHaveBeenCalledWith(
       expect.objectContaining({
-        role: 'model_container',
         entryLabel: 'model',
         description: 'One entry per model the paper reports.',
       }),
@@ -189,7 +185,7 @@ describe('AddSectionDialog — per-model mode (New per-{noun} section)', () => {
     entryNoun: 'algorithm',
   };
 
-  it('presets the invoking group as parent and posts role model_section', async () => {
+  it('presets the invoking group as parent', async () => {
     renderDialog(mode);
     expect(screen.getByText('New per-algorithm section')).toBeInTheDocument();
     await userEvent.type(labelInput(), 'Calibration');
@@ -199,7 +195,6 @@ describe('AddSectionDialog — per-model mode (New per-{noun} section)', () => {
       expect.objectContaining({
         name: 'calibration',
         label: 'Calibration',
-        role: 'model_section',
         parentEntityTypeId: 'grp',
         cardinality: 'one',
         entryLabel: undefined,

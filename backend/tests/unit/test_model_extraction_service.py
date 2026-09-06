@@ -82,7 +82,6 @@ def _live_container(entry_label: str | None = None) -> RunViewEntityType:
         label="Prediction Models",
         entry_label=entry_label,
         cardinality="many",
-        role="model_container",
         sort_order=0,
         is_required=False,
         fields=[
@@ -327,7 +326,7 @@ class TestModelIdentification:
         """Test successful model identification."""
         mock_entity = MagicMock()
         mock_entity.id = uuid4()
-        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_root_group = AsyncMock(return_value=mock_entity)
 
         with (
             patch(
@@ -397,7 +396,7 @@ class TestModelIdentification:
         'entry', never 'model'."""
         mock_entity = MagicMock()
         mock_entity.id = uuid4()
-        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_root_group = AsyncMock(return_value=mock_entity)
         container = _live_container(noun)
         container.description = "Only models validated on external data."
         captured: dict[str, str] = {}
@@ -434,7 +433,7 @@ class TestEntityTypeLookup:
 
     @pytest.mark.asyncio
     async def test_get_model_container_entity_type_id(self, service):
-        """Test entity type lookup by structural role (was: by name)."""
+        """The template's first ROOT GROUP (was: by role, was: by name)."""
         template_id = uuid4()
         entity_type_id = uuid4()
 
@@ -442,16 +441,17 @@ class TestEntityTypeLookup:
         mock_entity = MagicMock()
         mock_entity.id = entity_type_id
 
-        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_root_group = AsyncMock(return_value=mock_entity)
 
         result = await service._get_model_container_entity_type_id(template_id)
 
         # Returns str of entity_type_id
         assert result == str(entity_type_id)
-        service._entity_types.get_by_role.assert_called()
-        # First call asks for project-scope (is_project_template=True).
-        first_call = service._entity_types.get_by_role.call_args_list[0]
-        assert first_call.args[0] == "model_container"
+        service._entity_types.get_root_group.assert_called()
+        # First call asks for project-scope, falling back to global.
+        first_call = service._entity_types.get_root_group.call_args_list[0]
+        assert first_call.args[0] == template_id
+        assert first_call.kwargs["is_project_template"] is True
 
     @pytest.mark.asyncio
     async def test_get_child_entity_types(self, service):
@@ -516,7 +516,7 @@ class TestFullExtractionFlow:
         # Mock entity type lookup
         mock_entity = MagicMock()
         mock_entity.id = entity_type_id
-        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_root_group = AsyncMock(return_value=mock_entity)
         service._entity_types.get_children = AsyncMock(return_value=[])
 
         # Mock run creation
@@ -601,7 +601,7 @@ class TestFullExtractionFlow:
 
         mock_entity = MagicMock()
         mock_entity.id = entity_type_id
-        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_root_group = AsyncMock(return_value=mock_entity)
         service._entity_types.get_children = AsyncMock(return_value=[])
 
         # The session run to reuse — already in EXTRACT stage, owned by the
@@ -710,7 +710,7 @@ class TestFullExtractionFlow:
 
         mock_entity = MagicMock()
         mock_entity.id = entity_type_id
-        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_root_group = AsyncMock(return_value=mock_entity)
         service._entity_types.get_children = AsyncMock(return_value=[])
 
         mock_run = MagicMock()
@@ -787,7 +787,7 @@ class TestFullExtractionFlow:
 
         mock_entity = MagicMock()
         mock_entity.id = entity_type_id
-        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_root_group = AsyncMock(return_value=mock_entity)
         service._entity_types.get_children = AsyncMock(return_value=[])
 
         mock_run = MagicMock()
@@ -843,7 +843,7 @@ class TestFullExtractionFlow:
         service._templates.get_with_entity_types = AsyncMock(return_value=mock_template)
 
         # Mock entity type not found
-        service._entity_types.get_by_role = AsyncMock(return_value=None)
+        service._entity_types.get_root_group = AsyncMock(return_value=None)
 
         # Mock run creation
         mock_run = MagicMock()
@@ -899,7 +899,7 @@ async def test_build_prompt_input_called_with_correct_kwargs(service):
     mock_template = MagicMock()
     mock_template.entity_types = []
     service._templates.get_with_entity_types = AsyncMock(return_value=mock_template)
-    service._entity_types.get_by_role = AsyncMock(return_value=None)
+    service._entity_types.get_root_group = AsyncMock(return_value=None)
 
     mock_run = MagicMock()
     mock_run.id = run_id
@@ -951,7 +951,7 @@ async def test_identify_models_sends_full_text_no_truncation(service):
     long_text = "MODEL_SECTION_MARKER\n" + ("token " * 8000)  # far over the old 15k chars
     mock_entity = MagicMock()
     mock_entity.id = uuid4()
-    service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+    service._entity_types.get_root_group = AsyncMock(return_value=mock_entity)
 
     with (
         patch("app.services.model_extraction_service.extract_structured", _fake_extract),
@@ -977,7 +977,7 @@ class TestInstanceLabelNoun:
         run = SimpleNamespace(id=uuid4(), version_id=uuid4(), template_id=uuid4())
         mock_entity = MagicMock()
         mock_entity.id = uuid4()
-        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_root_group = AsyncMock(return_value=mock_entity)
         service._entity_types.get_children = AsyncMock(return_value=[])
         resolver = _fake_resolve_instance()
         with (

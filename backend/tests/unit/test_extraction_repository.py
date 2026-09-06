@@ -56,13 +56,11 @@ def make_db() -> AsyncMock:
 def make_entity_type(
     *,
     id: uuid.UUID | None = None,
-    role: str = "study_section",
     parent: uuid.UUID | None = None,
     sort_order: int = 0,
 ) -> MagicMock:
     et = MagicMock(spec=ExtractionEntityType)
     et.id = id or uuid.uuid4()
-    et.role = role
     et.parent_entity_type_id = parent
     et.sort_order = sort_order
     et.fields = []
@@ -151,33 +149,33 @@ class TestExtractionEntityTypeRepository:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_by_role_project_template(self) -> None:
+    async def test_get_root_group_project_template(self) -> None:
         db = make_db()
-        et = make_entity_type(role="model_container")
+        et = make_entity_type()
         db.execute = AsyncMock(return_value=make_scalar_one_or_none(et))
         repo = ExtractionEntityTypeRepository(db)
 
-        result = await repo.get_by_role("model_container", TEMPLATE_ID)
+        result = await repo.get_root_group(TEMPLATE_ID)
 
         assert result is et
 
     @pytest.mark.asyncio
-    async def test_get_by_role_global_template(self) -> None:
+    async def test_get_root_group_global_template(self) -> None:
         db = make_db()
         db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
         repo = ExtractionEntityTypeRepository(db)
 
-        result = await repo.get_by_role("study_section", TEMPLATE_ID, is_project_template=False)
+        result = await repo.get_root_group(TEMPLATE_ID, is_project_template=False)
 
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_by_role_accepts_string_template_id(self) -> None:
+    async def test_get_root_group_accepts_string_template_id(self) -> None:
         db = make_db()
         db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
         repo = ExtractionEntityTypeRepository(db)
 
-        result = await repo.get_by_role("model_container", str(TEMPLATE_ID))
+        result = await repo.get_root_group(str(TEMPLATE_ID))
 
         assert result is None
 

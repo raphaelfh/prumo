@@ -1240,10 +1240,11 @@ export interface paths {
          * Create Template Section
          * @description Create a section; ``sort_order`` is server-computed (max+1).
          *
-         *     ``role`` and ``parent_entity_type_id`` are explicit parameters — a
-         *     model_section's parent must be the template's model_container (400);
-         *     a second model_container is a 409. Stamps the B-4 draft marker via
-         *     the 0048 trigger (nothing manual).
+         *     ``parent_entity_type_id`` is the only structural parameter: 0069
+         *     retired ``role``, so a section names a parent (which must repeat — 400
+         *     otherwise) or is a root, and a template may hold any number of root
+         *     groups. Stamps the B-4 draft marker via the 0048 trigger (nothing
+         *     manual).
          */
         post: operations["create_template_section_api_v1_projects__project_id__templates__template_id__sections_post"];
         delete?: never;
@@ -4567,10 +4568,11 @@ export interface components {
         /**
          * PortableSection
          * @description One ``extraction_entity_types`` row plus its fields and (for a group)
-         *     its child sections. ``group`` ⇒ ``model_container``; nested ⇒
-         *     ``model_section``; otherwise ``study_section``. ``entry_label`` is legal
-         *     on any repeating section (a group, or ``repeats``); the import keeps the
-         *     bundle's value verbatim, NULL included, and readers fall back to
+         *     its child sections. ``group`` and ``repeats`` both mean
+         *     ``cardinality='many'``; nesting is ``parent_entity_type_id``, at any
+         *     depth (0069 retired ``role``). ``entry_label`` is legal on any repeating
+         *     section; the import keeps the bundle's value verbatim, NULL included,
+         *     and readers fall back to
          *     :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL.
          */
         PortableSection: {
@@ -5097,8 +5099,14 @@ export interface components {
         /**
          * RunViewEntityType
          * @description An entity type in the frozen template snapshot, with its fields embedded.
-         *     ``role`` drives the study/model partition; the tree hierarchy is conveyed by
-         *     ``parent_entity_type_id`` (flat array, ordered by ``sort_order``).
+         *
+         *     Structure is ``parent_entity_type_id`` + ``cardinality`` (trees B5): a
+         *     repeating section is an entry group and may own children at any depth.
+         *     The array is flat, ordered by ``sort_order``.
+         *
+         *     ``role`` is gone. Dropping only the frontend's mapping would have been
+         *     SILENT — the backend would keep sending a key nobody read — so the field
+         *     leaves the wire in the same change.
          */
         RunViewEntityType: {
             /** Cardinality */
@@ -5122,8 +5130,6 @@ export interface components {
             name: string;
             /** Parent Entity Type Id */
             parent_entity_type_id?: string | null;
-            /** Role */
-            role: string;
             /** Sort Order */
             sort_order: number;
         };
@@ -5307,13 +5313,12 @@ export interface components {
          * SectionCreateRequest
          * @description Create a section (entity type) in the path template.
          *
-         *     ``role`` is REQUIRED with no default — the column deliberately has no
-         *     server_default (migration 0016 step 4) so an insert that omits the
-         *     structural role fails loudly instead of silently becoming a
-         *     study_section. ``sort_order`` is deliberately ABSENT: the server
-         *     computes max+1 template-wide inside the INSERT itself, killing the
-         *     frontend's read-then-write race. The ``ck_role_parent`` validator
-         *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
+         *     ``role`` is gone (0069): a section's place in the tree is its
+         *     ``parent_entity_type_id`` plus its ``cardinality``. ``sort_order`` is
+         *     deliberately ABSENT: the server computes max+1 template-wide inside
+         *     the INSERT itself, killing the frontend's read-then-write race.
+         *     Whether the named parent may HAVE children — it must repeat — is the
+         *     service's job, because it needs the parent row; parent OWNERSHIP
          *     (parent belongs to THIS template) is the service's BOLA job.
          *     ``entry_label`` is a repeating section's entry noun (B-8, D3 — unlocked
          *     from the container in the entry-group train): REQUIRED, non-blank, on
@@ -5345,11 +5350,6 @@ export interface components {
             name: string;
             /** Parent Entity Type Id */
             parent_entity_type_id?: string | null;
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "study_section" | "model_container" | "model_section";
         };
         /**
          * SectionDeleteResponse
@@ -5485,20 +5485,15 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "study_section" | "model_container" | "model_section";
             /** Sort Order */
             sort_order: number;
         };
         /**
          * SectionUpdateRequest
-         * @description Partial section update: ``label`` and ``description`` (any role),
-         *     ``entry_label`` (repeating sections only) and ``cardinality``
-         *     (per-model sections only) — the role rules live in the service, which
-         *     owns the row (B-8, D5). At least one field must be provided, and
+         * @description Partial section update: ``label`` and ``description`` (any
+         *     section), ``entry_label`` (repeating sections only) and
+         *     ``cardinality`` (any section since 0069) — the rules live in the
+         *     service, which owns the row and its children. At least one field must be provided, and
          *     explicit nulls are rejected (omit instead) so a smuggled ``{"label":
          *     null}`` can never blank a column; a description is cleared by sending
          *     it blank. Replaces the label-only SectionRenameRequest; the pre-B-8
@@ -5821,16 +5816,21 @@ export interface components {
          *
          *     Deliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that
          *     enum is the cross-cutting vocabulary every client branches on, and these
-         *     five are one endpoint's private outcomes. Same call as
+         *     four are one endpoint's private outcomes. Same call as
          *     ``ExtractionErrorCode`` — slice-local codes stay slice-local, so the
          *     global contract does not grow a member per feature.
          *
          *     The split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a
-         *     *question* (re-post with ``acknowledge_orphans``), the other four are
+         *     *question* (re-post with ``acknowledge_orphans``), the other three are
          *     refusals no retry of the same request can satisfy.
+         *
+         *     ``CONTAINER_SWAP_UNSUPPORTED`` left with 0069: it reported the partial
+         *     unique index that allowed one container per template, and a template
+         *     may now hold as many root groups as it likes, so the restore simply
+         *     writes the swap.
          * @enum {string}
          */
-        TemplateDiscardRefusalCode: "ORPHAN_ACK_REQUIRED" | "NARROW_BASELINE" | "CARDINALITY_DOWNGRADE_BLOCKED" | "CONTAINER_SWAP_UNSUPPORTED" | "DISCARD_RACED";
+        TemplateDiscardRefusalCode: "ORPHAN_ACK_REQUIRED" | "NARROW_BASELINE" | "CARDINALITY_DOWNGRADE_BLOCKED" | "DISCARD_RACED";
         /**
          * TemplateDiscardRefusalDetails
          * @description The ``error.details`` payload of an ``ORPHAN_ACK_REQUIRED`` refusal.

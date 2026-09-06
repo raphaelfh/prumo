@@ -53,7 +53,7 @@ Dataset identifiers:
 - `E2E_TEMPLATE_ID`, `E2E_ENTITY_TYPE_ID` — **legacy**, read only by
   `extraction-observability.e2e.ts` (which matches no Playwright project,
   so it runs only via `test:e2e:baseline`). Local flows under `flows/` auto-resolve the
-  active extraction template + a study_section entity at test runtime
+  active extraction template + a childless root section at test runtime
   (see `supabase-admin.ts#resolveActiveExtractionTemplateId`) so the
   suite survives backend pytest's reseed of CHARMS / PROBAST.
 

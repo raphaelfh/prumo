@@ -162,8 +162,6 @@ export const templateConfig = {
   discardKeptReasonRelatedToKeptNode: 'it belongs to an item that had to stay',
   discardRefusedCardinality:
     'The published version expects one entry for a section that now holds several in at least one run. Restoring it would leave those runs impossible to complete.',
-  discardRefusedContainerSwap:
-    'The draft replaced this template’s repeating group. Discarding that particular change is not supported — undo it by hand in the grid instead.',
   discardRefusedNarrowBaseline:
     'The published version was saved in an older format, so restoring it would erase AI instructions and option settings across the template.',
   discardRefusedRaced:

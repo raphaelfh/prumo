@@ -806,7 +806,6 @@ export type Database = {
           name: string
           parent_entity_type_id: string | null
           project_template_id: string | null
-          role: Database["public"]["Enums"]["extraction_entity_role"]
           sort_order: number
           template_id: string | null
           updated_at: string
@@ -822,7 +821,6 @@ export type Database = {
           name: string
           parent_entity_type_id?: string | null
           project_template_id?: string | null
-          role: Database["public"]["Enums"]["extraction_entity_role"]
           sort_order?: number
           template_id?: string | null
           updated_at?: string
@@ -838,7 +836,6 @@ export type Database = {
           name?: string
           parent_entity_type_id?: string | null
           project_template_id?: string | null
-          role?: Database["public"]["Enums"]["extraction_entity_role"]
           sort_order?: number
           template_id?: string | null
           updated_at?: string
@@ -2196,14 +2193,6 @@ export type Database = {
           total_fields: number
         }[]
       }
-      check_cardinality_one: {
-        Args: {
-          p_article_id: string
-          p_entity_type_id: string
-          p_parent_instance_id?: string
-        }
-        Returns: boolean
-      }
       create_project_with_member: {
         Args: {
           p_created_by?: string
@@ -2253,10 +2242,6 @@ export type Database = {
       consensus_rule: "unanimous" | "majority" | "arbitrator"
       extraction_cardinality: "one" | "many"
       extraction_consensus_mode: "select_existing" | "manual_override"
-      extraction_entity_role:
-        | "study_section"
-        | "model_container"
-        | "model_section"
       extraction_field_type:
         | "text"
         | "number"
@@ -2425,11 +2410,6 @@ export const Constants = {
       consensus_rule: ["unanimous", "majority", "arbitrator"],
       extraction_cardinality: ["one", "many"],
       extraction_consensus_mode: ["select_existing", "manual_override"],
-      extraction_entity_role: [
-        "study_section",
-        "model_container",
-        "model_section",
-      ],
       extraction_field_type: [
         "text",
         "number",

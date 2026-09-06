@@ -86,7 +86,6 @@ class TestPostgreSQLEnumValuesMapping:
             "extraction_framework",
             "extraction_field_type",
             "extraction_cardinality",
-            "extraction_entity_role",
             "extraction_run_stage",
             "extraction_run_status",
             "hitl_config_scope_kind",

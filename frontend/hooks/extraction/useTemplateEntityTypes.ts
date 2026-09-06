@@ -10,7 +10,7 @@
  * one-per-article.
  *
  * The select also carries the entity-type metadata the Configuration grid
- * renders (label/role/cardinality/parent/sort_order) so that screen reads the
+ * renders (label/cardinality/parent/sort_order) so that screen reads the
  * whole template structure in ONE request instead of fanning out per section —
  * and inherits the invalidation `useTemplateRepublish` already performs on this
  * key after every config mutation.
@@ -27,7 +27,6 @@ export interface TemplateEntityTypeWithFields {
   name: string;
   label: string | null;
   description: string | null;
-  role: string | null;
   cardinality: string | null;
   parent_entity_type_id: string | null;
   /** Entry noun of a repeating section (B-8, entry-group train) — null on
@@ -52,7 +51,7 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
       const { data, error } = await supabase
         .from('extraction_entity_types')
         .select(
-          'id, name, label, description, role, cardinality, is_required, parent_entity_type_id, entry_label, sort_order, fields:extraction_fields(*)',
+          'id, name, label, description, cardinality, is_required, parent_entity_type_id, entry_label, sort_order, fields:extraction_fields(*)',
         )
         .eq('project_template_id', templateId as string)
         .order('sort_order', { ascending: true });
@@ -62,7 +61,6 @@ export function useTemplateEntityTypes(templateId: string | null | undefined) {
         name: et.name as string,
         label: (et.label ?? null) as string | null,
         description: (et.description ?? null) as string | null,
-        role: (et.role ?? null) as string | null,
         cardinality: (et.cardinality ?? null) as string | null,
         // Carried so an undo can restore the section EXACTLY (B-9d part 2);
         // the column is NOT NULL server-side, the projection just dropped it.

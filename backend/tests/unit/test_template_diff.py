@@ -150,7 +150,6 @@ def _modern_tree() -> tuple[UUID, UUID, dict[str, Any]]:
         _field(uuid4(), name="auc", label="AUC"),
         name="prediction_models",
         label="Prediction models",
-        role="model_container",
         cardinality="many",
         entry_label="model",
     )
@@ -194,18 +193,35 @@ def test_pre_0038_baseline_reports_exactly_the_one_rename() -> None:
     assert (change.attribute, change.after) == ("label", "Age (years)")
 
 
-def test_pre_0051_baseline_diffs_clean_against_unedited_live_tree() -> None:
-    """``entry_label`` defaults to 'model' on a repeating group only (D4)."""
+def test_pre_0051_baseline_reports_the_noun_it_lacks() -> None:
+    """The D4 default left with `role` (spec §5, trees B5).
+
+    It read "a baseline missing `entry_label` on a `role='model_container'`
+    row means 'model'", and there is no role to key on. A pre-0051 baseline
+    now simply LACKS the noun and the diff says so — which is honest: 0069
+    backfills every repeating section to 'entry', so the live tree really
+    does carry a value the baseline never had, and a manager can rename it.
+    """
     _, _, live = _modern_tree()
-    assert diff_snapshots(_pre_0051(live), live, fields_with_values=NO_VALUES).total == 0
+    change = _only(diff_snapshots(_pre_0051(live), live, fields_with_values=NO_VALUES))
+    assert change.attribute == "entry_label"
+    # `entry` — the canonical default, not NULL. 0051's backfill knew to say
+    # "model", but it keyed on `role == 'model_container'` and there is no
+    # role to key on; what matters is that an absent key never means NULL,
+    # because the restore writer would then abort on 0069's noun CHECK.
+    assert change.before == "entry"
 
 
-def test_pre_0051_baseline_reports_exactly_the_one_rename() -> None:
+def test_pre_0051_baseline_still_reports_an_unrelated_rename() -> None:
+    """The noun difference must not mask a real edit."""
     _, field_id, live = _modern_tree()
     edited = _rename_field(live, field_id, "Age (years)")
 
-    change = _only(diff_snapshots(_pre_0051(live), edited, fields_with_values=NO_VALUES))
-    assert change.attribute == "label"
+    attributes = {
+        c.attribute
+        for c in diff_snapshots(_pre_0051(live), edited, fields_with_values=NO_VALUES).changes
+    }
+    assert attributes == {"entry_label", "label"}
 
 
 def test_mixed_era_baseline_diffs_clean_against_unedited_live_tree() -> None:
@@ -515,8 +531,8 @@ def test_field_name_change_is_semantic() -> None:
 def test_entry_label_change_is_semantic() -> None:
     """B-8 made ``entry_label`` the export record stem — never cosmetic."""
     container_id = uuid4()
-    base = _snapshot(_entity(container_id, role="model_container", entry_label="model"))
-    curr = _snapshot(_entity(container_id, role="model_container", entry_label="algorithm"))
+    base = _snapshot(_entity(container_id, entry_label="model"))
+    curr = _snapshot(_entity(container_id, entry_label="algorithm"))
 
     change = _only(diff_snapshots(base, curr, fields_with_values=NO_VALUES))
     assert change.node_kind is NodeKind.ENTITY_TYPE

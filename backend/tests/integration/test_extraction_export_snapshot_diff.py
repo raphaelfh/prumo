@@ -116,7 +116,6 @@ async def test_obsolete_field_reported_when_run_pinned_to_older_version(
             "description": None,
             "parent_entity_type_id": None,
             "cardinality": "one",
-            "role": "study_section",
             "sort_order": 0,
             "is_required": False,
             "fields": fields,

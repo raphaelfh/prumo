@@ -66,9 +66,13 @@ async def test_entity_types_from_widened_snapshot(db_session: AsyncSession) -> N
 
     entity_types = await _entity_types_for_run(db_session, RunSummaryResponse.model_validate(run))
     assert entity_types, "expected a non-empty entity_types tree"
-    roles = {et.role for et in entity_types}
-    assert roles, "every entity type must carry a role from the widened snapshot"
-    assert roles <= {"study_section", "model_container", "model_section"}
+    # Was a role assertion. `role` left the wire in trees B5; the widened
+    # snapshot's structural payload is cardinality plus the parent edge,
+    # which is what the run form actually partitions on.
+    cardinalities = {et.cardinality for et in entity_types}
+    assert cardinalities, "every entity type must carry a cardinality from the snapshot"
+    assert cardinalities <= {"one", "many"}
+    assert any(et.parent_entity_type_id is None for et in entity_types), "a root is expected"
 
 
 @pytest.mark.asyncio
@@ -108,6 +112,6 @@ async def test_entity_types_live_fallback_for_narrow_snapshot(
         db_session, RunSummaryResponse.model_validate(refetched)
     )
     assert entity_types, "live fallback must yield the entity_types tree"
-    assert all(
-        et.role in ("study_section", "model_container", "model_section") for et in entity_types
-    ), "fallback reads role from the live table"
+    assert all(et.cardinality in ("one", "many") for et in entity_types), (
+        "fallback reads structure from the live table"
+    )

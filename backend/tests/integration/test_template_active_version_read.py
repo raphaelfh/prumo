@@ -42,7 +42,7 @@ async def test_returns_the_active_version_tree(db_session: AsyncSession) -> None
     assert result.version_id == active[0]
     assert result.version == active[1]
     assert result.entity_types, "seeded template must yield a non-empty tree"
-    assert all(et.role for et in result.entity_types)
+    assert all(et.cardinality for et in result.entity_types)
 
 
 @pytest.mark.asyncio

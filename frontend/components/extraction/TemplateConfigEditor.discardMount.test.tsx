@@ -92,7 +92,6 @@ const ROW_A = {
   name: 'sec_a',
   label: 'Section A',
   description: null,
-  role: 'study_section',
   cardinality: 'one',
   parent_entity_type_id: null,
   entry_label: null,

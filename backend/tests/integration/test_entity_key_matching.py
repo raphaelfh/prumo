@@ -35,8 +35,9 @@ async def _repeating_group(db: AsyncSession, *, with_key: bool) -> tuple[UUID, U
     await db.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, sort_order) "
-            "VALUES (:id, :tpl, :name, 'Probe Group', 'many', 'study_section', 90)"
+            "(id, project_template_id, name, label, cardinality, sort_order, entry_label) "
+            # 0069: a repeating section always carries the word for one entry.
+            "VALUES (:id, :tpl, :name, 'Probe Group', 'many', 90, 'entry')"
         ),
         {
             "id": entity_type_id,

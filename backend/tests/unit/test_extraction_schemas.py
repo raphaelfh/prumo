@@ -432,19 +432,6 @@ class TestExtractionEntityTypeSchema:
         with pytest.raises(ValidationError):
             ExtractionEntityTypeSchema(**_entity_type_kw(cardinality="zero"))
 
-    def test_role_default(self) -> None:
-        et = ExtractionEntityTypeSchema(**_entity_type_kw())
-        assert et.role == "study_section"
-
-    def test_role_all_valid_literals(self) -> None:
-        for role in ("study_section", "model_container", "model_section"):
-            et = ExtractionEntityTypeSchema(**_entity_type_kw(role=role))
-            assert et.role == role
-
-    def test_role_invalid_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            ExtractionEntityTypeSchema(**_entity_type_kw(role="unknown_role"))
-
     def test_sort_order_default(self) -> None:
         et = ExtractionEntityTypeSchema(**_entity_type_kw())
         assert et.sort_order == 0

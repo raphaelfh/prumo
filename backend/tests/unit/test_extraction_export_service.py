@@ -24,7 +24,6 @@ import pytest
 
 from app.core.error_handler import AuthorizationError
 from app.models.extraction import (
-    ExtractionEntityRole,
     ExtractionFieldType,
     ExtractionInstance,
     ExtractionRun,
@@ -155,12 +154,11 @@ def _make_field(label: str) -> FieldDescriptor:
     )
 
 
-def _make_section(label: str, role: ExtractionEntityRole) -> SectionDescriptor:
+def _make_section(label: str) -> SectionDescriptor:
     eid = uuid4()
     return SectionDescriptor(
         entity_type_id=eid,
         label=label,
-        role=role,
         parent_entity_type_id=None,
         fields=(_make_field(f"{label} F1"),),
     )

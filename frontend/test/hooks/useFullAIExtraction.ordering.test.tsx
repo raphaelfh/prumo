@@ -41,9 +41,6 @@ vi.mock('@/hooks/extraction/useBatchAllModelsSectionsExtraction', () => ({
 vi.mock('@/hooks/extraction/helpers/queryEntityTypes', () => ({
   queryEntityTypesWithFallback: vi.fn(async () => [{ id: 'model-container-1' }]),
 }));
-vi.mock('@/lib/extraction/entityTypeRoles', () => ({
-  ENTITY_ROLE: { MODEL_CONTAINER: 'model_container' },
-}));
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));

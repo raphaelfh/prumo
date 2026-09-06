@@ -499,9 +499,9 @@ async def test_republish_materializes_instances_for_new_singleton_section(
     await db_session.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, sort_order, "
+            "(id, project_template_id, name, label, cardinality, sort_order, "
             " is_required) "
-            "VALUES (:id, :tid, 'funding', 'Funding', 'one', 'study_section', 999, true)"
+            "VALUES (:id, :tid, 'funding', 'Funding', 'one', 999, true)"
         ),
         {"id": str(new_section_id), "tid": str(clone.project_template_id)},
     )

@@ -4,7 +4,6 @@ import { loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 import { recordResource } from "../_fixtures/registry";
 import {
   adminInsert,
-  adminRpc,
   adminSelect,
   resolveActiveExtractionTemplateId,
 } from "../_fixtures/supabase-admin";
@@ -87,8 +86,9 @@ test.describe("Extraction multi-instance + all field types", () => {
     const projectTemplateId = await resolveActiveExtractionTemplateId(projectId);
 
     // Two fresh entity types: one with cardinality=many, one with cardinality=one.
-    // role=study_section because migration 0016 made the column NOT NULL and
-    // these are standalone sections (no model hierarchy).
+    // The repeating one carries an `entry_label`: 0069's
+    // `ck_extraction_entity_types_noun_on_repeating` refuses a NULL noun on a
+    // repeating section, because the UI names its entries with it.
     const [manyEntity, oneEntity] = await adminInsert<{ id: string }>(
       "extraction_entity_types",
       [
@@ -97,18 +97,20 @@ test.describe("Extraction multi-instance + all field types", () => {
           name: `model_card_many_${Date.now()}`,
           label: "Prediction model (many)",
           cardinality: "many",
+          entry_label: "model",
           sort_order: 100,
           is_required: false,
-          role: "study_section",
         },
         {
           project_template_id: projectTemplateId,
           name: `study_summary_one_${Date.now()}`,
           label: "Study summary (one)",
           cardinality: "one",
+          // Present and NULL, not absent: PostgREST refuses a bulk insert
+          // whose objects do not share one key set (PGRST102).
+          entry_label: null,
           sort_order: 101,
           is_required: false,
-          role: "study_section",
         },
       ]
     );
@@ -134,37 +136,34 @@ test.describe("Extraction multi-instance + all field types", () => {
       recordResource({ kind: "extraction_instance", id: inst.id });
     }
 
-    // Cardinality=one: pre-flight RPC must allow the first and reject the second.
-    const canCreateFirst = await adminRpc<boolean>("check_cardinality_one", {
-      p_article_id: articleId,
-      p_entity_type_id: oneEntity.id,
-      p_parent_instance_id: null,
-    });
-    expect(canCreateFirst).toBe(true);
+    // Cardinality=one: the first insert lands, the second is refused.
+    //
+    // This used to probe the advisory `check_cardinality_one` RPC, which 0069
+    // dropped — B2 had already retired its last caller. It also never attempted
+    // the second insert, so it asserted the advice rather than the rule. The
+    // rule is `trg_enforce_extraction_instance_cardinality`, which raises
+    // SQLSTATE 23505 on the write itself, and that is what is asserted here.
+    const singletonRow = {
+      project_id: projectId,
+      article_id: articleId,
+      template_id: projectTemplateId,
+      entity_type_id: oneEntity.id,
+      sort_order: 1,
+      created_by: process.env.E2E_USER_ID!,
+      metadata: {},
+    };
 
     const [oneInstance] = await adminInsert<{ id: string }>("extraction_instances", [
-      {
-        project_id: projectId,
-        article_id: articleId,
-        template_id: projectTemplateId,
-        entity_type_id: oneEntity.id,
-        label: "Single Study Summary",
-        sort_order: 1,
-        created_by: process.env.E2E_USER_ID!,
-        metadata: {},
-      },
+      { ...singletonRow, label: "Single Study Summary" },
     ]);
     recordResource({ kind: "extraction_instance", id: oneInstance.id });
 
-    const canCreateSecond = await adminRpc<boolean>("check_cardinality_one", {
-      p_article_id: articleId,
-      p_entity_type_id: oneEntity.id,
-      p_parent_instance_id: null,
-    });
-    expect(
-      canCreateSecond,
+    await expect(
+      adminInsert<{ id: string }>("extraction_instances", [
+        { ...singletonRow, label: "Second Study Summary" },
+      ]),
       "cardinality=one should refuse a second instance for the same article"
-    ).toBe(false);
+    ).rejects.toThrow(/23505/);
 
     // Sanity: the article should now have exactly 3 'many' instances and 1 'one'.
     const fetchedMany = await adminSelect<{ id: string; label: string; sort_order: number }>(
@@ -192,8 +191,8 @@ test.describe("Extraction multi-instance + all field types", () => {
 
     const projectTemplateId = await resolveActiveExtractionTemplateId(env.projectId!);
 
-    // Fresh entity_type to host all field types. role=study_section because
-    // migration 0016 made the column NOT NULL.
+    // Fresh entity_type to host all field types — a root singleton, so it
+    // needs no `entry_label`.
     const [entity] = await adminInsert<{ id: string }>("extraction_entity_types", [
       {
         project_template_id: projectTemplateId,
@@ -202,7 +201,6 @@ test.describe("Extraction multi-instance + all field types", () => {
         cardinality: "one",
         sort_order: 200,
         is_required: false,
-        role: "study_section",
       },
     ]);
     recordResource({ kind: "extraction_entity_type", id: entity.id });

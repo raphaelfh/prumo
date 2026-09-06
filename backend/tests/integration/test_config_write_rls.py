@@ -104,9 +104,9 @@ async def _global_lineage(db: AsyncSession) -> tuple[UUID, UUID, UUID]:
         await db.execute(
             text(
                 "INSERT INTO public.extraction_entity_types "
-                "(template_id, name, label, cardinality, role, sort_order) "
+                "(template_id, name, label, cardinality, sort_order) "
                 "VALUES (:gid, 'probe_section', 'Probe Section', 'one', "
-                "'study_section', 0) RETURNING id"
+                "0) RETURNING id"
             ),
             {"gid": str(global_id)},
         )
@@ -126,9 +126,9 @@ async def _global_lineage(db: AsyncSession) -> tuple[UUID, UUID, UUID]:
 
 _INSERT_PROJECT_ENTITY_TYPE = (
     "INSERT INTO public.extraction_entity_types "
-    "(project_template_id, name, label, cardinality, role, sort_order) "
+    "(project_template_id, name, label, cardinality, sort_order) "
     "VALUES (:tid, 'rls_probe_section', 'RLS Probe Section', 'one', "
-    "'study_section', 99)"
+    "99)"
 )
 
 _INSERT_PROJECT_FIELD = (
@@ -208,9 +208,9 @@ async def test_manager_global_lineage_insert_refused(db_session: AsyncSession) -
         user_id=SEED.primary_profile,
         sql=(
             "INSERT INTO public.extraction_entity_types "
-            "(template_id, name, label, cardinality, role, sort_order) "
+            "(template_id, name, label, cardinality, sort_order) "
             "VALUES (:gid, 'injected_section', 'Injected', 'one', "
-            "'study_section', 99)"
+            "99)"
         ),
         params={"gid": str(global_id)},
     )
@@ -235,7 +235,7 @@ async def test_manager_hybrid_lineage_insert_refused(db_session: AsyncSession) -
             "(template_id, project_template_id, name, label, cardinality, "
             "role, sort_order) "
             "VALUES (:gid, :tid, 'hybrid_section', 'Hybrid', 'one', "
-            "'study_section', 99)"
+            "99)"
         ),
         params={"gid": str(global_id), "tid": str(SEED.primary_template)},
     )

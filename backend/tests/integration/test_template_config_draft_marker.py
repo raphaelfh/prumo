@@ -114,7 +114,6 @@ async def test_global_lineage_writes_never_stamp(db_session: AsyncSession) -> No
         project_template_id=None,
         name="b4_probe_global_section",
         label="B4 probe global section",
-        role="study_section",
         cardinality="one",
         sort_order=0,
     )
