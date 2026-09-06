@@ -168,7 +168,6 @@ interface RunViewEntityType {
   description: string | null;
   parent_entity_type_id: string | null;
   cardinality: string;
-  role: string;
   sort_order: number;
   is_required: boolean;
   /** Repeating-group entry noun (B-8) — null on non-containers and on

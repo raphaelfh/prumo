@@ -18,11 +18,9 @@
  * and they are only checkable if they are testable without a network.
  */
 import type {TemplateEntityTypeWithFields} from '@/hooks/extraction/useTemplateEntityTypes';
-import type {CreateSectionParams} from '@/services/templateService';
 import type {ExtractionFieldInsert} from '@/types/extraction';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
-type SectionRole = CreateSectionParams['role'];
 
 /** One section of the captured subtree, in creation order (parents first). */
 interface CapturedSection {
@@ -32,7 +30,6 @@ interface CapturedSection {
   name: string;
   label: string;
   description: string | null;
-  role: SectionRole;
   cardinality: 'one' | 'many';
   isRequired: boolean;
   entryLabel: string | null;
@@ -105,7 +102,6 @@ function capture(entityType: TemplateEntityTypeWithFields): CapturedSection {
     description: entityType.description ?? null,
     // The read widens these to string; the create payloads want the
     // closed unions the server validates against anyway.
-    role: (entityType.role ?? 'study_section') as SectionRole,
     cardinality: entityType.cardinality === 'many' ? 'many' : 'one',
     isRequired: Boolean(entityType.is_required),
     entryLabel: entityType.entry_label ?? null,
@@ -141,7 +137,6 @@ interface ReplayDeps {
     label: string;
     description: string | null;
     cardinality: 'one' | 'many';
-    role: SectionRole;
     parentEntityTypeId?: string | null;
     entryLabel?: string | null;
     isRequired: boolean;
@@ -198,7 +193,6 @@ export async function replaySection(
       label: section.label,
       description: section.description,
       cardinality: section.cardinality,
-      role: section.role,
       parentEntityTypeId,
       // The create rule requires a noun on a repeating section; a legacy row
       // that carried none is replayed with the fallback every reader already

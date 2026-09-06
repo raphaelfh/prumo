@@ -21,7 +21,7 @@ const field = (id: string, entityTypeId: string, sortOrder: number) => ({
 const tree = buildTemplateTree(
   [
     {id: 'sec1', name: 'basics', label: 'Basics', sort_order: 1},
-    {id: 'grp', name: 'models', label: 'Models', role: 'model_container', sort_order: 2},
+    {id: 'grp', name: 'models', label: 'Models', sort_order: 2},
     {id: 'child', name: 'perf', label: 'Performance', parent_entity_type_id: 'grp', sort_order: 3},
   ],
   [

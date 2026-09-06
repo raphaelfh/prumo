@@ -5097,8 +5097,14 @@ export interface components {
         /**
          * RunViewEntityType
          * @description An entity type in the frozen template snapshot, with its fields embedded.
-         *     ``role`` drives the study/model partition; the tree hierarchy is conveyed by
-         *     ``parent_entity_type_id`` (flat array, ordered by ``sort_order``).
+         *
+         *     Structure is ``parent_entity_type_id`` + ``cardinality`` (trees B5): a
+         *     repeating section is an entry group and may own children at any depth.
+         *     The array is flat, ordered by ``sort_order``.
+         *
+         *     ``role`` is gone. Dropping only the frontend's mapping would have been
+         *     SILENT — the backend would keep sending a key nobody read — so the field
+         *     leaves the wire in the same change.
          */
         RunViewEntityType: {
             /** Cardinality */
@@ -5122,8 +5128,6 @@ export interface components {
             name: string;
             /** Parent Entity Type Id */
             parent_entity_type_id?: string | null;
-            /** Role */
-            role: string;
             /** Sort Order */
             sort_order: number;
         };
@@ -5307,13 +5311,12 @@ export interface components {
          * SectionCreateRequest
          * @description Create a section (entity type) in the path template.
          *
-         *     ``role`` is REQUIRED with no default — the column deliberately has no
-         *     server_default (migration 0016 step 4) so an insert that omits the
-         *     structural role fails loudly instead of silently becoming a
-         *     study_section. ``sort_order`` is deliberately ABSENT: the server
-         *     computes max+1 template-wide inside the INSERT itself, killing the
-         *     frontend's read-then-write race. The ``ck_role_parent`` validator
-         *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
+         *     ``role`` is gone (0069): a section's place in the tree is its
+         *     ``parent_entity_type_id`` plus its ``cardinality``. ``sort_order`` is
+         *     deliberately ABSENT: the server computes max+1 template-wide inside
+         *     the INSERT itself, killing the frontend's read-then-write race.
+         *     Whether the named parent may HAVE children — it must repeat — is the
+         *     service's job, because it needs the parent row; parent OWNERSHIP
          *     (parent belongs to THIS template) is the service's BOLA job.
          *     ``entry_label`` is a repeating section's entry noun (B-8, D3 — unlocked
          *     from the container in the entry-group train): REQUIRED, non-blank, on
@@ -5345,11 +5348,6 @@ export interface components {
             name: string;
             /** Parent Entity Type Id */
             parent_entity_type_id?: string | null;
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "study_section" | "model_container" | "model_section";
         };
         /**
          * SectionDeleteResponse
@@ -5485,20 +5483,15 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "study_section" | "model_container" | "model_section";
             /** Sort Order */
             sort_order: number;
         };
         /**
          * SectionUpdateRequest
-         * @description Partial section update: ``label`` and ``description`` (any role),
-         *     ``entry_label`` (repeating sections only) and ``cardinality``
-         *     (per-model sections only) — the role rules live in the service, which
-         *     owns the row (B-8, D5). At least one field must be provided, and
+         * @description Partial section update: ``label`` and ``description`` (any
+         *     section), ``entry_label`` (repeating sections only) and
+         *     ``cardinality`` (any section since 0069) — the rules live in the
+         *     service, which owns the row and its children. At least one field must be provided, and
          *     explicit nulls are rejected (omit instead) so a smuggled ``{"label":
          *     null}`` can never blank a column; a description is cleared by sending
          *     it blank. Replaces the label-only SectionRenameRequest; the pre-B-8

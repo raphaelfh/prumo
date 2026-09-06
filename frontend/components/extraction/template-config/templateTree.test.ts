@@ -15,7 +15,6 @@ const section = (
   name: over.id,
   label: over.id,
   description: null,
-  role: 'study_section',
   cardinality: 'one',
   parent_entity_type_id: null,
   sort_order: 0,
@@ -73,14 +72,12 @@ describe('buildTemplateTree', () => {
         section({
           id: 'grp',
           label: 'Prediction Models',
-          role: 'model_container',
           cardinality: 'many',
           sort_order: 2,
         }),
         section({
           id: 'child',
           label: 'Model Development',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 3,
         }),
@@ -103,19 +100,16 @@ describe('buildTemplateTree', () => {
         section({id: 'repeating', cardinality: 'many', sort_order: 2}),
         section({
           id: 'grp',
-          role: 'model_container',
           cardinality: 'many',
           sort_order: 3,
         }),
         section({
           id: 'childOnce',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 4,
         }),
         section({
           id: 'childMany',
-          role: 'model_section',
           cardinality: 'many',
           parent_entity_type_id: 'grp',
           sort_order: 5,
@@ -137,10 +131,9 @@ describe('buildTemplateTree', () => {
     const tree = buildTemplateTree(
       [
         section({id: 'plain', sort_order: 1}),
-        section({id: 'grp', role: 'model_container', cardinality: 'many', sort_order: 2}),
+        section({id: 'grp', cardinality: 'many', sort_order: 2}),
         section({
           id: 'childOnce',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 3,
         }),
@@ -170,8 +163,8 @@ describe('buildTemplateTree', () => {
   it('counts a group total across its identity fields and child sections', () => {
     const tree = buildTemplateTree(
       [
-        section({id: 'grp', role: 'model_container', cardinality: 'many'}),
-        section({id: 'child', role: 'model_section', parent_entity_type_id: 'grp'}),
+        section({id: 'grp', cardinality: 'many'}),
+        section({id: 'child', parent_entity_type_id: 'grp'}),
       ],
       [
         field({id: 'f1', entity_type_id: 'grp'}),
@@ -189,14 +182,12 @@ describe('buildTemplateTree', () => {
       [
         section({
           id: 'grp',
-          role: 'model_container',
           cardinality: 'many',
           entry_label: 'algorithm',
           sort_order: 1,
         }),
         section({
           id: 'child',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 2,
         }),
@@ -216,14 +207,12 @@ describe('buildTemplateTree', () => {
       [
         section({
           id: 'grp',
-          role: 'model_container',
           cardinality: 'many',
           entry_label: 'algorithm',
           sort_order: 1,
         }),
         section({
           id: 'perf',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           cardinality: 'many',
           entry_label: 'validation',
@@ -247,20 +236,17 @@ describe('buildTemplateTree', () => {
       [
         section({
           id: 'grpNull',
-          role: 'model_container',
           cardinality: 'many',
           entry_label: null,
           sort_order: 1,
         }),
         section({
           id: 'grpAbsent',
-          role: 'model_container',
           cardinality: 'many',
           sort_order: 2,
         }),
         section({
           id: 'child',
-          role: 'model_section',
           parent_entity_type_id: 'grpNull',
           sort_order: 3,
         }),
@@ -284,7 +270,7 @@ describe('buildTemplateTree', () => {
 
   it('treats an orphaned child (parent missing) as a root rather than dropping it', () => {
     const tree = buildTemplateTree(
-      [section({id: 'lost', role: 'model_section', parent_entity_type_id: 'gone'})],
+      [section({id: 'lost', parent_entity_type_id: 'gone'})],
       [],
     );
     expect(tree.map((s) => s.id)).toEqual(['lost']);
@@ -298,13 +284,11 @@ describe('deriveMoveTargets (B-6 T4)', () => {
         section({id: 'root1', sort_order: 1}),
         section({
           id: 'grp',
-          role: 'model_container',
           cardinality: 'many',
           sort_order: 2,
         }),
         section({
           id: 'child',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 3,
         }),
@@ -340,14 +324,12 @@ describe('filterTemplateTree', () => {
       section({
         id: 'grp',
         label: 'Prediction Models',
-        role: 'model_container',
         cardinality: 'many',
         sort_order: 3,
       }),
       section({
         id: 'child',
         label: 'Model Development',
-        role: 'model_section',
         parent_entity_type_id: 'grp',
         sort_order: 4,
       }),

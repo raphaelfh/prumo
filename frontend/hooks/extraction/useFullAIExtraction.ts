@@ -24,7 +24,6 @@ import {useBatchAllModelsSectionsExtraction} from "./useBatchAllModelsSectionsEx
 import type {TopLevelSectionsProgress} from "./useTopLevelSectionsExtraction";
 import {useTopLevelSectionsExtraction} from "./useTopLevelSectionsExtraction";
 import {queryEntityTypesWithFallback} from "./helpers/queryEntityTypes";
-import {ENTITY_ROLE} from "@/lib/extraction/entityTypeRoles";
 import {loadExtractedModels} from "@/services/extractionInstanceService";
 
 /**
@@ -109,24 +108,31 @@ export function useFullAIExtraction(options?: {
   });
 
   /**
-   * Fetches the model container entity type id by structural role.
+   * The template's FIRST root entry group, by sort order.
    *
-   * The template has at most one ``model_container`` (enforced by a
-   * partial unique index), so this returns the single matching id or
-   * throws — failing fast is correct here: every caller assumes a
-   * template that owns prediction models.
+   * Was ``role = 'model_container'``, which 0016's partial unique index
+   * made single by construction — so ``results[0]`` was "the" container.
+   * 0069 drops that index and a template may hold several root groups, so
+   * ``results[0]`` would silently pick one and drop the rest. It is
+   * explicitly the FIRST now, with the ordering spelled out, mirroring the
+   * backend's ``ExtractionEntityTypeRepository.get_root_group``.
+   *
+   * That is the right answer for THIS caller and only this one: the model
+   * identification pipeline is single-group by construction and retires in
+   * trees B6. Anything else that wants "the groups" wants all of them.
    */
   const fetchModelParentEntityTypeId = async (
     templateId: string
   ): Promise<string> => {
-    const results = await queryEntityTypesWithFallback<{ id: string }>({
+    const results = await queryEntityTypesWithFallback<{ id: string; sort_order: number }>({
       templateId,
-      select: 'id',
-      filters: (query) => query.eq('role', ENTITY_ROLE.MODEL_CONTAINER),
+      select: 'id, sort_order',
+      filters: (query) => query.is('parent_entity_type_id', null).eq('cardinality', 'many'),
+      orderBy: { column: 'sort_order', ascending: true },
     });
 
     if (results.length === 0) {
-      throw new Error('No model_container entity type in template');
+      throw new Error('No root entry group in template');
     }
 
     return results[0].id;

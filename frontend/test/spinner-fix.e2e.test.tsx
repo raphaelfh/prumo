@@ -182,7 +182,6 @@ const QA_DOMAIN = {
     description: null,
     parent_entity_type_id: null,
     cardinality: 'one',
-    role: 'study_section',
     sort_order: 0,
     is_required: true,
     created_at: '2020-01-01T00:00:00Z',

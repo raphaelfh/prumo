@@ -14,7 +14,6 @@
  * (`metaKeys`), which the component resolves through `lib/copy`.
  */
 
-import {ENTITY_ROLE} from '@/lib/extraction/entityTypeRoles';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 type TemplateSectionKind = 'root' | 'group' | 'groupChild';
@@ -58,7 +57,6 @@ export interface TemplateEntityTypeInput {
   name: string;
   label: string | null;
   description?: string | null;
-  role?: string | null;
   cardinality?: string | null;
   /** NOT NULL server-side. Needed to restore a deleted section exactly. */
   is_required?: boolean;
@@ -316,7 +314,11 @@ export function buildTemplateTree(
   }
 
   return roots.map((entityType) => {
-    const isGroup = entityType.role === ENTITY_ROLE.MODEL_CONTAINER;
+    // A group is a section that REPEATS and owns children (spec §11); was
+    // `role === 'model_container'`, which could only ever be the one root
+    // container 0016 allowed.
+    const isGroup =
+      entityType.cardinality === 'many' && (childrenByParent.get(entityType.id)?.length ?? 0) > 0;
     // D7: the group resolves its own noun; children inherit the PARENT
     // group's resolved value (their own entry_label is never consulted).
     const entryNoun = (isGroup ? entityType.entry_label : null) ?? DEFAULT_ENTRY_NOUN;

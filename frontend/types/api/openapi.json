@@ -7645,7 +7645,7 @@
         "type": "object"
       },
       "RunViewEntityType": {
-        "description": "An entity type in the frozen template snapshot, with its fields embedded.\n``role`` drives the study/model partition; the tree hierarchy is conveyed by\n``parent_entity_type_id`` (flat array, ordered by ``sort_order``).",
+        "description": "An entity type in the frozen template snapshot, with its fields embedded.\n\nStructure is ``parent_entity_type_id`` + ``cardinality`` (trees B5): a\nrepeating section is an entry group and may own children at any depth.\nThe array is flat, ordered by ``sort_order``.\n\n``role`` is gone. Dropping only the frontend's mapping would have been\nSILENT \u2014 the backend would keep sending a key nobody read \u2014 so the field\nleaves the wire in the same change.",
         "properties": {
           "cardinality": {
             "title": "Cardinality",
@@ -7709,10 +7709,6 @@
             ],
             "title": "Parent Entity Type Id"
           },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
           "sort_order": {
             "title": "Sort Order",
             "type": "integer"
@@ -7723,7 +7719,6 @@
           "name",
           "label",
           "cardinality",
-          "role",
           "sort_order",
           "is_required",
           "fields"
@@ -8108,7 +8103,7 @@
       },
       "SectionCreateRequest": {
         "additionalProperties": false,
-        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is a repeating section's entry noun (B-8, D3 \u2014 unlocked\nfrom the container in the entry-group train): REQUIRED, non-blank, on\nevery ``cardinality='many'`` section, container included, and refused\non a section that does not repeat. The rule lives at this API boundary:\nrows created before it may still carry NULL, the portable importer keeps\na bundle's NULL verbatim, and the column stays nullable until the\nentry-group trees spec makes it NOT NULL; every reader falls back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` meanwhile.",
+        "description": "Create a section (entity type) in the path template.\n\n``role`` is gone (0069): a section's place in the tree is its\n``parent_entity_type_id`` plus its ``cardinality``. ``sort_order`` is\ndeliberately ABSENT: the server computes max+1 template-wide inside\nthe INSERT itself, killing the frontend's read-then-write race.\nWhether the named parent may HAVE children \u2014 it must repeat \u2014 is the\nservice's job, because it needs the parent row; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is a repeating section's entry noun (B-8, D3 \u2014 unlocked\nfrom the container in the entry-group train): REQUIRED, non-blank, on\nevery ``cardinality='many'`` section, container included, and refused\non a section that does not repeat. The rule lives at this API boundary:\nrows created before it may still carry NULL, the portable importer keeps\na bundle's NULL verbatim, and the column stays nullable until the\nentry-group trees spec makes it NOT NULL; every reader falls back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` meanwhile.",
         "properties": {
           "cardinality": {
             "enum": [
@@ -8172,22 +8167,12 @@
               }
             ],
             "title": "Parent Entity Type Id"
-          },
-          "role": {
-            "enum": [
-              "study_section",
-              "model_container",
-              "model_section"
-            ],
-            "title": "Role",
-            "type": "string"
           }
         },
         "required": [
           "name",
           "label",
-          "cardinality",
-          "role"
+          "cardinality"
         ],
         "title": "SectionCreateRequest",
         "type": "object"
@@ -8455,15 +8440,6 @@
             "title": "Project Template Id",
             "type": "string"
           },
-          "role": {
-            "enum": [
-              "study_section",
-              "model_container",
-              "model_section"
-            ],
-            "title": "Role",
-            "type": "string"
-          },
           "sort_order": {
             "title": "Sort Order",
             "type": "integer"
@@ -8475,7 +8451,6 @@
           "name",
           "label",
           "cardinality",
-          "role",
           "sort_order",
           "is_required",
           "created_at"
@@ -8485,7 +8460,7 @@
       },
       "SectionUpdateRequest": {
         "additionalProperties": false,
-        "description": "Partial section update: ``label`` and ``description`` (any role),\n``entry_label`` (repeating sections only) and ``cardinality``\n(per-model sections only) \u2014 the role rules live in the service, which\nowns the row (B-8, D5). At least one field must be provided, and\nexplicit nulls are rejected (omit instead) so a smuggled ``{\"label\":\nnull}`` can never blank a column; a description is cleared by sending\nit blank. Replaces the label-only SectionRenameRequest; the pre-B-8\nlabel-only body stays valid.",
+        "description": "Partial section update: ``label`` and ``description`` (any\nsection), ``entry_label`` (repeating sections only) and\n``cardinality`` (any section since 0069) \u2014 the rules live in the\nservice, which owns the row and its children. At least one field must be provided, and\nexplicit nulls are rejected (omit instead) so a smuggled ``{\"label\":\nnull}`` can never blank a column; a description is cleared by sending\nit blank. Replaces the label-only SectionRenameRequest; the pre-B-8\nlabel-only body stays valid.",
         "properties": {
           "cardinality": {
             "anyOf": [

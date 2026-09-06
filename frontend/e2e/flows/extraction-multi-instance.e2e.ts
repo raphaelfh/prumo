@@ -99,7 +99,6 @@ test.describe("Extraction multi-instance + all field types", () => {
           cardinality: "many",
           sort_order: 100,
           is_required: false,
-          role: "study_section",
         },
         {
           project_template_id: projectTemplateId,
@@ -108,7 +107,6 @@ test.describe("Extraction multi-instance + all field types", () => {
           cardinality: "one",
           sort_order: 101,
           is_required: false,
-          role: "study_section",
         },
       ]
     );
@@ -202,7 +200,6 @@ test.describe("Extraction multi-instance + all field types", () => {
         cardinality: "one",
         sort_order: 200,
         is_required: false,
-        role: "study_section",
       },
     ]);
     recordResource({ kind: "extraction_entity_type", id: entity.id });

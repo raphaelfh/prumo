@@ -6,7 +6,7 @@
  * - root ("New section"): the B-7 study-section form — cardinality
  *   select, description, required switch;
  * - group ("Add repeating group…"): Label + Entry label + Description;
- *   role model_container and cardinality 'many' are fixed (the server
+ *   cardinality 'many' is fixed (the server
  *   422s anything else — the form never offers the impossible);
  * - perModel ("New per-{noun} section"): parent preset from the invoking
  *   group; cardinality select stays, worded per-{noun}.
@@ -120,12 +120,6 @@ interface AddSectionDialogProps {
   onSectionAdded: () => void;
 }
 
-const ROLE_BY_MODE = {
-  root: 'study_section',
-  group: 'model_container',
-  perModel: 'model_section',
-} as const;
-
 // =================== COMPONENT ===================
 
 export function AddSectionDialog({
@@ -177,7 +171,6 @@ export function AddSectionDialog({
       label: data.label,
       description: data.description?.trim() || null,
       cardinality: data.cardinality,
-      role: ROLE_BY_MODE[mode.kind],
       parentEntityTypeId: mode.kind === 'perModel' ? mode.parentId : null,
       // The schema already refused a blank noun on a repeating section.
       entryLabel: data.cardinality === 'many' ? data.entry_label : undefined,
