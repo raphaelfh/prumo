@@ -307,6 +307,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/extraction/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create one entry of a repeating section
+         * @description Creates the entry and its singleton children in one transaction. A nested group requires parentInstanceId; a root group refuses one. A duplicate entry key answers a typed 409 ENTRY_KEY_DUPLICATE.
+         */
+        post: operations["create_entry_api_v1_extraction_instances_post"];
+        /**
+         * Delete several entries of a repeating section
+         * @description All or nothing: every id is bound to the request coordinate first, so one foreign or missing id refuses the WHOLE batch and deletes nothing. A singleton instance is refused with a 422.
+         */
+        delete: operations["delete_entries_endpoint_api_v1_extraction_instances_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/extraction/instances/{instance_id}": {
         parameters: {
             query?: never;
@@ -325,46 +349,6 @@ export interface paths {
          * @description Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.
          */
         patch: operations["update_instance_api_v1_extraction_instances__instance_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/extraction/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Extrair modelos de predicao
-         * @description Identifica and extrai automaticamente modelos de predicao do article.
-         */
-        post: operations["extract_models_api_v1_extraction_models_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/extraction/models/manual": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create one prediction model hierarchy
-         * @description Creates the parent prediction model and required singleton children in one transaction.
-         */
-        post: operations["create_manual_model_hierarchy_api_v1_extraction_models_manual_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/v1/extraction/sections": {
@@ -1240,10 +1224,11 @@ export interface paths {
          * Create Template Section
          * @description Create a section; ``sort_order`` is server-computed (max+1).
          *
-         *     ``role`` and ``parent_entity_type_id`` are explicit parameters — a
-         *     model_section's parent must be the template's model_container (400);
-         *     a second model_container is a 409. Stamps the B-4 draft marker via
-         *     the 0048 trigger (nothing manual).
+         *     ``parent_entity_type_id`` is the only structural parameter: 0069
+         *     retired ``role``, so a section names a parent (which must repeat — 400
+         *     otherwise) or is a root, and a template may hold any number of root
+         *     groups. Stamps the B-4 draft marker via the 0048 trigger (nothing
+         *     manual).
          */
         post: operations["create_template_section_api_v1_projects__project_id__templates__template_id__sections_post"];
         delete?: never;
@@ -1993,23 +1978,6 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[CreateModelHierarchyResponse] */
-        ApiResponse_CreateModelHierarchyResponse_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["CreateModelHierarchyResponse"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
         /** ApiResponse[DeleteAPIKeyResult] */
         ApiResponse_DeleteAPIKeyResult_: {
             /** @description Dados da resposta */
@@ -2031,6 +1999,40 @@ export interface components {
         ApiResponse_DiscardDraftResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["DiscardDraftResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[EntryBulkDeleteResponse] */
+        ApiResponse_EntryBulkDeleteResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["EntryBulkDeleteResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[EntryCreateResponse] */
+        ApiResponse_EntryCreateResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["EntryCreateResponse"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2269,23 +2271,6 @@ export interface components {
         ApiResponse_ManagerReviewVisibilityRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ManagerReviewVisibilityRead"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[ModelExtractionResult] */
-        ApiResponse_ModelExtractionResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["ModelExtractionResult"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3283,53 +3268,6 @@ export interface components {
             } | null;
         };
         /**
-         * CreateModelHierarchyRequest
-         * @description Request to create one prediction-model hierarchy for an article.
-         *
-         *     The dialog asks for the name only; it becomes the instance label and
-         *     the decision on the container's entry key. ``extra="forbid"`` for the
-         *     reason ``ModelExtractionRequest`` gives: this body is validated once,
-         *     in the request cycle, so a stale tab that still sends
-         *     ``modellingMethod`` gets a loud 422 instead of silently losing a value
-         *     it typed.
-         */
-        CreateModelHierarchyRequest: {
-            /**
-             * Articleid
-             * Format: uuid
-             */
-            articleId: string;
-            /** Modelname */
-            modelName: string;
-            /**
-             * Projectid
-             * Format: uuid
-             */
-            projectId: string;
-            /**
-             * Templateid
-             * Format: uuid
-             */
-            templateId: string;
-        };
-        /**
-         * CreateModelHierarchyResponse
-         * @description Response for one-shot hierarchy creation.
-         */
-        CreateModelHierarchyResponse: {
-            /** Childinstances */
-            childInstances: components["schemas"]["ModelHierarchyChildResponse"][];
-            /**
-             * Modelid
-             * Format: uuid
-             */
-            modelId: string;
-            /** Modellabel */
-            modelLabel: string;
-            /** Proposalrunid */
-            proposalRunId?: string | null;
-        };
-        /**
          * CreateProjectTemplateRequest
          * @description Name a template that starts with no sections; the tree is built after.
          *
@@ -3370,18 +3308,6 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
-        };
-        /**
-         * CreatedModelInfo
-         * @description One prediction-model instance created by model extraction.
-         */
-        CreatedModelInfo: {
-            /** Instanceid */
-            instanceId: string;
-            /** Modelname */
-            modelName: string;
-            /** Modellingmethod */
-            modellingMethod?: string | null;
         };
         /**
          * DeleteAPIKeyResult
@@ -3484,6 +3410,105 @@ export interface components {
             filename: string;
             /** Size */
             size: number;
+        };
+        /**
+         * EntryBulkDeleteRequest
+         * @description Delete several entries of a repeating section, all or none.
+         *
+         *     ``extra="forbid"`` for the reason every sibling gives: this body is
+         *     validated once, in the request cycle.
+         *
+         *     The list is non-empty and DISTINCT. A duplicate id is refused rather than
+         *     de-duplicated because ``deleted`` would then over-report — the caller
+         *     named one row twice and the count would say two, which is exactly the
+         *     number a confirmation dialog shows back to the reviewer.
+         */
+        EntryBulkDeleteRequest: {
+            /**
+             * Articleid
+             * Format: uuid
+             */
+            articleId: string;
+            /** Instanceids */
+            instanceIds: string[];
+            /**
+             * Projectid
+             * Format: uuid
+             */
+            projectId: string;
+            /**
+             * Templateid
+             * Format: uuid
+             */
+            templateId: string;
+        };
+        /**
+         * EntryBulkDeleteResponse
+         * @description How many entries the batch removed — always the full request length,
+         *     since a partial delete cannot happen.
+         */
+        EntryBulkDeleteResponse: {
+            /** Deleted */
+            deleted: number;
+        };
+        /**
+         * EntryCreateRequest
+         * @description Create one entry of a repeating section (spec §7).
+         *
+         *     ``extra="forbid"`` for the reason every sibling gives: this body is
+         *     validated once, in the request cycle, so a stale tab sending a retired
+         *     field gets a loud 422 instead of silently losing a value it typed.
+         *
+         *     ``label`` is the human-facing name; ``entity_key`` is the identity an AI
+         *     re-run matches against. A section that declares an ``is_entity_key``
+         *     field requires the key; one that does not must omit it.
+         */
+        EntryCreateRequest: {
+            /**
+             * Articleid
+             * Format: uuid
+             */
+            articleId: string;
+            /** Entitykey */
+            entityKey?: string | null;
+            /**
+             * Entitytypeid
+             * Format: uuid
+             */
+            entityTypeId: string;
+            /** Label */
+            label: string;
+            /** Parentinstanceid */
+            parentInstanceId?: string | null;
+            /**
+             * Projectid
+             * Format: uuid
+             */
+            projectId: string;
+            /**
+             * Templateid
+             * Format: uuid
+             */
+            templateId: string;
+        };
+        /**
+         * EntryCreateResponse
+         * @description The created entry.
+         *
+         *     Deliberately narrower than spec §7's ``(instance, descendants,
+         *     proposalRunId)``: the caller refetches the run view after a create, so
+         *     the descendant list and the run id are payload with no consumer — the
+         *     retired ``childInstances`` field had none in its whole lifetime. The
+         *     label IS read (the success toast names the entry).
+         */
+        EntryCreateResponse: {
+            /**
+             * Instanceid
+             * Format: uuid
+             */
+            instanceId: string;
+            /** Label */
+            label: string;
         };
         /**
          * ErrorDetail
@@ -3618,7 +3643,8 @@ export interface components {
         ExtractionArticleScope: "current_list" | "selected_only";
         /**
          * ExtractionErrorCode
-         * @description Stable, machine-readable code for a terminal extraction failure.
+         * @description Stable code for a terminal extraction failure, or for a typed
+         *     synchronous refusal on the extraction write paths.
          *
          *     Carried on ``ExtractionJobStatusResponse.error_code`` so the frontend can
          *     pick specific, actionable toast copy without parsing the human ``error``
@@ -3637,10 +3663,14 @@ export interface components {
          *       ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
          *       LLM call. Carried by the single-section job and, as a 409, by the sync
          *       models kickoff; a batch run keeps reporting per-section text.
+         *     - ``ENTRY_KEY_DUPLICATE`` — manual entry creation named an identity the
+         *       coordinate already holds (``EntryKeyDuplicateError``), refused as a 409
+         *       rather than silently renaming the entry the way the retired model path
+         *       did ("Cox Model (2)").
          *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
          * @enum {string}
          */
-        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "EXTRACTION_FAILED";
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "ENTRY_KEY_DUPLICATE" | "EXTRACTION_FAILED";
         /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.
@@ -4335,84 +4365,6 @@ export interface components {
             ready: boolean;
         };
         /**
-         * ModelExtractionRequest
-         * @description Request for extraction de modelos de predicao.
-         */
-        ModelExtractionRequest: {
-            /**
-             * Articleid
-             * Format: uuid
-             */
-            articleId: string;
-            options?: components["schemas"]["ExtractionOptions"] | null;
-            /**
-             * Projectid
-             * Format: uuid
-             */
-            projectId: string;
-            /** Runid */
-            runId?: string | null;
-            /**
-             * Templateid
-             * Format: uuid
-             */
-            templateId: string;
-        };
-        /**
-         * ModelExtractionResult
-         * @description Resultado da extraction de modelos.
-         */
-        ModelExtractionResult: {
-            /** Childinstancescreated */
-            childInstancesCreated: number;
-            /** Extractionrunid */
-            extractionRunId: string;
-            metadata: components["schemas"]["ModelExtractionRunStats"];
-            /** Modelscreated */
-            modelsCreated: components["schemas"]["CreatedModelInfo"][];
-            /** Totalmodels */
-            totalModels: number;
-        };
-        /**
-         * ModelExtractionRunStats
-         * @description Timing/token metadata attached to a model-extraction response.
-         */
-        ModelExtractionRunStats: {
-            /** Duration */
-            duration: number;
-            /** Modelsfound */
-            modelsFound: number;
-            /** Tokenscompletion */
-            tokensCompletion: number;
-            /** Tokensprompt */
-            tokensPrompt: number;
-            /** Tokenstotal */
-            tokensTotal: number;
-        };
-        /**
-         * ModelHierarchyChildResponse
-         * @description Child instance created under the parent model instance.
-         */
-        ModelHierarchyChildResponse: {
-            /**
-             * Entitytypeid
-             * Format: uuid
-             */
-            entityTypeId: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Label */
-            label: string;
-            /**
-             * Parentinstanceid
-             * Format: uuid
-             */
-            parentInstanceId: string;
-        };
-        /**
          * OpaqueValueState
          * @description A summarized opaque value that has no listable content (D3).
          *
@@ -4573,10 +4525,11 @@ export interface components {
         /**
          * PortableSection
          * @description One ``extraction_entity_types`` row plus its fields and (for a group)
-         *     its child sections. ``group`` ⇒ ``model_container``; nested ⇒
-         *     ``model_section``; otherwise ``study_section``. ``entry_label`` is legal
-         *     on any repeating section (a group, or ``repeats``); the import keeps the
-         *     bundle's value verbatim, NULL included, and readers fall back to
+         *     its child sections. ``group`` and ``repeats`` both mean
+         *     ``cardinality='many'``; nesting is ``parent_entity_type_id``, at any
+         *     depth (0069 retired ``role``). ``entry_label`` is legal on any repeating
+         *     section; the import keeps the bundle's value verbatim, NULL included,
+         *     and readers fall back to
          *     :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL.
          */
         PortableSection: {
@@ -5103,8 +5056,14 @@ export interface components {
         /**
          * RunViewEntityType
          * @description An entity type in the frozen template snapshot, with its fields embedded.
-         *     ``role`` drives the study/model partition; the tree hierarchy is conveyed by
-         *     ``parent_entity_type_id`` (flat array, ordered by ``sort_order``).
+         *
+         *     Structure is ``parent_entity_type_id`` + ``cardinality`` (trees B5): a
+         *     repeating section is an entry group and may own children at any depth.
+         *     The array is flat, ordered by ``sort_order``.
+         *
+         *     ``role`` is gone. Dropping only the frontend's mapping would have been
+         *     SILENT — the backend would keep sending a key nobody read — so the field
+         *     leaves the wire in the same change.
          */
         RunViewEntityType: {
             /** Cardinality */
@@ -5128,8 +5087,6 @@ export interface components {
             name: string;
             /** Parent Entity Type Id */
             parent_entity_type_id?: string | null;
-            /** Role */
-            role: string;
             /** Sort Order */
             sort_order: number;
         };
@@ -5313,13 +5270,12 @@ export interface components {
          * SectionCreateRequest
          * @description Create a section (entity type) in the path template.
          *
-         *     ``role`` is REQUIRED with no default — the column deliberately has no
-         *     server_default (migration 0016 step 4) so an insert that omits the
-         *     structural role fails loudly instead of silently becoming a
-         *     study_section. ``sort_order`` is deliberately ABSENT: the server
-         *     computes max+1 template-wide inside the INSERT itself, killing the
-         *     frontend's read-then-write race. The ``ck_role_parent`` validator
-         *     below mirrors the DB CHECK of the same name; parent OWNERSHIP
+         *     ``role`` is gone (0069): a section's place in the tree is its
+         *     ``parent_entity_type_id`` plus its ``cardinality``. ``sort_order`` is
+         *     deliberately ABSENT: the server computes max+1 template-wide inside
+         *     the INSERT itself, killing the frontend's read-then-write race.
+         *     Whether the named parent may HAVE children — it must repeat — is the
+         *     service's job, because it needs the parent row; parent OWNERSHIP
          *     (parent belongs to THIS template) is the service's BOLA job.
          *     ``entry_label`` is a repeating section's entry noun (B-8, D3 — unlocked
          *     from the container in the entry-group train): REQUIRED, non-blank, on
@@ -5351,11 +5307,6 @@ export interface components {
             name: string;
             /** Parent Entity Type Id */
             parent_entity_type_id?: string | null;
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "study_section" | "model_container" | "model_section";
         };
         /**
          * SectionDeleteResponse
@@ -5491,20 +5442,15 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
-            /**
-             * Role
-             * @enum {string}
-             */
-            role: "study_section" | "model_container" | "model_section";
             /** Sort Order */
             sort_order: number;
         };
         /**
          * SectionUpdateRequest
-         * @description Partial section update: ``label`` and ``description`` (any role),
-         *     ``entry_label`` (repeating sections only) and ``cardinality``
-         *     (per-model sections only) — the role rules live in the service, which
-         *     owns the row (B-8, D5). At least one field must be provided, and
+         * @description Partial section update: ``label`` and ``description`` (any
+         *     section), ``entry_label`` (repeating sections only) and
+         *     ``cardinality`` (any section since 0069) — the rules live in the
+         *     service, which owns the row and its children. At least one field must be provided, and
          *     explicit nulls are rejected (omit instead) so a smuggled ``{"label":
          *     null}`` can never blank a column; a description is cleared by sending
          *     it blank. Replaces the label-only SectionRenameRequest; the pre-B-8
@@ -5827,16 +5773,21 @@ export interface components {
          *
          *     Deliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that
          *     enum is the cross-cutting vocabulary every client branches on, and these
-         *     five are one endpoint's private outcomes. Same call as
+         *     four are one endpoint's private outcomes. Same call as
          *     ``ExtractionErrorCode`` — slice-local codes stay slice-local, so the
          *     global contract does not grow a member per feature.
          *
          *     The split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a
-         *     *question* (re-post with ``acknowledge_orphans``), the other four are
+         *     *question* (re-post with ``acknowledge_orphans``), the other three are
          *     refusals no retry of the same request can satisfy.
+         *
+         *     ``CONTAINER_SWAP_UNSUPPORTED`` left with 0069: it reported the partial
+         *     unique index that allowed one container per template, and a template
+         *     may now hold as many root groups as it likes, so the restore simply
+         *     writes the swap.
          * @enum {string}
          */
-        TemplateDiscardRefusalCode: "ORPHAN_ACK_REQUIRED" | "NARROW_BASELINE" | "CARDINALITY_DOWNGRADE_BLOCKED" | "CONTAINER_SWAP_UNSUPPORTED" | "DISCARD_RACED";
+        TemplateDiscardRefusalCode: "ORPHAN_ACK_REQUIRED" | "NARROW_BASELINE" | "CARDINALITY_DOWNGRADE_BLOCKED" | "DISCARD_RACED";
         /**
          * TemplateDiscardRefusalDetails
          * @description The ``error.details`` payload of an ``ORPHAN_ACK_REQUIRED`` refusal.
@@ -6964,6 +6915,72 @@ export interface operations {
             };
         };
     };
+    create_entry_api_v1_extraction_instances_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_EntryCreateResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_entries_endpoint_api_v1_extraction_instances_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryBulkDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_EntryBulkDeleteResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_instance_api_v1_extraction_instances__instance_id__patch: {
         parameters: {
             query?: never;
@@ -6986,72 +7003,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_RunViewInstance_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    extract_models_api_v1_extraction_models_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ModelExtractionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_ModelExtractionResult_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_manual_model_hierarchy_api_v1_extraction_models_manual_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateModelHierarchyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_CreateModelHierarchyResponse_"];
                 };
             };
             /** @description Validation Error */

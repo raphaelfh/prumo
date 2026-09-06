@@ -80,7 +80,6 @@ const entityTypes = [
     name: 'basics',
     label: 'Basics',
     description: null,
-    role: 'study_section',
     cardinality: 'one',
     parent_entity_type_id: null,
     entry_label: null,
@@ -91,7 +90,6 @@ const entityTypes = [
     name: 'models',
     label: 'Prediction models',
     description: null,
-    role: 'model_container',
     cardinality: 'many',
     parent_entity_type_id: null,
     entry_label: 'algorithm',
@@ -102,7 +100,6 @@ const entityTypes = [
     name: 'performance',
     label: 'Performance',
     description: null,
-    role: 'model_section',
     cardinality: 'many',
     parent_entity_type_id: 'grp',
     entry_label: null,
@@ -118,7 +115,7 @@ const rootOnlyTree = buildTemplateTree([entityTypes[0]], [fields[0]]);
 const makeSectionActions = (): TemplateSectionActions => ({
   onCommitRename: vi.fn(),
   onDelete: vi.fn(),
-  onAddPerModelSection: vi.fn(),
+  onAddPerGroupSection: vi.fn(),
 });
 
 function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
@@ -196,9 +193,9 @@ describe('section ＋▾ menu — role-aware items (B-8 D8)', () => {
     await userEvent.click(
       await screen.findByRole('menuitem', {name: 'New per-algorithm section'}),
     );
-    expect(sectionActions.onAddPerModelSection).toHaveBeenCalledTimes(1);
-    expect(sectionActions.onAddPerModelSection).toHaveBeenCalledWith(
-      expect.objectContaining({id: 'grp', kind: 'group', entryNoun: 'algorithm'}),
+    expect(sectionActions.onAddPerGroupSection).toHaveBeenCalledTimes(1);
+    expect(sectionActions.onAddPerGroupSection).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'grp', repeats: true, ownsChildren: true, entryNoun: 'algorithm'}),
     );
   });
 
@@ -210,7 +207,7 @@ describe('section ＋▾ menu — role-aware items (B-8 D8)', () => {
     );
     expect(sectionActions.onDelete).toHaveBeenCalledTimes(1);
     expect(sectionActions.onDelete).toHaveBeenCalledWith(
-      expect.objectContaining({id: 'grp', kind: 'group'}),
+      expect.objectContaining({id: 'grp', repeats: true, ownsChildren: true}),
     );
   });
 
@@ -229,8 +226,8 @@ describe('per-group ghost row (B-8 D9)', () => {
     const ghost = screen.getByTestId('template-grid-add-child-section-grp');
     expect(ghost).toHaveTextContent('New per-algorithm section');
     await userEvent.click(ghost);
-    expect(sectionActions.onAddPerModelSection).toHaveBeenCalledTimes(1);
-    expect(sectionActions.onAddPerModelSection).toHaveBeenCalledWith(
+    expect(sectionActions.onAddPerGroupSection).toHaveBeenCalledTimes(1);
+    expect(sectionActions.onAddPerGroupSection).toHaveBeenCalledWith(
       expect.objectContaining({id: 'grp'}),
     );
   });
@@ -242,7 +239,7 @@ describe('per-group ghost row (B-8 D9)', () => {
     await userEvent.keyboard('{Enter}');
     // Native button activation — the dialog callback fires and no ghost
     // editor mounts (the row is inlineEditor: false).
-    expect(sectionActions.onAddPerModelSection).toHaveBeenCalledTimes(1);
+    expect(sectionActions.onAddPerGroupSection).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('textbox', {name: 'New field label'})).toBeNull();
   });
 
@@ -322,7 +319,7 @@ describe('TemplateConfigGridPanel — new callback threading (B-8 T5)', () => {
     } as unknown as ReturnType<typeof useInsertTemplateField>);
   });
 
-  it('threads onAddGroup and onAddPerModelSection through to the grid', async () => {
+  it('threads onAddGroup and onAddPerGroupSection through to the grid', async () => {
     const sectionActions = makeSectionActions();
     const onAddGroup = vi.fn();
     render(
@@ -339,7 +336,7 @@ describe('TemplateConfigGridPanel — new callback threading (B-8 T5)', () => {
       </TooltipProvider>,
     );
     await userEvent.click(screen.getByTestId('template-grid-add-child-section-grp'));
-    expect(sectionActions.onAddPerModelSection).toHaveBeenCalledWith(
+    expect(sectionActions.onAddPerGroupSection).toHaveBeenCalledWith(
       expect.objectContaining({id: 'grp'}),
     );
     // A group exists → the bottom menu's group item is disabled.

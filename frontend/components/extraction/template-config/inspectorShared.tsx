@@ -3,14 +3,6 @@
  * extraction — the section pane moved to its own file when
  * TemplateInspector outgrew the file-size ceiling).
  */
-/** Kind badge copy keys (`extraction` namespace); `groupChild` carries a
- * `{{noun}}` placeholder the call sites interpolate (B-8 D7). */
-export const KIND_COPY = {
-  root: 'inspectorKindRoot',
-  group: 'inspectorKindGroup',
-  groupChild: 'inspectorKindGroupChild',
-} as const;
-
 export function Label({
   children,
   htmlFor,

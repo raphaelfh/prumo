@@ -52,11 +52,20 @@ guard that drifted or was never made.
   those helpers are what the RLS policies call, so a copy lets the API
   and the database disagree. Services cannot import `api.deps`, so a
   service calls the DB function directly (`SELECT public.is_project_member(...)`).
+  The CI gate has **no exempt module** — `security.py` included. It used to
+  exempt itself, on the theory that the module the policies agree with may
+  know the table; that hid two hand-rolled predicates inside the very file
+  whose job is to prevent them (`require_project_scope`,
+  `require_project_manager`). A dependency that reads a PATH parameter still
+  delegates to the imperative helper rather than re-typing its EXISTS.
 - **Row-in-parent** → the named guard for that pair:
   `project_template_active_service.owned_template`,
   `template_section_service.owned_section`,
+  `article_read_service.owned_article`,
   `ExtractionInstanceRepository.get_in_coordinate`. Need a new pair? Add
-  ONE guard and import it — never copy a sibling.
+  ONE guard and import it — never copy a sibling. This list is load-bearing:
+  the CI gate matches WHERE-clause shapes, so it cannot see a
+  `db.get`-then-compare copy — the enumeration is what prevents copy #3.
 - **The request coordinate** for the AI kickoff endpoints →
   `api/deps/scope.assert_kickoff_scope`. Both kickoff endpoints share it;
   `/extraction/models` shipped without the binding precisely because the

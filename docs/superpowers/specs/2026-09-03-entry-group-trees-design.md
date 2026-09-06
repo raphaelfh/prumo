@@ -404,6 +404,65 @@ endpoint disappears.
    group through the UI. Verify: migration roundtrip; service, grid and
    portable tests; e2e nested creation on the Spec A fixture project;
    `grep` for `role` in the touched packages at zero.
+
+   **Split in execution (2026-09-06).** B5 shipped as #827 — the schema,
+   the services, the exports' readers, the portable format, the seeds and
+   the run form. The **Config tab half is B5b** (plan:
+   `docs/superpowers/plans/2026-09-06-trees-b5b-config-tree.md`), because
+   §9 is its own ~18-file surface in `template-config/` and #827 was
+   already 113 files. The split is visible rather than silent:
+   `buildTemplateTree` is still the two-level builder 0016's CHECK
+   justified, so a grandchild renders nowhere on the Config tab until B5b
+   — and `templateTree.ts`'s header says exactly that. Everything that
+   WRITES the tree is depth-agnostic as of #827, and one promotion at the
+   end of the train means production never sees the gap.
+
+   **Carried over from B2** (recorded here because this list, not B2's plan
+   doc, is what B5's run reads):
+   - `entry_hierarchy_service._materialize_singletons` is a FLAT loop.
+     0016's CHECK + trigger made a singleton's children unrepresentable, so
+     recursion would have selected zero rows and been untestable. Once 0069
+     drops them, add the recursion **and** the depth bound the
+     self-referential `parent_entity_type_id` FK then needs — nothing else
+     stops a cycle turning one POST into unbounded INSERTs.
+   - That materializer is a **second implementation** of
+     `hitl_session_service._backfill_child_singletons`. B2 aligned their
+     label and `sort_order` so they agree today; fold them into one
+     materializer before adding recursion, or the recursion lands in only
+     one of the two.
+   - `entry_hierarchy_service` reads the **live** entity-type row while the
+     AI path reads the run-**pinned** tree (`entity_key.key_field_of`).
+     Entry creation has no run, so B2 could not reach a pin. When the pinned
+     resolver becomes shared, give it a `key_field_for(run_or_template)`
+     form with the live fallback, so a draft that moves `is_entity_key`
+     cannot make the two paths disagree about the same section.
+   **Carried over from B3** (the run form ships recursive; `role` does not
+   leave the frontend until here):
+   - `getTopLevelSections` still filters `role='study_section'`.
+     `parent IS NULL AND cardinality='one'` is NOT equivalent: a manager can
+     create a root `study_section` with `cardinality='many'`
+     (`AddSectionDialog`), and `extraction-multi-instance.e2e.ts` does. The
+     replacement must keep that section in the form.
+   - `useFullAIExtraction.fetchModelParentEntityTypeId` returns `results[0]`
+     and leans on 0016's partial unique index on `role='model_container'`.
+     `parent IS NULL AND cardinality='many'` has no uniqueness, so a second
+     root group — the thing this train enables — is silently dropped. Needs a
+     real multi-root answer, not a swapped predicate.
+   - `runViewAdapters.ts` still maps `role`, and `types/extraction.ts`
+     declares it required. Dropping only the adapter mapping is SILENT (the
+     backend still sends it); dropping the type cascades into ~15 spec files.
+     Do both together, here, with `RunViewEntityType.role`.
+   - `entityTypeRoles.ts` keeps only `ENTITY_ROLE` after B3, for
+     `templateTree.ts`. Delete the file with its last reader.
+   - A nested group that OWNS children is unrepresentable until 0069 drops
+     the parent trigger, so B3's `EntrySection` recursion is exercised only
+     as root-group-with-children → nested-childless-group. Add the depth-three
+     case to the e2e here.
+
+   - §11 assigns "browser-side instance insert **and cardinality RPC**" to
+     B2, but only the browser CALL retired: `check_cardinality_one` survives
+     as a SECURITY DEFINER function granted to `authenticated`, with an
+     admin-RPC e2e probe as its only caller. Drop the function in 0069.
 6. **B6 — retirement sweep.** Goal: the model pipeline and every row of
    §11 are gone and cannot return. Verify: the retired-symbols fitness
    check green; both knip modes; the vulture baseline at its new floor;

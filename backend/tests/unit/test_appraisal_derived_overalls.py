@@ -10,7 +10,7 @@ from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
-from app.models.extraction import ExtractionEntityRole, ExtractionFieldType
+from app.models.extraction import ExtractionFieldType
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
 from app.services.extraction_export_service import (
     AppraisalModel,
@@ -159,7 +159,6 @@ def _section(name: str, label: str, field_name: str) -> tuple[SectionDescriptor,
         SectionDescriptor(
             entity_type_id=section_id,
             label=label,
-            role=ExtractionEntityRole.STUDY_SECTION,
             parent_entity_type_id=None,
             fields=(field,),
             name=name,
@@ -174,8 +173,7 @@ def _article(run_id: Any, section_instances: dict[Any, tuple[Any, ...]]) -> Arti
         header_label="Art 1",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances=section_instances,
+        entries={(sid, None): ids for sid, ids in section_instances.items()},
     )
 
 

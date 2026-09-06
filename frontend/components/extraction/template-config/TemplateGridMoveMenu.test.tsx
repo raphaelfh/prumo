@@ -97,7 +97,7 @@ const field = (
 const sectionActions: TemplateSectionActions = {
   onCommitRename: vi.fn(),
   onDelete: vi.fn(),
-  onAddPerModelSection: vi.fn(),
+  onAddPerGroupSection: vi.fn(),
 };
 
 /** DOM .focus() runs the grid's focusin sync — act-wrap outside userEvent. */
@@ -245,7 +245,6 @@ const entityTypes = [
     name: 'basics',
     label: 'Basics',
     description: null,
-    role: 'study_section',
     cardinality: 'one',
     parent_entity_type_id: null,
     sort_order: 1,
@@ -260,7 +259,6 @@ const entityTypes = [
     name: 'outcomes',
     label: 'Outcomes',
     description: null,
-    role: 'study_section',
     cardinality: 'one',
     parent_entity_type_id: null,
     sort_order: 2,

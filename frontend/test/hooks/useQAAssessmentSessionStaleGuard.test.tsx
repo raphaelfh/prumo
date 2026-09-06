@@ -76,4 +76,36 @@ describe('useQAAssessmentSession — stale-response guard (#109)', () => {
     expect(result.current.session?.runId).toBe('run-art2');
     expect(result.current.session?.runId).not.toBe('run-art1-STALE');
   });
+
+  it('drops the previous article\'s session the moment articleId changes', async () => {
+    // Same contract as useExtractionSession: the QA page also pages in place,
+    // so a retained session leaves the run-keyed reads pointed at the previous
+    // article. QA only avoided the visible symptom because its `ready` gate
+    // carries an unconditional `!error` term — the data layer was still stale.
+    apiClientMock.mockResolvedValue({
+      ok: true,
+      data: {
+        run_id: 'run-art1',
+        project_template_id: 'tpl-1',
+        instances_by_entity_type: {},
+      },
+    });
+
+    const { result, rerender } = renderHook(
+      ({ articleId }: { articleId: string }) =>
+        useQAAssessmentSession({
+          projectId: 'proj-1',
+          articleId,
+          projectTemplateId: 'tpl-1',
+        }),
+      { initialProps: { articleId: 'art-1' } },
+    );
+
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+
+    // Hold the next open() open so nothing can re-populate the session.
+    apiClientMock.mockReturnValue(new Promise(() => {}));
+    rerender({ articleId: 'art-2' });
+    expect(result.current.session).toBeNull();
+  });
 });

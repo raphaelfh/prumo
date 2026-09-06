@@ -13,11 +13,10 @@ import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
 // Hoist mocks before imports
 // ---------------------------------------------------------------------------
 
-const {apiClientMock, getExtractionJobStatusMock, modelExtractionClientMock, MockApiError} = vi.hoisted(
+const {apiClientMock, getExtractionJobStatusMock, MockApiError} = vi.hoisted(
   () => ({
     apiClientMock: vi.fn(),
     getExtractionJobStatusMock: vi.fn(),
-    modelExtractionClientMock: vi.fn(),
     // Stands in for the client's ApiError (the service branches on instanceof);
     // hoisted so tests can construct it with this shape.
     MockApiError: class MockApiError extends Error {
@@ -38,7 +37,6 @@ const {apiClientMock, getExtractionJobStatusMock, modelExtractionClientMock, Moc
 vi.mock('@/integrations/api/client', () => ({
   apiClient: apiClientMock,
   ApiError: MockApiError,
-  modelExtractionClient: modelExtractionClientMock,
 }));
 
 vi.mock('./extractionRunService', () => ({
@@ -408,9 +406,14 @@ describe('SectionExtractionService.extractAllSections', () => {
   });
 });
 
-describe('SectionExtractionService.extractModels', () => {
+describe('SectionExtractionService.extractSection — typed refusals', () => {
   it('carries the envelope code of a typed refusal on the thrown APIError', async () => {
-    modelExtractionClientMock.mockRejectedValueOnce(
+    // Moved here from `extractModels` with trees B6: the refusal is the
+    // group pipeline's ("this repeating section declares no entry key"),
+    // and identification runs through THIS call now. The failure mode
+    // outlived its route, so the guard follows it rather than retiring
+    // with the code it happened to be written against.
+    apiClientMock.mockRejectedValueOnce(
       new MockApiError(
         "The repeating section 'Prediction models' declares no entry key.",
         409,
@@ -420,11 +423,16 @@ describe('SectionExtractionService.extractModels', () => {
     );
 
     await expect(
-      SectionExtractionService.extractModels({projectId: 'p1', articleId: 'a1', templateId: 't1'}),
+      SectionExtractionService.extractSection({
+        projectId: 'p1',
+        articleId: 'a1',
+        templateId: 't1',
+        entityTypeId: 'et-models',
+      }),
     ).rejects.toMatchObject({
       name: 'APIError',
       code: 'MISSING_ENTITY_KEY',
-      details: {statusCode: 409, traceId: 'tr-1'},
+      details: {traceId: 'tr-1'},
     });
   });
 });

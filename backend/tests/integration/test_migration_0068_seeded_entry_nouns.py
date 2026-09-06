@@ -31,10 +31,31 @@ async def _global_template(db: AsyncSession) -> UUID:
     return template.id
 
 
-async def _add(db: AsyncSession, **cols: object) -> UUID:
-    row = ExtractionEntityType(
-        **{"id": uuid4(), "label": "x", "role": "study_section", "cardinality": "many", **cols}
+@pytest.fixture(autouse=True)
+async def _allow_nounless_repeating(db_session: AsyncSession) -> None:
+    """Undo 0069's noun CHECK inside this test's SAVEPOINT.
+
+    0068 exists to STAMP a noun onto repeating rows that have none, and
+    0069 later makes that state unrepresentable — backfilling the stragglers
+    and adding ``ck_extraction_entity_types_noun_on_repeating``. So the
+    fixture cannot build 0068's input at head without dropping the CHECK
+    first. The rollback at the end of the test puts it back; nothing else
+    sees it gone.
+
+    Autouse and BEFORE any insert: 0069's deferred parent trigger queues
+    events on this table, and `ALTER TABLE` refuses while any are pending
+    ("cannot ALTER TABLE ... because it has pending trigger events").
+    """
+    await db_session.execute(
+        text(
+            "ALTER TABLE public.extraction_entity_types "
+            "DROP CONSTRAINT IF EXISTS ck_extraction_entity_types_noun_on_repeating"
+        )
     )
+
+
+async def _add(db: AsyncSession, **cols: object) -> UUID:
+    row = ExtractionEntityType(**{"id": uuid4(), "label": "x", "cardinality": "many", **cols})
     db.add(row)
     await db.flush()
     return row.id

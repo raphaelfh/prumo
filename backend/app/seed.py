@@ -60,7 +60,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import AsyncSessionLocal
 from app.models.extraction import (
-    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ExtractionTemplateGlobal,
@@ -82,7 +81,6 @@ class _EntitySpec(NamedTuple):
     description: str
     parent_id: UUID | None
     cardinality: str
-    role: ExtractionEntityRole
     sort_order: int
     # Entry noun of a repeating section ('many'); None otherwise. Reaches only a
     # fresh database — 0068 stamps existing rows; ``test_seed_entry_nouns`` pins both.
@@ -108,7 +106,6 @@ def _entity_type_from_spec(
         entry_label=spec.entry_label,
         parent_entity_type_id=spec.parent_id,
         cardinality=spec.cardinality,
-        role=spec.role.value,
         sort_order=spec.sort_order,
         is_required=False,
     )
@@ -303,11 +300,8 @@ async def seed_charms(session: AsyncSession) -> None:
     #
     # Sort order is just display order (the TemplateCloneService topologically
     # sorts before insertion, so children can come before parents in the seed
-    # if needed). ``role`` is the structural discriminant that downstream
-    # services and the frontend partition on.
-    _study = ExtractionEntityRole.STUDY_SECTION
-    _container = ExtractionEntityRole.MODEL_CONTAINER
-    _section = ExtractionEntityRole.MODEL_SECTION
+    # if needed). Structure is `parent_id` + `cardinality`: a 'many' section
+    # is an entry group and may own children (trees B5).
     _charms_entity_types: list[_EntitySpec] = [
         # Study-level
         _EntitySpec(
@@ -317,7 +311,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Data source used in the study (CHARMS 1.1)",
             None,
             "one",
-            _study,
             0,
         ),
         _EntitySpec(
@@ -327,7 +320,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Participant information (CHARMS 2.1–2.8)",
             None,
             "one",
-            _study,
             1,
         ),
         _EntitySpec(
@@ -337,7 +329,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Outcome variable to be predicted (CHARMS 3.1–3.7)",
             None,
             "one",
-            _study,
             2,
         ),
         _EntitySpec(
@@ -347,7 +338,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Candidate predictors assessed (CHARMS 4.1–4.6)",
             None,
             "one",
-            _study,
             3,
         ),
         _EntitySpec(
@@ -357,7 +347,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Sample size and events (CHARMS 5.1–5.3)",
             None,
             "one",
-            _study,
             4,
         ),
         _EntitySpec(
@@ -367,7 +356,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Missing data and handling (CHARMS 6.1–6.2)",
             None,
             "one",
-            _study,
             5,
         ),
         # Model container (drives the ModelSelector UI)
@@ -378,7 +366,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Prediction models evaluated in the article. Each model owns its own development, predictors, performance, validation, results, and interpretation sections.",
             None,
             "many",
-            _container,
             6,
             entry_label="model",
         ),
@@ -390,7 +377,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Prediction model development (CHARMS 7.1–7.4)",
             _ET_PREDICTION_MODELS,
             "one",
-            _section,
             7,
         ),
         _EntitySpec(
@@ -400,7 +386,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Final predictors included in the model (multiple allowed)",
             _ET_PREDICTION_MODELS,
             "many",
-            _section,
             8,
             entry_label="predictor",
         ),
@@ -411,7 +396,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Model performance: calibration, discrimination, overall, clinical utility (CHARMS 8.1–8.4)",
             _ET_PREDICTION_MODELS,
             "one",
-            _section,
             9,
         ),
         _EntitySpec(
@@ -421,7 +405,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Model validation (CHARMS 9.1–9.2)",
             _ET_PREDICTION_MODELS,
             "one",
-            _section,
             10,
         ),
         _EntitySpec(
@@ -431,7 +414,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Final model results (CHARMS 10.1–10.4)",
             _ET_PREDICTION_MODELS,
             "one",
-            _section,
             11,
         ),
         _EntitySpec(
@@ -441,7 +423,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Interpretation of the presented model (CHARMS 11.1)",
             _ET_PREDICTION_MODELS,
             "one",
-            _section,
             12,
         ),
         # Study-level closing notes
@@ -452,7 +433,6 @@ async def seed_charms(session: AsyncSession) -> None:
             "Extraction process observations and additional information (CHARMS 12.1–12.2)",
             None,
             "one",
-            _study,
             13,
         ),
     ]
@@ -1530,7 +1510,6 @@ async def seed_probast(session: AsyncSession) -> None:
     )
 
     # ---- Entity types (5 domains, all single-instance) ----
-    _study = ExtractionEntityRole.STUDY_SECTION
     _probast_specs: list[_EntitySpec] = [
         _EntitySpec(
             _PROBAST_ET_PARTICIPANTS,
@@ -1539,7 +1518,6 @@ async def seed_probast(session: AsyncSession) -> None:
             "PROBAST domain 1 — appraisal of participant selection.",
             None,
             "one",
-            _study,
             1,
         ),
         _EntitySpec(
@@ -1549,7 +1527,6 @@ async def seed_probast(session: AsyncSession) -> None:
             "PROBAST domain 2 — appraisal of candidate predictors.",
             None,
             "one",
-            _study,
             2,
         ),
         _EntitySpec(
@@ -1559,7 +1536,6 @@ async def seed_probast(session: AsyncSession) -> None:
             "PROBAST domain 3 — appraisal of outcome definition and measurement.",
             None,
             "one",
-            _study,
             3,
         ),
         _EntitySpec(
@@ -1569,7 +1545,6 @@ async def seed_probast(session: AsyncSession) -> None:
             "PROBAST domain 4 — appraisal of statistical analysis.",
             None,
             "one",
-            _study,
             4,
         ),
         _EntitySpec(
@@ -1579,7 +1554,6 @@ async def seed_probast(session: AsyncSession) -> None:
             "Overall PROBAST judgment across all domains.",
             None,
             "one",
-            _study,
             5,
         ),
     ]
@@ -1841,7 +1815,6 @@ async def seed_quadas2(session: AsyncSession) -> None:
     )
 
     # ---- Entity types (5 domains, all single-instance) ----
-    _study = ExtractionEntityRole.STUDY_SECTION
     _quadas2_specs: list[_EntitySpec] = [
         _EntitySpec(
             _QUADAS2_ET_PATIENT_SELECTION,
@@ -1850,7 +1823,6 @@ async def seed_quadas2(session: AsyncSession) -> None:
             "QUADAS-2 domain 1 — appraisal of patient selection.",
             None,
             "one",
-            _study,
             1,
         ),
         _EntitySpec(
@@ -1860,7 +1832,6 @@ async def seed_quadas2(session: AsyncSession) -> None:
             "QUADAS-2 domain 2 — appraisal of index test.",
             None,
             "one",
-            _study,
             2,
         ),
         _EntitySpec(
@@ -1870,7 +1841,6 @@ async def seed_quadas2(session: AsyncSession) -> None:
             "QUADAS-2 domain 3 — appraisal of reference standard.",
             None,
             "one",
-            _study,
             3,
         ),
         _EntitySpec(
@@ -1880,7 +1850,6 @@ async def seed_quadas2(session: AsyncSession) -> None:
             "QUADAS-2 domain 4 — appraisal of patient flow and timing.",
             None,
             "one",
-            _study,
             4,
         ),
         _EntitySpec(
@@ -1890,7 +1859,6 @@ async def seed_quadas2(session: AsyncSession) -> None:
             "Overall QUADAS-2 judgment across all domains.",
             None,
             "one",
-            _study,
             5,
         ),
     ]
@@ -2111,9 +2079,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
     # compares a multimodal model against a clinical-only model and against
     # MAGGIC yields three model instances. Study-level facts are therefore
     # kept out of the per-model sections so they are not re-entered per model.
-    _study = ExtractionEntityRole.STUDY_SECTION
-    _container = ExtractionEntityRole.MODEL_CONTAINER
-    _section = ExtractionEntityRole.MODEL_SECTION
     entity_types: list[_EntitySpec] = [
         _EntitySpec(
             id=_MM_ET_SOURCE,
@@ -2122,7 +2087,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             description="Study design and data source (CHARMS: source of data)",
             parent_id=None,
             cardinality="one",
-            role=_study,
             sort_order=0,
         ),
         _EntitySpec(
@@ -2132,7 +2096,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             description="Eligibility, setting, and centres (CHARMS: participants)",
             parent_id=None,
             cardinality="one",
-            role=_study,
             sort_order=1,
         ),
         _EntitySpec(
@@ -2142,7 +2105,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             description="Predicted outcome, timing, and phenotype (CHARMS: outcome)",
             parent_id=None,
             cardinality="one",
-            role=_study,
             sort_order=2,
         ),
         _EntitySpec(
@@ -2152,7 +2114,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             description=("Candidate predictors considered (CHARMS: candidate predictors)"),
             parent_id=None,
             cardinality="one",
-            role=_study,
             sort_order=3,
         ),
         _EntitySpec(
@@ -2162,7 +2123,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             description="Participants, events, and EPV (CHARMS: sample size)",
             parent_id=None,
             cardinality="one",
-            role=_study,
             sort_order=4,
         ),
         _EntitySpec(
@@ -2172,7 +2132,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             description=("Missing-data reporting and handling (CHARMS: missing data)"),
             parent_id=None,
             cardinality="one",
-            role=_study,
             sort_order=5,
         ),
         _EntitySpec(
@@ -2186,7 +2145,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
             parent_id=None,
             cardinality="one",
-            role=_study,
             sort_order=6,
         ),
         _EntitySpec(
@@ -2200,7 +2158,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
             parent_id=None,
             cardinality="many",
-            role=_container,
             sort_order=7,
             entry_label="model",
         ),
@@ -2214,7 +2171,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
             parent_id=_MM_ET_MODELS,
             cardinality="one",
-            role=_section,
             sort_order=8,
         ),
         _EntitySpec(
@@ -2227,7 +2183,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
             parent_id=_MM_ET_MODELS,
             cardinality="one",
-            role=_section,
             sort_order=9,
         ),
         _EntitySpec(
@@ -2239,7 +2194,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
             parent_id=_MM_ET_MODELS,
             cardinality="one",
-            role=_section,
             sort_order=10,
         ),
         _EntitySpec(
@@ -2249,7 +2203,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             description=("Final model presentation and coefficient availability (CHARMS: results)"),
             parent_id=_MM_ET_MODELS,
             cardinality="one",
-            role=_section,
             sort_order=11,
         ),
         _EntitySpec(
@@ -2262,7 +2215,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
             parent_id=_MM_ET_MODELS,
             cardinality="one",
-            role=_section,
             sort_order=12,
         ),
         _EntitySpec(
@@ -2277,7 +2229,6 @@ async def seed_charms_mm(session: AsyncSession) -> None:
             ),
             parent_id=_MM_ET_MODELS,
             cardinality="many",
-            role=_section,
             sort_order=13,
             entry_label="validation",
         ),

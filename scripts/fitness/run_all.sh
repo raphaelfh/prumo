@@ -101,6 +101,9 @@ run_check "check_copy_keys.py" \
 run_check "check_diff_attribute_copy.py" \
   python3 "${SCRIPT_DIR}/check_diff_attribute_copy.py"
 
+run_check "check_retired_symbols.py" \
+  python3 "${SCRIPT_DIR}/check_retired_symbols.py"
+
 echo ""
 echo "Summary:"
 for line in "${results[@]}"; do

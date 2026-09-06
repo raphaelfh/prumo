@@ -19,12 +19,27 @@ from app.services.narrow_snapshot_audit import NarrowEra, classify_baseline
 WIDE_FIELD = {"id": "f1", "name": "n", "llm_description": None, "allow_other": False}
 
 
+# The era probe is `cardinality` since trees B5 (0069 removed `role`, which
+# the probe used to key on). Fixtures that mean "this element is from the
+# wide era" must carry it; one that omits it means the pre-0017 era, which
+# is what `test_an_element_without_the_structural_key_is_pre_0017` asserts.
 def _snapshot(entity_types: list[dict]) -> dict:
     return {"entity_types": entity_types}
 
 
+def _wide_et(**overrides) -> dict:
+    """An element from the wide era.
+
+    Carrying the era probe is the whole point: it is `cardinality` since
+    trees B5 (0069 removed `role`, which the probe keyed on), and a fixture
+    that omits it means the pre-0017 era — which is exactly the distinction
+    `test_a_missing_structure_is_the_pre_0017_era` draws.
+    """
+    return {"id": "e1", "cardinality": "one", "fields": [WIDE_FIELD], **overrides}
+
+
 def test_a_wide_baseline_is_healthy() -> None:
-    snapshot = _snapshot([{"id": "e1", "role": "study_section", "fields": [WIDE_FIELD]}])
+    snapshot = _snapshot([_wide_et()])
     assert classify_baseline(snapshot).era is NarrowEra.WIDE
 
 
@@ -41,21 +56,22 @@ def test_an_empty_baseline_is_healthy_not_narrow() -> None:
     assert result.restorable is True
 
 
-def test_a_missing_role_is_the_pre_0017_era() -> None:
+def test_a_missing_structure_is_the_pre_0017_era() -> None:
+    # No `cardinality` key at all — the pre-0017 shape.
     snapshot = _snapshot([{"id": "e1", "fields": [WIDE_FIELD]}])
     result = classify_baseline(snapshot)
-    assert result.era is NarrowEra.PRE_0017_NO_ROLE
+    assert result.era is NarrowEra.PRE_0017_NO_STRUCTURE
     assert result.restorable is False
 
 
-def test_narrow_fields_under_a_role_are_the_pre_0026_era() -> None:
+def test_narrow_fields_under_a_structural_key_are_the_pre_0026_era() -> None:
     """The era migration 0026's backfill deliberately skipped.
 
-    0026 keyed on the role probe, so these rows — role present, fields
-    still narrow — were never widened. Restoring one would default
-    llm_description/allow_other across the project.
+    0026 keyed on the same era probe, so these rows — structural key
+    present, fields still narrow — were never widened. Restoring one would
+    default llm_description/allow_other across the project.
     """
-    snapshot = _snapshot([{"id": "e1", "role": "study_section", "fields": [{"id": "f1"}]}])
+    snapshot = _snapshot([_wide_et(fields=[{"id": "f1"}])])
     result = classify_baseline(snapshot)
     assert result.era is NarrowEra.PRE_0026_NARROW_FIELDS
     assert result.restorable is False
@@ -65,11 +81,11 @@ def test_a_mixed_tree_reports_the_most_severe_era() -> None:
     """A heterogeneous mix is not a third remedy — it needs the worst one."""
     snapshot = _snapshot(
         [
-            {"id": "e1", "role": "study_section", "fields": [WIDE_FIELD]},
-            {"id": "e2", "fields": [WIDE_FIELD]},  # no role at all
+            _wide_et(),
+            {"id": "e2", "fields": [WIDE_FIELD]},  # no structural key at all
         ]
     )
-    assert classify_baseline(snapshot).era is NarrowEra.PRE_0017_NO_ROLE
+    assert classify_baseline(snapshot).era is NarrowEra.PRE_0017_NO_STRUCTURE
 
 
 def test_the_classifier_agrees_with_the_predicate_it_explains() -> None:
@@ -82,9 +98,9 @@ def test_the_classifier_agrees_with_the_predicate_it_explains() -> None:
 
     cases = [
         _snapshot([]),
-        _snapshot([{"id": "e1", "role": "study_section", "fields": [WIDE_FIELD]}]),
         _snapshot([{"id": "e1", "fields": [WIDE_FIELD]}]),
-        _snapshot([{"id": "e1", "role": "study_section", "fields": [{"id": "f1"}]}]),
+        _snapshot([{"id": "e1", "fields": [WIDE_FIELD]}]),
+        _snapshot([{"id": "e1", "fields": [{"id": "f1"}]}]),
         {},
     ]
     for snapshot in cases:

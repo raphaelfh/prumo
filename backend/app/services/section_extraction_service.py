@@ -85,9 +85,6 @@ class SectionExtractionResult:
     extraction_run_id: str
     entity_type_id: str
     suggestions_created: int
-    tokens_prompt: int
-    tokens_completion: int
-    tokens_total: int
     duration_ms: float
 
 
@@ -429,9 +426,6 @@ class SectionExtractionService(LoggerMixin):
                 extraction_run_id=str(run.id),
                 entity_type_id=str(entity_type_id),
                 suggestions_created=suggestions_created,
-                tokens_prompt=llm_usage.prompt_tokens,
-                tokens_completion=llm_usage.completion_tokens,
-                tokens_total=llm_usage.total_tokens,
                 duration_ms=duration,
             )
 

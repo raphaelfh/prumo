@@ -289,4 +289,32 @@ describe('useExtractionSession', () => {
     // but no cache entry should have been written
     expect(queryClient.getQueryData(runsKeys.detail('run-1'))).toBeUndefined();
   });
+
+  it('drops the previous article\'s session the moment articleId changes', () => {
+    // The article pagers navigate in place, so this hook survives the change.
+    // Keeping the resolved session would leave `activeRunId` — and every read
+    // keyed on it — addressing the PREVIOUS article's run until the new open()
+    // commits, and on a FAILED open it never commits at all (the page then
+    // rendered the previous article's form with the error swallowed). The
+    // session must go null synchronously, before the new response lands.
+    const { wrapper } = createWrapper();
+    apiClientMock.mockResolvedValue(OPEN_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      ({ articleId }: { articleId: string }) =>
+        useExtractionSession({
+          projectId: 'proj-1',
+          articleId,
+          projectTemplateId: 'tpl-1',
+        }),
+      { wrapper, initialProps: { articleId: 'art-1' } },
+    );
+
+    return waitFor(() => expect(result.current.session).not.toBeNull()).then(() => {
+      // Hold the next open() open so nothing can re-populate the session.
+      apiClientMock.mockReturnValue(new Promise(() => {}));
+      rerender({ articleId: 'art-2' });
+      expect(result.current.session).toBeNull();
+    });
+  });
 });

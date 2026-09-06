@@ -18,11 +18,11 @@ row-locks it — serializing edits behind ``republish``'s FOR UPDATE. The
 trigger is deliberately NOT ported into this service (B-7 plan: the
 trigger stays the seed/E2E/clone chokepoint and owns the lock ordering).
 
-The deferred ``trg_check_model_section_parent_role`` trigger fires only
-at COMMIT — outside this flush-only service — so its predicate (a
-model_section's parent must be a model_container) is pre-checked here
-and surfaced as the typed ``SectionParentRoleError``. The trigger
-remains the commit-time backstop for races (a parent whose role changes
+The deferred ``trg_check_section_parent_repeats`` trigger (0069) fires
+only at COMMIT — outside this flush-only service — so its predicate (a
+section's parent must repeat) is pre-checked here and surfaced as the
+typed ``SectionParentMustRepeatError``. The trigger remains the
+commit-time backstop for races (a parent that stops repeating
 concurrently aborts the endpoint's commit with a raw 23514-class error).
 
 Services flush, never commit (the endpoint owns the transaction).
@@ -31,13 +31,12 @@ Services flush, never commit (the endpoint owns the transaction).
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import Select, delete, func, or_, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.integrity import violates_constraint
 from app.models.extraction import (
-    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionInstance,
 )
@@ -56,7 +55,6 @@ from app.services.project_template_active_service import owned_template
 # Constraint names duplicated as literals on purpose: both are frozen by
 # shipped migrations (0016 partial unique index; baseline FK) and the
 # schemas/services layers must not depend on migration internals.
-_ONE_CONTAINER_INDEX = "uq_extraction_entity_types_one_container_per_project"
 
 
 class SectionNotFoundError(Exception):
@@ -66,18 +64,17 @@ class SectionNotFoundError(Exception):
     another template/project, so existence never leaks."""
 
 
-class SectionParentRoleError(Exception):
-    """A model_section's parent must be the template's model_container.
+class SectionParentMustRepeatError(Exception):
+    """A section may name a parent only if that parent repeats.
 
-    400-class: deterministic request-time surface of the deferred
-    ``trg_check_model_section_parent_role`` predicate."""
+    422-class: deterministic request-time surface of the deferred
+    ``trg_check_section_parent_repeats`` predicate (0069). Replaces
+    ``SectionParentRoleError``, which required the parent to BE the one
+    model container; any entry group owns children now.
 
-
-class OneContainerError(Exception):
-    """The template already has a model_container.
-
-    409-class: remap of the 23505 from the partial unique index
-    ``uq_extraction_entity_types_one_container_per_project``."""
+    ``OneContainerError`` left with it: it remapped the 23505 from 0016's
+    partial unique index, and a template may hold several root groups, so
+    there is no second container to refuse."""
 
 
 class SectionInUseError(Exception):
@@ -92,7 +89,7 @@ class SectionInUseError(Exception):
     one article. The FKs remain the commit-time backstop for a race."""
 
 
-class SectionEntryLabelRoleError(Exception):
+class SectionEntryLabelCardinalityError(Exception):
     """``entry_label`` is only editable on a repeating section.
 
     422-class: deterministic rule (B-8, D5; unlocked from the container in
@@ -101,11 +98,14 @@ class SectionEntryLabelRoleError(Exception):
     nothing for it to name; no retry can succeed."""
 
 
-class SectionCardinalityRoleError(Exception):
-    """``cardinality`` is only editable on a per-model section.
+class SectionOwnsChildrenError(Exception):
+    """many -> one refused: the section owns child sections.
 
-    422-class (B-8, D5): roots keep their create-time choice and a
-    group always repeats — only model_section rows may flip."""
+    422-class: a child is filled once per ENTRY, so a section that stops
+    repeating leaves its children hanging off nothing. Replaces
+    ``SectionCardinalityRoleError``, which refused the edit on every
+    section except a ``model_section``; cardinality is editable on any
+    section now (spec §5), and this is the rule that protects the data."""
 
 
 class SectionCardinalityInUseError(Exception):
@@ -144,17 +144,16 @@ async def create_section(
 ) -> SectionRead:
     """Create a section in the template; sort_order is server-computed.
 
-    Raises ProjectTemplateNotFoundError / SectionNotFoundError (BOLA),
-    SectionParentRoleError (parent is not the model_container), or
-    OneContainerError (second model_container, 23505)."""
+    Raises ProjectTemplateNotFoundError / SectionNotFoundError (BOLA) or
+    SectionParentMustRepeatError (the named parent is not an entry group)."""
     await owned_template(db, project_id=project_id, template_id=template_id)
     if payload.parent_entity_type_id is not None:
         parent = await owned_section(
             db, template_id=template_id, section_id=payload.parent_entity_type_id
         )
-        if parent.role != ExtractionEntityRole.MODEL_CONTAINER.value:
-            raise SectionParentRoleError(
-                "A model_section's parent must be the template's model_container"
+        if parent.cardinality != "many":
+            raise SectionParentMustRepeatError(
+                "A section's parent must repeat: only an entry group owns per-entry children"
             )
 
     next_sort_order = (
@@ -169,7 +168,6 @@ async def create_section(
         label=payload.label,
         description=payload.description,
         cardinality=payload.cardinality,
-        role=payload.role,
         parent_entity_type_id=payload.parent_entity_type_id,
         # Post-validator value: the trimmed noun on a repeating section,
         # None on every other (the schema refuses it there).
@@ -178,12 +176,7 @@ async def create_section(
         sort_order=next_sort_order,
     )
     db.add(section)
-    try:
-        await db.flush()
-    except IntegrityError as exc:
-        if violates_constraint(exc, _ONE_CONTAINER_INDEX):
-            raise OneContainerError("This template already has a model container") from exc
-        raise
+    await db.flush()
     # sort_order was written as a SQL expression and created_at is a
     # server default — reload both for the response payload.
     await db.refresh(section)
@@ -196,17 +189,37 @@ async def has_multi_entry_parent(db: AsyncSession, *, section_id: UUID) -> bool:
     Shared with ``TemplateVersionService.republish``, which re-runs the
     many->one rule under its publish locks (B-8 review): a reviewer on a
     run still pinned to the old 'many' snapshot can add entries between
-    the PATCH-time check below and Publish."""
+    the PATCH-time check below and Publish.
+
+    Grouped by ``(article_id, parent_instance_id)``, not by parent alone.
+    A ROOT section's instances all carry ``parent_instance_id IS NULL``,
+    so grouping by the parent alone collapses every article in the
+    project into ONE bucket and reports "2+ entries" for a section that
+    holds exactly one per article. Unreachable while cardinality was
+    editable only on a ``model_section`` (which always has a parent);
+    trees B5 makes cardinality editable on any section, which is what
+    exposes it."""
     row = (
         await db.execute(
-            select(ExtractionInstance.parent_instance_id)
+            select(ExtractionInstance.article_id)
             .where(ExtractionInstance.entity_type_id == section_id)
-            .group_by(ExtractionInstance.parent_instance_id)
+            .group_by(ExtractionInstance.article_id, ExtractionInstance.parent_instance_id)
             .having(func.count() >= 2)
             .limit(1)
         )
     ).first()
     return row is not None
+
+
+async def owns_children(db: AsyncSession, *, section_id: UUID) -> bool:
+    """True when any section names this one as its parent."""
+    return (
+        await db.execute(
+            select(ExtractionEntityType.id)
+            .where(ExtractionEntityType.parent_entity_type_id == section_id)
+            .limit(1)
+        )
+    ).first() is not None
 
 
 async def update_section(
@@ -219,32 +232,44 @@ async def update_section(
 ) -> SectionRead:
     """Partial section update (label / entry_label / cardinality / description).
 
-    Role rules (B-8, D5): ``entry_label`` only on a repeating section
-    (SectionEntryLabelRoleError); ``cardinality`` only on model_section
-    (SectionCardinalityRoleError); many -> one refused while any parent
-    instance holds 2+ entries (SectionCardinalityInUseError) — the run
-    view would stop rendering instances the completion gate still
-    counts. ``description`` — the section's AI instruction — is editable
-    on every role, and a blank clears it. Each provided field is applied
+    Rules (spec §5): ``entry_label`` only on a repeating section
+    (SectionEntryLabelCardinalityError), and REQUIRED when a PATCH turns a
+    section into one, unless the row already carries a noun — the 0069
+    CHECK is the backstop, refusing here names the section. ``cardinality``
+    is editable on ANY section now that roles are gone, but many -> one is
+    refused while the section owns children (SectionOwnsChildrenError),
+    which would leave them hanging off a singleton, and while any parent
+    holds 2+ entries (SectionCardinalityInUseError) — the run view would
+    stop rendering instances the completion gate still counts.
+    ``description`` — the section's AI instruction — is editable on every
+    section, and a blank clears it. Each provided field is applied
     only when it differs from the row; an all-no-op update skips the
     flush entirely so the 0048 trigger does not stamp the draft marker
     (extends the old rename-no-op contract)."""
     await owned_template(db, project_id=project_id, template_id=template_id)
     section = await owned_section(db, template_id=template_id, section_id=section_id)
 
-    if payload.entry_label is not None and section.cardinality != "many":
-        raise SectionEntryLabelRoleError("entry_label can only be edited on a repeating section")
-    if payload.cardinality is not None and section.role != "model_section":
-        raise SectionCardinalityRoleError("cardinality can only be edited on a per-model section")
-    if (
-        payload.cardinality == "one"
-        and section.cardinality == "many"
-        and await has_multi_entry_parent(db, section_id=section_id)
-    ):
-        raise SectionCardinalityInUseError(
-            f'Section "{section.label}" has an entry with multiple items; '
-            "remove the extra items before switching it to once-per-entry"
+    becoming_repeating = payload.cardinality == "many" and section.cardinality != "many"
+    if payload.entry_label is not None and section.cardinality != "many" and not becoming_repeating:
+        raise SectionEntryLabelCardinalityError(
+            "entry_label can only be edited on a repeating section"
         )
+    if becoming_repeating and not (payload.entry_label or section.entry_label):
+        # The 0069 CHECK is the backstop; refusing here names the section.
+        raise SectionEntryLabelCardinalityError(
+            f'Section "{section.label}" needs a word for one entry before it can repeat'
+        )
+    if payload.cardinality == "one" and section.cardinality == "many":
+        if await owns_children(db, section_id=section_id):
+            raise SectionOwnsChildrenError(
+                f'Section "{section.label}" owns sections that are filled once per entry; '
+                "move or delete them before switching it to once-per-article"
+            )
+        if await has_multi_entry_parent(db, section_id=section_id):
+            raise SectionCardinalityInUseError(
+                f'Section "{section.label}" has an entry with multiple items; '
+                "remove the extra items before switching it to once-per-entry"
+            )
 
     changed = False
     for attr in ("label", "entry_label", "cardinality"):
@@ -334,13 +359,20 @@ def _subtree_section_ids(section_id: UUID) -> Select[tuple[UUID]]:
     probe and the instance sweep) inline it, so the subtree costs no round
     trip of its own.
 
-    Exactly two levels, and that is a schema invariant rather than a
-    shortcut: ``ck_extraction_entity_types_role_parent`` forces a parent on
-    ``model_section`` rows and forbids one everywhere else, so nothing can
-    sit below a child."""
-    return select(ExtractionEntityType.id).where(
-        or_(
-            ExtractionEntityType.id == section_id,
-            ExtractionEntityType.parent_entity_type_id == section_id,
-        )
+    A recursive CTE, not the two-level ``id = X OR parent = X`` it
+    replaces. That shortcut was a real schema invariant —
+    ``ck_extraction_entity_types_role_parent`` forced a parent on
+    ``model_section`` rows and forbade one everywhere else, so nothing
+    could sit below a child. 0069 drops that CHECK, so depth is unbounded
+    and the two-level form would silently MISS descendants: a delete would
+    report no recorded work while a grandchild held some, and its instance
+    sweep would leave that grandchild's rows behind."""
+    base = (
+        select(ExtractionEntityType.id)
+        .where(ExtractionEntityType.id == section_id)
+        .cte("section_subtree", recursive=True)
     )
+    descendants = select(ExtractionEntityType.id).where(
+        ExtractionEntityType.parent_entity_type_id == base.c.id
+    )
+    return select(base.union_all(descendants).c.id)

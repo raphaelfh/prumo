@@ -29,8 +29,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.error_handler import AppError
 from app.models.extraction import (
+    DEFAULT_ENTRY_LABEL,
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ProjectExtractionTemplate,
@@ -148,15 +148,20 @@ def parse_portable_document(raw: dict[str, Any]) -> PortableTemplate:
 
 
 def _section_dict(et: ExtractionEntityType, children: list[ExtractionEntityType]) -> dict[str, Any]:
-    is_group = et.role == ExtractionEntityRole.MODEL_CONTAINER.value
+    # Spec §5: `repeats` for every repeating section, `group` for one that
+    # also owns sections — at any depth, and several roots may be groups.
+    # Was `role == 'model_container'`, which could only ever be the one
+    # root container 0016 allowed.
     repeats = et.cardinality == ExtractionCardinality.MANY.value
+    is_group = repeats and bool(children)
     return {
         "name": et.name,
         "label": et.label,
         "description": et.description,
         "required": et.is_required,
-        # A group always repeats; ``repeats`` is only meaningful elsewhere.
-        "repeats": repeats and not is_group,
+        # A group always repeats, so `group` implies it on import; writing
+        # both keeps the bundle readable without a lookup.
+        "repeats": repeats,
         "group": is_group,
         # The entry noun rides every repeating section (unlocked from the
         # container in the entry-group train); a non-repeating row has none.
@@ -216,15 +221,9 @@ async def to_portable(db: AsyncSession, *, project_id: UUID, template_id: UUID) 
 def _entity_type_row(
     section: PortableSection, *, template_id: UUID, parent_id: UUID | None, sort_order: int
 ) -> ExtractionEntityType:
-    is_group = section.group
-    role = (
-        ExtractionEntityRole.MODEL_SECTION
-        if parent_id is not None
-        else ExtractionEntityRole.MODEL_CONTAINER
-        if is_group
-        else ExtractionEntityRole.STUDY_SECTION
-    )
-    repeats = is_group or section.repeats
+    # `group` implies `repeats` (spec §5); a section's place in the tree is
+    # now `parent_id` plus cardinality, so there is no role to derive.
+    repeats = section.group or section.repeats
     return ExtractionEntityType(
         id=uuid4(),
         project_template_id=template_id,
@@ -232,15 +231,17 @@ def _entity_type_row(
         name=section.name,
         label=section.label,
         description=section.description,
-        # The bundle's noun verbatim, NULL included: a bundle authored before
-        # nouns round-trips losslessly, and every reader falls back to
-        # DEFAULT_ENTRY_LABEL for a NULL — never to 'model'.
-        entry_label=section.entry_label if repeats else None,
+        # A repeating section without a noun defaults to `entry` on import
+        # (spec §5). It used to keep the bundle's NULL verbatim, on the
+        # reasoning that readers fall back anyway; 0069 makes that row
+        # unrepresentable, so importing a bundle authored before nouns would
+        # abort on `ck_extraction_entity_types_noun_on_repeating` instead of
+        # round-tripping. A section that does not repeat still carries none.
+        entry_label=(section.entry_label or DEFAULT_ENTRY_LABEL) if repeats else None,
         parent_entity_type_id=parent_id,
         cardinality=(
             ExtractionCardinality.MANY.value if repeats else ExtractionCardinality.ONE.value
         ),
-        role=role.value,
         sort_order=sort_order,
         is_required=section.is_required,
     )

@@ -428,9 +428,9 @@ export function TemplateConfigEditor({
                 void handleSaveEdit(sectionId, label),
               onDelete: (section) =>
                 void deleteSectionNow(section.id, section.label),
-              onAddPerModelSection: (group) =>
+              onAddPerGroupSection: (group) =>
                 setAddSectionMode({
-                  kind: "perModel",
+                  kind: "perGroup",
                   parentId: group.id,
                   parentLabel: group.label,
                   entryNoun: group.entryNoun,

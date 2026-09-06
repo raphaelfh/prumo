@@ -38,9 +38,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.f
 vi.mock('@/hooks/extraction/useJustUpdatedValue', () => ({ useJustUpdatedValue: () => false }));
 
 // ExtractionFormView / SectionAccordion side-effect hooks — no-ops in tests.
-vi.mock('@/hooks/extraction/useModelExtraction', () => ({
-  useModelExtraction: () => ({ extractModels: vi.fn(), loading: false }),
-}));
+
 vi.mock('@/hooks/extraction/useBatchSectionExtractionChunked', () => ({
   useBatchSectionExtractionChunked: () => ({ extractAllSections: vi.fn(), loading: false, progress: null }),
 }));
@@ -55,9 +53,6 @@ vi.mock('@/hooks/extraction/useSectionExtraction', () => ({
 // (and so the Supabase client doesn't throw on missing env vars).
 vi.mock('@/services/extractionInstanceService', () => ({
   updateInstanceLabel: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock('@/services/authService', () => ({
-  getRequiredUserId: vi.fn().mockResolvedValue({ ok: true, data: 'user-1' }),
 }));
 vi.mock('@/integrations/supabase/client', () => {
   const builder: Record<string, unknown> = {
@@ -185,7 +180,6 @@ const QA_DOMAIN = {
     description: null,
     parent_entity_type_id: null,
     cardinality: 'one',
-    role: 'study_section',
     sort_order: 0,
     is_required: true,
     created_at: '2020-01-01T00:00:00Z',
@@ -203,6 +197,13 @@ const QA_DOMAIN = {
 // vary. Data + hook wiring is layered on top per scenario.
 function baseExtractionProps() {
   return {
+    // The tree is the input now; roots are derived from it. Scenarios below
+    // still describe themselves with the legacy trio, so the harness folds
+    // them into `entityTypes`.
+    entityTypes: [],
+    activeEntries: {},
+    setActiveEntry: vi.fn(),
+    handleOpenRenameDialog: vi.fn(),
     studyLevelSections: [],
     modelParentEntityType: undefined,
     modelChildSections: [],
@@ -250,6 +251,11 @@ function ExtractionHarness(cfg: ExtractionHarnessConfig) {
   return (
     <ExtractionFormView
       {...(baseExtractionProps() as any)}
+      entityTypes={[
+        ...((cfg.studyLevelSections ?? []) as any[]),
+        ...(cfg.modelParentEntityType ? [cfg.modelParentEntityType as any] : []),
+        ...((cfg.modelChildSections ?? []) as any[]),
+      ]}
       studyLevelSections={(cfg.studyLevelSections ?? []) as any}
       modelParentEntityType={cfg.modelParentEntityType as any}
       modelChildSections={(cfg.modelChildSections ?? []) as any}

@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.extraction_export_service import (
@@ -21,7 +20,6 @@ def _section(label, *fields, sort_order=0):
     return SectionDescriptor(
         entity_type_id=eid,
         label=label,
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=tuple(fields),
         cardinality=ExtractionCardinality.ONE,

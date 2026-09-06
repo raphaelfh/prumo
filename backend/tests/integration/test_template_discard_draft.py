@@ -45,7 +45,6 @@ from app.services.template_discard_service import (
     OrphanAcknowledgementRequiredError,
     discard_draft,
 )
-from app.services.template_restore_service import ContainerSwapUnsupportedError
 from app.services.template_version_read_service import NoActiveTemplateVersionError
 from app.services.template_version_service import TemplateVersionService
 from tests.integration.conftest import (
@@ -429,7 +428,6 @@ async def test_draft_added_ancestor_of_a_blocked_node_is_kept(
         db_session,
         template_id,
         "b9c1_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
         sort_order=98,
@@ -438,7 +436,6 @@ async def test_draft_added_ancestor_of_a_blocked_node_is_kept(
         db_session,
         template_id,
         "b9c1_child",
-        role="model_section",
         parent_id=container,
         sort_order=99,
     )
@@ -523,7 +520,6 @@ async def test_the_sweep_never_cascades_through_a_nested_instance(
         db_session,
         template_id,
         "b9c1_nested_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
         sort_order=98,
@@ -532,7 +528,6 @@ async def test_the_sweep_never_cascades_through_a_nested_instance(
         db_session,
         template_id,
         "b9c1_nested_child",
-        role="model_section",
         parent_id=container,
         sort_order=99,
     )
@@ -599,11 +594,9 @@ async def test_instance_blocked_section_keeps_its_draft_added_children(
     subtrees"), so the manager is left with a coherent branch instead of a
     decapitated container.
 
-    ``ck_extraction_entity_types_role_parent`` plus
-    ``trg_check_model_section_parent_role`` cap the live tree at two levels
-    (a ``model_section``'s parent must be a ``model_container``; the other
-    two roles must have none), so a container and its sections ARE the
-    whole subtree — there are no grandchildren to walk to."""
+    Two levels only. 0069 lifted the depth cap that used to make two levels
+    the WHOLE tree, so the deeper case is a test of its own — see
+    ``test_instance_blocked_section_keeps_its_whole_draft_added_subtree``."""
     project_id = SEED.secondary_project
     await clean_project_clones(db_session, project_id)
     clone = await clone_charms(db_session, project_id, SEED.primary_profile)
@@ -624,7 +617,6 @@ async def test_instance_blocked_section_keeps_its_draft_added_children(
         db_session,
         template_id,
         "b9c1_parent_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
         sort_order=98,
@@ -633,7 +625,6 @@ async def test_instance_blocked_section_keeps_its_draft_added_children(
         db_session,
         template_id,
         "b9c1_subtree_child",
-        role="model_section",
         parent_id=container,
         sort_order=99,
     )
@@ -679,6 +670,105 @@ async def test_instance_blocked_section_keeps_its_draft_added_children(
         template_id=template_id,
         baseline=baseline,
         extra_entity_ids=frozenset({container, child}),
+        extra_field_ids=frozenset({target}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_instance_blocked_section_keeps_its_whole_draft_added_subtree(
+    db_session: AsyncSession,
+) -> None:
+    """The down-walk reaches a GRANDCHILD, not just one hop.
+
+    The walk descended one level and stopped, justified in a comment by
+    ``ck_extraction_entity_types_role_parent`` + the role-parent trigger:
+    they capped the live tree at two levels, so one hop WAS the subtree.
+    0069 drops both, and a group may now own a group at any depth — so the
+    stop leaves the grandchild to be deleted under a kept parent, which is
+    the decapitated branch the down-walk exists to prevent.
+
+    Only the ROOT holds recorded work here. The middle section is kept
+    solely by the closure, and it is exactly that node the old walk
+    refused to descend from."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+    template_id = clone.project_template_id
+    await db_session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+    await db_session.execute(text("SET CONSTRAINTS ALL DEFERRED"))
+    await _delete_section(
+        db_session, await _entity_id(db_session, template_id, "prediction_models")
+    )
+    await TemplateVersionService(db_session).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+    baseline = await _active_schema(db_session, template_id)
+
+    root = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_deep_root",
+        cardinality="many",
+        entry_label="model",
+        sort_order=97,
+    )
+    middle = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_deep_middle",
+        parent_id=root,
+        cardinality="many",
+        entry_label="validation",
+        sort_order=98,
+    )
+    grandchild = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_deep_grandchild",
+        parent_id=middle,
+        sort_order=99,
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, 'B-9c1 discard article', 1) ON CONFLICT (id) DO NOTHING"
+        ),
+        {"id": str(_ARTICLE_ID), "pid": str(project_id)},
+    )
+    target = await _add_field(db_session, root, "b9c1_deep_root_field")
+    instance = await _add_instance(
+        db_session, project_id=project_id, template_id=template_id, entity_type_id=root
+    )
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=_ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=instance,
+        field_id=target,
+        user_id=SEED.primary_profile,
+    )
+
+    result = await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    kept = {k.node_id: k.reason for k in result.kept}
+    assert kept == {
+        root: "has_recorded_data",
+        middle: "related_to_kept_node",
+        grandchild: "related_to_kept_node",
+        target: "has_recorded_data",
+    }
+    assert result.deleted_entity_types == 0
+    await _assert_matches_baseline(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        extra_entity_ids=frozenset({root, middle, grandchild}),
         extra_field_ids=frozenset({target}),
     )
 
@@ -803,7 +893,13 @@ async def test_cardinality_many_to_one_with_two_entries_is_refused(
     section = await _entity_id(db_session, template_id, "model_development")
     container = await _entity_id(db_session, template_id, "prediction_models")
     await db_session.execute(
-        text("UPDATE public.extraction_entity_types SET cardinality = 'many' WHERE id = :id"),
+        # The noun rides along: 0069's `ck_..._noun_on_repeating` means a
+        # section cannot become repeating without the word for one entry.
+        text(
+            "UPDATE public.extraction_entity_types "
+            "SET cardinality = 'many', entry_label = coalesce(entry_label, 'entry') "
+            "WHERE id = :id"
+        ),
         {"id": str(section)},
     )
     await db_session.flush()
@@ -834,37 +930,18 @@ async def test_cardinality_many_to_one_with_two_entries_is_refused(
 
 
 @pytest.mark.asyncio
-async def test_container_swap_is_refused(db_session: AsyncSession) -> None:
-    """The writer's D3 structural refusal, surfaced as a typed 409."""
-    project_id, template_id, _ = await _fresh_charms(db_session)
-    await _delete_section(
-        db_session, await _entity_id(db_session, template_id, "prediction_models")
-    )
-    await _add_section(
-        db_session,
-        template_id,
-        "b9c1_new_container",
-        role="model_container",
-        cardinality="many",
-        entry_label="model",
-    )
-
-    with pytest.raises(ContainerSwapUnsupportedError):
-        await _discard(db_session, project_id=project_id, template_id=template_id)
-
-
-@pytest.mark.asyncio
-async def test_container_swap_is_refused_even_when_the_new_container_is_kept(
+async def test_a_swapped_root_group_discards_instead_of_refusing(
     db_session: AsyncSession,
 ) -> None:
-    """D3's guard read the delete set AFTER D4 had filtered the skip set out
-    of it, so a draft-added container that owns instances never set the
-    flag: the refusal did not fire, phase 1 re-inserted the baseline
-    container, and ``uq_extraction_entity_types_one_container_per_project``
-    turned the actionable 409 into an untyped 500.
+    """Was two `ContainerSwapUnsupportedError` tests; 0069 retires both.
 
-    The guard must read the PRE-skip view — every live container absent
-    from the baseline counts, kept or not."""
+    The refusal existed only because recreating the baseline's group while
+    the draft's replacement still existed collided on
+    `uq_extraction_entity_types_one_container_per_project`. That index is
+    gone — several root groups are legal — so Discard just runs, and the
+    stronger of the two old cases is kept: the replacement OWNS INSTANCES,
+    which is what made D3's guard read the pre-skip view.
+    """
     project_id, template_id, _ = await _fresh_charms(db_session)
     await _delete_section(
         db_session, await _entity_id(db_session, template_id, "prediction_models")
@@ -873,7 +950,6 @@ async def test_container_swap_is_refused_even_when_the_new_container_is_kept(
         db_session,
         template_id,
         "b9c1_kept_container",
-        role="model_container",
         cardinality="many",
         entry_label="model",
     )
@@ -881,8 +957,22 @@ async def test_container_swap_is_refused_even_when_the_new_container_is_kept(
         db_session, project_id=project_id, template_id=template_id, entity_type_id=new_container
     )
 
-    with pytest.raises(ContainerSwapUnsupportedError):
-        await _discard(db_session, project_id=project_id, template_id=template_id)
+    await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    names = {
+        row
+        for (row,) in (
+            await db_session.execute(
+                text(
+                    "SELECT name FROM public.extraction_entity_types "
+                    "WHERE project_template_id = :tid AND cardinality = 'many' "
+                    "AND parent_entity_type_id IS NULL"
+                ),
+                {"tid": str(template_id)},
+            )
+        ).all()
+    }
+    assert "prediction_models" in names, "Discard restored the baseline's group"
 
 
 @pytest.mark.asyncio

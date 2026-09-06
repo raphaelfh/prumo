@@ -19,7 +19,7 @@ function Wrapper({ children }: { children: ReactNode }) {
 
 const entityType = {
   id: 'et1', template_id: 't', name: 'participants', label: 'Participants', description: null,
-  parent_entity_type_id: null, cardinality: 'many' as const, role: 'study_section' as const,
+  parent_entity_type_id: null, cardinality: 'many' as const,
   sort_order: 0, is_required: true, entry_label: null, created_at: '',
 };
 

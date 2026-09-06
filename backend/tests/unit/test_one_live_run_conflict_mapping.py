@@ -16,7 +16,6 @@ handler lines do not register on coverage — the diff-cover blind spot — so t
 integration suite cannot exercise these ``except`` branches.
 """
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -29,7 +28,6 @@ from app.api.v1.endpoints._integrity import (
     ONE_LIVE_RUN_CONSTRAINT,
     is_one_live_run_conflict,
 )
-from app.services.engine_credentials import EngineCredentials
 
 
 class _AsyncpgLikeError(Exception):
@@ -175,131 +173,6 @@ async def test_create_run_reraises_other_integrity_error() -> None:
         )
 
 
-# --- model_extraction.extract_models: 409 for one-live-run, 422 else ----------
-
-_MODEL_EP = "app.api.v1.endpoints.model_extraction"
-
-
-def _model_extraction_payload(project_id, article_id, template_id):
-    from app.schemas.extraction import ModelExtractionRequest
-
-    return ModelExtractionRequest(
-        project_id=project_id,
-        article_id=article_id,
-        template_id=template_id,
-    )
-
-
-async def _call_extract_models(payload, service, caller, credentials_error=None):
-    from app.api.v1.endpoints.model_extraction import extract_models
-
-    # extract_models is @limiter.limit(...)-decorated (slowapi); its wrapper
-    # rejects a non-Request ``request``. Call the pristine coroutine underneath
-    # (functools.wraps exposes it) so the unit test exercises the handler body,
-    # not the rate limiter.
-    raw = getattr(extract_models, "__wrapped__", extract_models)
-
-    from app.schemas.llm_target import LlmTarget
-
-    request = MagicMock()
-    request.state.trace_id = None
-    with (
-        patch(f"{_MODEL_EP}.ensure_project_member", AsyncMock()),
-        # Pin the C1b/F4 resolver explicitly: left unpatched on a MagicMock db
-        # it happens to fall back to the env default today, but an
-        # EngineRetired raise here would 409 and make the one-live-run 409
-        # test pass FOR THE WRONG REASON.
-        patch(
-            f"{_MODEL_EP}.resolve_project_engine",
-            AsyncMock(return_value=LlmTarget(provider="openai", model="m-x")),
-        ),
-        patch(f"{_MODEL_EP}.create_storage_adapter", return_value=MagicMock()),
-        # B9: one resolver for key + endpoint host, patched where the route
-        # imports it (the endpoint no longer builds an APIKeyService itself).
-        patch(
-            f"{_MODEL_EP}.resolve_engine_credentials",
-            AsyncMock(
-                return_value=EngineCredentials(None, None, None, None),
-                side_effect=credentials_error,
-            ),
-        ),
-        patch(f"{_MODEL_EP}.ModelExtractionService", return_value=service),
-    ):
-        db = AsyncMock()
-        await raw(
-            request=request,
-            payload=payload,
-            db=db,
-            user=SimpleNamespace(sub=str(caller)),
-            supabase=MagicMock(),
-            current_user_sub=caller,
-        )
-
-
-@pytest.mark.asyncio
-async def test_extract_models_maps_one_live_run_to_409() -> None:
-    project_id, article_id, template_id, caller = uuid4(), uuid4(), uuid4(), uuid4()
-    service = MagicMock()
-    service.extract = AsyncMock(
-        side_effect=_integrity_error(
-            f'duplicate key value violates unique constraint "{ONE_LIVE_RUN_CONSTRAINT}"',
-            constraint_name=ONE_LIVE_RUN_CONSTRAINT,
-        )
-    )
-
-    with pytest.raises(HTTPException) as exc_info:
-        await _call_extract_models(
-            _model_extraction_payload(project_id, article_id, template_id), service, caller
-        )
-
-    assert exc_info.value.status_code == 409
-    assert exc_info.value.detail == ONE_LIVE_RUN_CONFLICT_DETAIL
-
-
-@pytest.mark.asyncio
-async def test_extract_models_maps_other_integrity_error_to_422() -> None:
-    project_id, article_id, template_id, caller = uuid4(), uuid4(), uuid4(), uuid4()
-    service = MagicMock()
-    service.extract = AsyncMock(
-        side_effect=_integrity_error(
-            'violates foreign key constraint "fk_extraction_instances_template_id"',
-            constraint_name="fk_extraction_instances_template_id",
-        )
-    )
-
-    with pytest.raises(HTTPException) as exc_info:
-        await _call_extract_models(
-            _model_extraction_payload(project_id, article_id, template_id), service, caller
-        )
-
-    assert exc_info.value.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_extract_models_lets_the_typed_endpoint_error_through() -> None:
-    """``EndpointUnavailableError`` is an ``AppError``, not a ``ValueError``:
-    inside the route's broad ``except Exception`` it would become a generic
-    500 ("Model extraction failed: ...") instead of the registered typed 409
-    that tells the manager to re-verify or re-choose the endpoint.
-
-    Same hazard ``resolve_project_engine`` was hoisted above the try for —
-    the credentials resolver raises it too, so it belongs on the same side.
-    """
-    from app.services.llm_endpoint_service import EndpointUnavailableError
-
-    project_id, article_id, template_id, caller = uuid4(), uuid4(), uuid4(), uuid4()
-    service = MagicMock()
-    service.extract = AsyncMock(side_effect=AssertionError("must not reach the service"))
-
-    with pytest.raises(EndpointUnavailableError):
-        await _call_extract_models(
-            _model_extraction_payload(project_id, article_id, template_id),
-            service,
-            caller,
-            credentials_error=EndpointUnavailableError("endpoint is gone"),
-        )
-
-
 @pytest.mark.asyncio
 async def test_reopen_run_maps_one_live_run_to_409() -> None:
     """Reopening onto an occupied coordinate is a conflict, not a crash.
@@ -373,23 +246,4 @@ async def test_reopen_run_reraises_other_integrity_error() -> None:
             request=MagicMock(),
             db=AsyncMock(),
             current_user_sub=uuid4(),
-        )
-
-
-@pytest.mark.asyncio
-async def test_extract_models_lets_missing_entity_key_through() -> None:
-    """``MissingEntityKeyError`` is an ``AppError`` (typed 409
-    ``MISSING_ENTITY_KEY``), not a ``ValueError``: inside the route's broad
-    ``except Exception`` it became the generic 500 "Model extraction failed"
-    no client could act on. The route must let it reach the registered
-    handler, the way the endpoint-unavailable error does."""
-    from app.services.entity_key import MissingEntityKeyError
-
-    project_id, article_id, template_id, caller = uuid4(), uuid4(), uuid4(), uuid4()
-    service = MagicMock()
-    service.extract = AsyncMock(side_effect=MissingEntityKeyError(uuid4(), "Prediction models"))
-
-    with pytest.raises(MissingEntityKeyError):
-        await _call_extract_models(
-            _model_extraction_payload(project_id, article_id, template_id), service, caller
         )

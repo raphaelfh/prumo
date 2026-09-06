@@ -31,7 +31,6 @@ vi.mock('@/integrations/api/client', () => ({
       this.name = 'ApiError';
     }
   },
-  modelExtractionClient: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({

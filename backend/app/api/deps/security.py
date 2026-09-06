@@ -96,6 +96,22 @@ async def ensure_project_reviewer(db: DbSession, project_id: UUID, user_sub: UUI
     )
 
 
+async def ensure_project_manager(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
+    """Enforce a manager role, for a body-supplied ``project_id``.
+
+    The imperative twin of :func:`require_project_manager` (which can only
+    read a PATH parameter). It calls ``public.is_project_manager`` — the same
+    function the RLS policies call — so a destructive endpoint and the policy
+    guarding the same table cannot disagree about who may act."""
+    await _ensure_project_role(
+        db,
+        sql="SELECT public.is_project_manager(:pid, :uid) AS ok",
+        project_id=project_id,
+        user_sub=user_sub,
+        error="Manager role required",
+    )
+
+
 async def ensure_project_arbitrator(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
     """Enforce an adjudicator role (manager / consensus) — the roles allowed to
     resolve consensus and finalize. For privileged write paths (approve-and-finalize),
@@ -114,25 +130,14 @@ async def require_project_scope(
     db: DbSession,
     user_sub: UUID = Depends(get_current_user_sub),
 ) -> UUID:
-    """Ensure current user is a member of the requested project."""
-    result = await db.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM public.project_members pm
-                WHERE pm.project_id = :project_id
-                  AND pm.user_id = :user_id
-            ) AS allowed
-            """
-        ),
-        {"project_id": str(project_id), "user_id": str(user_sub)},
-    )
-    if not bool(result.scalar_one()):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Project access denied",
-        )
+    """Ensure current user is a member of the requested project.
+
+    The FastAPI-dependency face of :func:`ensure_project_member` — it reads a
+    PATH parameter, where the helper takes a body-supplied id. The predicate
+    itself is not repeated here: it is ``public.is_project_member``, the
+    function the RLS policies call.
+    """
+    await ensure_project_member(db, project_id, user_sub)
     return user_sub
 
 
@@ -146,24 +151,12 @@ async def require_project_manager(
     Used by endpoints that change project-wide configuration (HITL config,
     template enablement, member management). Reviewer or viewer roles are
     rejected here even though they may be able to read the config.
+
+    The FastAPI-dependency face of :func:`ensure_project_manager`, which is
+    where the predicate lives: ``public.is_project_manager``, the function the
+    RLS policies call. This body used to hand-roll the same EXISTS over
+    ``project_members``. The two agreed, but "they agree today" is what every
+    drifted guard in this repo could once have said.
     """
-    result = await db.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM public.project_members pm
-                WHERE pm.project_id = :project_id
-                  AND pm.user_id = :user_id
-                  AND pm.role = 'manager'
-            ) AS allowed
-            """
-        ),
-        {"project_id": str(project_id), "user_id": str(user_sub)},
-    )
-    if not bool(result.scalar_one()):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager role required",
-        )
+    await ensure_project_manager(db, project_id, user_sub)
     return user_sub

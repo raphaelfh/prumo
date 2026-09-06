@@ -67,13 +67,12 @@ from app.services.template_field_service import (
     update_field,
 )
 from app.services.template_section_service import (
-    OneContainerError,
     SectionCardinalityInUseError,
-    SectionCardinalityRoleError,
-    SectionEntryLabelRoleError,
+    SectionEntryLabelCardinalityError,
     SectionInUseError,
     SectionNotFoundError,
-    SectionParentRoleError,
+    SectionOwnsChildrenError,
+    SectionParentMustRepeatError,
     create_section,
     delete_section,
     update_section,
@@ -316,10 +315,11 @@ async def create_template_section(
 ) -> ApiResponse[SectionRead]:
     """Create a section; ``sort_order`` is server-computed (max+1).
 
-    ``role`` and ``parent_entity_type_id`` are explicit parameters — a
-    model_section's parent must be the template's model_container (400);
-    a second model_container is a 409. Stamps the B-4 draft marker via
-    the 0048 trigger (nothing manual).
+    ``parent_entity_type_id`` is the only structural parameter: 0069
+    retired ``role``, so a section names a parent (which must repeat — 400
+    otherwise) or is a root, and a template may hold any number of root
+    groups. Stamps the B-4 draft marker via the 0048 trigger (nothing
+    manual).
     """
     await _claim_lock(db, project_id, template_id, user_sub)
     try:
@@ -328,10 +328,8 @@ async def create_template_section(
         )
     except (ProjectTemplateNotFoundError, SectionNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-    except SectionParentRoleError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except OneContainerError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+    except SectionParentMustRepeatError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except DBAPIError as e:
         if is_deadlock(e):
             raise HTTPException(status_code=409, detail=DEADLOCK_RETRY_DETAIL) from e
@@ -375,7 +373,7 @@ async def update_template_section(
         )
     except (ProjectTemplateNotFoundError, SectionNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-    except (SectionEntryLabelRoleError, SectionCardinalityRoleError) as e:
+    except (SectionEntryLabelCardinalityError, SectionOwnsChildrenError) as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except SectionCardinalityInUseError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e

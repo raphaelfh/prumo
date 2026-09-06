@@ -232,8 +232,14 @@ class RunViewField(BaseModel):
 
 class RunViewEntityType(BaseModel):
     """An entity type in the frozen template snapshot, with its fields embedded.
-    ``role`` drives the study/model partition; the tree hierarchy is conveyed by
-    ``parent_entity_type_id`` (flat array, ordered by ``sort_order``)."""
+
+    Structure is ``parent_entity_type_id`` + ``cardinality`` (trees B5): a
+    repeating section is an entry group and may own children at any depth.
+    The array is flat, ordered by ``sort_order``.
+
+    ``role`` is gone. Dropping only the frontend's mapping would have been
+    SILENT — the backend would keep sending a key nobody read — so the field
+    leaves the wire in the same change."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -247,7 +253,6 @@ class RunViewEntityType(BaseModel):
     entry_label: str | None = None
     parent_entity_type_id: UUID | None = None
     cardinality: str
-    role: str
     sort_order: int
     is_required: bool
     fields: list[RunViewField]

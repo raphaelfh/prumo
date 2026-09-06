@@ -12,7 +12,6 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.schemas.extraction import (
     BatchSectionResult,
-    ModelExtractionResult,
     SectionExtractionResponseData,
     SectionOutcome,
     SingleSectionResult,
@@ -143,34 +142,6 @@ class TestSectionExtractionUnion:
         wire = parsed.model_dump(by_alias=True)
         assert "entity_type_id" in wire["sections"][0]
         assert wire["sections"][1]["error"] == "boom"
-
-
-class TestModelExtractionWire:
-    def test_validates_endpoint_shape_and_dumps_camel(self) -> None:
-        result = ModelExtractionResult.model_validate(
-            {
-                "extractionRunId": "r1",
-                "modelsCreated": [
-                    {
-                        "instanceId": "i1",
-                        "modelName": "Cox PH",
-                        "modellingMethod": "cox",
-                    }
-                ],
-                "totalModels": 1,
-                "childInstancesCreated": 6,
-                "metadata": {
-                    "duration": 1200,
-                    "modelsFound": 1,
-                    "tokensPrompt": 10,
-                    "tokensCompletion": 20,
-                    "tokensTotal": 30,
-                },
-            }
-        )
-        wire = result.model_dump(by_alias=True)
-        assert wire["modelsCreated"][0]["instanceId"] == "i1"
-        assert wire["metadata"]["tokensTotal"] == 30
 
 
 class TestZoteroActionWire:

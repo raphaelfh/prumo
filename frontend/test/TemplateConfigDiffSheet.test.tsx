@@ -378,7 +378,6 @@ function mockGridDeps() {
         name: 'sec_a',
         label: 'Section A',
         description: null,
-        role: 'study_section',
         cardinality: 'one',
         parent_entity_type_id: null,
         sort_order: 1,
@@ -445,7 +444,7 @@ function ConfigSurface({forceDiffOpen = false}: {forceDiffOpen?: boolean}) {
         sectionActions={{
           onCommitRename: vi.fn(),
           onDelete: vi.fn(),
-          onAddPerModelSection: vi.fn(),
+          onAddPerGroupSection: vi.fn(),
         }}
         onAddSection={vi.fn()}
         onAddGroup={vi.fn()}

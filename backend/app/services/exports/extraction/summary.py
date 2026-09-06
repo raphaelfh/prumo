@@ -11,22 +11,21 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from app.models.extraction import ExtractionEntityRole
+from app.services.exports.descriptors import (
+    descendant_instances,
+    iter_records,
+    root_groups,
+)
 from app.services.exports.extraction.sheet_spec import Cell, CellStyle, SheetSpec
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
-    SectionDescriptor,
 )
 
 _HEADER = CellStyle(bold=True, fill="EEEEEE")
 
-_HEADERS = ("Record", "Model #", "Fields filled", "Fields total", "Completeness")
-
-
-def _has_model_container(sections: tuple[SectionDescriptor, ...]) -> bool:
-    return any(s.role is ExtractionEntityRole.MODEL_CONTAINER for s in sections)
+_HEADERS = ("Record", "Entry", "Fields filled", "Fields total", "Completeness")
 
 
 def _consensus_value(layout: ExportLayout, run_id: UUID, instance_id: UUID, field_id: UUID):
@@ -38,67 +37,59 @@ def _consensus_value(layout: ExportLayout, run_id: UUID, instance_id: UUID, fiel
     return layout.value_map.get((run_id, instance_id, field_id))
 
 
-def _instance_for(article: ArticleDescriptor, section: SectionDescriptor, model_index: int | None):
-    if section.role is ExtractionEntityRole.MODEL_SECTION:
-        if model_index is None or model_index >= len(article.model_instances):
-            return None
-        return article.model_instances[model_index]
-    # study / other sections — first instance for the entity type
-    instances = article.section_instances.get(section.entity_type_id, ())
-    return instances[0] if instances else None
-
-
-def _completeness_for_record(
+def _completeness(
     layout: ExportLayout,
     article: ArticleDescriptor,
-    model_index: int | None,
+    scope: set[UUID] | None,
 ) -> tuple[int, int]:
+    """Filled / total over the instances in ``scope`` (``None`` = the article).
+
+    Was resolved section-by-section through a `model_index` into
+    `article.model_instances`. That tuple held every child instance of every
+    entry, so an entry's row counted a sibling entry's values — the Summary
+    face of the same defect the matrix had.
+    """
     filled = 0
     total = 0
     if article.run_id is None:
         return 0, 0
     for section in layout.sections:
-        if section.role is ExtractionEntityRole.MODEL_CONTAINER:
-            continue
-        # When fanning out by model, a model-section row belongs to one model;
-        # study sections apply to every model row (their values repeat).
-        instance_id = _instance_for(article, section, model_index)
-        if instance_id is None:
-            continue
-        for field in section.fields:
-            total += 1
-            if _consensus_value(layout, article.run_id, instance_id, field.field_id) is not None:
-                filled += 1
+        for instance_id, _parts in iter_records(section, article, layout.sections):
+            if scope is not None and instance_id not in scope:
+                continue
+            for field in section.fields:
+                total += 1
+                if (
+                    _consensus_value(layout, article.run_id, instance_id, field.field_id)
+                    is not None
+                ):
+                    filled += 1
     return filled, total
 
 
-def _record_rows(layout: ExportLayout, fan_out_models: bool) -> list[tuple[Cell, ...]]:
+def _row(article: ArticleDescriptor, label: str, filled: int, total: int) -> tuple[Cell, ...]:
+    pct = f"{(filled / total * 100):.0f}%" if total else ""
+    return (Cell(article.header_label), Cell(label), Cell(filled), Cell(total), Cell(pct))
+
+
+def _record_rows(layout: ExportLayout) -> list[tuple[Cell, ...]]:
+    """One row per article, then one row per entry of each root group (§10)."""
+    groups = root_groups(layout.sections)
     rows: list[tuple[Cell, ...]] = []
     for article in layout.articles:
-        model_iter: list[int | None]
-        if fan_out_models and article.model_instances:
-            model_iter = list(range(len(article.model_instances)))
-        else:
-            model_iter = [None]
-        for model_index in model_iter:
-            filled, total = _completeness_for_record(layout, article, model_index)
-            pct = f"{(filled / total * 100):.0f}%" if total else ""
-            rows.append(
-                (
-                    Cell(article.header_label),
-                    Cell("" if model_index is None else model_index + 1),
-                    Cell(filled),
-                    Cell(total),
-                    Cell(pct),
+        rows.append(_row(article, "", *_completeness(layout, article, None)))
+        for group in groups:
+            for instance_id, parts in iter_records(group, article, layout.sections):
+                scope = descendant_instances(article, instance_id)
+                rows.append(
+                    _row(article, " · ".join(parts), *_completeness(layout, article, scope))
                 )
-            )
     return rows
 
 
 def build_summary(layout: ExportLayout) -> SheetSpec:
-    fan_out = _has_model_container(layout.sections)
     rows: list[tuple[Cell, ...]] = [tuple(Cell(h, _HEADER) for h in _HEADERS)]
-    rows.extend(_record_rows(layout, fan_out))
+    rows.extend(_record_rows(layout))
 
     if layout.notes.omitted_articles_by_stage:
         rows.append(())

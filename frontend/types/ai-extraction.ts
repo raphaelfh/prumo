@@ -176,21 +176,6 @@ export interface SectionExtractionResponse {
   traceId?: string;
 }
 
-/**
- * Request for prediction model extraction
- */
-export interface ModelExtractionRequest {
-  projectId: string;
-  articleId: string;
-  templateId: string;
-  /**
-   * Active HITL session run to append the extracted models to. When set (the
-   * extraction surface), the backend REUSES that run instead of forking a
-   * parallel one that would shadow the reviewer's saved decisions. Omit for
-   * standalone (e.g. bulk table) extraction where no session run exists.
-   */
-  runId?: string;
-}
 
 
 /**
@@ -242,35 +227,6 @@ export interface BatchSectionExtractionResponse {
   traceId?: string;
 }
 
-/**
- * Response of model extraction
- */
-export interface ModelExtractionResponse {
-  ok: boolean;
-  data?: {
-    runId: string;
-    modelsCreated: Array<{
-      instanceId: string;
-      modelName: string;
-      modellingMethod?: string;
-    }>;
-    childInstancesCreated: number;
-    metadata?: {
-      tokensPrompt?: number;
-      tokensCompletion?: number;
-      tokensTotal?: number;  // Backend returns tokensTotal (not tokensUsed)
-      duration?: number;
-      modelsFound?: number;
-      [key: string]: any;
-    };
-  };
-  error?: {
-    code: string;
-    message: string;
-    details?: unknown;
-  };
-  traceId?: string;
-}
 
 // =================== HOOK PROPS ===================
 

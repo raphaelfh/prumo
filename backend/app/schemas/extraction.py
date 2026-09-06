@@ -215,25 +215,6 @@ SectionExtractionResponseData = Annotated[
 # =================== MODEL EXTRACTION SCHEMAS ===================
 
 
-class CreateModelHierarchyRequest(BaseModel):
-    """Request to create one prediction-model hierarchy for an article.
-
-    The dialog asks for the name only; it becomes the instance label and
-    the decision on the container's entry key. ``extra="forbid"`` for the
-    reason ``ModelExtractionRequest`` gives: this body is validated once,
-    in the request cycle, so a stale tab that still sends
-    ``modellingMethod`` gets a loud 422 instead of silently losing a value
-    it typed.
-    """
-
-    project_id: UUID = Field(..., alias="projectId")
-    article_id: UUID = Field(..., alias="articleId")
-    template_id: UUID = Field(..., alias="templateId")
-    model_name: str = Field(..., alias="modelName")
-
-    model_config = ConfigDict(populate_by_name=True, extra="forbid")
-
-
 class InstanceIdentityUpdateRequest(BaseModel):
     """Rename and/or re-key one extraction instance (the run form's rename
     dialog). ``entity_key`` is the identity an AI re-run matches against; the
@@ -260,97 +241,82 @@ class InstanceIdentityUpdateRequest(BaseModel):
         return self
 
 
-class ModelHierarchyChildResponse(BaseModel):
-    """Child instance created under the parent model instance."""
+class EntryBulkDeleteRequest(BaseModel):
+    """Delete several entries of a repeating section, all or none.
 
-    id: UUID
-    entity_type_id: UUID = Field(..., alias="entityTypeId")
-    parent_instance_id: UUID = Field(..., alias="parentInstanceId")
-    label: str
+    ``extra="forbid"`` for the reason every sibling gives: this body is
+    validated once, in the request cycle.
 
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class CreateModelHierarchyResponse(BaseModel):
-    """Response for one-shot hierarchy creation."""
-
-    model_id: UUID = Field(..., alias="modelId")
-    model_label: str = Field(..., alias="modelLabel")
-    child_instances: list[ModelHierarchyChildResponse] = Field(alias="childInstances")
-    proposal_run_id: UUID | None = Field(default=None, alias="proposalRunId")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class ModelExtractionRequest(BaseModel):
-    """Request for extraction de modelos de predicao."""
+    The list is non-empty and DISTINCT. A duplicate id is refused rather than
+    de-duplicated because ``deleted`` would then over-report — the caller
+    named one row twice and the count would say two, which is exactly the
+    number a confirmation dialog shows back to the reviewer.
+    """
 
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     template_id: UUID = Field(..., alias="templateId")
-    # The active HITL session run to append to. When set (the extraction
-    # surface), model extraction REUSES that run instead of forking a parallel
-    # one that would shadow the reviewer's decisions. None = standalone run.
-    run_id: UUID | None = Field(default=None, alias="runId")
+    instance_ids: list[UUID] = Field(..., alias="instanceIds", min_length=1, max_length=200)
 
-    # Opcoes de extraction
-    options: ExtractionOptions | None = None
-
-    # C1a: the engine is server-owned. ``extra="forbid"`` turns a client that
-    # still sends ``model`` into a loud 422 instead of silently dropping its
-    # choice — the same reasoning every server-owned write schema applies.
-    # Safe here (and NOT on
-    # ``SectionExtractionRequest``) because this payload is validated once, in
-    # the request cycle: there is no Celery hop that could replay an older body.
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-
-class IdentifiedModel(BaseModel):
-    """Modelo de predicao identificado in the article."""
-
-    model_name: str = Field(..., alias="modelName")
-    model_type: str | None = Field(default=None, alias="modelType")
-    target_outcome: str | None = Field(default=None, alias="targetOutcome")
-    description: str | None = None
-
-    # Metadata adicionais extraidos
-    sample_size: int | None = Field(default=None, alias="sampleSize")
-    performance_metrics: dict[str, Any] = Field(default={}, alias="performanceMetrics")
-    validation_strategy: str | None = Field(default=None, alias="validationStrategy")
-
-    model_config = ConfigDict(populate_by_name=True)
+    @model_validator(mode="after")
+    def _reject_duplicates(self) -> "EntryBulkDeleteRequest":
+        if len(set(self.instance_ids)) != len(self.instance_ids):
+            raise ValueError("instanceIds must be distinct")
+        return self
 
 
-class CreatedModelInfo(BaseModel):
-    """One prediction-model instance created by model extraction."""
+class EntryBulkDeleteResponse(BaseModel):
+    """How many entries the batch removed — always the full request length,
+    since a partial delete cannot happen."""
 
-    instance_id: str = Field(..., alias="instanceId")
-    model_name: str = Field(..., alias="modelName")
-    modelling_method: str | None = Field(default=None, alias="modellingMethod")
-
-    model_config = ConfigDict(populate_by_name=True)
+    deleted: int
 
 
-class ModelExtractionRunStats(BaseModel):
-    """Timing/token metadata attached to a model-extraction response."""
+class EntryCreateRequest(BaseModel):
+    """Create one entry of a repeating section (spec §7).
 
-    duration: int
-    models_found: int = Field(..., alias="modelsFound")
-    tokens_prompt: int = Field(..., alias="tokensPrompt")
-    tokens_completion: int = Field(..., alias="tokensCompletion")
-    tokens_total: int = Field(..., alias="tokensTotal")
+    ``extra="forbid"`` for the reason every sibling gives: this body is
+    validated once, in the request cycle, so a stale tab sending a retired
+    field gets a loud 422 instead of silently losing a value it typed.
 
-    model_config = ConfigDict(populate_by_name=True)
+    ``label`` is the human-facing name; ``entity_key`` is the identity an AI
+    re-run matches against. A section that declares an ``is_entity_key``
+    field requires the key; one that does not must omit it.
+    """
+
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    template_id: UUID = Field(..., alias="templateId")
+    entity_type_id: UUID = Field(..., alias="entityTypeId")
+    parent_instance_id: UUID | None = Field(default=None, alias="parentInstanceId")
+    label: str = Field(..., max_length=200)
+    entity_key: str | None = Field(default=None, alias="entityKey", max_length=500)
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    @model_validator(mode="after")
+    def _non_blank(self) -> "EntryCreateRequest":
+        if not self.label.strip():
+            raise ValueError("label may not be blank")
+        if self.entity_key is not None and not self.entity_key.strip():
+            raise ValueError("entityKey may be omitted but not blank")
+        return self
 
 
-class ModelExtractionResult(BaseModel):
-    """Resultado da extraction de modelos."""
+class EntryCreateResponse(BaseModel):
+    """The created entry.
 
-    extraction_run_id: str = Field(..., alias="extractionRunId")
-    models_created: list[CreatedModelInfo] = Field(..., alias="modelsCreated")
-    total_models: int = Field(..., alias="totalModels")
-    child_instances_created: int = Field(..., alias="childInstancesCreated")
-    metadata: ModelExtractionRunStats
+    Deliberately narrower than spec §7's ``(instance, descendants,
+    proposalRunId)``: the caller refetches the run view after a create, so
+    the descendant list and the run id are payload with no consumer — the
+    retired ``childInstances`` field had none in its whole lifetime. The
+    label IS read (the success toast names the entry).
+    """
+
+    instance_id: UUID = Field(..., alias="instanceId")
+    label: str
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -389,10 +355,6 @@ class ExtractionEntityTypeSchema(BaseModel):
     label: str
     description: str | None = None
     cardinality: Literal["one", "many"]
-    # ``role`` is the structural discriminant the frontend partitions on
-    # (study-level accordions vs model container vs per-model children).
-    # See ``ExtractionEntityRole`` and migration ``0016_entity_role_column``.
-    role: Literal["study_section", "model_container", "model_section"] = "study_section"
     is_required: bool = Field(default=False, alias="isRequired")
     sort_order: int = Field(default=0, alias="sortOrder")
     parent_entity_type_id: UUID | None = Field(default=None, alias="parentEntityTypeId")
@@ -488,7 +450,8 @@ class ValueResponse(BaseModel):
 
 
 class ExtractionErrorCode(str, Enum):
-    """Stable, machine-readable code for a terminal extraction failure.
+    """Stable code for a terminal extraction failure, or for a typed
+    synchronous refusal on the extraction write paths.
 
     Carried on ``ExtractionJobStatusResponse.error_code`` so the frontend can
     pick specific, actionable toast copy without parsing the human ``error``
@@ -507,6 +470,10 @@ class ExtractionErrorCode(str, Enum):
       ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
       LLM call. Carried by the single-section job and, as a 409, by the sync
       models kickoff; a batch run keeps reporting per-section text.
+    - ``ENTRY_KEY_DUPLICATE`` — manual entry creation named an identity the
+      coordinate already holds (``EntryKeyDuplicateError``), refused as a 409
+      rather than silently renaming the entry the way the retired model path
+      did ("Cox Model (2)").
     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
     """
 
@@ -515,6 +482,7 @@ class ExtractionErrorCode(str, Enum):
     ENGINE_RETIRED = "ENGINE_RETIRED"
     LLM_ENDPOINT_UNAVAILABLE = "LLM_ENDPOINT_UNAVAILABLE"
     MISSING_ENTITY_KEY = "MISSING_ENTITY_KEY"
+    ENTRY_KEY_DUPLICATE = "ENTRY_KEY_DUPLICATE"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
 
 

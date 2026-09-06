@@ -82,7 +82,23 @@ export function useQAAssessmentSession({
     globalTemplateId !== prevOpenKey.globalTemplateId ||
     projectTemplateId !== prevOpenKey.projectTemplateId
   ) {
+    // A session describes exactly ONE (project, article, template) triple; when
+    // that identity changes the session in state belongs to the article we just
+    // navigated away from. Drop it rather than leave every consumer reading a
+    // run that addresses the previous article — on a FAILED open it is never
+    // replaced, so the page would otherwise render the previous article's form.
+    // ``enabled`` is not identity (it toggles while the template resolves), so
+    // it must not clear the session. Mirrors useExtractionSession.
+    const identityChanged =
+      !!prevOpenKey &&
+      (projectId !== prevOpenKey.projectId ||
+        articleId !== prevOpenKey.articleId ||
+        globalTemplateId !== prevOpenKey.globalTemplateId ||
+        projectTemplateId !== prevOpenKey.projectTemplateId);
     setPrevOpenKey({ enabled, projectId, articleId, globalTemplateId, projectTemplateId });
+    if (identityChanged) {
+      setSession(null);
+    }
     if (willOpen) {
       setLoading(true);
       setError(null);

@@ -54,8 +54,8 @@ def _snapshot_entity(
     et_id: str,
     name: str,
     *,
-    role: str = "study_section",
     parent: str | None = None,
+    cardinality: str = "one",
     fields: list[dict] | None = None,
 ) -> dict:
     return {
@@ -64,8 +64,9 @@ def _snapshot_entity(
         "label": name,
         "description": "pinned entity description",
         "parent_entity_type_id": parent,
-        "cardinality": "one",
-        "role": role,
+        "cardinality": cardinality,
+        # A repeating section always carries the word for one entry (0069).
+        "entry_label": "entry" if cardinality == "many" else None,
         "sort_order": 0,
         "is_required": False,
         "fields": fields or [],
@@ -232,8 +233,8 @@ async def test_extract_for_run_iterates_the_pinned_top_level_set(
     await db_session.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, sort_order) "
-            "VALUES (:id, :tid, 'live_extra', 'Live extra', 'one', 'study_section', 99)"
+            "(id, project_template_id, name, label, cardinality, sort_order) "
+            "VALUES (:id, :tid, 'live_extra', 'Live extra', 'one', 99)"
         ),
         {"id": str(live_extra_id), "tid": str(template_id)},
     )
@@ -255,7 +256,6 @@ async def test_extract_for_run_iterates_the_pinned_top_level_set(
                 _snapshot_entity(
                     str(uuid.uuid4()),
                     "pinned_child_not_top_level",
-                    role="model_section",
                     parent=str(entity_type_id),
                 ),
             ]
@@ -302,9 +302,9 @@ async def test_child_entity_types_come_from_the_pinned_snapshot(
     await db_session.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, sort_order, "
+            "(id, project_template_id, name, label, cardinality, sort_order, "
             " parent_entity_type_id) "
-            "VALUES (:id, :tid, 'live_child', 'Live child', 'one', 'model_section', 1, :parent)"
+            "VALUES (:id, :tid, 'live_child', 'Live child', 'one', 1, :parent)"
         ),
         {
             "id": str(live_child_id),
@@ -322,11 +322,10 @@ async def test_child_entity_types_come_from_the_pinned_snapshot(
         profile_id=profile_id,
         schema={
             "entity_types": [
-                _snapshot_entity(str(entity_type_id), "parent", role="model_container"),
+                _snapshot_entity(str(entity_type_id), "parent", cardinality="many"),
                 _snapshot_entity(
                     pinned_child_id,
                     "pinned_child",
-                    role="model_section",
                     parent=str(entity_type_id),
                 ),
             ]
@@ -343,18 +342,25 @@ async def test_child_entity_types_come_from_the_pinned_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_model_identification_uses_pinned_label_and_instruction(
+async def test_entry_identification_uses_pinned_label_and_instruction(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Model identification: the container label, entry noun, key field and
-    description come from the pinned tree and the template-level ✨
-    instruction (phase-A gap) leads the prompt."""
-    from app.services.model_extraction_service import ModelExtractionService
+    """Entry identification: the group label, entry noun, key field and
+    description come from the PINNED tree, and the template-level instruction
+    leads the prompt.
 
+    Was ``test_model_identification_uses_pinned_label_and_instruction``,
+    driving the retired ``ModelExtractionService._identify_models``. The
+    behaviour outlived the service — ``entry_group_extraction`` identifies
+    every repeating group the same way — so the guard moved rather than
+    retiring with the file that happened to hold it (trees B6). It now goes
+    through the PUBLIC seam (``extract_section``), which is what a caller
+    actually reaches.
+    """
     fx = await _coords(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
-    _project_id, _article_id, template_id, profile_id, _instance_id, field_a_id = fx
+    project_id, article_id, template_id, profile_id, _instance_id, field_a_id = fx
 
     entity_type_id = (
         await db_session.execute(
@@ -377,7 +383,6 @@ async def test_model_identification_uses_pinned_label_and_instruction(
                     **_snapshot_entity(
                         str(entity_type_id),
                         "models",
-                        role="model_container",
                         fields=[
                             {
                                 **_snapshot_field(str(field_a_id), "pinned_key"),
@@ -404,22 +409,29 @@ async def test_model_identification_uses_pinned_label_and_instruction(
         return output, LlmUsage()
 
     monkeypatch.setattr(
-        "app.services.model_extraction_service.extract_structured",
+        "app.services.entry_group_extraction.extract_structured",
         fake_extract_structured,
     )
-    monkeypatch.setattr(
-        "app.services.model_extraction_service.build_model",
-        lambda *_a, **_k: MagicMock(),
+
+    service = _service(db_session, profile_id)
+    # Identification wires its own model — `_extract_with_llm` is stubbed but
+    # `_wire_model` is not, and `build_model` raises without an API key. That
+    # is a CI-only failure: a developer's `.env` supplies the key and the test
+    # passes locally for a reason CI does not have.
+    service._wire_model = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
+    await service.extract_section(
+        project_id=project_id,
+        article_id=article_id,
+        template_id=template_id,
+        entity_type_id=entity_type_id,
+        run_id=run.id,
     )
 
-    service = ModelExtractionService(
-        db=db_session,
-        user_id=str(profile_id),
-        storage=MagicMock(),
-        trace_id="test-pinned-models",
+    assert "user_prompt" in captured, (
+        "identification never ran — the pinned section must repeat AND declare "
+        "an entry key, or extract_into_instances takes the singleton branch and "
+        "this test asserts nothing"
     )
-    await service._identify_models("ARTICLE", "gpt-test", run)
-
     assert "PINNED MODELS LABEL" in captured["user_prompt"]
     assert "identify every algorithm" in captured["user_prompt"]
     assert "return its pinned_key" in captured["user_prompt"]

@@ -24,6 +24,7 @@ import {ringClass, rovingTabIndex, type CellFocus} from './gridCellFocus';
 import {SectionRenameEditor} from './TemplateGridCellEditors';
 import {DescriptionDot} from './templateConfigAtoms';
 import type {GridSection} from './templateTree';
+import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 /**
  * Section-level actions the accordion used to expose through its `⋮` menu.
@@ -37,7 +38,7 @@ export interface TemplateSectionActions {
   onDelete: (section: GridSection) => void;
   /** Opens AddSectionDialog in per-model mode preset to this GROUP (B-8
    * D8) — reached from the group menu and the per-group ghost row. */
-  onAddPerModelSection: (group: GridSection) => void;
+  onAddPerGroupSection: (group: GridSection) => void;
 }
 
 export function SectionHeaderRow({
@@ -117,11 +118,13 @@ export function SectionHeaderRow({
   // slot when expanded (see resolveDropSlot). Inert without a DndContext.
   const {setNodeRef: setDropRef, isOver} = useDroppable({id: section.id});
 
-  // B-8 D7: meta copy interpolates the group's entry noun ('{{noun}}'
-  // placeholder convention); keys without the placeholder pass through.
+  // B-8 D7: meta copy interpolates the noun of the SCOPE this section
+  // sits in — "repeats per algorithm" names the parent's entries, never
+  // its own ('{{noun}}' placeholder convention; keys without the
+  // placeholder pass through).
   const meta = [
     ...section.metaKeys.map((key) =>
-      t('extraction', key).replace('{{noun}}', section.entryNoun),
+      t('extraction', key).replace('{{noun}}', section.scopeNoun ?? DEFAULT_ENTRY_NOUN),
     ),
     String(section.fieldCount),
   ];
@@ -249,13 +252,13 @@ export function SectionHeaderRow({
               <Plus className="mr-2 size-3.5" aria-hidden />
               {t('extraction', 'gridNewField')}
             </DropdownMenuItem>
-            {section.kind === 'group' && (
+            {section.repeats && (
               // Dialog-opening item (B-8 D8): fires on select directly —
               // the dialog's own focus trap takes over after the menu's
               // FocusScope tears down, so no editor claim is needed.
-              <DropdownMenuItem onSelect={() => actions.onAddPerModelSection(section)}>
+              <DropdownMenuItem onSelect={() => actions.onAddPerGroupSection(section)}>
                 <FolderPlus className="mr-2 size-3.5" aria-hidden />
-                {t('templateConfig', 'newPerModelSection').replace(
+                {t('templateConfig', 'newPerGroupSection').replace(
                   '{{noun}}',
                   section.entryNoun,
                 )}
@@ -277,7 +280,7 @@ export function SectionHeaderRow({
               {/* D4: a group's delete states what it is — a cascade over
                   the whole block. B-9d: it dispatches immediately (no
                   confirm dialog); the 6s Undo toast is the safety net. */}
-              {section.kind === 'group'
+              {section.ownsChildren
                 ? t('templateConfig', 'deleteRepeatingGroup')
                 : t('extraction', 'removeButton')}
             </DropdownMenuItem>

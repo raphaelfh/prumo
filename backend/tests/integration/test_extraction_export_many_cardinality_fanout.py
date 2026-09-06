@@ -1,12 +1,12 @@
 """Integration: many-cardinality sections fan out (no instance collapse).
 
-Regression for the §6 ``study_instances.setdefault`` collapse: a study-role
+Regression for the §6 ``study_instances.setdefault`` collapse: a root
 entity_type with ``cardinality='many'`` materializes N instances per article,
 but the resolver kept only the first and silently dropped the other N-1.
-``ArticleDescriptor.section_instances`` must now carry the FULL ordered list
+``ArticleDescriptor.entries`` must carry the FULL ordered list
 (by ``sort_order``) for every entity_type.
 
-The descriptor resolvers read runs + instances + the entity_type role map;
+The descriptor resolvers read runs + instances;
 they do not require published values. We therefore seed a FINALIZED run and N
 ascending-``sort_order`` instances directly (raw SQL), scoped to the seed
 project, and roll the transaction back at the end.
@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionCardinality, ExtractionEntityRole
+from app.models.extraction import ExtractionCardinality
 from app.services.extraction_export_service import ExtractionExportService
 from tests.integration.conftest import SEED
 
@@ -45,7 +45,6 @@ class _ExportFixtureCtx:
 async def seeded_export_fixture(
     db: AsyncSession,
     *,
-    section_role: ExtractionEntityRole,
     section_cardinality: ExtractionCardinality,
     instance_count: int,
 ) -> _ExportFixtureCtx:
@@ -77,25 +76,27 @@ async def seeded_export_fixture(
     ).scalar()
     assert version_id is not None, "Seed template has no active version."
 
-    # A fresh study-role entity_type with the requested cardinality. The
-    # ``ck_extraction_entity_types_role_parent`` CHECK allows study_section
-    # (and model_container) roots with no parent; nothing couples
-    # study_section to cardinality='one', so 'many' is valid here.
+    # A fresh ROOT entity_type with the requested cardinality. 0069 replaced
+    # the role/parent CHECK with a parent-must-repeat trigger, so a root may
+    # repeat freely — which is the shape under test: a repeating section
+    # that sits under no group at all.
     many_entity_type_id = uuid4()
     await db.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, "
-            " parent_entity_type_id, sort_order, is_required) "
-            "VALUES (:id, :tid, :name, :label, :card, :role, NULL, 1, false)"
+            "(id, project_template_id, name, label, cardinality, "
+            " parent_entity_type_id, sort_order, is_required, entry_label) "
+            # 0069's `ck_..._noun_on_repeating`: a repeating section always
+            # carries the word for one entry.
+            "VALUES (:id, :tid, :name, :label, :card, NULL, 1, false, :noun)"
         ),
         {
             "id": str(many_entity_type_id),
             "tid": str(template_id),
             "name": f"arms_{many_entity_type_id.hex[:8]}",
             "label": "Treatment Arms",
+            "noun": "arm" if section_cardinality is ExtractionCardinality.MANY else None,
             "card": section_cardinality.value,
-            "role": section_role.value,
         },
     )
 
@@ -172,8 +173,15 @@ async def seeded_export_fixture(
 async def test_many_cardinality_section_keeps_all_instances(
     db_session: AsyncSession,
 ) -> None:
-    """A cardinality='many' study-role section must surface ALL its
-    instances in ArticleDescriptor.section_instances (was collapsed to 1)."""
+    """A root cardinality='many' section must surface ALL its instances.
+
+    Two regressions in one, both end-to-end through the real snapshot:
+    the §6 ``setdefault`` collapse to a single instance, and trees B4's
+    move to ``entries``. A root section keeps a NULL parent, so it is keyed
+    ``(entity_type, None)`` — the case a rewrite that assumed every
+    repeating section sits under a group would have silently dropped.
+    ``extraction-multi-instance.e2e.ts`` creates exactly this shape.
+    """
     if (
         await db_session.execute(
             text("SELECT 1 FROM public.profiles WHERE id = :id"),
@@ -184,7 +192,6 @@ async def test_many_cardinality_section_keeps_all_instances(
 
     ctx = await seeded_export_fixture(
         db_session,
-        section_role=ExtractionEntityRole.STUDY_SECTION,
         section_cardinality=ExtractionCardinality.MANY,
         instance_count=3,
     )
@@ -195,7 +202,7 @@ async def test_many_cardinality_section_keeps_all_instances(
         candidate_ids=[ctx.article_id],
     )
     assert len(descriptors) == 1
-    section_instances = descriptors[0].section_instances[ctx.many_entity_type_id]
+    section_instances = descriptors[0].entries[(ctx.many_entity_type_id, None)]
     # All 3 instances preserved, in sort_order — NOT collapsed to 1.
     assert list(section_instances) == ctx.ordered_instance_ids
     assert len(section_instances) == 3
@@ -223,7 +230,6 @@ async def test_load_sections_surfaces_entity_cardinality(
 
     ctx = await seeded_export_fixture(
         db_session,
-        section_role=ExtractionEntityRole.STUDY_SECTION,
         section_cardinality=ExtractionCardinality.MANY,
         instance_count=2,
     )

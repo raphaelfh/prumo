@@ -1,16 +1,9 @@
 /**
- * Remove Model Dialog
+ * Confirm removing one entry of a repeating section, and its subtree.
  *
- * Confirmation dialog to remove a prediction model.
- * Warns the user if the model has extracted data.
- * 
- * Features:
- * - Aviso destacado se modelo tem dados
- * - Contagem de campos preenchidos
- * - Loading state during removal
- * - Clear messages about consequences
- * 
- * @component
+ * Renamed from `RemoveModelDialog` (trees B3). The dialog is deliberately
+ * loud when the entry holds extracted data: the delete cascades through
+ * every descendant instance, and that is not recoverable from the UI.
  */
 
 import {useState} from 'react';
@@ -31,9 +24,9 @@ import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
 // =================== INTERFACES ===================
 
-interface RemoveModelDialogProps {
+interface RemoveEntryDialogProps {
   open: boolean;
-  modelName: string;
+  entryName: string;
   hasExtractedData: boolean;
   extractedFieldsCount?: number;
   onConfirm: () => Promise<void>;
@@ -44,15 +37,15 @@ interface RemoveModelDialogProps {
 
 // =================== COMPONENT ===================
 
-export function RemoveModelDialog({
+export function RemoveEntryDialog({
   open,
-  modelName,
+  entryName,
   hasExtractedData,
   extractedFieldsCount = 0,
   onConfirm,
   onCancel,
   entryLabel = DEFAULT_ENTRY_NOUN
-}: RemoveModelDialogProps) {
+}: RemoveEntryDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // {{noun}} resolves inline at each call site (D7); the bullet naming
@@ -65,7 +58,7 @@ export function RemoveModelDialog({
     setError(null);
 
     extractionLogger.info('removeModelDialog', 'Starting model removal', {
-      modelName,
+      entryName,
       hasExtractedData,
       extractedFieldsCount,
     });
@@ -75,7 +68,7 @@ export function RemoveModelDialog({
     if (err) {
       const errAny = err as any;
       extractionLogger.error('removeModelDialog', 'Failed to remove model', errAny, {
-        modelName,
+        entryName,
         hasExtractedData,
       });
       setError(
@@ -83,7 +76,7 @@ export function RemoveModelDialog({
           t('extraction', 'removeModelError').replace('{{noun}}', entryLabel),
       );
     } else {
-      extractionLogger.info('removeModelDialog', 'Model removed successfully', {modelName});
+      extractionLogger.info('removeModelDialog', 'Model removed successfully', {entryName});
         // Dialog will be closed by parent component
     }
 
@@ -102,7 +95,7 @@ export function RemoveModelDialog({
           <DialogDescription>
               {t('extraction', 'removeModelDesc')
                   .replace('{{noun}}', entryLabel)
-                  .replace('{{name}}', modelName)}
+                  .replace('{{name}}', entryName)}
           </DialogDescription>
         </DialogHeader>
 
@@ -148,7 +141,7 @@ export function RemoveModelDialog({
             <ul className="space-y-1 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
                 <span className="text-destructive">•</span>
-                  <span>{nounCap} "{modelName}"</span>
+                  <span>{nounCap} "{entryName}"</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-destructive">•</span>

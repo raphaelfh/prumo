@@ -18,7 +18,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.article import Article
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
@@ -29,6 +28,7 @@ from app.models.extraction import (
     TemplateKind,
 )
 from app.services.advisory_locks import take_advisory_xact_lock
+from app.services.article_read_service import ArticleNotFoundError, owned_article
 from app.services.run_lifecycle_service import (
     NON_TERMINAL_STAGES,
     RunLifecycleService,
@@ -132,12 +132,16 @@ class HITLSessionService:
         )
 
     async def _ensure_article_in_project(self, *, project_id: UUID, article_id: UUID) -> None:
-        stmt = select(Article.project_id).where(Article.id == article_id)
-        owner = (await self.db.execute(stmt)).scalar_one_or_none()
-        if owner is None or owner != project_id:
+        # One implementation of the article-in-project predicate, with the
+        # scope in the WHERE clause (`.claude/rules/backend.md` § Ownership
+        # guards). The message is unchanged: it already answered "missing"
+        # and "foreign" identically, and echoes only ids the caller supplied.
+        try:
+            await owned_article(self.db, project_id=project_id, article_id=article_id)
+        except ArticleNotFoundError as exc:
             raise HITLSessionInputError(
                 f"article {article_id} does not belong to project {project_id}"
-            )
+            ) from exc
 
     async def _resolve_project_template(
         self,

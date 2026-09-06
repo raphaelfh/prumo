@@ -20,22 +20,16 @@ from pydantic import TypeAdapter, ValidationError
 from app.schemas.extraction import (
     BatchSectionResult,
     CitationAnchor,
-    CreatedModelInfo,
     CreateInstanceRequest,
-    CreateModelHierarchyRequest,
-    CreateModelHierarchyResponse,
+    EntryCreateRequest,
+    EntryCreateResponse,
     EvidencePassage,
     ExtractionEntityTypeSchema,
     ExtractionFieldSchema,
     ExtractionOptions,
     ExtractionTemplateSchema,
     HybridCitationAnchor,
-    IdentifiedModel,
     InstanceResponse,
-    ModelExtractionRequest,
-    ModelExtractionResult,
-    ModelExtractionRunStats,
-    ModelHierarchyChildResponse,
     PDFRect,
     PDFTextRange,
     PositionV1,
@@ -433,19 +427,6 @@ class TestExtractionEntityTypeSchema:
         with pytest.raises(ValidationError):
             ExtractionEntityTypeSchema(**_entity_type_kw(cardinality="zero"))
 
-    def test_role_default(self) -> None:
-        et = ExtractionEntityTypeSchema(**_entity_type_kw())
-        assert et.role == "study_section"
-
-    def test_role_all_valid_literals(self) -> None:
-        for role in ("study_section", "model_container", "model_section"):
-            et = ExtractionEntityTypeSchema(**_entity_type_kw(role=role))
-            assert et.role == role
-
-    def test_role_invalid_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            ExtractionEntityTypeSchema(**_entity_type_kw(role="unknown_role"))
-
     def test_sort_order_default(self) -> None:
         et = ExtractionEntityTypeSchema(**_entity_type_kw())
         assert et.sort_order == 0
@@ -517,66 +498,44 @@ class TestSaveValueRequest:
 
 
 class TestRemainingConstruction:
-    def test_create_model_hierarchy_request_carries_the_name_only(self) -> None:
+    def test_entry_create_request_carries_the_name_only(self) -> None:
         """The dialog asks for the key only (follow-up train §6): the schema
         has no ``modelling_method``, and a stale client's ``modellingMethod``
         is refused loudly (``extra="forbid"``, the rule for every
         request-cycle schema in this module) rather than silently dropped."""
-        assert "modelling_method" not in CreateModelHierarchyRequest.model_fields
+        assert "modelling_method" not in EntryCreateRequest.model_fields
         payload = {
             "projectId": str(uuid4()),
             "articleId": str(uuid4()),
             "templateId": str(uuid4()),
-            "modelName": "Cox PH",
+            "entityTypeId": str(uuid4()),
+            "label": "Cox PH",
+            "entityKey": "Cox PH",
         }
-        assert CreateModelHierarchyRequest.model_validate(payload).model_name == "Cox PH"
+        assert EntryCreateRequest.model_validate(payload).label == "Cox PH"
         with pytest.raises(ValidationError, match="modellingMethod"):
-            CreateModelHierarchyRequest.model_validate({**payload, "modellingMethod": "cox"})
+            EntryCreateRequest.model_validate({**payload, "modellingMethod": "cox"})
 
-    def test_model_hierarchy_child_response(self) -> None:
-        child = ModelHierarchyChildResponse(
-            id=uuid4(),
-            entityTypeId=uuid4(),
-            parentInstanceId=uuid4(),
-            label="Predictors",
-        )
-        assert child.label == "Predictors"
+    def test_entry_create_request_refuses_a_blank_label_or_key(self) -> None:
+        """A smuggled empty string must never become an entry's name, nor a
+        key that matches nothing on the next AI run."""
+        payload = {
+            "projectId": str(uuid4()),
+            "articleId": str(uuid4()),
+            "templateId": str(uuid4()),
+            "entityTypeId": str(uuid4()),
+            "label": "Cox PH",
+        }
+        with pytest.raises(ValidationError, match="label"):
+            EntryCreateRequest.model_validate({**payload, "label": "   "})
+        with pytest.raises(ValidationError, match="entityKey"):
+            EntryCreateRequest.model_validate({**payload, "entityKey": "  "})
+        # Omitted (keyless section) is fine; blank is not.
+        assert EntryCreateRequest.model_validate(payload).entity_key is None
 
-    def test_create_model_hierarchy_response(self) -> None:
-        resp = CreateModelHierarchyResponse(
-            modelId=uuid4(),
-            modelLabel="Model A",
-            childInstances=[],
-        )
-        assert resp.proposal_run_id is None
-        assert resp.child_instances == []
-
-    def test_model_extraction_request(self) -> None:
-        req = ModelExtractionRequest(
-            projectId=uuid4(),
-            articleId=uuid4(),
-            templateId=uuid4(),
-        )
-        assert req.options is None
-
-    def test_identified_model(self) -> None:
-        m = IdentifiedModel(modelName="Logistic")
-        assert m.performance_metrics == {}
-        assert m.model_type is None
-
-    def test_created_model_info(self) -> None:
-        info = CreatedModelInfo(instanceId="i1", modelName="Cox")
-        assert info.instance_id == "i1"
-
-    def test_model_extraction_run_stats(self) -> None:
-        stats = ModelExtractionRunStats(
-            duration=1,
-            modelsFound=2,
-            tokensPrompt=3,
-            tokensCompletion=4,
-            tokensTotal=7,
-        )
-        assert stats.tokens_total == 7
+    def test_entry_create_response(self) -> None:
+        resp = EntryCreateResponse(instanceId=uuid4(), label="Model A")
+        assert resp.label == "Model A"
 
     def test_create_instance_request(self) -> None:
         req = CreateInstanceRequest(
@@ -648,19 +607,3 @@ class TestRemainingConstruction:
         )
         assert res.mode == "batch"
         assert res.sections == []
-
-    def test_model_extraction_result_light_construction(self) -> None:
-        res = ModelExtractionResult(
-            extractionRunId="r1",
-            modelsCreated=[],
-            totalModels=0,
-            childInstancesCreated=0,
-            metadata=ModelExtractionRunStats(
-                duration=1,
-                modelsFound=0,
-                tokensPrompt=0,
-                tokensCompletion=0,
-                tokensTotal=0,
-            ),
-        )
-        assert res.total_models == 0

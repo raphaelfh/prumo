@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.extraction import ExtractionCardinality, ExtractionEntityRole
+from app.models.extraction import ExtractionCardinality
 from app.services.extraction_export_service import ExtractionExportService
 
 
@@ -37,7 +37,6 @@ async def test_load_sections_maps_snapshot_metadata() -> None:
                 "description": "per outcome",
                 "parent_entity_type_id": None,
                 "cardinality": "many",
-                "role": "study_section",
                 "sort_order": 2,
                 "is_required": True,
                 "fields": [
@@ -67,7 +66,9 @@ async def test_load_sections_maps_snapshot_metadata() -> None:
 
     assert len(sections) == 1
     s = sections[0]
-    assert s.role is ExtractionEntityRole.STUDY_SECTION
+    # `role` is no longer carried onto the descriptors (trees B4): the
+    # export derives structure from parent + cardinality.
+    assert not hasattr(s, "role")
     assert s.cardinality is ExtractionCardinality.MANY
     assert s.sort_order == 2
     f = s.fields[0]
@@ -90,7 +91,6 @@ async def test_load_sections_carries_entry_label_and_defaults_it() -> None:
                 "entry_label": "algorithm",
                 "parent_entity_type_id": None,
                 "cardinality": "many",
-                "role": "model_container",
                 "sort_order": 0,
                 "is_required": False,
                 "fields": [],
@@ -102,7 +102,6 @@ async def test_load_sections_carries_entry_label_and_defaults_it() -> None:
                 "label": "Study info",
                 "parent_entity_type_id": None,
                 "cardinality": "one",
-                "role": "study_section",
                 "sort_order": 1,
                 "is_required": False,
                 "fields": [],

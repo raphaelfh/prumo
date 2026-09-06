@@ -29,9 +29,9 @@ const REQUIRED = [
   "E2E_SUPABASE_SERVICE_ROLE_KEY",
 ];
 
-type ManualModelResponse = {
-  modelId: string;
-  modelLabel: string;
+type EntryCreateResponse = {
+  instanceId: string;
+  label: string;
 };
 
 type InstanceRow = {
@@ -81,15 +81,15 @@ test.describe("Entry identity on a dedicated fixture project", () => {
     await dialog.locator("#entry-key").fill(name);
     const created = page.waitForResponse(
       (res) =>
-        res.url().includes("/api/v1/extraction/models/manual") &&
+        res.url().endsWith("/api/v1/extraction/instances") &&
         res.request().method() === "POST" &&
         res.ok(),
       { timeout: 30_000 },
     );
     await dialog.getByRole("button", { name: /^create /i }).click();
-    const createdBody = await parseEnvelope<ManualModelResponse>(await created);
+    const createdBody = await parseEnvelope<EntryCreateResponse>(await created);
     expect(createdBody.ok).toBeTruthy();
-    const modelId = createdBody.data.modelId;
+    const modelId = createdBody.data.instanceId;
     // Teardown deletes the parent; its singleton children and its decision
     // rows cascade (every FK onto extraction_instances is ON DELETE CASCADE).
     recordResource({ kind: "extraction_instance", id: modelId, note: name });

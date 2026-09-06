@@ -434,7 +434,11 @@ class TemplateVersionService:
                 select(ExtractionEntityType.id, ExtractionEntityType.label)
                 .where(
                     ExtractionEntityType.project_template_id == project_template_id,
-                    ExtractionEntityType.role == "model_section",
+                    # Every NESTED singleton, not just a `model_section`
+                    # (spec §5): any section under an entry group holds one
+                    # instance per entry, so any of them can be caught by a
+                    # parent that grew a second entry.
+                    ExtractionEntityType.parent_entity_type_id.is_not(None),
                     ExtractionEntityType.cardinality == "one",
                 )
                 .order_by(ExtractionEntityType.sort_order, ExtractionEntityType.id)

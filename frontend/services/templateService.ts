@@ -81,7 +81,6 @@ export interface TemplateDiscardOrphan {
 
 type SectionRead = components['schemas']['SectionRead'];
 type SectionDeleteResponse = components['schemas']['SectionDeleteResponse'];
-type SectionRole = components['schemas']['SectionCreateRequest']['role'];
 type SectionCardinality = NonNullable<
   components['schemas']['SectionUpdateRequest']['cardinality']
 >;
@@ -520,11 +519,9 @@ export interface CreateSectionParams {
   label: string;
   description?: string | null;
   cardinality: 'one' | 'many';
-  /** Structural role — the caller states its intent (the old service
-   * hard-coded study_section). */
-  role: SectionRole;
-  /** Owning group for a model_section (B-8); roots and containers omit
-   * it — the endpoint enforces the role/parent pairing. */
+  /** Owning group; a root omits it. The server refuses a parent that does
+   * not repeat (`SectionParentMustRepeatError`) — it needs the parent row,
+   * so the request alone cannot decide it. */
   parentEntityTypeId?: string | null;
   /** Entry noun (B-8 D3, entry-group train): required by the server on
    * every repeating section, refused on one that does not repeat. */
@@ -554,7 +551,6 @@ export async function createSection(
           label: params.label,
           description: params.description || null,
           cardinality: params.cardinality,
-          role: params.role,
           parent_entity_type_id: params.parentEntityTypeId ?? null,
           entry_label: params.entryLabel ?? null,
           is_required: params.isRequired,

@@ -13,7 +13,6 @@ reconcile**:
   flush; the 0048 AFTER-ROW triggers re-stamp it on every row written
   here and that is expected);
 * it never decides refusals beyond the one structural impossibility it
-  cannot write around (:class:`ContainerSwapUnsupportedError`, D3);
 * it never commits.
 
 Blunt delete-all-and-reinsert is impossible: ``extraction_instances``
@@ -37,18 +36,14 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import status
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.error_handler import AppError
 from app.models.extraction import (
-    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ProjectExtractionTemplate,
 )
-from app.schemas.hitl_session import TemplateDiscardRefusalCode
 from app.services.template_clone_service import TemplateCloneService, TemplateNotFoundError
 from app.services.template_diff import (
     ENTITY_ATTRIBUTE_DEFAULTS,
@@ -66,7 +61,6 @@ from app.services.template_section_service import sweep_empty_instances
 from app.services.template_version_service import TemplateVersionService
 
 __all__ = [
-    "ContainerSwapUnsupportedError",
     "RestoreOutcome",
     "restore_snapshot",
 ]
@@ -85,27 +79,6 @@ _NAME_KEY = "name"
 #: through the same key list the baseline side is built from.
 _ENTITY_KEYS: tuple[str, ...] = (*ENTITY_ATTRIBUTE_DEFAULTS, ORDER_KEY)
 _FIELD_KEYS: tuple[str, ...] = (*FIELD_ATTRIBUTE_DEFAULTS, OPTION_KEY, _OWNER_KEY, ORDER_KEY)
-
-
-class ContainerSwapUnsupportedError(AppError):
-    """The draft replaced the template's ``model_container`` (D3).
-
-    ``uq_extraction_entity_types_one_container_per_project`` is a partial
-    unique index, so the create pass would collide with the container the
-    delete pass has not reached yet. Solving it would need a third pass
-    that parks the live container's role — deliberately out of scope.
-
-    An ``AppError`` since B-9c2 D1, so the endpoint lets it propagate to
-    ``app_error_handler`` with its own code instead of flattening it into a
-    ``HTTP_ERROR`` no client can tell from the ack question.
-    """
-
-    def __init__(self, message: str) -> None:
-        super().__init__(
-            code=TemplateDiscardRefusalCode.CONTAINER_SWAP_UNSUPPORTED,
-            message=message,
-            status_code=status.HTTP_409_CONFLICT,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,12 +287,6 @@ async def restore_snapshot(
         for eid, columns in baseline_entities.items()
         if eid in live_entities and _live_columns(live_entities[eid], _ENTITY_KEYS) != columns
     ]
-
-    _refuse_container_swap(
-        baseline_entities=baseline_entities,
-        live_entities=live_entities,
-        create_entity_ids=create_entity_ids,
-    )
 
     delete_field_ids = [
         fid
@@ -546,36 +513,6 @@ def _name_conflicted(
             if live is not None:
                 taken.add((live.entity_type_id, live.name))
     return frozenset(conflicted)
-
-
-def _refuse_container_swap(
-    *,
-    baseline_entities: dict[UUID, dict[str, Any]],
-    live_entities: dict[UUID, ExtractionEntityType],
-    create_entity_ids: list[UUID],
-) -> None:
-    """D3, checked before anything is written so the refusal is inert.
-
-    The delete side is read PRE-skip — every live container absent from the
-    baseline, whether or not D4 kept it. A kept container is still an
-    incumbent on ``uq_extraction_entity_types_one_container_per_project``,
-    so reading the filtered delete set would silence the refusal and let
-    phase 1 collide instead.
-    """
-    container = ExtractionEntityRole.MODEL_CONTAINER.value
-    creates_container = any(
-        baseline_entities[entity_id]["role"] == container for entity_id in create_entity_ids
-    )
-    live_has_an_unpublished_container = any(
-        row.role == container
-        for entity_id, row in live_entities.items()
-        if entity_id not in baseline_entities
-    )
-    if creates_container and live_has_an_unpublished_container:
-        raise ContainerSwapUnsupportedError(
-            "Cannot restore: the draft replaced the template's model container. "
-            "Delete the new container first, then try again."
-        )
 
 
 async def _restore_instruction(

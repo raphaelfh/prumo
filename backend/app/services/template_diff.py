@@ -50,6 +50,7 @@ from uuid import UUID
 
 from app.domain.template_change import ChangeTier
 from app.llm.claim_value import normalize_options
+from app.models.extraction import DEFAULT_ENTRY_LABEL, ExtractionCardinality
 
 _PATH_SEPARATOR = " → "
 
@@ -83,11 +84,9 @@ NESTING_KEY = "fields"
 #: Compared as a set of option codes, not as an opaque attribute (D1).
 OPTION_KEY = "allowed_values"
 
-_MODEL_CONTAINER_ROLE = "model_container"
 # What 0051 stamped onto every container — the value a pre-0051 baseline that
 # lacks the key describes. A historical constant, NOT the runtime fallback
 # (``app.models.extraction.DEFAULT_ENTRY_LABEL`` reads ``entry``).
-_B8_CONTAINER_NOUN = "model"
 ENTRY_LABEL_KEY = "entry_label"
 #: Identity of a repeating-group entry (0059). Versioned config: the snapshot
 #: carries it, a move is two SEMANTIC changes, and restore round-trips it.
@@ -102,10 +101,9 @@ ENTITY_ATTRIBUTE_DEFAULTS: dict[str, Any] = {
     "name": None,
     "label": None,
     "description": None,
-    ENTRY_LABEL_KEY: None,  # role-aware, see _normalize_entity
+    ENTRY_LABEL_KEY: None,  # cardinality-aware, see _normalize_entity
     "parent_entity_type_id": None,
     "cardinality": "one",
-    "role": None,
     "is_required": False,
 }
 
@@ -152,7 +150,6 @@ ATTRIBUTE_TIERS: dict[str, ChangeTier] = {
     "field_type": ChangeTier.SEMANTIC,
     "is_required": ChangeTier.SEMANTIC,
     "cardinality": ChangeTier.SEMANTIC,
-    "role": ChangeTier.SEMANTIC,
     "unit": ChangeTier.SEMANTIC,
     "allowed_units": ChangeTier.SEMANTIC,
     "validation_schema": ChangeTier.SEMANTIC,
@@ -323,11 +320,21 @@ def _index(
 
 def _normalize_entity(raw: dict[str, Any]) -> dict[str, Any]:
     """Fill absent keys with their canonical defaults (present-but-null stays null)."""
+    # The pre-0051 noun rule keyed on `role == 'model_container'` and could
+    # only ever describe the one container 0016 allowed. It is now keyed on
+    # the thing that actually requires a noun: repeating.
+    #
+    # This is NOT cosmetic. `_normalize_entity` feeds the RESTORE writer, and
+    # 0069 makes a repeating section with a NULL noun unrepresentable
+    # (`ck_extraction_entity_types_noun_on_repeating`). A pre-0051 baseline
+    # simply LACKS the key, so defaulting it to None would write NULL onto a
+    # repeating live row and abort the restore with a CheckViolation —
+    # turning "Discard my draft" into a 500 for every template old enough to
+    # predate the noun. Absent means the canonical default, which is what
+    # 0069's own backfill wrote for exactly these rows.
     data = {key: raw.get(key, default) for key, default in ENTITY_ATTRIBUTE_DEFAULTS.items()}
-    if ENTRY_LABEL_KEY not in raw and data["role"] == _MODEL_CONTAINER_ROLE:
-        # 0051 seeded every repeating group to "model"; a pre-0051 baseline
-        # that simply lacks the key describes the same tree.
-        data[ENTRY_LABEL_KEY] = _B8_CONTAINER_NOUN
+    if data[ENTRY_LABEL_KEY] is None and data["cardinality"] == ExtractionCardinality.MANY.value:
+        data[ENTRY_LABEL_KEY] = DEFAULT_ENTRY_LABEL
     return data
 
 

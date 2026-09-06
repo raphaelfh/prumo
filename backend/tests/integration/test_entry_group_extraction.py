@@ -59,7 +59,6 @@ async def _group(
     db: AsyncSession,
     *,
     with_key: bool = True,
-    role: str = "study_section",
     parent: UUID | None = None,
     label: str = "Numeric performance",
     cardinality: str = "many",
@@ -74,19 +73,22 @@ async def _group(
     await db.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, sort_order, "
+            "(id, project_template_id, name, label, cardinality, sort_order, "
             " parent_entity_type_id, entry_label) "
-            "VALUES (:id, :tpl, :name, :label, :cardinality, :role, 90, :parent, :entry_label)"
+            "VALUES (:id, :tpl, :name, :label, :cardinality, 90, :parent, :entry_label)"
         ),
         {
             "id": entity_type_id,
             "tpl": SEED.primary_template,
             "name": f"perf_{entity_type_id.hex[:8]}",
             "label": label,
-            "role": role,
             "parent": parent,
             "cardinality": cardinality,
-            "entry_label": entry_label,
+            # 0069's `ck_..._noun_on_repeating`: a repeating section always
+            # carries the word for one entry. Callers that care about the
+            # noun pass it; the rest get the default rather than a row the
+            # schema refuses.
+            "entry_label": entry_label or ("entry" if cardinality == "many" else None),
         },
     )
     key_id, value_id = uuid4(), uuid4()
@@ -123,8 +125,8 @@ async def _container(db: AsyncSession) -> UUID:
     await db.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, role, sort_order, entry_label) "
-            "VALUES (:id, :tpl, :name, 'Prediction Models', 'many', 'model_container', 80, 'model')"
+            "(id, project_template_id, name, label, cardinality, sort_order, entry_label) "
+            "VALUES (:id, :tpl, :name, 'Prediction Models', 'many', 80, 'model')"
         ),
         {
             "id": entity_type_id,
@@ -216,7 +218,6 @@ def _pinned_group(
     value_id: UUID,
     *,
     key: bool,
-    role: str = "study_section",
     parent: UUID | None = None,
     label: str = "Numeric performance",
     entry_label: str | None = None,
@@ -229,7 +230,6 @@ def _pinned_group(
         "entry_label": entry_label,
         "parent_entity_type_id": str(parent) if parent else None,
         "cardinality": "many",
-        "role": role,
         "sort_order": 90,
         "is_required": False,
         "fields": [
@@ -248,7 +248,6 @@ def _pinned_container(entity_type_id: UUID) -> dict:
         "entry_label": "model",
         "parent_entity_type_id": None,
         "cardinality": "many",
-        "role": "model_container",
         "sort_order": 80,
         "is_required": False,
         "fields": [],
@@ -460,7 +459,7 @@ async def test_nested_group_entries_are_scoped_by_their_parent(
     container = await _container(db_session)
     parent_a = await _instance(db_session, container, "XGBoost")
     parent_b = await _instance(db_session, container, "LightGBM")
-    child, _key_id, _value_id = await _group(db_session, role="model_section", parent=container)
+    child, _key_id, _value_id = await _group(db_session, parent=container)
     run = await _run_in_extract(db_session)
     service, fake = _service(db_session)
     identification = _fake_identification(monkeypatch, ["internal"])
@@ -506,7 +505,6 @@ async def test_a_singleton_under_an_entry_is_scoped_to_that_entry(
     xgboost = await _instance(db_session, container, "XGBoost")
     development, _key_id, value_id = await _group(
         db_session,
-        role="model_section",
         parent=container,
         cardinality="one",
         label="Model development",
@@ -543,13 +541,12 @@ async def test_a_section_at_depth_three_names_the_whole_chain(
     """
     container = await _container(db_session)
     validations, _key_id, _value_id = await _group(
-        db_session, role="model_section", parent=container, entry_label="validation"
+        db_session, parent=container, entry_label="validation"
     )
     xgboost = await _instance(db_session, container, "XGBoost")
     external = await _instance(db_session, validations, "external", parent=xgboost)
     leaf, _leaf_key, leaf_value = await _group(
         db_session,
-        role="model_section",
         parent=container,
         cardinality="one",
         label="Calibration plot",
@@ -576,7 +573,7 @@ async def test_a_section_at_depth_three_names_the_whole_chain(
     # to the same chain, its entry carries it too, and the value lands under
     # that entry (the fake maps a validation-type key to its C-statistic).
     subgroups, _sub_key, sub_value = await _group(
-        db_session, role="model_section", parent=container, entry_label="subgroup"
+        db_session, parent=container, entry_label="subgroup"
     )
     await service.extract_section(
         **_coord(), entity_type_id=subgroups, parent_instance_id=external, run_id=run.id
@@ -604,7 +601,6 @@ async def test_the_chain_reaches_the_prompt_the_model_receives(
     xgboost = await _instance(db_session, container, "XGBoost")
     development, _key_id, _value_id = await _group(
         db_session,
-        role="model_section",
         parent=container,
         cardinality="one",
         label="Model development",
@@ -644,14 +640,11 @@ async def test_a_stranger_parent_is_refused_before_any_llm_call(
     container = await _container(db_session)
     development, _k, _v = await _group(
         db_session,
-        role="model_section",
         parent=container,
         cardinality="one",
         label="Model development",
     )
-    validations, _k2, _v2 = await _group(
-        db_session, role="model_section", parent=container, entry_label="validation"
-    )
+    validations, _k2, _v2 = await _group(db_session, parent=container, entry_label="validation")
     foreign_project, foreign_template, _ = await fresh_charms(db_session)
     stranger = await add_instance(
         db_session,
@@ -781,7 +774,7 @@ async def test_the_per_model_batch_routes_a_nested_group_through_the_pipeline(
 ) -> None:
     container = await _container(db_session)
     parent_a = await _instance(db_session, container, "XGBoost")
-    child, key_id, value_id = await _group(db_session, role="model_section", parent=container)
+    child, key_id, value_id = await _group(db_session, parent=container)
     run = await _run_in_extract(db_session)
     await _pin_run_to_snapshot(
         db_session,
@@ -791,9 +784,7 @@ async def test_the_per_model_batch_routes_a_nested_group_through_the_pipeline(
         schema={
             "entity_types": [
                 _pinned_container(container),
-                _pinned_group(
-                    child, key_id, value_id, key=True, role="model_section", parent=container
-                ),
+                _pinned_group(child, key_id, value_id, key=True, parent=container),
             ]
         },
     )

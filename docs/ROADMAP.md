@@ -18,7 +18,7 @@ This file records only the **top-level milestones** (one bullet each) — the
 
 ## Current cycle (2026-Q2)
 
-- [ ] **Entry-group trees** — any repeating section owns children at any depth, several root groups, no `role` (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`, six slices). B1 (ancestry on the three prompts) shipped 2026-09-05; B2–B6 queued.
+- [ ] **Entry-group trees** — any repeating section owns children at any depth, several root groups, no `role` (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`). All slices merged to `dev` 2026-09-05 → 2026-09-06: B1 ancestry (#818), B2 entry creation (#822), B3 recursive run form (#824), B4 tree-derived exports (#826), B5 migration 0069 (#827), B5b the Config tab at any depth (#828), B6 the model pipeline retired (#829), B7 bulk entry delete (#830). **Not yet promoted to `main`.** §14 (recreate every prod project) is owed AFTER promotion and is a human step.
 - [ ] **Structured PDF parsing + grounded extraction** — layout-aware parse at ingest, page-anchored evidence, verbatim-verified citations (ADR-0011, ADR-0013).
 - [ ] **Quality of extracted data** — refine extraction prompts, add evidence-linked citations, surface page-anchored references in the PDF viewer.
 - [ ] **Multi-reviewer reliability** — close the open bugs around inviting reviewers, concurrent assessment, and final-reviewer assignment.

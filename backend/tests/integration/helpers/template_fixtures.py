@@ -119,7 +119,7 @@ async def fresh_charms(db: AsyncSession) -> tuple[UUID, UUID, dict[str, Any]]:
 async def force_narrow_baseline(db: AsyncSession, template_id: UUID, section: UUID) -> None:
     """Rewrite the active version's schema into the pre-0017 "narrow" shape.
 
-    The entity type carries no ``role``, so ``snapshot_is_narrow`` calls it
+    The entity type carries no ``cardinality``, so ``snapshot_is_narrow`` calls it
     narrow and ``baseline_is_restorable`` refuses it — which is exactly what
     the count, the Discard gate and the config-diff read all key off. One
     owner because this shape is a GATE INPUT: a copy that drifted would
@@ -180,7 +180,6 @@ async def add_section(
     template_id: UUID,
     name: str,
     *,
-    role: str = "study_section",
     parent_id: UUID | None = None,
     cardinality: str = "one",
     sort_order: int = 99,
@@ -191,9 +190,9 @@ async def add_section(
         text(
             "INSERT INTO public.extraction_entity_types "
             "(id, project_template_id, template_id, name, label, parent_entity_type_id, "
-            " cardinality, role, sort_order, is_required, entry_label) "
-            "VALUES (:id, :tid, NULL, :name, :label, :parent, CAST(:card AS extraction_cardinality),"
-            " CAST(:role AS extraction_entity_role), :o, false, :entry)"
+            " cardinality, sort_order, is_required, entry_label) "
+            "VALUES (:id, :tid, NULL, :name, :label, :parent, "
+            " CAST(:card AS extraction_cardinality), :o, false, :entry)"
         ),
         {
             "id": str(section_id),
@@ -202,7 +201,6 @@ async def add_section(
             "label": name,
             "parent": str(parent_id) if parent_id else None,
             "card": cardinality,
-            "role": role,
             "o": sort_order,
             "entry": entry_label,
         },

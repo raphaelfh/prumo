@@ -13,7 +13,7 @@ The deferred ``trg_check_model_section_parent_role`` trigger fires only
 at true COMMIT, which the SAVEPOINT-isolated ``db_session`` never
 issues; its commit-time behavior (happy + abort) is covered by
 ``tests/integration/smoke_constraints/test_entity_role_parent.py``.
-Here the service's Python pre-check (``SectionParentRoleError``)
+Here the service's Python pre-check (``SectionParentMustRepeatError``)
 enforces the same predicate deterministically at request time.
 """
 
@@ -30,13 +30,12 @@ from app.models.extraction import ExtractionEntityType
 from app.schemas.template_structure import SectionCreateRequest, SectionUpdateRequest
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_section_service import (
-    OneContainerError,
     SectionCardinalityInUseError,
-    SectionCardinalityRoleError,
-    SectionEntryLabelRoleError,
+    SectionEntryLabelCardinalityError,
     SectionInUseError,
     SectionNotFoundError,
-    SectionParentRoleError,
+    SectionOwnsChildrenError,
+    SectionParentMustRepeatError,
     create_section,
     delete_section,
     update_section,
@@ -66,7 +65,6 @@ def make_create(**overrides: object) -> SectionCreateRequest:
         "label": "Custom Section",
         "description": "A project-specific section.",
         "cardinality": "one",
-        "role": "study_section",
         "parent_entity_type_id": None,
         "is_required": True,
     }
@@ -81,13 +79,22 @@ async def _fresh_clone(db: AsyncSession) -> uuid.UUID:
     return clone.project_template_id
 
 
-async def _section_id_by_role(db: AsyncSession, template_id: uuid.UUID, role: str) -> uuid.UUID:
+async def _first_section(
+    db: AsyncSession, template_id: uuid.UUID, *, nested: bool, repeats: bool
+) -> uuid.UUID:
+    """The template's first section of a given SHAPE, by sort order.
+
+    Was keyed on `role`; 0069 removed it. `nested` replaces
+    model_section-vs-root and `repeats` replaces container-vs-study.
+    """
+    parent = ExtractionEntityType.parent_entity_type_id
     return (
         await db.execute(
             select(ExtractionEntityType.id)
             .where(
                 ExtractionEntityType.project_template_id == template_id,
-                ExtractionEntityType.role == role,
+                parent.is_not(None) if nested else parent.is_(None),
+                ExtractionEntityType.cardinality == ("many" if repeats else "one"),
             )
             .order_by(ExtractionEntityType.sort_order)
             .limit(1)
@@ -181,54 +188,40 @@ async def _update(
     )
 
 
-# =================== SCHEMA-LEVEL ck_role_parent MIRROR ===================
-# Unit-style asserts (no DB): the Pydantic validator mirrors the DB's
-# ck_extraction_entity_types_role_parent CHECK, so an invalid combination
-# never reaches the service.
+# =================== SCHEMA-LEVEL CREATE RULES ===================
+# Unit-style asserts (no DB). The role/parent mirror that used to live here
+# is gone with 0069: whether a named parent may own children is "does it
+# repeat", which needs the parent ROW, so it is the SERVICE's rule and is
+# covered by `test_a_parent_that_does_not_repeat_is_refused` below. What
+# stays at this boundary is what the request alone can decide.
 
 
-class TestCreateRequestRoleParentRules:
-    def test_model_section_without_parent_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="parent_entity_type_id"):
-            make_create(role="model_section", parent_entity_type_id=None)
-
-    def test_study_section_with_parent_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="parent_entity_type_id"):
-            make_create(role="study_section", parent_entity_type_id=str(uuid.uuid4()))
-
-    def test_model_container_with_parent_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="parent_entity_type_id"):
-            make_create(role="model_container", parent_entity_type_id=str(uuid.uuid4()))
-
-    def test_role_is_required(self) -> None:
-        payload = {"name": "sec_x", "label": "Sec X", "cardinality": "one"}
-        with pytest.raises(ValidationError, match="role"):
-            SectionCreateRequest(**payload)  # type: ignore[arg-type]
-
+class TestCreateRequestRules:
     def test_client_supplied_sort_order_is_rejected(self) -> None:
         # sort_order is server-computed for sections (kills the frontend
         # read-then-write race); extra="forbid" refuses the key outright.
         with pytest.raises(ValidationError, match="sort_order"):
             make_create(sort_order=99)
 
+    def test_a_parent_may_be_named_without_any_role(self) -> None:
+        """`role` was REQUIRED and had to agree with the parent. A nested
+        section is now just one that names a parent."""
+        parent = str(uuid.uuid4())
+        assert make_create(parent_entity_type_id=parent).parent_entity_type_id == uuid.UUID(parent)
+
 
 # =================== SCHEMA-LEVEL ENTRY-NOUN CREATE RULES ===================
 
-_MODEL_SECTION = {"role": "model_section", "parent_entity_type_id": str(uuid.uuid4())}
-_EVERY_ROLE = [
-    pytest.param({"role": "model_container"}, id="container"),
-    pytest.param({"role": "study_section"}, id="root"),
-    pytest.param(_MODEL_SECTION, id="model_section"),
+# Was parametrized over the three roles. The shapes that matter now are
+# root vs nested — a repeating section carries a noun wherever it sits.
+_SHAPES = [
+    pytest.param({}, id="root"),
+    pytest.param({"parent_entity_type_id": str(uuid.uuid4())}, id="nested"),
 ]
-_NON_CONTAINER_ROLES = _EVERY_ROLE[1:]
 
 
 class TestCreateRequestEntryLabelRules:
-    def test_container_with_cardinality_one_is_rejected(self) -> None:
-        with pytest.raises(ValidationError, match="cardinality"):
-            make_create(role="model_container", cardinality="one", entry_label="model")
-
-    @pytest.mark.parametrize("role", _EVERY_ROLE)
+    @pytest.mark.parametrize("shape", _SHAPES)
     @pytest.mark.parametrize(
         ("entry_label", "message"),
         [
@@ -238,28 +231,29 @@ class TestCreateRequestEntryLabelRules:
         ],
     )
     def test_repeating_section_without_entry_label_is_rejected(
-        self, role: dict[str, str], entry_label: str | None, message: str
+        self, shape: dict[str, str], entry_label: str | None, message: str
     ) -> None:
-        """A repeating section is created WITH its noun: the container no
-        longer defaults to 'model'; an absent noun trips the model rule and a
-        blank one the ``SectionEntryLabel`` shape — refused, never 'unset'."""
+        """A repeating section is created WITH its noun: an absent noun trips
+        the model rule and a blank one the ``SectionEntryLabel`` shape —
+        refused, never 'unset'. 0069 makes the same rule a CHECK."""
         with pytest.raises(ValidationError, match=message):
-            make_create(cardinality="many", entry_label=entry_label, **role)
+            make_create(cardinality="many", entry_label=entry_label, **shape)
 
-    @pytest.mark.parametrize("role", _EVERY_ROLE)
-    def test_entry_label_is_kept_trimmed_on_every_repeating_role(
-        self, role: dict[str, str]
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_entry_label_is_kept_trimmed_wherever_the_section_sits(
+        self, shape: dict[str, str]
     ) -> None:
-        """Every repeating section is an entry group: the noun rides any
-        ``cardinality='many'`` section, not only the container."""
-        assert make_create(cardinality="many", entry_label=" predictor ", **role).entry_label == (
+        """Every repeating section is an entry group — root or nested."""
+        assert make_create(cardinality="many", entry_label=" predictor ", **shape).entry_label == (
             "predictor"
         )
 
-    @pytest.mark.parametrize("role", _NON_CONTAINER_ROLES)
-    def test_entry_label_on_a_non_repeating_section_is_rejected(self, role: dict[str, str]) -> None:
+    @pytest.mark.parametrize("shape", _SHAPES)
+    def test_entry_label_on_a_non_repeating_section_is_rejected(
+        self, shape: dict[str, str]
+    ) -> None:
         with pytest.raises(ValidationError, match="only valid for a repeating"):
-            make_create(entry_label="model", **role)
+            make_create(entry_label="model", **shape)
 
 
 # =================== SCHEMA-LEVEL UPDATE RULES (D5) ===================
@@ -323,7 +317,7 @@ async def test_create_study_section_happy(db_session: AsyncSession) -> None:
     assert read.label == "Custom Section"
     assert read.description == "A project-specific section."
     assert read.cardinality == "one"
-    assert read.role == "study_section"
+    assert read.parent_entity_type_id is None
     assert read.parent_entity_type_id is None
     assert read.entry_label is None
     assert read.is_required is True
@@ -357,7 +351,7 @@ async def test_create_stamps_config_draft_marker(db_session: AsyncSession) -> No
 @pytest.mark.asyncio
 async def test_create_model_section_under_container(db_session: AsyncSession) -> None:
     template_id = await _fresh_clone(db_session)
-    container_id = await _section_id_by_role(db_session, template_id, "model_container")
+    container_id = await _first_section(db_session, template_id, nested=False, repeats=True)
 
     read = await create_section(
         db_session,
@@ -366,12 +360,11 @@ async def test_create_model_section_under_container(db_session: AsyncSession) ->
         payload=make_create(
             name="custom_model_section",
             label="Custom Model Section",
-            role="model_section",
             parent_entity_type_id=container_id,
         ),
     )
 
-    assert read.role == "model_section"
+    assert read.parent_entity_type_id is not None
     assert read.parent_entity_type_id == container_id
 
 
@@ -382,47 +375,52 @@ async def test_create_model_section_under_non_container_parent_refused(
     """The service pre-checks the parent role, surfacing the deferred
     trigger's predicate as a typed request-time error."""
     template_id = await _fresh_clone(db_session)
-    study_id = await _section_id_by_role(db_session, template_id, "study_section")
+    study_id = await _first_section(db_session, template_id, nested=False, repeats=False)
 
-    with pytest.raises(SectionParentRoleError):
+    with pytest.raises(SectionParentMustRepeatError):
         await create_section(
             db_session,
             project_id=SEED.secondary_project,
             template_id=template_id,
             payload=make_create(
                 name="bad_model_section",
-                role="model_section",
                 parent_entity_type_id=study_id,
             ),
         )
 
 
 @pytest.mark.asyncio
-async def test_create_second_model_container_refused(db_session: AsyncSession) -> None:
-    """The CHARMS clone already has its container: the partial unique
-    index fires (23505) and the service remaps it to OneContainerError."""
+async def test_a_second_root_group_is_now_created(db_session: AsyncSession) -> None:
+    """Was `test_create_second_model_container_refused`.
+
+    The CHARMS clone already has a root group, and 0016's partial unique
+    index turned a second one into a 23505 the service remapped to
+    `OneContainerError`. 0069 drops that index — several root groups per
+    template is the point of the train — so this asserts the create SUCCEEDS
+    rather than that an exception stopped being raised.
+    """
     template_id = await _fresh_clone(db_session)
 
-    with pytest.raises(OneContainerError):
-        await create_section(
-            db_session,
-            project_id=SEED.secondary_project,
-            template_id=template_id,
-            payload=make_create(
-                name="second_container",
-                label="Second Container",
-                cardinality="many",
-                role="model_container",
-                entry_label="model",
-            ),
-        )
-    await db_session.rollback()
+    read = await create_section(
+        db_session,
+        project_id=SEED.secondary_project,
+        template_id=template_id,
+        payload=make_create(
+            name="second_container",
+            label="Second Container",
+            cardinality="many",
+            entry_label="arm",
+        ),
+    )
+
+    assert read.parent_entity_type_id is None
+    assert read.cardinality == "many"
 
 
 @pytest.mark.asyncio
 async def test_create_container_carries_explicit_entry_label(db_session: AsyncSession) -> None:
     template_id = await _fresh_clone(db_session)
-    container_id = await _section_id_by_role(db_session, template_id, "model_container")
+    container_id = await _first_section(db_session, template_id, nested=False, repeats=True)
     await delete_section(
         db_session,
         project_id=SEED.secondary_project,
@@ -438,7 +436,6 @@ async def test_create_container_carries_explicit_entry_label(db_session: AsyncSe
             name="algorithms",
             label="Algorithms",
             cardinality="many",
-            role="model_container",
             entry_label="algorithm",
         ),
     )
@@ -474,7 +471,7 @@ async def test_sort_order_is_server_computed_and_increasing(db_session: AsyncSes
 @pytest.mark.asyncio
 async def test_update_label_happy(db_session: AsyncSession) -> None:
     template_id = await _fresh_clone(db_session)
-    section_id = await _section_id_by_role(db_session, template_id, "study_section")
+    section_id = await _first_section(db_session, template_id, nested=False, repeats=False)
 
     read = await _update(
         db_session, template_id, section_id, SectionUpdateRequest(label="Renamed Section")
@@ -493,7 +490,7 @@ async def test_update_label_happy(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_update_entry_label_on_container(db_session: AsyncSession) -> None:
     template_id = await _fresh_clone(db_session)
-    container_id = await _section_id_by_role(db_session, template_id, "model_container")
+    container_id = await _first_section(db_session, template_id, nested=False, repeats=True)
 
     read = await _update(
         db_session, template_id, container_id, SectionUpdateRequest(entry_label="algorithm")
@@ -511,7 +508,7 @@ async def test_update_entry_label_on_container(db_session: AsyncSession) -> None
 @pytest.mark.asyncio
 async def test_update_label_and_entry_label_together(db_session: AsyncSession) -> None:
     template_id = await _fresh_clone(db_session)
-    container_id = await _section_id_by_role(db_session, template_id, "model_container")
+    container_id = await _first_section(db_session, template_id, nested=False, repeats=True)
 
     read = await _update(
         db_session,
@@ -525,14 +522,14 @@ async def test_update_label_and_entry_label_together(db_session: AsyncSession) -
 
 
 @pytest.mark.asyncio
-async def test_update_description_on_any_role(db_session: AsyncSession) -> None:
+async def test_update_description_on_any_shape(db_session: AsyncSession) -> None:
     """The description is the section's AI instruction (sent with every
     extraction of the section; the identification instruction of a
-    repeating one) — editable after creation on every role, where before
+    repeating one) — editable after creation on every SHAPE, where before
     only label / entry_label / cardinality were."""
     template_id = await _fresh_clone(db_session)
-    for role in ("study_section", "model_container", "model_section"):
-        section_id = await _section_id_by_role(db_session, template_id, role)
+    for nested, repeats in ((False, False), (False, True), (True, False)):
+        section_id = await _first_section(db_session, template_id, nested=nested, repeats=repeats)
 
         read = await _update(
             db_session,
@@ -555,7 +552,7 @@ async def test_update_description_on_any_role(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_update_blank_description_clears_it(db_session: AsyncSession) -> None:
     template_id = await _fresh_clone(db_session)
-    section_id = await _section_id_by_role(db_session, template_id, "study_section")
+    section_id = await _first_section(db_session, template_id, nested=False, repeats=False)
     await _update(db_session, template_id, section_id, SectionUpdateRequest(description="Guide"))
 
     read = await _update(db_session, template_id, section_id, SectionUpdateRequest(description=""))
@@ -594,9 +591,9 @@ async def test_update_entry_label_on_non_repeating_section_refused(
     """D5: the entry noun names one entry of a repeating section — a section
     that does not repeat has nothing for it to name."""
     template_id = await _fresh_clone(db_session)
-    study_id = await _section_id_by_role(db_session, template_id, "study_section")
+    study_id = await _first_section(db_session, template_id, nested=False, repeats=False)
 
-    with pytest.raises(SectionEntryLabelRoleError):
+    with pytest.raises(SectionEntryLabelCardinalityError):
         await _update(db_session, template_id, study_id, SectionUpdateRequest(entry_label="model"))
 
 
@@ -625,38 +622,79 @@ async def test_update_entry_label_on_repeating_study_section_accepted(
 
 
 @pytest.mark.asyncio
-async def test_update_cardinality_on_root_refused(db_session: AsyncSession) -> None:
-    """D5: cardinality is editable ONLY on model_section — roots keep
-    their create-time choice."""
-    template_id = await _fresh_clone(db_session)
-    study_id = await _section_id_by_role(db_session, template_id, "study_section")
+async def test_a_root_singleton_may_now_start_repeating(db_session: AsyncSession) -> None:
+    """Was `test_update_cardinality_on_root_refused`.
 
-    with pytest.raises(SectionCardinalityRoleError):
+    D5 allowed the edit only on a `model_section`, so a root kept its
+    create-time choice forever. Cardinality is editable on any section now
+    (spec §5) — a manager turning "Outcomes" into a group is the point.
+    The noun is required in the same PATCH, because 0069's CHECK refuses a
+    repeating section without one.
+    """
+    template_id = await _fresh_clone(db_session)
+    study_id = await _first_section(db_session, template_id, nested=False, repeats=False)
+
+    read = await _update(
+        db_session,
+        template_id,
+        study_id,
+        SectionUpdateRequest(cardinality="many", entry_label="outcome"),
+    )
+
+    assert read.cardinality == "many"
+    assert read.entry_label == "outcome"
+
+
+@pytest.mark.asyncio
+async def test_turning_a_section_into_a_group_without_a_noun_is_refused(
+    db_session: AsyncSession,
+) -> None:
+    """The readable half of 0069's `ck_..._noun_on_repeating`.
+
+    The CHECK is the backstop; refusing here names the section, so the
+    manager is told WHICH one needs a word.
+    """
+    template_id = await _fresh_clone(db_session)
+    study_id = await _first_section(db_session, template_id, nested=False, repeats=False)
+
+    with pytest.raises(SectionEntryLabelCardinalityError, match="needs a word for one entry"):
         await _update(db_session, template_id, study_id, SectionUpdateRequest(cardinality="many"))
 
 
 @pytest.mark.asyncio
-async def test_update_cardinality_on_container_refused(db_session: AsyncSession) -> None:
-    """D5: a group always repeats — even a no-op 'many' write is refused
-    by role, keeping the rule deterministic."""
+async def test_a_group_that_owns_children_may_not_stop_repeating(
+    db_session: AsyncSession,
+) -> None:
+    """Was `test_update_cardinality_on_container_refused`, which refused by
+    ROLE — even a no-op 'many' write. The rule that actually protects data
+    is the one about children: they are filled once per ENTRY, so a section
+    that stops repeating would leave them hanging off nothing.
+    """
     template_id = await _fresh_clone(db_session)
-    container_id = await _section_id_by_role(db_session, template_id, "model_container")
+    container_id = await _first_section(db_session, template_id, nested=False, repeats=True)
 
-    with pytest.raises(SectionCardinalityRoleError):
+    with pytest.raises(SectionOwnsChildrenError, match="owns sections"):
         await _update(
-            db_session, template_id, container_id, SectionUpdateRequest(cardinality="many")
+            db_session, template_id, container_id, SectionUpdateRequest(cardinality="one")
         )
 
 
 @pytest.mark.asyncio
 async def test_update_cardinality_one_to_many(db_session: AsyncSession) -> None:
-    """one -> many is always free (renders MORE than before)."""
+    """one -> many is free (renders MORE than before) — with its noun.
+
+    0069 requires a repeating section to carry the word for one entry, so
+    the PATCH that turns a section into a group carries it too.
+    """
     template_id = await _fresh_clone(db_session)
     section = await _section_by_name(db_session, template_id, "model_development")
     assert section.cardinality == "one", "seed precondition"
 
     read = await _update(
-        db_session, template_id, section.id, SectionUpdateRequest(cardinality="many")
+        db_session,
+        template_id,
+        section.id,
+        SectionUpdateRequest(cardinality="many", entry_label="stage"),
     )
 
     assert read.cardinality == "many"
@@ -773,7 +811,7 @@ async def test_update_is_bola_guarded(db_session: AsyncSession) -> None:
     """Foreign-project template 404s; foreign-template section 404s —
     the section BOLA chain section -> template -> project holds."""
     template_id = await _fresh_clone(db_session)
-    section_id = await _section_id_by_role(db_session, template_id, "study_section")
+    section_id = await _first_section(db_session, template_id, nested=False, repeats=False)
 
     # Template not owned by the path project.
     with pytest.raises(ProjectTemplateNotFoundError):
@@ -804,7 +842,7 @@ async def test_delete_happy(db_session: AsyncSession) -> None:
     """A fresh clone has no instances, so a study section deletes clean
     (its fields go with it via the DB cascade)."""
     template_id = await _fresh_clone(db_session)
-    section_id = await _section_id_by_role(db_session, template_id, "study_section")
+    section_id = await _first_section(db_session, template_id, nested=False, repeats=False)
 
     result = await delete_section(
         db_session,
@@ -911,7 +949,7 @@ async def test_delete_group_sweeps_its_child_sections_instances(
     must reach THEIR instances too — the child's own RESTRICT FK fires
     during that cascade otherwise."""
     template_id = await _fresh_clone(db_session)
-    group_id = await _section_id_by_role(db_session, template_id, "model_container")
+    group_id = await _first_section(db_session, template_id, nested=False, repeats=True)
     child_id = (
         (
             await db_session.execute(
@@ -971,7 +1009,6 @@ async def test_create_is_bola_guarded(db_session: AsyncSession) -> None:
             template_id=template_id,
             payload=make_create(
                 name="cross_template_child",
-                role="model_section",
                 parent_entity_type_id=SEED.primary_entity_type,
             ),
         )

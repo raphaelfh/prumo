@@ -17,7 +17,6 @@ def _et(eid: str, fields: list[dict]) -> dict:
         "description": None,
         "parent_entity_type_id": None,
         "cardinality": "one",
-        "role": "study_section",
         "sort_order": 0,
         "is_required": False,
         "fields": fields,
@@ -76,8 +75,7 @@ async def test_obsolete_fields_are_run_only_fields_absent_from_anchor() -> None:
         header_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=run_version,
-        model_instances=(),
-        section_instances={},
+        entries={},
     )
     out = await svc._compute_obsolete_fields_per_article(
         articles=(article,),
@@ -98,8 +96,7 @@ async def test_no_obsolete_fields_when_run_matches_anchor() -> None:
         header_label="X",
         run_id=uuid4(),
         version_id=run_version,
-        model_instances=(),
-        section_instances={},
+        entries={},
     )
     out = await svc._compute_obsolete_fields_per_article(
         articles=(article,),

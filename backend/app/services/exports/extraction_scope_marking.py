@@ -19,11 +19,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from app.models.extraction import ExtractionEntityRole
+from app.models.extraction import ExtractionCardinality
 from app.services.derived_judgment_service import (
     out_of_scope_sections,
     scope_classifier_coordinate,
 )
+from app.services.exports.descriptors import all_instances_of, root_instance
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 if TYPE_CHECKING:  # pragma: no cover — annotations only, no runtime import
@@ -55,8 +56,7 @@ def article_values_by_coord(
     run_id = article.run_id
     values_by_coord: dict[tuple[str, str], Any] = {}
     for section in sections:
-        instance_ids = article.section_instances.get(section.entity_type_id, ())
-        instance_id = instance_ids[0] if instance_ids else None
+        instance_id = root_instance(article, section.entity_type_id)
         for section_field in section.fields:
             key = (
                 (run_id, instance_id, section_field.field_id, None)
@@ -75,15 +75,13 @@ def reader_instance_ids(
 ) -> tuple[UUID, ...]:
     """The instance ids the matrix and tidy builders read for this section.
 
-    Role first, then cardinality — the same selection
-    ``matrix._resolve_instance_id`` and ``_build_tidy_tables`` make. A model
-    container has no own fields.
+    Every instance of the section across its parents, which is what a
+    records-as-rows sheet wants. A field-less repeating group contributes
+    nothing: it is the axis, not a record.
     """
-    if section.role is ExtractionEntityRole.MODEL_CONTAINER:
+    if section.cardinality is ExtractionCardinality.MANY and not section.fields:
         return ()
-    if section.role is ExtractionEntityRole.MODEL_SECTION:
-        return article.model_instances
-    return article.section_instances.get(section.entity_type_id, ())
+    return all_instances_of(article, section.entity_type_id)
 
 
 def mark_out_of_scope_values(

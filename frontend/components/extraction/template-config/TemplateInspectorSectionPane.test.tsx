@@ -45,7 +45,10 @@ function section(overrides: Partial<GridSection> = {}): GridSection {
   return {
     id: 'sec-1',
     label: 'Numeric Performance',
-    kind: 'groupChild',
+    depth: 1,
+    repeats: true,
+    ownsChildren: false,
+    scopeNoun: 'model',
     cardinality: 'many',
     entryNoun: 'model',
     fields: [field('f-1', 'Validation type'), field('f-2', 'AUC')],
@@ -114,7 +117,7 @@ describe('entry label on every repeating section (entry-group train)', () => {
   });
 
   it('advertises the same fallback placeholder on a group — the "model" default is gone', () => {
-    renderPane(section({kind: 'group', entryNoun: 'model'}));
+    renderPane(section({ownsChildren: true, ownEntryLabel: null}));
     const input = screen.getByLabelText('Entry label') as HTMLInputElement;
     expect(input.placeholder).toBe('entry');
   });
@@ -134,7 +137,7 @@ describe('entry label on every repeating section (entry-group train)', () => {
   });
 
   it('is offered on a repeating root section too', () => {
-    renderPane(section({kind: 'root', ownEntryLabel: 'arm', cardinality: 'many'}));
+    renderPane(section({depth: 0, scopeNoun: null, ownEntryLabel: 'arm', cardinality: 'many'}));
     expect((screen.getByLabelText('Entry label') as HTMLInputElement).value).toBe('arm');
   });
 

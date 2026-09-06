@@ -686,54 +686,6 @@
         "title": "ApiResponse[CreateAPIKeyResponse]",
         "type": "object"
       },
-      "ApiResponse_CreateModelHierarchyResponse_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CreateModelHierarchyResponse"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[CreateModelHierarchyResponse]",
-        "type": "object"
-      },
       "ApiResponse_DeleteAPIKeyResult_": {
         "properties": {
           "data": {
@@ -828,6 +780,102 @@
           "ok"
         ],
         "title": "ApiResponse[DiscardDraftResponse]",
+        "type": "object"
+      },
+      "ApiResponse_EntryBulkDeleteResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntryBulkDeleteResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[EntryBulkDeleteResponse]",
+        "type": "object"
+      },
+      "ApiResponse_EntryCreateResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntryCreateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[EntryCreateResponse]",
         "type": "object"
       },
       "ApiResponse_ExportCancelResponse_": {
@@ -1500,54 +1548,6 @@
           "ok"
         ],
         "title": "ApiResponse[ManagerReviewVisibilityRead]",
-        "type": "object"
-      },
-      "ApiResponse_ModelExtractionResult_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ModelExtractionResult"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[ModelExtractionResult]",
         "type": "object"
       },
       "ApiResponse_OpenHITLSessionResponse_": {
@@ -4055,79 +4055,6 @@
         "title": "CreateDecisionRequest",
         "type": "object"
       },
-      "CreateModelHierarchyRequest": {
-        "additionalProperties": false,
-        "description": "Request to create one prediction-model hierarchy for an article.\n\nThe dialog asks for the name only; it becomes the instance label and\nthe decision on the container's entry key. ``extra=\"forbid\"`` for the\nreason ``ModelExtractionRequest`` gives: this body is validated once,\nin the request cycle, so a stale tab that still sends\n``modellingMethod`` gets a loud 422 instead of silently losing a value\nit typed.",
-        "properties": {
-          "articleId": {
-            "format": "uuid",
-            "title": "Articleid",
-            "type": "string"
-          },
-          "modelName": {
-            "title": "Modelname",
-            "type": "string"
-          },
-          "projectId": {
-            "format": "uuid",
-            "title": "Projectid",
-            "type": "string"
-          },
-          "templateId": {
-            "format": "uuid",
-            "title": "Templateid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "projectId",
-          "articleId",
-          "templateId",
-          "modelName"
-        ],
-        "title": "CreateModelHierarchyRequest",
-        "type": "object"
-      },
-      "CreateModelHierarchyResponse": {
-        "description": "Response for one-shot hierarchy creation.",
-        "properties": {
-          "childInstances": {
-            "items": {
-              "$ref": "#/components/schemas/ModelHierarchyChildResponse"
-            },
-            "title": "Childinstances",
-            "type": "array"
-          },
-          "modelId": {
-            "format": "uuid",
-            "title": "Modelid",
-            "type": "string"
-          },
-          "modelLabel": {
-            "title": "Modellabel",
-            "type": "string"
-          },
-          "proposalRunId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Proposalrunid"
-          }
-        },
-        "required": [
-          "modelId",
-          "modelLabel",
-          "childInstances"
-        ],
-        "title": "CreateModelHierarchyResponse",
-        "type": "object"
-      },
       "CreateProjectTemplateRequest": {
         "additionalProperties": false,
         "description": "Name a template that starts with no sections; the tree is built after.\n\n``extra=\"forbid\"``: ``is_active``, ``project_id`` and ``created_by`` are\nthe server's to set \u2014 the invariants in ``template_create_service`` are\nexactly what a client-supplied field set would break.",
@@ -4203,36 +4130,6 @@
           "project_template_id"
         ],
         "title": "CreateRunRequest",
-        "type": "object"
-      },
-      "CreatedModelInfo": {
-        "description": "One prediction-model instance created by model extraction.",
-        "properties": {
-          "instanceId": {
-            "title": "Instanceid",
-            "type": "string"
-          },
-          "modelName": {
-            "title": "Modelname",
-            "type": "string"
-          },
-          "modellingMethod": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Modellingmethod"
-          }
-        },
-        "required": [
-          "instanceId",
-          "modelName"
-        ],
-        "title": "CreatedModelInfo",
         "type": "object"
       },
       "DeleteAPIKeyResult": {
@@ -4404,6 +4301,143 @@
           "size"
         ],
         "title": "DownloadAttachmentResponse",
+        "type": "object"
+      },
+      "EntryBulkDeleteRequest": {
+        "additionalProperties": false,
+        "description": "Delete several entries of a repeating section, all or none.\n\n``extra=\"forbid\"`` for the reason every sibling gives: this body is\nvalidated once, in the request cycle.\n\nThe list is non-empty and DISTINCT. A duplicate id is refused rather than\nde-duplicated because ``deleted`` would then over-report \u2014 the caller\nnamed one row twice and the count would say two, which is exactly the\nnumber a confirmation dialog shows back to the reviewer.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "instanceIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Instanceids",
+            "type": "array"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "articleId",
+          "templateId",
+          "instanceIds"
+        ],
+        "title": "EntryBulkDeleteRequest",
+        "type": "object"
+      },
+      "EntryBulkDeleteResponse": {
+        "description": "How many entries the batch removed \u2014 always the full request length,\nsince a partial delete cannot happen.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "EntryBulkDeleteResponse",
+        "type": "object"
+      },
+      "EntryCreateRequest": {
+        "additionalProperties": false,
+        "description": "Create one entry of a repeating section (spec \u00a77).\n\n``extra=\"forbid\"`` for the reason every sibling gives: this body is\nvalidated once, in the request cycle, so a stale tab sending a retired\nfield gets a loud 422 instead of silently losing a value it typed.\n\n``label`` is the human-facing name; ``entity_key`` is the identity an AI\nre-run matches against. A section that declares an ``is_entity_key``\nfield requires the key; one that does not must omit it.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "entityKey": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitykey"
+          },
+          "entityTypeId": {
+            "format": "uuid",
+            "title": "Entitytypeid",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 200,
+            "title": "Label",
+            "type": "string"
+          },
+          "parentInstanceId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentinstanceid"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "articleId",
+          "templateId",
+          "entityTypeId",
+          "label"
+        ],
+        "title": "EntryCreateRequest",
+        "type": "object"
+      },
+      "EntryCreateResponse": {
+        "description": "The created entry.\n\nDeliberately narrower than spec \u00a77's ``(instance, descendants,\nproposalRunId)``: the caller refetches the run view after a create, so\nthe descendant list and the run id are payload with no consumer \u2014 the\nretired ``childInstances`` field had none in its whole lifetime. The\nlabel IS read (the success toast names the entry).",
+        "properties": {
+          "instanceId": {
+            "format": "uuid",
+            "title": "Instanceid",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instanceId",
+          "label"
+        ],
+        "title": "EntryCreateResponse",
         "type": "object"
       },
       "ErrorDetail": {
@@ -4679,13 +4713,14 @@
         "type": "string"
       },
       "ExtractionErrorCode": {
-        "description": "Stable, machine-readable code for a terminal extraction failure.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_project_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
+        "description": "Stable code for a terminal extraction failure, or for a typed\nsynchronous refusal on the extraction write paths.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_project_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``ENTRY_KEY_DUPLICATE`` \u2014 manual entry creation named an identity the\n  coordinate already holds (``EntryKeyDuplicateError``), refused as a 409\n  rather than silently renaming the entry the way the retired model path\n  did (\"Cox Model (2)\").\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
         "enum": [
           "PDF_NOT_FOUND",
           "MISSING_API_KEY",
           "ENGINE_RETIRED",
           "LLM_ENDPOINT_UNAVAILABLE",
           "MISSING_ENTITY_KEY",
+          "ENTRY_KEY_DUPLICATE",
           "EXTRACTION_FAILED"
         ],
         "title": "ExtractionErrorCode",
@@ -6148,158 +6183,6 @@
         "title": "MarkReadyRequest",
         "type": "object"
       },
-      "ModelExtractionRequest": {
-        "additionalProperties": false,
-        "description": "Request for extraction de modelos de predicao.",
-        "properties": {
-          "articleId": {
-            "format": "uuid",
-            "title": "Articleid",
-            "type": "string"
-          },
-          "options": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ExtractionOptions"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "projectId": {
-            "format": "uuid",
-            "title": "Projectid",
-            "type": "string"
-          },
-          "runId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Runid"
-          },
-          "templateId": {
-            "format": "uuid",
-            "title": "Templateid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "projectId",
-          "articleId",
-          "templateId"
-        ],
-        "title": "ModelExtractionRequest",
-        "type": "object"
-      },
-      "ModelExtractionResult": {
-        "description": "Resultado da extraction de modelos.",
-        "properties": {
-          "childInstancesCreated": {
-            "title": "Childinstancescreated",
-            "type": "integer"
-          },
-          "extractionRunId": {
-            "title": "Extractionrunid",
-            "type": "string"
-          },
-          "metadata": {
-            "$ref": "#/components/schemas/ModelExtractionRunStats"
-          },
-          "modelsCreated": {
-            "items": {
-              "$ref": "#/components/schemas/CreatedModelInfo"
-            },
-            "title": "Modelscreated",
-            "type": "array"
-          },
-          "totalModels": {
-            "title": "Totalmodels",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "extractionRunId",
-          "modelsCreated",
-          "totalModels",
-          "childInstancesCreated",
-          "metadata"
-        ],
-        "title": "ModelExtractionResult",
-        "type": "object"
-      },
-      "ModelExtractionRunStats": {
-        "description": "Timing/token metadata attached to a model-extraction response.",
-        "properties": {
-          "duration": {
-            "title": "Duration",
-            "type": "integer"
-          },
-          "modelsFound": {
-            "title": "Modelsfound",
-            "type": "integer"
-          },
-          "tokensCompletion": {
-            "title": "Tokenscompletion",
-            "type": "integer"
-          },
-          "tokensPrompt": {
-            "title": "Tokensprompt",
-            "type": "integer"
-          },
-          "tokensTotal": {
-            "title": "Tokenstotal",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "duration",
-          "modelsFound",
-          "tokensPrompt",
-          "tokensCompletion",
-          "tokensTotal"
-        ],
-        "title": "ModelExtractionRunStats",
-        "type": "object"
-      },
-      "ModelHierarchyChildResponse": {
-        "description": "Child instance created under the parent model instance.",
-        "properties": {
-          "entityTypeId": {
-            "format": "uuid",
-            "title": "Entitytypeid",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "parentInstanceId": {
-            "format": "uuid",
-            "title": "Parentinstanceid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "entityTypeId",
-          "parentInstanceId",
-          "label"
-        ],
-        "title": "ModelHierarchyChildResponse",
-        "type": "object"
-      },
       "OpaqueValueState": {
         "description": "A summarized opaque value that has no listable content (D3).\n\nThe wire row ships this instead of a server-rendered English word, so the\ncopy layer owns the sentence (``.claude/rules/frontend.md``) and a stored\nvalue that happens to read like the marker cannot be mistaken for it.",
         "enum": [
@@ -6661,7 +6544,7 @@
       },
       "PortableSection": {
         "additionalProperties": false,
-        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` \u21d2 ``model_container``; nested \u21d2\n``model_section``; otherwise ``study_section``. ``entry_label`` is legal\non any repeating section (a group, or ``repeats``); the import keeps the\nbundle's value verbatim, NULL included, and readers fall back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL.",
+        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` and ``repeats`` both mean\n``cardinality='many'``; nesting is ``parent_entity_type_id``, at any\ndepth (0069 retired ``role``). ``entry_label`` is legal on any repeating\nsection; the import keeps the bundle's value verbatim, NULL included,\nand readers fall back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL.",
         "properties": {
           "description": {
             "anyOf": [
@@ -7665,7 +7548,7 @@
         "type": "object"
       },
       "RunViewEntityType": {
-        "description": "An entity type in the frozen template snapshot, with its fields embedded.\n``role`` drives the study/model partition; the tree hierarchy is conveyed by\n``parent_entity_type_id`` (flat array, ordered by ``sort_order``).",
+        "description": "An entity type in the frozen template snapshot, with its fields embedded.\n\nStructure is ``parent_entity_type_id`` + ``cardinality`` (trees B5): a\nrepeating section is an entry group and may own children at any depth.\nThe array is flat, ordered by ``sort_order``.\n\n``role`` is gone. Dropping only the frontend's mapping would have been\nSILENT \u2014 the backend would keep sending a key nobody read \u2014 so the field\nleaves the wire in the same change.",
         "properties": {
           "cardinality": {
             "title": "Cardinality",
@@ -7729,10 +7612,6 @@
             ],
             "title": "Parent Entity Type Id"
           },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
           "sort_order": {
             "title": "Sort Order",
             "type": "integer"
@@ -7743,7 +7622,6 @@
           "name",
           "label",
           "cardinality",
-          "role",
           "sort_order",
           "is_required",
           "fields"
@@ -8128,7 +8006,7 @@
       },
       "SectionCreateRequest": {
         "additionalProperties": false,
-        "description": "Create a section (entity type) in the path template.\n\n``role`` is REQUIRED with no default \u2014 the column deliberately has no\nserver_default (migration 0016 step 4) so an insert that omits the\nstructural role fails loudly instead of silently becoming a\nstudy_section. ``sort_order`` is deliberately ABSENT: the server\ncomputes max+1 template-wide inside the INSERT itself, killing the\nfrontend's read-then-write race. The ``ck_role_parent`` validator\nbelow mirrors the DB CHECK of the same name; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is a repeating section's entry noun (B-8, D3 \u2014 unlocked\nfrom the container in the entry-group train): REQUIRED, non-blank, on\nevery ``cardinality='many'`` section, container included, and refused\non a section that does not repeat. The rule lives at this API boundary:\nrows created before it may still carry NULL, the portable importer keeps\na bundle's NULL verbatim, and the column stays nullable until the\nentry-group trees spec makes it NOT NULL; every reader falls back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` meanwhile.",
+        "description": "Create a section (entity type) in the path template.\n\n``role`` is gone (0069): a section's place in the tree is its\n``parent_entity_type_id`` plus its ``cardinality``. ``sort_order`` is\ndeliberately ABSENT: the server computes max+1 template-wide inside\nthe INSERT itself, killing the frontend's read-then-write race.\nWhether the named parent may HAVE children \u2014 it must repeat \u2014 is the\nservice's job, because it needs the parent row; parent OWNERSHIP\n(parent belongs to THIS template) is the service's BOLA job.\n``entry_label`` is a repeating section's entry noun (B-8, D3 \u2014 unlocked\nfrom the container in the entry-group train): REQUIRED, non-blank, on\nevery ``cardinality='many'`` section, container included, and refused\non a section that does not repeat. The rule lives at this API boundary:\nrows created before it may still carry NULL, the portable importer keeps\na bundle's NULL verbatim, and the column stays nullable until the\nentry-group trees spec makes it NOT NULL; every reader falls back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` meanwhile.",
         "properties": {
           "cardinality": {
             "enum": [
@@ -8192,22 +8070,12 @@
               }
             ],
             "title": "Parent Entity Type Id"
-          },
-          "role": {
-            "enum": [
-              "study_section",
-              "model_container",
-              "model_section"
-            ],
-            "title": "Role",
-            "type": "string"
           }
         },
         "required": [
           "name",
           "label",
-          "cardinality",
-          "role"
+          "cardinality"
         ],
         "title": "SectionCreateRequest",
         "type": "object"
@@ -8475,15 +8343,6 @@
             "title": "Project Template Id",
             "type": "string"
           },
-          "role": {
-            "enum": [
-              "study_section",
-              "model_container",
-              "model_section"
-            ],
-            "title": "Role",
-            "type": "string"
-          },
           "sort_order": {
             "title": "Sort Order",
             "type": "integer"
@@ -8495,7 +8354,6 @@
           "name",
           "label",
           "cardinality",
-          "role",
           "sort_order",
           "is_required",
           "created_at"
@@ -8505,7 +8363,7 @@
       },
       "SectionUpdateRequest": {
         "additionalProperties": false,
-        "description": "Partial section update: ``label`` and ``description`` (any role),\n``entry_label`` (repeating sections only) and ``cardinality``\n(per-model sections only) \u2014 the role rules live in the service, which\nowns the row (B-8, D5). At least one field must be provided, and\nexplicit nulls are rejected (omit instead) so a smuggled ``{\"label\":\nnull}`` can never blank a column; a description is cleared by sending\nit blank. Replaces the label-only SectionRenameRequest; the pre-B-8\nlabel-only body stays valid.",
+        "description": "Partial section update: ``label`` and ``description`` (any\nsection), ``entry_label`` (repeating sections only) and\n``cardinality`` (any section since 0069) \u2014 the rules live in the\nservice, which owns the row and its children. At least one field must be provided, and\nexplicit nulls are rejected (omit instead) so a smuggled ``{\"label\":\nnull}`` can never blank a column; a description is cleared by sending\nit blank. Replaces the label-only SectionRenameRequest; the pre-B-8\nlabel-only body stays valid.",
         "properties": {
           "cardinality": {
             "anyOf": [
@@ -9254,12 +9112,11 @@
         "type": "object"
       },
       "TemplateDiscardRefusalCode": {
-        "description": "Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).\n\nDeliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that\nenum is the cross-cutting vocabulary every client branches on, and these\nfive are one endpoint's private outcomes. Same call as\n``ExtractionErrorCode`` \u2014 slice-local codes stay slice-local, so the\nglobal contract does not grow a member per feature.\n\nThe split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a\n*question* (re-post with ``acknowledge_orphans``), the other four are\nrefusals no retry of the same request can satisfy.",
+        "description": "Why ``POST .../discard-draft`` returned 409 (B-9c2 D1).\n\nDeliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that\nenum is the cross-cutting vocabulary every client branches on, and these\nfour are one endpoint's private outcomes. Same call as\n``ExtractionErrorCode`` \u2014 slice-local codes stay slice-local, so the\nglobal contract does not grow a member per feature.\n\nThe split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a\n*question* (re-post with ``acknowledge_orphans``), the other three are\nrefusals no retry of the same request can satisfy.\n\n``CONTAINER_SWAP_UNSUPPORTED`` left with 0069: it reported the partial\nunique index that allowed one container per template, and a template\nmay now hold as many root groups as it likes, so the restore simply\nwrites the swap.",
         "enum": [
           "ORPHAN_ACK_REQUIRED",
           "NARROW_BASELINE",
           "CARDINALITY_DOWNGRADE_BLOCKED",
-          "CONTAINER_SWAP_UNSUPPORTED",
           "DISCARD_RACED"
         ],
         "title": "TemplateDiscardRefusalCode",
@@ -11535,6 +11392,98 @@
         ]
       }
     },
+    "/api/v1/extraction/instances": {
+      "delete": {
+        "description": "All or nothing: every id is bound to the request coordinate first, so one foreign or missing id refuses the WHOLE batch and deletes nothing. A singleton instance is refused with a 422.",
+        "operationId": "delete_entries_endpoint_api_v1_extraction_instances_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryBulkDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EntryBulkDeleteResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete several entries of a repeating section",
+        "tags": [
+          "Extraction Instances"
+        ]
+      },
+      "post": {
+        "description": "Creates the entry and its singleton children in one transaction. A nested group requires parentInstanceId; a root group refuses one. A duplicate entry key answers a typed 409 ENTRY_KEY_DUPLICATE.",
+        "operationId": "create_entry_api_v1_extraction_instances_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EntryCreateResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create one entry of a repeating section",
+        "tags": [
+          "Extraction Instances"
+        ]
+      }
+    },
     "/api/v1/extraction/instances/{instance_id}": {
       "patch": {
         "description": "Rewrites the entry's label and/or its identity key; a re-key appends {who, when, from, to} to the instance's entity_key_history.",
@@ -11591,100 +11540,6 @@
         "summary": "Rename or re-key one extraction instance",
         "tags": [
           "Extraction Instances"
-        ]
-      }
-    },
-    "/api/v1/extraction/models": {
-      "post": {
-        "description": "Identifica and extrai automaticamente modelos de predicao do article.",
-        "operationId": "extract_models_api_v1_extraction_models_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ModelExtractionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ModelExtractionResult_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Extrair modelos de predicao",
-        "tags": [
-          "Model Extraction"
-        ]
-      }
-    },
-    "/api/v1/extraction/models/manual": {
-      "post": {
-        "description": "Creates the parent prediction model and required singleton children in one transaction.",
-        "operationId": "create_manual_model_hierarchy_api_v1_extraction_models_manual_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateModelHierarchyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CreateModelHierarchyResponse_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Create one prediction model hierarchy",
-        "tags": [
-          "Model Extraction"
         ]
       }
     },
@@ -14382,7 +14237,7 @@
     },
     "/api/v1/projects/{project_id}/templates/{template_id}/sections": {
       "post": {
-        "description": "Create a section; ``sort_order`` is server-computed (max+1).\n\n``role`` and ``parent_entity_type_id`` are explicit parameters \u2014 a\nmodel_section's parent must be the template's model_container (400);\na second model_container is a 409. Stamps the B-4 draft marker via\nthe 0048 trigger (nothing manual).",
+        "description": "Create a section; ``sort_order`` is server-computed (max+1).\n\n``parent_entity_type_id`` is the only structural parameter: 0069\nretired ``role``, so a section names a parent (which must repeat \u2014 400\notherwise) or is a root, and a template may hold any number of root\ngroups. Stamps the B-4 draft marker via the 0048 trigger (nothing\nmanual).",
         "operationId": "create_template_section_api_v1_projects__project_id__templates__template_id__sections_post",
         "parameters": [
           {

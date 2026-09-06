@@ -38,7 +38,11 @@ def test_the_historically_dropped_columns_travel() -> None:
         "allows_not_evaluated",
         "allows_no_information",
     } <= CLONED_FIELD_COLUMNS
-    assert {"entry_label", "role", "cardinality"} <= CLONED_ENTITY_TYPE_COLUMNS
+    # `role` left this set with 0069. `parent_entity_type_id` is NOT in it
+    # and must not be: the clone REMAPS parents to the new rows' ids rather
+    # than copying them, so a verbatim copy would point at the source
+    # template.
+    assert {"entry_label", "cardinality"} <= CLONED_ENTITY_TYPE_COLUMNS
 
 
 def test_a_stale_exclusion_fails_loudly() -> None:

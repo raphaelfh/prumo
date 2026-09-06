@@ -6,19 +6,24 @@ here would skip extract-stage hydration and leave the form empty (the documented
 Since the one-live-run invariant (0045), run resolution lives in
 ``RunLifecycleService.resolve_or_create_extract_run`` — the extraction services
 themselves perform NO stage advance at all, and the shared gate only ever
-targets EXTRACT (opening/resuming the run)."""
+targets EXTRACT (opening/resuming the run).
+
+Trees B6 retired ``model_extraction_service``; the guard follows the
+behaviour rather than the file — ``entry_group_extraction`` is what runs a
+repeating group's identify → resolve → extract now, so it takes the retired
+module's place in the guarded set."""
 
 import inspect
 import re
 
-from app.services import model_extraction_service, section_extraction_service
+from app.services import entry_group_extraction, section_extraction_service
 from app.services.run_lifecycle_service import RunLifecycleService
 
 _TARGET_RE = r"target_stage=ExtractionRunStage\.(\w+)"
 
 
 def test_extraction_services_never_advance_stages():
-    for module in (section_extraction_service, model_extraction_service):
+    for module in (section_extraction_service, entry_group_extraction):
         src = inspect.getsource(module)
         targets = set(re.findall(_TARGET_RE, src))
         assert targets == set(), (

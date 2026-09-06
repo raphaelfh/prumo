@@ -7,7 +7,6 @@ from uuid import uuid4
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.schemas.extraction_run import RunViewEntityType
@@ -30,7 +29,6 @@ def _container_view(payload: dict) -> RunViewEntityType:
         "label": "Prediction models",
         "parent_entity_type_id": None,
         "cardinality": "many",
-        "role": "model_container",
         "sort_order": 0,
         "is_required": False,
         "fields": [],
@@ -68,18 +66,16 @@ def test_snapshot_field_carries_full_metadata() -> None:
     assert dataclasses.is_dataclass(f)
 
 
-def test_snapshot_section_carries_role_and_cardinality() -> None:
+def test_snapshot_section_carries_parent_and_cardinality() -> None:
     s = SnapshotSection(
         entity_type_id=uuid4(),
         name="study",
         label="Study",
-        role=ExtractionEntityRole.STUDY_SECTION,
         cardinality=ExtractionCardinality.ONE,
         parent_entity_type_id=None,
         sort_order=0,
         fields=(),
     )
-    assert s.role is ExtractionEntityRole.STUDY_SECTION
     assert s.cardinality is ExtractionCardinality.ONE
 
 

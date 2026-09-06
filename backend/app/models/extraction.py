@@ -71,31 +71,6 @@ class ExtractionCardinality(str, PyEnum):
 DEFAULT_ENTRY_LABEL = "entry"
 
 
-class ExtractionEntityRole(str, PyEnum):
-    """Structural role of an entity type within a template.
-
-    Replaces the previous convention of identifying the "prediction models"
-    container by ``name='prediction_models'`` (a magic string scattered
-    across services and the frontend). The role makes the structural
-    intent first-class in the schema:
-
-    * ``STUDY_SECTION`` — root entity type (``parent_entity_type_id IS NULL``).
-      Rendered as a top-level accordion, filled once per article.
-    * ``MODEL_CONTAINER`` — root, ``cardinality='many'``. Drives the
-      model selector UI. At most one per template (enforced by partial
-      unique index).
-    * ``MODEL_SECTION`` — child of a ``MODEL_CONTAINER``. Rendered once
-      per model instance; only meaningful when a model is active.
-
-    Database CHECK constraints enforce parent/role coherence (see
-    migration ``0016_entity_role_column``).
-    """
-
-    STUDY_SECTION = "study_section"
-    MODEL_CONTAINER = "model_container"
-    MODEL_SECTION = "model_section"
-
-
 class ExtractionRunStage(str, PyEnum):
     """Stage of the extraction execution (HITL lifecycle)."""
 
@@ -317,18 +292,6 @@ class ExtractionEntityType(BaseModel):
         nullable=False,
     )
 
-    # Structural discriminant — see ``ExtractionEntityRole``. Replaces the
-    # legacy practice of identifying the model container by
-    # ``name='prediction_models'``.
-    role: Mapped[str] = mapped_column(
-        PostgreSQLEnumType("extraction_entity_role"),
-        default=ExtractionEntityRole.STUDY_SECTION.value,
-        # No server_default: migration 0016 step 4 removed it so an INSERT that
-        # omits `role` fails loudly rather than silently defaulting to
-        # study_section. Keep the Python-side `default` for ORM inserts.
-        nullable=False,
-    )
-
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
@@ -354,33 +317,21 @@ class ExtractionEntityType(BaseModel):
         foreign_keys=[parent_entity_type_id],
     )
 
-    # These four DB invariants exist in the schema (baseline + 0016) but were
-    # absent from the ORM, so `alembic revision --autogenerate` would emit DROPs
-    # for them (silently un-guarding the role model). Declaring them here keeps
-    # the model the source of truth. The deferred `model_section`-under-
-    # `model_container` trigger (0016 step 7) can't live in __table_args__ and
-    # stays migration-only. (#93)
+    # DB invariants that exist in the schema but not otherwise in the ORM, so
+    # `alembic revision --autogenerate` would emit DROPs for them (silently
+    # un-guarding them). Declaring them here keeps the model the source of
+    # truth. 0069 removed three role-shaped ones — the parent/role CHECK and
+    # the two one-container-per-template indexes — and replaced them with a
+    # deferred trigger (`trg_check_section_parent_repeats`) that, like 0016's,
+    # cannot live in `__table_args__` and stays migration-only. (#93)
     __table_args__ = (
         CheckConstraint(
             "(template_id IS NULL) <> (project_template_id IS NULL)",
             name="ck_extraction_entity_types_template_xor",
         ),
         CheckConstraint(
-            "(role IN ('study_section', 'model_container') AND parent_entity_type_id IS NULL)"
-            " OR (role = 'model_section' AND parent_entity_type_id IS NOT NULL)",
-            name="ck_extraction_entity_types_role_parent",
-        ),
-        Index(
-            "uq_extraction_entity_types_one_container_per_global",
-            "template_id",
-            unique=True,
-            postgresql_where=text("role = 'model_container' AND template_id IS NOT NULL"),
-        ),
-        Index(
-            "uq_extraction_entity_types_one_container_per_project",
-            "project_template_id",
-            unique=True,
-            postgresql_where=text("role = 'model_container' AND project_template_id IS NOT NULL"),
+            "cardinality <> 'many' OR entry_label IS NOT NULL",
+            name="ck_extraction_entity_types_noun_on_repeating",
         ),
         {"schema": "public"},
     )

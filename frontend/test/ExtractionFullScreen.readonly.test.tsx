@@ -134,7 +134,6 @@ const FINALIZED_RUN_VIEW = {
       description: null,
       parent_entity_type_id: null,
       cardinality: "one",
-      role: "study_section",
       sort_order: 0,
       is_required: true,
       fields: [

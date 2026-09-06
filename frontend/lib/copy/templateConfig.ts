@@ -14,8 +14,8 @@ export const templateConfig = {
   addRepeatingGroup: 'Add repeating group…',
   addSectionDialogDesc: 'Create a custom section to extract project-specific data.',
   addSectionMenu: 'Add section',
-  cardinalityOncePerModel: 'Once per {{noun}}',
-  cardinalityRepeatsPerModel: 'Repeats per {{noun}}',
+  cardinalityOncePerEntry: 'Once per {{noun}}',
+  cardinalityRepeatsPerEntry: 'Repeats per {{noun}}',
   cardinalityRootInfo:
     'Single for data that appears once per article; multiple allows several instances (e.g. a list or table).',
   cardinalityRootMultipleHint: 'Multiple occurrences per article (e.g. Authors, Groups)',
@@ -162,8 +162,6 @@ export const templateConfig = {
   discardKeptReasonRelatedToKeptNode: 'it belongs to an item that had to stay',
   discardRefusedCardinality:
     'The published version expects one entry for a section that now holds several in at least one run. Restoring it would leave those runs impossible to complete.',
-  discardRefusedContainerSwap:
-    'The draft replaced this template’s repeating group. Discarding that particular change is not supported — undo it by hand in the grid instead.',
   discardRefusedNarrowBaseline:
     'The published version was saved in an older format, so restoring it would erase AI instructions and option settings across the template.',
   discardRefusedRaced:
@@ -274,7 +272,6 @@ export const templateConfig = {
   historyRestoreKept:
     '{{n}} item(s) could not be brought back because they hold recorded answers.',
   errors_restoreVersion: 'Could not restore that version',
-  inspectorGroupAlwaysRepeats: 'A group always repeats',
   inspectorGroupKindLine: 'Repeating group — reviewers add one entry per {{noun}}',
   inspectorInsideGroup: 'Inside {{group}}',
   inspectorPlacementLabel: 'Placement',
@@ -298,8 +295,8 @@ export const templateConfig = {
   moveDialogHeading: 'Sections',
   moveDialogPlaceholder: 'Move {{field}} to…',
   moveDialogTitle: 'Move field to a section',
-  newPerModelSection: 'New per-{{noun}} section',
-  perModelDialogDesc:
+  newPerGroupSection: 'New per-{{noun}} section',
+  perGroupDialogDesc:
     'Lives inside {{group}} — reviewers fill it once for each {{noun}}.',
   // Capitalized inspector variants — the extraction-namespace meta keys
   // ('repeats per article') are lowercase inline-meta styling.

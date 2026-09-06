@@ -44,7 +44,6 @@ export function useActiveTemplateStructure(
         name: et.name,
         label: et.label ?? null,
         description: et.description ?? null,
-        role: et.role ?? null,
         cardinality: et.cardinality ?? null,
         parent_entity_type_id: et.parent_entity_type_id ?? null,
         entry_label: et.entry_label ?? null,

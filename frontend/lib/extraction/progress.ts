@@ -42,6 +42,14 @@ export interface RequiredFieldProgress {
  * derived from the value keys — the header's historical behaviour, preserved
  * unchanged because the form holds every instance's keys already.
  *
+ * The set scopes BOTH sides: a value whose instance is not in it is skipped in
+ * the numerator, so a caller measuring a SUBSET of the article (the nav rail's
+ * nested section under one entry, an entry card's own subtree) can no longer
+ * read another entry's filled values against its own slot count — which used to
+ * push `completedFields` past `totalFields` and mark an empty section complete.
+ * This also matches the finalize gate, which counts per EXISTING instance and
+ * so never sees a value from an instance outside the set.
+ *
  * When the authoritative set IS supplied, an entity type with **no instances**
  * contributes to the denominator only if the template marks it `is_required`:
  * an optional `cardinality='many'` entity (e.g. "Prediction Models" with
@@ -134,9 +142,15 @@ export function computeRequiredFieldProgress(
     const fieldId = key.slice(sep + 1);
     const etId = fieldToEntityType.get(fieldId);
     if (!etId) continue;
-    if (requiredFieldIdsByEntityType.get(etId)?.has(fieldId)) {
-      completedRequired += 1;
-    }
+    if (!requiredFieldIdsByEntityType.get(etId)?.has(fieldId)) continue;
+    // The authoritative set scopes the NUMERATOR too: a value belonging to an
+    // instance outside it is another scope's progress, and counting it let a
+    // section read complete while the entry on screen was empty. Only the
+    // value-key fallback counts every key, because there the instance set IS
+    // derived from these same keys — every one of them is in scope by
+    // construction.
+    if (authoritative && !observedInstances.get(etId)?.has(key.slice(0, sep))) continue;
+    completedRequired += 1;
   }
 
   const percentage =

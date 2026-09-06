@@ -7,9 +7,11 @@ import {DescriptionDot} from './templateConfigAtoms';
 import type {GridSection} from './templateTree';
 
 /**
- * 216px outline rail (spec §2): every section, nested entries indented,
- * per-section field counts, and zero-match entries dimmed while a search
- * filter is active.
+ * 216px outline rail (spec §2): every section at every depth, indented
+ * per level, per-section field counts, and zero-match entries dimmed
+ * while a search filter is active. It walks the tree recursively — the
+ * two-level map it replaces dropped grandchildren from the outline while
+ * the grid beside it rendered them (trees B5b).
  *
  * Density note: rail rows sit at the compact tier (4px vertical / 8px
  * horizontal padding, 2px between rows). Anything tighter reads as one
@@ -32,19 +34,23 @@ interface TemplateOutlineRailProps {
   style?: React.CSSProperties;
 }
 
+/** Literal margin classes indexed by depth, clamped at the last rung — a
+ * computed `ml-[${n}]` is never compiled by Tailwind, so the rail would
+ * render flat with no error to see. */
+const RAIL_INDENT = ['', 'ml-3', 'ml-6', 'ml-9', 'ml-12'] as const;
+
 function RailItem({
   section,
-  nested,
   dimmed,
   selected,
   onSelect,
 }: {
   section: GridSection;
-  nested: boolean;
   dimmed: boolean;
   selected: boolean;
   onSelect: () => void;
 }) {
+  const nested = section.depth > 0;
   return (
     <button
       type="button"
@@ -53,7 +59,7 @@ function RailItem({
       className={cn(
         'flex min-h-7 w-full items-center gap-2 rounded-md px-2 py-1 text-left text-muted-foreground',
         'hover:bg-muted/50 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
-        nested && 'ml-3',
+        RAIL_INDENT[Math.min(section.depth, RAIL_INDENT.length - 1)],
         selected && 'bg-muted/60 text-foreground',
         dimmed && 'opacity-40',
       )}
@@ -82,6 +88,18 @@ export function TemplateOutlineRail({
   className,
   style,
 }: TemplateOutlineRailProps) {
+  const renderRail = (section: GridSection): React.ReactNode => (
+    <div key={section.id} className="space-y-0.5">
+      <RailItem
+        section={section}
+        dimmed={isFiltering && !visibleSectionIds.has(section.id)}
+        selected={selectedSectionId === section.id}
+        onSelect={() => onSelectSection(section.id)}
+      />
+      {section.children.map((child) => renderRail(child))}
+    </div>
+  );
+
   return (
     <nav
       aria-label={t('extraction', 'configHeaderTitle')}
@@ -95,23 +113,7 @@ export function TemplateOutlineRail({
     >
       {sections.map((section) => (
         <div key={section.id} className="space-y-0.5">
-          <RailItem
-            section={section}
-            nested={false}
-            dimmed={isFiltering && !visibleSectionIds.has(section.id)}
-            selected={selectedSectionId === section.id}
-            onSelect={() => onSelectSection(section.id)}
-          />
-          {section.children.map((child) => (
-            <RailItem
-              key={child.id}
-              section={child}
-              nested
-              dimmed={isFiltering && !visibleSectionIds.has(child.id)}
-              selected={selectedSectionId === child.id}
-              onSelect={() => onSelectSection(child.id)}
-            />
-          ))}
+          {renderRail(section)}
         </div>
       ))}
 

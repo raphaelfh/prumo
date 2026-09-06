@@ -342,8 +342,26 @@ async def test_section_extraction_run_id_403_for_non_member(
     assert res.status_code == 403, res.text
 
 
+async def _first_repeating_section(db: AsyncSession, template_id: UUID) -> UUID | None:
+    """The template's first ``cardinality='many'`` section, or None.
+
+    Ordered, so the guard test always names the same section: an unordered
+    scan order is not a contract.
+    """
+    return (
+        await db.execute(
+            text(
+                "SELECT id FROM public.extraction_entity_types "
+                "WHERE project_template_id = :tid AND cardinality = 'many' "
+                "ORDER BY sort_order LIMIT 1"
+            ),
+            {"tid": str(template_id)},
+        )
+    ).scalar_one_or_none()
+
+
 @pytest.mark.asyncio
-async def test_model_extraction_403_for_non_member(
+async def test_entry_creation_403_for_non_member(
     db_client: AsyncClient,
     db_session: AsyncSession,
     outsider_user: UUID,
@@ -355,37 +373,19 @@ async def test_model_extraction_403_for_non_member(
         )
     project_id, article_id, template_id = fx
 
+    entity_type_id = await _first_repeating_section(db_session, template_id)
+    if entity_type_id is None:
+        pytest.skip("Need a repeating section on that template")
+
     res = await db_client.post(
-        "/api/v1/extraction/models",
+        "/api/v1/extraction/instances",
         json={
             "projectId": str(project_id),
             "articleId": str(article_id),
             "templateId": str(template_id),
-        },
-    )
-    assert res.status_code == 403, res.text
-
-
-@pytest.mark.asyncio
-async def test_manual_model_hierarchy_403_for_non_member(
-    db_client: AsyncClient,
-    db_session: AsyncSession,
-    outsider_user: UUID,
-) -> None:
-    fx = await _pick_extraction_article_template_for_outsider(db_session, outsider_user)
-    if fx is None:
-        pytest.skip(
-            "Need an extraction article/template in a project the outsider does not belong to"
-        )
-    project_id, article_id, template_id = fx
-
-    res = await db_client.post(
-        "/api/v1/extraction/models/manual",
-        json={
-            "projectId": str(project_id),
-            "articleId": str(article_id),
-            "templateId": str(template_id),
-            "modelName": "Outsider model",
+            "entityTypeId": str(entity_type_id),
+            "label": "Outsider model",
+            "entityKey": "Outsider model",
         },
     )
     assert res.status_code == 403, res.text

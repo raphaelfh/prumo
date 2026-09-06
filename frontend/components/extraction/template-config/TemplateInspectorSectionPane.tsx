@@ -2,18 +2,20 @@
  * Section pane of the docked inspector (B-8 T6, D10) — extracted from
  * TemplateInspector.tsx when it outgrew the file-size ceiling.
  *
- * Three variants by `section.kind`. Every edit commits IMMEDIATELY
- * through the section PATCH (the Section-combobox semantics — no
- * draft/Save row):
- * - group: Repeats LOCKED ("a group always repeats");
- * - groupChild: Placement locked to the parent group, Repeats select
- *   (one/many). The D5 many→one 409 toasts the friendly copy in the
- *   hook and the select reverts here;
- * - root: Repeats READ-ONLY (cardinality is a create-time choice,
- *   spec §3).
+ * One pane for every section, varying on `depth` / `repeats` /
+ * `ownsChildren` rather than the three kinds 0069 retired — a nested
+ * group is a group AND a child, which no single kind could say. Every
+ * edit commits IMMEDIATELY through the section PATCH (the
+ * Section-combobox semantics — no draft/Save row):
+ * - Repeats is an EDITABLE select on EVERY section (spec §5); the two
+ *   refusals — the section owns children, or a parent already holds
+ *   several entries — come back typed from the PATCH, the hook toasts
+ *   the friendly copy and the select reverts here;
+ * - a nested section (`depth > 0`) additionally shows its Placement,
+ *   locked to the parent.
  *
- * Every section that REPEATS — a group, or any other section with
- * cardinality 'many' — additionally shows the entry-group controls: the
+ * Every section that REPEATS additionally shows the entry-group
+ * controls: the
  * entry-label Input (blur/Enter; an unchanged or emptied value is a
  * no-op that reverts the display — the header rename revert rule) and
  * the entry-key select (0059). One entry of a repeating section needs a
@@ -33,7 +35,7 @@ import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField'
 import {useUpdateTemplateSection} from '@/hooks/extraction/useUpdateTemplateSection';
 import {t} from '@/lib/copy';
 
-import {KIND_COPY, Label, ReadOnlyValue} from './inspectorShared';
+import {Label, ReadOnlyValue} from './inspectorShared';
 import type {GridSection} from './templateTree';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
@@ -55,11 +57,20 @@ export function sectionContentKey(section: GridSection): string {
   ]);
 }
 
-/** What the entry-label input shows: the group's resolved noun (a legacy
- * group without one resolves to the fallback), any other section's own raw
- * noun — or '' while unset, with the fallback noun as the placeholder. */
+/** What the entry-label input shows: the section's OWN raw noun, or ''
+ * while unset with the fallback as the placeholder. A legacy group whose
+ * noun is NULL now shows the placeholder rather than the resolved
+ * fallback, so an empty field reads as empty in every case. */
 function shownEntryLabel(section: GridSection): string {
-  return section.kind === 'group' ? section.entryNoun : (section.ownEntryLabel ?? '');
+  return section.ownEntryLabel ?? '';
+}
+
+/** The badge word. A nested group is BOTH a group and a child; "group" is
+ * the more informative of the two, so it wins. */
+function kindCopyKey(section: GridSection): 'inspectorKindGroup' | 'inspectorKindGroupChild' | 'inspectorKindRoot' {
+  if (section.repeats && section.ownsChildren) return 'inspectorKindGroup';
+  if (section.depth > 0) return 'inspectorKindGroupChild';
+  return 'inspectorKindRoot';
 }
 
 export function SectionInspectorForm({
@@ -80,8 +91,7 @@ export function SectionInspectorForm({
   const [cardinality, setCardinality] = useState(section.cardinality);
   const [description, setDescription] = useState(section.description ?? '');
 
-  // A group always repeats; a per-model section only when it says so.
-  const repeats = section.kind === 'group' || cardinality === 'many';
+  const repeats = cardinality === 'many';
   const entryKeyFieldId = section.fields.find((f) => f.isEntityKey)?.id ?? '';
 
   // Moving the key is clear-then-set: the API allows one per section and
@@ -171,13 +181,13 @@ export function SectionInspectorForm({
       <div className="flex items-center gap-1.5">
         <strong className="min-w-0 flex-1 truncate">{section.label}</strong>
         <Badge variant="secondary" className="shrink-0 text-[11px]">
-          {t('extraction', KIND_COPY[section.kind]).replace(
+          {t('extraction', kindCopyKey(section)).replace(
             '{{noun}}',
-            section.entryNoun,
+            section.scopeNoun ?? DEFAULT_ENTRY_NOUN,
           )}
         </Badge>
       </div>
-      {section.kind === 'group' && (
+      {section.repeats && section.ownsChildren && (
         <p className="mt-1 text-muted-foreground">
           {t('templateConfig', 'inspectorGroupKindLine').replace(
             '{{noun}}',
@@ -191,7 +201,7 @@ export function SectionInspectorForm({
         <span className="font-mono text-[11px]">{section.key}</span>
       </ReadOnlyValue>
 
-      {section.kind === 'groupChild' && (
+      {section.depth > 0 && (
         <>
           <Label>{t('templateConfig', 'inspectorPlacementLabel')}</Label>
           <ReadOnlyValue muted>
@@ -228,49 +238,42 @@ export function SectionInspectorForm({
         </>
       )}
 
-      {section.kind === 'groupChild' ? (
-        <>
-          <Label htmlFor="inspector-section-repeats">
-            {t('templateConfig', 'inspectorRepeatsLabel')}
-          </Label>
-          {/* Native select for the same reasons as the Section combobox:
-              dense, keyboard-accessible, drivable in jsdom. */}
-          <select
-            id="inspector-section-repeats"
-            value={cardinality}
-            onChange={(e) => commitCardinality(e.target.value)}
-            disabled={saving}
-            className="h-7 w-full rounded-md border border-input bg-background px-2 text-[13px] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="one">
-              {t('templateConfig', 'cardinalityOncePerModel').replace(
+      <Label htmlFor="inspector-section-repeats">
+        {t('templateConfig', 'inspectorRepeatsLabel')}
+      </Label>
+      {/* Editable on EVERY section (spec §5): 0069 retired the role that
+          made cardinality a create-time choice for a root and a group.
+          The two refusals — a section that owns children, and one whose
+          parent already holds several entries — come back from the PATCH
+          as typed errors the hook toasts, and the select reverts here. */}
+      {/* Native select for the same reasons as the Section combobox:
+          dense, keyboard-accessible, drivable in jsdom. */}
+      <select
+        id="inspector-section-repeats"
+        value={cardinality}
+        onChange={(e) => commitCardinality(e.target.value)}
+        disabled={saving}
+        className="h-7 w-full rounded-md border border-input bg-background px-2 text-[13px] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {/* The scope a section repeats IN is its parent's entry, or the
+            article at root — never its own noun. */}
+        <option value="one">
+          {section.scopeNoun === null
+            ? t('templateConfig', 'repeatsOncePerArticle')
+            : t('templateConfig', 'cardinalityOncePerEntry').replace(
                 '{{noun}}',
-                section.entryNoun,
+                section.scopeNoun,
               )}
-            </option>
-            <option value="many">
-              {t('templateConfig', 'cardinalityRepeatsPerModel').replace(
+        </option>
+        <option value="many">
+          {section.scopeNoun === null
+            ? t('templateConfig', 'repeatsPerArticle')
+            : t('templateConfig', 'cardinalityRepeatsPerEntry').replace(
                 '{{noun}}',
-                section.entryNoun,
+                section.scopeNoun,
               )}
-            </option>
-          </select>
-        </>
-      ) : (
-        <>
-          <Label>{t('templateConfig', 'inspectorRepeatsLabel')}</Label>
-          <ReadOnlyValue muted>
-            {section.kind === 'group'
-              ? t('templateConfig', 'inspectorGroupAlwaysRepeats')
-              : t(
-                  'templateConfig',
-                  section.cardinality === 'many'
-                    ? 'repeatsPerArticle'
-                    : 'repeatsOncePerArticle',
-                )}
-          </ReadOnlyValue>
-        </>
-      )}
+        </option>
+      </select>
 
       {/* 0059 — a repeating section needs an identity, or an AI re-run
           cannot tell a new entry from one it already extracted and the

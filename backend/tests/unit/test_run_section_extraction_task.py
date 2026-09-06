@@ -79,9 +79,6 @@ def _single_result(run_id: str, entity_type_id: str) -> SectionExtractionResult:
         extraction_run_id=run_id,
         entity_type_id=entity_type_id,
         suggestions_created=5,
-        tokens_prompt=100,
-        tokens_completion=40,
-        tokens_total=140,
         duration_ms=300.0,
     )
 

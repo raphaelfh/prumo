@@ -44,13 +44,12 @@ from app.services.template_field_service import (
     ProjectTemplateNotFoundError,
 )
 from app.services.template_section_service import (
-    OneContainerError,
     SectionCardinalityInUseError,
-    SectionCardinalityRoleError,
-    SectionEntryLabelRoleError,
+    SectionEntryLabelCardinalityError,
     SectionInUseError,
     SectionNotFoundError,
-    SectionParentRoleError,
+    SectionOwnsChildrenError,
+    SectionParentMustRepeatError,
 )
 
 
@@ -92,7 +91,6 @@ def _section_read(project_template_id: uuid.UUID | None = None) -> SectionRead:
         name="my_section",
         label="My Section",
         cardinality="one",
-        role="study_section",
         sort_order=1,
         is_required=False,
         created_at=datetime.now(tz=UTC),
@@ -113,7 +111,6 @@ def _section_create_body() -> SectionCreateRequest:
         name="my_section",
         label="My Section",
         cardinality="one",
-        role="study_section",
     )
 
 
@@ -441,12 +438,16 @@ _ERROR_CASES: list[tuple[str, _Caller, Exception, int]] = [
     ("reorder_fields", _call_reorder_fields, DuplicateReorderIdsError("twice"), 422),
     ("create_section", _call_create_section, ProjectTemplateNotFoundError("nope"), 404),
     ("create_section", _call_create_section, SectionNotFoundError("nope"), 404),
-    ("create_section", _call_create_section, SectionParentRoleError("bad parent"), 400),
-    ("create_section", _call_create_section, OneContainerError("second"), 409),
+    ("create_section", _call_create_section, SectionParentMustRepeatError("bad parent"), 422),
     ("update_section", _call_update_section, ProjectTemplateNotFoundError("nope"), 404),
     ("update_section", _call_update_section, SectionNotFoundError("nope"), 404),
-    ("update_section", _call_update_section, SectionEntryLabelRoleError("group only"), 422),
-    ("update_section", _call_update_section, SectionCardinalityRoleError("per-model only"), 422),
+    (
+        "update_section",
+        _call_update_section,
+        SectionEntryLabelCardinalityError("repeating only"),
+        422,
+    ),
+    ("update_section", _call_update_section, SectionOwnsChildrenError("owns children"), 422),
     ("update_section", _call_update_section, SectionCardinalityInUseError("in use"), 409),
     ("delete_section", _call_delete_section, ProjectTemplateNotFoundError("nope"), 404),
     ("delete_section", _call_delete_section, SectionNotFoundError("nope"), 404),

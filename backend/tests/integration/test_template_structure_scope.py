@@ -30,7 +30,6 @@ client_as_manager = engine_setup.client_as_manager
 _SECTION_BODY = {
     "name": "scope_probe",
     "label": "Scope probe",
-    "role": "study_section",
     "cardinality": "one",
 }
 

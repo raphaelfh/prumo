@@ -42,7 +42,6 @@ function makeRunViewResponse(
       description: 'Top-level study entity',
       parent_entity_type_id: null,
       cardinality: 'one' as const,
-      role: 'study_section' as const,
       sort_order: 0,
       is_required: true,
       entry_label: null,
@@ -123,11 +122,14 @@ describe('entityTypesFromRunView', () => {
     expect(et.sort_order).toBe(0);
   });
 
-  it('casts cardinality and role through', () => {
+  it('casts cardinality through', () => {
+    // `role` used to ride along here. It left the wire in trees B5:
+    // dropping only the adapter's mapping would have been SILENT, with the
+    // backend still sending a key nobody read.
     const view = makeRunViewResponse();
     const [et] = entityTypesFromRunView(view);
     expect(et.cardinality).toBe('one');
-    expect(et.role).toBe('study_section');
+    expect('role' in et).toBe(false);
   });
 
   it('injects entity_type_id onto each field', () => {
@@ -196,7 +198,6 @@ describe('entityTypesFromRunView', () => {
         description: null,
         parent_entity_type_id: 'et-1',
         cardinality: 'many',
-        role: 'model_container',
         sort_order: 1,
         is_required: false,
         entry_label: null,
@@ -207,7 +208,7 @@ describe('entityTypesFromRunView', () => {
     expect(ets).toHaveLength(2);
     expect(ets[1].template_id).toBe('tmpl-1');
     expect(ets[1].cardinality).toBe('many');
-    expect(ets[1].role).toBe('model_container');
+    expect(ets[1].parent_entity_type_id).toBe('et-1');
     expect(ets[1].fields).toEqual([]);
   });
 

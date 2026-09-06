@@ -24,7 +24,6 @@ const groupTree = buildTemplateTree(
       id: 'root1',
       name: 'basics',
       label: 'Basics',
-      role: 'study_section',
       cardinality: 'one',
       parent_entity_type_id: null,
       sort_order: 1,
@@ -33,7 +32,6 @@ const groupTree = buildTemplateTree(
       id: 'grp',
       name: 'models',
       label: 'Prediction models',
-      role: 'model_container',
       cardinality: 'many',
       entry_label: 'algorithm',
       parent_entity_type_id: null,
@@ -43,7 +41,6 @@ const groupTree = buildTemplateTree(
       id: 'child',
       name: 'performance',
       label: 'Performance',
-      role: 'model_section',
       cardinality: 'one',
       parent_entity_type_id: 'grp',
       sort_order: 1,
@@ -70,6 +67,84 @@ const groupTree = buildTemplateTree(
 );
 
 const none = new Set<string>();
+
+const deepTree = buildTemplateTree(
+  [
+    {
+      id: 'grp',
+      name: 'models',
+      label: 'Prediction models',
+      cardinality: 'many',
+      entry_label: 'algorithm',
+      parent_entity_type_id: null,
+      sort_order: 1,
+    },
+    {
+      id: 'nested',
+      name: 'validations',
+      label: 'Validations',
+      cardinality: 'many',
+      entry_label: 'validation',
+      parent_entity_type_id: 'grp',
+      sort_order: 1,
+    },
+    {
+      id: 'leaf',
+      name: 'metrics',
+      label: 'Metrics',
+      cardinality: 'one',
+      parent_entity_type_id: 'nested',
+      sort_order: 1,
+    },
+  ],
+  [{id: 'lf', entity_type_id: 'leaf', name: 'auc', label: 'AUC', field_type: 'number', sort_order: 1}],
+);
+
+describe('buildRowShapes — depth (trees B5b)', () => {
+  it('emits the grandchild section, its fields and its ghost, in tree order', () => {
+    const rows = buildRowShapes(deepTree, none, false).map((r) => r.rowId);
+
+    expect(rows.indexOf('leaf')).toBeGreaterThan(rows.indexOf('nested'));
+    expect(rows).toContain('lf');
+    expect(rows).toContain(ghostRowId('leaf'));
+  });
+
+  it('closes EVERY repeating section with its add-child ghost, not only a group', () => {
+    // The nested group is repeating and owns a child; the check used to be
+    // "is a group", which also meant a repeating section with NO children
+    // never offered the ghost — so its first child could not be created.
+    const rows = buildRowShapes(deepTree, none, false).map((r) => r.rowId);
+
+    expect(rows).toContain(groupChildGhostRowId('grp'));
+    expect(rows).toContain(groupChildGhostRowId('nested'));
+
+    const childless = buildTemplateTree(
+      [
+        {
+          id: 'lonely',
+          name: 'arms',
+          label: 'Arms',
+          cardinality: 'many',
+          entry_label: 'arm',
+          parent_entity_type_id: null,
+          sort_order: 1,
+        },
+      ],
+      [],
+    );
+    expect(buildRowShapes(childless, none, false).map((r) => r.rowId)).toContain(
+      groupChildGhostRowId('lonely'),
+    );
+  });
+
+  it('a collapsed middle section hides its whole subtree', () => {
+    const rows = buildRowShapes(deepTree, new Set(['nested']), false).map((r) => r.rowId);
+
+    expect(rows).toContain('nested');
+    expect(rows).not.toContain('leaf');
+    expect(rows).not.toContain('lf');
+  });
+});
 
 describe('buildRowShapes — per-group ghost (B-8 D9)', () => {
   it('emits the per-group ghost AFTER the group children block, dialog-opening', () => {

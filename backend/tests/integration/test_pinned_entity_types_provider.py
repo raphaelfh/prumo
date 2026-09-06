@@ -22,7 +22,6 @@ def _wide_entity_type(
     *,
     et_id: str,
     label: str,
-    role: str = "study_section",
     parent: str | None = None,
     fields: list[dict] | None = None,
 ) -> dict:
@@ -34,7 +33,6 @@ def _wide_entity_type(
         "description": "pinned description",
         "parent_entity_type_id": parent,
         "cardinality": "one",
-        "role": role,
         "sort_order": 0,
         "is_required": False,
         "fields": fields or [],
@@ -126,7 +124,6 @@ async def test_provider_chains_empty_snapshot_to_live(db_session: AsyncSession) 
     )
 
     assert tree, "empty snapshot must fall back to live rows"
-    assert all(et.role in ("study_section", "model_container", "model_section") for et in tree)
 
 
 @pytest.mark.asyncio
@@ -158,7 +155,6 @@ async def test_provider_chains_heterogeneous_snapshot_to_live(
     )
 
     assert tree, "heterogeneous snapshot must fall back to live, not raise"
-    assert all(et.role for et in tree)
 
 
 @pytest.mark.asyncio

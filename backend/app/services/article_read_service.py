@@ -30,3 +30,26 @@ async def get_article_project_id(db: AsyncSession, article_id: UUID) -> UUID:
     if project_id is None:
         raise ArticleNotFoundError(f"Article {article_id} not found")
     return project_id
+
+
+async def owned_article(db: AsyncSession, *, project_id: UUID, article_id: UUID) -> UUID:
+    """The article's id, only when it belongs to ``project_id``.
+
+    THE article-in-project pair guard (`.claude/rules/backend.md`
+    § Ownership guards). The scope is in the WHERE clause, not a compare
+    after a bare ``db.get``: a foreign article and a missing one raise the
+    same error with the same message shape, so no caller can leak which
+    articles exist in projects the caller cannot see.
+
+    Distinct from :func:`get_article_project_id` above, which answers the
+    opposite question ("which project owns this?") for routers that must
+    resolve an article's project *before* they can check membership at all.
+    """
+    found = (
+        await db.execute(
+            select(Article.id).where(Article.id == article_id, Article.project_id == project_id)
+        )
+    ).scalar_one_or_none()
+    if found is None:
+        raise ArticleNotFoundError(f"Article {article_id} not found")
+    return found

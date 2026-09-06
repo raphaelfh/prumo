@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.extraction_export_service import FieldDescriptor, SectionDescriptor
@@ -46,7 +45,6 @@ def test_section_descriptor_carries_cardinality_and_sort_order() -> None:
     s = SectionDescriptor(
         entity_type_id=uuid4(),
         label="Outcomes",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(),
         cardinality=ExtractionCardinality.MANY,
@@ -62,7 +60,6 @@ def test_section_descriptor_defaults_are_back_compat() -> None:
     s = SectionDescriptor(
         entity_type_id=uuid4(),
         label="Study",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(),
     )

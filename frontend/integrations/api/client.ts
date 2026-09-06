@@ -346,38 +346,37 @@ export async function zoteroClient<T>(
   });
 }
 
-/**
- * Client for model extraction endpoints.
- */
-export async function modelExtractionClient<T>(
-  body: Record<string, unknown>
-): Promise<T> {
-  return apiClient<T>("/api/v1/extraction/models", {
+
+// Create one entry of a repeating section, with its singleton children, in
+// one transaction. Replaces the browser-side PostgREST insert: the key value
+// is recorded as a ReviewerDecision, which only the server may author.
+export type EntryCreateRequest = components['schemas']['EntryCreateRequest'];
+
+export type EntryCreateResponse = components['schemas']['EntryCreateResponse'];
+
+export async function createEntry(
+  body: EntryCreateRequest
+): Promise<EntryCreateResponse> {
+  return apiClient<EntryCreateResponse>("/api/v1/extraction/instances", {
     method: "POST",
     body,
-    timeout: 120000,
   });
 }
 
-// Request shape from the generated contract too — the snake_case copy
-// only worked through Pydantic's populate_by_name leniency.
-export type ManualModelHierarchyRequest =
-  components['schemas']['CreateModelHierarchyRequest'];
+// Delete SEVERAL entries of a repeating section in one transaction. Not a
+// loop of the browser's single PostgREST delete: an entry cascades to its
+// children, its values and its reviewer decisions, so a batch that gets
+// halfway leaves audit-bearing tables in a state no undo restores. The
+// server validates the whole set before it touches a row.
+export type EntryBulkDeleteRequest = components['schemas']['EntryBulkDeleteRequest'];
 
-// Response shapes come from the generated contract (camelCase aliases) —
-// a hand-mirrored snake_case copy here shipped `model_label: undefined`
-// all the way to the success toast (envelope-drift incident class).
-export type ManualModelHierarchyChild =
-  components['schemas']['ModelHierarchyChildResponse'];
+export type EntryBulkDeleteResponse = components['schemas']['EntryBulkDeleteResponse'];
 
-export type ManualModelHierarchyResponse =
-  components['schemas']['CreateModelHierarchyResponse'];
-
-export async function createManualModelHierarchy(
-  body: ManualModelHierarchyRequest
-): Promise<ManualModelHierarchyResponse> {
-  return apiClient<ManualModelHierarchyResponse>("/api/v1/extraction/models/manual", {
-    method: "POST",
+export async function deleteEntries(
+  body: EntryBulkDeleteRequest
+): Promise<EntryBulkDeleteResponse> {
+  return apiClient<EntryBulkDeleteResponse>("/api/v1/extraction/instances", {
+    method: "DELETE",
     body,
   });
 }

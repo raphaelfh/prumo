@@ -114,8 +114,6 @@ export const extraction = {
     fullAIPartialTitle: 'Extraction partially complete',
     fullAIPartialTopLevelFailed: 'Prediction models were extracted, but study-level sections failed and were not saved. Re-run extraction to retry them.',
     fullAIErrorPrefix: 'Error in full AI extraction',
-    modelExtractionSuccessTitle: 'Extraction complete! {{n}} model(s) found and created.',
-    modelExtractionSuccessTokens: '{{n}} tokens used',
     noModelsFoundTitle: 'No models found',
     errors_loadExtractionData: 'Error loading data',
     errors_loadExtractedValues: 'Error loading extracted values',
@@ -137,13 +135,8 @@ export const extraction = {
     saving: 'Saving…',
     processingArticle: 'Processing article {{current}}/{{total}}: {{title}}',
     zoteroImportCompletedWithErrors: 'Import completed with errors',
-    modelNotAuthenticatedOrInvalid: 'User not authenticated or invalid template',
-    errors_createModel: 'Error creating model',
-    errors_removeModel: 'Error removing model',
     errors_topLevelSectionsExtraction: 'Error in top-level sections extraction',
     errors_sectionsExtraction: 'Error in section extraction',
-    modelCreatedSuccess: 'Model "{{label}}" created successfully!',
-    modelRemovedSuccess: 'Model "{{label}}" removed successfully',
     errors_zoteroFetch: 'Error fetching Zotero collections',
     errors_zoteroImport: 'Error importing articles',
     zoteroDisconnectSuccess: 'Zotero integration removed',
@@ -311,7 +304,6 @@ export const extraction = {
     loadingConfiguration: 'Loading configuration…',
     noSectionsConfigured: 'No sections configured',
     noModelsAdded: 'No {{noun}} added yet',
-    noModelsAddedDesc: 'Add a {{noun}} manually or extract it automatically from the article.',
     // RunHeader (extraction-specific keys — shared header keys now live in the runs namespace)
     runHeaderFinishExtraction: 'Finish extraction',
     runHeaderFinishExtractionTooltip: 'Signal that you are done extracting this article and open the next one.',
@@ -349,7 +341,6 @@ export const extraction = {
     selectTypePlaceholder: 'Select type',
     placeholderSectionNameExample: 'e.g. exclusion_criteria',
     // ModelSelector
-    selectModelPlaceholder: 'Select a {{noun}}…',
     modelNamePlaceholder: 'Enter a name for this {{noun}}…',
     modelNameHint: 'Choose a descriptive name to identify this {{noun}}',
     modelSelectorTitle: '{{noun}} entries',
@@ -361,6 +352,18 @@ export const extraction = {
     modelAddManuallyTitle: 'Add new {{noun}} manually',
     modelNewShort: 'New',
     modelRemoveActiveTitle: 'Remove active {{noun}}',
+    // Bulk selection (trees B7). The tab strip flips into checkboxes on
+    // demand rather than carrying a permanent checkbox column: the common
+    // case is one entry, and a column that is always there reads as a table
+    // the reviewer is expected to act on.
+    entrySelectStart: 'Select',
+    entrySelectCancel: 'Cancel',
+    entrySelectDelete: 'Delete',
+    entrySelectCount: '{{n}} selected',
+    entrySelectToggleOne: 'Select {{name}}',
+    entryBulkDeleteTitle: 'Delete {{n}} {{noun}}?',
+    entryBulkDeleteBody:
+      'Their answers, evidence and review history go with them. This cannot be undone.',
     modelRenameActiveTitle: 'Rename active {{noun}}',
     modelActiveLabel: 'Active {{noun}}',
     // SectionAccordion
@@ -392,7 +395,6 @@ export const extraction = {
     addNewModelDesc: 'Create a new {{noun}} to extract its data. You can add as many as you need.',
     modelsAlreadyAdded: 'Already added:',
     creating: 'Creating…',
-    addManually: 'Add manually',
     addSection: 'Add section',
     addNewSection: 'Add new section',
     createSection: 'Create section',
@@ -481,7 +483,7 @@ export const extraction = {
     gridOptionsCellAria: 'Options — {{label}}',
     sectionMetaRepeatingGroup: 'Repeating group',
     sectionMetaRepeatsPerArticle: 'repeats per article',
-    sectionMetaRepeatsPerModel: 'repeats per {{noun}}', // B-8 D7: grid call site interpolates the group's entry noun
+    sectionMetaRepeatsPerEntry: 'repeats per {{noun}}', // B-8 D7: the grid interpolates the SCOPE noun (the parent's entries)
     matchHintKey: 'in key',
     matchHintDescription: 'in description',
     matchHintAiInstruction: 'in AI instruction',

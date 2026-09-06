@@ -13,12 +13,10 @@ import pytest
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionInstance,
-    ProjectExtractionTemplate,
 )
 from app.repositories.extraction_repository import (
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,
-    ExtractionTemplateRepository,
 )
 
 # ---------------------------------------------------------------------------
@@ -56,13 +54,11 @@ def make_db() -> AsyncMock:
 def make_entity_type(
     *,
     id: uuid.UUID | None = None,
-    role: str = "study_section",
     parent: uuid.UUID | None = None,
     sort_order: int = 0,
 ) -> MagicMock:
     et = MagicMock(spec=ExtractionEntityType)
     et.id = id or uuid.uuid4()
-    et.role = role
     et.parent_entity_type_id = parent
     et.sort_order = sort_order
     et.fields = []
@@ -90,44 +86,6 @@ def make_instance(
 # ---------------------------------------------------------------------------
 
 
-class TestExtractionTemplateRepository:
-    @pytest.mark.asyncio
-    async def test_get_with_entity_types_returns_template(self) -> None:
-        db = make_db()
-        tmpl = MagicMock(spec=ProjectExtractionTemplate)
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(tmpl))
-        repo = ExtractionTemplateRepository(db)
-
-        result = await repo.get_with_entity_types(TEMPLATE_ID)
-
-        assert result is tmpl
-
-    @pytest.mark.asyncio
-    async def test_get_with_entity_types_returns_none(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
-        repo = ExtractionTemplateRepository(db)
-
-        result = await repo.get_with_entity_types(TEMPLATE_ID)
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_get_with_entity_types_accepts_string_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
-        repo = ExtractionTemplateRepository(db)
-
-        result = await repo.get_with_entity_types(str(TEMPLATE_ID))
-
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
-# ExtractionEntityTypeRepository
-# ---------------------------------------------------------------------------
-
-
 class TestExtractionEntityTypeRepository:
     @pytest.mark.asyncio
     async def test_get_with_fields_returns_entity_type(self) -> None:
@@ -149,73 +107,6 @@ class TestExtractionEntityTypeRepository:
         result = await repo.get_with_fields(ENTITY_TYPE_ID)
 
         assert result is None
-
-    @pytest.mark.asyncio
-    async def test_get_by_role_project_template(self) -> None:
-        db = make_db()
-        et = make_entity_type(role="model_container")
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(et))
-        repo = ExtractionEntityTypeRepository(db)
-
-        result = await repo.get_by_role("model_container", TEMPLATE_ID)
-
-        assert result is et
-
-    @pytest.mark.asyncio
-    async def test_get_by_role_global_template(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
-        repo = ExtractionEntityTypeRepository(db)
-
-        result = await repo.get_by_role("study_section", TEMPLATE_ID, is_project_template=False)
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_get_by_role_accepts_string_template_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
-        repo = ExtractionEntityTypeRepository(db)
-
-        result = await repo.get_by_role("model_container", str(TEMPLATE_ID))
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_get_children_without_cardinality(self) -> None:
-        db = make_db()
-        children = [make_entity_type(), make_entity_type()]
-        db.execute = AsyncMock(return_value=make_scalars_result(children))
-        repo = ExtractionEntityTypeRepository(db)
-
-        result = await repo.get_children(ENTITY_TYPE_ID)
-
-        assert result == children
-
-    @pytest.mark.asyncio
-    async def test_get_children_with_cardinality_filter(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ExtractionEntityTypeRepository(db)
-
-        result = await repo.get_children(ENTITY_TYPE_ID, cardinality="many")
-
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_get_children_accepts_string_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ExtractionEntityTypeRepository(db)
-
-        result = await repo.get_children(str(ENTITY_TYPE_ID))
-
-        assert result == []
-
-
-# ---------------------------------------------------------------------------
-# ExtractionInstanceRepository
-# ---------------------------------------------------------------------------
 
 
 class TestExtractionInstanceRepository:
@@ -258,26 +149,5 @@ class TestExtractionInstanceRepository:
         repo = ExtractionInstanceRepository(db)
 
         result = await repo.get_by_article(ARTICLE_ID, entity_type_id=str(ENTITY_TYPE_ID))
-
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_get_children_returns_list(self) -> None:
-        db = make_db()
-        children = [make_instance(), make_instance()]
-        db.execute = AsyncMock(return_value=make_scalars_result(children))
-        repo = ExtractionInstanceRepository(db)
-
-        result = await repo.get_children(INSTANCE_ID)
-
-        assert result == children
-
-    @pytest.mark.asyncio
-    async def test_get_children_accepts_string_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ExtractionInstanceRepository(db)
-
-        result = await repo.get_children(str(INSTANCE_ID))
 
         assert result == []

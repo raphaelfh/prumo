@@ -301,19 +301,23 @@ class TemplateDiscardRefusalCode(StrEnum):
 
     Deliberately NOT part of :class:`app.schemas.common.ApiErrorCode`: that
     enum is the cross-cutting vocabulary every client branches on, and these
-    five are one endpoint's private outcomes. Same call as
+    four are one endpoint's private outcomes. Same call as
     ``ExtractionErrorCode`` — slice-local codes stay slice-local, so the
     global contract does not grow a member per feature.
 
     The split that matters to the caller: ``ORPHAN_ACK_REQUIRED`` is a
-    *question* (re-post with ``acknowledge_orphans``), the other four are
+    *question* (re-post with ``acknowledge_orphans``), the other three are
     refusals no retry of the same request can satisfy.
+
+    ``CONTAINER_SWAP_UNSUPPORTED`` left with 0069: it reported the partial
+    unique index that allowed one container per template, and a template
+    may now hold as many root groups as it likes, so the restore simply
+    writes the swap.
     """
 
     ORPHAN_ACK_REQUIRED = "ORPHAN_ACK_REQUIRED"
     NARROW_BASELINE = "NARROW_BASELINE"
     CARDINALITY_DOWNGRADE_BLOCKED = "CARDINALITY_DOWNGRADE_BLOCKED"
-    CONTAINER_SWAP_UNSUPPORTED = "CONTAINER_SWAP_UNSUPPORTED"
     DISCARD_RACED = "DISCARD_RACED"
 
 

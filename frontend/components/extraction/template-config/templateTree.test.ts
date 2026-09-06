@@ -15,7 +15,6 @@ const section = (
   name: over.id,
   label: over.id,
   description: null,
-  role: 'study_section',
   cardinality: 'one',
   parent_entity_type_id: null,
   sort_order: 0,
@@ -73,14 +72,12 @@ describe('buildTemplateTree', () => {
         section({
           id: 'grp',
           label: 'Prediction Models',
-          role: 'model_container',
           cardinality: 'many',
           sort_order: 2,
         }),
         section({
           id: 'child',
           label: 'Model Development',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 3,
         }),
@@ -90,10 +87,13 @@ describe('buildTemplateTree', () => {
 
     expect(tree.map((s) => s.id)).toEqual(['root', 'grp']);
     const group = tree[1];
-    expect(group.kind).toBe('group');
+    expect(group.repeats).toBe(true);
+    expect(group.ownsChildren).toBe(true);
+    expect(group.depth).toBe(0);
     expect(group.fields.map((f) => f.label)).toEqual(['Model name']);
     expect(group.children.map((c) => c.label)).toEqual(['Model Development']);
-    expect(group.children[0].kind).toBe('groupChild');
+    expect(group.children[0].depth).toBe(1);
+    expect(group.children[0].ownsChildren).toBe(false);
   });
 
   it('labels only non-default metadata (one-per-article stays silent)', () => {
@@ -103,19 +103,16 @@ describe('buildTemplateTree', () => {
         section({id: 'repeating', cardinality: 'many', sort_order: 2}),
         section({
           id: 'grp',
-          role: 'model_container',
           cardinality: 'many',
           sort_order: 3,
         }),
         section({
           id: 'childOnce',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 4,
         }),
         section({
           id: 'childMany',
-          role: 'model_section',
           cardinality: 'many',
           parent_entity_type_id: 'grp',
           sort_order: 5,
@@ -130,17 +127,16 @@ describe('buildTemplateTree', () => {
     expect(tree[1].metaKeys).toEqual(['sectionMetaRepeatsPerArticle']);
     expect(tree[2].metaKeys).toEqual(['sectionMetaRepeatingGroup']);
     expect(tree[2].children[0].metaKeys).toEqual([]);
-    expect(tree[2].children[1].metaKeys).toEqual(['sectionMetaRepeatsPerModel']);
+    expect(tree[2].children[1].metaKeys).toEqual(['sectionMetaRepeatsPerEntry']);
   });
 
   it('projects cardinality onto every section (the inspector edits it)', () => {
     const tree = buildTemplateTree(
       [
         section({id: 'plain', sort_order: 1}),
-        section({id: 'grp', role: 'model_container', cardinality: 'many', sort_order: 2}),
+        section({id: 'grp', cardinality: 'many', sort_order: 2}),
         section({
           id: 'childOnce',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 3,
         }),
@@ -170,8 +166,8 @@ describe('buildTemplateTree', () => {
   it('counts a group total across its identity fields and child sections', () => {
     const tree = buildTemplateTree(
       [
-        section({id: 'grp', role: 'model_container', cardinality: 'many'}),
-        section({id: 'child', role: 'model_section', parent_entity_type_id: 'grp'}),
+        section({id: 'grp', cardinality: 'many'}),
+        section({id: 'child', parent_entity_type_id: 'grp'}),
       ],
       [
         field({id: 'f1', entity_type_id: 'grp'}),
@@ -184,19 +180,17 @@ describe('buildTemplateTree', () => {
     expect(tree[0].totalFieldCount).toBe(3);
   });
 
-  it('resolves entryNoun from the group own entry_label and children inherit it (B-8 D7)', () => {
+  it('resolves entryNoun from the own entry_label and children inherit it as scopeNoun (B-8 D7)', () => {
     const tree = buildTemplateTree(
       [
         section({
           id: 'grp',
-          role: 'model_container',
           cardinality: 'many',
           entry_label: 'algorithm',
           sort_order: 1,
         }),
         section({
           id: 'child',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 2,
         }),
@@ -205,7 +199,12 @@ describe('buildTemplateTree', () => {
     );
 
     expect(tree[0].entryNoun).toBe('algorithm');
-    expect(tree[0].children[0].entryNoun).toBe('algorithm');
+    expect(tree[0].scopeNoun).toBeNull();
+    // The child sits INSIDE one algorithm — that is its scope, not its own
+    // noun. Two levels could conflate the two because a section was never
+    // both a group and a child; 0069 makes it both.
+    expect(tree[0].children[0].scopeNoun).toBe('algorithm');
+    expect(tree[0].children[0].entryNoun).toBe('entry');
   });
 
   it('carries each section OWN entry_label separately from the inherited group noun', () => {
@@ -216,14 +215,12 @@ describe('buildTemplateTree', () => {
       [
         section({
           id: 'grp',
-          role: 'model_container',
           cardinality: 'many',
           entry_label: 'algorithm',
           sort_order: 1,
         }),
         section({
           id: 'perf',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           cardinality: 'many',
           entry_label: 'validation',
@@ -236,7 +233,8 @@ describe('buildTemplateTree', () => {
     );
 
     expect(tree[0].ownEntryLabel).toBe('algorithm');
-    expect(tree[0].children[0].entryNoun).toBe('algorithm');
+    expect(tree[0].children[0].scopeNoun).toBe('algorithm');
+    expect(tree[0].children[0].entryNoun).toBe('validation');
     expect(tree[0].children[0].ownEntryLabel).toBe('validation');
     expect(tree[1].ownEntryLabel).toBe('arm');
     expect(tree[2].ownEntryLabel).toBeNull();
@@ -247,20 +245,17 @@ describe('buildTemplateTree', () => {
       [
         section({
           id: 'grpNull',
-          role: 'model_container',
           cardinality: 'many',
           entry_label: null,
           sort_order: 1,
         }),
         section({
           id: 'grpAbsent',
-          role: 'model_container',
           cardinality: 'many',
           sort_order: 2,
         }),
         section({
           id: 'child',
-          role: 'model_section',
           parent_entity_type_id: 'grpNull',
           sort_order: 3,
         }),
@@ -284,10 +279,111 @@ describe('buildTemplateTree', () => {
 
   it('treats an orphaned child (parent missing) as a root rather than dropping it', () => {
     const tree = buildTemplateTree(
-      [section({id: 'lost', role: 'model_section', parent_entity_type_id: 'gone'})],
+      [section({id: 'lost', parent_entity_type_id: 'gone'})],
       [],
     );
     expect(tree.map((s) => s.id)).toEqual(['lost']);
+  });
+});
+
+describe('buildTemplateTree — depth (trees B5b)', () => {
+  it('nests a group under a group, at any depth, and stamps depth on each level', () => {
+    const tree = buildTemplateTree(
+      [
+        section({id: 'root', cardinality: 'many', entry_label: 'model', sort_order: 1}),
+        section({
+          id: 'middle',
+          parent_entity_type_id: 'root',
+          cardinality: 'many',
+          entry_label: 'validation',
+          sort_order: 1,
+        }),
+        section({id: 'leaf', parent_entity_type_id: 'middle', sort_order: 1}),
+      ],
+      [field({id: 'f', entity_type_id: 'leaf'})],
+    );
+
+    expect(tree).toHaveLength(1);
+    const [root] = tree;
+    expect(root.depth).toBe(0);
+    expect(root.repeats).toBe(true);
+    expect(root.ownsChildren).toBe(true);
+
+    const [middle] = root.children;
+    expect(middle.id).toBe('middle');
+    expect(middle.depth).toBe(1);
+    expect(middle.ownsChildren).toBe(true);
+
+    // The level 0069 made representable and the two-level builder dropped.
+    const [leaf] = middle.children;
+    expect(leaf.id).toBe('leaf');
+    expect(leaf.depth).toBe(2);
+    expect(leaf.repeats).toBe(false);
+    expect(leaf.ownsChildren).toBe(false);
+    expect(leaf.fields.map((f) => f.id)).toEqual(['f']);
+  });
+
+  it('counts a grandchild\'s fields in an ancestor\'s totalFieldCount', () => {
+    const tree = buildTemplateTree(
+      [
+        section({id: 'root', cardinality: 'many', entry_label: 'model'}),
+        section({
+          id: 'middle',
+          parent_entity_type_id: 'root',
+          cardinality: 'many',
+          entry_label: 'run',
+        }),
+        section({id: 'leaf', parent_entity_type_id: 'middle'}),
+      ],
+      [
+        field({id: 'a', entity_type_id: 'root'}),
+        field({id: 'b', entity_type_id: 'middle'}),
+        field({id: 'c', entity_type_id: 'leaf'}),
+      ],
+    );
+
+    expect(tree[0].fieldCount).toBe(1);
+    expect(tree[0].totalFieldCount).toBe(3);
+  });
+
+  it('offers a grandchild as a move destination', () => {
+    // The two-level flatten dropped it, so a field could not be moved INTO
+    // a nested group's child at all.
+    const tree = buildTemplateTree(
+      [
+        section({id: 'root', cardinality: 'many', entry_label: 'model', sort_order: 1}),
+        section({
+          id: 'middle',
+          parent_entity_type_id: 'root',
+          cardinality: 'many',
+          entry_label: 'run',
+          sort_order: 1,
+        }),
+        section({id: 'leaf', parent_entity_type_id: 'middle', sort_order: 1}),
+      ],
+      [],
+    );
+
+    expect(deriveMoveTargets(tree)).toEqual([
+      {id: 'root', label: 'root', depth: 0, fieldCount: 0},
+      {id: 'middle', label: 'middle', depth: 1, fieldCount: 0},
+      {id: 'leaf', label: 'leaf', depth: 2, fieldCount: 0},
+    ]);
+  });
+
+  it('terminates on a parent cycle instead of recursing forever', () => {
+    // Unreachable through the API (the FK plus the parent-repeats trigger),
+    // but a builder that trusts the data hangs the whole Config tab, and a
+    // hung tab is indistinguishable from a crashed one.
+    const tree = buildTemplateTree(
+      [
+        section({id: 'a', parent_entity_type_id: 'b', cardinality: 'many', entry_label: 'x'}),
+        section({id: 'b', parent_entity_type_id: 'a', cardinality: 'many', entry_label: 'y'}),
+      ],
+      [],
+    );
+
+    expect(tree.map((s) => s.id).sort()).toEqual(['a']);
   });
 });
 
@@ -298,13 +394,11 @@ describe('deriveMoveTargets (B-6 T4)', () => {
         section({id: 'root1', sort_order: 1}),
         section({
           id: 'grp',
-          role: 'model_container',
           cardinality: 'many',
           sort_order: 2,
         }),
         section({
           id: 'child',
-          role: 'model_section',
           parent_entity_type_id: 'grp',
           sort_order: 3,
         }),
@@ -318,10 +412,10 @@ describe('deriveMoveTargets (B-6 T4)', () => {
     );
 
     expect(deriveMoveTargets(tree)).toEqual([
-      {id: 'root1', label: 'root1', kind: 'root', fieldCount: 1},
-      {id: 'grp', label: 'grp', kind: 'group', fieldCount: 0},
-      {id: 'child', label: 'child', kind: 'groupChild', fieldCount: 2},
-      {id: 'root2', label: 'root2', kind: 'root', fieldCount: 0},
+      {id: 'root1', label: 'root1', depth: 0, fieldCount: 1},
+      {id: 'grp', label: 'grp', depth: 0, fieldCount: 0},
+      {id: 'child', label: 'child', depth: 1, fieldCount: 2},
+      {id: 'root2', label: 'root2', depth: 0, fieldCount: 0},
     ]);
   });
 });
@@ -340,14 +434,12 @@ describe('filterTemplateTree', () => {
       section({
         id: 'grp',
         label: 'Prediction Models',
-        role: 'model_container',
         cardinality: 'many',
         sort_order: 3,
       }),
       section({
         id: 'child',
         label: 'Model Development',
-        role: 'model_section',
         parent_entity_type_id: 'grp',
         sort_order: 4,
       }),

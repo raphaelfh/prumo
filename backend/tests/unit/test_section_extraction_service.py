@@ -335,7 +335,6 @@ class TestSectionExtractionFullFlow:
 
         assert result.extraction_run_id is not None
         assert result.entity_type_id == str(entity_type_id)
-        assert result.tokens_total == 150
         service._proposals.record_proposal.assert_awaited()
 
         # The gate delivers a run already parked in EXTRACT and the service

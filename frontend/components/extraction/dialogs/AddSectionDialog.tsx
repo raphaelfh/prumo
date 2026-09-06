@@ -6,10 +6,13 @@
  * - root ("New section"): the B-7 study-section form — cardinality
  *   select, description, required switch;
  * - group ("Add repeating group…"): Label + Entry label + Description;
- *   role model_container and cardinality 'many' are fixed (the server
+ *   cardinality 'many' is fixed (the server
  *   422s anything else — the form never offers the impossible);
- * - perModel ("New per-{noun} section"): parent preset from the invoking
- *   group; cardinality select stays, worded per-{noun}.
+ * - perGroup ("New per-{noun} section"): parent preset from the invoking
+ *   REPEATING section — at any depth since 0069, so a nested group's
+ *   children are created the same way a root group's are; cardinality
+ *   select stays, worded per-{noun}. Choosing 'many' here is how a
+ *   nested GROUP is created.
  *
  * Every repeating section is created WITH its entry noun (entry-group
  * train): the entry-label field renders whenever the form's cardinality is
@@ -59,7 +62,7 @@ import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 export type AddSectionMode =
   | {kind: 'root'}
   | {kind: 'group'}
-  | {kind: 'perModel'; parentId: string; parentLabel: string; entryNoun: string};
+  | {kind: 'perGroup'; parentId: string; parentLabel: string; entryNoun: string};
 
 // =================== SCHEMAS ===================
 
@@ -120,12 +123,6 @@ interface AddSectionDialogProps {
   onSectionAdded: () => void;
 }
 
-const ROLE_BY_MODE = {
-  root: 'study_section',
-  group: 'model_container',
-  perModel: 'model_section',
-} as const;
-
 // =================== COMPONENT ===================
 
 export function AddSectionDialog({
@@ -138,7 +135,7 @@ export function AddSectionDialog({
 }: AddSectionDialogProps) {
   const [loading, setLoading] = useState(false);
   const [autoGenerateName, setAutoGenerateName] = useState(true);
-  const noun = mode.kind === 'perModel' ? mode.entryNoun : DEFAULT_ENTRY_NOUN;
+  const noun = mode.kind === 'perGroup' ? mode.entryNoun : DEFAULT_ENTRY_NOUN;
 
   const form = useForm<AddSectionInput, unknown, AddSectionOutput>({
       resolver: zodResolver(getAddSectionSchema()),
@@ -177,8 +174,7 @@ export function AddSectionDialog({
       label: data.label,
       description: data.description?.trim() || null,
       cardinality: data.cardinality,
-      role: ROLE_BY_MODE[mode.kind],
-      parentEntityTypeId: mode.kind === 'perModel' ? mode.parentId : null,
+      parentEntityTypeId: mode.kind === 'perGroup' ? mode.parentId : null,
       // The schema already refused a blank noun on a repeating section.
       entryLabel: data.cardinality === 'many' ? data.entry_label : undefined,
       isRequired: data.is_required,
@@ -210,14 +206,14 @@ export function AddSectionDialog({
   const title =
     mode.kind === 'group'
       ? t('templateConfig', 'addGroupDialogTitle')
-      : mode.kind === 'perModel'
-        ? t('templateConfig', 'newPerModelSection').replace('{{noun}}', noun)
+      : mode.kind === 'perGroup'
+        ? t('templateConfig', 'newPerGroupSection').replace('{{noun}}', noun)
         : t('extraction', 'addNewSection');
   const description =
     mode.kind === 'group'
       ? t('templateConfig', 'addGroupDialogDesc')
-      : mode.kind === 'perModel'
-        ? t('templateConfig', 'perModelDialogDesc')
+      : mode.kind === 'perGroup'
+        ? t('templateConfig', 'perGroupDialogDesc')
             .replace('{{group}}', mode.parentLabel)
             .replace('{{noun}}', noun)
         : t('templateConfig', 'addSectionDialogDesc');
@@ -317,8 +313,8 @@ export function AddSectionDialog({
                       <SelectItem value="one">
                         <div className="flex flex-col items-start">
                           <span className="font-medium">
-                            {mode.kind === 'perModel'
-                              ? t('templateConfig', 'cardinalityOncePerModel').replace('{{noun}}', noun)
+                            {mode.kind === 'perGroup'
+                              ? t('templateConfig', 'cardinalityOncePerEntry').replace('{{noun}}', noun)
                               : t('extraction', 'sectionTypeSingle')}
                           </span>
                           {mode.kind === 'root' && (
@@ -331,8 +327,8 @@ export function AddSectionDialog({
                       <SelectItem value="many">
                         <div className="flex flex-col items-start">
                           <span className="font-medium">
-                            {mode.kind === 'perModel'
-                              ? t('templateConfig', 'cardinalityRepeatsPerModel').replace('{{noun}}', noun)
+                            {mode.kind === 'perGroup'
+                              ? t('templateConfig', 'cardinalityRepeatsPerEntry').replace('{{noun}}', noun)
                               : t('extraction', 'sectionTypeMultiple')}
                           </span>
                           {mode.kind === 'root' && (

@@ -72,7 +72,6 @@ const KEPT_KIND = {
  */
 const REFUSAL_COPY = {
   CARDINALITY_DOWNGRADE_BLOCKED: 'discardRefusedCardinality',
-  CONTAINER_SWAP_UNSUPPORTED: 'discardRefusedContainerSwap',
   DISCARD_RACED: 'discardRefusedRaced',
   NARROW_BASELINE: 'discardRefusedNarrowBaseline',
 } satisfies Record<

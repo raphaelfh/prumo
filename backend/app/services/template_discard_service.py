@@ -62,7 +62,7 @@ inside a wide baseline is not detectable here.
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any, NoReturn
 from uuid import UUID
@@ -101,7 +101,6 @@ from app.services.extraction_snapshot import (
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_diff import TemplateChange, diff_snapshots
 from app.services.template_restore_service import (
-    ContainerSwapUnsupportedError,
     RestoreOutcome,
     restore_snapshot,
 )
@@ -486,32 +485,39 @@ def _closed_over_the_tree(
       kept merely to spare one field of its own has no claim on its child
       sections.
 
-    One hop down IS the whole subtree: ``ck_extraction_entity_types_role_parent``
-    forces ``study_section``/``model_container`` to be roots and
-    ``model_section`` to have a parent, and the deferred
-    ``trg_check_model_section_parent_role`` forces that parent to be a
-    ``model_container`` — so the live tree is exactly two levels deep and
-    has no grandchildren. Should that ever change, this walk needs a
-    fixpoint; today one would be unreachable code.
+    The down-walk runs to the LEAVES, not one hop. It used to stop at one,
+    justified by ``ck_extraction_entity_types_role_parent`` plus
+    ``trg_check_model_section_parent_role`` capping the live tree at two
+    levels — so one hop was the whole subtree. 0069 drops both, a group may
+    own a group at any depth, and stopping would delete a grandchild out
+    from under a kept parent: the decapitated branch this half prevents.
+
+    ``descend`` is what carries that down the chain. A node reached by the
+    down-walk keeps descending whether or not it holds recorded work of its
+    own — re-testing ``work_blocked`` at each level is what stopped the
+    walk at one hop, since the middle node is kept BY the closure and so is
+    never itself blocked. The test is still what SEEDS a descent: a section
+    kept merely to spare one field of its own has no claim on its children.
     """
+    children: dict[UUID, list[UUID]] = defaultdict(list)
+    for entity_id, entity in live_entities.items():
+        if entity.parent_entity_type_id is not None:
+            children[entity.parent_entity_type_id].append(entity_id)
+
     skip = set(seed)
-    stack = list(seed)
+    stack: list[tuple[UUID, bool]] = [(node, node in work_blocked) for node in seed]
     while stack:
-        node = stack.pop()
+        node, descend = stack.pop()
         parent = live_entities[node].parent_entity_type_id
         if parent is not None and parent in added_entity_ids and parent not in skip:
             skip.add(parent)
-            stack.append(parent)
-        if node not in work_blocked:
+            stack.append((parent, parent in work_blocked))
+        if not descend:
             continue
-        for child_id, child in live_entities.items():
-            if (
-                child.parent_entity_type_id == node
-                and child_id in added_entity_ids
-                and child_id not in skip
-            ):
+        for child_id in children[node]:
+            if child_id in added_entity_ids and child_id not in skip:
                 skip.add(child_id)
-                stack.append(child_id)
+                stack.append((child_id, True))
     return skip
 
 
@@ -734,8 +740,6 @@ async def reconcile_to_baseline(
             snapshot=baseline,
             skip_entity_type_ids=blocked.skip_entity_type_ids,
         )
-    except ContainerSwapUnsupportedError as exc:
-        _refuse(exc, project_id=project_id, template_id=template_id, user_id=user_id)
     except DBAPIError as exc:
         _reraise_if_raced(exc, project_id=project_id, template_id=template_id, user_id=user_id)
         raise
