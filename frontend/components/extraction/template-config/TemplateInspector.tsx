@@ -329,7 +329,7 @@ function FieldInspectorForm({
           >
             {sections.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.kind === 'groupChild' ? `\u00A0\u00A0${s.label}` : s.label}
+                {`${'\u00A0\u00A0'.repeat(s.depth)}${s.label}`}
               </option>
             ))}
           </select>

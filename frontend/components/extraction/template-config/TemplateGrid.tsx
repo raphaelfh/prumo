@@ -1,4 +1,4 @@
-import {Fragment, useRef, useState} from 'react';
+import {Fragment, type ReactNode, useRef, useState} from 'react';
 import {SortableContext, verticalListSortingStrategy} from '@dnd-kit/sortable';
 
 import {t} from '@/lib/copy';
@@ -151,13 +151,20 @@ interface TemplateGridProps {
   isFiltering: boolean;
 }
 
-/** Indentation ladder from the mock: identity 22px, sub-header 14px, child fields 36px. */
-const INDENT = {
-  rootField: 'pl-2',
-  identityField: 'pl-[22px]',
-  childHeader: 'pl-[14px]',
-  childField: 'pl-[36px]',
-} as const;
+/** Indentation ladder from the mock: sub-header +14px per level, fields
+ * +8px under a plain root and +22px anywhere an entry is in play.
+ *
+ * LITERAL classes, indexed by depth — a computed `pl-[${n}px]` is never
+ * compiled by Tailwind, so it would render flat with no error anywhere.
+ * Depth is clamped at the last rung: past four levels the tree is
+ * unreadable for reasons indentation cannot fix. */
+const HEADER_INDENT = ['pl-0', 'pl-[14px]', 'pl-[28px]', 'pl-[42px]', 'pl-[56px]'] as const;
+const FIELD_INDENT = ['pl-[22px]', 'pl-[36px]', 'pl-[50px]', 'pl-[64px]', 'pl-[78px]'] as const;
+/** A plain root section's fields sit one hair in, not a whole entry in. */
+const ROOT_FIELD_INDENT = 'pl-2';
+
+const rung = (ladder: readonly string[], depth: number): string =>
+  ladder[Math.min(depth, ladder.length - 1)];
 
 /** Keys the grid routes through the cell model on EVERY cell. Text and
  * ghost cells additionally route Enter/F2/printables (they open the
@@ -574,6 +581,75 @@ export function TemplateGrid({
     </SortableContext>
   );
 
+  /** One section and its whole subtree, mirroring `buildRowShapes` row for
+   * row — the roving model's vertical axis is derived from that function,
+   * so a row rendered here but not shaped there desyncs focus silently. */
+  const renderSection = (section: GridSection): ReactNode => {
+    const isCollapsed = collapsed.has(section.id);
+    const headerIndent = rung(HEADER_INDENT, section.depth);
+    // A section whose fields describe ONE ENTRY sits an entry's width in;
+    // a plain root section's fields sit one hair in.
+    const fieldIndent =
+      section.repeats || section.depth > 0
+        ? rung(FIELD_INDENT, section.depth)
+        : ROOT_FIELD_INDENT;
+    return (
+      <Fragment key={section.id}>
+        <SectionHeaderRow
+          section={section}
+          columnCount={columnCount}
+          indent={headerIndent}
+          collapsed={isCollapsed}
+          selected={isSelected('section', section.id)}
+          focus={focus}
+          spanCols={spanCols}
+          onToggle={() => onToggleCollapse(section.id)}
+          onSelect={() => onSelect({kind: 'section', id: section.id})}
+          onNewField={() => openGhostEditor(section.id)}
+          newFieldDisabled={isFiltering}
+          actions={sectionActions}
+        />
+        {!isCollapsed && (
+          <>
+            {renderFields(section.fields, fieldIndent)}
+            {!isFiltering && (
+              <GhostRow
+                rowId={ghostRowId(section.id)}
+                columnCount={columnCount}
+                indent={fieldIndent}
+                label={t('extraction', 'gridNewField')}
+                focus={focus}
+                onClick={() => openGhostEditor(section.id)}
+                editor={ghostEditorFor(section.id)}
+                testId={`template-grid-add-field-${section.id}`}
+              />
+            )}
+            {section.children.map((child) => renderSection(child))}
+            {/* B-8 D9: each REPEATING section closes with a dialog-opening
+                ghost (no inline editor — gridRowShapes mirrors it as
+                inlineEditor: false). Unlocked from "is a group" in trees
+                B5b: a repeating section with no children yet needs this
+                row to get its first one. */}
+            {!isFiltering && section.repeats && (
+              <GhostRow
+                rowId={groupChildGhostRowId(section.id)}
+                columnCount={columnCount}
+                indent={rung(HEADER_INDENT, section.depth + 1)}
+                label={t('templateConfig', 'newPerGroupSection').replace(
+                  '{{noun}}',
+                  section.entryNoun,
+                )}
+                focus={focus}
+                onClick={() => sectionActions.onAddPerGroupSection(section)}
+                testId={`template-grid-add-child-section-${section.id}`}
+              />
+            )}
+          </>
+        )}
+      </Fragment>
+    );
+  };
+
   return (
     <table
       ref={tableRef}
@@ -608,111 +684,21 @@ export function TemplateGrid({
         </tr>
       </thead>
 
-      {sections.map((section) => {
-        const isCollapsed = collapsed.has(section.id);
-        const isGroup = section.kind === 'group';
-        return (
-          <tbody
-            key={section.id}
-            // A repeating group is ONE bounded block: a single accent rule on
-            // its left edge, never interior verticals (mock v3 polish).
-            className={cn(
-              isGroup &&
-                '[&>tr>td:first-child]:border-l-2 [&>tr>td:first-child]:border-l-primary',
-            )}
-          >
-            <SectionHeaderRow
-              section={section}
-              columnCount={columnCount}
-              indent="pl-0"
-              collapsed={isCollapsed}
-              selected={isSelected('section', section.id)}
-              focus={focus}
-              spanCols={spanCols}
-              onToggle={() => onToggleCollapse(section.id)}
-              onSelect={() => onSelect({kind: 'section', id: section.id})}
-              onNewField={() => openGhostEditor(section.id)}
-              newFieldDisabled={isFiltering}
-              actions={sectionActions}
-            />
-            {!isCollapsed && (
-              <>
-                {renderFields(
-                  section.fields,
-                  isGroup ? INDENT.identityField : INDENT.rootField,
-                )}
-                {!isFiltering && (
-                  <GhostRow
-                    rowId={ghostRowId(section.id)}
-                    columnCount={columnCount}
-                    indent={isGroup ? INDENT.identityField : INDENT.rootField}
-                    label={t('extraction', 'gridNewField')}
-                    focus={focus}
-                    onClick={() => openGhostEditor(section.id)}
-                    editor={ghostEditorFor(section.id)}
-                    testId={`template-grid-add-field-${section.id}`}
-                  />
-                )}
-                {section.children.map((child) => {
-                  const childCollapsed = collapsed.has(child.id);
-                  return (
-                    <Fragment key={child.id}>
-                      <SectionHeaderRow
-                        section={child}
-                        columnCount={columnCount}
-                        indent={INDENT.childHeader}
-                        collapsed={childCollapsed}
-                        selected={isSelected('section', child.id)}
-                        focus={focus}
-                        spanCols={spanCols}
-                        onToggle={() => onToggleCollapse(child.id)}
-                        onSelect={() => onSelect({kind: 'section', id: child.id})}
-                        onNewField={() => openGhostEditor(child.id)}
-                        newFieldDisabled={isFiltering}
-                        actions={sectionActions}
-                      />
-                      {!childCollapsed && (
-                        <>
-                          {renderFields(child.fields, INDENT.childField)}
-                          {!isFiltering && (
-                            <GhostRow
-                              rowId={ghostRowId(child.id)}
-                              columnCount={columnCount}
-                              indent={INDENT.childField}
-                              label={t('extraction', 'gridNewField')}
-                              focus={focus}
-                              onClick={() => openGhostEditor(child.id)}
-                              editor={ghostEditorFor(child.id)}
-                              testId={`template-grid-add-field-${child.id}`}
-                            />
-                          )}
-                        </>
-                      )}
-                    </Fragment>
-                  );
-                })}
-                {/* B-8 D9: each group block closes with a dialog-opening
-                    ghost (no inline editor — gridRowShapes mirrors it as
-                    inlineEditor: false). */}
-                {!isFiltering && isGroup && (
-                  <GhostRow
-                    rowId={groupChildGhostRowId(section.id)}
-                    columnCount={columnCount}
-                    indent={INDENT.childHeader}
-                    label={t('templateConfig', 'newPerModelSection').replace(
-                      '{{noun}}',
-                      section.entryNoun,
-                    )}
-                    focus={focus}
-                    onClick={() => sectionActions.onAddPerModelSection(section)}
-                    testId={`template-grid-add-child-section-${section.id}`}
-                  />
-                )}
-              </>
-            )}
-          </tbody>
-        );
-      })}
+      {sections.map((section) => (
+        <tbody
+          key={section.id}
+          // A repeating group is ONE bounded block: a single accent rule on
+          // its left edge, never interior verticals (mock v3 polish). The
+          // rule is drawn once, on the root's tbody, so a nested group does
+          // not stack a second one inside the first.
+          className={cn(
+            section.repeats &&
+              '[&>tr>td:first-child]:border-l-2 [&>tr>td:first-child]:border-l-primary',
+          )}
+        >
+          {renderSection(section)}
+        </tbody>
+      ))}
 
       {!isFiltering && (
         <tbody>
@@ -725,7 +711,7 @@ export function TemplateGrid({
             columnCount={columnCount}
             focus={focus}
             existingGroupLabel={
-              sections.find((s) => s.kind === 'group')?.label ?? null
+              sections.find((s) => s.repeats)?.label ?? null
             }
             onAddSection={onAddSection}
             onAddGroup={onAddGroup}

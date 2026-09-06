@@ -471,7 +471,7 @@ export const extraction = {
     gridOptionsCellAria: 'Options — {{label}}',
     sectionMetaRepeatingGroup: 'Repeating group',
     sectionMetaRepeatsPerArticle: 'repeats per article',
-    sectionMetaRepeatsPerModel: 'repeats per {{noun}}', // B-8 D7: grid call site interpolates the group's entry noun
+    sectionMetaRepeatsPerEntry: 'repeats per {{noun}}', // B-8 D7: the grid interpolates the SCOPE noun (the parent's entries)
     matchHintKey: 'in key',
     matchHintDescription: 'in description',
     matchHintAiInstruction: 'in AI instruction',

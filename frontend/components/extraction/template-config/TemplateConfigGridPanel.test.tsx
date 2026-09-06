@@ -138,7 +138,7 @@ describe('applyRetentionToFilter', () => {
 const sectionActions: TemplateSectionActions = {
   onCommitRename: vi.fn(),
   onDelete: vi.fn(),
-  onAddPerModelSection: vi.fn()};
+  onAddPerGroupSection: vi.fn()};
 
 // A FRESH element per (re)render: reusing one element reference makes React
 // bail out of the subtree on rerender, so mocked data never lands. ONE copy

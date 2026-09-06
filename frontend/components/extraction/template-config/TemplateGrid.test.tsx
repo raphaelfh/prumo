@@ -43,7 +43,7 @@ function renderGrid(over: Partial<Parameters<typeof TemplateGrid>[0]> = {}) {
   const sectionActions: TemplateSectionActions = {
     onCommitRename: vi.fn(),
     onDelete: vi.fn(),
-    onAddPerModelSection: vi.fn(),
+    onAddPerGroupSection: vi.fn(),
   };
   const props = {
     sections: tree,

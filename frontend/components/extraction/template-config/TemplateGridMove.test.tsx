@@ -93,7 +93,7 @@ const field = (
 const sectionActions: TemplateSectionActions = {
   onCommitRename: vi.fn(),
   onDelete: vi.fn(),
-  onAddPerModelSection: vi.fn(),
+  onAddPerGroupSection: vi.fn(),
 };
 
 /** DOM .focus() runs the grid's focusin sync — act-wrap outside userEvent. */
