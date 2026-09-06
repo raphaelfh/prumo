@@ -49,7 +49,8 @@ export interface ExtractionFormViewProps {
   onRefreshInstances: () => Promise<void>;
   handleAddInstance: (entityTypeId: string, parentInstanceId: string | null) => void;
   handleRemoveInstance: (instanceId: string) => void;
-  handleDeleteEntries: (instanceIds: string[]) => void;
+  /** Absent for non-managers — the delete endpoint is manager-only. */
+  handleDeleteEntries?: (instanceIds: string[]) => void;
   handleRenameInstance?: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
   projectId: string;
   articleId: string;

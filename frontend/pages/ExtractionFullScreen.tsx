@@ -1084,7 +1084,12 @@ export default function ExtractionFullScreen() {
           handleOpenRemoveDialog,
           handleAddInstance,
           handleRemoveInstance,
-          handleDeleteEntries,
+          // MANAGER only — the endpoint gates on `is_project_manager` to match
+          // the RLS policy on extraction_instances, so offering the control to
+          // a reviewer would show them a button that always 403s. Undefined
+          // hides the whole Select affordance in EntrySelector.
+          handleDeleteEntries:
+            permissions.userRole === 'manager' ? handleDeleteEntries : undefined,
           handleRenameInstance,
           projectId: projectId || '',
           articleId: articleId || '',

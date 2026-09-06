@@ -20,6 +20,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.endpoints import extraction_instances as ei
 from app.schemas.extraction import EntryBulkDeleteRequest
@@ -47,10 +48,10 @@ def _payload(count: int = 2) -> EntryBulkDeleteRequest:
 def gates(monkeypatch: pytest.MonkeyPatch) -> dict[str, AsyncMock]:
     """Both auth gates pass; the handler's own branches are what is under test."""
     member = AsyncMock(return_value=None)
-    reviewer = AsyncMock(return_value=None)
+    manager = AsyncMock(return_value=None)
     monkeypatch.setattr(ei, "ensure_project_member", member)
-    monkeypatch.setattr(ei, "ensure_project_reviewer", reviewer)
-    return {"member": member, "reviewer": reviewer}
+    monkeypatch.setattr(ei, "ensure_project_manager", manager)
+    return {"member": member, "manager": manager}
 
 
 def _service(monkeypatch: pytest.MonkeyPatch, outcome: object) -> None:
@@ -83,7 +84,7 @@ async def test_the_handler_returns_the_count_and_commits(
     db.rollback.assert_not_awaited()
     # Both gates run, and BEFORE the delete.
     gates["member"].assert_awaited_once()
-    gates["reviewer"].assert_awaited_once()
+    gates["manager"].assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -153,3 +154,84 @@ async def test_an_unrelated_exception_is_NOT_translated(
         await _handler(
             request=_request(), payload=_payload(), db=AsyncMock(), current_user_sub=CALLER
         )
+
+
+@pytest.mark.asyncio
+async def test_the_gate_is_MANAGER_not_reviewer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The RLS policy on this table is `USING is_project_manager(...)` — checked
+    against production — and the single delete beside this endpoint is a
+    browser PostgREST call that RLS refuses to a reviewer. So the endpoint must
+    call the MANAGER guard: `ensure_project_reviewer` would accept
+    manager/reviewer/consensus and make the API the more permissive of two
+    implementations of one predicate, on a path that cascades to reviewer
+    decisions.
+
+    Asserted structurally rather than by outcome: both guards raise the same
+    HTTPException type, so a test that only checked "403 for a reviewer" would
+    pass with the wrong guard wired in.
+    """
+    called: list[str] = []
+    monkeypatch.setattr(ei, "ensure_project_member", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        ei,
+        "ensure_project_manager",
+        AsyncMock(side_effect=lambda *_a, **_k: called.append("manager")),
+    )
+    monkeypatch.setattr(
+        ei,
+        "ensure_project_reviewer",
+        AsyncMock(side_effect=lambda *_a, **_k: called.append("reviewer")),
+    )
+    _service(monkeypatch, 1)
+
+    await _handler(request=_request(), payload=_payload(), db=AsyncMock(), current_user_sub=CALLER)
+
+    assert called == ["manager"], f"expected the manager guard only, got {called}"
+
+
+@pytest.mark.asyncio
+async def test_a_published_pin_at_COMMIT_becomes_409_not_500(
+    monkeypatch: pytest.MonkeyPatch, gates: dict[str, AsyncMock]
+) -> None:
+    """`extraction_published_states.instance_id` is NO ACTION, DEFERRABLE
+    INITIALLY DEFERRED (verified by SQL against production), so it fires at
+    COMMIT — outside the try/except around the service call. Without the
+    commit being wrapped too, the one refusal the UI already knows how to
+    explain arrives as a bare 500.
+    """
+    del gates
+    _service(monkeypatch, 1)
+    db = AsyncMock()
+    db.commit.side_effect = IntegrityError(
+        "DELETE FROM extraction_instances",
+        {},
+        Exception(
+            'update or delete on table "extraction_instances" violates foreign key '
+            'constraint "extraction_published_states_instance_id_fkey"'
+        ),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await _handler(request=_request(), payload=_payload(), db=db, current_user_sub=CALLER)
+
+    assert exc.value.status_code == 409
+    assert "extraction_published_states_instance_id_fkey" in str(exc.value.detail)
+    db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_an_UNRELATED_integrity_error_at_commit_is_not_swallowed(
+    monkeypatch: pytest.MonkeyPatch, gates: dict[str, AsyncMock]
+) -> None:
+    """The commit wrapper names ONE constraint. Any other IntegrityError is a
+    bug, and answering 409 for it would mis-state the cause the same way a bare
+    `except Exception` would."""
+    del gates
+    _service(monkeypatch, 1)
+    db = AsyncMock()
+    db.commit.side_effect = IntegrityError(
+        "stmt", {}, Exception('violates foreign key constraint "some_other_fkey"')
+    )
+
+    with pytest.raises(IntegrityError):
+        await _handler(request=_request(), payload=_payload(), db=db, current_user_sub=CALLER)

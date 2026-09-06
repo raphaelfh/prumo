@@ -74,8 +74,11 @@ export interface EntryFormContextValue {
   onAddEntry: (entityTypeId: string, parentInstanceId: string | null) => void;
   onRemoveInstance: (instanceId: string) => void;
   /** Bulk delete of several entries, through the transactional endpoint.
-   * Distinct from `onRemoveInstance`, which is the single browser delete. */
-  onDeleteEntries: (instanceIds: string[]) => void;
+   * Distinct from `onRemoveInstance`, which is the single browser delete.
+   * ABSENT for a non-manager: the endpoint gates on `is_project_manager` to
+   * match the RLS policy, so the control is not offered rather than offered
+   * and refused. */
+  onDeleteEntries?: (instanceIds: string[]) => void;
   onRenameInstance: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
   /**
    * Open the rename/re-key dialog for one entry. Distinct from

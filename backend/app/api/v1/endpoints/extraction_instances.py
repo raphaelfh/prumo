@@ -19,13 +19,16 @@ AI re-run matches), hence the same reviewer gate as manual model creation.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps.security import (
+    ensure_project_manager,
     ensure_project_member,
     ensure_project_reviewer,
     get_current_user_sub,
 )
 from app.core.deps import DbSession
+from app.core.integrity import violates_constraint
 from app.schemas.common import ApiResponse
 from app.schemas.extraction import (
     EntryBulkDeleteRequest,
@@ -53,6 +56,11 @@ from app.services.instance_identity_service import (
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
+
+#: Named as a literal on purpose, like its siblings: the constraint is frozen
+#: by a shipped migration (0040) and the api layer must not import migration
+#: internals to learn its name.
+_PUBLISHED_STATES_FK = "extraction_published_states_instance_id_fkey"
 
 
 @router.post(
@@ -130,10 +138,17 @@ async def delete_entries_endpoint(
 ) -> ApiResponse[EntryBulkDeleteResponse]:
     trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
     await ensure_project_member(db, payload.project_id, current_user_sub)
-    # Deleting an entry destroys the ReviewerDecision rows recorded against
-    # it, so the same reviewer gate the create sibling carries: a read-only
-    # viewer is a member but must not destroy audit-trail rows.
-    await ensure_project_reviewer(db, payload.project_id, current_user_sub)
+    # MANAGER, not reviewer — deliberately stricter than the create sibling.
+    # The RLS policy on this very table is
+    # `extraction_instances_delete USING is_project_manager(...)`, and the
+    # single delete beside this one is a browser PostgREST call that RLS
+    # therefore refuses to a reviewer. Gating the bulk path on
+    # `is_project_reviewer` would make the API the MORE permissive of two
+    # implementations of one predicate, on a destructive path — the exact
+    # drift `.claude/rules/backend.md` § Ownership guards exists to stop.
+    # `ensure_project_manager` calls `public.is_project_manager`, the same
+    # function the policy calls.
+    await ensure_project_manager(db, payload.project_id, current_user_sub)
     try:
         deleted = await delete_entries(
             db,
@@ -150,7 +165,27 @@ async def delete_entries_endpoint(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        # `extraction_published_states.instance_id` is the ONE child FK that
+        # does not cascade: NO ACTION, DEFERRABLE INITIALLY DEFERRED. It
+        # therefore fires at COMMIT — outside the block above — so without
+        # this the reviewer gets a bare 500 for the one refusal the UI
+        # already knows how to explain ("this entry is pinned by a published
+        # revision"). The single delete answers 409 with the constraint name;
+        # so does this one, and the message carries the name the client
+        # matches on.
+        await db.rollback()
+        if violates_constraint(exc, _PUBLISHED_STATES_FK):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Entry is pinned by a published revision "
+                    f"({_PUBLISHED_STATES_FK}); it cannot be deleted."
+                ),
+            ) from exc
+        raise
     return ApiResponse.success(EntryBulkDeleteResponse(deleted=deleted), trace_id=trace_id)
 
 

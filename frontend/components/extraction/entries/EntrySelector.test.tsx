@@ -187,4 +187,13 @@ describe('EntrySelector — bulk selection (trees B7)', () => {
     render(<EntrySelector {...base({onDeleteEntries: vi.fn(), readOnly: true})} />);
     expect(screen.queryByRole('button', {name: /select/i})).toBeNull();
   });
+
+  it('offers no bulk affordance when the caller is not a manager', async () => {
+    // The endpoint gates on `is_project_manager` to match the RLS policy on
+    // extraction_instances, so a reviewer must not be shown a control that
+    // would always 403. The page passes `onDeleteEntries: undefined` for
+    // anyone but a manager, and that absence has to hide the whole thing.
+    render(<EntrySelector {...base()} />);
+    expect(screen.queryByRole('button', {name: /select/i})).toBeNull();
+  });
 });

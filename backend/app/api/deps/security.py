@@ -96,6 +96,22 @@ async def ensure_project_reviewer(db: DbSession, project_id: UUID, user_sub: UUI
     )
 
 
+async def ensure_project_manager(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
+    """Enforce a manager role, for a body-supplied ``project_id``.
+
+    The imperative twin of :func:`require_project_manager` (which can only
+    read a PATH parameter). It calls ``public.is_project_manager`` — the same
+    function the RLS policies call — so a destructive endpoint and the policy
+    guarding the same table cannot disagree about who may act."""
+    await _ensure_project_role(
+        db,
+        sql="SELECT public.is_project_manager(:pid, :uid) AS ok",
+        project_id=project_id,
+        user_sub=user_sub,
+        error="Manager role required",
+    )
+
+
 async def ensure_project_arbitrator(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
     """Enforce an adjudicator role (manager / consensus) — the roles allowed to
     resolve consensus and finalize. For privileged write paths (approve-and-finalize),
