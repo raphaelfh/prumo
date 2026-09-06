@@ -43,6 +43,8 @@ import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes'
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 
 import {TemplateConfigGridPanel} from './TemplateConfigGridPanel';
+import {TemplateOutlineRail} from './TemplateOutlineRail';
+import {buildTemplateTree} from './templateTree';
 import type {TemplateSectionActions} from './TemplateGrid';
 import {stubStructuralHistory} from '@/test/helpers/structuralHistoryStub';
 
@@ -262,5 +264,60 @@ describe('TemplateConfigGridPanel — rail click reveals the section', () => {
     // The group re-opened, and the now-mounted child row was scrolled to.
     expect(screen.getByRole('button', {name: 'C-statistic'})).toBeInTheDocument();
     expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({top: EXPECTED_TOP}));
+  });
+});
+
+describe('TemplateOutlineRail — depth (trees B5b)', () => {
+  it('lists a grandchild, indented past its parent', () => {
+    // The two-level map dropped it from the outline while the grid beside
+    // it rendered the row — the rail and the grid disagreeing about what
+    // the template contains.
+    const deep = buildTemplateTree(
+      [
+        {
+          id: 'grp',
+          name: 'models',
+          label: 'Prediction models',
+          cardinality: 'many',
+          entry_label: 'model',
+          parent_entity_type_id: null,
+          sort_order: 1,
+        },
+        {
+          id: 'nested',
+          name: 'validations',
+          label: 'Validations',
+          cardinality: 'many',
+          entry_label: 'validation',
+          parent_entity_type_id: 'grp',
+          sort_order: 1,
+        },
+        {
+          id: 'leaf',
+          name: 'metrics',
+          label: 'Metrics',
+          cardinality: 'one',
+          parent_entity_type_id: 'nested',
+          sort_order: 1,
+        },
+      ],
+      [],
+    );
+
+    render(
+      <TemplateOutlineRail
+        sections={deep}
+        visibleSectionIds={new Set(['grp', 'nested', 'leaf'])}
+        selectedSectionId={null}
+        onSelectSection={vi.fn()}
+        onAddSection={vi.fn()}
+        isFiltering={false}
+      />,
+    );
+
+    const leaf = screen.getByRole('button', {name: /Metrics/});
+    const middle = screen.getByRole('button', {name: /Validations/});
+    expect(leaf).toBeInTheDocument();
+    expect(leaf.className).not.toBe(middle.className);
   });
 });
