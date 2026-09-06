@@ -95,27 +95,44 @@ describe('buildSectionRegistry', () => {
     expect(second.find(i => i.id === 'cs')).toMatchObject({ requiredTotal: 1 });
   });
 
-  it('counts filled values from EVERY entry, not just the scoped one', () => {
-    // Pre-existing behaviour of the shared metric, pinned here because it is
-    // surprising and because the fix belongs to `computeRequiredFieldProgress`
-    // (shared with the article list and the dashboard), not to the registry:
-    // `instanceIdsByEntityType` narrows the DENOMINATOR only, while the
-    // completed loop (progress.ts) walks every value and checks the field's
-    // entity type alone. The two-level registry had the same behaviour.
+  it('counts filled values from the scoped entry ONLY', () => {
+    // Inverted from the behaviour this test used to pin. The scoping lives in
+    // `computeRequiredFieldProgress` (shared with the article list and the
+    // dashboard), not in the registry: `instanceIdsByEntityType` used to narrow
+    // the DENOMINATOR only, while the completed loop walked every value and
+    // checked the field's entity type alone — so a section could read complete
+    // while the entry on screen was empty, and `requiredFilled` could exceed
+    // `requiredTotal`. It now narrows both sides.
     const group = entity('mc', 'model_container', 'many', []);
     const child = entity('cs', 'model_section', 'many', [field('cf', true)], 'mc');
-    const items = buildSectionRegistry({
+    const args = {
       roots: [group], entityTypes: [group, child], articleId: 'a1',
       instances: [
         instance('m1', 'mc'), instance('m2', 'mc'),
         instance('c1', 'cs', 'm1'), instance('c2', 'cs', 'm2'),
       ],
-      // Only m1's child is filled, but m2 is the active entry.
+      // Only m1's child is filled.
       values: { c1_cf: 'done' },
+    };
+
+    // m2 is the active entry: its own child entry is empty.
+    const onM2 = buildSectionRegistry({
+      ...args,
       activeEntries: { 'active-entry-a1-mc-root': 'm2' },
     });
-    const cs = items.find(i => i.id === 'cs');
-    expect(cs).toMatchObject({ requiredTotal: 1, requiredFilled: 1 });
+    expect(onM2.find(i => i.id === 'cs')).toMatchObject({
+      requiredTotal: 1, requiredFilled: 0, state: 'empty',
+    });
+
+    // Switching back to m1 shows the value that IS in scope — the guard against
+    // a fix that simply stopped counting nested values altogether.
+    const onM1 = buildSectionRegistry({
+      ...args,
+      activeEntries: { 'active-entry-a1-mc-root': 'm1' },
+    });
+    expect(onM1.find(i => i.id === 'cs')).toMatchObject({
+      requiredTotal: 1, requiredFilled: 1, state: 'complete',
+    });
   });
 
   it('walks deeper than two levels', () => {
