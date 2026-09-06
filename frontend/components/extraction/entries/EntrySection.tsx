@@ -126,6 +126,7 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
         onSelectEntry={setActiveEntryId}
         onAddEntry={() => form.onAddEntry(group.id, parentInstanceId)}
         onRemoveEntry={form.onOpenRemoveDialog}
+        onDeleteEntries={form.onDeleteEntries}
         onRenameEntry={form.onOpenRenameDialog}
         onIdentifyEntries={ai.handleIdentifyEntries}
         onExtractAllSections={activeEntryId ? ai.handleExtractAllSections : undefined}

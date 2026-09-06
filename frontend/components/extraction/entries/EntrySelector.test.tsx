@@ -134,3 +134,57 @@ describe('EntrySelector — noun interpolation (ported B-8 D6 guard)', () => {
     expect(screen.getByText('No entry added yet')).toBeInTheDocument();
   });
 });
+
+describe('EntrySelector — bulk selection (trees B7)', () => {
+  it('the Select toggle turns the tab strip into checkboxes', async () => {
+    // Not always-on checkboxes: the common case is one entry, and a
+    // permanent checkbox column reads as a table the reviewer must act on.
+    render(<EntrySelector {...base({onDeleteEntries: vi.fn()})} />);
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole('button', {name: /select/i}));
+
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+  });
+
+  it('deletes exactly the checked entries, and only after a confirmation', async () => {
+    const onDeleteEntries = vi.fn();
+    render(<EntrySelector {...base({onDeleteEntries})} />);
+    await userEvent.click(screen.getByRole('button', {name: /select/i}));
+
+    await userEvent.click(screen.getAllByRole('checkbox')[1]);
+    await userEvent.click(screen.getByRole('button', {name: /delete/i}));
+
+    // The confirmation is the last stop before a cascade — no dialog, no call.
+    expect(onDeleteEntries).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', {name: /^delete$/i}));
+
+    expect(onDeleteEntries).toHaveBeenCalledWith(['m2']);
+  });
+
+  it('the delete control is inert while nothing is checked', async () => {
+    render(<EntrySelector {...base({onDeleteEntries: vi.fn()})} />);
+    await userEvent.click(screen.getByRole('button', {name: /select/i}));
+
+    expect(screen.getByRole('button', {name: /delete/i})).toBeDisabled();
+  });
+
+  it('leaving selection mode drops the selection', async () => {
+    // Otherwise a stale tick survives out of sight and the next Select opens
+    // with rows already armed for deletion.
+    const onDeleteEntries = vi.fn();
+    render(<EntrySelector {...base({onDeleteEntries})} />);
+    await userEvent.click(screen.getByRole('button', {name: /select/i}));
+    await userEvent.click(screen.getAllByRole('checkbox')[0]);
+    await userEvent.click(screen.getByRole('button', {name: /cancel/i}));
+    await userEvent.click(screen.getByRole('button', {name: /select/i}));
+
+    expect(screen.getByRole('button', {name: /delete/i})).toBeDisabled();
+  });
+
+  it('offers no bulk affordance at all when the surface is read-only', async () => {
+    render(<EntrySelector {...base({onDeleteEntries: vi.fn(), readOnly: true})} />);
+    expect(screen.queryByRole('button', {name: /select/i})).toBeNull();
+  });
+});

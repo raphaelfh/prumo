@@ -782,6 +782,54 @@
         "title": "ApiResponse[DiscardDraftResponse]",
         "type": "object"
       },
+      "ApiResponse_EntryBulkDeleteResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntryBulkDeleteResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[EntryBulkDeleteResponse]",
+        "type": "object"
+      },
       "ApiResponse_EntryCreateResponse_": {
         "properties": {
           "data": {
@@ -4253,6 +4301,59 @@
           "size"
         ],
         "title": "DownloadAttachmentResponse",
+        "type": "object"
+      },
+      "EntryBulkDeleteRequest": {
+        "additionalProperties": false,
+        "description": "Delete several entries of a repeating section, all or none.\n\n``extra=\"forbid\"`` for the reason every sibling gives: this body is\nvalidated once, in the request cycle.\n\nThe list is non-empty and DISTINCT. A duplicate id is refused rather than\nde-duplicated because ``deleted`` would then over-report \u2014 the caller\nnamed one row twice and the count would say two, which is exactly the\nnumber a confirmation dialog shows back to the reviewer.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "instanceIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Instanceids",
+            "type": "array"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "articleId",
+          "templateId",
+          "instanceIds"
+        ],
+        "title": "EntryBulkDeleteRequest",
+        "type": "object"
+      },
+      "EntryBulkDeleteResponse": {
+        "description": "How many entries the batch removed \u2014 always the full request length,\nsince a partial delete cannot happen.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "EntryBulkDeleteResponse",
         "type": "object"
       },
       "EntryCreateRequest": {
@@ -11292,6 +11393,51 @@
       }
     },
     "/api/v1/extraction/instances": {
+      "delete": {
+        "description": "All or nothing: every id is bound to the request coordinate first, so one foreign or missing id refuses the WHOLE batch and deletes nothing. A singleton instance is refused with a 422.",
+        "operationId": "delete_entries_endpoint_api_v1_extraction_instances_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryBulkDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EntryBulkDeleteResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete several entries of a repeating section",
+        "tags": [
+          "Extraction Instances"
+        ]
+      },
       "post": {
         "description": "Creates the entry and its singleton children in one transaction. A nested group requires parentInstanceId; a root group refuses one. A duplicate entry key answers a typed 409 ENTRY_KEY_DUPLICATE.",
         "operationId": "create_entry_api_v1_extraction_instances_post",

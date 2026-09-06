@@ -321,7 +321,11 @@ export interface paths {
          * @description Creates the entry and its singleton children in one transaction. A nested group requires parentInstanceId; a root group refuses one. A duplicate entry key answers a typed 409 ENTRY_KEY_DUPLICATE.
          */
         post: operations["create_entry_api_v1_extraction_instances_post"];
-        delete?: never;
+        /**
+         * Delete several entries of a repeating section
+         * @description All or nothing: every id is bound to the request coordinate first, so one foreign or missing id refuses the WHOLE batch and deletes nothing. A singleton instance is refused with a 422.
+         */
+        delete: operations["delete_entries_endpoint_api_v1_extraction_instances_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2008,6 +2012,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[EntryBulkDeleteResponse] */
+        ApiResponse_EntryBulkDeleteResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["EntryBulkDeleteResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[EntryCreateResponse] */
         ApiResponse_EntryCreateResponse_: {
             /** @description Dados da resposta */
@@ -3389,6 +3410,46 @@ export interface components {
             filename: string;
             /** Size */
             size: number;
+        };
+        /**
+         * EntryBulkDeleteRequest
+         * @description Delete several entries of a repeating section, all or none.
+         *
+         *     ``extra="forbid"`` for the reason every sibling gives: this body is
+         *     validated once, in the request cycle.
+         *
+         *     The list is non-empty and DISTINCT. A duplicate id is refused rather than
+         *     de-duplicated because ``deleted`` would then over-report — the caller
+         *     named one row twice and the count would say two, which is exactly the
+         *     number a confirmation dialog shows back to the reviewer.
+         */
+        EntryBulkDeleteRequest: {
+            /**
+             * Articleid
+             * Format: uuid
+             */
+            articleId: string;
+            /** Instanceids */
+            instanceIds: string[];
+            /**
+             * Projectid
+             * Format: uuid
+             */
+            projectId: string;
+            /**
+             * Templateid
+             * Format: uuid
+             */
+            templateId: string;
+        };
+        /**
+         * EntryBulkDeleteResponse
+         * @description How many entries the batch removed — always the full request length,
+         *     since a partial delete cannot happen.
+         */
+        EntryBulkDeleteResponse: {
+            /** Deleted */
+            deleted: number;
         };
         /**
          * EntryCreateRequest
@@ -6874,6 +6935,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_EntryCreateResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_entries_endpoint_api_v1_extraction_instances_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryBulkDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_EntryBulkDeleteResponse_"];
                 };
             };
             /** @description Validation Error */

@@ -241,6 +241,39 @@ class InstanceIdentityUpdateRequest(BaseModel):
         return self
 
 
+class EntryBulkDeleteRequest(BaseModel):
+    """Delete several entries of a repeating section, all or none.
+
+    ``extra="forbid"`` for the reason every sibling gives: this body is
+    validated once, in the request cycle.
+
+    The list is non-empty and DISTINCT. A duplicate id is refused rather than
+    de-duplicated because ``deleted`` would then over-report — the caller
+    named one row twice and the count would say two, which is exactly the
+    number a confirmation dialog shows back to the reviewer.
+    """
+
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    template_id: UUID = Field(..., alias="templateId")
+    instance_ids: list[UUID] = Field(..., alias="instanceIds", min_length=1, max_length=200)
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    @model_validator(mode="after")
+    def _reject_duplicates(self) -> "EntryBulkDeleteRequest":
+        if len(set(self.instance_ids)) != len(self.instance_ids):
+            raise ValueError("instanceIds must be distinct")
+        return self
+
+
+class EntryBulkDeleteResponse(BaseModel):
+    """How many entries the batch removed — always the full request length,
+    since a partial delete cannot happen."""
+
+    deleted: int
+
+
 class EntryCreateRequest(BaseModel):
     """Create one entry of a repeating section (spec §7).
 

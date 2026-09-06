@@ -15,11 +15,23 @@
  * copy VALUES are an e2e contract (`extraction-entry-identity.ui.e2e.ts`
  * matches them, not the keys) and do not change.
  */
-import {ChevronDown, Loader2, Pencil, Plus, Sparkles, Trash2} from 'lucide-react';
+import {ChevronDown, Loader2, ListChecks, Pencil, Plus, Sparkles, Trash2} from 'lucide-react';
+import {useState} from 'react';
 import type {ReactElement} from 'react';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
+import {Checkbox} from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,6 +52,8 @@ export interface EntrySelectorProps {
   onAddEntry: () => void;
   onRemoveEntry: (id: string) => void;
   onRenameEntry?: (id: string) => void;
+  /** Bulk delete. Absent → the Select affordance is not offered at all. */
+  onDeleteEntries?: (ids: string[]) => void;
   /** "Identify {noun}s with AI" — absent when the group declares no key. */
   onIdentifyEntries?: () => void;
   onExtractAllSections?: () => void;
@@ -105,6 +119,7 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
     onAddEntry,
     onRemoveEntry,
     onRenameEntry,
+    onDeleteEntries,
     onIdentifyEntries,
     onExtractAllSections,
     onExtractAllSectionsForAllEntries,
@@ -116,8 +131,35 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
     readOnly = false,
   } = props;
 
+  // Selection mode is local: nothing above needs to know the strip is in it,
+  // and leaving it must drop the ticks — a tick that survives out of sight
+  // arms the next Select with rows the reviewer no longer means.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+
+  const leaveSelection = () => {
+    setSelecting(false);
+    setSelected(new Set());
+  };
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  };
+
+  const confirmDelete = () => {
+    onDeleteEntries?.([...selected]);
+    setConfirming(false);
+    leaveSelection();
+  };
+
   const nounCap = entryLabel.charAt(0).toUpperCase() + entryLabel.slice(1);
   const activeEntry = entries.find((e) => e.instanceId === activeEntryId) ?? null;
+  const bulkAvailable = !readOnly && onDeleteEntries !== undefined && entries.length > 0;
   const busy = identifying || extractingAllSectionsForAllEntries;
   const addLabel = t('extraction', 'modelAddManuallyTitle').replace('{{noun}}', entryLabel);
 
@@ -190,6 +232,18 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
             </TooltipProvider>
           )}
 
+          {bulkAvailable && !selecting && (
+            <Button
+              onClick={() => setSelecting(true)}
+              size="sm"
+              variant="outline"
+              className="gap-2"
+            >
+              <ListChecks className="h-4 w-4" />
+              {t('extraction', 'entrySelectStart')}
+            </Button>
+          )}
+
           {!readOnly && (
             <TooltipProvider>
               <Tooltip>
@@ -221,6 +275,71 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
         <p className="text-sm text-muted-foreground">
           {t('extraction', 'noModelsAdded').replace('{{noun}}', entryLabel)}
         </p>
+      ) : selecting ? (
+        <div className="space-y-2">
+          {/* Checkboxes REPLACE the tabs rather than sitting beside them: a
+              row that is both a tab and a checkbox has two meanings for one
+              click, and the active entry is not what a bulk delete acts on. */}
+          <div className="flex flex-wrap gap-1">
+            {entries.map((entry) => (
+              <label
+                key={entry.instanceId}
+                className="flex max-w-full items-center gap-2 rounded-md border border-border/60 px-2 py-1 text-sm hover:bg-muted/50"
+              >
+                <Checkbox
+                  checked={selected.has(entry.instanceId)}
+                  onCheckedChange={() => toggleOne(entry.instanceId)}
+                  aria-label={t('extraction', 'entrySelectToggleOne').replace(
+                    '{{name}}',
+                    entry.entryName,
+                  )}
+                />
+                <span className="truncate">{entry.entryName}</span>
+                {progressBadge(entry.progress)}
+              </label>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {t('extraction', 'entrySelectCount').replace('{{n}}', String(selected.size))}
+            </span>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={selected.size === 0}
+              onClick={() => setConfirming(true)}
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('extraction', 'entrySelectDelete')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={leaveSelection}>
+              {t('extraction', 'entrySelectCancel')}
+            </Button>
+          </div>
+
+          <AlertDialog open={confirming} onOpenChange={setConfirming}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {t('extraction', 'entryBulkDeleteTitle')
+                    .replace('{{n}}', String(selected.size))
+                    .replace('{{noun}}', selected.size === 1 ? entryLabel : `${entryLabel}s`)}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t('extraction', 'entryBulkDeleteBody')}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('extraction', 'entrySelectCancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDelete}>
+                  {t('extraction', 'entrySelectDelete')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       ) : (
         <div className="flex items-center gap-2">
           <Tabs

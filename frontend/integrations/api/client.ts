@@ -363,6 +363,24 @@ export async function createEntry(
   });
 }
 
+// Delete SEVERAL entries of a repeating section in one transaction. Not a
+// loop of the browser's single PostgREST delete: an entry cascades to its
+// children, its values and its reviewer decisions, so a batch that gets
+// halfway leaves audit-bearing tables in a state no undo restores. The
+// server validates the whole set before it touches a row.
+export type EntryBulkDeleteRequest = components['schemas']['EntryBulkDeleteRequest'];
+
+export type EntryBulkDeleteResponse = components['schemas']['EntryBulkDeleteResponse'];
+
+export async function deleteEntries(
+  body: EntryBulkDeleteRequest
+): Promise<EntryBulkDeleteResponse> {
+  return apiClient<EntryBulkDeleteResponse>("/api/v1/extraction/instances", {
+    method: "DELETE",
+    body,
+  });
+}
+
 // Rename / re-key one entry of a repeating section (the run form's rename
 // dialog). Shapes from the generated contract, like the manual-model call.
 export type InstanceIdentityUpdateRequest =
