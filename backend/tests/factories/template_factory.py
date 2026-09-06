@@ -41,13 +41,17 @@ def make_entity_type(
     parent_entity_type_id: UUID | None = None,
     sort_order: int = 0,
     is_required: bool = False,
+    entry_label: str | None = None,
 ) -> ExtractionEntityType:
-    """Construct an :class:`ExtractionEntityType` with type-checked
-    role/parent invariants.
+    """Construct an :class:`ExtractionEntityType` with its DB invariants.
 
     Exactly one of ``project_template_id`` / ``template_id`` must be set
-    (mirrors the DB XOR check constraint). The caller adds the row to a
-    session and commits — this function does no I/O.
+    (mirrors the DB XOR check constraint). A repeating section gets the
+    default noun unless the caller names one, because 0069's
+    ``ck_extraction_entity_types_noun_on_repeating`` requires one — a
+    factory that produced rows the schema refuses would make every caller
+    repeat the same boilerplate. The caller adds the row to a session and
+    commits — this function does no I/O.
     """
     if (project_template_id is None) == (template_id is None):
         raise ValueError("Exactly one of project_template_id / template_id must be set")
@@ -64,6 +68,7 @@ def make_entity_type(
         parent_entity_type_id=parent_entity_type_id,
         sort_order=sort_order,
         is_required=is_required,
+        entry_label=entry_label or ("entry" if cardinality == "many" else None),
     )
 
 
@@ -135,7 +140,6 @@ class TemplateFactory:
             project_template_id=project_template_id,
             name=name,
             cardinality=cardinality,
-            role=ExtractionEntityRole.STUDY_SECTION,
             sort_order=sort_order,
         )
         self.db.add(et)
@@ -153,7 +157,6 @@ class TemplateFactory:
             project_template_id=project_template_id,
             name=name,
             cardinality="many",
-            role=ExtractionEntityRole.MODEL_CONTAINER,
             sort_order=sort_order,
         )
         self.db.add(et)
@@ -173,7 +176,6 @@ class TemplateFactory:
             project_template_id=project_template_id,
             name=name,
             cardinality=cardinality,
-            role=ExtractionEntityRole.MODEL_SECTION,
             parent_entity_type_id=parent,
             sort_order=sort_order,
         )

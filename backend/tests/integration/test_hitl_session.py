@@ -1177,9 +1177,8 @@ async def test_session_backfills_singleton_children_added_after_model_creation(
     assert model_instance_id is not None
 
     # Manager adds a brand-new sub-section under prediction_models. The
-    # parent is the model container, so the child must be a model_section
-    # (enforced by the trigger from migration 0016).
-    from app.models.extraction import ExtractionEntityRole
+    # parent repeats, so it may own per-entry children (0069's
+    # `trg_check_section_parent_repeats`).
     from tests.factories import make_entity_type
 
     new_sub = make_entity_type(
@@ -1187,7 +1186,6 @@ async def test_session_backfills_singleton_children_added_after_model_creation(
         name="late_added_sub",
         label="Late Added Sub",
         cardinality=ExtractionCardinality.ONE.value,
-        role=ExtractionEntityRole.MODEL_SECTION,
         parent_entity_type_id=prediction_models_et_id,
         sort_order=99,
     )

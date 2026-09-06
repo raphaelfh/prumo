@@ -117,7 +117,6 @@ async def _create_template_with_entity_types(
     from typing import Literal as L
     from typing import cast
 
-    from app.models.extraction import ExtractionEntityRole
     from tests.factories import make_entity_type
 
     entity_ids: list[UUID] = []
@@ -127,7 +126,6 @@ async def _create_template_with_entity_types(
             name=name,
             label=name.title(),
             cardinality=cast(L["one", "many"], cardinality),
-            role=ExtractionEntityRole.STUDY_SECTION,
             sort_order=idx,
         )
         db.add(et)

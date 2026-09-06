@@ -76,7 +76,7 @@ async def _group(
             "INSERT INTO public.extraction_entity_types "
             "(id, project_template_id, name, label, cardinality, sort_order, "
             " parent_entity_type_id, entry_label) "
-            "VALUES (:id, :tpl, :name, :label, :cardinality, :role, 90, :parent, :entry_label)"
+            "VALUES (:id, :tpl, :name, :label, :cardinality, 90, :parent, :entry_label)"
         ),
         {
             "id": entity_type_id,
@@ -85,7 +85,11 @@ async def _group(
             "label": label,
             "parent": parent,
             "cardinality": cardinality,
-            "entry_label": entry_label,
+            # 0069's `ck_..._noun_on_repeating`: a repeating section always
+            # carries the word for one entry. Callers that care about the
+            # noun pass it; the rest get the default rather than a row the
+            # schema refuses.
+            "entry_label": entry_label or ("entry" if cardinality == "many" else None),
         },
     )
     key_id, value_id = uuid4(), uuid4()
@@ -642,9 +646,7 @@ async def test_a_stranger_parent_is_refused_before_any_llm_call(
         cardinality="one",
         label="Model development",
     )
-    validations, _k2, _v2 = await _group(
-        db_session, parent=container, entry_label="validation"
-    )
+    validations, _k2, _v2 = await _group(db_session, parent=container, entry_label="validation")
     foreign_project, foreign_template, _ = await fresh_charms(db_session)
     stranger = await add_instance(
         db_session,
@@ -784,9 +786,7 @@ async def test_the_per_model_batch_routes_a_nested_group_through_the_pipeline(
         schema={
             "entity_types": [
                 _pinned_container(container),
-                _pinned_group(
-                    child, key_id, value_id, key=True, parent=container
-                ),
+                _pinned_group(child, key_id, value_id, key=True, parent=container),
             ]
         },
     )

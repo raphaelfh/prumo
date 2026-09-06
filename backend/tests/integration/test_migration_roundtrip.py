@@ -559,7 +559,9 @@ async def test_migration_0063_deletes_the_orphaned_probast_ai_v1_row(
                 "(id, template_id, name, label, role, cardinality, sort_order) "
                 "VALUES ('00ba0000-0000-0000-0000-0000000000aa', "
                 "        '00ba0000-0000-0000-0000-000000000001', 'dev_d1', 'D1', "
-                "        'one', 0)"
+                # This INSERT runs at a 0002-era schema, where `role` still
+                # exists — 0069 is far above it in the chain.
+                "        'study_section', 'one', 0)"
             )
         )
         await migration_session.commit()
@@ -979,16 +981,17 @@ _HEAL_FIXTURE_STATEMENTS = (
     "(id, name, framework, version, kind, is_global, schema) VALUES "
     f"('{_H_GLOBAL_TPL}', 'heal-0050-global', 'CUSTOM', '1.0', 'extraction', "
     "true, '{}'::jsonb)",
+    # Era-correct `role`: inserted at a 0050-era schema, where it is NOT NULL.
     "INSERT INTO public.extraction_entity_types "
-    "(id, project_template_id, name, label, cardinality,"
+    "(id, project_template_id, name, label, role, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
-    f"('{_H_SECTION}', '{_H_TEMPLATE}', 'heal_section', 'Heal Section', 'one', "
-    "NULL, 0, false)",
+    f"('{_H_SECTION}', '{_H_TEMPLATE}', 'heal_section', 'Heal Section', "
+    "'study_section', 'one', NULL, 0, false)",
     "INSERT INTO public.extraction_entity_types "
-    "(id, template_id, name, label, cardinality,"
+    "(id, template_id, name, label, role, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
     f"('{_H_GLOBAL_SECTION}', '{_H_GLOBAL_TPL}', 'heal_global_section', "
-    "'Heal Global Section', 'one', NULL, 0, false)",
+    "'Heal Global Section', 'study_section', 'one', NULL, 0, false)",
     # Project section: three 'dup_probe' rows + a pre-existing 'dup_probe_2'
     # that must NOT collide with the healed names (collision-proof case).
     "INSERT INTO public.extraction_fields "
@@ -1142,21 +1145,24 @@ _B8_FIXTURE_STATEMENTS = (
     "(id, name, framework, version, kind, is_global, schema) VALUES "
     f"('{_B8_GLOBAL_TPL}', 'entry-label-0051-global', 'CUSTOM', '1.0', 'extraction', "
     "true, '{}'::jsonb)",
+    # `role` is spelled out here on purpose: these rows are inserted at a
+    # 0050/0051-era schema, where the column is NOT NULL and 0051's backfill
+    # KEYS on `role = 'model_container'`. 0069 drops it far above them.
     "INSERT INTO public.extraction_entity_types "
-    "(id, project_template_id, name, label, cardinality,"
+    "(id, project_template_id, name, label, role, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
     f"('{_B8_CONTAINER}', '{_B8_TEMPLATE}', 'prediction_models', 'Prediction Models', "
-    "'many', NULL, 0, false)",
+    "'model_container', 'many', NULL, 0, false)",
     "INSERT INTO public.extraction_entity_types "
-    "(id, project_template_id, name, label, cardinality,"
+    "(id, project_template_id, name, label, role, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
     f"('{_B8_SECTION}', '{_B8_TEMPLATE}', 'population', 'Population', "
-    "'one', NULL, 1, false)",
+    "'study_section', 'one', NULL, 1, false)",
     "INSERT INTO public.extraction_entity_types "
-    "(id, template_id, name, label, cardinality,"
+    "(id, template_id, name, label, role, cardinality,"
     " parent_entity_type_id, sort_order, is_required) VALUES "
     f"('{_B8_GLOBAL_CONTAINER}', '{_B8_GLOBAL_TPL}', 'prediction_models', "
-    "'Prediction Models', 'many', NULL, 0, false)",
+    "'Prediction Models', 'model_container', 'many', NULL, 0, false)",
 )
 
 
@@ -1322,7 +1328,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0068_seeded_entry_nouns"
+    expected_head = "0069_entry_group_trees"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
