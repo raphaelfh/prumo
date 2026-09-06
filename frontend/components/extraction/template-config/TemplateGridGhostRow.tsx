@@ -8,7 +8,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Input} from '@/components/ui/input';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 
@@ -140,24 +139,20 @@ export function GhostRow({
 /**
  * The template-level add row as a `＋▾` menu (B-8 D8/D12): "New section"
  * opens AddSectionDialog in root mode; "Add repeating group…" opens it
- * in group mode — DISABLED (with a tooltip naming the existing group)
- * once the tree has one, since a template holds at most one container
- * (DB partial-unique index, 0016). Both are dialog-opening items: they
- * fire on select directly, no editor-focus claim. The trigger keeps the
- * ghost row's look and its roving-focus coordinates.
+ * in group mode. Both stay enabled unconditionally — 0069 dropped the
+ * one-container partial-unique indexes, so a template may hold as many
+ * root groups as it likes. Both are dialog-opening items: they fire on
+ * select directly, no editor-focus claim. The trigger keeps the ghost
+ * row's look and its roving-focus coordinates.
  */
 export function AddSectionMenuRow({
   columnCount,
   focus,
-  existingGroupLabel,
   onAddSection,
   onAddGroup,
 }: {
   columnCount: number;
   focus: CellFocus;
-  /** The current group's label when one exists — disables the add-group
-   * item and names the reason; null when the template has none yet. */
-  existingGroupLabel: string | null;
   onAddSection: () => void;
   onAddGroup: () => void;
 }) {
@@ -189,31 +184,10 @@ export function AddSectionMenuRow({
               <Plus className="mr-2 size-3.5" aria-hidden />
               {t('extraction', 'gridNewSection')}
             </DropdownMenuItem>
-            {existingGroupLabel === null ? (
-              <DropdownMenuItem onSelect={onAddGroup}>
-                <FolderPlus className="mr-2 size-3.5" aria-hidden />
-                {t('templateConfig', 'addRepeatingGroup')}
-              </DropdownMenuItem>
-            ) : (
-              <Tooltip>
-                {/* A disabled Radix item is pointer-events:none — the
-                    wrapping span carries the hover for the reason. */}
-                <TooltipTrigger asChild>
-                  <span tabIndex={-1}>
-                    <DropdownMenuItem disabled>
-                      <FolderPlus className="mr-2 size-3.5" aria-hidden />
-                      {t('templateConfig', 'addRepeatingGroup')}
-                    </DropdownMenuItem>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t('templateConfig', 'addGroupExistsTooltip').replace(
-                    '{{label}}',
-                    existingGroupLabel,
-                  )}
-                </TooltipContent>
-              </Tooltip>
-            )}
+            <DropdownMenuItem onSelect={onAddGroup}>
+              <FolderPlus className="mr-2 size-3.5" aria-hidden />
+              {t('templateConfig', 'addRepeatingGroup')}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </td>
