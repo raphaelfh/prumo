@@ -40,6 +40,47 @@ describe('computeRequiredFieldProgress', () => {
     expect(r.completionPercentage).toBe(50); // NOT 100
   });
 
+  it('authoritative set scopes the NUMERATOR: a value from an instance outside it is not this scope\'s progress', () => {
+    const entityTypes = [et('models', [field('f1', true)])];
+    // The caller measures m2 only (the nav rail under the active entry, an
+    // entry card's own subtree). m1's value is another entry's progress.
+    const r = computeRequiredFieldProgress(
+      { m1_f1: 'other entry' },
+      entityTypes,
+      new Map([['models', new Set(['m2'])]]),
+    );
+    // Used to be 1/1 — filled could exceed total and an empty section read
+    // "complete" while showing nothing.
+    expect(r.totalFields).toBe(1);
+    expect(r.completedFields).toBe(0);
+    expect(r.isComplete).toBe(false);
+    // ...and the in-scope value still counts.
+    expect(
+      computeRequiredFieldProgress(
+        { m1_f1: 'other entry', m2_f1: 'this entry' },
+        entityTypes,
+        new Map([['models', new Set(['m2'])]]),
+      ),
+    ).toMatchObject({ totalFields: 1, completedFields: 1, isComplete: true });
+  });
+
+  it('authoritative set: an entity type absent from the map counts no values, phantom slot or not', () => {
+    // A required entity with zero instances keeps a phantom denominator slot;
+    // a stray value for it (e.g. a just-deleted instance still in the form
+    // state) must not fill that slot, or the form reads complete with nothing
+    // materialized — which the finalize gate, counting per EXISTING instance,
+    // would then refuse.
+    const entityTypes = [et('required_models', [field('m1', true)], true)];
+    const r = computeRequiredFieldProgress(
+      { deleted_m1: 'stale' },
+      entityTypes,
+      new Map([['other', new Set(['x'])]]),
+    );
+    expect(r.totalFields).toBe(1);
+    expect(r.completedFields).toBe(0);
+    expect(r.isComplete).toBe(false);
+  });
+
   it('phantom instance: required fields with zero observed instances → denominator 1, never NaN', () => {
     const r = computeRequiredFieldProgress({}, [et('e1', [field('f1', true), field('f2', true)])]);
     expect(r.totalFields).toBe(2); // 2 required × 1 phantom instance
