@@ -5,10 +5,16 @@
  * presentational and the rules stay unit-testable: the section/field tree,
  * which metadata is worth showing, and the search predicate.
  *
- * Ground truth for the hierarchy is the DB constraint
- * `ck_extraction_entity_types_role_parent` — only `model_section` rows may
- * have a parent, and only under the single `model_container`. Generic
- * nesting does not exist (spec §3), so the tree is at most two levels deep.
+ * Ground truth for the hierarchy is `parent_entity_type_id` alone: 0069
+ * dropped `ck_extraction_entity_types_role_parent`, so a group may own a
+ * group at any depth and a template may hold several root groups.
+ *
+ * The builder below is still the two-level one that CHECK justified, so a
+ * grandchild does not render on the Config tab. Trees B5b makes it
+ * recursive (spec §9: `depth`, `ownsChildren`, ghost rows and move targets
+ * keyed by parent id at any depth). Everything that WRITES the tree — the
+ * section service, the create endpoint, the run form — is already
+ * depth-agnostic; only this read is not.
  *
  * i18n-free by design: metadata comes back as copy TOKENS
  * (`metaKeys`), which the component resolves through `lib/copy`.

@@ -315,10 +315,11 @@ async def create_template_section(
 ) -> ApiResponse[SectionRead]:
     """Create a section; ``sort_order`` is server-computed (max+1).
 
-    ``role`` and ``parent_entity_type_id`` are explicit parameters — a
-    model_section's parent must be the template's model_container (400);
-    a second model_container is a 409. Stamps the B-4 draft marker via
-    the 0048 trigger (nothing manual).
+    ``parent_entity_type_id`` is the only structural parameter: 0069
+    retired ``role``, so a section names a parent (which must repeat — 400
+    otherwise) or is a root, and a template may hold any number of root
+    groups. Stamps the B-4 draft marker via the 0048 trigger (nothing
+    manual).
     """
     await _claim_lock(db, project_id, template_id, user_sub)
     try:

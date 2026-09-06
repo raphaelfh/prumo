@@ -6641,7 +6641,7 @@
       },
       "PortableSection": {
         "additionalProperties": false,
-        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` \u21d2 ``model_container``; nested \u21d2\n``model_section``; otherwise ``study_section``. ``entry_label`` is legal\non any repeating section (a group, or ``repeats``); the import keeps the\nbundle's value verbatim, NULL included, and readers fall back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL.",
+        "description": "One ``extraction_entity_types`` row plus its fields and (for a group)\nits child sections. ``group`` and ``repeats`` both mean\n``cardinality='many'``; nesting is ``parent_entity_type_id``, at any\ndepth (0069 retired ``role``). ``entry_label`` is legal on any repeating\nsection; the import keeps the bundle's value verbatim, NULL included,\nand readers fall back to\n:data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL.",
         "properties": {
           "description": {
             "anyOf": [
@@ -14337,7 +14337,7 @@
     },
     "/api/v1/projects/{project_id}/templates/{template_id}/sections": {
       "post": {
-        "description": "Create a section; ``sort_order`` is server-computed (max+1).\n\n``role`` and ``parent_entity_type_id`` are explicit parameters \u2014 a\nmodel_section's parent must be the template's model_container (400);\na second model_container is a 409. Stamps the B-4 draft marker via\nthe 0048 trigger (nothing manual).",
+        "description": "Create a section; ``sort_order`` is server-computed (max+1).\n\n``parent_entity_type_id`` is the only structural parameter: 0069\nretired ``role``, so a section names a parent (which must repeat \u2014 400\notherwise) or is a root, and a template may hold any number of root\ngroups. Stamps the B-4 draft marker via the 0048 trigger (nothing\nmanual).",
         "operationId": "create_template_section_api_v1_projects__project_id__templates__template_id__sections_post",
         "parameters": [
           {

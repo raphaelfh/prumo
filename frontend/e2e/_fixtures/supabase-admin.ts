@@ -84,23 +84,6 @@ export async function adminDelete(table: string, query: string): Promise<void> {
   }
 }
 
-export async function adminRpc<T>(
-  fn: string,
-  payload: Record<string, unknown>
-): Promise<T> {
-  const { url, key } = admin();
-  const response = await fetch(`${url}/rest/v1/rpc/${fn}`, {
-    method: "POST",
-    headers: adminHeaders(key),
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`adminRpc(${fn}) failed: ${response.status} ${body}`);
-  }
-  return (await response.json()) as T;
-}
-
 /**
  * Resolve the active extraction template for a project at test runtime.
  * Hardcoding E2E_TEMPLATE_ID in .env is fragile because backend pytest
@@ -123,22 +106,30 @@ export async function resolveActiveExtractionTemplateId(projectId: string): Prom
 }
 
 /**
- * Pick a study_section entity in the given template — a stable target for
- * section-level extraction calls. Study sections live at the root of the
- * template (no parent), making them safe to use regardless of model
- * container presence.
+ * Pick a root section that owns no children — a stable target for
+ * section-level extraction calls, because it carries its own fields and
+ * needs no entry to be selected first.
+ *
+ * Was `role=eq.study_section`. Migration 0069 dropped the column, and the
+ * predicate it stood for is structural: 0016's CHECK made a study_section a
+ * root (no parent) that could not itself be a parent. Both halves are read
+ * here from `parent_entity_type_id` alone, in one round trip.
  */
-export async function resolveStudySectionEntityTypeId(templateId: string): Promise<string> {
-  const rows = await adminSelect<{ id: string }>(
+export async function resolveLeafSectionEntityTypeId(templateId: string): Promise<string> {
+  const rows = await adminSelect<{ id: string; parent_entity_type_id: string | null }>(
     "extraction_entity_types",
-    `project_template_id=eq.${templateId}&role=eq.study_section&select=id&order=sort_order&limit=1`
+    `project_template_id=eq.${templateId}&select=id,parent_entity_type_id&order=sort_order`
   );
-  if (rows.length === 0) {
+  const parents = new Set(
+    rows.map((row) => row.parent_entity_type_id).filter((id): id is string => id !== null)
+  );
+  const leaf = rows.find((row) => row.parent_entity_type_id === null && !parents.has(row.id));
+  if (!leaf) {
     throw new Error(
-      `No study_section entity found in template ${templateId}. The template structure may be empty or corrupted.`
+      `No childless root section found in template ${templateId}. The template structure may be empty or corrupted.`
     );
   }
-  return rows[0].id;
+  return leaf.id;
 }
 
 type ProposalInsert = Database["public"]["Tables"]["extraction_proposal_records"]["Insert"];

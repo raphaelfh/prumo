@@ -455,10 +455,12 @@ class ModelExtractionService(LoggerMixin):
         """
         Fetch the entity_type_id of the template's model container.
 
-        Looks up by structural ``role='model_container'`` (the schema
-        guarantees at most one per template). Falls back to the global
-        catalogue if the project clone lookup misses, so callers can pass
-        either id flavour without branching.
+        Looks up the FIRST root repeating section by ``(sort_order, id)``.
+        Was ``role='model_container'``, which 0069 retired along with the
+        partial unique index that made it singular — a template may now hold
+        several root groups, and this pipeline retires in B6. Falls back to
+        the global catalogue if the project clone lookup misses, so callers
+        can pass either id flavour without branching.
 
         Returns:
             entity_type_id or None if the template has no model container.

@@ -85,10 +85,11 @@ class PortableField(BaseModel):
 
 class PortableSection(BaseModel):
     """One ``extraction_entity_types`` row plus its fields and (for a group)
-    its child sections. ``group`` ⇒ ``model_container``; nested ⇒
-    ``model_section``; otherwise ``study_section``. ``entry_label`` is legal
-    on any repeating section (a group, or ``repeats``); the import keeps the
-    bundle's value verbatim, NULL included, and readers fall back to
+    its child sections. ``group`` and ``repeats`` both mean
+    ``cardinality='many'``; nesting is ``parent_entity_type_id``, at any
+    depth (0069 retired ``role``). ``entry_label`` is legal on any repeating
+    section; the import keeps the bundle's value verbatim, NULL included,
+    and readers fall back to
     :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL."""
 
     model_config = ConfigDict(extra="forbid")

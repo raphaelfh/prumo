@@ -144,7 +144,7 @@ describe('createSection — typed create endpoint', () => {
     ).toBeNull();
 
     apiClientMock.mockRejectedValue(
-      new ApiError('HTTP_ERROR', 'template already has a model_container', 409),
+      new ApiError('HTTP_ERROR', 'entry key already used in this section', 409),
     );
     const result = await createSection(PARAMS);
     expect(result.ok).toBe(false);

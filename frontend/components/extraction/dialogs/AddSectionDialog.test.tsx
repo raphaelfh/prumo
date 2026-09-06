@@ -68,7 +68,7 @@ beforeEach(() => {
 });
 
 describe('AddSectionDialog — root mode (unchanged B-7 contract)', () => {
-  it('keeps the cardinality select and posts role study_section', async () => {
+  it('keeps the cardinality select and posts a parentless section', async () => {
     const {onSectionAdded} = renderDialog({kind: 'root'});
     expect(screen.getByText('Section type *')).toBeInTheDocument();
     expect(screen.queryByText('Entry label')).toBeNull();
@@ -185,7 +185,7 @@ describe('AddSectionDialog — per-model mode (New per-{noun} section)', () => {
     entryNoun: 'algorithm',
   };
 
-  it('presets the invoking group as parent and posts role model_section', async () => {
+  it('presets the invoking group as parent', async () => {
     renderDialog(mode);
     expect(screen.getByText('New per-algorithm section')).toBeInTheDocument();
     await userEvent.type(labelInput(), 'Calibration');

@@ -1240,10 +1240,11 @@ export interface paths {
          * Create Template Section
          * @description Create a section; ``sort_order`` is server-computed (max+1).
          *
-         *     ``role`` and ``parent_entity_type_id`` are explicit parameters — a
-         *     model_section's parent must be the template's model_container (400);
-         *     a second model_container is a 409. Stamps the B-4 draft marker via
-         *     the 0048 trigger (nothing manual).
+         *     ``parent_entity_type_id`` is the only structural parameter: 0069
+         *     retired ``role``, so a section names a parent (which must repeat — 400
+         *     otherwise) or is a root, and a template may hold any number of root
+         *     groups. Stamps the B-4 draft marker via the 0048 trigger (nothing
+         *     manual).
          */
         post: operations["create_template_section_api_v1_projects__project_id__templates__template_id__sections_post"];
         delete?: never;
@@ -4567,10 +4568,11 @@ export interface components {
         /**
          * PortableSection
          * @description One ``extraction_entity_types`` row plus its fields and (for a group)
-         *     its child sections. ``group`` ⇒ ``model_container``; nested ⇒
-         *     ``model_section``; otherwise ``study_section``. ``entry_label`` is legal
-         *     on any repeating section (a group, or ``repeats``); the import keeps the
-         *     bundle's value verbatim, NULL included, and readers fall back to
+         *     its child sections. ``group`` and ``repeats`` both mean
+         *     ``cardinality='many'``; nesting is ``parent_entity_type_id``, at any
+         *     depth (0069 retired ``role``). ``entry_label`` is legal on any repeating
+         *     section; the import keeps the bundle's value verbatim, NULL included,
+         *     and readers fall back to
          *     :data:`app.models.extraction.DEFAULT_ENTRY_LABEL` for a NULL.
          */
         PortableSection: {

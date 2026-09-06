@@ -594,11 +594,9 @@ async def test_instance_blocked_section_keeps_its_draft_added_children(
     subtrees"), so the manager is left with a coherent branch instead of a
     decapitated container.
 
-    ``ck_extraction_entity_types_role_parent`` plus
-    ``trg_check_model_section_parent_role`` cap the live tree at two levels
-    (a ``model_section``'s parent must be a ``model_container``; the other
-    two roles must have none), so a container and its sections ARE the
-    whole subtree — there are no grandchildren to walk to."""
+    Two levels only. 0069 lifted the depth cap that used to make two levels
+    the WHOLE tree, so the deeper case is a test of its own — see
+    ``test_instance_blocked_section_keeps_its_whole_draft_added_subtree``."""
     project_id = SEED.secondary_project
     await clean_project_clones(db_session, project_id)
     clone = await clone_charms(db_session, project_id, SEED.primary_profile)
@@ -672,6 +670,105 @@ async def test_instance_blocked_section_keeps_its_draft_added_children(
         template_id=template_id,
         baseline=baseline,
         extra_entity_ids=frozenset({container, child}),
+        extra_field_ids=frozenset({target}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_instance_blocked_section_keeps_its_whole_draft_added_subtree(
+    db_session: AsyncSession,
+) -> None:
+    """The down-walk reaches a GRANDCHILD, not just one hop.
+
+    The walk descended one level and stopped, justified in a comment by
+    ``ck_extraction_entity_types_role_parent`` + the role-parent trigger:
+    they capped the live tree at two levels, so one hop WAS the subtree.
+    0069 drops both, and a group may now own a group at any depth — so the
+    stop leaves the grandchild to be deleted under a kept parent, which is
+    the decapitated branch the down-walk exists to prevent.
+
+    Only the ROOT holds recorded work here. The middle section is kept
+    solely by the closure, and it is exactly that node the old walk
+    refused to descend from."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+    template_id = clone.project_template_id
+    await db_session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+    await db_session.execute(text("SET CONSTRAINTS ALL DEFERRED"))
+    await _delete_section(
+        db_session, await _entity_id(db_session, template_id, "prediction_models")
+    )
+    await TemplateVersionService(db_session).republish(
+        project_id=project_id, project_template_id=template_id, user_id=SEED.primary_profile
+    )
+    baseline = await _active_schema(db_session, template_id)
+
+    root = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_deep_root",
+        cardinality="many",
+        entry_label="model",
+        sort_order=97,
+    )
+    middle = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_deep_middle",
+        parent_id=root,
+        cardinality="many",
+        entry_label="validation",
+        sort_order=98,
+    )
+    grandchild = await _add_section(
+        db_session,
+        template_id,
+        "b9c1_deep_grandchild",
+        parent_id=middle,
+        sort_order=99,
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, 'B-9c1 discard article', 1) ON CONFLICT (id) DO NOTHING"
+        ),
+        {"id": str(_ARTICLE_ID), "pid": str(project_id)},
+    )
+    target = await _add_field(db_session, root, "b9c1_deep_root_field")
+    instance = await _add_instance(
+        db_session, project_id=project_id, template_id=template_id, entity_type_id=root
+    )
+    session = await open_session(
+        db_session,
+        project_id=project_id,
+        article_id=_ARTICLE_ID,
+        template_id=template_id,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=instance,
+        field_id=target,
+        user_id=SEED.primary_profile,
+    )
+
+    result = await _discard(db_session, project_id=project_id, template_id=template_id)
+
+    kept = {k.node_id: k.reason for k in result.kept}
+    assert kept == {
+        root: "has_recorded_data",
+        middle: "related_to_kept_node",
+        grandchild: "related_to_kept_node",
+        target: "has_recorded_data",
+    }
+    assert result.deleted_entity_types == 0
+    await _assert_matches_baseline(
+        db_session,
+        template_id=template_id,
+        baseline=baseline,
+        extra_entity_ids=frozenset({root, middle, grandchild}),
         extra_field_ids=frozenset({target}),
     )
 
