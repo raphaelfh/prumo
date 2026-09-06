@@ -50,7 +50,11 @@ export interface EntrySelectorProps {
   activeEntryId: string | null;
   onSelectEntry: (id: string) => void;
   onAddEntry: () => void;
-  onRemoveEntry: (id: string) => void;
+  /** Absent for anyone but a manager — see `onDeleteEntries`. The RLS policy
+   * on extraction_instances is manager-only and this delete goes through
+   * PostgREST without a `.select()`, so a reviewer's DELETE would report
+   * success while removing nothing. */
+  onRemoveEntry?: (id: string) => void;
   onRenameEntry?: (id: string) => void;
   /** Bulk delete. Absent → the Select affordance is not offered at all. */
   onDeleteEntries?: (ids: string[]) => void;
@@ -371,7 +375,7 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
               <Pencil className="h-4 w-4" />
             </IconAction>
           )}
-          {!readOnly && activeEntryId && (
+          {!readOnly && activeEntryId && onRemoveEntry && (
             <IconAction
               label={t('extraction', 'modelRemoveActiveTitle').replace('{{noun}}', entryLabel)}
               onClick={() => onRemoveEntry(activeEntryId)}

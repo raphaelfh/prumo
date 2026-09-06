@@ -730,6 +730,9 @@ export default function ExtractionFullScreen() {
     templateId: template?.id,
     onDeleted: refetchRun,
     values,
+    // Manager only, and the hook enforces it for BOTH deletes — see its
+    // `canDelete`. Undefined is what hides each affordance.
+    canDelete: permissions.userRole === 'manager',
   });
 
   // Rename / re-key — one write for cards and for the active model. The
@@ -1081,15 +1084,11 @@ export default function ExtractionFullScreen() {
           activeEntries,
           setActiveEntry,
           handleOpenRenameDialog: setModelToRename,
-          handleOpenRemoveDialog,
+          // The dialog only exists to confirm the delete the hook withheld.
+          handleOpenRemoveDialog: handleRemoveInstance ? handleOpenRemoveDialog : undefined,
           handleAddInstance,
           handleRemoveInstance,
-          // MANAGER only — the endpoint gates on `is_project_manager` to match
-          // the RLS policy on extraction_instances, so offering the control to
-          // a reviewer would show them a button that always 403s. Undefined
-          // hides the whole Select affordance in EntrySelector.
-          handleDeleteEntries:
-            permissions.userRole === 'manager' ? handleDeleteEntries : undefined,
+          handleDeleteEntries,
           handleRenameInstance,
           projectId: projectId || '',
           articleId: articleId || '',

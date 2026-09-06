@@ -226,11 +226,16 @@ async def test_an_outsider_gets_403(
     assert res.status_code == 403, res.text
 
 
-async def test_a_member_who_is_not_a_reviewer_gets_403(
+async def test_a_viewer_who_is_not_a_manager_gets_403(
     db_session: AsyncSession, db_client: AsyncClient, as_viewer: UUID
 ) -> None:
-    """Deleting an entry destroys reviewer decisions recorded against it, so
-    membership alone is not enough — the same gate the create sibling uses."""
+    """Membership alone is not enough.
+
+    Named for the manager gate this endpoint actually enforces. It used to be
+    called ``..._who_is_not_a_reviewer_...``, after the create sibling's
+    reviewer gate — a name that kept reading as surviving coverage of a
+    predicate this endpoint no longer applies. The reviewer/manager boundary
+    is the sibling case below; this one is the viewer/manager boundary."""
     del as_viewer
     _et, ids = await _entries(db_session, 1)
     await db_session.commit()

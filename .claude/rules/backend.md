@@ -52,6 +52,12 @@ guard that drifted or was never made.
   those helpers are what the RLS policies call, so a copy lets the API
   and the database disagree. Services cannot import `api.deps`, so a
   service calls the DB function directly (`SELECT public.is_project_member(...)`).
+  The CI gate has **no exempt module** — `security.py` included. It used to
+  exempt itself, on the theory that the module the policies agree with may
+  know the table; that hid two hand-rolled predicates inside the very file
+  whose job is to prevent them (`require_project_scope`,
+  `require_project_manager`). A dependency that reads a PATH parameter still
+  delegates to the imperative helper rather than re-typing its EXISTS.
 - **Row-in-parent** → the named guard for that pair:
   `project_template_active_service.owned_template`,
   `template_section_service.owned_section`,

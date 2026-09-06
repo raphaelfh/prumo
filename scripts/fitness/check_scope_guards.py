@@ -62,9 +62,16 @@ SCOPE_COLUMNS = {
     "instance_id",
 }
 
-#: Raw membership SQL belongs to exactly one module — the one whose helpers
-#: the RLS policies also call.
-MEMBERSHIP_SQL_HOME = "backend/app/api/deps/security.py"
+#: Raw membership SQL belongs NOWHERE. The role predicates live in SQL
+#: functions (`public.is_project_member` / `_reviewer` / `_manager` / ...)
+#: that the RLS policies also call, and every Python caller goes through
+#: `api/deps/security.py`'s helpers, which invoke those functions by name.
+#:
+#: This check used to exempt `security.py` itself, on the theory that the one
+#: module allowed to know the table should be the one the policies agree with.
+#: That exemption hid two hand-rolled copies of predicates the SQL functions
+#: already express — inside the very file whose job is to prevent copies. The
+#: exemption is gone: there is no home for raw membership SQL.
 MEMBERSHIP_SQL_MARKERS = ("project_members",)
 
 
@@ -135,17 +142,16 @@ def scan(repo_root: Path) -> tuple[dict[str, list[str]], list[str]]:
         except (OSError, SyntaxError):
             continue
 
-        if rel != MEMBERSHIP_SQL_HOME:
-            # String literals only, via the AST: a COMMENT mentioning the
-            # table (including the ones explaining this very rule) is not SQL.
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
-                    continue
-                text_upper = node.value.upper()
-                if any(m in node.value for m in MEMBERSHIP_SQL_MARKERS) and (
-                    "FROM" in text_upper or "JOIN" in text_upper
-                ):
-                    membership.append(f"{rel}:{node.lineno}")
+        # String literals only, via the AST: a COMMENT mentioning the table
+        # (including the ones explaining this very rule) is not SQL.
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            text_upper = node.value.upper()
+            if any(m in node.value for m in MEMBERSHIP_SQL_MARKERS) and (
+                "FROM" in text_upper or "JOIN" in text_upper
+            ):
+                membership.append(f"{rel}:{node.lineno}")
 
         spans = _function_spans(tree)
         for node in ast.walk(tree):
