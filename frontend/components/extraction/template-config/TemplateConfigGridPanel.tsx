@@ -44,6 +44,7 @@ import {
   deriveMoveTargets,
   filterTemplateTree,
   findField,
+  findParentSection,
   findSection,
   type GridField,
 } from './templateTree';
@@ -313,13 +314,12 @@ export function TemplateConfigGridPanel({
   const owningSection = selectedField
     ? findSection(displayTree, selectedField.entityTypeId)
     : null;
-  // B-8 T6: the locked Placement line for a selected per-model section —
-  // the label of the group whose children hold it.
+  // B-8 T6: the locked Placement line for a selected nested section. Read
+  // through the RECURSIVE `findParentSection` — the two-level
+  // `displayTree.find` it replaces left a grandchild's line empty.
   const parentGroupLabel =
-    selectedSection?.kind === 'groupChild'
-      ? (displayTree.find((s) =>
-          s.children.some((c) => c.id === selectedSection.id),
-        )?.label ?? null)
+    selectedSection && selectedSection.depth > 0
+      ? (findParentSection(displayTree, selectedSection.id)?.label ?? null)
       : null;
   // A deep-link only travels with ITS field — selecting another row keeps
   // the inspector from stealing focus to a stale group.

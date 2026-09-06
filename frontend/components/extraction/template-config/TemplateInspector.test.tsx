@@ -113,10 +113,10 @@ const otherField = section.fields[3];
 /** Destination list the panel threads in — ALWAYS this template's
  * sections only (the client-side guard against the RLS move hole). */
 const moveTargets: MoveTargetSection[] = [
-  {id: 'sec', label: 'Source of Data', kind: 'root', fieldCount: 4},
-  {id: 'grp', label: 'Models', kind: 'group', fieldCount: 0},
-  {id: 'grpChild', label: 'Performance', kind: 'groupChild', fieldCount: 2},
-  {id: 'sec2', label: 'Outcomes', kind: 'root', fieldCount: 1},
+  {id: 'sec', label: 'Source of Data', depth: 0, fieldCount: 4},
+  {id: 'grp', label: 'Models', depth: 0, fieldCount: 0},
+  {id: 'grpChild', label: 'Performance', depth: 1, fieldCount: 2},
+  {id: 'sec2', label: 'Outcomes', depth: 0, fieldCount: 1},
 ];
 
 function renderInspector(
@@ -184,7 +184,7 @@ function renderSection(
     field: null,
     section: selected,
     owningSection: null,
-    parentGroupLabel: selected.kind === 'groupChild' ? 'Prediction models' : null,
+    parentGroupLabel: selected.depth > 0 ? 'Prediction models' : null,
     onSaveField: vi.fn() as SaveFieldHandler,
     saving: false,
     focusGroup: null,
@@ -536,15 +536,15 @@ describe('TemplateInspector section pane — group (B-8 T6, D10)', () => {
     vi.mocked(toast.error).mockClear();
   });
 
-  it('shows the kind line and the LOCKED Repeats row (no cardinality select)', () => {
+  it('shows the kind line and an EDITABLE Repeats select (spec §5)', () => {
     renderSection(groupSection);
     expect(screen.getByText('inspectorGroupKindLine')).toBeInTheDocument();
-    expect(screen.getByText('inspectorGroupAlwaysRepeats')).toBeInTheDocument();
-    // A group's cardinality is fixed, so it gets the read-only row rather
-    // than the groupChild's select. Asserted by id: since 0059 the pane
-    // also renders the entry-key select, and a bare `queryByRole
-    // ('combobox')` would catch that unrelated control too.
-    expect(document.getElementById('inspector-section-repeats')).toBeNull();
+    // 0069 retired the role that fixed a group's cardinality, so the pane
+    // offers the select here too; a group that owns children is refused by
+    // the PATCH (SectionOwnsChildrenError), not by a missing control.
+    // Asserted by id: since 0059 the pane also renders the entry-key
+    // select, and a bare `queryByRole('combobox')` would catch that too.
+    expect(document.getElementById('inspector-section-repeats')).not.toBeNull();
   });
 
   it('entry-label input commits IMMEDIATELY on blur via updateSection', async () => {
@@ -721,10 +721,15 @@ describe('TemplateInspector section pane — per-model section (B-8 T6, D10)', (
 });
 
 describe('TemplateInspector section pane — root section (B-8 T6, D10)', () => {
-  it('Repeats line is READ-ONLY: one per article', () => {
+  it('Repeats is editable and reads in ARTICLE scope, not an entry noun', () => {
     renderSection(section);
+    const select = document.getElementById('inspector-section-repeats');
+    expect(select).not.toBeNull();
+    expect(select).toHaveValue('one');
+    // A root section sits in no entry, so its options name the article —
+    // interpolating an entry noun here would invent a scope.
     expect(screen.getByText('repeatsOncePerArticle')).toBeInTheDocument();
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByText('repeatsPerArticle')).toBeInTheDocument();
     expect(screen.queryByLabelText('entryLabelLabel')).toBeNull();
   });
 
