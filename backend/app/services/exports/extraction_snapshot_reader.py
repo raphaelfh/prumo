@@ -1,7 +1,7 @@
 """Snapshot section reader for the publication-ready xlsx export (spec §5.1).
 
 Reads the frozen per-Run / per-version template snapshot and returns
-ordered ``SnapshotSection`` descriptors carrying role + cardinality +
+ordered ``SnapshotSection`` descriptors carrying parent + cardinality +
 parent + full field metadata. This is the column-layout *anchor* and the
 per-Run obsolete-field diff source.
 
@@ -59,7 +59,6 @@ class SnapshotSection:
     entity_type_id: UUID
     name: str
     label: str
-    role: Any  # ExtractionEntityRole — typed loosely to avoid an import cycle on load
     cardinality: ExtractionCardinality
     parent_entity_type_id: UUID | None
     sort_order: int
@@ -93,13 +92,10 @@ async def load_export_sections(
 
 
 def _section_from_view(view: RunViewEntityType) -> SnapshotSection:
-    from app.models.extraction import ExtractionEntityRole
-
     return SnapshotSection(
         entity_type_id=view.id,
         name=view.name,
         label=view.label,
-        role=ExtractionEntityRole(view.role),
         cardinality=ExtractionCardinality(view.cardinality),
         parent_entity_type_id=view.parent_entity_type_id,
         sort_order=view.sort_order,

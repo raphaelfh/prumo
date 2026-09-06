@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from openpyxl import load_workbook
 
-from app.models.extraction import ExtractionEntityRole, ExtractionFieldType
+from app.models.extraction import ExtractionFieldType
 from app.services.exports.extraction.workbook import build_workbook
 from app.services.extraction_export_service import (
     ArticleDescriptor,
@@ -31,7 +31,6 @@ def _one_field_layout(*, include_ai: bool, n_articles: int = 1) -> ExportLayout:
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="Source of data",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
     )

@@ -19,7 +19,6 @@ from fastapi import status
 from app.core.error_handler import AppError
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.exports.extraction.workbook import (
@@ -56,7 +55,6 @@ def _wide_layout(*, n_articles: int, n_subcols_each: int) -> ExportLayout:
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="Sec",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
         cardinality=ExtractionCardinality.MANY,

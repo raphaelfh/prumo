@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.extraction_export_service import (
@@ -32,7 +31,6 @@ def _study_section():
     return SectionDescriptor(
         entity_type_id=eid,
         label="Study characteristics",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(_field("Author"), _field("Year")),
         cardinality=ExtractionCardinality.ONE,
@@ -45,7 +43,6 @@ def _model_section():
     return SectionDescriptor(
         entity_type_id=eid,
         label="Model characteristics",
-        role=ExtractionEntityRole.MODEL_SECTION,
         parent_entity_type_id=None,
         fields=(_field("Method"),),
         cardinality=ExtractionCardinality.MANY,
@@ -108,7 +105,6 @@ def test_model_container_section_is_skipped():
     container = SectionDescriptor(
         entity_type_id=uuid4(),
         label="Models",
-        role=ExtractionEntityRole.MODEL_CONTAINER,
         parent_entity_type_id=None,
         fields=(),
         cardinality=ExtractionCardinality.MANY,

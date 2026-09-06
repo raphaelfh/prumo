@@ -6,7 +6,6 @@ import uuid
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.extraction_export_service import (
@@ -37,7 +36,6 @@ def _section(label, verdict_field, sort_order):
     return SectionDescriptor(
         entity_type_id=sid,
         label=label,
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(verdict_field,),
         cardinality=ExtractionCardinality.ONE,
@@ -210,7 +208,6 @@ def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() 
     d1 = SectionDescriptor(
         entity_type_id=sid,
         label="Participants",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(signalling, risk, applicability),  # signalling first, by sort_order
         cardinality=ExtractionCardinality.ONE,
@@ -256,7 +253,6 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
         return SectionDescriptor(
             entity_type_id=uuid.uuid4(),
             label=label,
-            role=ExtractionEntityRole.STUDY_SECTION,
             parent_entity_type_id=None,
             fields=tuple(fields),
             name=name,

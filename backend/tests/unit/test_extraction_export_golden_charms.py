@@ -28,7 +28,6 @@ from openpyxl import load_workbook
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.exports.extraction.workbook import build_workbook
@@ -71,7 +70,6 @@ class _Charms:
         container = SectionDescriptor(
             entity_type_id=self.container_id,
             label="Prediction Models",
-            role=ExtractionEntityRole.MODEL_CONTAINER,
             parent_entity_type_id=None,
             fields=(),
             cardinality=ExtractionCardinality.MANY,
@@ -82,7 +80,6 @@ class _Charms:
             SectionDescriptor(
                 entity_type_id=cid,
                 label=label,
-                role=ExtractionEntityRole.MODEL_SECTION,
                 parent_entity_type_id=self.container_id,
                 fields=(
                     FieldDescriptor(
@@ -104,11 +101,6 @@ class _Charms:
         return (container, *children)
 
     def article(self) -> ArticleDescriptor:
-        flat: list[UUID] = [
-            self.child_instances[(entry, child)]
-            for entry in self.entry_ids
-            for child in self.child_ids
-        ]
         entries: dict[tuple[UUID, UUID | None], tuple[UUID, ...]] = {
             (self.container_id, None): self.entry_ids
         }
@@ -120,9 +112,6 @@ class _Charms:
             header_label="Gaca, 2011",
             run_id=self.run_id,
             version_id=None,
-            # The flat projection is kept beside the tree only until its last
-            # reader goes; `flat` is exactly what produced the diagonal.
-            model_instances=tuple(flat),
             entries=entries,
         )
 

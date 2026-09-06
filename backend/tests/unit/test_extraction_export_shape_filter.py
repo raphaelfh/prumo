@@ -18,7 +18,6 @@ from openpyxl import load_workbook
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.exports.extraction import workbook as workbook_module
@@ -64,7 +63,6 @@ def _every_sheet_layout() -> ExportLayout:
     section = SectionDescriptor(
         entity_type_id=_SECTION_ID,
         label="Participants",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
     )

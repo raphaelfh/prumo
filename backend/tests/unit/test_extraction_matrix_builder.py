@@ -18,7 +18,6 @@ from openpyxl import Workbook, load_workbook
 from app.core.error_handler import AppError
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.exports.extraction.matrix import build_matrix
@@ -62,7 +61,7 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
     section = SectionDescriptor(
         entity_type_id=eid,
         label="Index tests",
-        role=ExtractionEntityRole.STUDY_SECTION,  # NOT a model section
+        # NOT a model section
         parent_entity_type_id=None,
         fields=(field,),
         cardinality=ExtractionCardinality.MANY,
@@ -118,7 +117,6 @@ def test_column_guard_rejects_layouts_over_excel_limit():
     section = SectionDescriptor(
         entity_type_id=eid,
         label="S",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
         cardinality=ExtractionCardinality.MANY,
@@ -190,7 +188,6 @@ def test_header_block_labels() -> None:
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="1. Source of data",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
     )
@@ -234,7 +231,6 @@ def test_study_section_repeats_not_merges_across_models() -> None:
     study = SectionDescriptor(
         entity_type_id=study_id,
         label="Study",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(study_field,),
     )
@@ -245,7 +241,6 @@ def test_study_section_repeats_not_merges_across_models() -> None:
     model = SectionDescriptor(
         entity_type_id=model_id,
         label="Model development",
-        role=ExtractionEntityRole.MODEL_SECTION,
         parent_entity_type_id=None,
         fields=(model_field,),
         cardinality=ExtractionCardinality.MANY,
@@ -279,7 +274,6 @@ def test_matrix_structural_styling() -> None:
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="Source of data",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(f1, f2),
     )
@@ -324,7 +318,6 @@ def test_matrix_freeze_all_users_uses_two_header_rows() -> None:
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="Source",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(f1,),
     )
@@ -361,7 +354,6 @@ def _single_field_layout(field: FieldDescriptor, raw_value, *, sec_id: UUID) -> 
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="Section",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
     )

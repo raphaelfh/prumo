@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.extraction import ExtractionCardinality, ExtractionEntityRole
+from app.models.extraction import ExtractionCardinality
 from app.services.extraction_export_service import ExtractionExportService
 
 
@@ -67,7 +67,9 @@ async def test_load_sections_maps_snapshot_metadata() -> None:
 
     assert len(sections) == 1
     s = sections[0]
-    assert s.role is ExtractionEntityRole.STUDY_SECTION
+    # `role` is no longer carried onto the descriptors (trees B4): the
+    # export derives structure from parent + cardinality.
+    assert not hasattr(s, "role")
     assert s.cardinality is ExtractionCardinality.MANY
     assert s.sort_order == 2
     f = s.fields[0]

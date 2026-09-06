@@ -33,7 +33,6 @@ from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import Article
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ExtractionFieldType,
@@ -122,14 +121,14 @@ class FieldDescriptor:
 class SectionDescriptor:
     """One section (entity_type) — drives section header + field rows.
 
-    ``cardinality`` is the fan-out key (spec §5.2): ``MANY`` fans out one
-    record per instance for ANY role; ``ONE`` is one record per article.
-    Sections are emitted in ``sort_order``.
+    Structure is ``parent_entity_type_id`` + ``cardinality`` (trees B4):
+    ``MANY`` repeats — it is an entry group — and ``ONE`` is a singleton
+    under its parent, or under the article when it has none. Sections are
+    emitted in ``sort_order``.
     """
 
     entity_type_id: UUID
     label: str
-    role: ExtractionEntityRole
     parent_entity_type_id: UUID | None
     fields: tuple[FieldDescriptor, ...]
     cardinality: ExtractionCardinality = ExtractionCardinality.ONE
@@ -146,25 +145,19 @@ class SectionDescriptor:
 class ArticleDescriptor:
     """One article column (or N adjacent columns when multi-instance).
 
-    ``section_instances`` carries an ORDERED instance-id tuple per
-    study/section entity_type — fixing the §6 medium bug where
-    ``setdefault`` kept only the first instance and silently lost the rest.
-    Single-cardinality sections carry a 1-tuple. ``version_id`` is the Run's
-    own snapshot version, used for the per-Run obsolete-field diff (§5.1).
+    ``entries`` carries an ORDERED instance-id tuple per
+    ``(entity_type, parent_instance)`` pair, so a section's instances are
+    grouped under the entry that owns them rather than pooled by entity type.
+    ``version_id`` is the Run's own snapshot version, used for the per-Run
+    obsolete-field diff (§5.1).
     """
 
     article_id: UUID
     header_label: str
     run_id: UUID | None
     version_id: UUID | None
-    # Ordered model_section instance ids; empty when the template has no
-    # model_container OR when the article has zero model instances.
-    model_instances: tuple[UUID, ...] = ()
-    # entity_type_id (study/section) → ORDERED instance ids for the run.
-    section_instances: dict[UUID, tuple[UUID, ...]] = field(default_factory=dict)
-    # (entity_type_id, parent_instance_id) → ORDERED instance ids. The two
-    # fields above are the flat projections of this one and are deleted at
-    # the end of trees B4; see `exports/extraction/descriptors.py`.
+    # (entity_type_id, parent_instance_id) → ORDERED instance ids.
+    # See `exports/descriptors.py` for what reads it.
     entries: dict[tuple[UUID, UUID | None], tuple[UUID, ...]] = field(default_factory=dict)
 
 
@@ -850,14 +843,13 @@ class ExtractionExportService(LoggerMixin):
         Snapshot-driven (spec §5.1): reads the frozen entity_types tree via
         ``load_export_sections`` (mirrors the run-read path), not the live
         ``extraction_entity_types`` / ``extraction_fields`` tables. Carries
-        role + cardinality + full field metadata onto the descriptors.
+        parent + cardinality + full field metadata onto the descriptors.
         """
         snapshot_sections = await load_export_sections(self.db, version_id=version_id)
         return tuple(
             SectionDescriptor(
                 entity_type_id=s.entity_type_id,
                 label=s.label,
-                role=s.role,
                 parent_entity_type_id=s.parent_entity_type_id,
                 fields=tuple(
                     FieldDescriptor(
@@ -974,7 +966,6 @@ class ExtractionExportService(LoggerMixin):
         descriptors = await self._build_article_descriptors(
             article_ids=kept_articles,
             runs_by_article=runs_by_article,
-            template_id=template_id,
             kept_run_ids=kept_run_ids,
         )
 
@@ -985,7 +976,6 @@ class ExtractionExportService(LoggerMixin):
         *,
         article_ids: list[UUID],
         runs_by_article: dict[UUID, ExtractionRun],
-        template_id: UUID,
         kept_run_ids: list[UUID],
     ) -> list[ArticleDescriptor]:
         """Turn an article's instances into its column descriptor.
@@ -993,42 +983,27 @@ class ExtractionExportService(LoggerMixin):
         Was three byte-identical copies — consensus, single-user and
         all-users each partitioned instances by role inline.
 
-        ``entries`` is the tree-shaped one and takes EVERY instance,
-        containers included: a container instance carries no values of its
-        own, which is why the role partition dropped it, but it is the
-        parent key its children are grouped under and the axis the sheet
-        fans out on. The two flat fields beside it are the old projections
-        and go when their last reader does.
+        ``entries`` takes EVERY instance, containers included: a container
+        instance carries no values of its own, which is why the role
+        partition dropped it, but it is the parent key its children are
+        grouped under and the axis the sheet fans out on.
+
+        The role map that partition needed is gone with it — one fewer query
+        per export, on all three paths.
         """
         instances_by_run = await self._load_instances_for_runs(kept_run_ids)
-        entity_by_id = await self._load_entity_type_role_map(template_id)
         headers = await self._load_article_headers(article_ids)
 
-        descriptors: list[ArticleDescriptor] = []
-        for aid in article_ids:
-            run = runs_by_article[aid]
-            insts = instances_by_run.get(run.id, [])
-            model_instances: list[UUID] = []
-            section_instances: dict[UUID, list[UUID]] = {}
-            for inst in insts:
-                role = entity_by_id.get(inst.entity_type_id)
-                if role is ExtractionEntityRole.MODEL_SECTION:
-                    model_instances.append(inst.id)
-                elif role is ExtractionEntityRole.STUDY_SECTION:
-                    section_instances.setdefault(inst.entity_type_id, []).append(inst.id)
-
-            descriptors.append(
-                ArticleDescriptor(
-                    article_id=aid,
-                    header_label=headers.get(aid) or _short_id(aid),
-                    run_id=run.id,
-                    version_id=run.version_id,
-                    model_instances=tuple(model_instances),
-                    section_instances={k: tuple(v) for k, v in section_instances.items()},
-                    entries=build_entries(insts),
-                )
+        return [
+            ArticleDescriptor(
+                article_id=aid,
+                header_label=headers.get(aid) or _short_id(aid),
+                run_id=runs_by_article[aid].id,
+                version_id=runs_by_article[aid].version_id,
+                entries=build_entries(instances_by_run.get(runs_by_article[aid].id, [])),
             )
-        return descriptors
+            for aid in article_ids
+        ]
 
     async def _load_instances_for_runs(
         self,
@@ -1076,31 +1051,6 @@ class ExtractionExportService(LoggerMixin):
             by_article.setdefault(inst.article_id, []).append(inst)
 
         return {r.id: by_article.get(r.article_id, []) for r in runs}
-
-    async def _load_entity_type_role_map(
-        self,
-        template_id: UUID,
-    ) -> dict[UUID, ExtractionEntityRole]:
-        """``entity_type_id -> role`` from the ACTIVE snapshot (B-3a).
-
-        Derived from the same anchor the column layout uses — a live read
-        here would let an unpublished draft edit repartition the export's
-        study/model fan-out under B-4. Chains to the live rows when no
-        active version exists (unreachable for templates with runs —
-        trigger 0004 — but chain, never swap).
-        """
-        version = await self._template_versions_repo().get_active(template_id)
-        if version is not None:
-            sections = await load_export_sections(self.db, version_id=version.id)
-            return {s.entity_type_id: ExtractionEntityRole(s.role) for s in sections}
-        rows = (
-            await self.db.execute(
-                select(ExtractionEntityType.id, ExtractionEntityType.role).where(
-                    ExtractionEntityType.project_template_id == template_id
-                )
-            )
-        ).all()
-        return {row[0]: ExtractionEntityRole(row[1]) for row in rows}
 
     async def _load_article_headers(
         self,
@@ -1245,7 +1195,6 @@ class ExtractionExportService(LoggerMixin):
         descriptors = await self._build_article_descriptors(
             article_ids=kept_article_ids,
             runs_by_article=runs_by_article,
-            template_id=template_id,
             kept_run_ids=kept_run_ids,
         )
         return descriptors, omitted
@@ -1472,7 +1421,6 @@ class ExtractionExportService(LoggerMixin):
         descriptors = await self._build_article_descriptors(
             article_ids=kept_article_ids,
             runs_by_article=runs_by_article,
-            template_id=template_id,
             kept_run_ids=kept_run_ids,
         )
         return descriptors, omitted
@@ -1784,12 +1732,13 @@ class ExtractionExportService(LoggerMixin):
             decisions_by_key.setdefault((rid, iid, fid), []).append((decision, prop_id))
 
         # Pre-compute the instance index map per article so we can label
-        # "Instance #" 1..N for model_section instances.
+        # "Instance #" 1..N. The index is per SIBLING GROUP, which is what
+        # `section_instances` always gave a study section; children used to
+        # be numbered 1..N over the flat tuple instead — 1..12 for a CHARMS
+        # article with two models, which named nothing.
         instance_index_by_id: dict[UUID, int] = {}
         for article in articles:
-            for idx, iid in enumerate(article.model_instances, start=1):
-                instance_index_by_id[iid] = idx
-            for ids in article.section_instances.values():
+            for ids in article.entries.values():
                 for idx, iid in enumerate(ids, start=1):
                     instance_index_by_id[iid] = idx
 

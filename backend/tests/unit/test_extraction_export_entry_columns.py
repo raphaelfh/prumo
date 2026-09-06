@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from app.models.extraction import ExtractionCardinality, ExtractionEntityRole
+from app.models.extraction import ExtractionCardinality
 from app.services.exports.descriptors import (
     EntryColumn,
     all_instances_of,
@@ -28,9 +28,6 @@ def _sec(eid, *, parent=None, many=False, order=0):
     return SectionDescriptor(
         entity_type_id=eid,
         label=str(eid)[:8],
-        # `role` is still on the dataclass until it is deleted at the end of
-        # the slice; nothing under test reads it.
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=parent,
         fields=(),
         cardinality=ExtractionCardinality.MANY if many else ExtractionCardinality.ONE,
@@ -234,7 +231,6 @@ def _labelled(eid, *, parent=None, many=False, noun=None, label=None):
     return SectionDescriptor(
         entity_type_id=s.entity_type_id,
         label=label or s.label,
-        role=s.role,
         parent_entity_type_id=s.parent_entity_type_id,
         fields=(),
         cardinality=s.cardinality,

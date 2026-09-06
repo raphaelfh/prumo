@@ -138,7 +138,6 @@ class TemplateFactory:
             project_template_id=project_template_id,
             name=name,
             cardinality=cardinality,
-            role=ExtractionEntityRole.STUDY_SECTION,
             sort_order=sort_order,
         )
         self.db.add(et)
@@ -156,7 +155,6 @@ class TemplateFactory:
             project_template_id=project_template_id,
             name=name,
             cardinality="many",
-            role=ExtractionEntityRole.MODEL_CONTAINER,
             sort_order=sort_order,
         )
         self.db.add(et)
@@ -176,7 +174,6 @@ class TemplateFactory:
             project_template_id=project_template_id,
             name=name,
             cardinality=cardinality,
-            role=ExtractionEntityRole.MODEL_SECTION,
             parent_entity_type_id=parent,
             sort_order=sort_order,
         )

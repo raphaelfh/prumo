@@ -19,7 +19,6 @@ from uuid import UUID, uuid4
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.exports.extraction_scope_marking import mark_out_of_scope_values
@@ -74,12 +73,10 @@ def _section(
     fields: tuple[FieldDescriptor, ...],
     *,
     cardinality: ExtractionCardinality = ExtractionCardinality.ONE,
-    role: ExtractionEntityRole = ExtractionEntityRole.STUDY_SECTION,
 ) -> SectionDescriptor:
     return SectionDescriptor(
         entity_type_id=entity_type_id,
         label=name.replace("_", " ").title(),
-        role=role,
         parent_entity_type_id=None,
         fields=fields,
         cardinality=cardinality,

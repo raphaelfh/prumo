@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from app.models.extraction import ExtractionEntityRole, ExtractionFieldType
+from app.models.extraction import ExtractionFieldType
 from app.services.derived_judgment_payload import build_derived_judgments_payload
 from app.services.exports.value_envelope import resolve_value
 from app.services.extraction_export_service import (
@@ -142,7 +142,6 @@ def _workbook_overall(
             SectionDescriptor(
                 entity_type_id=section_id,
                 label=name,
-                role=ExtractionEntityRole.STUDY_SECTION,
                 parent_entity_type_id=None,
                 fields=(field,),
                 name=name,

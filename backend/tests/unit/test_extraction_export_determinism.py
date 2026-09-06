@@ -25,7 +25,6 @@ from openpyxl import load_workbook
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 
@@ -81,7 +80,6 @@ def _fixed_layout() -> ExportLayout:
     section = SectionDescriptor(
         entity_type_id=_SECTION_ID,
         label="1. Source of data",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
     )
@@ -268,7 +266,6 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
     section = SectionDescriptor(
         entity_type_id=entity_type_id,
         label="1. Source of data",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
     )
@@ -387,7 +384,6 @@ def test_column_guard_boundary() -> None:
         section = SectionDescriptor(
             entity_type_id=sec_id,
             label="S",
-            role=ExtractionEntityRole.STUDY_SECTION,
             parent_entity_type_id=None,
             fields=(field,),
         )
@@ -490,7 +486,6 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
     section = SectionDescriptor(
         entity_type_id=sec_id,
         label="Sec",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
         cardinality=ExtractionCardinality.MANY,
@@ -605,7 +600,6 @@ def _tied_appraisal_inputs():
     so only input ORDER — never identity — varies.
     """
     from app.models.extraction import (
-        ExtractionEntityRole,
         ExtractionFieldType,
     )
 
@@ -625,7 +619,6 @@ def _tied_appraisal_inputs():
     d1 = SectionDescriptor(
         entity_type_id=sid1,
         label="Participants",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(f1,),
         cardinality=ExtractionCardinality.ONE,
@@ -634,7 +627,6 @@ def _tied_appraisal_inputs():
     d2 = SectionDescriptor(
         entity_type_id=sid2,
         label="Predictors",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(f2,),
         cardinality=ExtractionCardinality.ONE,

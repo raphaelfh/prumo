@@ -46,7 +46,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
-    ExtractionEntityRole,
     ExtractionEvidence,
     ExtractionFieldType,
     ExtractionRun,
@@ -262,7 +261,6 @@ def _section(*, entity_type_id: UUID, field_id: UUID) -> SectionDescriptor:
     return SectionDescriptor(
         entity_type_id=entity_type_id,
         label="Section",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(
             FieldDescriptor(

@@ -15,7 +15,6 @@ from openpyxl import load_workbook
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.exports.extraction.workbook import build_workbook
@@ -44,7 +43,6 @@ def _field(label: str, ftype: ExtractionFieldType) -> FieldDescriptor:
 
 def _section(
     label: str,
-    role: ExtractionEntityRole,
     fields: list[FieldDescriptor] | None = None,
     parent: UUID | None = None,
     cardinality: ExtractionCardinality = ExtractionCardinality.ONE,
@@ -54,7 +52,6 @@ def _section(
     return SectionDescriptor(
         entity_type_id=eid,
         label=label,
-        role=role,
         parent_entity_type_id=parent,
         fields=f,
         cardinality=cardinality,
@@ -163,7 +160,7 @@ def test_single_article_single_section_single_field_consensus():
     # The builder now owns hierarchical numbering (§9), so fixtures carry the
     # bare labels and we assert on the builder-generated "1." / "1.1" prefixes.
     f = _field("Source of data", ExtractionFieldType.TEXT)
-    section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("Source of data", [f])
     inst_id = uuid4()
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
     field_id = section.fields[0].field_id
@@ -196,13 +193,12 @@ def test_multi_instance_article_repeats_study_section_values():
     # Two sections: one study_section ("Author"), one model_section ("Model perf").
     study_field = _field("Author", ExtractionFieldType.TEXT)
     model_field = _field("Modelling method", ExtractionFieldType.TEXT)
-    study = _section("Study", ExtractionEntityRole.STUDY_SECTION, [study_field])
+    study = _section("Study", [study_field])
     # Was a MODEL_SECTION with no parent, which only fanned out because role
     # was read before structure. The repeating root gives the same two
     # sub-columns from a shape the schema can actually hold.
     model = _section(
         "Model development",
-        ExtractionEntityRole.MODEL_SECTION,
         [model_field],
         cardinality=ExtractionCardinality.MANY,
     )
@@ -268,7 +264,7 @@ def test_multi_instance_article_repeats_study_section_values():
 
 def test_section_header_rows_have_bold_font_and_grey_fill():
     f = _field("Source", ExtractionFieldType.TEXT)
-    section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("Source of data", [f])
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: uuid4()})
     data = build_workbook(_layout(sections=(section,), articles=(article,)))
     ws = _open(data)["CHARMS"]
@@ -303,7 +299,7 @@ def test_section_header_rows_have_bold_font_and_grey_fill():
 )
 def test_format_cell_per_field_type(ftype, raw_value, expected):
     f = _field("F", ftype)
-    section = _section("S", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("S", [f])
     inst = uuid4()
     article = _article("X", study_instances={section.entity_type_id: inst})
     data = build_workbook(
@@ -319,7 +315,7 @@ def test_format_cell_per_field_type(ftype, raw_value, expected):
 
 def test_none_value_renders_blank_cell():
     f = _field("F", ExtractionFieldType.TEXT)
-    section = _section("S", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("S", [f])
     article = _article("X", study_instances={section.entity_type_id: uuid4()})
     # No value in value_map → cell is blank.
     data = build_workbook(_layout(sections=(section,), articles=(article,)))
@@ -380,7 +376,7 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
     )
 
     f = _field("Source", ExtractionFieldType.TEXT)
-    section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
+    section = _section("Source of data", [f])
     inst_id = uuid4()
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
     reviewer_a_id = _uuid4()
@@ -540,7 +536,6 @@ def test_workbook_emits_sheets_in_section4_order():
     """README → Summary → matrix → tidy tables → Data dictionary → Dropdown lists."""
     from app.models.extraction import (
         ExtractionCardinality,
-        ExtractionEntityRole,
         ExtractionFieldType,
     )
     from app.services.exports.extraction.workbook import build_workbook
@@ -563,7 +558,6 @@ def test_workbook_emits_sheets_in_section4_order():
     section = SectionDescriptor(
         entity_type_id=eid,
         label="Study",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(
             FieldDescriptor(

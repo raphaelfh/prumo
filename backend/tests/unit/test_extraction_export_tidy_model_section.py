@@ -20,7 +20,6 @@ from uuid import uuid4
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.extraction_export_service import (
@@ -44,7 +43,6 @@ def _group(entry_label: str | None = "model"):
     return SectionDescriptor(
         entity_type_id=_GROUP_ID,
         label="Prediction Models",
-        role=ExtractionEntityRole.MODEL_CONTAINER,
         parent_entity_type_id=None,
         fields=(),
         cardinality=ExtractionCardinality.MANY,
@@ -56,7 +54,6 @@ def _child(field_id):
     return SectionDescriptor(
         entity_type_id=uuid4(),
         label="Model development",
-        role=ExtractionEntityRole.MODEL_SECTION,
         parent_entity_type_id=_GROUP_ID,
         fields=(_field(field_id),),
         # Production child sections are cardinality ONE; the N-entry fan-out
@@ -153,7 +150,6 @@ def test_a_root_many_section_still_fans_out_per_instance() -> None:
     section = SectionDescriptor(
         entity_type_id=uuid4(),
         label="Outcomes",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(_field(field_id, "Name"),),
         cardinality=ExtractionCardinality.MANY,

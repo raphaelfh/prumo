@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
     ExtractionFieldType,
 )
 from app.services.exports.extraction.summary import build_summary
@@ -34,7 +33,6 @@ def _study_section_two_fields():
     return SectionDescriptor(
         entity_type_id=eid,
         label="Study",
-        role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(_field(), _field()),
         cardinality=ExtractionCardinality.ONE,
@@ -96,7 +94,6 @@ def test_summary_has_an_article_row_then_one_row_per_entry():
     container = SectionDescriptor(
         entity_type_id=uuid4(),
         label="Models",
-        role=ExtractionEntityRole.MODEL_CONTAINER,
         parent_entity_type_id=None,
         fields=(),
         cardinality=ExtractionCardinality.MANY,
@@ -134,7 +131,6 @@ def test_an_entry_row_counts_only_its_own_subtree():
     group = SectionDescriptor(
         entity_type_id=group_id,
         label="Models",
-        role=ExtractionEntityRole.MODEL_CONTAINER,
         parent_entity_type_id=None,
         fields=(),
         cardinality=ExtractionCardinality.MANY,
@@ -144,7 +140,6 @@ def test_an_entry_row_counts_only_its_own_subtree():
     child = SectionDescriptor(
         entity_type_id=child_id,
         label="Development",
-        role=ExtractionEntityRole.MODEL_SECTION,
         parent_entity_type_id=group_id,
         fields=(
             FieldDescriptor(
