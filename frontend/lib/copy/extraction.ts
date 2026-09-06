@@ -352,6 +352,18 @@ export const extraction = {
     modelAddManuallyTitle: 'Add new {{noun}} manually',
     modelNewShort: 'New',
     modelRemoveActiveTitle: 'Remove active {{noun}}',
+    // Bulk selection (trees B7). The tab strip flips into checkboxes on
+    // demand rather than carrying a permanent checkbox column: the common
+    // case is one entry, and a column that is always there reads as a table
+    // the reviewer is expected to act on.
+    entrySelectStart: 'Select',
+    entrySelectCancel: 'Cancel',
+    entrySelectDelete: 'Delete',
+    entrySelectCount: '{{n}} selected',
+    entrySelectToggleOne: 'Select {{name}}',
+    entryBulkDeleteTitle: 'Delete {{n}} {{noun}}?',
+    entryBulkDeleteBody:
+      'Their answers, evidence and review history go with them. This cannot be undone.',
     modelRenameActiveTitle: 'Rename active {{noun}}',
     modelActiveLabel: 'Active {{noun}}',
     // SectionAccordion

@@ -49,6 +49,7 @@ export interface ExtractionFormViewProps {
   onRefreshInstances: () => Promise<void>;
   handleAddInstance: (entityTypeId: string, parentInstanceId: string | null) => void;
   handleRemoveInstance: (instanceId: string) => void;
+  handleDeleteEntries: (instanceIds: string[]) => void;
   handleRenameInstance?: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
   projectId: string;
   articleId: string;
@@ -102,6 +103,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     registerSection,
     onAddEntry: props.handleAddInstance,
     onRemoveInstance: props.handleRemoveInstance,
+    onDeleteEntries: props.handleDeleteEntries,
     onRenameInstance: props.handleRenameInstance ?? (async () => {}),
     onOpenRenameDialog: props.handleOpenRenameDialog,
     onOpenRemoveDialog: props.handleOpenRemoveDialog,

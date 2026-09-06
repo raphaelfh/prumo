@@ -3,6 +3,11 @@
 ``POST /api/v1/extraction/instances`` — create one entry of a repeating
 section, with its singleton children, in one transaction.
 
+``DELETE /api/v1/extraction/instances`` — delete SEVERAL entries in one
+transaction. Not N of the browser's single deletes: an entry cascades to its
+children, its values and its reviewer decisions, so a half-finished batch is
+a state no undo restores.
+
 ``PATCH /api/v1/extraction/instances/{instance_id}`` — rename and/or re-key
 one entry of a repeating section. The client sends the coordinate it holds
 (project, article, template); the service binds the id to it through the one
@@ -23,11 +28,18 @@ from app.api.deps.security import (
 from app.core.deps import DbSession
 from app.schemas.common import ApiResponse
 from app.schemas.extraction import (
+    EntryBulkDeleteRequest,
+    EntryBulkDeleteResponse,
     EntryCreateRequest,
     EntryCreateResponse,
     InstanceIdentityUpdateRequest,
 )
 from app.schemas.extraction_run import RunViewInstance
+from app.services.entry_bulk_delete_service import (
+    EntryNotFoundError,
+    EntryNotRepeatingError,
+    delete_entries,
+)
 from app.services.entry_hierarchy_service import (
     EntryHierarchyService,
     EntryKeyDuplicateError,
@@ -97,6 +109,49 @@ async def create_entry(
         ) from exc
     await db.commit()
     return ApiResponse.success(created, trace_id=trace_id)
+
+
+@router.delete(
+    "",
+    response_model=ApiResponse[EntryBulkDeleteResponse],
+    summary="Delete several entries of a repeating section",
+    description=(
+        "All or nothing: every id is bound to the request coordinate first, "
+        "so one foreign or missing id refuses the WHOLE batch and deletes "
+        "nothing. A singleton instance is refused with a 422."
+    ),
+)
+@limiter.limit("30/minute")
+async def delete_entries_endpoint(
+    request: Request,  # noqa: ARG001 — read by the rate limiter
+    payload: EntryBulkDeleteRequest,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[EntryBulkDeleteResponse]:
+    trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
+    await ensure_project_member(db, payload.project_id, current_user_sub)
+    # Deleting an entry destroys the ReviewerDecision rows recorded against
+    # it, so the same reviewer gate the create sibling carries: a read-only
+    # viewer is a member but must not destroy audit-trail rows.
+    await ensure_project_reviewer(db, payload.project_id, current_user_sub)
+    try:
+        deleted = await delete_entries(
+            db,
+            instance_ids=payload.instance_ids,
+            project_id=payload.project_id,
+            article_id=payload.article_id,
+            template_id=payload.template_id,
+        )
+    except EntryNotFoundError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except EntryNotRepeatingError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await db.commit()
+    return ApiResponse.success(EntryBulkDeleteResponse(deleted=deleted), trace_id=trace_id)
 
 
 @router.patch(

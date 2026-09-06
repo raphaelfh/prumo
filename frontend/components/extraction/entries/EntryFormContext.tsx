@@ -73,6 +73,9 @@ export interface EntryFormContextValue {
    */
   onAddEntry: (entityTypeId: string, parentInstanceId: string | null) => void;
   onRemoveInstance: (instanceId: string) => void;
+  /** Bulk delete of several entries, through the transactional endpoint.
+   * Distinct from `onRemoveInstance`, which is the single browser delete. */
+  onDeleteEntries: (instanceIds: string[]) => void;
   onRenameInstance: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
   /**
    * Open the rename/re-key dialog for one entry. Distinct from

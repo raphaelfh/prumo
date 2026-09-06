@@ -80,6 +80,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 
 // Additional hooks
 import {useAddEntry} from '@/hooks/extraction/useAddEntry';
+import {useDeleteEntries} from '@/hooks/extraction/useDeleteEntries';
 import {entrySlotKey} from '@/hooks/extraction/useEntryGroup';
 import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
 import {displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
@@ -721,6 +722,16 @@ export default function ExtractionFullScreen() {
   });
   const handleAddInstance = addEntry.open;
 
+  // Entry deletion, single and bulk. Both live in one hook because they
+  // share their failure vocabulary (the published-states pin).
+  const {deleteOne: handleRemoveInstance, deleteSelected: handleDeleteEntries} = useDeleteEntries({
+    projectId,
+    articleId,
+    templateId: template?.id,
+    onDeleted: refetchRun,
+    values,
+  });
+
   // Rename / re-key — one write for cards and for the active model. The
   // noun names the entry in the toasts; the run view refetch (invalidated
   // by the hook) re-derives labels and identities.
@@ -754,32 +765,6 @@ export default function ExtractionFullScreen() {
   const removedEntityType = entityTypes.find(
     (et) => et.id === instances.find((i) => i.id === modelToRemove?.id)?.entity_type_id,
   );
-
-  const handleRemoveInstance = async (instanceId: string) => {
-    // Check if there are extracted values
-    const hasValues = Object.keys(values).some(key => key.startsWith(`${instanceId}_`));
-    if (hasValues) {
-      const confirmed = window.confirm(t('pages', 'extractionScreenConfirmRemoveInstance'));
-      if (!confirmed) return;
-    }
-    const removed = await extractionInstanceService.removeInstance(instanceId).catch((error: unknown) => {
-      console.error('Error removing instance:', error);
-      // FK 23503: the instance is pinned by published rows from a prior
-      // finalized revision (deferred FK, migration 0040) — explain, don't
-      // show the generic failure (2026-07-02 hardening finding).
-      const message = error instanceof Error ? error.message : String(error);
-      toast.error(
-        message.includes('extraction_published_states')
-          ? t('pages', 'extractionScreenInstancePinned')
-          : t('pages', 'extractionScreenErrorRemoveInstance'),
-      );
-      return false;
-    });
-    if (removed !== false) {
-      await refetchRun();
-      toast.success(t('pages', 'extractionScreenInstanceRemoved'));
-    }
-  };
 
 
   // Single render gate. ``no-fields`` is reported ONLY when the run is loaded
@@ -1099,6 +1084,7 @@ export default function ExtractionFullScreen() {
           handleOpenRemoveDialog,
           handleAddInstance,
           handleRemoveInstance,
+          handleDeleteEntries,
           handleRenameInstance,
           projectId: projectId || '',
           articleId: articleId || '',
