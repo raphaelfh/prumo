@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from app.models.extraction import ExtractionEntityRole
 from tests.integration.conftest import SEED
 
 pytestmark = pytest.mark.asyncio
@@ -184,6 +185,7 @@ async def _add_child_entity_type(
         project_template_id=project_template_id,
         name=name,
         cardinality=cast(L["one", "many"], cardinality),
+        role=ExtractionEntityRole.MODEL_SECTION,
         parent_entity_type_id=parent_et_id,
         sort_order=sort_order,
     )

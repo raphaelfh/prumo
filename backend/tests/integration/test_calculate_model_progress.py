@@ -75,6 +75,7 @@ async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, Non
         {"tid": str(ptid), "uid": str(user_id)},
     )
 
+    from app.models.extraction import ExtractionEntityRole
     from tests.factories import make_entity_type
 
     container = make_entity_type(
@@ -82,6 +83,7 @@ async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, Non
         name="prediction_models",
         label="Prediction Models",
         cardinality="many",
+        role=ExtractionEntityRole.MODEL_CONTAINER,
         sort_order=0,
     )
     db_session.add(container)
@@ -93,6 +95,7 @@ async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, Non
         name="sub_section",
         label="Sub Section",
         cardinality="one",
+        role=ExtractionEntityRole.MODEL_SECTION,
         parent_entity_type_id=pred_et,
         sort_order=1,
     )
