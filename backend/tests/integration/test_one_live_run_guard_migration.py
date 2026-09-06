@@ -94,10 +94,13 @@ async def _seed_duplicate_live_runs(conn: asyncpg.Connection) -> None:
         _PROFILE,
     )
     await conn.execute(
+        # `role` spelled out: these rows are inserted at a pre-0069 schema,
+        # where the column is NOT NULL. 0069 drops it far above this
+        # migration in the chain.
         "INSERT INTO public.extraction_entity_types "
-        "(id, project_template_id, name, label, cardinality,"
+        "(id, project_template_id, name, label, role, cardinality,"
         " parent_entity_type_id, sort_order, is_required) "
-        "VALUES ($1, $2, 'participants', 'Participants', 'one', "
+        "VALUES ($1, $2, 'participants', 'Participants', 'study_section', 'one', "
         "NULL, 0, false)",
         _ENTITY_TYPE,
         _TEMPLATE,

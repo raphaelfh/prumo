@@ -55,6 +55,7 @@ def _snapshot_entity(
     name: str,
     *,
     parent: str | None = None,
+    cardinality: str = "one",
     fields: list[dict] | None = None,
 ) -> dict:
     return {
@@ -63,7 +64,9 @@ def _snapshot_entity(
         "label": name,
         "description": "pinned entity description",
         "parent_entity_type_id": parent,
-        "cardinality": "one",
+        "cardinality": cardinality,
+        # A repeating section always carries the word for one entry (0069).
+        "entry_label": "entry" if cardinality == "many" else None,
         "sort_order": 0,
         "is_required": False,
         "fields": fields or [],
@@ -319,7 +322,7 @@ async def test_child_entity_types_come_from_the_pinned_snapshot(
         profile_id=profile_id,
         schema={
             "entity_types": [
-                _snapshot_entity(str(entity_type_id), "parent", role="model_container"),
+                _snapshot_entity(str(entity_type_id), "parent", cardinality="many"),
                 _snapshot_entity(
                     pinned_child_id,
                     "pinned_child",
