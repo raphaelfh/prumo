@@ -114,11 +114,10 @@ def _article(
         header_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={
-            _SCOPE_SECTION: (scope_inst,),
-            _DEV_SECTION: (dev_inst,),
-            _EVAL_SECTION: eval_insts,
+        entries={
+            (_SCOPE_SECTION, None): (scope_inst,),
+            (_DEV_SECTION, None): (dev_inst,),
+            (_EVAL_SECTION, None): eval_insts,
         },
     )
 
@@ -268,8 +267,7 @@ def test_an_article_with_no_run_is_skipped() -> None:
         header_label="No run",
         run_id=None,
         version_id=None,
-        model_instances=(),
-        section_instances={},
+        entries={},
     )
     value_map: dict[tuple[Any, ...], Any] = {}
 

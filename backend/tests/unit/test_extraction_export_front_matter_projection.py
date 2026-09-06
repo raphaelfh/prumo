@@ -49,8 +49,7 @@ def test_front_matter_assembles_counts_contents_and_obsolete() -> None:
         header_label="Gaca, 2011",
         run_id=run,
         version_id=None,
-        model_instances=(),
-        section_instances={study.entity_type_id: (inst,)},
+        entries={(study.entity_type_id, None): (inst,)},
     )
     value_map = {(run, inst, study.fields[0].field_id): "Gaca"}
     tidy = _build_tidy_tables((study,), (article,), value_map, ExportMode.CONSENSUS)

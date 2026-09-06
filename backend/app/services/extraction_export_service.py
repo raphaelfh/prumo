@@ -32,7 +32,6 @@ from app.core.logging import LoggerMixin
 from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import Article
 from app.models.extraction import (
-    DEFAULT_ENTRY_LABEL,
     ExtractionCardinality,
     ExtractionEntityRole,
     ExtractionEntityType,
@@ -59,7 +58,11 @@ from app.services.derived_judgment_service import (
     scope_filtered_values,
     warn_dangling_spec_refs,
 )
-from app.services.exports.descriptors import build_entries
+from app.services.exports.descriptors import (
+    build_entries,
+    iter_records,
+    root_instance,
+)
 from app.services.exports.extraction_scope_marking import (
     NOT_APPLICABLE,
     article_values_by_coord,
@@ -156,9 +159,9 @@ class ArticleDescriptor:
     version_id: UUID | None
     # Ordered model_section instance ids; empty when the template has no
     # model_container OR when the article has zero model instances.
-    model_instances: tuple[UUID, ...]
+    model_instances: tuple[UUID, ...] = ()
     # entity_type_id (study/section) → ORDERED instance ids for the run.
-    section_instances: dict[UUID, tuple[UUID, ...]]
+    section_instances: dict[UUID, tuple[UUID, ...]] = field(default_factory=dict)
     # (entity_type_id, parent_instance_id) → ORDERED instance ids. The two
     # fields above are the flat projections of this one and are deleted at
     # the end of trees B4; see `exports/extraction/descriptors.py`.
@@ -695,8 +698,7 @@ class ExtractionExportService(LoggerMixin):
             consensus_verdicts: list[Any] = []
             per_reviewer_verdicts: dict[UUID, list[Any]] = {r.reviewer_id: [] for r in reviewers}
             for section, vfield in domains:
-                instance_ids = article.section_instances.get(section.entity_type_id, ())
-                instance_id = instance_ids[0] if instance_ids else None
+                instance_id = root_instance(article, section.entity_type_id)
                 if is_all_users:
                     consensus_verdicts.append(
                         value_map.get((run_id, instance_id, vfield.field_id, None))
@@ -2054,23 +2056,21 @@ def _build_tidy_tables(
     value_map: dict[tuple[Any, ...], Any],
     mode: ExportMode,
 ) -> tuple[TidyTable, ...]:
-    """One publication table per non-container section at its record grain.
+    """One publication table per section carrying fields, at its record grain.
 
-    Record axis is selected by ROLE first, then cardinality (mirrors
-    ``matrix._resolve_instance_id``): a ``MODEL_SECTION`` fans out one row per
-    ``model_instances`` entry regardless of its own cardinality (spec §5.2);
-    non-model ``MANY`` fans out per ``section_instances``; non-model ``ONE`` is
-    one row per article. ``MODEL_CONTAINER`` and field-less sections are skipped.
+    The record axis comes from the entry tree (``iter_records``): a row under
+    a nested group is labelled with every repeating level above it, so
+    ``{article} - {root entry} - {nested entry}`` (spec §10).
+
+    Was selected by ROLE first: a model section fanned out one row per
+    ``model_instances`` entry, and that tuple held EVERY child instance of
+    EVERY entry — so an article with two models emitted twelve rows on each
+    child sheet, six of them empty. A field-less repeating group is skipped
+    because it is the axis, not a record; one WITH fields now gets its own
+    sheet, which it never did.
     """
-    # B-8: model records are labelled with the container's entry noun, read from
-    # the PINNED snapshot descriptors (never live rows). No container, or a
-    # pre-0051 snapshot without the key, falls back to DEFAULT_ENTRY_LABEL.
-    container = next((s for s in sections if s.role is ExtractionEntityRole.MODEL_CONTAINER), None)
-    model_stem = ((container.entry_label if container else None) or DEFAULT_ENTRY_LABEL).title()
     tables: list[TidyTable] = []
     for section in sections:
-        if section.role is ExtractionEntityRole.MODEL_CONTAINER:
-            continue
         if not section.fields:
             continue
         column_field_ids = tuple(f.field_id for f in section.fields)
@@ -2079,27 +2079,13 @@ def _build_tidy_tables(
         for article in articles:
             if article.run_id is None:
                 continue
-            if section.role is ExtractionEntityRole.MODEL_SECTION:
-                instances = article.model_instances
-                stem = model_stem
-            elif section.cardinality is ExtractionCardinality.MANY:
-                instances = article.section_instances.get(section.entity_type_id, ())
-                stem = section.label
-            else:
-                instances = article.section_instances.get(section.entity_type_id, ())[:1]
-                stem = None
-            for idx, instance_id in enumerate(instances, start=1):
-                label = (
-                    article.header_label
-                    if stem is None
-                    else f"{article.header_label} — {stem} {idx}"
-                )
+            for instance_id, label_parts in iter_records(section, article, sections):
                 rows.append(
                     _tidy_row(
                         section=section,
                         article=article,
                         instance_id=instance_id,
-                        record_label=label,
+                        record_label=" — ".join((article.header_label, *label_parts)),
                         value_map=value_map,
                         mode=mode,
                     )

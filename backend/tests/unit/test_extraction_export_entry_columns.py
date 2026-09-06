@@ -15,8 +15,11 @@ from uuid import uuid4
 from app.models.extraction import ExtractionCardinality, ExtractionEntityRole
 from app.services.exports.descriptors import (
     EntryColumn,
+    all_instances_of,
     build_columns,
     instance_for,
+    iter_records,
+    root_instance,
 )
 from app.services.extraction_export_service import ArticleDescriptor, SectionDescriptor
 
@@ -41,8 +44,6 @@ def _article(entries):
         header_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=None,
-        model_instances=(),
-        section_instances={},
         entries=entries,
     )
 
@@ -128,9 +129,7 @@ def test_a_nested_group_widens_only_its_own_entry_columns() -> None:
     n2a = uuid4()
     group_sec, nested_sec = _sec(g, many=True), _sec(nested, parent=g, many=True)
     sections = (group_sec, nested_sec)
-    article = _article(
-        {(g, None): (e1, e2), (nested, e1): (n1a, n1b, n1c), (nested, e2): (n2a,)}
-    )
+    article = _article({(g, None): (e1, e2), (nested, e1): (n1a, n1b, n1c), (nested, e2): (n2a,)})
 
     cols = build_columns(sections, article)
 
@@ -202,3 +201,106 @@ def test_a_parent_cycle_terminates_instead_of_hanging() -> None:
 
     # No root (both sections name a parent) -> single empty column, no hang.
     assert build_columns(sections, article) == (EntryColumn(selection={}),)
+
+
+def test_root_instance_ignores_an_instance_that_lives_under_an_entry() -> None:
+    """The accident `section_instances` had, kept on purpose.
+
+    A section nested under an entry never had a `section_instances` row, so
+    the scope rules and the appraisal roll-up could not key on one. Resolving
+    it through the chain here would silently start feeding per-entry values
+    into the out-of-scope pass, which decides what a whole domain reports.
+    """
+    g, child, study = uuid4(), uuid4(), uuid4()
+    e1, c1, s1 = uuid4(), uuid4(), uuid4()
+    article = _article({(g, None): (e1,), (child, e1): (c1,), (study, None): (s1,)})
+
+    assert root_instance(article, study) == s1
+    assert root_instance(article, child) is None
+
+
+def test_all_instances_of_spans_every_parent() -> None:
+    g, child = uuid4(), uuid4()
+    e1, e2 = uuid4(), uuid4()
+    c1, c2 = uuid4(), uuid4()
+    article = _article({(g, None): (e1, e2), (child, e1): (c1,), (child, e2): (c2,)})
+
+    assert set(all_instances_of(article, child)) == {c1, c2}
+    assert all_instances_of(article, uuid4()) == ()
+
+
+def _labelled(eid, *, parent=None, many=False, noun=None, label=None):
+    s = _sec(eid, parent=parent, many=many)
+    return SectionDescriptor(
+        entity_type_id=s.entity_type_id,
+        label=label or s.label,
+        role=s.role,
+        parent_entity_type_id=s.parent_entity_type_id,
+        fields=(),
+        cardinality=s.cardinality,
+        sort_order=s.sort_order,
+        entry_label=noun,
+    )
+
+
+def test_records_for_a_root_singleton_is_one_unlabelled_row() -> None:
+    s = _labelled(uuid4())
+    i1 = uuid4()
+    article = _article({(s.entity_type_id, None): (i1,)})
+
+    assert iter_records(s, article, (s,)) == ((i1, ()),)
+
+
+def test_records_for_a_root_group_number_its_entries_by_noun() -> None:
+    g = _labelled(uuid4(), many=True, noun="model")
+    e1, e2 = uuid4(), uuid4()
+    article = _article({(g.entity_type_id, None): (e1, e2)})
+
+    assert iter_records(g, article, (g,)) == ((e1, ("Model 1",)), (e2, ("Model 2",)))
+
+
+def test_records_for_a_singleton_child_carry_their_entry_in_the_label() -> None:
+    """§10: a nested row reads `{article} - {root entry} - {nested entry}`.
+
+    Today every child row is labelled with the CONTAINER's noun and a running
+    index over the flat tuple, so an article with two models produced twelve
+    "Model 1..12" rows on each child sheet — six of them empty.
+    """
+    g = _labelled(uuid4(), many=True, noun="model")
+    child = _labelled(uuid4(), parent=g.entity_type_id, label="Model Development")
+    e1, e2 = uuid4(), uuid4()
+    c1, c2 = uuid4(), uuid4()
+    sections = (g, child)
+    article = _article(
+        {
+            (g.entity_type_id, None): (e1, e2),
+            (child.entity_type_id, e1): (c1,),
+            (child.entity_type_id, e2): (c2,),
+        }
+    )
+
+    assert iter_records(child, article, sections) == (
+        (c1, ("Model 1",)),
+        (c2, ("Model 2",)),
+    )
+
+
+def test_records_for_a_nested_group_name_both_levels() -> None:
+    g = _labelled(uuid4(), many=True, noun="model")
+    nested = _labelled(uuid4(), parent=g.entity_type_id, many=True, noun="predictor")
+    e1, e2 = uuid4(), uuid4()
+    p1, p2, p3 = uuid4(), uuid4(), uuid4()
+    sections = (g, nested)
+    article = _article(
+        {
+            (g.entity_type_id, None): (e1, e2),
+            (nested.entity_type_id, e1): (p1, p2),
+            (nested.entity_type_id, e2): (p3,),
+        }
+    )
+
+    assert iter_records(nested, article, sections) == (
+        (p1, ("Model 1", "Predictor 1")),
+        (p2, ("Model 1", "Predictor 2")),
+        (p3, ("Model 2", "Predictor 1")),
+    )

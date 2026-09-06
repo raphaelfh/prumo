@@ -67,8 +67,7 @@ def _wide_layout(*, n_articles: int, n_subcols_each: int) -> ExportLayout:
             header_label=f"A{i}",
             run_id=uuid4(),
             version_id=uuid4(),
-            model_instances=(),
-            section_instances={sec_id: tuple(uuid4() for _ in range(n_subcols_each))},
+            entries={(sec_id, None): tuple(uuid4() for _ in range(n_subcols_each))},
         )
         for i in range(n_articles)
     )

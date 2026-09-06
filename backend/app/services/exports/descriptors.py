@@ -121,9 +121,7 @@ def build_columns(
                 # A shorter axis repeats its last entry rather than blanking.
                 selection[root.entity_type_id] = ids[min(position, len(ids) - 1)]
         roots_added = list(selection)
-        columns.extend(
-            _expand(sections, article, selection, roots_added, frozenset(roots_added))
-        )
+        columns.extend(_expand(sections, article, selection, roots_added, frozenset(roots_added)))
     return tuple(columns)
 
 
@@ -197,3 +195,120 @@ def instance_for(
         return column.selection.get(section.entity_type_id)
     ids = article.entries.get((section.entity_type_id, parent_instance_id), ())
     return ids[0] if ids else None
+
+
+def root_instance(article: ArticleDescriptor, entity_type_id: UUID) -> UUID | None:
+    """The one instance of a ROOT section — its first, or nothing.
+
+    Replaces ``article.section_instances.get(et, ())[0]`` in the appraisal
+    roll-up and the scope projection. It deliberately keeps an accident of
+    that expression: a section nested under an entry has no
+    ``parent_instance_id IS NULL`` row, so it resolves to ``None`` and a
+    scope rule still cannot key on one. Walking the chain here instead would
+    quietly start feeding per-entry values into the out-of-scope pass.
+    """
+    ids = article.entries.get((entity_type_id, None), ())
+    return ids[0] if ids else None
+
+
+def all_instances_of(article: ArticleDescriptor, entity_type_id: UUID) -> tuple[UUID, ...]:
+    """Every instance of one section, across all of its parents.
+
+    The tidy sheets are records-as-rows, so they want the whole set rather
+    than one column's pick — ordered by parent, then within a parent by the
+    order ``build_entries`` fixed.
+    """
+    return tuple(
+        instance_id
+        for (et, _parent), ids in article.entries.items()
+        if et == entity_type_id
+        for instance_id in ids
+    )
+
+
+def _stem(section: SectionDescriptor) -> str:
+    """The noun one record of this section is called.
+
+    The entry noun is authored lowercase ("model", "arm"), so it is
+    Title-Cased; a section LABEL is authored for display and is used
+    verbatim, which is what the old cardinality-MANY branch did.
+    """
+    return section.entry_label.title() if section.entry_label else section.label
+
+
+def _ancestry(
+    section: SectionDescriptor, sections: Sequence[SectionDescriptor]
+) -> list[SectionDescriptor]:
+    """``section`` and its ancestors, root first."""
+    chain, current, seen = [], section, set()
+    while current is not None and current.entity_type_id not in seen:
+        chain.append(current)
+        seen.add(current.entity_type_id)
+        parent_id = current.parent_entity_type_id
+        current = (
+            next((s for s in sections if s.entity_type_id == parent_id), None)
+            if parent_id
+            else None
+        )
+    chain.reverse()
+    return chain
+
+
+def iter_records(
+    section: SectionDescriptor,
+    article: ArticleDescriptor,
+    sections: Sequence[SectionDescriptor],
+) -> tuple[tuple[UUID, tuple[str, ...]], ...]:
+    """``(instance_id, label parts)`` for every record of one section.
+
+    The records-as-rows grain of the tidy sheets (spec §10): a row under a
+    nested group reads ``{article} · {root entry} · {nested entry}``, so the
+    parts name every repeating level above the row, in order.
+
+    Each level of the chain multiplies the records below it, which is what
+    the flat ``model_instances`` tuple could not express: every child row was
+    labelled with the CONTAINER's noun and a running index over that tuple,
+    so an article with two models produced twelve "Model 1..12" rows on each
+    child sheet, six of them empty.
+    """
+    records: list[tuple[UUID | None, tuple[str, ...]]] = [(None, ())]
+    for level in _ancestry(section, sections):
+        grown: list[tuple[UUID | None, tuple[str, ...]]] = []
+        for parent_instance_id, parts in records:
+            ids = article.entries.get((level.entity_type_id, parent_instance_id), ())
+            if _repeats(level):
+                stem = _stem(level)
+                grown.extend(
+                    (instance_id, (*parts, f"{stem} {i}"))
+                    for i, instance_id in enumerate(ids, start=1)
+                )
+            elif ids:
+                grown.append((ids[0], parts))
+        records = grown
+    return tuple((iid, parts) for iid, parts in records if iid is not None)
+
+
+def descendant_instances(article: ArticleDescriptor, instance_id: UUID) -> set[UUID]:
+    """``instance_id`` and every instance beneath it.
+
+    The completeness scope of one Summary row: an entry is "80% filled"
+    counting its own fields and its children's, and nothing from a sibling
+    entry.
+    """
+    found = {instance_id}
+    stack = [instance_id]
+    while stack:
+        parent = stack.pop()
+        for (_et, parent_instance_id), ids in article.entries.items():
+            if parent_instance_id != parent:
+                continue
+            for child in ids:
+                if child not in found:
+                    found.add(child)
+                    stack.append(child)
+    return found
+
+
+def root_groups(sections: Sequence[SectionDescriptor]) -> list[SectionDescriptor]:
+    """Root sections that repeat — the axes a template fans out on."""
+    return [s for s in _children_of(sections, None) if _repeats(s)]

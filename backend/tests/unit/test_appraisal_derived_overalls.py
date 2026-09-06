@@ -174,8 +174,7 @@ def _article(run_id: Any, section_instances: dict[Any, tuple[Any, ...]]) -> Arti
         header_label="Art 1",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances=section_instances,
+        entries={(sid, None): ids for sid, ids in section_instances.items()},
     )
 
 

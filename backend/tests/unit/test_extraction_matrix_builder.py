@@ -74,8 +74,7 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
         header_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={eid: (inst_a, inst_b)},
+        entries={(eid, None): (inst_a, inst_b)},
     )
     data = build_workbook(
         _layout(
@@ -131,8 +130,7 @@ def test_column_guard_rejects_layouts_over_excel_limit():
         header_label="Big",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={eid: instance_ids},
+        entries={(eid, None): instance_ids},
     )
     with pytest.raises(AppError) as exc:
         build_workbook(_layout((section,), (article,), {}))
@@ -202,8 +200,7 @@ def test_header_block_labels() -> None:
         header_label="Smith, 2020",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={sec_id: (inst_id,)},
+        entries={(sec_id, None): (inst_id,)},
     )
     layout = _spec_layout(
         sections=(section,),
@@ -241,12 +238,17 @@ def test_study_section_repeats_not_merges_across_models() -> None:
         parent_entity_type_id=None,
         fields=(study_field,),
     )
+    # Was `role=MODEL_SECTION, parent=None` — a shape 0016 forbids (a model
+    # section's parent must BE the container) that only rendered because role
+    # was read before structure. The repeating ROOT group is the real shape
+    # with the same two sub-columns.
     model = SectionDescriptor(
         entity_type_id=model_id,
         label="Model development",
         role=ExtractionEntityRole.MODEL_SECTION,
         parent_entity_type_id=None,
         fields=(model_field,),
+        cardinality=ExtractionCardinality.MANY,
     )
     run_id, study_inst = uuid4(), uuid4()
     m1, m2 = uuid4(), uuid4()
@@ -255,8 +257,7 @@ def test_study_section_repeats_not_merges_across_models() -> None:
         header_label="A",
         run_id=run_id,
         version_id=None,
-        model_instances=(m1, m2),
-        section_instances={study_id: (study_inst,)},
+        entries={(model_id, None): (m1, m2), (study_id, None): (study_inst,)},
     )
     layout = _spec_layout(
         sections=(study, model),
@@ -288,8 +289,7 @@ def test_matrix_structural_styling() -> None:
         header_label="A",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={sec_id: (inst_id,)},
+        entries={(sec_id, None): (inst_id,)},
     )
     layout = _spec_layout(sections=(section,), articles=(article,))
     spec = build_matrix(layout)
@@ -335,8 +335,7 @@ def test_matrix_freeze_all_users_uses_two_header_rows() -> None:
         header_label="A",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={sec_id: (inst_id,)},
+        entries={(sec_id, None): (inst_id,)},
     )
     layout = _spec_layout(
         sections=(section,),
@@ -372,8 +371,7 @@ def _single_field_layout(field: FieldDescriptor, raw_value, *, sec_id: UUID) -> 
         header_label="A",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={sec_id: (inst_id,)},
+        entries={(sec_id, None): (inst_id,)},
     )
     return _spec_layout(
         sections=(section,),

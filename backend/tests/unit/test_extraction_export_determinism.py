@@ -90,8 +90,7 @@ def _fixed_layout() -> ExportLayout:
         header_label="Gaca, 2011",
         run_id=_RUN_ID,
         version_id=None,
-        model_instances=(),
-        section_instances={_SECTION_ID: (_INST_ID,)},
+        entries={(_SECTION_ID, None): (_INST_ID,)},
     )
 
     # README / Methods front-matter (§4 #1). Its ``generated_at`` is hard-coded,
@@ -278,8 +277,7 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         header_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={entity_type_id: (inst_id,)},
+        entries={(entity_type_id, None): (inst_id,)},
     )
 
     # ALL_USERS value_map: consensus column uses (run_id, inst_id, field_id, None).
@@ -399,10 +397,9 @@ def test_column_guard_boundary() -> None:
                 header_label=f"a{i}",
                 run_id=uuid4(),
                 version_id=None,
-                model_instances=(),
                 # One cardinality=one study section ⇒ a single data column
                 # per article (no model / many-axis fan-out).
-                section_instances={sec_id: (uuid4(),)},
+                entries={(sec_id, None): (uuid4(),)},
             )
             for i in range(n)
         )
@@ -504,8 +501,7 @@ def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayou
             header_label=f"A{i}",
             run_id=uuid4(),
             version_id=uuid4(),
-            model_instances=(),
-            section_instances={sec_id: tuple(uuid4() for _ in range(subcols_each))},
+            entries={(sec_id, None): tuple(uuid4() for _ in range(subcols_each))},
         )
         for i in range(n_articles)
     )
@@ -652,8 +648,7 @@ def _tied_appraisal_inputs():
         header_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={sid1: (inst1,), sid2: (inst2,)},
+        entries={(sid1, None): (inst1,), (sid2, None): (inst2,)},
     )
 
     r1, r2 = uuid4(), uuid4()

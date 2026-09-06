@@ -254,8 +254,7 @@ def _article(
         header_label="Article",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={entity_type_id: (instance_id,)},
+        entries={(entity_type_id, None): (instance_id,)},
     )
 
 

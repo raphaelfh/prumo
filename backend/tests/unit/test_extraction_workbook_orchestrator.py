@@ -41,8 +41,7 @@ def _one_field_layout(*, include_ai: bool, n_articles: int = 1) -> ExportLayout:
             header_label=f"Art {i}",
             run_id=uuid4(),
             version_id=None,
-            model_instances=(),
-            section_instances={sec_id: (uuid4(),)},
+            entries={(sec_id, None): (uuid4(),)},
         )
         for i in range(n_articles)
     )

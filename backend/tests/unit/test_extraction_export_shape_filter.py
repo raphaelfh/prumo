@@ -74,8 +74,7 @@ def _every_sheet_layout() -> ExportLayout:
         header_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=None,
-        model_instances=(),
-        section_instances={_SECTION_ID: (instance_id,)},
+        entries={(_SECTION_ID, None): (instance_id,)},
     )
     return ExportLayout(
         project_name="P",

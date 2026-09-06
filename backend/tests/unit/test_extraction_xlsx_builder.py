@@ -13,7 +13,11 @@ from uuid import UUID, uuid4
 import pytest
 from openpyxl import load_workbook
 
-from app.models.extraction import ExtractionEntityRole, ExtractionFieldType
+from app.models.extraction import (
+    ExtractionCardinality,
+    ExtractionEntityRole,
+    ExtractionFieldType,
+)
 from app.services.exports.extraction.workbook import build_workbook
 from app.services.extraction_export_service import (
     ArticleDescriptor,
@@ -43,6 +47,7 @@ def _section(
     role: ExtractionEntityRole,
     fields: list[FieldDescriptor] | None = None,
     parent: UUID | None = None,
+    cardinality: ExtractionCardinality = ExtractionCardinality.ONE,
 ) -> SectionDescriptor:
     eid = uuid4()
     f = tuple(fields or ())
@@ -52,6 +57,7 @@ def _section(
         role=role,
         parent_entity_type_id=parent,
         fields=f,
+        cardinality=cardinality,
     )
 
 
@@ -59,7 +65,7 @@ def _article(
     header: str,
     *,
     study_instances: dict[UUID, UUID],
-    model_instances: tuple[UUID, ...] = (),
+    group_entries: dict[UUID, tuple[UUID, ...]] | None = None,
     run_id: UUID | None = None,
 ) -> ArticleDescriptor:
     return ArticleDescriptor(
@@ -67,10 +73,12 @@ def _article(
         header_label=header,
         run_id=run_id if run_id is not None else uuid4(),
         version_id=None,
-        model_instances=model_instances,
         # Fan the one-instance-per-section shorthand out to the ordered
         # tuples ArticleDescriptor actually carries.
-        section_instances={sid: (iid,) for sid, iid in study_instances.items()},
+        entries={
+            **{(sid, None): (iid,) for sid, iid in study_instances.items()},
+            **{(sid, None): ids for sid, ids in (group_entries or {}).items()},
+        },
     )
 
 
@@ -189,7 +197,15 @@ def test_multi_instance_article_repeats_study_section_values():
     study_field = _field("Author", ExtractionFieldType.TEXT)
     model_field = _field("Modelling method", ExtractionFieldType.TEXT)
     study = _section("Study", ExtractionEntityRole.STUDY_SECTION, [study_field])
-    model = _section("Model development", ExtractionEntityRole.MODEL_SECTION, [model_field])
+    # Was a MODEL_SECTION with no parent, which only fanned out because role
+    # was read before structure. The repeating root gives the same two
+    # sub-columns from a shape the schema can actually hold.
+    model = _section(
+        "Model development",
+        ExtractionEntityRole.MODEL_SECTION,
+        [model_field],
+        cardinality=ExtractionCardinality.MANY,
+    )
 
     study_inst = uuid4()
     model_inst_a = uuid4()
@@ -197,7 +213,7 @@ def test_multi_instance_article_repeats_study_section_values():
     article = _article(
         "Gaca, 2011",
         study_instances={study.entity_type_id: study_inst},
-        model_instances=(model_inst_a, model_inst_b),
+        group_entries={model.entity_type_id: (model_inst_a, model_inst_b)},
     )
     study_fid = study.fields[0].field_id
     model_fid = model.fields[0].field_id
@@ -567,8 +583,7 @@ def test_workbook_emits_sheets_in_section4_order():
         header_label="Gaca, 2011",
         run_id=run,
         version_id=None,
-        model_instances=(),
-        section_instances={eid: (inst,)},
+        entries={(eid, None): (inst,)},
     )
     fm = FrontMatter(
         project_name="P",

@@ -159,8 +159,7 @@ def _workbook_overall(
         header_label="Art 1",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances=section_instances,
+        entries={(sid, None): ids for sid, ids in section_instances.items()},
     )
     model = ExtractionExportService._build_appraisal_model(
         sections=tuple(sections),

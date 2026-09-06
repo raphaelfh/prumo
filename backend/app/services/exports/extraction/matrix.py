@@ -20,8 +20,8 @@ from uuid import UUID
 
 from app.models.extraction import (
     ExtractionCardinality,
-    ExtractionEntityRole,
 )
+from app.services.exports.descriptors import EntryColumn, build_columns, instance_for
 from app.services.exports.extraction.sheet_spec import (
     Cell,
     CellStyle,
@@ -57,74 +57,43 @@ def _safe_sheet_name(raw: str) -> str:
     return cleaned[:_SHEET_MAX_LEN]
 
 
+def _article_columns(
+    *, article: ArticleDescriptor, layout: ExportLayout
+) -> tuple[EntryColumn, ...]:
+    """The sub-columns of one article, one per entry the sheet shows.
+
+    Replaces a count derived from ``len(article.model_instances)``. That
+    tuple held every child-section instance flat, so an article with M
+    entries and K singleton child sections reported M*K columns and the
+    values landed on a diagonal — see
+    ``tests/unit/test_extraction_export_golden_charms.py``.
+    """
+    return build_columns(layout.sections, article)
+
+
 def _article_fanout_count(*, article: ArticleDescriptor, layout: ExportLayout) -> int:
     """Number of instance sub-columns for one article.
 
-    The fan-out grain is the MAX instance count across the article's
-    instance-bearing sections, with a floor of 1:
-
-      * MODEL_SECTION is *always* a model-instance axis (driven by
-        ``article.model_instances``) regardless of its own cardinality —
-        in production every model section carries ``cardinality='one'``
-        and the N-model fan-out comes from the snapshot reader splitting
-        instances by role (extraction_export_service §5.2), never from a
-        section being ``cardinality='many'``.
-      * Any non-model section contributes only when it is
-        ``cardinality='many'`` (its instances live in
-        ``section_instances``).
-
-    We do NOT cartesian-product independent axes (design §5.4 — one
-    instance axis per article); a section with fewer instances repeats
-    its last value.
+    Kept as a function because ``workbook._matrix_column_count`` sizes the
+    Excel 16,384-column guard with it; it is now just the column count.
     """
-    counts = [1]
-    for section in layout.sections:
-        if section.role is ExtractionEntityRole.MODEL_SECTION:
-            counts.append(max(1, len(article.model_instances)))
-        elif section.cardinality is ExtractionCardinality.MANY:
-            counts.append(max(1, len(article.section_instances.get(section.entity_type_id, ()))))
-    return max(counts)
+    return len(_article_columns(article=article, layout=layout))
 
 
 def _resolve_instance_id(
     *,
     section: SectionDescriptor,
     article: ArticleDescriptor,
-    model_index: int,
+    column: EntryColumn,
+    layout: ExportLayout,
 ) -> UUID | None:
     """Return the instance_id whose values feed the given cell.
 
-    The instance axis is selected by role first, then cardinality:
-      * MODEL_SECTION → the ``model_index``-th model instance (from
-        ``article.model_instances``), clamped to the last when the
-        article has fewer models than the fan-out width. This holds
-        regardless of the section's own cardinality, because production
-        model sections are ``cardinality='one'`` and the N-model fan-out
-        is sourced from ``model_instances`` (extraction_export_service
-        §5.2), not from the section being ``cardinality='many'``.
-      * non-model, cardinality='many' → the ``model_index``-th instance
-        of that entity_type (from ``section_instances``), clamped to the
-        last when its own list is shorter than the fan-out width.
-      * non-model, cardinality='one' → the single instance for the
-        section's entity_type, repeated across every sub-column (§5.4
-        repeat-not-merge).
+    A repeating section reads the entry this column selected; a singleton
+    reads the one instance under its resolved parent, so a child is always
+    read UNDER the entry on screen rather than at an index into a flat list.
     """
-    if section.role is ExtractionEntityRole.MODEL_CONTAINER:
-        return None  # no own fields — caller already skipped
-    if section.role is ExtractionEntityRole.MODEL_SECTION:
-        if not article.model_instances:
-            return None
-        idx = min(model_index, len(article.model_instances) - 1)
-        return article.model_instances[idx]
-    if section.cardinality is ExtractionCardinality.MANY:
-        ids = article.section_instances.get(section.entity_type_id, ())
-        if not ids:
-            return None
-        idx = min(model_index, len(ids) - 1)
-        return ids[idx]
-    # cardinality='one' — single instance, repeated across sub-columns.
-    ids = article.section_instances.get(section.entity_type_id, ())
-    return ids[0] if ids else None
+    return instance_for(section, article, column, layout.sections)
 
 
 def _lookup_value(
@@ -238,8 +207,7 @@ def build_matrix(layout: ExportLayout) -> SheetSpec:
         header_offset = 2
         cur = _FIRST_DATA_COL
         for article in layout.articles:
-            models_per_article = _article_fanout_count(article=article, layout=layout)
-            for _model_idx in range(models_per_article):
+            for _column in _article_columns(article=article, layout=layout):
                 for rev in reviewer_axis:
                     label = (
                         "Consensus"
@@ -255,7 +223,7 @@ def build_matrix(layout: ExportLayout) -> SheetSpec:
     row_cursor = header_offset + 1
     section_number = 0
     for section in layout.sections:
-        if section.role is ExtractionEntityRole.MODEL_CONTAINER and not section.fields:
+        if section.cardinality is ExtractionCardinality.MANY and not section.fields:
             continue
         section_number += 1
 
@@ -273,13 +241,13 @@ def build_matrix(layout: ExportLayout) -> SheetSpec:
                 _LABEL_STYLE,
             )
             for article, first_col, _last_col in article_spans:
-                models_per_article = _article_fanout_count(article=article, layout=layout)
                 slot = 0
-                for model_idx in range(models_per_article):
+                for column in _article_columns(article=article, layout=layout):
                     instance_id = _resolve_instance_id(
                         section=section,
                         article=article,
-                        model_index=model_idx,
+                        column=column,
+                        layout=layout,
                     )
                     for rev in reviewer_axis:
                         sub_col = first_col + slot

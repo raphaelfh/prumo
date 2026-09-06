@@ -24,7 +24,6 @@ import io
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-import pytest
 from openpyxl import load_workbook
 
 from app.models.extraction import (
@@ -110,13 +109,21 @@ class _Charms:
             for entry in self.entry_ids
             for child in self.child_ids
         ]
+        entries: dict[tuple[UUID, UUID | None], tuple[UUID, ...]] = {
+            (self.container_id, None): self.entry_ids
+        }
+        for entry in self.entry_ids:
+            for child in self.child_ids:
+                entries[(child, entry)] = (self.child_instances[(entry, child)],)
         return ArticleDescriptor(
             article_id=uuid4(),
             header_label="Gaca, 2011",
             run_id=self.run_id,
             version_id=None,
+            # The flat projection is kept beside the tree only until its last
+            # reader goes; `flat` is exactly what produced the diagonal.
             model_instances=tuple(flat),
-            section_instances={},
+            entries=entries,
         )
 
     def value(self, entry_index: int, child_index: int) -> str:
@@ -156,15 +163,6 @@ def _value_columns(ws) -> int:
     return ws.max_column - 2
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "trees B4 characterization: ArticleDescriptor.model_instances is a FLAT "
-        "tuple of every child instance, so one entry renders as six sub-columns "
-        "with its values on a diagonal. Un-xfail when the matrix resolves an "
-        "instance by walking parent_entity_type_id instead of indexing that tuple."
-    ),
-)
 def test_one_entry_is_one_subcolumn_with_every_section_readable():
     charms = _Charms(entry_count=1)
     ws = _sheet(charms)
@@ -180,10 +178,6 @@ def test_one_entry_is_one_subcolumn_with_every_section_readable():
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="same flat-tuple defect: two entries render as twelve sub-columns.",
-)
 def test_two_entries_are_two_subcolumns_each_internally_complete():
     charms = _Charms(entry_count=2)
     ws = _sheet(charms)

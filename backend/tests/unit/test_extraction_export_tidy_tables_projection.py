@@ -62,8 +62,7 @@ def test_one_cardinality_section_is_one_row_per_article():
         header_label="Gaca, 2011",
         run_id=run,
         version_id=None,
-        model_instances=(),
-        section_instances={study.entity_type_id: (inst,)},
+        entries={(study.entity_type_id, None): (inst,)},
     )
     f_author, f_year = study.fields
     value_map = {
@@ -89,8 +88,7 @@ def test_many_cardinality_section_fans_out_per_instance():
         header_label="Gaca, 2011",
         run_id=run,
         version_id=None,
-        model_instances=(m_a, m_b),
-        section_instances={},
+        entries={(model.entity_type_id, None): (m_a, m_b)},
     )
     f_method = model.fields[0]
     value_map = {
@@ -100,8 +98,8 @@ def test_many_cardinality_section_fans_out_per_instance():
     tables = _build_tidy_tables((model,), (article,), value_map, ExportMode.CONSENSUS)
     table = tables[0]
     assert len(table.rows) == 2
-    # No container in the sections tuple -> the one fallback noun, 'entry'.
-    assert table.rows[0].record_label.endswith("Entry 1")
+    # A root repeating section with no entry noun is named by its label.
+    assert table.rows[0].record_label.endswith("Model characteristics 1")
     assert table.rows[0].values == ("Logistic regression",)
     assert table.rows[1].values == ("Cox model",)
 

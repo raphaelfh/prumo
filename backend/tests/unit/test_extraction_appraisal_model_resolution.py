@@ -60,8 +60,7 @@ def test_build_appraisal_model_consensus_rollup() -> None:
         header_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={d1.entity_type_id: (inst1,), d2.entity_type_id: (inst2,)},
+        entries={(d1.entity_type_id, None): (inst1,), (d2.entity_type_id, None): (inst2,)},
     )
     # consensus value_map: 3-tuple keys, already-resolved scalars.
     value_map = {
@@ -104,8 +103,7 @@ def test_build_appraisal_model_excludes_disposition_marker_verdict() -> None:
         header_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={d1.entity_type_id: (inst1,), d2.entity_type_id: (inst2,)},
+        entries={(d1.entity_type_id, None): (inst1,), (d2.entity_type_id, None): (inst2,)},
     )
 
     # Mixed: one domain silent (marker → "No information"), one real "High".
@@ -152,8 +150,7 @@ def test_build_appraisal_model_all_users_per_reviewer() -> None:
         header_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={d1.entity_type_id: (inst1,)},
+        entries={(d1.entity_type_id, None): (inst1,)},
     )
     # all_users value_map: 4-tuple keys; consensus row uses reviewer_id=None.
     value_map = {
@@ -225,8 +222,7 @@ def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() 
         header_label="Gaca, 2011",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={sid: (inst,)},
+        entries={(sid, None): (inst,)},
     )
     # If selection wrongly picked the signalling field, "Y" would be read and
     # ranked maximally severe -> Overall "Y". Keying on the risk-label set
@@ -317,8 +313,7 @@ def test_v2_shapes_contribute_columns_only_for_the_judgment_section() -> None:
         header_label="A",
         run_id=run_id,
         version_id=None,
-        model_instances=(),
-        section_instances={judgment.entity_type_id: (uuid.uuid4(),)},
+        entries={(judgment.entity_type_id, None): (uuid.uuid4(),)},
     )
     model = ExtractionExportService._build_appraisal_model(
         sections=(d4_type, scope, judgment, overall),

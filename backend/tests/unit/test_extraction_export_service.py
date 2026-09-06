@@ -748,7 +748,7 @@ class TestLoadAiProposalRows:
             model_instances=model_instances,
             # Fan the one-instance-per-section shorthand out to the ordered
             # tuples ArticleDescriptor actually carries.
-            section_instances={sid: (iid,) for sid, iid in (study_instances or {}).items()},
+            entries={(sid, None): (iid,) for sid, iid in (study_instances or {}).items()},
         )
 
     @pytest.mark.asyncio
@@ -761,8 +761,7 @@ class TestLoadAiProposalRows:
                 header_label="No Run",
                 run_id=None,
                 version_id=None,
-                model_instances=(),
-                section_instances={},
+                entries={},
             ),
         )
         result = await svc._load_ai_proposal_rows(
@@ -2499,7 +2498,7 @@ class TestAiProposalRowsModelInstances:
             run_id=run_id,
             version_id=None,
             model_instances=(model_instance_id1, model_instance_id2),
-            section_instances={},
+            entries={},
         )
 
         proposal_row = (proposal_id, run_id, model_instance_id1, field_id, "v", None, None, ts)

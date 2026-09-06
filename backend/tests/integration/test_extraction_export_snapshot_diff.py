@@ -149,8 +149,7 @@ async def test_obsolete_field_reported_when_run_pinned_to_older_version(
         header_label="Gaca, 2011",
         run_id=uuid4(),
         version_id=older.id,
-        model_instances=(),
-        section_instances={},
+        entries={},
     )
     svc = ExtractionExportService(
         db=db_session,
