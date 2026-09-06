@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionEntityRole
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
@@ -51,12 +50,16 @@ async def test_load_export_sections_reads_active_version_snapshot(
     # Ordered by sort_order, ascending.
     orders = [s.sort_order for s in sections]
     assert orders == sorted(orders)
-    # Every section carries a real role + cardinality from the snapshot.
+    # Every section carries cardinality + its parent edge from the snapshot.
+    # `role` is no longer read here at all (trees B4): structure is
+    # `parent_entity_type_id` + `cardinality`.
     for s in sections:
-        assert isinstance(s.role, ExtractionEntityRole)
         assert s.cardinality is not None
-    # At least one study section exists in the seeded CHARMS template.
-    assert any(s.role is ExtractionEntityRole.STUDY_SECTION for s in sections)
+        assert not hasattr(s, "role")
+    # This fixture's template is root sections only, so only the root edge
+    # is assertable here; the nested edge is covered by the unit tests over
+    # `_ancestry` and by test_extraction_export_many_cardinality_fanout.
+    assert any(s.parent_entity_type_id is None for s in sections)
     # Field metadata threads through (label + field_id present on every field).
     a_field = next((f for s in sections for f in s.fields), None)
     assert a_field is not None

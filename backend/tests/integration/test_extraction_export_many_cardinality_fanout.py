@@ -3,10 +3,10 @@
 Regression for the §6 ``study_instances.setdefault`` collapse: a study-role
 entity_type with ``cardinality='many'`` materializes N instances per article,
 but the resolver kept only the first and silently dropped the other N-1.
-``ArticleDescriptor.section_instances`` must now carry the FULL ordered list
+``ArticleDescriptor.entries`` must carry the FULL ordered list
 (by ``sort_order``) for every entity_type.
 
-The descriptor resolvers read runs + instances + the entity_type role map;
+The descriptor resolvers read runs + instances;
 they do not require published values. We therefore seed a FINALIZED run and N
 ascending-``sort_order`` instances directly (raw SQL), scoped to the seed
 project, and roll the transaction back at the end.
@@ -172,8 +172,15 @@ async def seeded_export_fixture(
 async def test_many_cardinality_section_keeps_all_instances(
     db_session: AsyncSession,
 ) -> None:
-    """A cardinality='many' study-role section must surface ALL its
-    instances in ArticleDescriptor.section_instances (was collapsed to 1)."""
+    """A root cardinality='many' section must surface ALL its instances.
+
+    Two regressions in one, both end-to-end through the real snapshot:
+    the §6 ``setdefault`` collapse to a single instance, and trees B4's
+    move to ``entries``. A root section keeps a NULL parent, so it is keyed
+    ``(entity_type, None)`` — the case a rewrite that assumed every
+    repeating section sits under a group would have silently dropped.
+    ``extraction-multi-instance.e2e.ts`` creates exactly this shape.
+    """
     if (
         await db_session.execute(
             text("SELECT 1 FROM public.profiles WHERE id = :id"),
@@ -195,7 +202,7 @@ async def test_many_cardinality_section_keeps_all_instances(
         candidate_ids=[ctx.article_id],
     )
     assert len(descriptors) == 1
-    section_instances = descriptors[0].section_instances[ctx.many_entity_type_id]
+    section_instances = descriptors[0].entries[(ctx.many_entity_type_id, None)]
     # All 3 instances preserved, in sort_order — NOT collapsed to 1.
     assert list(section_instances) == ctx.ordered_instance_ids
     assert len(section_instances) == 3
