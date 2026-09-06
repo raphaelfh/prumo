@@ -22,7 +22,6 @@ def _wide_entity_type(
     *,
     et_id: str,
     label: str,
-    role: str = "study_section",
     parent: str | None = None,
     fields: list[dict] | None = None,
 ) -> dict:

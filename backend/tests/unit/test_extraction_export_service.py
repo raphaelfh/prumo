@@ -159,7 +159,6 @@ def _make_section(label: str) -> SectionDescriptor:
     return SectionDescriptor(
         entity_type_id=eid,
         label=label,
-        role=role,
         parent_entity_type_id=None,
         fields=(_make_field(f"{label} F1"),),
     )

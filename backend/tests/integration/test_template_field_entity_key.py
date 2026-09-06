@@ -25,8 +25,8 @@ async def _section_with_two_fields(db: AsyncSession) -> tuple[UUID, UUID, UUID]:
     await db.execute(
         text(
             "INSERT INTO public.extraction_entity_types "
-            "(id, project_template_id, name, label, cardinality, sort_order) "
-            "VALUES (:id, :tpl, :name, 'Key Probe', 'many', 96)"
+            "(id, project_template_id, name, label, cardinality, sort_order, entry_label) "
+            "VALUES (:id, :tpl, :name, 'Key Probe', 'many', 96, 'entry')"
         ),
         {
             "id": entity_type_id,

@@ -54,7 +54,6 @@ def _snapshot_entity(
     et_id: str,
     name: str,
     *,
-    role: str = "study_section",
     parent: str | None = None,
     fields: list[dict] | None = None,
 ) -> dict:

@@ -394,7 +394,6 @@ async def _add_section(
     template_id: UUID,
     name: str,
     *,
-    role: str = "study_section",
     parent_id: UUID | None = None,
     cardinality: str = "one",
     sort_order: int = 99,
