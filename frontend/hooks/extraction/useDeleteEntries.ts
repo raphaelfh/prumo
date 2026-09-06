@@ -39,6 +39,22 @@ export interface UseDeleteEntriesArgs {
   /** Reviewer values, keyed `${instanceId}_${fieldId}` — the single delete
    * asks for confirmation only when the entry actually holds some. */
   values: Record<string, unknown>;
+  /**
+   * Whether this caller may delete at all — manager, and nothing wider.
+   *
+   * `extraction_instances_delete` is `USING is_project_manager(...)`, and the
+   * bulk endpoint calls `ensure_project_manager` to match it. The single
+   * delete has no endpoint to gate: it is a browser PostgREST call through
+   * `baseRepository.deleteOne`, which is `.delete().eq('id', id)` with NO
+   * `.select()`. A reviewer's DELETE matches zero rows, PostgREST returns no
+   * error, and this hook would announce success over an untouched entry.
+   *
+   * So the authority lives HERE rather than at each call site: three
+   * affordances hang off these two functions (the selector's trash icon, the
+   * card list's inline remove, the bulk Select mode), and gating them one by
+   * one is how the first two came to disagree.
+   */
+  canDelete: boolean;
 }
 
 /** The one place a delete failure becomes a sentence. */
@@ -53,8 +69,15 @@ function reportFailure(error: unknown, where: string): null {
   return null;
 }
 
-export function useDeleteEntries(args: UseDeleteEntriesArgs) {
-  const {projectId, articleId, templateId, onDeleted, values} = args;
+export interface DeleteEntriesActions {
+  /** Absent when the caller may not delete — the control is not offered. */
+  deleteOne?: (instanceId: string) => Promise<void>;
+  /** Absent when the caller may not delete. */
+  deleteSelected?: (instanceIds: string[]) => Promise<void>;
+}
+
+export function useDeleteEntries(args: UseDeleteEntriesArgs): DeleteEntriesActions {
+  const {projectId, articleId, templateId, onDeleted, values, canDelete} = args;
 
   const succeed = async (): Promise<void> => {
     await onDeleted();
@@ -84,5 +107,5 @@ export function useDeleteEntries(args: UseDeleteEntriesArgs) {
     await succeed();
   };
 
-  return {deleteOne, deleteSelected};
+  return canDelete ? {deleteOne, deleteSelected} : {};
 }

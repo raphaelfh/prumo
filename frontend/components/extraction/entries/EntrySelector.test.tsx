@@ -187,4 +187,32 @@ describe('EntrySelector — bulk selection (trees B7)', () => {
     render(<EntrySelector {...base({onDeleteEntries: vi.fn(), readOnly: true})} />);
     expect(screen.queryByRole('button', {name: /select/i})).toBeNull();
   });
+
+  it('offers no SINGLE-remove affordance when the caller is not a manager', async () => {
+    // Sibling of the bulk case above, and the more dangerous one. The RLS
+    // policy on extraction_instances is `USING is_project_manager(...)`, and
+    // the single remove is a browser PostgREST call through
+    // `baseRepository.deleteOne` — `.delete().eq('id', id)` with no
+    // `.select()`. A reviewer's DELETE therefore matches zero rows, returns
+    // NO error, and the caller reports success: a green "removed" toast over
+    // an untouched entry. Hiding the control is what keeps the two halves of
+    // one policy consistent; showing it is strictly worse than a 403.
+    const shown = render(<EntrySelector {...base()} />);
+    // Precondition: the query actually finds the control when it IS offered,
+    // so the absence asserted below cannot pass vacuously.
+    expect(screen.queryByRole('button', {name: /remove active/i})).not.toBeNull();
+    shown.unmount();
+
+    render(<EntrySelector {...base({onRemoveEntry: undefined})} />);
+    expect(screen.queryByRole('button', {name: /remove active/i})).toBeNull();
+  });
+
+  it('offers no bulk affordance when the caller is not a manager', async () => {
+    // The endpoint gates on `is_project_manager` to match the RLS policy on
+    // extraction_instances, so a reviewer must not be shown a control that
+    // would always 403. The page passes `onDeleteEntries: undefined` for
+    // anyone but a manager, and that absence has to hide the whole thing.
+    render(<EntrySelector {...base()} />);
+    expect(screen.queryByRole('button', {name: /select/i})).toBeNull();
+  });
 });

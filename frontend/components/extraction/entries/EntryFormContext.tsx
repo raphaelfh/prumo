@@ -72,10 +72,17 @@ export interface EntryFormContextValue {
    * second entry would create under the first.
    */
   onAddEntry: (entityTypeId: string, parentInstanceId: string | null) => void;
-  onRemoveInstance: (instanceId: string) => void;
+  /** ABSENT for a non-manager, like `onDeleteEntries`. This one is the
+   * browser PostgREST delete, which under a manager-only RLS policy
+   * removes nothing and still reports success — so it must not be
+   * offered at all. */
+  onRemoveInstance?: (instanceId: string) => void;
   /** Bulk delete of several entries, through the transactional endpoint.
-   * Distinct from `onRemoveInstance`, which is the single browser delete. */
-  onDeleteEntries: (instanceIds: string[]) => void;
+   * Distinct from `onRemoveInstance`, which is the single browser delete.
+   * ABSENT for a non-manager: the endpoint gates on `is_project_manager` to
+   * match the RLS policy, so the control is not offered rather than offered
+   * and refused. */
+  onDeleteEntries?: (instanceIds: string[]) => void;
   onRenameInstance: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
   /**
    * Open the rename/re-key dialog for one entry. Distinct from
@@ -89,7 +96,7 @@ export interface EntryFormContextValue {
    * entry cascades through its whole subtree, so §8 gates it on what that
    * subtree holds rather than on a window.confirm.
    */
-  onOpenRemoveDialog: (instanceId: string) => void;
+  onOpenRemoveDialog?: (instanceId: string) => void;
 
   /**
    * Which entry is active in each rendered group, keyed by

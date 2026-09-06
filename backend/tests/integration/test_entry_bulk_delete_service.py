@@ -6,7 +6,15 @@ in, so a "nothing was deleted" assertion there would pass whether the service
 deleted the rows or not. Calling the service directly leaves the rows exactly
 as it found them, so the assertion means what it says.
 
-The property is worth this much care because deleting an entry cascades:
+One child FK does NOT cascade: `extraction_published_states.instance_id` is
+NO ACTION, DEFERRABLE INITIALLY DEFERRED (verified by SQL against production).
+It therefore fires at COMMIT, which this SAVEPOINT-isolated session never
+reaches — a savepoint release is not a commit. The endpoint's translation of
+that late failure into a 409 is covered where it can be: the direct-call unit
+test in `tests/unit/test_entry_bulk_delete_endpoint_unit.py`.
+
+The all-or-nothing property is worth this much care because deleting an entry
+otherwise cascades:
 ``extraction_instances.parent_instance_id`` is ON DELETE CASCADE and four of
 the five work tables cascade from ``instance_id``, so a batch that removes six
 of eight destroys six entries' reviewer decisions and leaves the reviewer

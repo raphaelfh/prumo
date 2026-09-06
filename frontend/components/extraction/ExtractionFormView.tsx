@@ -37,7 +37,8 @@ export interface ExtractionFormViewProps {
   activeEntries: Record<string, string>;
   setActiveEntry: (slot: string, entryId: string) => void;
   handleOpenRenameDialog: (instanceId: string) => void;
-  handleOpenRemoveDialog: (instanceId: string) => void;
+  /** Absent for non-managers — see `handleDeleteEntries`. */
+  handleOpenRemoveDialog?: (instanceId: string) => void;
   instances: ExtractionInstance[];
   values: Record<string, ExtractionValue>;
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
@@ -48,8 +49,12 @@ export interface ExtractionFormViewProps {
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   onRefreshInstances: () => Promise<void>;
   handleAddInstance: (entityTypeId: string, parentInstanceId: string | null) => void;
-  handleRemoveInstance: (instanceId: string) => void;
-  handleDeleteEntries: (instanceIds: string[]) => void;
+  /** Absent for non-managers — see `handleDeleteEntries`. */
+  handleRemoveInstance?: (instanceId: string) => void;
+  /** Absent for non-managers: `extraction_instances_delete` is
+   * `USING is_project_manager(...)`, so every delete affordance is hidden
+   * rather than offered and refused. */
+  handleDeleteEntries?: (instanceIds: string[]) => void;
   handleRenameInstance?: (instanceId: string, changes: EntryIdentityChanges) => Promise<void>;
   projectId: string;
   articleId: string;
