@@ -10,9 +10,10 @@ owner: '@raphaelfh'
 
 - See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the live cycle — the
   source of truth; don't re-pin a date here. Now: the entry-group trees
-  train (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`,
-  six slices; B1 shipped). ADR-0011 still **proposed**; app-schema reads
-  other than extraction still use PostgREST.
+  train (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`) —
+  every slice on `dev`, awaiting one promotion, then §14 (a human step).
+  ADR-0011 still **proposed**; app-schema reads other than extraction
+  still use PostgREST.
 - Project history lives in `git log` and `docs/adr/` — do not append
   changelogs to this file. Keep this section to ≤ 5 lines.
 
