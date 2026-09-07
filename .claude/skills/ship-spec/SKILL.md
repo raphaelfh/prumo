@@ -72,10 +72,18 @@ first use and is meant to be committed).
 user. It returns `status: blocked` with `question`, `options` and
 `cost_if_wrong`. You first try to rule from the spec, the plan or
 CLAUDE.md (SDD's "Rulings, not stalls"); ledger the ruling as
-`Ruling: <what> — <why> — <cost if wrong>` and resume the *same* seat
-with `SendMessage`. Only when no authority answers do you call
-`AskUserQuestion` — one question, with options — and resume the seat
-with the answer. Every ruling and every question lands in the ledger.
+`Ruling: <what> — <why> — <cost if wrong>`. Only when no authority
+answers do you call `AskUserQuestion` — one question, with options.
+Either way the seat then continues, by one of two routes: resume the
+*same* seat with `SendMessage` where the client offers that tool, and
+otherwise dispatch a **fresh** seat of the same type whose brief carries
+the ruling, the task, and what the blocked seat had already done. Read
+that last part back from the ledger — carrying a blocked seat's progress
+across a restart is what the ledger is for. Do not assume `SendMessage`
+exists: the desktop app disables it for the session and its subagents,
+and a resume you cannot perform is a stall. Never leave a `status:
+blocked` return unanswered. Every ruling and every question lands in the
+ledger.
 
 **State and ledger.** Two directories, deliberately separate:
 

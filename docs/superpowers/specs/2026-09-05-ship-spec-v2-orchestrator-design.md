@@ -144,8 +144,17 @@ React Compiler rules, copy keys, knip, jsdom limits).
 Workers return `status: done | blocked` with `question`, `options` and
 `cost_if_wrong`. The orchestrator rules from the spec, the plan or
 `CLAUDE.md` when it can (SDD "Rulings, not stalls"), ledgers the ruling,
-and resumes the *same* worker via `SendMessage`; otherwise it asks the
-user one question and resumes the worker with the answer.
+and otherwise asks the user one question.
+
+The blocked worker then continues by one of two routes, because resuming
+is not always available: `SendMessage` where the client offers it, and a
+**fresh worker of the same type** otherwise, briefed with the ruling plus
+the blocked worker's progress read back from the ledger. The desktop app
+disables `SendMessage` for the session and its subagents — verified
+2026-09-07, the call returns "No such tool available: SendMessage.
+SendMessage is disabled for this session, in subagents as well as here."
+A protocol that can only resume would stall there, which is why the
+ledger, not the live subagent, is the unit of continuity.
 
 ### Run state
 
