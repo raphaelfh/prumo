@@ -15,6 +15,11 @@ import {MemoryRouter} from "react-router";
 import {ArticlesList} from "@/components/articles/ArticlesList";
 import type {Article} from "@/types/article";
 
+// The component tree reaches `@/integrations/supabase/client`, which builds a
+// real client at module scope. CI has no env for it, so the import throws there
+// and only there — stub it up front.
+vi.mock("@/integrations/supabase/client", () => ({supabase: {}}));
+
 vi.mock("@/services/articlesService", () => ({
     fetchArticleIdsWithMainFile: vi.fn(async () => ({ok: true, data: [] as string[]})),
     fetchArticlePdfSignedUrl: vi.fn(),
