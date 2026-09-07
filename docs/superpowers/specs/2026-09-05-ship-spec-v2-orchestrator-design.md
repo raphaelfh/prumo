@@ -250,8 +250,10 @@ Not yet exercised:
   `/ship-spec` invocation is the test). Evals 1–4 are written, not run.
 - `autoCompactWindow` at project-settings scope (the docs describe the
   user-settings path; confirm with `/autocompact` on the next session).
-- The `memory: project` field on agents (needs auto-memory enabled; it
-  is, but `MEMORY.md` was over its 24.4 KB load limit and was
-  consolidated in the same session).
+- The `memory: project` field on agents (needs auto-memory enabled,
+  which it is). An earlier draft of this review claimed the memory
+  index was over its load limit; that was not verified and was wrong
+  (11 KB) — the real memory debt was 96 topic files no longer in the
+  index, consolidated in the same session.
 - `SessionStart`/`PostCompact` hooks under a real compaction; their
   output contract matches the documented `additionalContext` form.
