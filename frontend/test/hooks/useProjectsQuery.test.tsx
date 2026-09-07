@@ -89,14 +89,20 @@ describe('useProjectsQuery / useProjectsList', () => {
   });
 
   it('does not serve one user\'s cached list to the next user in the same tab', async () => {
-    const {queryClient, wrapper} = harness();
-    queryClient.setQueryData(projectsListKey('u1'), [row({name: 'A-only'})]);
+    const {wrapper} = harness();
+    listProjectsForDashboard.mockResolvedValue({ok: true, data: [row({name: 'A-only'})]});
+
+    // Drive both identities through the hook itself — seeding the cache by
+    // hand would only prove the helper scopes keys, not that the hook calls
+    // it. u1 populates the shared entry first.
+    const {result, rerender} = renderHook(() => useProjectsQuery(), {wrapper});
+    await waitFor(() => expect(result.current.data?.[0]?.name).toBe('A-only'));
+
     currentUser = {id: 'u2'};
     listProjectsForDashboard.mockResolvedValue({ok: true, data: [row({id: 'p9', name: 'B-only'})]});
+    rerender();
 
-    const {result} = renderHook(() => useProjectsQuery(), {wrapper});
-
-    // Nothing is served synchronously: A's entry is a different key.
+    // Nothing is served synchronously: u1's entry is a different key.
     expect(result.current.data).toBeUndefined();
     await waitFor(() => expect(result.current.data?.[0]?.name).toBe('B-only'));
   });
