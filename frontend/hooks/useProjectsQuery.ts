@@ -33,7 +33,7 @@ export function useProjectsQuery(): UseQueryResult<ProjectListItem[], Error> {
   return useQuery<ProjectListItem[], Error>({
     queryKey: projectsListKey(userId),
     queryFn: async () => {
-      const result = await listProjectsForDashboard();
+      const result = await listProjectsForDashboard(userId);
       if (!result.ok) throw result.error;
       return result.data;
     },

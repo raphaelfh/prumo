@@ -7,6 +7,7 @@ import {useEffect, useState} from 'react';
 import {useAuth} from '@/contexts/AuthContext';
 import type {ProjectMemberRole} from '@/types/extraction';
 import {getProjectMemberRole} from '@/services/projectSettingsService';
+import {isManagerRole} from '@/types/project';
 
 export interface UseProjectMemberRoleReturn {
     role: ProjectMemberRole | null;
@@ -39,7 +40,7 @@ export function useProjectMemberRole(projectId: string): UseProjectMemberRoleRet
 
     return {
         role,
-        isManager: role === 'manager',
+        isManager: isManagerRole(role),
         loading,
     };
 }
