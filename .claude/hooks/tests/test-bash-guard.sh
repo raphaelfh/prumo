@@ -22,6 +22,10 @@ GUARD="$HERE/../bash-guard.sh"
 # A sandbox repo: the guard derives its root from `git rev-parse
 # --git-common-dir` in its own cwd, so running from here scopes it completely.
 SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/guard-test.XXXXXX")
+# Physical path: on macOS mktemp hands back /var/... while git resolves
+# /private/var/..., and the guard compares orchestrator= against a git-derived
+# root. Unnormalized, every ownership check silently fails to match.
+SANDBOX=$(cd "$SANDBOX" && pwd -P)
 trap 'rm -rf "$SANDBOX"' EXIT
 git -C "$SANDBOX" init -q
 git -C "$SANDBOX" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
@@ -38,7 +42,11 @@ fail=0
 
 decision() { # $1 = command  → prints allow | ask | deny
   local out
-  out=$(jq -cn --arg c "$1" '{tool_input:{command:$c}}' | bash "$GUARD")
+  # `cwd` is what the real harness sends, and it is how the guard decides which
+  # run owns this session. Without it the guard falls back to
+  # CLAUDE_PROJECT_DIR, which is inherited from the surrounding session and
+  # points at the real repo rather than this sandbox.
+  out=$(jq -cn --arg c "$1" --arg d "$ROOT" '{cwd:$d, tool_input:{command:$c}}' | bash "$GUARD")
   if [ -z "$out" ]; then
     echo allow
   else
@@ -105,6 +113,34 @@ expect "dev: env-prefixed gh denied"       deny  'GH_TOKEN=x gh pr create --base
 expect "dev: absolute gh path denied"      deny  '/opt/homebrew/bin/gh pr merge 3 --merge'
 expect "dev: railway up denied"            deny  'railway up'
 expect "dev: squash to dev still ok"       allow 'gh pr merge 123 --auto --squash'
+
+# A ceiling binds the session driving the run, not the whole repository. The
+# state is readable from every worktree by design; reading it is not owning it.
+# Before this, one dev-ceiling run denied hand promotions everywhere, so the
+# message said "this run cannot touch main" while the behaviour was "nobody
+# may touch main". Reported by a peer session blocked mid-promotion.
+echo "# ceiling: scoped to the run's orchestrator"
+set_state ceiling=dev phase=5 "orchestrator=$ROOT"
+expect "dev, owned by me: denied"          deny  "$PROMOTE"
+expect "dev, owned by me: deploy denied"   deny  'railway up'
+
+set_state ceiling=dev phase=5 "orchestrator=/somewhere/else/worktree"
+expect "dev, someone else's run: asks"     ask   "$PROMOTE"
+expect "dev, someone else's run: deploy asks" ask 'railway up'
+
+# The prod path must survive the scoping untouched: promotion is the
+# orchestrator's own Phase 6 and no seat promotes, so a --to prod run keeps its
+# whole autonomous cycle. Evidence, not ownership, is what gates it.
+set_state ceiling=prod phase=6 "preflight=GREEN@$DEV_SHA" "orchestrator=$ROOT"
+expect "prod, owned by me, GREEN: allowed" allow "$PROMOTE"
+
+set_state ceiling=prod phase=6 "preflight=GREEN@$DEV_SHA" "orchestrator=/somewhere/else"
+expect "prod, someone else's run: asks"    ask   "$PROMOTE"
+
+# A run with no orchestrator= (written before the field existed) still binds
+# the main checkout, so the fallback cannot be used to slip a promotion past.
+set_state ceiling=dev phase=5
+expect "legacy state still binds root"     deny  "$PROMOTE"
 
 echo "# ceiling: prod — evidence-gated"
 set_state ceiling=prod phase=6
