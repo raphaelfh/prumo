@@ -9,20 +9,11 @@
  * new reads); the data-path consolidation owns the typed-client swap.
  */
 import {supabase} from '@/integrations/supabase/client';
+import {apiClient} from '@/integrations/api/client';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
-import type {ProjectListItem} from '@/types/project';
+import type {MemberRole, ProjectListItem} from '@/types/project';
 import type {Article} from '@/types/article';
-
-export function listProjects(): Promise<ErrorResult<ProjectListItem[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('projects')
-      .select('*')
-      .order('created_at', {ascending: false});
-    if (error) throw error;
-    return data ?? [];
-  }, 'projectsService.listProjects');
-}
+import type {components} from '@/types/api/schema';
 
 // ---------------------------------------------------------------------------
 // Dashboard / SidebarHeader: create project via RPC
@@ -127,16 +118,69 @@ export function loadProjectArticles(
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard: list projects (typed columns)
+// Hub: list projects (typed columns + the caller's membership row)
 // ---------------------------------------------------------------------------
 
-export function listProjectsForDashboard(): Promise<ErrorResult<ProjectListItem[]>> {
+const PROJECT_LIST_SELECT =
+  'id, name, description, created_at, updated_at, is_active, review_title, project_members(user_id, role)';
+
+/**
+ * `updated_at` is maintained by the `trg_projects_updated_at` BEFORE UPDATE
+ * trigger, so it is real for every writer — the `Updated <relative>` row
+ * metadata and the default sort both rest on that (spec §6.2).
+ *
+ * The embed is narrowed to the caller to keep the payload small; correctness
+ * does not depend on it (`isProjectManager` re-checks `user_id`).
+ */
+export function listProjectsForDashboard(
+  userId: string,
+): Promise<ErrorResult<ProjectListItem[]>> {
   return toResult(async () => {
     const {data, error} = await supabase
       .from('projects')
-      .select('id, name, description, created_at, is_active, review_title')
-      .order('created_at', {ascending: false});
+      .select(PROJECT_LIST_SELECT)
+      .eq('project_members.user_id', userId)
+      .order('updated_at', {ascending: false});
     if (error) throw error;
-    return (data ?? []) as ProjectListItem[];
+    // ONE assertion, on the embed only. `as unknown as ProjectListItem[]`
+    // would switch off the check that ties this hand-written select string to
+    // the generated row types for EVERY column — the same shape as the
+    // recorded incident where PostgREST kept reading a dropped column past a
+    // migration (constitution §V).
+    return (data ?? []).map((row) => ({
+      ...row,
+      project_members: row.project_members as {user_id: string; role: MemberRole}[],
+    }));
   }, 'projectsService.listProjectsForDashboard');
+}
+
+// ---------------------------------------------------------------------------
+// Hub: archive / restore (backend endpoint, manager-gated)
+// ---------------------------------------------------------------------------
+
+export type ProjectArchiveRead = components['schemas']['ProjectArchiveRead'];
+
+/**
+ * Archive (`archived = true`) or restore a project.
+ *
+ * `PATCH /api/v1/projects/{id}/archive` is gated by `require_project_manager`,
+ * which evaluates the same `public.is_project_manager` the `project_update`
+ * RLS policy calls — so a reviewer gets a 403, not the silent zero-row success
+ * a direct PostgREST update would have returned. The response is the row as
+ * STORED, so the caller can check that the write did what was asked.
+ *
+ * NOTE: toast messages are handled by the caller.
+ */
+export function setProjectArchived(
+  projectId: string,
+  archived: boolean,
+): Promise<ErrorResult<ProjectArchiveRead>> {
+  return toResult(
+    () =>
+      apiClient<ProjectArchiveRead>(`/api/v1/projects/${projectId}/archive`, {
+        method: 'PATCH',
+        body: {archived},
+      }),
+    'projectsService.setProjectArchived',
+  );
 }

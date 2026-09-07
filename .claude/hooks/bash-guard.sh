@@ -23,6 +23,16 @@ COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || tr
 if [ -n "$COMMON" ]; then ROOT=$(dirname "$COMMON"); else ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"; fi
 STATE_DIR="$ROOT/.superpowers/ship-spec"
 
+# The checkout this session is invoking from. `cwd` in the hook input follows a
+# session into a worktree; CLAUDE_PROJECT_DIR stays at the launch directory, so
+# it is the fallback rather than the first choice.
+SESSION_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)
+if [ -n "$SESSION_CWD" ] && [ -d "$SESSION_CWD" ]; then
+  INVOKER="$SESSION_CWD"
+else
+  INVOKER="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+fi
+
 # 1. unwrap `bash -c` / `sh -c`; 2. drop the VALUES of prose flags
 # (--body/--title/--message/-b/-t, and -m when quoted); 3. remove quote
 # characters so `--base "main"` reads as a flag; 4. split into simple commands.
@@ -121,22 +131,51 @@ if seg_matches 'railway[[:space:]]+(up|redeploy)'; then is_deploy=1; fi
 trimmed() { sed -n "s/^$1=//p" "$2" | tail -1 | tr -d '[:space:]'; }
 
 if [ "$is_promotion" = 1 ] || [ "$is_deploy" = 1 ]; then
+  # A run's ceiling binds the session that DRIVES it, not the whole repo.
+  # State lives under the common git dir so every worktree can read it, and
+  # reading it is not owning it — the same lesson the Stop gate learned in
+  # #847, which survived here in a third place: a dev-ceiling run was denying
+  # hand promotions from unrelated worktrees, so the message said "this run
+  # cannot touch main" while the behaviour was "nobody may touch main".
+  #
+  # Keying on orchestrator= costs the prod path nothing, because promotion is
+  # the orchestrator's own Phase 6 and no seat ever promotes. A --to prod run
+  # therefore keeps its full autonomous cycle; the evidence gate below, not
+  # ownership, is what stands between it and main.
   ACTIVE=""
   ACTIVE_COUNT=0
+  FOREIGN=""
+  FOREIGN_COUNT=0
   for f in "$STATE_DIR"/*/state; do
     [ -f "$f" ] || continue
     phase=$(trimmed phase "$f")
     case "$phase" in done|halted) continue ;; esac
     [ -n "$(find "$f" -mmin +1440 2>/dev/null)" ] && continue
-    ACTIVE="$f"
-    ACTIVE_COUNT=$((ACTIVE_COUNT + 1))
+    owner=$(trimmed orchestrator "$f")
+    if [ -z "$owner" ]; then
+      # States written before orchestrator= existed: fall back to the run's
+      # own worktree or the main checkout, so an uninvolved worktree is never
+      # bound by a run it has nothing to do with.
+      wt=$(trimmed worktree "$f")
+      case "$INVOKER" in "$wt"|"$ROOT") owner="$INVOKER" ;; esac
+    fi
+    if [ "$owner" = "$INVOKER" ]; then
+      ACTIVE="$f"
+      ACTIVE_COUNT=$((ACTIVE_COUNT + 1))
+    else
+      FOREIGN="$f"
+      FOREIGN_COUNT=$((FOREIGN_COUNT + 1))
+    fi
   done
 
+  if [ "$ACTIVE_COUNT" -eq 0 ] && [ "$FOREIGN_COUNT" -gt 0 ]; then
+    ask "A /ship-spec run is live in another session ($FOREIGN) and does not bind this checkout ($INVOKER). If you ARE that run's orchestrator, promote from its checkout so its ceiling applies. Otherwise this is a hand promotion while someone else's run is open — confirm; the deploy-release skill is the runbook."
+  fi
   if [ "$ACTIVE_COUNT" -eq 0 ]; then
     ask "No active /ship-spec run declares a ceiling (no .superpowers/ship-spec/*/state with a live phase). Promoting or deploying to prod by hand — confirm; the deploy-release skill is the runbook."
   fi
   if [ "$ACTIVE_COUNT" -gt 1 ]; then
-    deny "More than one active /ship-spec run state under .superpowers/ship-spec/*/state. Mark finished runs phase=done (or halted) before promoting."
+    deny "More than one active /ship-spec run state names this checkout as orchestrator. Mark finished runs phase=done (or halted) before promoting."
   fi
 
   ceiling=$(trimmed ceiling "$ACTIVE")

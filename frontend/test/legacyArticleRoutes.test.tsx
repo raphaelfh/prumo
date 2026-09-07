@@ -12,6 +12,7 @@
  */
 
 import {render, screen} from '@testing-library/react';
+import {Outlet} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 // The App module graph statically reaches the Supabase client, which throws at
@@ -26,8 +27,8 @@ vi.mock('@/contexts/AuthContext', () => ({
     useAuth: () => ({user: {id: 'u1'}, session: null, loading: false, signOut: vi.fn()}),
 }));
 
-vi.mock('@/components/layout/AppLayout', () => ({
-    ProjectLayout: ({children}: {children: React.ReactNode}) => <>{children}</>,
+vi.mock('@/components/layout/AppShell', () => ({
+    AppShell: () => <Outlet/>,
 }));
 
 vi.mock('@/pages/ProjectView', () => ({
