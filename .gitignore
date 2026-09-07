@@ -177,6 +177,10 @@ supabase/.branches/*
 .claude/worktrees/
 .superpowers/
 graphify-out/*
+# `graphify hook install` output — per developer, never committed: with
+# core.hooksPath=.githooks it warns on every commit for anyone without graphify.
+.githooks/post-commit
+.githooks/post-checkout
 
 # Orphan root lockfile (no root pyproject); the real lock is backend/uv.lock
 /uv.lock
