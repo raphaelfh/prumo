@@ -5,32 +5,33 @@
 #
 #   bash .claude/hooks/tests/test-bash-guard.sh
 #
-# Writes a throwaway run state under <main checkout>/.superpowers/ship-spec/
-# __guard_test__/ (gitignored) and removes it on exit. If origin/dev does not
-# resolve (shallow CI checkout), it is created pointing at HEAD.
+# Runs entirely inside a throwaway git repository in $TMPDIR, so the guard it
+# exercises resolves its run-state directory there and never reads the real
+# repo's. That isolation is load-bearing, not tidiness: this test runs inside
+# `make quality-scan`, which is exactly what a /ship-spec run's Phase 4 gate
+# executes. An earlier version asserted "no other live run state exists" and
+# exited 2 otherwise, which deadlocked the pipeline against itself — the gate a
+# run must pass went red *because that run was live*, so no run could ever
+# reach a green gate, and every other session in the repo lost the gate too.
+# Found by the first live eval run, 2026-09-07.
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 GUARD="$HERE/../bash-guard.sh"
-COMMON=$(git rev-parse --path-format=absolute --git-common-dir)
-ROOT=$(dirname "$COMMON")
+
+# A sandbox repo: the guard derives its root from `git rev-parse
+# --git-common-dir` in its own cwd, so running from here scopes it completely.
+SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/guard-test.XXXXXX")
+trap 'rm -rf "$SANDBOX"' EXIT
+git -C "$SANDBOX" init -q
+git -C "$SANDBOX" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
+git -C "$SANDBOX" update-ref refs/remotes/origin/dev HEAD
+cd "$SANDBOX" || exit 2
+
+ROOT="$SANDBOX"
 STATE_DIR="$ROOT/.superpowers/ship-spec/__guard_test__"
 STATE="$STATE_DIR/state"
-
-git -C "$ROOT" rev-parse -q --verify origin/dev >/dev/null 2>&1 \
-  || git -C "$ROOT" update-ref refs/remotes/origin/dev HEAD
-
-# Precondition: no other live run state, or the multi-run rule fires.
-for f in "$ROOT"/.superpowers/ship-spec/*/state; do
-  [ -f "$f" ] || continue
-  [ "$f" = "$STATE" ] && continue
-  case "$(sed -n 's/^phase=//p' "$f" | tail -1 | tr -d '[:space:]')" in
-    done|halted) ;;
-    *) echo "PRECONDITION FAILED: another live run state exists: $f" >&2; exit 2 ;;
-  esac
-done
 mkdir -p "$STATE_DIR"
-trap 'rm -rf "$STATE_DIR"' EXIT
 
 pass=0
 fail=0

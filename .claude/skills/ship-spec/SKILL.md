@@ -91,6 +91,7 @@ ledger.
 <main checkout>/.superpowers/ship-spec/<plan-basename>/     the RUN STATE — read by the hooks
   state             ceiling=<dev|staging|prod>  phase=<0-8|halted|done>  preflight=GREEN@<sha>|RED@<sha>
                     worktree=<absolute path of the run's working tree>
+                    orchestrator=<absolute path of YOUR checkout — who the Stop gate applies to>
   quality-scan.log  gate output; first line `sha=<HEAD it ran on>`
 <run worktree>/.superpowers/sdd/<plan-basename>/            SDD's workspace — the ledger
   progress.md       rulings, task completions, questions, KPI line
@@ -137,11 +138,23 @@ From `$ARGUMENTS` compute:
   write step would do, and makes no commit, push, PR or deploy; it stops
   at the end of Phase 5 regardless of ceiling.
 
-Then write `state` (`ceiling=<c>`, `phase=0`, `worktree=<absolute path
-of the checkout this run edits — the worktree from Phase 1, or the
-current checkout under --no-worktree>`) under
-`<main checkout>/.superpowers/ship-spec/<plan-basename>/` and announce
-one line:
+Then write `state` under
+`<main checkout>/.superpowers/ship-spec/<plan-basename>/` with:
+
+- `ceiling=<c>`, `phase=0`
+- `worktree=<absolute path of the checkout this run EDITS — the worktree from
+  Phase 1, or the current checkout under --no-worktree>`
+- `orchestrator=<absolute path of the checkout YOU are in — `pwd`>`
+
+The two paths differ whenever the run uses a worktree: you stay in the main
+checkout while the implementers edit the worktree. Both are needed, and for
+different readers. The Stop gate keys on `orchestrator=` so it gates the one
+session driving the run; without it a run gates every session in the
+repository, because the state lives under the common git dir where all
+worktrees can see it. `worktree=` is what the gate log's SHA is compared
+against.
+
+Then announce one line:
 
 > Ceiling = prod · subject = ADR-0013 stored-markdown tier · worktree on · auto-merge armed · evidence-gated.
 
