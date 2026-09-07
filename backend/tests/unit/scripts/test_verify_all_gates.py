@@ -145,6 +145,7 @@ def test_gate_roster_is_pinned() -> None:
         "test:vitest": "npm test -- --run",
         "build:react-compiler": "node scripts/check_compiler_coverage.mjs",
         "fitness:run_all": 'bash "${SCRIPT_DIR}/fitness/run_all.sh" ${SCOPE:+--scope "${SCOPE}"}',
+        "schema:alembic-check": "bash -c 'cd backend && uv run alembic check'",
         "smoke:playwright": "npx playwright test --project=local-api --project=local-ui",
     }
     actual = {}

@@ -47,6 +47,16 @@ exact file:line. Report a finding as blocking only if the verdict is
 CONFIRMED; downgrade REFUTED findings to nothing and UNVERIFIABLE ones
 to advisory with the reason.
 
+**Pass `run_in_background: false` on every one of those dispatches.**
+You are yourself a subagent, and a backgrounded nested agent's result
+does not come back to you — it surfaces as a notification in the
+top-level session, so you would wait for a verdict that can never
+arrive and the review turn is lost. Verified on 2026-09-07: with
+`run_in_background: false` a nested dispatch returns its answer inline,
+in the same turn. If you ever cannot await a verifier, do not stall and
+do not silently drop the finding: verify it yourself with a freshly run
+command and report that command's verbatim output as the evidence.
+
 ## What you return
 
 ```

@@ -5,14 +5,12 @@ description: After finding a root cause, validate at every layer the data passes
 
 # Defense-in-Depth Validation (prumo)
 
-## Overview
-
-Fixing a bug at a single layer feels sufficient. It isn't. A check inside one service is bypassed by a new endpoint, a refactor, a Celery task, a SQL admin script, or a test mock. The next bug of the same class will land in a place your single check doesn't guard.
-
-**Core principle:** validate the *invariant* at every layer the data crosses. Make the bug impossible to express, not merely caught.
-
-Single validation = "we fixed this bug".
-Multiple layers = "we made this class of bug impossible".
+**Read `superpowers:systematic-debugging`'s `defense-in-depth.md` first** for the
+generic principle (validate the invariant at every layer the data crosses; make
+the bug impossible to express, not merely caught). Its four layers are generic —
+entry point, business logic, environment guards, debug instrumentation. **prumo's
+five layers below replace that model**, because they are this stack: Pydantic,
+service, SQLAlchemy/Postgres, RLS, Zod.
 
 ## Why multiple layers — prumo edition
 
