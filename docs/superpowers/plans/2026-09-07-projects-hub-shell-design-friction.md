@@ -309,3 +309,50 @@ verifying them.
 directory (the plan, and here a friction log) and never validates them against
 the gates that govern that directory. The plan-writing phase should end with the
 repo's own doc checks, not wait for Phase 4.
+
+## 2026-09-07T16:10Z — Phase 2 — the panel hid a blocking finding in a fourth array
+
+**Expected.** `/ship-spec` Phase 2 says: "Revise the plan for blocking findings,
+ledger the rulings on advisory ones, proceed." That phrasing implies two
+buckets. I expected to read `blocking` and `advisory` and be done.
+
+**Happened.** The panel returned **four** arrays: `blocking` (7), `advisory`
+(15), `refuted` (1) and **`unverified` (1)**. The unverified entry carries
+`severity: blocking, confirmed: false` — not refuted, simply never checked,
+because its refuter agents were among **four of twenty-three that finished
+without calling StructuredOutput** (reported only in a `failures` block as
+`parallel[0] failed` / `parallel[1] failed`, with no indication of which finding
+each belonged to).
+
+That demoted finding was real, and arguably the most user-visible of the whole
+set: the plan deleted the only error surface for the project-list read and
+rendered failure as a permanent `aria-hidden` shimmer inside the breadcrumb
+landmark, so a failed read was invisible on every project route — with zero
+accessible content for a screen reader. It is a named recurring incident class
+in this repo's own review checklist (error swallowing).
+
+**Action.** Ruled it UPHELD on the panel's own rubric and dispatched a targeted
+revision. The revising seat then improved on my ruling: it split the case I had
+called "failed" into *failed* and *not-found-because-archived*, because the plan
+filters the switcher to `is_active = true`, so an archived-but-open project
+legitimately resolves to no name and must not be shown as an error. Four states,
+not three.
+
+**Skill gaps, both real:**
+
+1. **The verdict summary lies by omission.** The workflow's own log line reads
+   "24 findings (9 blocking, 15 advisory)" while the `blocking` array holds 7.
+   The two missing blocking findings went to `refuted` and `unverified`. A reader
+   who trusts the array — which is what the skill's wording invites — silently
+   drops a blocking finding. `/ship-spec` should say to read `unverified` as
+   blocking-until-checked, and `ship-panel` should not let a refuter crash
+   downgrade a finding.
+2. **Refuter failures are unattributed.** Four agents returned nothing and the
+   output does not say which findings lost their verification. I only found the
+   demoted one because a revision seat mentioned it in passing and I went
+   looking. There is no way to audit this from the structured result alone.
+
+**Cost if I had not caught it:** an accessibility regression and a swallowed
+error would have shipped to prod, and neither Phase 4's gates nor the design
+review would have caught them — the shimmer renders fine, and no test asserted
+the failed state.
