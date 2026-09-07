@@ -57,10 +57,6 @@ frontend/lib/copy/common.ts:pdfLoadErrorDesc
 frontend/lib/copy/common.ts:pdfNotLinked
 frontend/lib/copy/common.ts:pdfNotLinkedDesc
 frontend/lib/copy/common.ts:removeAria
-frontend/lib/copy/common.ts:timeAgoD
-frontend/lib/copy/common.ts:timeAgoH
-frontend/lib/copy/common.ts:timeAgoMin
-frontend/lib/copy/common.ts:timeJustNow
 frontend/lib/copy/common.ts:unknownError
 frontend/lib/copy/common.ts:userRoleAria
 frontend/lib/copy/consensus.ts:templatesEditAction
