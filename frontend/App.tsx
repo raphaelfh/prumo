@@ -14,6 +14,7 @@ import {ProjectLayout} from "./components/layout/AppLayout";
 import {RunWorkspaceShell} from "@/components/runs/RunWorkspaceShell";
 import {Loader2} from "lucide-react";
 import {t} from "@/lib/copy";
+import {RESET_PASSWORD_PATH} from "@/lib/routes";
 import React from "react";
 import {useGlobalShortcuts} from "./hooks/useGlobalShortcuts";
 
@@ -79,7 +80,7 @@ const App = () => {
                     <GlobalShortcuts>
                     <Routes>
                   <Route path="/auth" element={<Auth />} />
-                        <Route path="/auth/reset-password" element={<ResetPassword/>}/>
+                        <Route path={RESET_PASSWORD_PATH} element={<ResetPassword/>}/>
                   <Route
                     path="/"
                     element={

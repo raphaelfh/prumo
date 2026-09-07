@@ -1,6 +1,7 @@
 import {useState} from "react";
 import {useNavigate} from "react-router";
 import {signInWithPassword, signUp, resetPasswordForEmail} from "@/services/authService";
+import {RESET_PASSWORD_PATH} from "@/lib/routes";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
@@ -493,7 +494,7 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
         e.preventDefault();
         setError(null);
         setLoading(true);
-        const result = await resetPasswordForEmail(email, `${authRedirectBaseUrl}/auth/reset-password`);
+        const result = await resetPasswordForEmail(email, `${authRedirectBaseUrl}${RESET_PASSWORD_PATH}`);
         setLoading(false);
         if (!result.ok) {
             setError(mapAuthError(result.error.message || t("auth", "errorSendEmail")));
