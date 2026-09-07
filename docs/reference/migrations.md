@@ -241,6 +241,22 @@ the canonical patterns.
 
 - **Never** edit a committed-and-deployed migration in place. Add a new
   migration that fixes the issue.
+  - The one carve-out, and it is narrow: **`baseline_v1.sql` may be
+    edited for statements that only shape a FRESH bootstrap**, because
+    `0001_baseline_v1` never replays — alembic runs a revision only when
+    the database is stamped below it, and every real database is far
+    past it. That is also what makes the edit dangerous: deployed
+    databases do not receive it, so anything that changes the resulting
+    schema splits the estate in two. Before touching that file you owe a
+    fresh-vs-fresh differential — build one database from the old file
+    and one from the new, and diff the schema plus
+    `information_schema.role_table_grants` and `pg_default_acl`. They
+    must be identical. Do NOT diff a fresh build against local Supabase:
+    Supabase sets its own default privileges (grantors `postgres` and
+    `supabase_admin`, granting `anon` too), so that comparison measures
+    the platform, not your edit. Precedent: the `FOR ROLE "postgres"`
+    removal, whose six `ALTER DEFAULT PRIVILEGES` turned out to be
+    load-bearing for four tables created by later migrations.
 - **Never** rename a `revision` id once the migration is on someone
   else's machine — `down_revision` chains break silently.
 - When in doubt, write the migration's downgrade first. If you can't
