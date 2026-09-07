@@ -29,7 +29,7 @@ Testing Library + MSW, Playwright.
 
 **Spec:** `docs/superpowers/specs/2026-09-07-projects-hub-shell-design.md`
 **Ledger (overrides the spec where they disagree):**
-`.superpowers/sdd/2026-09-07-projects-hub-shell-design/progress.md`
+`.superpowers/sdd/2026-09-07-projects-hub-shell/progress.md`
 
 ## Global Constraints
 
@@ -213,7 +213,10 @@ guarantees the code makes.
 - Consumes: `sidebarItems` from `frontend/components/layout/sidebarConfig.ts`
   (already exported: `SidebarNavItem[]` with `id: SidebarTabId`).
 - Produces: `useShellLocation(): {projectId: string | null; activeSection: SidebarTabId | null}`
-  and `DEFAULT_PROJECT_TAB: SidebarTabId`. Tasks 4–7 and 12 consume both.
+  and `DEFAULT_PROJECT_TAB: SidebarTabId`. Tasks 4, 6 and 7 consume
+  `useShellLocation` (Task 4 only inside a test harness); `DEFAULT_PROJECT_TAB`
+  is used inside `useShellLocation.ts` itself and exported only so the
+  derivation test can assert against it — it is not a production seam.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2166,6 +2169,7 @@ git commit -m "feat(shortcuts): register nav bindings from the shell and add G H
 - Delete: `frontend/components/layout/AppLayout.tsx`
 - Modify: `frontend/App.tsx`
 - Modify: `frontend/pages/Dashboard.tsx`
+- Modify: `frontend/lib/copy/pages.ts` (delete `dashboardMyProjects`, Step 5.3)
 - Modify: `frontend/test/legacyArticleRoutes.test.tsx:29-31`
 - Test: `frontend/test/appShell.routes.test.tsx`
 
@@ -2203,13 +2207,34 @@ vi.mock('@/contexts/AuthContext', () => ({
     useAuth: () => ({user: {id: 'u1'}, session: null, loading: false, signOut: vi.fn()}),
 }));
 
-// Page bodies are not under test; the shell around them is.
+// Page bodies are not under test; the shell around them is. ExtractionFullScreen
+// is mocked too so the run-route test has a positive control — without it, its
+// `queryByTestId('app-shell')` negative would also pass against a route that
+// rendered nothing at all.
 vi.mock('@/pages/Dashboard', () => ({default: () => <div>hub page</div>}));
 vi.mock('@/pages/ProjectView', () => ({default: () => <div>project view</div>}));
 vi.mock('@/pages/UserSettings', () => ({default: () => <div>settings page</div>}));
+vi.mock('@/pages/ExtractionFullScreen', () => ({default: () => <div>run workspace</div>}));
 // The footer pulls in the authed user menu and the feedback dialog.
 vi.mock('@/components/layout/SidebarFooter', () => ({
     SidebarFooter: () => <div data-testid="sidebar-footer" />,
+}));
+// The Topbar's FIRST statement is `useUserProfile()`, which issues a real
+// Supabase read against the stubbed URL; until it settles the bar renders a
+// skeleton with no breadcrumb, no toggles and no view switcher. Unmocked, every
+// Topbar assertion (Task 7 appends six) races a connection-refused round trip
+// inside findBy*'s 1000 ms budget. NotificationCenter likewise starts
+// background-job polling. Both are stubbed so the bar renders synchronously.
+vi.mock('@/hooks/useNavigation', () => ({
+    useUserProfile: () => ({
+        user: {id: 'u1', name: 'Test User', email: 't@example.com', initials: 'T'},
+        isLoading: false,
+        error: null,
+        refreshProfile: vi.fn(),
+    }),
+}));
+vi.mock('@/components/navigation/NotificationCenter', () => ({
+    NotificationCenter: () => <div data-testid="notification-center" />,
 }));
 vi.mock('@/hooks/useProjectsQuery', () => ({
     useProjectsQuery: () => ({
@@ -2265,7 +2290,15 @@ describe('AppShell', () => {
     it('does not wrap the full-screen run routes', async () => {
         renderAt('/projects/p1/extraction/a9');
 
-        expect(await screen.findByTestId('sidebar-footer')).toBeInTheDocument();
+        // POSITIVE CONTROL: the run page really did render. Do NOT assert
+        // `sidebar-footer` here — RunWorkspaceShell mounts
+        // `<SidebarProvider defaultCollapsed persist={false}>`
+        // (`RunWorkspaceShell.tsx:72`), and ResizablePanel returns null while
+        // collapsed (`resizable-panel.tsx:279`), so ProjectSidebar and its
+        // footer are unmounted on this route by design. The mobile drawer is
+        // closed, so its copy is unmounted too. `RunWorkspaceShell.test.tsx:63-65`
+        // documents exactly this.
+        expect(await screen.findByText('run workspace')).toBeInTheDocument();
         // RunWorkspaceShell, not AppShell: no Topbar, hence no app-shell root.
         expect(screen.queryByTestId('app-shell')).toBeNull();
     });
@@ -2421,6 +2454,16 @@ are, outside the layout route. Close the new provider after `</Routes>`:
 `SidebarProvider` is no longer imported per-route inside the project element —
 keep the top-level import.
 
+The hoisted provider now also sits around the two full-screen run routes, which
+mount their own `<SidebarProvider defaultCollapsed persist={false}>`
+(`RunWorkspaceShell.tsx:72`). **That nesting is deliberate and safe:** the inner
+provider is the nearest one for every `RunWorkspaceShell` descendant, so it still
+wins, and `persist={false}` keeps focus mode from writing over the outer
+provider's persisted `collapsed` baseline — the exact reason the inner provider
+exists (`RunWorkspaceShell.tsx:65-68`). It also means the outer provider mounts
+on `/auth`, `/reset-password` and `*`, where nothing reads it; that is inert, not
+a leak.
+
 - [ ] **Step 5: De-chrome the hub page**
 
 `Dashboard` no longer opens its own layout. In `frontend/pages/Dashboard.tsx`:
@@ -2554,6 +2597,11 @@ Append to `frontend/test/appShell.routes.test.tsx`, inside the same `describe`:
     it('drops the Topbar brand block — the sidebar header owns brand now', async () => {
         renderAt('/');
         const shell = await screen.findByTestId('app-shell');
+        // NON-VACUITY GUARD: "exactly one Prumo" would also hold while the
+        // Topbar is showing its loading skeleton (the single match then coming
+        // from the sidebar brand header alone). Assert the breadcrumb in the
+        // same render so the count is only meaningful once the real bar is up.
+        expect(within(shell).getByRole('navigation', {name: 'Breadcrumb'})).toBeInTheDocument();
         // Exactly one "Prumo" in the shell: the sidebar brand header.
         expect(within(shell).getAllByText('Prumo')).toHaveLength(1);
     });
@@ -3602,8 +3650,17 @@ async def test_the_service_called_directly(db_session: AsyncSession) -> None:
 
 - [ ] **Step 3: Run both to verify they fail**
 
-Run: `cd backend && uv run pytest tests/unit/test_project_archive_endpoints_unit.py -q`
-Expected: FAIL — `ModuleNotFoundError: app.api.v1.endpoints.project_archive`.
+Both files, not just the unit one — otherwise the five integration tests get
+their first run at Step 8, after the implementation exists, and a test that
+passes for the wrong reason (a fixture that never reaches the route) would never
+be caught.
+
+Run: `cd backend && uv run pytest tests/unit/test_project_archive_endpoints_unit.py tests/integration/test_project_archive_endpoints.py -q`
+Expected: FAIL — two collection errors:
+`ModuleNotFoundError: app.api.v1.endpoints.project_archive` (unit) and
+`ModuleNotFoundError: app.services.project_archive` (integration). Both are
+raised at import, before any DB fixture, so this red run does not need the local
+Supabase Docker stack; Step 8's `make test-backend` does.
 
 - [ ] **Step 4: Write the schema**
 
@@ -4101,7 +4158,8 @@ the embed at all, narrow with a single named alias rather than reaching for
 - [ ] **Step 8: Run the tests**
 
 Run: `npm run test:run -- frontend/test/services/projectsService.test.ts frontend/test/types/projectManager.test.ts frontend/test/hooks/useProjectsQuery.test.tsx`
-Expected: PASS (3 + 5 + 4 tests).
+Expected: PASS (3 + 5 + 7 tests). `useProjectsQuery.test.tsx` carries the 7 tests
+Task 2 wrote (plan Task 2 Step 10 says 7); this task removes none.
 
 - [ ] **Step 9: Full suite and gates**
 
@@ -4308,6 +4366,14 @@ commit):
     dashboardArchiveDenied: 'You do not have permission to change this project',
     dashboardArchiveFailed: 'Could not update the project',
 ```
+
+`dashboardArchiveDenied` has no consumer until Task 13 Step 4 wires it to the
+endpoint's 403 (`require_project_manager`, Task 9) in `Dashboard`'s `onError`.
+That is a reachable outcome — a non-manager holding a stale affordance — and the
+key must be read by something: `scripts/fitness/check_copy_keys.py` is a
+shrink-only ratchet on unused keys, so an unread key would redden
+`bash scripts/fitness/run_all.sh` at Task 13 Step 7. The gate does not run
+between here and there, so adding it at this commit is safe.
 
 - [ ] **Step 2: Write the failing mutation test**
 
@@ -4878,6 +4944,7 @@ import {toast} from "sonner";
 import {AddProjectDialog} from "@/components/project/AddProjectDialog";
 import {ProjectRow} from "@/components/project/ProjectRow";
 import {ErrorState} from "@/components/patterns/ErrorState";
+import {ApiError} from "@/integrations/api/client";
 import {EmptyListState, ListDisplaySortPopover, ListToolbarSearch} from "@/components/shared/list";
 import {projectsListKey, useProjectsQuery} from "@/hooks/useProjectsQuery";
 import {useArchiveProject} from "@/hooks/useArchiveProject";
@@ -4928,7 +4995,18 @@ export default function Dashboard() {
       {projectId, archived},
       {
         onSuccess: () => toast.success(t('pages', archived ? 'dashboardArchived' : 'dashboardRestored')),
-        onError: (error) => toast.error(error.message || t('pages', 'dashboardArchiveFailed')),
+        // 403 is the one failure the caller can act on: the route is
+        // manager-gated (`require_project_manager`, Task 9) and a non-manager
+        // can still be holding a stale affordance. `normalizeError` passes
+        // Error instances through unchanged, so the ApiError apiClient threw
+        // survives `toResult` and the mutation's rethrow with its `.status`
+        // intact. Same idiom as `HITLExportDialog.tsx:116`.
+        onError: (error) =>
+          toast.error(
+            error instanceof ApiError && error.status === 403
+              ? t('pages', 'dashboardArchiveDenied')
+              : error.message || t('pages', 'dashboardArchiveFailed'),
+          ),
       },
     );
   };
@@ -5208,7 +5286,15 @@ test.describe("Projects navigation flows", () => {
     await expect(shell).toHaveAttribute("data-project-id", env.projectId);
     await expect(shell.getByRole("button", { name: "Articles" })).toBeVisible();
 
-    await shell.getByRole("button", { name: /^G P|Project/ }).first().click();
+    // Scoped and name-independent. The trigger's accessible name is the avatar
+    // letter plus the SEEDED project's name (`SidebarHeader.tsx:59-76`) — the
+    // KbdBadge is aria-hidden and `aria-keyshortcuts` does not contribute to
+    // the name, so a `/^G P|Project/` regex would never match its first
+    // alternative and would match the second only by luck of the seed.
+    // `aria-keyshortcuts="G P"` is unique in the app (`SidebarNavItem` emits
+    // `G <letter>` for O,C,A,T,E,Q,R,H; `PanelToggleButton` emits Meta+B and
+    // `\`), so no `.first()` is needed — a second match should fail loudly.
+    await shell.locator('[aria-keyshortcuts="G P"]').click();
     await page.getByRole("menuitem", { name: "Back to projects" }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByTestId("app-shell")).toHaveAttribute("data-project-id", "");

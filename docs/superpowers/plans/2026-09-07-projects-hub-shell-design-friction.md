@@ -356,3 +356,30 @@ not three.
 error would have shipped to prod, and neither Phase 4's gates nor the design
 review would have caught them — the shimmer renders fine, and no test asserted
 the failed state.
+
+## 2026-09-07T16:25Z — Phase 3 — two skills disagree about where the ledger lives
+
+**Expected.** One ledger for the run, at the path `/ship-spec` names.
+
+**Happened.** `/ship-spec` says the SDD workspace is
+`.superpowers/sdd/<plan-basename>/`, and I created the ledger in Phase 0 —
+before any plan existed — keyed off the **spec** basename
+(`2026-09-07-projects-hub-shell-design`). When SDD actually started, its own
+`scripts/sdd-workspace` resolved the **plan** basename
+(`2026-09-07-projects-hub-shell`). Different directory. SDD's setup rules then
+say a ledger whose first line names a different plan "is another plan's
+progress: leave it in place and start your own, fresh" — which would have
+orphaned every ruling made in Phases 0-2 and started an empty ledger at the
+moment the run finally needed continuity most.
+
+**Action.** Moved the ledger to SDD's resolved path and prepended the identity
+line SDD expects (`# SDD ledger — plan: <path>`), so there is one ledger with
+the full history. Deleted the old directory.
+
+**Skill gap.** `/ship-spec` tells the orchestrator to create the ledger in
+Phase 0, when the plan file does not exist yet and its basename is therefore
+unknowable — so the path it prescribes is one the orchestrator cannot compute at
+the time it is told to compute it. Either Phase 0 should defer ledger creation,
+or it should key the workspace off the spec and SDD should be told that name.
+Following both skills literally produces two ledgers and silently discards the
+first.
