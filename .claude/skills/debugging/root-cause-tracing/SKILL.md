@@ -5,6 +5,11 @@ description: Trace a bug backwards through prumo's call stack — frontend hook 
 
 # Root Cause Tracing (prumo)
 
+**Read `superpowers:systematic-debugging`'s `root-cause-tracing.md` first.** It
+owns the generic method: the five-step climb, the stack-trace technique, and the
+test-pollution bisect. This file does not repeat them — it layers prumo's call
+chain on top: async pitfalls, error-swallowing, structlog/OTel instrumentation.
+
 ## Overview
 
 Bugs in prumo almost always surface far from the trigger:
@@ -198,12 +203,6 @@ pytest -k "test_a or test_b or test_c"
 
 Common culprits on prumo: a test that wrote to `seed_data`-shared tables without an explicit teardown; a test that left a `pg_advisory_lock` held; a fixture that didn't roll back its transaction.
 
-## The principle, restated
-
-> Never fix only where the error appears. Trace back to the original trigger, fix there, then add defenses at each layer in between.
-
-Symptoms are honest narrators about *something*, but rarely about themselves.
-
 ## Worked example — wrong progress % in sidebar
 
 **Symptom.** `RunProgressBadge` shows 42% but `GET /api/v1/runs/:id/progress` returns 67%.
@@ -223,9 +222,7 @@ Symptoms are honest narrators about *something*, but rarely about themselves.
 
 This produces a fix that holds even after the next refactor.
 
-## Stack-trace tips
+## Stack-trace tips (prumo)
 
 - In pytest, capture stacks with `pytest --tb=long`. For async, `pytest -p asyncio --tb=long`.
-- In Node/Vitest, the default trace is fine; for service-level recursion, add `Error.captureStackTrace`.
-- Always log *before* the dangerous operation — once it raises, you've lost the call-site context.
 - Always log the IDs (`run_id`, `project_id`, `user_id`, `template_version_id`) — a trace without IDs is a chair without legs.
