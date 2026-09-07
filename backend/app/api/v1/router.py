@@ -22,6 +22,7 @@ from app.api.v1.endpoints import (
     llm_engine,
     manager_review_visibility,
     parser_settings,
+    project_archive,
     project_templates,
     section_extraction,
     template_structure,
@@ -112,6 +113,12 @@ api_router.include_router(
 
 api_router.include_router(
     ai_context.router,
+    prefix="/projects",
+    tags=["projects"],
+)
+
+api_router.include_router(
+    project_archive.router,
     prefix="/projects",
     tags=["projects"],
 )
