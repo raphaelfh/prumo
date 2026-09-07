@@ -21,6 +21,19 @@ from app.repositories.integration_repository import ZoteroIntegrationRepository
 ZOTERO_API_BASE = "https://api.zotero.org"
 ZOTERO_API_VERSION = "3"
 
+# A collection holds more than bibliographic records: notes and attachments are
+# items of their own. Neither carries a ``title``, so normalization falls back
+# to "Untitled" and persists a ghost article with no authors, journal, year or
+# DOI. The API-side ``itemType=-attachment`` filter drops only half of that —
+# the documented negation syntax takes a single type — so the rest is dropped
+# here, where the Zotero item taxonomy already lives.
+NON_ARTICLE_ITEM_TYPES = frozenset({"attachment", "note"})
+
+
+def is_article_item(item: dict[str, Any]) -> bool:
+    """True when a Zotero item is a bibliographic record, not a note/attachment."""
+    return (item.get("data") or {}).get("itemType") not in NON_ARTICLE_ITEM_TYPES
+
 
 class ZoteroService(LoggerMixin):
     """
@@ -252,7 +265,8 @@ class ZoteroService(LoggerMixin):
             start: Offset for paginacao.
 
         Returns:
-            Dict with items and info de paginacao.
+            Dict with items and info de paginacao. Notes and attachments are
+            excluded — only bibliographic records come back.
         """
         credentials = await self._get_credentials()
 
@@ -274,7 +288,7 @@ class ZoteroService(LoggerMixin):
         )
 
         return {
-            "items": result["data"],
+            "items": [item for item in result["data"] if is_article_item(item)],
             "total_results": result["total_results"],
             "has_more": result["has_more"],
         }

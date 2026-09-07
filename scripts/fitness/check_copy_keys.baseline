@@ -91,8 +91,6 @@ frontend/lib/copy/pages.ts:extractionScreenYou
 frontend/lib/copy/pages.ts:indexSubtitle
 frontend/lib/copy/pages.ts:indexWelcome
 frontend/lib/copy/pages.ts:projectViewErrorLoading
-frontend/lib/copy/pages.ts:projectViewFromRisFile
-frontend/lib/copy/pages.ts:projectViewFromZotero
 frontend/lib/copy/pages.ts:projectViewLoading
 frontend/lib/copy/pages.ts:projectViewProjectNotFound
 frontend/lib/copy/pages.ts:projectViewTabExtractionDesc
