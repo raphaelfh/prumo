@@ -151,6 +151,15 @@ _e2e_env_value() {
   return 1
 }
 
+# Can alembic reach the database at all? `alembic check` cannot tell a schema
+# that drifted from a database that is not there — both exit non-zero — and a
+# FAIL that means "run make start" is the same blindness as a false OK.
+# `alembic current` is the probe because it resolves the URL and opens the
+# connection exactly the way `check` will.
+_db_reachable() {
+  (cd "${REPO_ROOT}/backend" && uv run alembic current >/dev/null 2>&1)
+}
+
 # Is the local stack actually serving? Playwright's global setup spends 60 s per
 # URL before dying, and that death must read as SKIP, never OK.
 _stack_reachable() {
@@ -229,6 +238,17 @@ run_gate "build:react-compiler" \
 # 6. Architectural fitness functions
 run_gate "fitness:run_all" \
   bash "${SCRIPT_DIR}/fitness/run_all.sh" ${SCOPE:+--scope "${SCOPE}"}
+
+# 6b. Schema drift (alembic check) — the models and the live schema must agree.
+#     Autogenerate without writing a file: non-zero the moment the metadata
+#     implies DDL that no migration carries. This gate existed as a command
+#     nobody ran, and it had accumulated 11 items by the time anyone looked.
+if _db_reachable; then
+  run_gate "schema:alembic-check" \
+    bash -c 'cd backend && uv run alembic check'
+else
+  skip_gate "schema:alembic-check" "database unreachable — run make start"
+fi
 
 # 7. Playwright smoke (local-api + local-ui projects only — local-hitl is too
 #    slow to run on every iteration; CI still runs all three in the
