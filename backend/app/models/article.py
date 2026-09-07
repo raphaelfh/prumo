@@ -119,13 +119,13 @@ class Article(BaseModel):
     zotero_item_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     zotero_collection_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     zotero_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    sync_state: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    sync_state: Mapped[str] = mapped_column(Text, nullable=False, default="active")
     removed_at_source_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_conflict_log: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    source_lineage: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_lineage: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     project: Mapped["Project"] = relationship(

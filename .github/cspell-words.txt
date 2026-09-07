@@ -1,3 +1,5 @@
+acking
+acks
 AEPEI
 aepei
 affordances
@@ -11,8 +13,10 @@ asynccontextmanager
 asyncio
 asyncpg
 atlasgo
+authorisation
 autodeploy
 autoloop
+autoretry
 autouse
 BAA
 bakeoff
@@ -34,6 +38,7 @@ Claude
 Cochrane
 codegen
 conftest
+contextvars
 coro
 covidence
 cspell
@@ -128,6 +133,8 @@ OCR
 Ollama
 OmniDocBench
 OMOP
+ondelete
+oneline
 OpenDataLoader
 openpyxl
 organise
@@ -137,20 +144,23 @@ PaddleOCR
 parameterised
 pathlib
 pdfium
-pdfium
 pdfminer
 penalise
 PGRST
 PHI
+PKCE
 planos
 PLOS
 PMC
 podman
+polname
+polqual
 poolclass
 pooler
 popleft
 postgres
 PostgREST
+prerun
 probast
 prumo
 prumoai
@@ -173,6 +183,7 @@ rastreabilidade
 ratchet
 ratcheted
 ratcheting
+rationalisation
 reask
 reasks
 REASND
@@ -196,12 +207,15 @@ sessionmaker
 slowapi
 slowload
 sota
+specialise
 SPECKIT
 sqlalchemy
 structlog
 studylevel
 supabase
 sveltekit
+swallowers
+tablename
 tailwindcss
 tanstack
 TEDS
@@ -227,6 +241,7 @@ undoable
 ungated
 ungroundable
 univariable
+unrepresentable
 unwired
 upserted
 upserts
@@ -243,4 +258,5 @@ workos
 worktree
 worktrees
 xdist
+XPASS
 zotero

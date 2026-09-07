@@ -177,11 +177,21 @@ this as the template for the next squash):
 7. Run the full test suite. If tests pass, the schema is functionally
    identical to what the migration trail produced.
 
-**Note on `alembic check`:** after a squash, `alembic check` may report
-`modify_type` diffs for `String()` vs `TEXT()` and similar SQLAlchemy
-naming-convention noise. Those are pre-existing model/DB quirks
-unmasked by the squash, not real differences. Trust the test suite,
-not `alembic check`, for "is the schema right?".
+**Note on `alembic check`:** it is a gate now, and it must stay at zero.
+`alembic check` is autogenerate without writing a file — it exits
+non-zero the moment the models imply DDL that no migration carries. It
+runs in CI (backend-test, right after `alembic upgrade head`, against a
+database built only from the migration chain) and locally as the
+`schema:alembic-check` gate in `scripts/verify_all.sh`.
+
+It used to be advisory, on the theory that `String()` vs `TEXT()` and
+naming-convention noise made it untrustworthy. That advice let 11 real
+items accumulate — including two columns the models declared and the
+schema did not have. The noise was fixable: pin the model type to `Text`
+where the column is `text`, and name a constraint explicitly when the
+migration that created it did not follow the convention. The models
+describe the database, so a diff is either a missing migration or a
+model that overstates reality — never something to skip past.
 
 ## Tests
 
@@ -241,6 +251,22 @@ the canonical patterns.
 
 - **Never** edit a committed-and-deployed migration in place. Add a new
   migration that fixes the issue.
+  - The one carve-out, and it is narrow: **`baseline_v1.sql` may be
+    edited for statements that only shape a FRESH bootstrap**, because
+    `0001_baseline_v1` never replays — alembic runs a revision only when
+    the database is stamped below it, and every real database is far
+    past it. That is also what makes the edit dangerous: deployed
+    databases do not receive it, so anything that changes the resulting
+    schema splits the estate in two. Before touching that file you owe a
+    fresh-vs-fresh differential — build one database from the old file
+    and one from the new, and diff the schema plus
+    `information_schema.role_table_grants` and `pg_default_acl`. They
+    must be identical. Do NOT diff a fresh build against local Supabase:
+    Supabase sets its own default privileges (grantors `postgres` and
+    `supabase_admin`, granting `anon` too), so that comparison measures
+    the platform, not your edit. Precedent: the `FOR ROLE "postgres"`
+    removal, whose six `ALTER DEFAULT PRIVILEGES` turned out to be
+    load-bearing for four tables created by later migrations.
 - **Never** rename a `revision` id once the migration is on someone
   else's machine — `down_revision` chains break silently.
 - When in doubt, write the migration's downgrade first. If you can't

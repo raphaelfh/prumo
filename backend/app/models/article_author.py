@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -53,7 +53,7 @@ class ArticleAuthorLink(BaseModel):
         index=True,
     )
     author_order: Mapped[int] = mapped_column(Integer, nullable=False)
-    creator_type: Mapped[str] = mapped_column(String, nullable=False, default="author")
+    creator_type: Mapped[str] = mapped_column(Text, nullable=False, default="author")
     raw_creator_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     article: Mapped["Article"] = relationship("Article", back_populates="author_links")
@@ -79,8 +79,8 @@ class ArticleSyncRun(BaseModel):
     )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
-    source: Mapped[str] = mapped_column(String, nullable=False, default="zotero")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="zotero")
     source_collection_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     total_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     persisted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -124,9 +124,9 @@ class ArticleSyncEvent(BaseModel):
         index=True,
     )
     zotero_item_key: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False)
-    authority_rule_applied: Mapped[str | None] = mapped_column(String, nullable=True)
-    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    authority_rule_applied: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     event_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

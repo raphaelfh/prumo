@@ -645,7 +645,15 @@ class ExtractionRun(Base, UUIDMixin):
 
     version_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_template_versions.id", ondelete="RESTRICT"),
+        # Named explicitly: migration 0011 created this constraint by hand as
+        # ``fk_extraction_runs_version_id``, so the metadata naming convention's
+        # ``extraction_runs_version_id_fkey`` describes a constraint that does not
+        # exist. The model states the name the database actually carries.
+        ForeignKey(
+            "public.extraction_template_versions.id",
+            ondelete="RESTRICT",
+            name="fk_extraction_runs_version_id",
+        ),
         nullable=False,
         index=True,
     )
