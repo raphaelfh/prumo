@@ -73,6 +73,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
+from app.core.integrity import FK_VIOLATION_SQLSTATES
 from app.core.logging import get_logger
 from app.domain.template_change import ChangeTier
 from app.models.extraction import (
@@ -121,8 +122,7 @@ __all__ = [
 # ``RESTRICT_FKS`` (imported above) is the D8 backstop: detection queries
 # those tables up front (D4), and the name set tells a lost race apart from a
 # genuine bug in the writer's own phase order — a ``parent_entity_type_id``
-# violation is also 23503 and must NOT be reported as a race.
-_FK_VIOLATION = "23503"
+# violation carries the same SQLSTATE and must NOT be reported as a race.
 _DEADLOCK = "40P01"
 
 
@@ -186,7 +186,7 @@ class DiscardRacedError(_DiscardRefusal):
     """The database refused a delete the detection pass had cleared (D8).
 
     409-class. Between detection and the write, a concurrent writer gave a
-    draft-added node recorded work (23503 on a RESTRICT FK) or the
+    draft-added node recorded work (an FK violation on a RESTRICT FK) or the
     transaction deadlocked (40P01). Retrying recomputes the blocked set and
     keeps the node."""
 
@@ -619,11 +619,16 @@ def _reraise_if_raced(
 ) -> None:
     """D8: turn the DB's verdict into the refusal detection would have given.
 
-    Anything else — including a 23503 on ``parent_entity_type_id``, which
-    would mean the writer's phase order is wrong — propagates untouched, so
-    a real bug never hides behind a "someone else was editing" message."""
+    Anything else — including an FK violation on ``parent_entity_type_id``,
+    which would mean the writer's phase order is wrong — propagates
+    untouched, so a real bug never hides behind a "someone else was
+    editing" message. The NAME draws that line, not the code: both
+    SQLSTATEs are accepted because Postgres 18 reports a RESTRICT
+    violation as 23001 where 17 reported 23503."""
     state = _sqlstate(exc)
-    raced = state == _DEADLOCK or (state == _FK_VIOLATION and _constraint_name(exc) in RESTRICT_FKS)
+    raced = state == _DEADLOCK or (
+        state in FK_VIOLATION_SQLSTATES and _constraint_name(exc) in RESTRICT_FKS
+    )
     if not raced:
         return
     _refuse(

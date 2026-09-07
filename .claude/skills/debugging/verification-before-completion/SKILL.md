@@ -1,35 +1,17 @@
 ---
 name: verification-before-completion
-description: Before claiming a fix is done, a bug is confirmed, a flake is real, or work is ready to ship — run the verification commands and read the output. Evidence before assertions. Use BEFORE typing "fixed", "done", "passing", "ready", or filing a PR.
+description: prumo's command table for proving a claim. Before saying a fix is done, a bug is confirmed, a flake is real, or work is ready to ship — run the command that proves it and read the output. Use BEFORE typing "fixed", "done", "passing", "ready", or filing a PR.
 ---
 
 # Verification Before Completion (prumo)
 
-## Overview
+**Read `superpowers:verification-before-completion` first.** It owns the generic
+gate: the iron law, the five-step gate function, the red-flag list, and the
+rationalisation table. This file does not repeat them — it supplies the prumo
+commands that make the gate executable, and is the canonical gate `code-review`
+points at.
 
-Claiming work is complete without verification is dishonesty wearing efficiency's clothes. On prumo, the cost is paid by reviewers who trust the merge button: a "fix" that wasn't run produces extraction data corruption that's expensive to detect and worse to roll back.
-
-**Core principle:** evidence before claims. Always. If you haven't run the verification command *in this session*, you cannot claim it passes.
-
-## The iron law
-
-> No completion claim without fresh verification evidence.
-
-A test run from yesterday, a CI run on a sibling branch, a "should pass because the diff is small" — none of these count.
-
-## The gate
-
-Before saying any variant of "done", "fixed", "passing", "ready", "good to go", "confirmed":
-
-1. **Identify** the command(s) that prove the claim.
-2. **Run** the full command, fresh, this session. No partial scope unless explicitly justified.
-3. **Read** the entire output. Check the exit code. Count failures, warnings, skipped tests.
-4. **Verify** the output matches the claim.
-   - If no → state the actual status with the evidence.
-   - If yes → state the claim and include the evidence.
-5. **Only then** make the claim.
-
-Skipping any of these steps means you are *guessing*, not *verifying*.
+On prumo the cost of an unverified claim is paid by reviewers who trust the merge button: a "fix" that wasn't run produces extraction data corruption that's expensive to detect and worse to roll back.
 
 ## Verification commands for prumo
 
@@ -47,49 +29,18 @@ Skipping any of these steps means you are *guessing*, not *verifying*.
 | Migration is reversible | `cd backend && alembic upgrade head && alembic downgrade -1 && alembic upgrade head` | All three succeed |
 | E2E pass | `npx playwright test` | All green, no `failed` lines |
 | Bug reproduces | The test that should fail does fail (red), then after fix is green | TDD red-green cycle visible |
+| Full deterministic gate | `make quality-scan` (`scripts/verify_all.sh`) | lint + typecheck + tests + fitness, exit 0 |
 
-## Common failures — what is *not* sufficient
+## prumo-specific insufficiency — what does *not* prove the claim
 
 | Claim | Insufficient | Required |
 |---|---|---|
-| "Tests pass" | "Linter passed" | Test command exit 0, 0 failures |
 | "Backend is clean" | `ruff check` only | `ruff check` + `mypy` + `pytest` |
 | "Frontend is clean" | `npm run lint` only, or a bare `tsc --noEmit` | `lint` + `npm run typecheck` + `vitest run` |
-| "Build succeeds" | "TypeScript compiles" | The actual build command exit 0 |
-| "Bug is fixed" | Diff "looks right" | Failing test now passes; full suite still green |
-| "Regression test works" | Test passes after fix | Red-green: revert fix → test fails; restore → test passes |
 | "Migration is fine" | `alembic upgrade head` passes | upgrade → downgrade → upgrade all pass; data preserved |
 | "RLS is correct" | Service-level test passes | Direct SQL with a non-reviewer JWT is rejected |
-| "Agent finished" | Agent claims success | `git status` shows the expected diff; tests run locally |
-
-## Red flags — stop
-
-Any of the following means you are about to claim something you haven't verified:
-
-- "Should work now."
-- "Probably fine."
-- "Looks correct."
-- "Linter passed" *(as evidence of anything other than lint)*.
-- "Tests passed last run."
-- "Agent said it was done."
-- "It's a one-line change, no need to test."
-- "I'll verify after the commit."
-- "Just this once."
-- Any expression of satisfaction ("Great!", "Perfect!", "Done!") before the command has been re-run.
-- About to write `git commit`, `gh pr create`, or "ready for review" without a fresh test run.
-
-## Rationalisation prevention
-
-| Excuse | Reality |
-|---|---|
-| "Should work now" | Then running the command is cheap. Run it. |
-| "I'm confident" | Confidence is not evidence. |
-| "Just this once" | This is exactly what "just this once" becomes. |
-| "Linter passed" | Lint doesn't run tests. Tests don't run types. Types don't run RLS. |
-| "Agent said success" | Verify independently. Agents lie when convenient. |
-| "I'm tired" | Tired-you's lie ships to reviewers in the morning. |
-| "Partial check is enough" | Partial proves nothing about the full claim. |
-| "Different words so the rule doesn't apply" | Spirit over letter. "Looks good" is a completion claim. |
+| "Bug is fixed" | Diff "looks right" | Failing test now passes; full suite still green |
+| "Regression test works" | Test passes after fix | Red-green: revert fix → test fails; restore → test passes |
 
 ## Verification patterns
 
@@ -160,7 +111,8 @@ pytest backend/tests/rls/    # policy tests use real JWTs with limited roles
 5. Then report status.
 ```
 
-Trust but verify. Agent self-reports do not count as evidence.
+Agent self-reports do not count as evidence. On prumo this bites hardest when the
+agent read a dirty working tree rather than the commit.
 
 ## Evidence to include in your claim
 
@@ -179,32 +131,12 @@ $ make test-backend
 
 Don't paraphrase ("all tests pass"). Show it.
 
-## When verification reveals failure
-
-That's the system working. State the actual result with the evidence:
-
-```
-Not fixed. The new test still fails:
-
-$ pytest -k advance_stage_toctou --tb=short
-FAILED ...  AssertionError: expected ConcurrentUpdateError, got None
-
-Hypothesis: the `with_for_update` lock isn't taken because the session
-is using `autoflush=False`. Investigating.
-```
-
-This is honest and useful. A premature "fixed" claim followed by a "actually, never mind" is worse than this.
+When verification reveals failure, state the actual result with the evidence and
+the next hypothesis. That is the system working — a premature "fixed" followed by
+"actually, never mind" is strictly worse.
 
 ## Why this matters on prumo
 
 - HITL data is *graded by humans*. A "fixed" extraction bug that ships unverified corrupts published values that took human time to produce.
 - Cross-tenant bugs (BOLA/RLS) shipped unverified leak data across projects. There is no "small" version of that.
 - The CI signal is the only thing reviewers can trust if they're not the author. Polluting it with unverified claims trains everyone to ignore it.
-
-## The bottom line
-
-No shortcuts. No "just this once". No "should pass". No "linter is green". No "agent said success".
-
-Run the command. Read the output. Then claim the result.
-
-This is non-negotiable.

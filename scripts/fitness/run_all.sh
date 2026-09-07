@@ -104,6 +104,19 @@ run_check "check_diff_attribute_copy.py" \
 run_check "check_retired_symbols.py" \
   python3 "${SCRIPT_DIR}/check_retired_symbols.py"
 
+# The /ship-spec ceiling guard is a PreToolUse hook; its rules are the only
+# thing standing between a dev-ceiling run and a promotion, so they are gated
+# like any other fitness function. Deterministic, no network (~3 s).
+run_check "test-bash-guard.sh" \
+  bash "${REPO_ROOT}/.claude/hooks/tests/test-bash-guard.sh"
+
+# The Stop gate decides which sessions may end a turn during a run. Both hook
+# tests sandbox themselves in $TMPDIR: this harness is what a run's Phase 4
+# gate executes, so a check that reads live run state would fail *because* a
+# run is in progress and no run could ever go green.
+run_check "test-stop-gate.sh" \
+  bash "${REPO_ROOT}/.claude/hooks/tests/test-stop-gate.sh"
+
 echo ""
 echo "Summary:"
 for line in "${results[@]}"; do
