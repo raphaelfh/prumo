@@ -124,7 +124,7 @@ Canonical frontend vars (set in the Vercel project for Production + Preview):
 | `VITE_API_URL` | yes | Railway backend base URL (`https://web-production-48b398.up.railway.app`). |
 | `VITE_SUPABASE_URL` | yes | Supabase project URL — same value as the integration's `SUPABASE_URL`, but it must carry the `VITE_` prefix. |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | yes | Supabase publishable (anon) key. `VITE_SUPABASE_ANON_KEY` is accepted as a fallback. |
-| `VITE_SITE_URL` | recommended | Auth redirect base for magic-link / password-reset emails (`frontend/pages/Auth.tsx`). |
+| `VITE_SITE_URL` | yes | Auth redirect base for the sign-up-confirmation and password-reset e-mails (`getAuthRedirectBaseUrl` in `frontend/pages/Auth.tsx`; falls back to `window.location.origin` when unset). Must equal the production origin **and** be allow-listed in Supabase — see [Supabase auth redirects](#supabase-auth-redirects-the-silent-failure) below. |
 | `VITE_SUPABASE_ENV` | optional | `local` points the client at the local Supabase URL; anything else (or unset) means `production`. |
 
 #### The Supabase ↔ Vercel integration does not feed the Vite build
@@ -166,6 +166,44 @@ The Vercel project currently also holds backend-only vars (`SUPABASE_SERVICE_ROL
 Vercel, so these are unused by the static build (no `VITE_` prefix → never bundled) but
 are needless secret surface on a second platform. They are safe to delete from Vercel;
 keep them only on Railway.
+
+#### Supabase auth redirects: the silent failure
+
+The sign-up-confirmation and password-reset e-mails carry a `redirect_to` built
+from `VITE_SITE_URL`. GoTrue honours it **only** when it matches the project's
+Redirect URLs allow list. On a miss it silently discards the value and sends the
+user to the Site URL instead. Nothing fails loudly: the e-mail still arrives, the
+link still works, the user just lands on the wrong page. There is no console
+error, no failed request, and no build-time signal.
+
+Two settings must therefore agree, in **Dashboard > Authentication > URL
+Configuration**:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Site URL | `https://prumoai.vercel.app` | The fallback target. Must be a public origin: pointing it at the project-scoped `prumo-*.vercel.app` domain sends users into Vercel's Deployment Protection login wall. |
+| Redirect URLs | `https://prumoai.vercel.app/**`, `http://localhost:8080/**` | The allow list. **The `/**` suffix is load-bearing** — a bare `http://localhost:8080` does not match `http://localhost:8080/auth/reset-password`. Local dev runs on 8080 (`vite.config.ts`), not Vite's default 5173. |
+
+This has broken three times, always through domain drift
+(`prumo` -> `prumo-alpha` -> `prumoai`). To check a redirect target after a
+domain rename, ask GoTrue directly — a deliberately invalid token is read-only,
+so no e-mail is sent and no auth state changes:
+
+```bash
+curl -sSI "https://<project-ref>.supabase.co/auth/v1/verify?token=invalid&type=recovery&redirect_to=https%3A%2F%2Fprumoai.vercel.app%2Fauth%2Freset-password" | grep -i '^location'
+```
+
+If the `location` echoes the URL and path you sent, it is allow-listed. If it
+returns anything else, that something else is the Site URL and your redirect was
+discarded. (`otp_expired` in the fragment is the expected response to the
+invalid token; read the host and path only.)
+
+`AuthProvider` also routes to the reset form whenever Supabase emits
+`PASSWORD_RECOVERY`, so a same-origin allow-list miss degrades to a redirect
+rather than to a silent sign-in. That safety net cannot cover a cross-origin
+fallback: the PKCE verifier lives in the requesting origin's `localStorage`, so
+a local-dev request falling back to the production Site URL still fails. Keep
+both origins allow-listed.
 
 ## Migrations
 

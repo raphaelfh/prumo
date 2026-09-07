@@ -1006,9 +1006,6 @@ CREATE SEQUENCE IF NOT EXISTS "public"."migration_status_id_seq"
     CACHE 1;
 
 
-ALTER SEQUENCE "public"."migration_status_id_seq" OWNER TO "postgres";
-
-
 ALTER SEQUENCE "public"."migration_status_id_seq" OWNED BY "public"."migration_status"."id";
 
 
@@ -3134,18 +3131,26 @@ GRANT ALL ON TABLE "public"."zotero_integrations" TO "service_role";
 
 
 
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "service_role";
+-- Load-bearing: later migrations create tables in this schema and rely on
+-- these defaults for the PostgREST grants (article_text_blocks/0006,
+-- feedback_attachments/0020, extraction_reviewer_ready/0029,
+-- project_llm_endpoints/0055). No FOR ROLE clause on purpose — pg_dump
+-- emits the dumping role's name, which pins a fresh bootstrap to a role
+-- literally called "postgres"; omitting it applies the defaults to the
+-- role actually running the migration. If this file is ever re-dumped,
+-- strip FOR ROLE again.
+ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
+ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "service_role";
 
 
 
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "authenticated";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "service_role";
+ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "authenticated";
+ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "service_role";
 
 
 
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
+ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
+ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
 
 
 

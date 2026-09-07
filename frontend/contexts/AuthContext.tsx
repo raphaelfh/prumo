@@ -3,6 +3,7 @@ import {Session, User} from "@supabase/supabase-js";
 import {supabase} from "@/integrations/supabase/client";
 import {IS_LOCAL_SUPABASE, SUPABASE_ENV, SUPABASE_EXPECTED_ISSUER, SUPABASE_STORAGE_KEY,} from "@/config/supabase-env";
 import {useNavigate} from "react-router";
+import {RESET_PASSWORD_PATH} from "@/lib/routes";
 
 const ALLOWED_ALGS = IS_LOCAL_SUPABASE
   ? new Set(["HS256", "RS256", "ES256"])
@@ -99,6 +100,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+
+        // A recovery link must reach the password form even when GoTrue sent
+        // the user elsewhere. GoTrue honours `redirect_to` only when it
+        // matches the Redirect URLs allow list and silently falls back to the
+        // Site URL otherwise, but the PKCE exchange still succeeds: auth-js
+        // reads the recovery type from the verifier it stored locally, not
+        // from the URL. Without this the user is signed in on whatever page
+        // they landed on and never asked for a new password.
+        if (event === "PASSWORD_RECOVERY") {
+          navigate(RESET_PASSWORD_PATH, {replace: true});
+        }
       }
     );
 

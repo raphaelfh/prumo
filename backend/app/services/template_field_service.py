@@ -32,11 +32,13 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.integrity import violates_constraint
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
     ProjectExtractionTemplate,
 )
+from app.repositories.extraction_field_reference_repository import RESTRICT_FKS
 from app.schemas.template_structure import (
     TemplateFieldCreateRequest,
     TemplateFieldDeleteResponse,
@@ -64,7 +66,6 @@ __all__ = [
     "update_field",
 ]
 
-_FK_VIOLATION = "23503"
 _UNIQUE_VIOLATION = "23505"
 # Frozen by the B-7 plan (panel 7); matches migration 0050's CREATE
 # UNIQUE INDEX — the DB backstop behind the read-time checks below.
@@ -291,7 +292,13 @@ async def delete_field(
     try:
         await db.flush()
     except IntegrityError as exc:
-        if _pgcode(exc) == _FK_VIOLATION:
+        # By NAME, not by SQLSTATE: Postgres 18 reports a RESTRICT
+        # violation as 23001 where 17 reported 23503, and a gate on the
+        # code would let the raw IntegrityError reach the client after
+        # an upgrade. ``RESTRICT_FKS``'s ``extraction_instances`` entry
+        # cannot fire here (it references sections, not fields) — the
+        # five ``field_id`` FKs are what a field delete can hit.
+        if violates_constraint(exc, *RESTRICT_FKS):
             raise FieldInUseError(
                 f"Field {field_id} has recorded extraction work and cannot be deleted"
             ) from exc
