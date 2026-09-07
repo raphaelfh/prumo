@@ -7,7 +7,6 @@ export const pages = {
     notFoundBackHome: 'Return to Home',
     indexWelcome: 'Welcome to Your Blank App',
     indexSubtitle: 'Start building your amazing project here!',
-    dashboardMyProjects: 'My Projects',
     dashboardNewProject: 'New Project',
     dashboardAuthRequired: 'You must be signed in to create a project',
     dashboardErrorCreating: 'Error creating project',

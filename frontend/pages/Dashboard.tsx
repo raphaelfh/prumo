@@ -4,7 +4,6 @@ import {useQueryClient} from "@tanstack/react-query";
 import {useAuth} from "@/contexts/AuthContext";
 import {createProject} from "@/services/projectsService";
 import {projectsListKey, useProjectsQuery} from "@/hooks/useProjectsQuery";
-import {AppLayout} from "@/components/layout/AppLayout";
 import {Button} from "@/components/ui/button";
 import {Skeleton} from "@/components/ui/skeleton";
 import {BookOpen, ChevronRight, Plus} from "lucide-react";
@@ -13,8 +12,6 @@ import {AddProjectDialog} from "@/components/project/AddProjectDialog";
 import {ErrorState} from "@/components/patterns/ErrorState";
 import {t} from '@/lib/copy';
 import {cn} from "@/lib/utils";
-
-const SHELL_PADDING_X = "px-4 sm:px-6 lg:px-8 2xl:px-12";
 
 export default function Dashboard() {
   const {user} = useAuth();
@@ -43,17 +40,14 @@ export default function Dashboard() {
   };
 
   const header = (
-    <div className="sticky top-0 z-10 border-b border-border/40 bg-background/80 backdrop-blur-md">
-      <div className={cn("flex h-12 items-center justify-between gap-3", SHELL_PADDING_X)}>
-        <h1 className="text-[13px] font-semibold uppercase tracking-[0.05em] text-foreground/80">
-          {t('pages', 'dashboardMyProjects')}
-        </h1>
+    <div className="@container/hubbar sticky top-0 z-10 shrink-0 border-b border-border/40 bg-background/80 px-4 backdrop-blur-md lg:px-6">
+      <div className="flex h-12 items-center justify-end gap-2">
         <Button
           variant="default"
           size="sm"
           onClick={() => setAddDialogOpen(true)}
           disabled={creating}
-          className="h-8 gap-1.5 rounded-md px-2.5 text-[12px] font-medium shadow-xs transition-all sm:px-3 motion-reduce:transition-none"
+          className="gap-1.5 rounded-md text-[12px] font-medium shadow-xs transition-all motion-reduce:transition-none"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden="true"/>
           {t('pages', 'dashboardNewProject')}
@@ -64,12 +58,12 @@ export default function Dashboard() {
 
   if (isLoading) {
     return (
-      <AppLayout>
+      <>
         {header}
-        <div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="divide-y divide-border/30">
             {[0, 1, 2, 3, 4].map((i) => (
-              <div key={i} className={cn("flex items-center gap-3 py-3 sm:gap-4", SHELL_PADDING_X)}>
+              <div key={i} className={cn("flex items-center gap-3 py-3 sm:gap-4", "px-4 lg:px-6")}>
                 <Skeleton className="h-9 w-9 shrink-0 rounded-lg"/>
                 <div className="min-w-0 flex-1 space-y-2">
                   <Skeleton className="h-3.5 w-1/3 max-w-[180px]"/>
@@ -81,30 +75,32 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
-      </AppLayout>
+      </>
     );
   }
 
   if (isError) {
     return (
-      <AppLayout>
+      <>
         {header}
-        <div className={cn("py-6", SHELL_PADDING_X)}>
-          <ErrorState
-            message={t('pages', 'dashboardCouldNotLoadProjects')}
-            onRetry={refetch}
-          />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className={cn("py-6", "px-4 lg:px-6")}>
+            <ErrorState
+              message={t('pages', 'dashboardCouldNotLoadProjects')}
+              onRetry={refetch}
+            />
+          </div>
         </div>
-      </AppLayout>
+      </>
     );
   }
 
   return (
-    <AppLayout>
+    <>
       {header}
-      <div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {projects.length === 0 ? (
-          <div className={cn("flex flex-col items-center justify-center py-16 sm:py-20 lg:py-28", SHELL_PADDING_X)}>
+          <div className={cn("flex flex-col items-center justify-center py-16 sm:py-20 lg:py-28", "px-4 lg:px-6")}>
             <div
               className="w-full max-w-sm text-center duration-500 animate-in fade-in slide-in-from-bottom-4 motion-reduce:animate-none">
               <div
@@ -138,7 +134,7 @@ export default function Dashboard() {
                   "group flex cursor-pointer items-center gap-3 py-3 outline-hidden sm:gap-4",
                   "transition-colors duration-75 motion-reduce:transition-none",
                   "hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  SHELL_PADDING_X,
+                  "px-4 lg:px-6",
                 )}
                 onClick={() => navigate(`/projects/${project.id}`)}
                 onKeyDown={(e) => {
@@ -200,6 +196,6 @@ export default function Dashboard() {
         onProjectCreate={handleCreateProject}
         isCreating={creating}
       />
-    </AppLayout>
+    </>
   );
 }
