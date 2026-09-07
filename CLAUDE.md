@@ -182,10 +182,11 @@ branch. Fix throughput without weakening the gate:
 - A GitHub merge queue is the real fix but needs an org (public repo →
   a free org); revisit if concurrency outgrows the merge-train.
 - **Promotion (`dev → main`) is hook-enforced, not prose-enforced.**
-  `.claude/hooks/bash-guard.sh` denies `--base main` / `--merge` /
-  pushes to `main` unless an active `/ship-spec` run declares
-  `ceiling=prod` with a GREEN preflight on the exact commit; with no
-  active run it asks once. Design: `docs/superpowers/specs/2026-09-05-ship-spec-v2-orchestrator-design.md`.
+  `.claude/hooks/bash-guard.sh` denies any push to `main` outright, and
+  denies the promotion PR (`--base main` / `--merge`) unless an active
+  `/ship-spec` run declares `ceiling=prod` with a GREEN preflight on the
+  exact commit; with no active run it asks once. Design:
+  `docs/superpowers/specs/2026-09-05-ship-spec-v2-orchestrator-design.md`.
 
 ## Compaction
 

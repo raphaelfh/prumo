@@ -2,29 +2,42 @@
 # SessionStart (compact|resume) and PostCompact: re-inject the active
 # /ship-spec run state and the ledger tail into the fresh context, so a
 # compacted or resumed session trusts the ledger, not its recollection.
-# Silent when no run is active — costs nothing on ordinary sessions.
+# Silent when no run is live — costs nothing on ordinary sessions.
 # Design: docs/superpowers/specs/2026-09-05-ship-spec-v2-orchestrator-design.md
 
 set -u
 
-ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 INPUT=$(cat)
 EVENT=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // "SessionStart"')
 
+# State lives under the MAIN checkout root (common git dir), so the main
+# checkout and every worktree see the same run. The SDD ledger lives in the
+# run worktree's own .superpowers/sdd/<plan>/ while SDD keeps it.
+COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+if [ -n "$COMMON" ]; then ROOT=$(dirname "$COMMON"); else ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"; fi
+trimmed() { sed -n "s/^$1=//p" "$2" | tail -1 | tr -d '[:space:]'; }
+
 ctx=""
-for f in "$ROOT"/.superpowers/sdd/*/state; do
+for f in "$ROOT"/.superpowers/ship-spec/*/state; do
   [ -f "$f" ] || continue
-  phase=$(sed -n 's/^phase=//p' "$f" | tail -1)
-  [ "$phase" = "done" ] && continue
+  phase=$(trimmed phase "$f")
+  case "$phase" in done|halted) continue ;; esac
+  [ -n "$(find "$f" -mmin +1440 2>/dev/null)" ] && continue
   dir=$(dirname "$f")
+  slug=$(basename "$dir")
+  wt=$(trimmed worktree "$f")
+  [ -d "$wt" ] || wt="$ROOT"
   ctx="${ctx}ACTIVE /ship-spec RUN — ${dir}
 $(cat "$f")
 "
-  if [ -f "$dir/progress.md" ]; then
-    ctx="${ctx}--- ledger tail (progress.md, last 40 lines) ---
-$(tail -40 "$dir/progress.md")
+  for ledger in "$wt/.superpowers/sdd/$slug/progress.md" "$ROOT/.superpowers/sdd/$slug/progress.md"; do
+    if [ -f "$ledger" ]; then
+      ctx="${ctx}--- ledger tail ($ledger, last 40 lines) ---
+$(tail -40 "$ledger")
 "
-  fi
+      break
+    fi
+  done
 done
 
 [ -z "$ctx" ] && exit 0

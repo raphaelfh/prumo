@@ -58,8 +58,10 @@ loop: `/loop 10m /merge-train`.
 
 - Never `gh pr merge` without `--auto`; never `--merge` or `--rebase`;
   never anything with `--base main` or against `main`. Promotion is
-  `/ship-spec --to prod` or `deploy-release`, and the ceiling hook in
-  `.claude/hooks/bash-guard.sh` denies it here anyway.
+  `/ship-spec --to prod` or `deploy-release`. The ceiling hook in
+  `.claude/hooks/bash-guard.sh` denies `--rebase` outright, denies a
+  promotion during a `dev`-ceiling run, and asks when no run is active —
+  do not answer that prompt from inside this command.
 - Never close, edit or comment on a PR.
 
 ## Report

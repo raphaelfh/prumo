@@ -57,14 +57,16 @@ a source file yourself. Delegate with the `Agent` tool:
 | implementer | `ship-implementer-backend` / `ship-implementer-frontend` | one task, test-first, in the worktree |
 | reviewer | `ship-reviewer` | diff + plan + rubric → findings; dispatches `ship-verifier` per blocking finding |
 | gate-runner | `ship-gate-runner` | runs a gate, writes `quality-scan.log`, returns failures + SHA only |
-| shipper | `ship-shipper` | merge-train precheck, commit, push, PR, auto-merge |
+| shipper | `ship-shipper` | merge-train precheck, push, PR, auto-merge (SDD's implementers commit; the shipper refuses a dirty tree) |
 | panel | Workflow `ship-panel` (or parallel `Agent` calls if workflows are off) | plan review across lenses, cross-verified |
 
 Every brief names the **absolute worktree path** the seat must work in
 (subagents otherwise start in the main checkout) and the plan's
 **Global Constraints**. Subagents do not receive auto-memory; the prumo
-lessons they need are preloaded through each agent's `skills:` and its
-`.claude/agent-memory/` directory.
+lessons they need are written into each agent's body and preloaded
+through its `skills:`. Each agent also has `memory: project`, so
+`.claude/agent-memory/<name>/` accumulates over runs (it is created on
+first use and is meant to be committed).
 
 **Escalation protocol — "ask only on doubt".** A seat cannot ask the
 user. It returns `status: blocked` with `question`, `options` and
@@ -75,22 +77,33 @@ with `SendMessage`. Only when no authority answers do you call
 `AskUserQuestion` — one question, with options — and resume the seat
 with the answer. Every ruling and every question lands in the ledger.
 
-**State and ledger.** The run workspace is SDD's:
-`.superpowers/sdd/<plan-basename>/` (resolve it with the plugin's
-`sdd-workspace` script; gitignored). Files:
+**State and ledger.** Two directories, deliberately separate:
 
 ```
-state             ceiling=<dev|staging|prod>  phase=<0-8|halted|done>  preflight=GREEN@<sha>|RED@<sha>
-progress.md       the SDD ledger — rulings, task completions, questions, KPI line
-quality-scan.log  gate output; first line `sha=<HEAD it ran on>`
+<main checkout>/.superpowers/ship-spec/<plan-basename>/     the RUN STATE — read by the hooks
+  state             ceiling=<dev|staging|prod>  phase=<0-8|halted|done>  preflight=GREEN@<sha>|RED@<sha>
+                    worktree=<absolute path of the run's working tree>
+  quality-scan.log  gate output; first line `sha=<HEAD it ran on>`
+<run worktree>/.superpowers/sdd/<plan-basename>/            SDD's workspace — the ledger
+  progress.md       rulings, task completions, questions, KPI line
 ```
 
-Write `state` before anything else in Phase 0, update `phase=` at every
-phase boundary, and never end a turn without the ledger current: it is
-what survives compaction — after one, trust the ledger and `git log`
-over your own recollection (a `SessionStart`/`PostCompact` hook
-re-injects both). On a HALT or a question that ends your turn, set
-`phase=halted` first; on completion, `phase=done`.
+The main-checkout root is `dirname "$(git rev-parse --path-format=absolute
+--git-common-dir)"`, the same from the main checkout and from any worktree,
+which is why the hooks resolve it that way. SDD resolves its own workspace
+with the plugin's `sdd-workspace` script and **deletes it after a clean
+final review** — that is fine because `state` and the gate log live
+outside it; copy the KPI line into `state` before Phase 4 ends. Both
+directories are gitignored.
+
+Write `state` (ceiling, phase, worktree) before anything else in Phase 0,
+update `phase=` at every phase boundary, and never end a turn without the
+ledger current: it is what survives compaction — after one, trust the
+ledger and `git log` over your own recollection (a
+`SessionStart`/`PostCompact` hook re-injects both). On a HALT or a
+question that ends your turn, set `phase=halted` first; on completion,
+`phase=done`. `halted` and `done` are terminal for every hook; a state
+untouched for 24 hours is treated as a crashed run.
 
 **Bounds.** SDD caps fix rounds at 5 per task. The Stop hook blocks at
 most 8 consecutive turn ends. If the user set `/goal`, its evaluator
@@ -116,8 +129,11 @@ From `$ARGUMENTS` compute:
   write step would do, and makes no commit, push, PR or deploy; it stops
   at the end of Phase 5 regardless of ceiling.
 
-Then write `state` (`ceiling=<c>`, `phase=0`) in the run workspace and
-announce one line:
+Then write `state` (`ceiling=<c>`, `phase=0`, `worktree=<absolute path
+of the checkout this run edits — the worktree from Phase 1, or the
+current checkout under --no-worktree>`) under
+`<main checkout>/.superpowers/ship-spec/<plan-basename>/` and announce
+one line:
 
 > Ceiling = prod · subject = ADR-0013 stored-markdown tier · worktree on · auto-merge armed · evidence-gated.
 
@@ -130,7 +146,9 @@ also promote" is a bug, and the hook will deny it anyway.
   `superpowers:brainstorming`. This is the one phase designed to talk to
   you; surface ambiguity here, not later.
 - Unless `--no-worktree`, isolate with `superpowers:using-git-worktrees`
-  (native tool first). Deps come from the parent checkout; frontend
+  (native tool first), then update `worktree=` in `state` to the new
+  absolute path — the Stop hook compares the gate log against *that*
+  checkout's `HEAD`. Deps come from the parent checkout; frontend
   tooling runs from the repo root.
 - Decide slicing and state the checkable goal + verify step per slice.
   A phased spec ships slice 1 in this run; the rest queue.
@@ -165,6 +183,11 @@ cap. Bind its seats to this pipeline's agents (`ship-implementer-*`,
   governed by the hook, not by this ruling.
 - **Migrations.** A model change ⇒ Alembic migration in the same task
   ⇒ the roundtrip head-pin moves in the same change (`backend-development`).
+- **Workspace deletion.** SDD deletes its workspace (`rm -rf`) after a
+  clean final review. Let it: the run `state` and `quality-scan.log`
+  live in `.superpowers/ship-spec/<plan>/`, not there. Before SDD's
+  final review, copy the ledger's KPI line into `state`; the hooks keep
+  enforcing the ceiling through Phases 4–8.
 
 For a frontend screen, the task review includes `/design-review`.
 
@@ -186,8 +209,12 @@ For a frontend screen, the task review includes `/design-review`.
 
 ## Phase 5 — Ship to dev
 
-Dispatch `ship-shipper` with the branch, a conventional-commit title and
-the PR body. It runs the **merge-train precheck** (`gh pr list --base
+**`--dry-run`: do not dispatch the shipper.** Print the branch, the
+would-be PR title and body, and the merge-train state
+(`gh pr list --base dev --json autoMergeRequest`), then go to the
+ceiling guard below. Otherwise dispatch `ship-shipper` with the branch,
+a conventional-commit title and the PR body. It runs the **merge-train
+precheck** (`gh pr list --base
 dev --json autoMergeRequest`): if a PR is already armed, it opens the PR
 unarmed and reports "queued behind #n"; otherwise it arms
 `gh pr merge --auto --squash` (unless `--no-automerge`). Required checks

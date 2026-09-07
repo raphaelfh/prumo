@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: 'Phase 2 of /ship-spec, on a written plan. args: { plan, worktree, spec? }',
   phases: [
     { title: 'Lenses', detail: 'constitution/layering, security/RLS/BOLA, migration-safety, simplicity/YAGNI, test-coverage' },
-    { title: 'Verify', detail: 'two independent refuters per blocking finding; majority decides' },
+    { title: 'Verify', detail: 'two independent refuters per blocking finding; any refutation kills it' },
   ],
 }
 
@@ -109,7 +109,7 @@ ${l.prompt}
 ${RUBRIC}
 Return findings only; no prose.`,
       { label: `lens:${l.key}`, phase: 'Lenses', schema: FINDINGS_SCHEMA },
-    ).then(r => ({ lens: l.key, findings: (r && r.findings) || [] })),
+    ).then(r => (r ? { lens: l.key, findings: r.findings || [] } : null)), // null = lens died; keep it null so it is reported as missing
   ),
 )
 

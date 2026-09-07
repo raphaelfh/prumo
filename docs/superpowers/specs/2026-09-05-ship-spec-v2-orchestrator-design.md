@@ -150,11 +150,23 @@ user one question and resumes the worker with the answer.
 ### Run state
 
 ```
-.superpowers/sdd/<plan-basename>/
+<main checkout>/.superpowers/ship-spec/<plan-basename>/   read by the hooks; survives SDD's cleanup
   state             ceiling=<dev|staging|prod>  phase=<0-8|halted|done>  preflight=GREEN@<sha>|RED@<sha>
-  progress.md       the SDD ledger (rulings, task completions, questions, KPI line)
+                    worktree=<absolute path of the run's working tree>
   quality-scan.log  gate output; first line `sha=<HEAD it ran on>`
+<run worktree>/.superpowers/sdd/<plan-basename>/          SDD's workspace (deleted after a clean final review)
+  progress.md       the ledger (rulings, task completions, questions, KPI line)
 ```
+
+The hooks resolve the main-checkout root through the common git dir
+(`git rev-parse --git-common-dir`), so the main checkout and every
+worktree read the same state; the Stop hook compares the gate log with
+`HEAD` of the recorded `worktree=`. This replaced the first draft's
+single SDD-owned directory after review found that SDD deletes it on
+success (which would have silently removed the ceiling) and that the
+hook's root and the worktree's `HEAD` differ in worktree mode. `halted`
+and `done` are terminal for every hook; a state untouched for 24 hours
+is a crashed run.
 
 ### Guards (deterministic)
 
@@ -226,12 +238,36 @@ and there is nothing here that benefits from separate CI runs.
 
 ## 6. Verified / not yet verified
 
+**Fresh-context review round (2026-09-06).** A read-only reviewer
+subagent that saw only the diff found three blocking defects and eleven
+advisories, all with reproduced evidence, all fixed in the same PR:
+the ceiling regexes required whitespace after `main`/`--merge`, so a
+closing quote, `;` or `bash -c "…"` bypassed them (now the command is
+normalized, prose-flag values dropped, quotes removed, and split into
+simple commands — 44 guard tests, including every bypass and the
+false-positive chains such as `git fetch origin main && git push origin
+feature`); SDD's `rm -rf <workspace>` would have deleted the run state
+(state moved to `.superpowers/ship-spec/`); the Stop hook compared the
+launch checkout's `HEAD` with a log written from the worktree
+(`worktree=` recorded in state, hooks resolve the root through the
+common git dir); the DDL scan matched `downgrade()` bodies (upgrade only,
+read from `origin/dev`); a dead lens read as "covered, 0 findings"
+(`null` kept); `--dry-run` still dispatched the shipper (it no longer
+does); force-push-to-main asked instead of denying (rule order);
+`halted` and whitespace-padded phases counted as live (terminal, trimmed,
+24 h staleness); `-m`, `-Bmain`, `--rebase`, env-prefixed and
+absolute-path invocations slipped (covered). The guard test is now a
+fitness check in `scripts/fitness/run_all.sh`, so CI runs it.
+
 Verified on 2026-09-06, in the worktree, with output read:
 
-- `test-bash-guard.sh`: 20/20 (incident rules, no-run `ask`, dev
-  `deny`, `sh -c` wrapping, prod without/with stale/with RED preflight
-  `deny`, prod with fresh GREEN allowed, `railway redeploy` allowed at
-  prod, finished run ignored).
+- `test-bash-guard.sh`: 44/44 (incident rules; quote/`;`/`bash -c`/
+  `-Bmain`/`-m`/env-prefix/absolute-path bypasses denied; command chains
+  and PR bodies mentioning `--base main` allowed; no-run `ask`; dev
+  `deny`; prod without/with stale/with RED preflight `deny`; prod with
+  fresh GREEN allowed; `railway redeploy` allowed at prod; `done`,
+  `halted` and whitespace-padded states ignored). Also runs as a fitness
+  check in `scripts/fitness/run_all.sh` (16/16 checks green).
 - Stop hook: blocks in phase 4 with no log; passes once the log's SHA
   equals `HEAD`; ruff check unchanged.
 - Re-inject hook: silent with no active run; emits state + trust line
