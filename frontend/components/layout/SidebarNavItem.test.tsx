@@ -1,6 +1,6 @@
 import {describe, it, expect, vi} from 'vitest';
 import {fireEvent, render, screen} from '@testing-library/react';
-import {FileText} from 'lucide-react';
+import {FileText, Settings} from 'lucide-react';
 import {SidebarNavItem} from './SidebarNavItem';
 
 describe('SidebarNavItem', () => {
@@ -33,5 +33,16 @@ describe('SidebarNavItem', () => {
     expect(chip.className).toContain('opacity-0');
     expect(chip.className).toContain('group-hover:opacity-100');
     expect(chip.className).toContain('group-focus-visible:opacity-100');
+  });
+
+  it('renders no chip and no aria-keyshortcuts when the item owns no sequence', () => {
+    render(<SidebarNavItem icon={Settings} label="Settings" active={false} onClick={vi.fn()} />);
+    expect(screen.getByRole('button')).not.toHaveAttribute('aria-keyshortcuts');
+    expect(screen.queryByText('G')).toBeNull();
+  });
+
+  it('still marks a shortcut-less item as current', () => {
+    render(<SidebarNavItem icon={Settings} label="Settings" active onClick={vi.fn()} />);
+    expect(screen.getByRole('button')).toHaveAttribute('aria-current', 'page');
   });
 });

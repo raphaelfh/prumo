@@ -57,15 +57,10 @@ frontend/lib/copy/common.ts:pdfLoadErrorDesc
 frontend/lib/copy/common.ts:pdfNotLinked
 frontend/lib/copy/common.ts:pdfNotLinkedDesc
 frontend/lib/copy/common.ts:removeAria
-frontend/lib/copy/common.ts:timeAgoD
-frontend/lib/copy/common.ts:timeAgoH
-frontend/lib/copy/common.ts:timeAgoMin
-frontend/lib/copy/common.ts:timeJustNow
 frontend/lib/copy/common.ts:unknownError
 frontend/lib/copy/common.ts:userRoleAria
 frontend/lib/copy/consensus.ts:templatesEditAction
 frontend/lib/copy/consensus.ts:templatesOverrideAction
-frontend/lib/copy/layout.ts:loadingProjects
 frontend/lib/copy/layout.ts:themeToggleDark
 frontend/lib/copy/layout.ts:themeToggleLight
 frontend/lib/copy/layout.ts:themeToggleSystem
@@ -127,10 +122,3 @@ frontend/lib/copy/user.ts:apiKeysDeactivated
 frontend/lib/copy/user.ts:apiKeysErrorDeactivating
 frontend/lib/copy/user.ts:apiKeysSessionExpired
 frontend/lib/copy/user.ts:ariaGoBack
-frontend/lib/copy/user.ts:settingsAriaSections
-frontend/lib/copy/user.ts:tabIntegrations
-frontend/lib/copy/user.ts:tabIntegrationsDesc
-frontend/lib/copy/user.ts:tabProfile
-frontend/lib/copy/user.ts:tabProfileDesc
-frontend/lib/copy/user.ts:tabSecurity
-frontend/lib/copy/user.ts:tabSecurityDesc

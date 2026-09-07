@@ -1,48 +1,39 @@
 /**
- * Main Topbar component
- * Integrates all top navigation elements
+ * The shell's top bar: panel toggle / hamburger + breadcrumb (left),
+ * SectionViewSwitcher (centre), NotificationCenter (right).
+ *
+ * `isProjectPage` used to be read from `window.location`, which never
+ * re-rendered on client navigation. That survived only because `/` and
+ * `/projects/:id` were separate route trees that remounted the bar; inside
+ * AppShell the bar no longer remounts, so the read is now `useShellLocation()`
+ * (ledger 2026-09-07T14:33Z — not optional).
+ *
+ * HeaderShell is kept verbatim: `h-12`, sticky, frosted, `z-header`, and the
+ * `@container/headerbar` declaration that the breadcrumb's info button and
+ * both SectionViewSwitcher tiers key off.
  */
 
-import React, {useContext, useState} from 'react';
-import {Info, Menu} from 'lucide-react';
+import React from 'react';
+import {Menu} from 'lucide-react';
 import {HeaderIconButton} from '@/components/layout/HeaderIconButton';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {useUserProfile} from '@/hooks/useNavigation';
-import {SidebarContext} from '@/contexts/SidebarContext';
-import {ProjectContext} from '@/contexts/ProjectContext';
+import {useSidebar} from '@/contexts/SidebarContext';
 import {HeaderShell} from '@/components/layout/HeaderShell';
 import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
 import {useScrolled} from '@/components/layout/useScrolled';
-import {TruncatedText} from '@/components/runs/header/TruncatedText';
 import {NotificationCenter} from './NotificationCenter';
+import {AppBreadcrumb} from './Breadcrumb';
 import type {TopbarProps} from '@/types/navigation';
-import {tabIdToLabel} from '@/components/layout/sidebarConfig';
 import {t} from '@/lib/copy';
 import {SectionViewSwitcher} from '@/components/navigation/SectionViewSwitcher';
-import {sectionDescriptionKey} from '@/components/layout/sectionViews';
 
-export const Topbar: React.FC<TopbarProps> = ({
-  className,
-}) => {
-  const { user, isLoading } = useUserProfile();
-  const [_mobileMenuOpen, _setMobileMenuOpen] = useState(false);
+export const Topbar: React.FC<TopbarProps> = ({className}) => {
+  const {isLoading} = useUserProfile();
   const scrolled = useScrolled();
+  const {sidebarCollapsed, toggleSidebar, toggleMobile} = useSidebar();
 
-  // Use sidebar context only on project pages
-  // IMPORTANT: Hooks must always be called unconditionally
-  // Use useContext directly to avoid errors when contexts are not available
-  const isProjectPage = window.location.pathname.includes('/projects/');
-
-  // Always call useContext unconditionally (does not violate React rules)
-  const sidebarContextValue = useContext(SidebarContext);
-  const projectContextValue = useContext(ProjectContext);
-
-  // Use only when available and on project page
-  const sidebarContext = (isProjectPage && sidebarContextValue !== undefined) ? sidebarContextValue : null;
-  const projectContext = (isProjectPage && projectContextValue !== undefined) ? projectContextValue : null;
-
-  // Loading state: skeleton with final content dimensions to avoid layout shift.
-  // Routed through HeaderShell so the skeleton shares the exact final chrome.
+  // Loading state: skeleton with final content dimensions to avoid layout
+  // shift. Routed through HeaderShell so it shares the exact final chrome.
   if (isLoading) {
     return (
       <HeaderShell className={className}>
@@ -54,91 +45,37 @@ export const Topbar: React.FC<TopbarProps> = ({
     );
   }
 
-  // If no user, render simplified topbar (same final chrome via HeaderShell).
-  if (!user) {
-    return (
-      <HeaderShell className={className}>
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="text-header-title font-medium text-foreground">{t('navigation', 'topbarBrand')}</span>
-        </div>
-      </HeaderShell>
-    );
-  }
-
   return (
     <HeaderShell lifted={scrolled} className={className}>
-      {/* Left Section — toggle + title (min-w-0 so the title can truncate) */}
+      {/* Left — toggles + breadcrumb (min-w-0 so the crumbs can truncate) */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {/* Hamburger Menu — Mobile/Tablet only */}
-        {sidebarContext && isProjectPage && (
-          <HeaderIconButton
-            onClick={sidebarContext.toggleMobile}
-            aria-label={t('navigation', 'ariaOpenMenu')}
-            className="lg:hidden"
-          >
-            <Menu strokeWidth={1.5} aria-hidden="true" />
-          </HeaderIconButton>
-        )}
-        {/* Sidebar Toggle — Desktop only. */}
-        {sidebarContext && isProjectPage && (
-          <span className="hidden lg:flex">
-            <PanelToggleButton
-              side="left"
-              pressed={!sidebarContext.sidebarCollapsed}
-              onToggle={sidebarContext.toggleSidebar}
-              ariaLabel={t('layout', 'sidebarToggleAriaLabel')}
-            />
-          </span>
-        )}
-
-        {/* Breadcrumb or Brand */}
-        {!isProjectPage ? (
-          <div className="flex items-center gap-2 px-2">
-            <div className="flex h-5 w-5 items-center justify-center rounded bg-primary">
-              <span className="text-[10px] font-bold text-primary-foreground">R</span>
-            </div>
-            <span className="text-header-title font-medium tracking-tight text-foreground">
-              {t('navigation', 'topbarBrandFull')}
-            </span>
-          </div>
-        ) : (
-          <span className="flex min-w-0 items-center gap-1.5 px-2">
-            <TruncatedText
-              className="text-header-title font-medium text-foreground"
-              text={tabIdToLabel[projectContext?.activeTab ?? ''] ?? t('layout', 'defaultProjectName')}
-            />
-            {sectionDescriptionKey[projectContext?.activeTab ?? ''] && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="hidden rounded text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 @[34rem]/headerbar:inline-flex"
-                      aria-label={t('navigation', sectionDescriptionKey[projectContext?.activeTab ?? ''])}
-                    >
-                      <Info className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('navigation', sectionDescriptionKey[projectContext?.activeTab ?? ''])}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-          </span>
-        )}
+        <HeaderIconButton
+          onClick={toggleMobile}
+          aria-label={t('navigation', 'ariaOpenMenu')}
+          className="lg:hidden"
+        >
+          <Menu strokeWidth={1.5} aria-hidden="true" />
+        </HeaderIconButton>
+        <span className="hidden lg:flex">
+          <PanelToggleButton
+            side="left"
+            pressed={!sidebarCollapsed}
+            onToggle={toggleSidebar}
+            ariaLabel={t('layout', 'sidebarToggleAriaLabel')}
+          />
+        </span>
+        <AppBreadcrumb />
       </div>
 
-      {/* Center Section — View Switcher (yields width so the title can truncate) */}
+      {/* Centre — view switcher (yields width so the crumbs can truncate) */}
       <div className="flex shrink-0 items-center justify-center">
-        {isProjectPage && <SectionViewSwitcher />}
+        <SectionViewSwitcher />
       </div>
 
-      {/* Right Section — Notifications */}
+      {/* Right — notifications */}
       <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
         <NotificationCenter />
       </div>
     </HeaderShell>
   );
 };
-

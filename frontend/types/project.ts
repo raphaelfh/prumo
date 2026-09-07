@@ -82,11 +82,45 @@ export type Project = Database['public']['Tables']['projects']['Row'];
 
 /**
  * Lean type for project lists.
+ *
+ * `project_members` carries membership rows for this project.
+ * `listProjectsForDashboard` narrows the embed to the caller with
+ * `.eq('project_members.user_id', …)`, but `isProjectManager` re-checks
+ * `user_id` anyway: the RLS policy `project_members_select` lets any member
+ * read every member row, so a predicate that trusted the transport would say
+ * "manager" for any project that has one.
+ *
+ * None of this is the security boundary. The archive write is
+ * `PATCH /api/v1/projects/{id}/archive`, gated by `require_project_manager`
+ * against the same `public.is_project_manager` the `project_update` RLS policy
+ * calls. This only decides whether the menu item is offered.
  */
 export type ProjectListItem = Pick<
     Project,
-    'id' | 'name' | 'description' | 'created_at' | 'is_active' | 'review_title'
->;
+    'id' | 'name' | 'description' | 'created_at' | 'updated_at' | 'is_active' | 'review_title'
+> & {
+    project_members: { user_id: string; role: MemberRole }[];
+};
+
+/**
+ * The ONE client-side answer to "does this role mean manager?".
+ *
+ * `useProjectMemberRole` derived the same `role === 'manager'` inline; both
+ * now call this, so the hub and a project route cannot disagree within one
+ * session. (`extractionFieldService.checkProjectPermissions` is a separate
+ * *read* of `project_members`, not a second role predicate — consolidating
+ * that read belongs to the ADR-0011 data-path work, not here.)
+ */
+export function isManagerRole(role: MemberRole | null | undefined): boolean {
+    return role === 'manager';
+}
+
+/** True when `userId`'s OWN membership row on this project is a manager row. */
+export function isProjectManager(project: ProjectListItem, userId: string): boolean {
+    return project.project_members.some(
+        (member) => member.user_id === userId && isManagerRole(member.role),
+    );
+}
 
 /**
  * Lean type for project context.

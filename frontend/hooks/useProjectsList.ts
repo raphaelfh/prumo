@@ -1,45 +1,48 @@
 /**
- * Hook to manage project list
- * Reusable between desktop and mobile sidebar
+ * The project switcher's list: the ONE shared, identity-scoped project-list
+ * cache entry, filtered to active projects. Archived projects are reachable
+ * from the hub's Archived filter, never from the switcher.
+ *
+ * The error surface CHANGES SHAPE here, it is not dropped. The toast this hook
+ * used to fire cannot move onto a shared query — it would fire once per
+ * mounted consumer of the same entry — but deleting it outright would leave a
+ * failed read returning `projects: []`, which is byte for byte what an account
+ * with no projects returns. The switcher would then render a failure as an
+ * empty menu, and on `/projects/:id` the hub's ErrorState is not mounted to
+ * say otherwise. `isError` and `retry` keep the two apart, and the caller
+ * renders them (`SidebarHeader`). Error swallowing is a named recurring
+ * incident class in this repo (`code-review` checklist).
  */
-
-import {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router';
-import {toast} from 'sonner';
-import {t} from '@/lib/copy';
-import {listProjects} from '@/services/projectsService';
+import {useProjectsQuery} from './useProjectsQuery';
 import type {ProjectListItem} from '@/types/project';
 
-export const useProjectsList = () => {
-  const navigate = useNavigate();
-  const [projects, setProjects] = useState<ProjectListItem[]>([]);
-  const [loading, setLoading] = useState(false);
+interface UseProjectsListReturn {
+  /** Active projects only. `[]` for BOTH a failed read and an empty account. */
+  projects: ProjectListItem[];
+  loading: boolean;
+  /** True only for a FAILED read. An empty account is `false` with `projects: []`. */
+  isError: boolean;
+  retry: () => void;
+  switchProject: (projectId: string) => void;
+}
 
-  const loadProjects = async () => {
-    setLoading(true);
-    const result = await listProjects();
-    if (result.ok) {
-      setProjects(result.data);
-    } else {
-      toast.error(t('pages', 'dashboardCouldNotLoadProjects'));
-      console.error(result.error);
-    }
-    setLoading(false);
-  };
+export const useProjectsList = (): UseProjectsListReturn => {
+  const navigate = useNavigate();
+  const {data, isLoading, isError, refetch} = useProjectsQuery();
+  const projects = (data ?? []).filter((project) => project.is_active);
 
   const switchProject = (projectId: string) => {
     navigate(`/projects/${projectId}`);
   };
 
-  useEffect(() => {
-    // Microtask so the loader's setState calls run in an async callback.
-    queueMicrotask(() => void loadProjects());
-  }, [loadProjects]);
-
   return {
     projects,
-    loading,
-    loadProjects,
+    loading: isLoading,
+    isError,
+    // `void` — the switcher's retry is fire-and-forget; the query's own state
+    // drives the re-render.
+    retry: () => void refetch(),
     switchProject,
   };
 };

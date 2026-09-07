@@ -176,7 +176,7 @@ A PostgREST update without `.select()` returns success having changed nothing
 when RLS rejects the row. A zero-row result must surface as a failure, not a
 silent success.
 
-This is not hypothetical here. `baseline_v1.sql:2838` defines:
+This is not hypothetical here. `backend/alembic/versions/baseline_v1.sql:2835` defines:
 
 ```sql
 CREATE POLICY "project_update" ON "public"."projects"
@@ -193,7 +193,7 @@ silent-zero-row path. The UI must consequently:
 
 Determining the current user's role on the hub needs the member row embedded
 in the existing list query (`project_members` already exists; no schema
-change). This is permitted: `baseline_v1.sql:2824` defines
+change). This is permitted: `backend/alembic/versions/baseline_v1.sql:2821` defines
 `project_members_select` as `is_project_member(project_id, auth.uid())`, so a
 member may read membership rows for projects they belong to — including their
 own role.
@@ -201,7 +201,7 @@ own role.
 ### 6.2 `updated_at` is trigger-maintained
 
 `BaseModel.updated_at` carries a SQLAlchemy-side `onupdate`, which would not
-fire for PostgREST writes. It does not need to: `baseline_v1.sql:1710` defines
+fire for PostgREST writes. It does not need to: `backend/alembic/versions/baseline_v1.sql:1707` defines
 
 ```sql
 CREATE OR REPLACE TRIGGER "trg_projects_updated_at" BEFORE UPDATE

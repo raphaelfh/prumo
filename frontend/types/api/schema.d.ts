@@ -479,6 +479,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set Archived
+         * @description Archive (`archived=true`) or restore, returning the row as stored.
+         */
+        patch: operations["set_archived_api_v1_projects__project_id__archive_patch"];
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/extraction-export": {
         parameters: {
             query?: never;
@@ -2339,6 +2359,23 @@ export interface components {
         ApiResponse_ProjectAiContextRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ProjectAiContextRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ProjectArchiveRead] */
+        ApiResponse_ProjectArchiveRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ProjectArchiveRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4632,6 +4669,27 @@ export interface components {
             picots?: components["schemas"]["PicotsSlots"] | null;
             /** Picots Enabled */
             picots_enabled?: boolean | null;
+        };
+        /**
+         * ProjectArchiveRead
+         * @description The row as written.
+         */
+        ProjectArchiveRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+        };
+        /**
+         * ProjectArchiveUpdate
+         * @description ``true`` archives (``is_active = false``); ``false`` restores.
+         */
+        ProjectArchiveUpdate: {
+            /** Archived */
+            archived: boolean;
         };
         /** ProposalRecordResponse */
         ProposalRecordResponse: {
@@ -7202,6 +7260,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ProjectAiContextRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_archived_api_v1_projects__project_id__archive_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectArchiveUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProjectArchiveRead_"];
                 };
             };
             /** @description Validation Error */

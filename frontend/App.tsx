@@ -10,7 +10,7 @@ import {SidebarProvider} from "./contexts/SidebarContext";
 import {ThemeProvider} from "./contexts/ThemeContext";
 import {ProtectedRoute} from "./components/ProtectedRoute";
 import {ErrorBoundary} from "./components/ErrorBoundary";
-import {ProjectLayout} from "./components/layout/AppLayout";
+import {AppShell} from "./components/layout/AppShell";
 import {RunWorkspaceShell} from "@/components/runs/RunWorkspaceShell";
 import {Loader2} from "lucide-react";
 import {t} from "@/lib/copy";
@@ -78,35 +78,44 @@ const App = () => {
                 <AuthProvider>
                   <Suspense fallback={<PageLoader />}>
                     <GlobalShortcuts>
+                    <SidebarProvider>
                     <Routes>
                   <Route path="/auth" element={<Auth />} />
                         <Route path={RESET_PASSWORD_PATH} element={<ResetPassword/>}/>
                   <Route
-                    path="/"
                     element={
                       <ProtectedRoute>
-                          <ErrorBoundary context={t('common', 'errorContextDashboard')}>
+                        <AppShell />
+                      </ProtectedRoute>
+                    }
+                  >
+                    <Route
+                      path="/"
+                      element={
+                        <ErrorBoundary context={t('common', 'errorContextDashboard')}>
                           <Dashboard />
                         </ErrorBoundary>
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/projects/:projectId"
-                    element={
-                      <ProtectedRoute>
-                          <ErrorBoundary context={t('common', 'errorContextProjectView')}>
+                      }
+                    />
+                    <Route
+                      path="/projects/:projectId"
+                      element={
+                        <ErrorBoundary context={t('common', 'errorContextProjectView')}>
                           <ProjectProvider>
-                            <SidebarProvider>
-                              <ProjectLayout>
-                                <ProjectView />
-                              </ProjectLayout>
-                            </SidebarProvider>
+                            <ProjectView />
                           </ProjectProvider>
                         </ErrorBoundary>
-                      </ProtectedRoute>
-                    }
-                  />
+                      }
+                    />
+                    <Route
+                      path="/settings"
+                      element={
+                        <ErrorBoundary context={t('common', 'errorContextUserSettings')}>
+                          <UserSettings />
+                        </ErrorBoundary>
+                      }
+                    />
+                  </Route>
                   <Route
                     path="/projects/:projectId/extraction/:articleId"
                     element={
@@ -131,19 +140,10 @@ const App = () => {
                       </ProtectedRoute>
                     }
                   />
-                  <Route
-                    path="/settings"
-                    element={
-                      <ProtectedRoute>
-                          <ErrorBoundary context={t('common', 'errorContextUserSettings')}>
-                          <UserSettings />
-                        </ErrorBoundary>
-                      </ProtectedRoute>
-                    }
-                  />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                     </Routes>
+                    </SidebarProvider>
                     </GlobalShortcuts>
                   </Suspense>
               </AuthProvider>

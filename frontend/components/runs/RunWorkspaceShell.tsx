@@ -1,5 +1,4 @@
 import { type ReactNode, useState } from 'react';
-import { useNavigate } from 'react-router';
 import { SidebarProvider, useSidebar } from '@/contexts/SidebarContext';
 import { ProjectSidebar } from '@/components/layout/ProjectSidebar';
 import { MobileSidebar } from '@/components/layout/MobileSidebar';
@@ -13,7 +12,6 @@ interface RunWorkspaceShellProps {
 }
 
 function ShellInner({ projectId, activeTab, children }: RunWorkspaceShellProps) {
-  const navigate = useNavigate();
   const { toggleSidebar, mobileOpen, setMobileOpen } = useSidebar();
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
@@ -21,10 +19,6 @@ function ShellInner({ projectId, activeTab, children }: RunWorkspaceShellProps) 
   // sidebar nav items navigate OUT of focus mode to the project tab.
   const bindings: Binding[] = [{ type: 'chord', key: 'b', mod: true, handler: toggleSidebar }];
   useKeyboardShortcuts({ bindings, enabled: true });
-
-  // Both the desktop ProjectSidebar and the mobile drawer navigate OUT of focus
-  // mode to the chosen project tab.
-  const goToTab = (tab: SidebarTabId) => navigate(`/projects/${projectId}?tab=${tab}`);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -34,8 +28,8 @@ function ShellInner({ projectId, activeTab, children }: RunWorkspaceShellProps) 
             project list itself for the switcher when expanded. Fetching it here
             would be wasted work in the common collapsed case. */}
         <ProjectSidebar
+          projectId={projectId}
           activeTab={activeTab}
-          onTabChange={goToTab}
           switcherOpen={switcherOpen}
           onSwitcherOpenChange={setSwitcherOpen}
         />
@@ -45,8 +39,8 @@ function ShellInner({ projectId, activeTab, children }: RunWorkspaceShellProps) 
         <MobileSidebar
           open={mobileOpen}
           onOpenChange={setMobileOpen}
+          projectId={projectId}
           activeTab={activeTab}
-          onTabChange={goToTab}
         />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
       </div>
