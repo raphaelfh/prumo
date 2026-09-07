@@ -9,9 +9,11 @@
  * new reads); the data-path consolidation owns the typed-client swap.
  */
 import {supabase} from '@/integrations/supabase/client';
+import {apiClient} from '@/integrations/api/client';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {MemberRole, ProjectListItem} from '@/types/project';
 import type {Article} from '@/types/article';
+import type {components} from '@/types/api/schema';
 
 // ---------------------------------------------------------------------------
 // Dashboard / SidebarHeader: create project via RPC
@@ -150,4 +152,35 @@ export function listProjectsForDashboard(
       project_members: row.project_members as {user_id: string; role: MemberRole}[],
     }));
   }, 'projectsService.listProjectsForDashboard');
+}
+
+// ---------------------------------------------------------------------------
+// Hub: archive / restore (backend endpoint, manager-gated)
+// ---------------------------------------------------------------------------
+
+export type ProjectArchiveRead = components['schemas']['ProjectArchiveRead'];
+
+/**
+ * Archive (`archived = true`) or restore a project.
+ *
+ * `PATCH /api/v1/projects/{id}/archive` is gated by `require_project_manager`,
+ * which evaluates the same `public.is_project_manager` the `project_update`
+ * RLS policy calls — so a reviewer gets a 403, not the silent zero-row success
+ * a direct PostgREST update would have returned. The response is the row as
+ * STORED, so the caller can check that the write did what was asked.
+ *
+ * NOTE: toast messages are handled by the caller.
+ */
+export function setProjectArchived(
+  projectId: string,
+  archived: boolean,
+): Promise<ErrorResult<ProjectArchiveRead>> {
+  return toResult(
+    () =>
+      apiClient<ProjectArchiveRead>(`/api/v1/projects/${projectId}/archive`, {
+        method: 'PATCH',
+        body: {archived},
+      }),
+    'projectsService.setProjectArchived',
+  );
 }
