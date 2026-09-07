@@ -25,7 +25,7 @@ from app.repositories.article_repository import (
 )
 from app.services.article_file_ingest_service import ArticleFileIngestService
 from app.services.article_source_normalization import normalize_zotero_item
-from app.services.zotero_service import ZoteroService
+from app.services.zotero_service import ZoteroService, is_article_item
 
 
 @dataclass
@@ -155,7 +155,9 @@ class ZoteroImportService(LoggerMixin):
             items = items_result.get("items", [])
             fetch_truncated = bool(items_result.get("has_more"))
         else:
-            items = predefined_items
+            # Replayed payloads never pass through the adapter, which is where
+            # notes and attachments are otherwise dropped.
+            items = [item for item in predefined_items if is_article_item(item)]
 
         initial_counts = {
             "total_received": len(items),

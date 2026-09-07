@@ -291,6 +291,41 @@ class TestZoteroServiceAPI:
         assert result["total_results"] == 100
         assert result["has_more"] is True
 
+    @pytest.mark.asyncio
+    async def test_fetch_items_excludes_notes_and_attachments(self, zotero_service, mock_repo):
+        """Only bibliographic records come back.
+
+        A collection returns notes and attachments as items of their own, and
+        neither carries a ``title`` — mapping one persists an "Untitled" ghost
+        article. The API-side filter takes a single negated type, so the
+        adapter drops the rest itself.
+        """
+        mock_integration = MagicMock()
+        mock_integration.zotero_user_id = "12345"
+        mock_integration.encrypted_api_key = zotero_service._encrypt("api-key")
+        mock_integration.library_type = "user"
+        mock_repo.get_by_user = AsyncMock(return_value=mock_integration)
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_response = MagicMock()
+            mock_response.is_success = True
+            mock_response.json.return_value = [
+                {"key": "ITEM1", "data": {"itemType": "journalArticle", "title": "Paper 1"}},
+                {"key": "NOTE1", "data": {"itemType": "note", "note": "<p>a note</p>"}},
+                {"key": "ATT1", "data": {"itemType": "attachment", "title": "paper.pdf"}},
+            ]
+            mock_response.headers = {"Total-Results": "3"}
+            get_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.__aenter__.return_value.get = get_mock
+
+            result = await zotero_service.fetch_items(collection_key="COL123")
+
+        assert [item["key"] for item in result["items"]] == ["ITEM1"]
+        # The server-side half of the same rule still has to be requested.
+        url, kwargs = get_mock.call_args[0][0], get_mock.call_args[1]
+        assert url.endswith("/users/12345/collections/COL123/items")
+        assert kwargs["params"]["itemType"] == "-attachment"
+
 
 class TestZoteroServiceDownload:
     """Testes de download de attachments."""
