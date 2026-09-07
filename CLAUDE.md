@@ -45,8 +45,11 @@ These bias toward caution over speed. For trivial changes, use judgment.
 
 ## Which skill to load
 
-Load the skill before non-trivial work in its area (skills are on-demand —
-naming them here is what makes them load reliably).
+Load the skill before non-trivial work in its area. The four domain
+skills (`backend-development`, `frontend-development`, `ui-styling`,
+`web-testing`) also auto-load by `paths:` when a matching file is
+touched; the rest are on-demand — naming them here is what makes them
+load reliably.
 
 - Backend (FastAPI/SQLAlchemy/Alembic/Celery/RLS) → `backend-development`
 - Frontend structure/data/state (components/hooks/services/stores) → `frontend-development`
@@ -175,9 +178,28 @@ branch. Fix throughput without weakening the gate:
   `gh api -X PUT .../pulls/<n>/update-branch`. Never `@dependabot
   rebase` a grouped PR — it closes and recreates it under a new number.
 - **Scope agents to non-overlapping paths/worktrees** so concurrent PRs
-  rarely conflict.
+  rarely conflict. **Remove a worktree once its PR merges**
+  (`git worktree remove` + `git branch -d`, from the main checkout): it is
+  a second checkout of `.claude/`, so every model-invocable skill in it
+  registers again as `.claude/worktrees/<name>:<skill>` until it is gone,
+  and no setting excludes it.
 - A GitHub merge queue is the real fix but needs an org (public repo →
   a free org); revisit if concurrency outgrows the merge-train.
+- **Promotion (`dev → main`) is hook-enforced, not prose-enforced.**
+  `.claude/hooks/bash-guard.sh` denies any push to `main` outright, and
+  denies the promotion PR (`--base main` / `--merge`) unless an active
+  `/ship-spec` run declares `ceiling=prod` with a GREEN preflight on the
+  exact commit; with no active run it asks once. Design:
+  `docs/superpowers/specs/2026-09-05-ship-spec-v2-orchestrator-design.md`.
+
+## Compaction
+
+When compacting, always preserve: the active `/ship-spec` ceiling and
+run-state path (`.superpowers/sdd/<plan>/state`); the spec, plan and
+ledger paths; the list of modified files; every test or gate command
+with its last result and the SHA it ran on; open questions and rulings.
+Drop raw tool output — it is in the ledger or the gate log. After a
+compaction, trust the ledger and `git log` over recollection.
 
 ## graphify
 

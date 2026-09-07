@@ -1,6 +1,10 @@
 ---
 name: backend-development
 description: Use this when writing or modifying anything under `backend/app/` — FastAPI endpoints, SQLAlchemy 2.0 async models or queries, Alembic migrations, Celery tasks in `backend/app/worker/`, Pydantic v2 schemas, Supabase RLS policies in `supabase/migrations/`, or `pytest` tests. Covers prumo's HITL stack (extraction + quality assessment), project-membership auth, structlog observability, and the migration split between Alembic (app schema) and Supabase CLI (auth/storage). Trigger on requests like "add endpoint", "create migration", "write a Celery task", "fix RLS", "new SQLAlchemy model", or anything touching `extraction_*` tables or `/api/v1/runs/...` / `/api/v1/hitl/sessions`.
+paths:
+  - "backend/app/**"
+  - "backend/alembic/versions/*.py"
+  - "supabase/migrations/**"
 ---
 
 # Backend Development (prumo)

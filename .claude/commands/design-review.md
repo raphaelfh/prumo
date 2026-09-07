@@ -7,15 +7,14 @@ allowed-tools:
   - Glob
   - Grep
   - Bash(npm run dev*)
-  - mcp__Claude_Preview__preview_start
-  - mcp__Claude_Preview__preview_screenshot
-  - mcp__Claude_Preview__preview_snapshot
-  - mcp__Claude_Preview__preview_inspect
-  - mcp__Claude_Preview__preview_resize
-  - mcp__Claude_Preview__preview_eval
-  - mcp__Claude_Preview__preview_console_logs
-  - mcp__Claude_Preview__preview_click
-  - mcp__Claude_Preview__preview_fill
+  - mcp__Claude_Browser__preview_start
+  - mcp__Claude_Browser__navigate
+  - mcp__Claude_Browser__computer
+  - mcp__Claude_Browser__read_page
+  - mcp__Claude_Browser__javascript_tool
+  - mcp__Claude_Browser__resize_window
+  - mcp__Claude_Browser__read_console_messages
+  - mcp__Claude_Browser__form_input
 ---
 
 # /design-review — visual feedback loop
@@ -56,31 +55,39 @@ path. If you cannot resolve it confidently, ask rather than guess.
 
 ## Phase 3 — Render
 
-Start the preview with `preview_start` at `http://127.0.0.1:8080<route>` (Vite,
-`npm run dev`). It reuses a server already on :8080; if nothing is listening, start
-one first (`npm run dev`) and wait for it, then `preview_start`.
+Start the preview with `preview_start({url})` at `http://127.0.0.1:<port><route>`
+(Vite, `npm run dev`).
+
+**Confirm the port is yours before you trust a single pixel.** `preview_start({name})`
+reads `.claude/launch.json` from the MAIN checkout, so from a worktree it cannot start
+that worktree's server, and :8080 is frequently a peer session's server for another
+branch — you would review the wrong code and it would look fine. Check the owner with
+`lsof -nP -iTCP:8080 -sTCP:LISTEN`, then `lsof -a -p <pid> -d cwd`. If the cwd is not
+this tree, start your own: `npm run dev -- --port <n> --strictPort` in the background,
+then open that URL.
 
 **Auth.** Most product routes sit behind `ProtectedRoute` and redirect an
 unauthenticated session to `/auth` — so a deep route renders the login form, not
 your screen. If you land on `/auth`, sign in with the browser test account:
-`preview_fill` email + password (`teste@prumo.local` / `Senha123`), `preview_click`
-submit, then go to the target. Confirm via `preview_snapshot` that you're on the
+`form_input` email + password (`teste@prumo.local` / `Senha123`), click submit with
+`computer`, then go to the target. Confirm via `read_page` that you're on the
 app shell (not `/auth`) before capturing. If sign-in is rejected (`Invalid login
 credentials` in the console), the dev build's Supabase has no such account — bring
 up the full local stack (`make start` / `make db-seed`) or use known-good creds.
 
 If the screen needs a specific state (empty / loading / a particular run or
-reviewer), drive to it with `preview_click` / `preview_eval` and say which state
-you captured. Check `preview_console_logs` for errors that would distort the render.
+reviewer), drive to it with `computer` / `javascript_tool` and say which state
+you captured. Check `read_console_messages` for errors that would distort the render.
 
 ## Phase 4 — Capture
 
-- Desktop light: `preview_screenshot` (always).
+- Desktop light: `computer {action: "screenshot"}` (always).
 - `--dark`: theme is `next-themes` (`storageKey="prumo:theme"`), so force it
-  durably — `preview_eval("localStorage.setItem('prumo:theme','dark'); location.reload()")`,
-  then `preview_screenshot`; restore with `'system'`/`'light'` + reload.
-- `--mobile`: `preview_resize` to ≈390 wide, `preview_screenshot`, restore.
-- `preview_snapshot` for structure, and `preview_inspect` on any node whose token
+  durably — `javascript_tool` running
+  `localStorage.setItem('prumo:theme','dark'); location.reload()`, then a
+  screenshot; restore with `'system'`/`'light'` + reload.
+- `--mobile`: `resize_window` to ≈390 wide, screenshot, restore.
+- `read_page` for structure, and `javascript_tool` (computed styles) on any node whose token
   you doubt (confirm the header is really 48px, the border really `/0.4`, the
   shadow not `none`).
 

@@ -1,10 +1,11 @@
 import type {CSSProperties} from "react";
-import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from "react";
+import type {LucideIcon} from "lucide-react";
+import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
 import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
-import {FileText, Import, MoreHorizontal, Plus, Search, Trash2, Upload} from "lucide-react";
+import {FileText, FileUp, Import, MoreHorizontal, Plus, Search, Trash2, Upload} from "lucide-react";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {
     DropdownMenu,
@@ -24,6 +25,8 @@ import {
     AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
+import {Separator} from "@/components/ui/separator";
+import {HeaderIconButton} from "@/components/layout/HeaderIconButton";
 import {toast} from "sonner";
 import {
     deleteArticle,
@@ -52,27 +55,20 @@ import {
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
 import {ArticlesExportDialog} from "./ArticlesExportDialog";
-import {ZoteroImportDialog} from "./ZoteroImportDialog";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 import type {Article} from "@/types/article";
 import {ARTICLES_DATA_COLUMN_DEFS, formatArticleListCell} from "@/lib/articlesListDisplay";
-
-export type ArticlesListHandle = {
-    openExportDialog: () => void;
-};
 
 interface ArticlesListProps {
   articles: Article[];
   onArticleClick: (articleId: string) => void;
   projectId: string;
-  onArticlesChange?: () => void;
-    /** When provided, Zotero dialog is controlled by parent (e.g. ProjectView) */
-    onOpenZoteroDialog?: () => void;
-    /** When provided, shows "Via RIS file" option alongside Zotero */
-    onOpenRisDialog?: () => void;
-    /** Notifies parent when export action should be enabled (filtered list or selection). */
-    onExportAvailabilityChange?: (canExport: boolean) => void;
-    /** Opens the article editor panel from the empty state's "Add first article". */
+  onArticlesChange: () => void;
+    /** Opens the parent-owned Zotero import dialog. */
+    onOpenZoteroDialog: () => void;
+    /** Opens the parent-owned RIS import dialog. */
+    onOpenRisDialog: () => void;
+    /** Opens the article editor panel (toolbar "Add" and the empty state). */
     onOpenAddArticle: () => void;
 }
 
@@ -240,19 +236,48 @@ for (const {id} of ARTICLES_DATA_COLUMN_DEFS) {
     }
 }
 
-export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(function ArticlesList(
-    {
-        articles,
-        onArticleClick,
-        projectId,
-        onArticlesChange,
-        onOpenZoteroDialog,
-        onOpenRisDialog,
-        onExportAvailabilityChange,
-        onOpenAddArticle,
-    },
-    ref,
-) {
+/**
+ * One toolbar action: the chrome icon button, its tooltip, and its accessible
+ * name from a single `label`. `children` is the trigger when the action opens a
+ * menu instead of firing directly.
+ */
+function ToolbarAction({
+                           label,
+                           icon: Icon,
+                           onClick,
+                           disabled,
+                           className,
+                           children,
+                       }: {
+    label: string;
+    icon: LucideIcon;
+    onClick?: () => void;
+    disabled?: boolean;
+    className?: string;
+    children?: (button: React.ReactNode) => React.ReactNode;
+}) {
+    const button = (
+        <HeaderIconButton onClick={onClick} disabled={disabled} aria-label={label} className={className}>
+            <Icon className="h-4 w-4" strokeWidth={1.5}/>
+        </HeaderIconButton>
+    );
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{children ? children(button) : button}</TooltipTrigger>
+            <TooltipContent side="bottom">{label}</TooltipContent>
+        </Tooltip>
+    );
+}
+
+export function ArticlesList({
+                                 articles,
+                                 onArticleClick,
+                                 projectId,
+                                 onArticlesChange,
+                                 onOpenZoteroDialog,
+                                 onOpenRisDialog,
+                                 onOpenAddArticle,
+                             }: ArticlesListProps) {
     const isNarrow = useIsNarrow();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedArticles, setSelectedArticles] = useState<Set<string>>(new Set());
@@ -262,11 +287,8 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [articleToUpload, setArticleToUpload] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [zoteroImportOpen, setZoteroImportOpen] = useState(false);
     const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [articlesWithMainFile, setArticlesWithMainFile] = useState<Set<string>>(new Set());
-
-    const useImportCallbacks = !!onOpenZoteroDialog;
 
     const navigate = useNavigate();
     const searchInputRef = useRef<HTMLInputElement>(null);
@@ -475,7 +497,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     }
 
       toast.success(t('articles', 'listArticleDeletedSuccess'));
-    onArticlesChange?.();
+    onArticlesChange();
   };
 
   // Delete multiple articles
@@ -495,7 +517,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
 
       toast.success(`${articleIds.length} article(s) deleted successfully!`);
     setSelectedArticles(new Set());
-    onArticlesChange?.();
+    onArticlesChange();
   };
 
   const openDeleteDialog = (articleId: string) => {
@@ -633,37 +655,10 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     return filtered;
   })();
 
-    // Latest-value refs read only by the imperative `openExportDialog` handle
-    // (never during render), so the handle can stay stable across data changes.
-    // Assigned in an effect rather than during render to keep the React Compiler
-    // happy — the imperative callback is the sole reader and runs after commit.
-    const filteredArticlesRef = useRef(filteredArticles);
-    const selectedArticlesRef = useRef(selectedArticles);
-    useEffect(() => {
-        filteredArticlesRef.current = filteredArticles;
-        selectedArticlesRef.current = selectedArticles;
-    }, [filteredArticles, selectedArticles]);
+    const canExport = filteredArticles.length > 0 || selectedArticles.size > 0;
 
-    useEffect(() => {
-        onExportAvailabilityChange?.(
-            filteredArticles.length > 0 || selectedArticles.size > 0,
-        );
-    }, [filteredArticles, selectedArticles, onExportAvailabilityChange]);
-
-    useImperativeHandle(
-        ref,
-        () => ({
-            openExportDialog: () => {
-                if (
-                    filteredArticlesRef.current.length > 0 ||
-                    selectedArticlesRef.current.size > 0
-                ) {
-                    setExportDialogOpen(true);
-                }
-            },
-        }),
-        [],
-    );
+    const openZoteroImport = () =>
+        hasZoteroConfigured ? onOpenZoteroDialog() : navigate('/settings?tab=integrations');
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -705,52 +700,22 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                     <Plus className="mr-2 h-4 w-4"/>
                     {t('articles', 'listAddFirstArticle')}
                 </Button>
-                {useImportCallbacks ? (
-                    <>
-                        {onOpenRisDialog && (
-                            <Button
-                                variant="outline"
-                                onClick={onOpenRisDialog}
-                                className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
-                            >
-                                <FileText className="mr-2 h-4 w-4"/>
-                                {t('articles', 'listImportFromRis')}
-                            </Button>
-                        )}
-                        <Button
-                            variant="outline"
-                            onClick={() =>
-                                hasZoteroConfigured
-                                    ? onOpenZoteroDialog?.()
-                                    : navigate('/settings?tab=integrations')
-                            }
-                            className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
-                        >
-                            <Import className="mr-2 h-4 w-4"/>
-                            {onOpenRisDialog ? t('articles', 'listFromZotero') : t('articles', 'listImportArticles')}
-                        </Button>
-                    </>
-                ) : (
-                    hasZoteroConfigured ? (
-                        <Button
-                            variant="outline"
-                            onClick={() => setZoteroImportOpen(true)}
-                            className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
-                        >
-                            <Import className="mr-2 h-4 w-4"/>
-                            {t('articles', 'listImportArticles')}
-                        </Button>
-                    ) : (
-                        <Button
-                            variant="outline"
-                            onClick={() => navigate("/settings?tab=integrations")}
-                            className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
-                        >
-                            <Import className="mr-2 h-4 w-4"/>
-                            {t('articles', 'listImportArticles')}
-                        </Button>
-                    )
-                )}
+                <Button
+                    variant="outline"
+                    onClick={onOpenRisDialog}
+                    className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
+                >
+                    <FileText className="mr-2 h-4 w-4"/>
+                    {t('articles', 'listImportFromRis')}
+                </Button>
+                <Button
+                    variant="outline"
+                    onClick={openZoteroImport}
+                    className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
+                >
+                    <Import className="mr-2 h-4 w-4"/>
+                    {t('articles', 'listFromZotero')}
+                </Button>
             </div>
         </div>
     ) : null;
@@ -1213,6 +1178,41 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                             tooltipLabel={t('articles', 'listDisplayAndSort')}
                             ariaLabel={t('articles', 'listDisplayOptions')}
                         />
+                        {/* Actions sit on the same row as search, separated from the
+                            view controls by a hairline: import / export / add. */}
+                        <Separator orientation="vertical" className="h-4 bg-border/60"/>
+                        {/* Local provider like every sibling control: Radix throws
+                            without a provider ancestor, so the block stays mountable
+                            on its own rather than relying on App's. */}
+                        <TooltipProvider>
+                        <DropdownMenu>
+                            <ToolbarAction label={t('articles', 'listImportArticles')} icon={Import}>
+                                {(button) => <DropdownMenuTrigger asChild>{button}</DropdownMenuTrigger>}
+                            </ToolbarAction>
+                            <DropdownMenuContent align="end" sideOffset={6} className="min-w-[180px]">
+                                <DropdownMenuItem onClick={openZoteroImport} className="text-xs">
+                                    <Import className="mr-2 h-3.5 w-3.5"/>
+                                    {t('articles', 'listFromZotero')}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={onOpenRisDialog} className="text-xs">
+                                    <FileText className="mr-2 h-3.5 w-3.5"/>
+                                    {t('articles', 'listFromRisFile')}
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                        <ToolbarAction
+                            label={t('articles', 'listExportArticles')}
+                            icon={FileUp}
+                            disabled={!canExport}
+                            onClick={() => setExportDialogOpen(true)}
+                        />
+                        <ToolbarAction
+                            label={t('articles', 'listAddArticle')}
+                            icon={Plus}
+                            onClick={onOpenAddArticle}
+                            className="bg-foreground text-background hover:bg-foreground/90 hover:text-background"
+                        />
+                        </TooltipProvider>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-auto">
                         {selectedArticles.size === 0 ? (
@@ -1325,25 +1325,11 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
           articleId={articleToUpload as string}
           projectId={projectId}
           onFileUploaded={() => {
-            onArticlesChange?.();
+            onArticlesChange();
             setArticleToUpload(null);
           }}
         />
       )}
-
-          {/* Zotero Import Dialog (only when not controlled by parent) */}
-          {!useImportCallbacks && (
-              <ZoteroImportDialog
-                  open={zoteroImportOpen}
-                  onOpenChange={setZoteroImportOpen}
-                  projectId={projectId}
-                  onImportComplete={() => {
-                      onArticlesChange?.();
-                  }}
-              />
-          )}
         </div>
   );
-});
-
-ArticlesList.displayName = 'ArticlesList';
+}

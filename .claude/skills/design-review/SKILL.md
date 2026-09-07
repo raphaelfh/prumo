@@ -1,6 +1,6 @@
 ---
 name: design-review
-description: prumo's visual feedback loop — render the screen, screenshot it, compare to the Plane/Linear target, list the diffs, fix, re-screenshot, confirm. Use BEFORE claiming any frontend screen or component "done", and whenever the ask is "does this look right", "match Linear/Plane", "tighten this screen", "iterate on the UI", "why does this look off / generic / AI-made", or after any non-trivial layout, density, spacing, or theme change. The `/design-review` command runs this loop on a route. Siblings: `frontend-ux` sets the visual language (what it should look like), `ui-styling` is the Tailwind/shadcn mechanics (how to wire the classes); this skill is the *did it actually end up that way* layer that closes the loop with your eyes, not the diff.
+description: "prumo's visual feedback loop — render the screen, screenshot it, compare to the Plane/Linear target, list the diffs, fix, re-screenshot, confirm. Use BEFORE claiming any frontend screen or component \"done\", and whenever the ask is \"does this look right\", \"match Linear/Plane\", \"tighten this screen\", \"iterate on the UI\", \"why does this look off / generic / AI-made\", or after any non-trivial layout, density, spacing, or theme change. The `/design-review` command runs this loop on a route. Siblings: `frontend-ux` sets the visual language (what it should look like), `ui-styling` is the Tailwind/shadcn mechanics (how to wire the classes); this skill is the *did it actually end up that way* layer that closes the loop with your eyes, not the diff."
 ---
 
 # Design Review — the visual feedback loop
@@ -50,7 +50,7 @@ cosmetics forever — note them and move on.
 
 | Goal | Tool | Why |
 | --- | --- | --- |
-| Interactive iteration (the loop above) | **Claude_Preview MCP** — `preview_start`, `preview_screenshot`, `preview_snapshot`, `preview_inspect`, `preview_resize`, `preview_eval`, `preview_fill`, `preview_click` | First-party harness preview; the harness's preview-tools guidance prefers `preview_*` over Bash/Chrome for running the dev server + verifying. |
+| Interactive iteration (the loop above) | **Browser pane** (`mcp__Claude_Browser__*`) — `preview_start` / `navigate`, `computer` (screenshot, click, type), `read_page`, `resize_window`, `javascript_tool` (computed styles), `form_input`, `read_console_messages` | First-party in-app browser; the harness's preview-tools guidance prefers it over Bash or Chrome for running the dev server and verifying. |
 | A scripted capture or a committed regression baseline | **Playwright** `toHaveScreenshot` | Deterministic, lives in CI. Owned by the `web-testing` skill §7 — read it before adding baselines. |
 
 Mechanics:
