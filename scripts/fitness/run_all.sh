@@ -104,6 +104,12 @@ run_check "check_diff_attribute_copy.py" \
 run_check "check_retired_symbols.py" \
   python3 "${SCRIPT_DIR}/check_retired_symbols.py"
 
+# The /ship-spec ceiling guard is a PreToolUse hook; its rules are the only
+# thing standing between a dev-ceiling run and a promotion, so they are gated
+# like any other fitness function. Deterministic, no network (~3 s).
+run_check "test-bash-guard.sh" \
+  bash "${REPO_ROOT}/.claude/hooks/tests/test-bash-guard.sh"
+
 echo ""
 echo "Summary:"
 for line in "${results[@]}"; do
