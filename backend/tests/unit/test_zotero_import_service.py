@@ -20,14 +20,21 @@ def service() -> ZoteroImportService:
     return svc
 
 
-@pytest.mark.asyncio
-async def test_import_collection_counts_created_items(service: ZoteroImportService) -> None:
-    run = MagicMock()
-    run.id = uuid4()
-    run.status = "pending"
+@pytest.fixture
+def stubbed_service(service: ZoteroImportService) -> ZoteroImportService:
+    """``service`` with the run bookkeeping stubbed out — the shared preamble."""
+    run = MagicMock(id=uuid4(), status="pending")
     service._ensure_run = AsyncMock(return_value=run)  # type: ignore[method-assign]
     service._sync_runs.update_counts = AsyncMock()  # type: ignore[attr-defined]
     service._mark_removed_items = AsyncMock(return_value=0)  # type: ignore[method-assign]
+    return service
+
+
+@pytest.mark.asyncio
+async def test_import_collection_counts_created_items(
+    stubbed_service: ZoteroImportService,
+) -> None:
+    service = stubbed_service
     service._zotero.fetch_items = AsyncMock(
         return_value={"items": [{"key": "A", "data": {"title": "A"}}]}
     )  # type: ignore[attr-defined]
@@ -48,7 +55,7 @@ async def test_import_collection_counts_created_items(service: ZoteroImportServi
 
 @pytest.mark.asyncio
 async def test_import_collection_skips_removal_on_truncated_fetch(
-    service: ZoteroImportService,
+    stubbed_service: ZoteroImportService,
 ) -> None:
     """A truncated (paged) fetch must NOT drive the removal reconciliation.
 
@@ -57,12 +64,7 @@ async def test_import_collection_skips_removal_on_truncated_fetch(
     every previously-imported article that fell off the page window. Guard: skip
     reconciliation whenever ``fetch_items`` reports ``has_more``.
     """
-    run = MagicMock()
-    run.id = uuid4()
-    run.status = "pending"
-    service._ensure_run = AsyncMock(return_value=run)  # type: ignore[method-assign]
-    service._sync_runs.update_counts = AsyncMock()  # type: ignore[attr-defined]
-    service._mark_removed_items = AsyncMock(return_value=0)  # type: ignore[method-assign]
+    service = stubbed_service
     service._process_item = AsyncMock(  # type: ignore[method-assign]
         return_value=MagicMock(success=True, error=None, zotero_key="A")
     )
@@ -106,3 +108,38 @@ async def test_retry_failed_items_requires_failed_events(service: ZoteroImportSe
             source_run_id=uuid4(),
             limit=10,
         )
+
+
+@pytest.mark.asyncio
+async def test_replayed_items_skip_notes_and_attachments(
+    stubbed_service: ZoteroImportService,
+) -> None:
+    """A retry replays stored payloads, which never pass through the adapter.
+
+    ``fetch_items`` drops notes and attachments for the normal path; the retry
+    path feeds ``predefined_items`` straight from stored event payloads, so a
+    note captured before that filter existed would still become an "Untitled"
+    ghost article without this guard.
+    """
+    service = stubbed_service
+    service._zotero.fetch_items = AsyncMock()  # type: ignore[attr-defined]
+    service._process_item = AsyncMock(  # type: ignore[method-assign]
+        return_value=MagicMock(success=True, error=None, zotero_key="A")
+    )
+
+    result = await service.import_collection(
+        project_id=uuid4(),
+        collection_key="COLL",
+        max_items=10,
+        import_pdfs=False,
+        predefined_items=[
+            {"key": "A", "data": {"itemType": "journalArticle", "title": "A"}},
+            {"key": "N", "data": {"itemType": "note", "note": "<p>a note</p>"}},
+            {"key": "P", "data": {"itemType": "attachment", "title": "paper.pdf"}},
+        ],
+    )
+
+    processed_keys = [call.kwargs["item"]["key"] for call in service._process_item.call_args_list]
+    assert processed_keys == ["A"]
+    assert result.total_items == 1
+    service._zotero.fetch_items.assert_not_called()

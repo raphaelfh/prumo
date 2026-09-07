@@ -1,6 +1,6 @@
 ---
 name: architectural-quality-loop
-description: Run one cycle of the prumo autonomous architectural quality loop on a scoped slice of the repo — detects concept-vocabulary drift, layered-architecture violations, security gaps, legacy code, and missing tests; converges through deterministic gates + LLM judge. Trigger on requests like "run the quality loop", "sweep extraction services for drift", "find legacy in this slice", "audit architectural drift", "autoloop on <path>", "quality sweep". Manual: one cycle per invocation. Autonomous: chainable via `superpowers:loop` skill.
+description: "Run one cycle of the prumo autonomous architectural quality loop on a scoped slice of the repo — detects concept-vocabulary drift, layered-architecture violations, security gaps, legacy code, and missing tests; converges through deterministic gates + LLM judge. Trigger on requests like \"run the quality loop\", \"sweep extraction services for drift\", \"find legacy in this slice\", \"audit architectural drift\", \"autoloop on <path>\", \"quality sweep\". Manual: one cycle per invocation. Autonomous: chainable via `superpowers:loop` skill."
 ---
 
 # Architectural Quality Auto-Loop (prumo)
