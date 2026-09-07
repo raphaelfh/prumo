@@ -111,6 +111,16 @@ describe('projects hub', () => {
     expect(screen.getByText('No archived projects')).toBeInTheDocument();
   });
 
+  it('shows an active empty state — not the archived one — when every project is archived', () => {
+    // The Active tab is selected by default; a project existing only under
+    // Archived must not be reported through the Archived-tab copy while the
+    // Active tab is what's on screen (final-review Finding 1).
+    renderHub([project({is_active: false})]);
+    expect(screen.getByRole('tab', {name: 'Active'})).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('No active projects')).toBeInTheDocument();
+    expect(screen.queryByText('No archived projects')).toBeNull();
+  });
+
   it('offers Archive to managers and fires the mutation', async () => {
     renderHub([project({})]);
     await userEvent.click(screen.getByRole('button', {name: 'Project actions'}));

@@ -64,7 +64,7 @@ describe('SidebarHeader project switcher', () => {
 
     expect(within(menu).getByText('Alpha')).toBeInTheDocument();
     expect(within(menu).queryByRole('alert')).toBeNull();
-    expect(within(menu).queryByText('No projects yet')).toBeNull();
+    expect(within(menu).queryByText('No active projects')).toBeNull();
   });
 
   it('loading — names the wait instead of showing an unlabelled spinner', () => {
@@ -72,23 +72,26 @@ describe('SidebarHeader project switcher', () => {
 
     expect(within(menu).getByText('Loading projects…')).toBeInTheDocument();
     expect(within(menu).queryByRole('alert')).toBeNull();
-    expect(within(menu).queryByText('No projects yet')).toBeNull();
+    expect(within(menu).queryByText('No active projects')).toBeNull();
   });
 
   it('failed — says so, offers a retry, and does not read as an empty account', async () => {
     const menu = renderSwitcher({projects: [], loading: false, isError: true});
 
     expect(within(menu).getByRole('alert')).toHaveTextContent('Could not load projects.');
-    expect(within(menu).queryByText('No projects yet')).toBeNull();
+    expect(within(menu).queryByText('No active projects')).toBeNull();
 
     await userEvent.click(within(menu).getByRole('menuitem', {name: 'Try again'}));
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it('empty — says the account has no projects, and does not read as a failure', () => {
+  it('empty — says the visible list has no projects, without claiming the account has none', () => {
+    // `useProjectsList` is filtered to `is_active`, so this same state also
+    // covers an account whose projects are all archived — the copy must not
+    // contradict that (final-review Finding 2).
     const menu = renderSwitcher({projects: [], loading: false, isError: false});
 
-    expect(within(menu).getByText('No projects yet')).toBeInTheDocument();
+    expect(within(menu).getByText('No active projects')).toBeInTheDocument();
     expect(within(menu).queryByRole('alert')).toBeNull();
     expect(within(menu).queryByRole('menuitem', {name: 'Try again'})).toBeNull();
   });

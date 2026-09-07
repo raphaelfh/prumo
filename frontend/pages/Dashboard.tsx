@@ -229,6 +229,23 @@ export default function Dashboard() {
         />
       </div>
     );
+  } else if (visible.length === 0 && status === 'active') {
+    // Reachable when every project is archived: `projects.length` is nonzero
+    // (state 1 doesn't match) and nothing survived the active filter. Must
+    // NOT fall through to the archived-tab copy below — that told the user
+    // "no archived projects" while looking at the Active tab, with their
+    // project one tab away (final-review Finding 1).
+    body = (
+      <div className={cn("py-6", GUTTER)}>
+        <EmptyListState
+          icon={BookOpen}
+          title={t('pages', 'dashboardNoActive')}
+          description={t('pages', 'dashboardNoActiveDesc')}
+          actionLabel={t('pages', 'dashboardViewArchived')}
+          onAction={() => setStatus('archived')}
+        />
+      </div>
+    );
   } else if (visible.length === 0) {
     body = (
       <div className={cn("py-6", GUTTER)}>

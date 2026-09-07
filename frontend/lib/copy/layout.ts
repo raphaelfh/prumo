@@ -12,7 +12,11 @@ export const layout = {
     helpAndSupport: 'Help & support',
     projects: 'Projects',
     loadingProjects: 'Loading projects…',
-    switcherNoProjects: 'No projects yet',
+    // The switcher only ever sees the active-filtered list
+    // (`useProjectsList`), so it cannot tell a genuinely empty account from
+    // one whose projects are all archived — the copy must be true in both
+    // (final-review Finding 2; don't revert to "No projects yet").
+    switcherNoProjects: 'No active projects',
     createNewProject: 'Create new project',
 
     // Sidebar sections (used by sidebarConfig or components)

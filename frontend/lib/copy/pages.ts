@@ -41,6 +41,9 @@ export const pages = {
     dashboardClearSearch: 'Clear search',
     dashboardNoArchived: 'No archived projects',
     dashboardNoArchivedDesc: 'Projects you archive are kept here and can be restored at any time.',
+    dashboardNoActive: 'No active projects',
+    dashboardNoActiveDesc: 'Every project is archived. Switch to Archived to view or restore one.',
+    dashboardViewArchived: 'View archived',
     // ProjectView
     projectViewErrorLoading: 'Error loading project',
     projectViewLoading: 'Loading project...',
