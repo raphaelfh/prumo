@@ -139,7 +139,7 @@ guarantees the code makes.
 
 ## File Structure
 
-**Created**
+**Created:**
 
 | File | Responsibility |
 |---|---|
@@ -171,7 +171,7 @@ guarantees the code makes.
 | `frontend/test/hooks/useArchiveProject.test.tsx` | Success invalidates the identity-scoped list key; a contradicting response and an API error both surface as errors. |
 | `frontend/test/Dashboard.hub.test.tsx` | Search, filter, sort, three empty states, row affordances. |
 
-**Modified**
+**Modified:**
 
 | File | Change |
 |---|---|
@@ -201,15 +201,17 @@ guarantees the code makes.
 
 ---
 
-# SLICE 1 — the unified shell
+## SLICE 1 — the unified shell
 
 ### Task 1: `useShellLocation` — the one URL derivation
 
 **Files:**
+
 - Create: `frontend/hooks/useShellLocation.ts`
 - Test: `frontend/test/hooks/useShellLocation.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `sidebarItems` from `frontend/components/layout/sidebarConfig.ts`
   (already exported: `SidebarNavItem[]` with `id: SidebarTabId`).
 - Produces: `useShellLocation(): {projectId: string | null; activeSection: SidebarTabId | null}`
@@ -367,6 +369,7 @@ here, before anything depends on it. Clearing the cache on sign-out is the
 deeper fix and is out of scope (ledger 15:45Z, follow-up).
 
 **Files:**
+
 - Create: `frontend/hooks/useProjectsQuery.ts`
 - Create: `frontend/test/hooks/useProjectsQuery.test.tsx`
 - Create: `frontend/components/layout/SidebarHeader.test.tsx`
@@ -379,6 +382,7 @@ deeper fix and is out of scope (ledger 15:45Z, follow-up).
 - Test: `frontend/test/services/projectsService.test.ts` (retarget)
 
 **Interfaces:**
+
 - Consumes: `listProjectsForDashboard` (`projectsService`), `projectKeys.list`
   (`@/lib/query-keys`), `useAuth` (`@/contexts/AuthContext`), `ProjectListItem`
   (`@/types/project`).
@@ -1057,6 +1061,7 @@ here rather than in Task 4:
   `active` derivations exist in exactly one place instead of four.
 
 **Files:**
+
 - Create: `frontend/components/layout/SidebarBrandHeader.tsx`
 - Create: `frontend/components/layout/sidebarConfig.test.ts`
 - Modify: `frontend/components/layout/SidebarNavItem.tsx`
@@ -1065,6 +1070,7 @@ here rather than in Task 4:
 - Modify: `frontend/lib/copy/layout.ts`
 
 **Interfaces:**
+
 - Produces:
   - `SidebarNavItem` props become `{icon, label, shortcut?: string, active, onClick}` —
     when `shortcut` is absent the item renders no `KbdBadge` and no `aria-keyshortcuts`.
@@ -1388,6 +1394,7 @@ git commit -m "feat(sidebar): derive the nav once, add the workspace config and 
 ### Task 4: the sidebar's two states, navigating by URL
 
 **Files:**
+
 - Modify: `frontend/components/layout/ProjectSidebar.tsx` (whole file)
 - Modify: `frontend/components/layout/MobileSidebar.tsx` (whole file)
 - Modify: `frontend/components/layout/AppLayout.tsx:37-72` (prop shim; deleted in Task 6)
@@ -1398,6 +1405,7 @@ git commit -m "feat(sidebar): derive the nav once, add the workspace config and 
 - Test: `frontend/test/projectSectionNav.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `deriveSidebarNav`, `SidebarBrandHeader`, `BrandMark` (Task 3).
 - Produces: `ProjectSidebar` and `MobileSidebar` props become
   `{projectId: string | null; activeTab: string; projectName?: string; ...}` —
@@ -1925,11 +1933,13 @@ which never mounts on `/`, so **no** `G`-chord fires there today. Lifting the
 registration into the shell fixes the whole family at once.
 
 **Files:**
+
 - Modify: `frontend/hooks/useNavigationShortcuts.ts` (whole file)
 - Modify: `frontend/components/layout/AppLayout.tsx:37-49` (shim; deleted in Task 6)
 - Test: `frontend/test/hooks/useNavigationShortcuts.test.tsx`
 
 **Interfaces:**
+
 - Produces: `useNavigationShortcuts({projectId, onToggleSidebar, onOpenProjectSwitcher}): void`.
   Consumed by Task 6 (`AppShell`).
 
@@ -2165,6 +2175,7 @@ git commit -m "feat(shortcuts): register nav bindings from the shell and add G H
 ### Task 6: `AppShell` — one shell for `/`, `/projects/:projectId` and `/settings`
 
 **Files:**
+
 - Create: `frontend/components/layout/AppShell.tsx`
 - Delete: `frontend/components/layout/AppLayout.tsx`
 - Modify: `frontend/App.tsx`
@@ -2174,6 +2185,7 @@ git commit -m "feat(shortcuts): register nav bindings from the shell and add G H
 - Test: `frontend/test/appShell.routes.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `useShellLocation` (Task 1), `useProjectsQuery` (Task 2),
   `ProjectSidebar` / `MobileSidebar` (Task 4), `useNavigationShortcuts` (Task 5).
 - Produces: `AppShell: React.FC` rendering `<Outlet/>`. The shell root carries
@@ -2551,6 +2563,7 @@ Resolved design, ledger 2026-09-07T14:50Z. `HeaderShell` is kept verbatim —
 declaration, which three descendants key off and which must not be dropped.
 
 **Files:**
+
 - Create: `frontend/components/navigation/Breadcrumb.tsx`
 - Create: `frontend/components/navigation/Breadcrumb.test.tsx`
 - Modify: `frontend/components/navigation/Topbar.tsx` (whole file)
@@ -2560,6 +2573,7 @@ declaration, which three descendants key off and which must not be dropped.
 - Modify: `frontend/test/appShell.routes.test.tsx` (extend)
 
 **Interfaces:**
+
 - Consumes: `useShellLocation` (Task 1), `useProjectsQuery` (Task 2),
   `tabIdToLabel` + `sectionDescriptionKey` (existing).
 - Produces: `AppBreadcrumb: React.FC` from `Breadcrumb.tsx`.
@@ -3081,11 +3095,13 @@ git commit -m "feat(shell): turn the top bar into a route-derived breadcrumb bar
 ### Task 8: `/settings` folds into the shell
 
 **Files:**
+
 - Modify: `frontend/pages/UserSettings.tsx` (whole file)
 - Modify: `scripts/fitness/check_copy_keys.baseline`
 - Test: `frontend/test/UserSettings.test.tsx`
 
 **Interfaces:**
+
 - Consumes: nothing new. Uses the seven already-defined-but-baselined `user.*`
   keys (`tabProfile`, `tabProfileDesc`, `tabSecurity`, `tabSecurityDesc`,
   `tabIntegrations`, `tabIntegrationsDesc`, `settingsAriaSections`).
@@ -3366,7 +3382,7 @@ git commit -m "feat(settings): fold /settings into the shell and restyle its rai
 
 ---
 
-# SLICE 2 — hub management
+## SLICE 2 — hub management
 
 ### Task 9: the archive write is a manager-gated backend endpoint
 
@@ -3402,6 +3418,7 @@ written value, so "missing" and "foreign" are indistinguishable (both 403) and
 the route is not an existence oracle.
 
 **Files:**
+
 - Create: `backend/app/schemas/project_archive.py`
 - Create: `backend/app/services/project_archive.py`
 - Create: `backend/app/api/v1/endpoints/project_archive.py`
@@ -3411,6 +3428,7 @@ the route is not an existence oracle.
 - Modify (generated): `frontend/types/api/openapi.json`, `frontend/types/api/schema.d.ts`
 
 **Interfaces:**
+
 - Produces:
   - `ProjectArchiveUpdate{archived: bool}` and `ProjectArchiveRead{id: UUID, is_active: bool}`
     (`app.schemas.project_archive`).
@@ -3867,6 +3885,7 @@ The read stays on PostgREST: it is an existing, grandfathered call site, and
 ADR-0011 has not landed. Only the projection and the sort change.
 
 **Files:**
+
 - Modify: `frontend/types/project.ts:86-89`
 - Modify: `frontend/hooks/useProjectMemberRole.ts:41`
 - Modify: `frontend/services/projectsService.ts` (list select + sort)
@@ -3875,6 +3894,7 @@ ADR-0011 has not landed. Only the projection and the sort change.
 - Test: `frontend/test/types/projectManager.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `ProjectListItem` gains `updated_at: string` and
     `project_members: {user_id: string; role: MemberRole}[]`.
@@ -4185,11 +4205,13 @@ There is no relative-time formatter in the repo and no `date-fns`. The four
 task makes them live and tightens the baseline.
 
 **Files:**
+
 - Create: `frontend/lib/relative-time.ts`
 - Create: `frontend/test/relativeTime.test.ts`
 - Modify: `scripts/fitness/check_copy_keys.baseline`
 
 **Interfaces:**
+
 - Produces: `relativeTime(iso: string, now?: number): string`. Consumed by Task 12.
 
 - [ ] **Step 1: Write the failing test**
@@ -4308,7 +4330,7 @@ Run: `python3 scripts/fitness/check_copy_keys.py --update-baseline`
 Then: `git diff scripts/fitness/check_copy_keys.baseline`
 Expected: exactly these four lines removed, none added:
 
-```
+```text
 frontend/lib/copy/common.ts:timeAgoD
 frontend/lib/copy/common.ts:timeAgoH
 frontend/lib/copy/common.ts:timeAgoMin
@@ -4331,6 +4353,7 @@ The write half of the archive feature on the client. It calls the endpoint from
 Task 9 through the typed apiClient — no `supabase.from(...)`.
 
 **Files:**
+
 - Create: `frontend/components/project/ProjectRow.tsx`
 - Create: `frontend/hooks/useArchiveProject.ts`
 - Create: `frontend/test/hooks/useArchiveProject.test.tsx`
@@ -4338,6 +4361,7 @@ Task 9 through the typed apiClient — no `supabase.from(...)`.
 - Modify: `frontend/lib/copy/pages.ts`
 
 **Interfaces:**
+
 - Consumes: `ProjectListItem` + `isProjectManager` (Task 10), `relativeTime`
   (Task 11), `projectsListKey` (Task 2),
   `components['schemas']['ProjectArchiveRead']` (Task 9).
@@ -4732,12 +4756,14 @@ git commit -m "feat(hub): extract the project row and add the archive mutation"
 ### Task 13: hub header — search, status filter, sort, three empty states
 
 **Files:**
+
 - Modify: `frontend/pages/Dashboard.tsx` (whole file)
 - Modify: `frontend/lib/copy/pages.ts`
 - Modify: `scripts/fitness/check_button_scale.baseline`
 - Test: `frontend/test/Dashboard.hub.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `useProjectsQuery` + `projectsListKey` (Task 2/10),
   `useArchiveProject` + `ProjectRow` (Task 12), `ListToolbarSearch` /
   `ListDisplaySortPopover` / `EmptyListState` (`@/components/shared/list`).
@@ -5239,9 +5265,11 @@ git commit -m "feat(hub): add search, status filter, sort and three distinct emp
 ### Task 14: E2E, visual verification, final gates
 
 **Files:**
+
 - Modify: `frontend/e2e/flows/projects.e2e.ts`
 
 **Interfaces:**
+
 - Consumes: everything above. Produces nothing.
 
 - [ ] **Step 1: Rewrite the E2E flow with scoped pickers**
@@ -5398,7 +5426,7 @@ git commit -m "docs(spec): correct the three baseline_v1.sql line anchors in §6
 
 ## Self-Review
 
-**1. Spec coverage**
+**1. Spec coverage:**
 
 | Spec section | Task |
 |---|---|

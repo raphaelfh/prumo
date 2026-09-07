@@ -503,3 +503,45 @@ distinction the rule is actually protecting: I never handled the secret.
 pass for user-facing surfaces and provides no authenticated-session story. Any
 run touching a logged-in screen hits this. The fixture route works and should
 probably be the documented answer.
+
+## 2026-09-07T22:05Z — Phase 5 — CI failed on a lane the local gate cannot see
+
+**Expected.** `make quality-scan` green on the exact shipped SHA means the PR's
+required checks pass.
+
+**Happened.** PR #852 went red on **markdownlint** while all nineteen other
+checks passed — Backend Lint, Backend Tests, Frontend Lint/Build/Tests,
+Architectural Fitness, Frontend E2E (ephemeral stack), API Contract, CodeQL,
+cspell, links, frontmatter, staleness, Vercel. 36 violations, every one of them
+in this run's **own two documents**: the plan and the friction log.
+
+`scripts/verify_all.sh` does not run markdownlint. The docs-CI workflow does, over
+`"**/*.md"`. So the deterministic local gate is structurally blind to a lane that
+gates the PR, and the two files `/ship-spec` itself mandates writing are the ones
+that tripped it.
+
+Breakdown: 28 × MD032 (blank lines around lists — the `**Files:**` / `**Interfaces:**`
+blocks the `writing-plans` template prescribes produce exactly this), 3 × MD036
+(bare `**Created**` / `**Modified**` emphasis-as-heading), 2 × MD025 (the plan's
+two `# SLICE` banners are second and third h1s), 2 × MD001 (h3 task headings
+following an h1), 1 × MD040 (an unlabelled fence).
+
+**Action.** `markdownlint-cli --fix` cleared the 28 MD032s. Fixed the other eight
+by hand: added terminal colons inside the emphasis (MD036 ignores single-line
+emphasis ending in punctuation), demoted the two `# SLICE` banners to `##` — which
+resolved both MD001s as a side effect — and labelled the fence `text`. Verified
+with the exact CI invocation over `"**/*.md"`: exit 0, zero output.
+
+**Skill gap, and it is structural.** The `superpowers:writing-plans` document
+format is itself markdownlint-hostile in this repo's configuration: its
+prescribed `**Files:**` block followed immediately by a list is a guaranteed
+MD032, once per task. A 14-task plan therefore ships ~28 guaranteed violations.
+Either `/ship-spec` should lint the documents it generates before Phase 5, or
+`verify_all.sh` should include the docs lane, or `.markdownlintignore` should
+cover `docs/superpowers/plans/`. As it stands every `/ship-spec` run that writes
+a plan will fail CI on its own artefact, and only discover it after the PR is open.
+
+**Second-order cost.** The Stop hook requires a `quality-scan.log` whose first
+line matches the current HEAD. Fixing docs moves HEAD, which invalidates a
+four-minute gate run that could not have covered the docs lane anyway. This run
+paid that cost twice.
