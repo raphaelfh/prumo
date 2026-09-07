@@ -11,7 +11,6 @@ import {MobileSidebar} from './MobileSidebar';
 import {useProject} from '@/contexts/ProjectContext';
 import {useSidebar} from '@/contexts/SidebarContext';
 import {useNavigationShortcuts} from '@/hooks/useNavigationShortcuts';
-import type {SidebarTabId} from './sidebarConfig';
 import {cn} from '@/lib/utils';
 
 interface AppLayoutProps {
@@ -35,16 +34,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, className }) => 
 
 // Layout with Sidebar for specific pages
 export const ProjectLayout: React.FC<AppLayoutProps> = ({children, className}) => {
-  const {project, activeTab, changeTab} = useProject();
+  const {project, activeTab} = useProject();
   const {projectId} = useParams<{projectId: string}>();
   const {toggleSidebar, mobileOpen, setMobileOpen} = useSidebar();
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
 
-  const handleNavigate = (tab: SidebarTabId) => changeTab(tab);
-
   useNavigationShortcuts({
-    enabled: true,
-    onNavigate: handleNavigate,
+    projectId: projectId ?? null,
     onToggleSidebar: toggleSidebar,
     onOpenProjectSwitcher: () => setSwitcherOpen(true),
   });
