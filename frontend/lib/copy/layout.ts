@@ -18,6 +18,7 @@ export const layout = {
     // Sidebar sections (used by sidebarConfig or components)
     sectionProject: 'Project',
     sectionReview: 'Review',
+    sectionWorkspace: 'Workspace',
     navOverview: 'Overview',
     navArticles: 'Articles',
     navScreening: 'Screening',
