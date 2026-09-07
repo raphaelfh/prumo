@@ -1,6 +1,11 @@
 ---
 name: ui-styling
 description: Tailwind + shadcn/ui + Radix mechanics for the prumo frontend (Vite + React 19 + TS strict). Use whenever you are adding or editing a `frontend/components/**/*.tsx` file, installing a new shadcn primitive, writing className strings, building a cva variant, touching `frontend/index.css` / `tailwind.config.ts` / `components.json`, wiring dark mode, fixing a contrast/focus/keyboard a11y bug, or hand-rolling a Radix primitive. Be a little pushy: if you are about to write JSX with classes, read this first — it will stop you from inventing colors, breaking the cn() merge order, or shipping focus-less buttons. For the project's *visual language* (Plane/Linear aesthetic, header height, density, hover affordances) see the sibling `frontend-ux` skill; this skill is the *how* layer underneath.
+paths:
+  - "frontend/components/**/*.tsx"
+  - "frontend/index.css"
+  - "tailwind.config.ts"
+  - "components.json"
 ---
 
 # UI Styling (prumo)

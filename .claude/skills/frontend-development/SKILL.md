@@ -1,6 +1,9 @@
 ---
 name: frontend-development
 description: Use when writing or modifying the STRUCTURE of anything under `frontend/` — where code lives, data flow, and state. Covers components/{domain} organization, TanStack Query hooks + key factories, `services/*Service.ts` via the typed apiClient, Zustand stores vs React Context, react-hook-form + Zod forms, generated `types/api/schema.d.ts`, ErrorResult boundaries, and the React Compiler constraints. Trigger on "add a page", "add a data hook", "add a mutation", "wire a form", "new store", "fetch data", or anything about how the frontend is organized. NOT for visual language (use `frontend-ux`) or Tailwind/shadcn class mechanics (use `ui-styling`).
+paths:
+  - "frontend/**/*.ts"
+  - "frontend/**/*.tsx"
 ---
 
 # Frontend Development (prumo)
