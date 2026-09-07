@@ -126,10 +126,3 @@ frontend/lib/copy/user.ts:apiKeysDeactivated
 frontend/lib/copy/user.ts:apiKeysErrorDeactivating
 frontend/lib/copy/user.ts:apiKeysSessionExpired
 frontend/lib/copy/user.ts:ariaGoBack
-frontend/lib/copy/user.ts:settingsAriaSections
-frontend/lib/copy/user.ts:tabIntegrations
-frontend/lib/copy/user.ts:tabIntegrationsDesc
-frontend/lib/copy/user.ts:tabProfile
-frontend/lib/copy/user.ts:tabProfileDesc
-frontend/lib/copy/user.ts:tabSecurity
-frontend/lib/copy/user.ts:tabSecurityDesc
