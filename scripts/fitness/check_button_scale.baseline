@@ -3,7 +3,7 @@
 # The scale owns height: see .claude/skills/frontend-ux/SKILL.md.
 frontend/components/articles/ArticleAuthorsField.tsx:4
 frontend/components/articles/ArticleFileUploadDialogNew.tsx:1
-frontend/components/articles/ArticleForm.tsx:6
+frontend/components/articles/ArticleForm.tsx:2
 frontend/components/articles/ArticleKeywordsField.tsx:3
 frontend/components/articles/ArticlesList.tsx:7
 frontend/components/assessment/DerivedDefaultChip.tsx:1
@@ -29,7 +29,6 @@ frontend/components/shared/list/ListDisplaySortPopover.tsx:2
 frontend/components/shared/list/SortIconHeader.tsx:1
 frontend/components/user/ApiKeysSection.tsx:6
 frontend/components/user/SecuritySection.tsx:2
-frontend/pages/Dashboard.tsx:2
 frontend/pdf-viewer/ui/NavigationControls.tsx:2
 frontend/pdf-viewer/ui/SearchBar.tsx:3
 frontend/pdf-viewer/ui/Toolbar.tsx:2
