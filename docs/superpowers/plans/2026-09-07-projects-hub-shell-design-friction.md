@@ -383,3 +383,49 @@ the time it is told to compute it. Either Phase 0 should defer ledger creation,
 or it should key the workspace off the spec and SDD should be told that name.
 Following both skills literally produces two ledgers and silently discards the
 first.
+
+## 2026-09-07T18:05Z — Phase 3 Task 4 — implementer hit a turn cap; the documented recovery does not exist here
+
+**Expected.** SDD's fix-loop and recovery guidance says rounds 1-3 "resume the
+original implementer" with `SendMessage`, because "its context is intact". The
+harness note on the truncated result said the same: "Send the agent a message
+(SendMessage) to let it continue from where it stopped."
+
+**Happened.** The Task 4 implementer stopped at a **60-turn limit** mid-task,
+part-way through Step 11 of its brief. Its last words were "Now Step 11: tighten
+the button-scale baseline." Then:
+
+- `ToolSearch` for `SendMessage` → **no such tool in this session.** This is the
+  documented desktop-app limitation that `/ship-spec` itself warns about ("the
+  desktop app disables it for the session and its subagents, and a resume you
+  cannot perform is a stall"), and SDD's own recovery path assumes it exists.
+- The agent had committed **nothing** — `git log 6df7dd18..HEAD` is empty.
+- The agent had written **no report file**, so
+  `.superpowers/sdd/…/task-4-report.md` does not exist. SDD calls the report file
+  "the persistent memory either way" for exactly this case; here it was never
+  created, because the implementer template has it written at the END of the task.
+- What survives is seven modified/untracked files in the working tree and
+  nothing that says which brief steps they satisfy.
+
+**Action.** Dispatched a fresh implementer told explicitly that the tree is
+dirty with a predecessor's uncommitted work, given the file list, told where the
+predecessor stopped, and instructed to verify each brief step against the tree
+rather than assume — then finish, test and commit.
+
+**Skill gaps, three:**
+
+1. **The report file is written last, so it is missing exactly when it is
+   needed.** SDD leans on it as crash-recovery memory but the implementer
+   template has the implementer write it after the work is done. An implementer
+   that dies mid-task leaves no memory at all. It should be created early and
+   appended per step.
+2. **`SendMessage` is assumed available.** Both SDD and the harness's own
+   truncation note prescribe a recovery that this client cannot perform. SDD
+   does have a fallback ("dispatch a fresh implementer carrying the brief path,
+   the report-file path, and the findings") — but it is written for the fix
+   loop, not for a turn-capped implementer, and it points at a report file that
+   in this case does not exist.
+3. **Nothing budgets turns.** A 533-line brief with 12 steps was dispatched with
+   no way to know it exceeded a 60-turn cap, and no way to raise the cap. The
+   only lever is splitting tasks smaller, which nothing in the plan-writing or
+   dispatch guidance mentions.
