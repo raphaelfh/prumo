@@ -86,4 +86,16 @@ describe('UserSettings', () => {
     // only role="button" on the page.
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
+
+  it('does not clone the shell sidebar panel skin on its rail', () => {
+    renderSettings();
+
+    const rail = screen.getByRole('tablist', {name: 'settingsAriaSections'});
+    // This rail is page sub-navigation, not a second sidebar (see file
+    // header). A panel background or panel border here recreates the
+    // "two same-skinned panes" violation the fold-in was meant to remove.
+    expect(rail.className).not.toContain('bg-[#fafafa]');
+    expect(rail.className).not.toContain('dark:bg-[#0c0c0c]');
+    expect(rail.className).not.toMatch(/(?:^|\s)border-r(?:\s|$)/);
+  });
 });
