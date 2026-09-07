@@ -37,6 +37,15 @@
   // file in them as unused. Default mode still checks all of it.
   "project": [
     "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,css}!",
+    // Agent-harness scripts, in BOTH modes (no trailing `!`). `.claude/`
+    // holds Claude Code configuration: workflow scripts run by the Workflow
+    // tool, hooks run by the harness. Nothing in the repo imports them and
+    // nothing ever will — they are invoked by name from outside the module
+    // graph, exactly like `scripts/*.mjs`, except they are not entry points
+    // either (knip would then report their absent exports). Listing each
+    // file under `ignore` would mean a new line per workflow; the directory
+    // is the honest unit. App code never lives here.
+    "!.claude/**",
     // Vitest/Playwright infrastructure: fixtures, MSW handlers, setup files
     // and shared test utilities, reached only from specs.
     "!frontend/test/**!",
