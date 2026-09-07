@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import {Outlet} from 'react-router';
+import {Outlet, useParams} from 'react-router';
 import {Topbar} from '@/components/navigation';
 import {ProjectSidebar} from './ProjectSidebar';
 import {MobileSidebar} from './MobileSidebar';
@@ -36,6 +36,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, className }) => 
 // Layout with Sidebar for specific pages
 export const ProjectLayout: React.FC<AppLayoutProps> = ({children, className}) => {
   const {project, activeTab, changeTab} = useProject();
+  const {projectId} = useParams<{projectId: string}>();
   const {toggleSidebar, mobileOpen, setMobileOpen} = useSidebar();
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
 
@@ -57,15 +58,15 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({children, className}) =
       <MobileSidebar
         open={mobileOpen}
         onOpenChange={setMobileOpen}
+        projectId={projectId ?? null}
         activeTab={activeTab}
-        onTabChange={changeTab}
         projectName={project?.name}
       />
 
       <div className="flex flex-1 overflow-hidden">
         <ProjectSidebar
+          projectId={projectId ?? null}
           activeTab={activeTab}
-          onTabChange={changeTab}
           projectName={project?.name}
           switcherOpen={switcherOpen}
           onSwitcherOpenChange={setSwitcherOpen}
