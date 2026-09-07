@@ -24,8 +24,14 @@ block() {
   exit 0
 }
 
+# The checkout this session is actually sitting in. `cwd` in the hook input
+# follows the session into a worktree; CLAUDE_PROJECT_DIR stays at the launch
+# directory, so it is the fallback, not the first choice.
+SESSION_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)
+
 # --- 1. ruff format on changed Python files (current checkout) --------------
 CWD_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+[ -n "$SESSION_CWD" ] && [ -d "$SESSION_CWD" ] && CWD_ROOT="$SESSION_CWD"
 cd "$CWD_ROOT" || exit 0
 CHANGED_PY=$( (git diff --name-only HEAD -- '*.py'; git diff --cached --name-only -- '*.py') 2>/dev/null | sort -u | head -50)
 if [ -n "$CHANGED_PY" ]; then
@@ -55,6 +61,21 @@ for f in "$ROOT"/.superpowers/ship-spec/*/state; do
   dir=$(dirname "$f")
   wt=$(trimmed worktree "$f")
   [ -d "$wt" ] || wt="$ROOT"
+
+  # Gate ONLY the session driving the run. The state deliberately lives under
+  # the common git dir so every worktree can see it, and an earlier version
+  # confused seeing it with owning it: one run in phase 4-7 stopped every
+  # session in the repository from ending a turn, for up to the 24h staleness
+  # window. A peer session hit this on 2026-09-07 while promoting unrelated
+  # PRs. `orchestrator=` is the checkout /ship-spec was invoked from; when a
+  # state predates it, fall back to the run's own worktree or the main
+  # checkout, so an uninvolved worktree is never gated.
+  owner=$(trimmed orchestrator "$f")
+  if [ -n "$owner" ]; then
+    [ "$CWD_ROOT" = "$owner" ] || continue
+  else
+    case "$CWD_ROOT" in "$wt"|"$ROOT") ;; *) continue ;; esac
+  fi
   head_sha=$(git -C "$wt" rev-parse HEAD 2>/dev/null || echo "")
   log="$dir/quality-scan.log"
   log_sha=""
