@@ -115,7 +115,12 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15
+        # Matches the server we deploy on: prod and every developer's local
+        # Supabase both report 17.6. Postgres changes observable behaviour
+        # between majors -- 18 gave ON DELETE RESTRICT its own SQLSTATE, which
+        # broke two typed-error mappings and which a 15 runner could not have
+        # seen -- so a CI two majors behind prod tests a different database.
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -365,7 +370,12 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15
+        # Matches the server we deploy on: prod and every developer's local
+        # Supabase both report 17.6. Postgres changes observable behaviour
+        # between majors -- 18 gave ON DELETE RESTRICT its own SQLSTATE, which
+        # broke two typed-error mappings and which a 15 runner could not have
+        # seen -- so a CI two majors behind prod tests a different database.
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
