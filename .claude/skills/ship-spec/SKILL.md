@@ -292,3 +292,14 @@ Set `phase=done` (or `halted`) and end with one block:
 Plus the KPI line from the ledger. Report faithfully: a skipped step is
 named as skipped; a failed gate shows its output; a green you did not
 capture is not a green. If the work was a phased slice, name the next.
+
+**Then close the workspace.** If the run used a worktree, say in the
+verdict that it is now disposable and give the two commands
+(`git worktree remove <path>` and `git branch -d <branch>`, from the main
+checkout). A session cannot remove the worktree it is running in, so this
+is the human's step, and it is not cosmetic: a worktree under
+`.claude/worktrees/` is a second full checkout of `.claude/`, so every
+model-invocable project skill in it registers a **second** time as
+`.claude/worktrees/<name>:<skill>` for as long as it exists. There is no
+setting that excludes it. Leaving merged worktrees around is how the
+skill list doubles.

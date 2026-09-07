@@ -178,7 +178,11 @@ branch. Fix throughput without weakening the gate:
   `gh api -X PUT .../pulls/<n>/update-branch`. Never `@dependabot
   rebase` a grouped PR — it closes and recreates it under a new number.
 - **Scope agents to non-overlapping paths/worktrees** so concurrent PRs
-  rarely conflict.
+  rarely conflict. **Remove a worktree once its PR merges**
+  (`git worktree remove` + `git branch -d`, from the main checkout): it is
+  a second checkout of `.claude/`, so every model-invocable skill in it
+  registers again as `.claude/worktrees/<name>:<skill>` until it is gone,
+  and no setting excludes it.
 - A GitHub merge queue is the real fix but needs an org (public repo →
   a free org); revisit if concurrency outgrows the merge-train.
 - **Promotion (`dev → main`) is hook-enforced, not prose-enforced.**

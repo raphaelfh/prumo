@@ -1,6 +1,6 @@
 ---
 status: in_progress
-last_reviewed: 2026-09-06
+last_reviewed: 2026-09-07
 owner: '@raphaelfh'
 ---
 
@@ -57,10 +57,13 @@ owner: '@raphaelfh'
    current `HEAD`; review runs in a fresh subagent that sees only the
    diff, the plan and a rubric, and every blocking finding is
    cross-verified by a refuter before it is reported.
-6. **Reuse, don't invent.** Run state lives in SDD's own workspace
-   (`.superpowers/sdd/<plan-basename>/`, gitignored). Guards went into
-   the existing `bash-guard.sh`. The gate went into the existing Stop
-   hook. The panel is a saved Workflow.
+6. **Reuse, don't invent.** The ledger is SDD's own workspace
+   (`<run worktree>/.superpowers/sdd/<plan-basename>/`, gitignored).
+   Guards went into the existing `bash-guard.sh`. The gate went into the
+   existing Stop hook. The panel is a saved Workflow. Run *state* was
+   meant to share SDD's directory too, until the first review round found
+   that SDD deletes it after a clean final review; it now sits beside it
+   at `<main checkout>/.superpowers/ship-spec/<plan-basename>/` (§6).
 
 ## 2. Verified defects in the original command (2026-09-05)
 
@@ -302,3 +305,79 @@ Not yet exercised:
   index, consolidated in the same session.
 - `SessionStart`/`PostCompact` hooks under a real compaction; their
   output contract matches the documented `additionalContext` form.
+
+## 7. Second round — the pipeline's own environment (2026-09-07)
+
+The first round reviewed the diff. This one checked the *assumptions the
+diff rests on* against the running harness, and six of them were wrong.
+
+1. **CI went red on knip**, not on anything the review looked at:
+   `.claude/workflows/ship-panel.js` is a committed `.js` file that
+   nothing imports, because the Workflow tool invokes it by name. The
+   gate was right. `.claude/**` is now out of knip's project graph in
+   both modes — the directory is the honest unit, since an `ignore`
+   entry per file would need a new line for every workflow.
+
+2. **`SendMessage` does not exist in this client**, so the escalation
+   protocol's "resume the same worker" was unimplementable. Verified
+   rather than assumed: Claude Code 2.1.263 (the feature's floor is
+   2.1.224), no deny rule in any of the three settings files, and the
+   call returns "SendMessage is disabled for this session, in subagents
+   as well as here." The protocol now names two routes — resume where
+   the client offers it, otherwise a **fresh** worker briefed from the
+   ledger. This is why continuity lives in the ledger and not in a live
+   subagent.
+
+3. **Why a worktree session lists every skill twice.** Startup loads
+   `.claude/skills/` from the cwd and every parent to the repo root, and
+   a skill in a *subdirectory* registers on demand under both its plain
+   name and a `dir:name` form. A harness worktree is a full checkout
+   living at `.claude/worktrees/<name>/` — inside the repo — so its copy
+   of the skills tree registers a second time as
+   `.claude/worktrees/<name>:<skill>`. Only the model-invocable ones
+   show, which is why the shadow set is smaller than the real one. There
+   is **no exclusion setting** for skills, agents or commands
+   (`claudeMdExcludes` is CLAUDE.md-only) and `.gitignore` does not stop
+   the walk.
+
+   A `WorktreeCreate` hook is the only documented way to move worktrees
+   out of the repo, and it is **rejected**: it replaces harness-owned
+   creation logic through an input schema the docs do not specify, and
+   the docs warn that transcript location and resume guarantees change.
+   That is a poor trade against noise that ends when the worktree does.
+   The fix is disposal, now written into CLAUDE.md and Phase 8.
+
+4. **Dead tool names, same class as §2.** The `design-review` command
+   and skill drove `mcp__Claude_Preview__*`, which does not exist; the
+   browser surface is `mcp__Claude_Browser__*`. Nine `allowed-tools`
+   entries pre-approved nothing and ten instructions named absent tools.
+   Rewritten, and Phase 3 now says to prove you own port 8080 before
+   trusting the render — `preview_start({name})` reads `launch.json`
+   from the main checkout and cannot start a worktree's own server.
+
+5. **Three skill descriptions were invalid YAML** — an unquoted scalar
+   containing `": "` (`architectural-quality-loop`, `design-review`,
+   `ui-styling`). Claude Code's parser tolerates it; a strict reader
+   drops the whole frontmatter block, and a skill that silently fails to
+   register is the worst rot: nothing goes red, it just never fires.
+   Quoted; all harness frontmatter now parses.
+
+6. **The evals asserted a path the first round had already moved**
+   (`.superpowers/sdd/<plan>/state`). Realigned to
+   `.superpowers/ship-spec/<plan>/`, and the readme now states that a
+   fresh throwaway worktree is mandatory rather than tidy: even under
+   `--dry-run` the SDD implementers commit.
+
+Left deliberately: the `graphify` post-commit hook prints "could not
+locate a Python with graphify installed" on every commit made from a
+worktree, because `core.hooksPath` is absolute (the main checkout's hook
+runs) while its interpreter probe reads `graphify-out/.graphify_python`
+relative to cwd, and a worktree has none. Making it work would build a
+second per-developer, gitignored graph on every worktree commit. The
+one-line silencer is recorded in memory; a worktree session cannot edit
+the shared checkout anyway.
+
+Still not exercised, and honestly so: no live `/ship-spec` run, no live
+`ship-panel` run, no eval executed. All four evals must run in a fresh
+worktree on a throwaway branch, which is also why this PR's own worktree
+could not host them.
