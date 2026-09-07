@@ -65,7 +65,6 @@ frontend/lib/copy/common.ts:unknownError
 frontend/lib/copy/common.ts:userRoleAria
 frontend/lib/copy/consensus.ts:templatesEditAction
 frontend/lib/copy/consensus.ts:templatesOverrideAction
-frontend/lib/copy/layout.ts:loadingProjects
 frontend/lib/copy/layout.ts:themeToggleDark
 frontend/lib/copy/layout.ts:themeToggleLight
 frontend/lib/copy/layout.ts:themeToggleSystem

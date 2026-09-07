@@ -1,8 +1,9 @@
 import {useState} from "react";
 import {useNavigate} from "react-router";
-import {useQuery, useQueryClient} from "@tanstack/react-query";
+import {useQueryClient} from "@tanstack/react-query";
 import {useAuth} from "@/contexts/AuthContext";
-import {listProjectsForDashboard, createProject} from "@/services/projectsService";
+import {createProject} from "@/services/projectsService";
+import {projectsListKey, useProjectsQuery} from "@/hooks/useProjectsQuery";
 import {AppLayout} from "@/components/layout/AppLayout";
 import {Button} from "@/components/ui/button";
 import {Skeleton} from "@/components/ui/skeleton";
@@ -10,9 +11,7 @@ import {BookOpen, ChevronRight, Plus} from "lucide-react";
 import {toast} from "sonner";
 import {AddProjectDialog} from "@/components/project/AddProjectDialog";
 import {ErrorState} from "@/components/patterns/ErrorState";
-import type {ProjectListItem} from "@/types/project";
 import {t} from '@/lib/copy';
-import {projectKeys} from '@/lib/query-keys';
 import {cn} from "@/lib/utils";
 
 const SHELL_PADDING_X = "px-4 sm:px-6 lg:px-8 2xl:px-12";
@@ -24,15 +23,7 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
-  const {data: projects = [], isLoading, isError, refetch} = useQuery<ProjectListItem[]>({
-    queryKey: projectKeys.all,
-    queryFn: async () => {
-      const result = await listProjectsForDashboard();
-      if (!result.ok) throw result.error;
-      return result.data;
-    },
-    staleTime: 30_000,
-  });
+  const {data: projects = [], isLoading, isError, refetch} = useProjectsQuery();
 
   const handleCreateProject = async (data: { name: string; description?: string }) => {
     if (!user?.id) {
@@ -47,7 +38,7 @@ export default function Dashboard() {
       return;
     }
     toast.success(t('pages', 'dashboardProjectCreated'));
-    await queryClient.invalidateQueries({queryKey: projectKeys.all});
+    await queryClient.invalidateQueries({queryKey: projectsListKey(user.id)});
     setAddDialogOpen(false);
   };
 

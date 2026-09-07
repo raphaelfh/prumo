@@ -13,17 +13,6 @@ import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {ProjectListItem} from '@/types/project';
 import type {Article} from '@/types/article';
 
-export function listProjects(): Promise<ErrorResult<ProjectListItem[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('projects')
-      .select('*')
-      .order('created_at', {ascending: false});
-    if (error) throw error;
-    return data ?? [];
-  }, 'projectsService.listProjects');
-}
-
 // ---------------------------------------------------------------------------
 // Dashboard / SidebarHeader: create project via RPC
 // ---------------------------------------------------------------------------

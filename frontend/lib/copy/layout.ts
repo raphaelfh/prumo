@@ -12,6 +12,7 @@ export const layout = {
     helpAndSupport: 'Help & support',
     projects: 'Projects',
     loadingProjects: 'Loading projects…',
+    switcherNoProjects: 'No projects yet',
     createNewProject: 'Create new project',
 
     // Sidebar sections (used by sidebarConfig or components)
