@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
-import { ProjectContext } from '@/contexts/ProjectContext';
 
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 
@@ -12,14 +11,10 @@ vi.mock('@/hooks/useProjectMemberRole', () => ({
 
 import { SectionViewSwitcher } from '@/components/navigation/SectionViewSwitcher';
 
-function renderWith(activeTab: string, initialEntries = ['/projects/p1?tab=extraction']) {
+function renderWith(activeTab: string) {
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <ProjectContext.Provider
-        value={{ project: { id: 'p1' } as never, setProject: vi.fn(), activeTab, changeTab: vi.fn() } as never}
-      >
-        <SectionViewSwitcher />
-      </ProjectContext.Provider>
+    <MemoryRouter initialEntries={[`/projects/p1?tab=${activeTab}`]}>
+      <SectionViewSwitcher />
     </MemoryRouter>,
   );
 }
@@ -47,13 +42,13 @@ describe('SectionViewSwitcher', () => {
 
   it('preserves the QA data-testid', () => {
     roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
-    renderWith('quality', ['/projects/p1?tab=quality']);
+    renderWith('quality');
     expect(screen.getByTestId('hitl-quality_assessment-tab-assessment')).toBeInTheDocument();
   });
 
   it('renders both a tablist and a collapsed dropdown trigger', () => {
     roleMock.mockReturnValue({ isManager: false, role: 'reviewer', loading: false });
-    renderWith('quality', ['/projects/p1?tab=quality']);
+    renderWith('quality');
     // Segmented control (visible at comfortable widths and up).
     expect(screen.getByRole('tablist')).toBeInTheDocument();
     // Collapsed dropdown trigger (visible at compact widths) showing the

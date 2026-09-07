@@ -1,7 +1,6 @@
-import { useContext } from 'react';
 import { useSearchParams } from 'react-router';
 import { Check, ChevronDown } from 'lucide-react';
-import { ProjectContext } from '@/contexts/ProjectContext';
+import { useShellLocation } from '@/hooks/useShellLocation';
 import { useProjectMemberRole } from '@/hooks/useProjectMemberRole';
 import { getSectionViews } from '@/components/layout/sectionViews';
 import { Button } from '@/components/ui/button';
@@ -16,13 +15,12 @@ import { t } from '@/lib/copy';
 
 export function SectionViewSwitcher() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const projectContext = useContext(ProjectContext);
-  const activeSection = projectContext?.activeTab ?? '';
-  const projectId = projectContext?.project?.id ?? '';
-  const hasViews = activeSection === 'extraction' || activeSection === 'quality';
-  const { isManager } = useProjectMemberRole(hasViews ? projectId : '');
+  const {projectId, activeSection} = useShellLocation();
+  const section = activeSection ?? '';
+  const hasViews = section === 'extraction' || section === 'quality';
+  const { isManager } = useProjectMemberRole(hasViews ? (projectId ?? '') : '');
 
-  const views = getSectionViews(activeSection).filter((v) => !v.managerOnly || isManager);
+  const views = getSectionViews(section).filter((v) => !v.managerOnly || isManager);
   if (views.length === 0) return null;
 
   const urlParam = views[0].urlParam;
@@ -37,7 +35,7 @@ export function SectionViewSwitcher() {
   };
 
   const ariaLabel =
-    activeSection === 'quality'
+    section === 'quality'
       ? t('navigation', 'viewsQualityAria')
       : t('navigation', 'viewsExtractionAria');
 
@@ -56,7 +54,7 @@ export function SectionViewSwitcher() {
             type="button"
             role="tab"
             aria-selected={active === value}
-            data-testid={activeSection === 'quality' ? `hitl-quality_assessment-tab-${value}` : undefined}
+            data-testid={section === 'quality' ? `hitl-quality_assessment-tab-${value}` : undefined}
             onClick={() => select(value)}
             className={cn(
               // Matches the `sm` Button used as this control's collapsed

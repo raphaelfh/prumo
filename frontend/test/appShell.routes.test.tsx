@@ -59,6 +59,9 @@ vi.mock('@/hooks/useProjectsQuery', () => ({
         refetch: vi.fn(),
     }),
 }));
+vi.mock('@/hooks/useProjectMemberRole', () => ({
+    useProjectMemberRole: () => ({role: 'reviewer', isManager: false, loading: false}),
+}));
 
 import App from '@/App';
 
@@ -116,5 +119,47 @@ describe('AppShell', () => {
         expect(await screen.findByText('run workspace')).toBeInTheDocument();
         // RunWorkspaceShell, not AppShell: no Topbar, hence no app-shell root.
         expect(screen.queryByTestId('app-shell')).toBeNull();
+    });
+
+    it('names the page in a breadcrumb on every shell route', async () => {
+        renderAt('/');
+        const crumbs = await screen.findByRole('navigation', {name: 'Breadcrumb'});
+        expect(within(crumbs).getByText('Projects')).toBeInTheDocument();
+    });
+
+    it('shows project › section on a project route', async () => {
+        renderAt('/projects/p1?tab=extraction');
+        const crumbs = await screen.findByRole('navigation', {name: 'Breadcrumb'});
+        expect(within(crumbs).getByText('Alpha')).toBeInTheDocument();
+        expect(within(crumbs).getByText('Data extraction')).toBeInTheDocument();
+    });
+
+    it('shows Settings on /settings', async () => {
+        renderAt('/settings');
+        const crumbs = await screen.findByRole('navigation', {name: 'Breadcrumb'});
+        expect(within(crumbs).getByText('Settings')).toBeInTheDocument();
+    });
+
+    it('offers the sidebar toggle on every shell route, not just project routes', async () => {
+        renderAt('/');
+        expect(await screen.findByRole('button', {name: 'Toggle sidebar'})).toBeInTheDocument();
+        expect(screen.getByRole('button', {name: 'Open menu'})).toBeInTheDocument();
+    });
+
+    it('drops the Topbar brand block — the sidebar header owns brand now', async () => {
+        renderAt('/');
+        const shell = await screen.findByTestId('app-shell');
+        // NON-VACUITY GUARD: "exactly one Prumo" would also hold while the
+        // Topbar is showing its loading skeleton (the single match then coming
+        // from the sidebar brand header alone). Assert the breadcrumb in the
+        // same render so the count is only meaningful once the real bar is up.
+        expect(within(shell).getByRole('navigation', {name: 'Breadcrumb'})).toBeInTheDocument();
+        // Exactly one "Prumo" in the shell: the sidebar brand header.
+        expect(within(shell).getAllByText('Prumo')).toHaveLength(1);
+    });
+
+    it('keeps the QA view-switcher testid on a quality route', async () => {
+        renderAt('/projects/p1?tab=quality');
+        expect(await screen.findByTestId('hitl-quality_assessment-tab-assessment')).toBeInTheDocument();
     });
 });
