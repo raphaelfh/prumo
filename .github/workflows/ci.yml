@@ -242,6 +242,13 @@ jobs:
       - name: Apply Alembic migrations
         run: uv run alembic upgrade head
 
+      # Autogenerate without writing a file: exits non-zero when the models
+      # imply DDL that no migration carries. Runs here, against a database
+      # built only from the migration chain, so drift cannot hide behind a
+      # long-lived developer database that was hand-patched into agreement.
+      - name: Check for model-vs-schema drift (alembic check)
+        run: uv run alembic check
+
       - name: Seed default data (PROBAST + QUADAS-2 templates)
         run: uv run python -m app.seed
 
