@@ -177,11 +177,21 @@ this as the template for the next squash):
 7. Run the full test suite. If tests pass, the schema is functionally
    identical to what the migration trail produced.
 
-**Note on `alembic check`:** after a squash, `alembic check` may report
-`modify_type` diffs for `String()` vs `TEXT()` and similar SQLAlchemy
-naming-convention noise. Those are pre-existing model/DB quirks
-unmasked by the squash, not real differences. Trust the test suite,
-not `alembic check`, for "is the schema right?".
+**Note on `alembic check`:** it is a gate now, and it must stay at zero.
+`alembic check` is autogenerate without writing a file — it exits
+non-zero the moment the models imply DDL that no migration carries. It
+runs in CI (backend-test, right after `alembic upgrade head`, against a
+database built only from the migration chain) and locally as the
+`schema:alembic-check` gate in `scripts/verify_all.sh`.
+
+It used to be advisory, on the theory that `String()` vs `TEXT()` and
+naming-convention noise made it untrustworthy. That advice let 11 real
+items accumulate — including two columns the models declared and the
+schema did not have. The noise was fixable: pin the model type to `Text`
+where the column is `text`, and name a constraint explicitly when the
+migration that created it did not follow the convention. The models
+describe the database, so a diff is either a missing migration or a
+model that overstates reality — never something to skip past.
 
 ## Tests
 
