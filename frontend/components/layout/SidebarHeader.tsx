@@ -12,6 +12,7 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -80,13 +81,17 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-[260px] p-1 shadow-elev-popover border-border/50">
           {loading ? (
-            <div className="flex items-center justify-center gap-2 p-4">
+            // A plain `<div>` here is an invalid child of Radix's `role="menu"`
+            // container (which only owns menuitem/group-role children).
+            // `DropdownMenuLabel` is Radix's non-interactive-content construct
+            // for exactly this case.
+            <DropdownMenuLabel className="flex items-center justify-center gap-2 p-4 font-normal">
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" aria-hidden="true" />
               {/* The spinner had no accessible name at all. sr-only, never
                   `hidden` — `hidden` strips it from the a11y tree
                   (.claude/rules/frontend.md). */}
               <span className="sr-only">{t('layout', 'loadingProjects')}</span>
-            </div>
+            </DropdownMenuLabel>
           ) : (
             <>
               {isError ? (
@@ -97,9 +102,9 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
                 // otherwise. This is the switcher's replacement for the toast
                 // that `useProjectsList` used to fire.
                 <>
-                  <div role="alert" className="px-2 py-1.5 text-[13px] text-muted-foreground">
+                  <DropdownMenuLabel role="alert" className="text-[13px] font-normal text-muted-foreground">
                     {t('pages', 'dashboardCouldNotLoadProjects')}
-                  </div>
+                  </DropdownMenuLabel>
                   <DropdownMenuItem
                     onSelect={(event) => {
                       // Keep the menu open — the retry resolves in place.
@@ -113,9 +118,9 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
                   </DropdownMenuItem>
                 </>
               ) : projects.length === 0 ? (
-                <div className="px-2 py-1.5 text-[13px] text-muted-foreground">
+                <DropdownMenuLabel className="text-[13px] font-normal text-muted-foreground">
                   {t('layout', 'switcherNoProjects')}
-                </div>
+                </DropdownMenuLabel>
               ) : (
                 projects.map((project) => (
                   <DropdownMenuItem
