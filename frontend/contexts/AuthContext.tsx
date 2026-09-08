@@ -1,4 +1,5 @@
-import {createContext, ReactNode, useContext, useEffect, useState} from "react";
+import {createContext, ReactNode, useContext, useEffect, useRef, useState} from "react";
+import {useQueryClient} from "@tanstack/react-query";
 import {Session, User} from "@supabase/supabase-js";
 import {supabase} from "@/integrations/supabase/client";
 import {IS_LOCAL_SUPABASE, SUPABASE_ENV, SUPABASE_EXPECTED_ISSUER, SUPABASE_STORAGE_KEY,} from "@/config/supabase-env";
@@ -70,8 +71,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  // The account the query cache currently holds data for; null while signed
+  // out, which is also how the tab starts.
+  const cachedIdentity = useRef<string | null>(null);
 
   useEffect(() => {
+    /**
+     * Drop the whole query cache whenever the identity behind it changes.
+     *
+     * One QueryClient is built at module scope (App.tsx) and lives for as
+     * long as the tab is open, while sign-out is a client-side navigate()
+     * that tears down no state. TanStack serves a cache hit synchronously
+     * during render, and every query here carries a staleTime (5 min by
+     * default), so the next account in the same tab paints the previous
+     * account's rows and no refetch corrects them until that time is up.
+     * Scoping a key by user id fixes one family; this fixes the cause.
+     *
+     * It runs inside the auth notification rather than in an effect that
+     * watches `user`, because the clear has to land before React renders
+     * anything under the new identity — an effect fires only after that
+     * render has already read the cache.
+     *
+     * Adopting an account is not a change of account, so it must not clear:
+     * getSession() and the listener report the same session from two paths,
+     * and auth-js re-emits for the same user on every refresh, on
+     * visibilitychange and on every broadcast from another tab. Clearing on
+     * any of those would drop rows the signed-in user is still reading. A
+     * tab that boots straight into a session does clear once, before
+     * setUser, on a cache no observer has reached yet.
+     */
+    const adoptIdentity = (userId: string | null) => {
+      const previous = cachedIdentity.current;
+      cachedIdentity.current = userId;
+      if (previous === userId) return;
+      queryClient.clear();
+    };
+
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -91,12 +127,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
           clearStoredSession();
           void supabase.auth.signOut();
+          adoptIdentity(null);
           setSession(null);
           setUser(null);
           setLoading(false);
           return;
         }
 
+        adoptIdentity(session?.user?.id ?? null);
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
@@ -131,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearStoredSession();
         supabase.auth.signOut();
       }
+      adoptIdentity(envCheck.valid ? session?.user?.id ?? null : null);
       setSession(envCheck.valid ? session : null);
       setUser(envCheck.valid ? session?.user ?? null : null);
       setLoading(false);

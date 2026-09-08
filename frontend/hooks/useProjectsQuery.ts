@@ -7,10 +7,12 @@
  * `select('*')` read that no invalidation reached — archiving a project would
  * refresh the hub and leave the switcher listing it (ledger 2026-09-07T14:33Z).
  *
- * The key carries the caller's id. The rows are RLS-scoped to whoever fetched
- * them, the QueryClient is module-scope (App.tsx:57) and sign-out clears no
- * cache, so an identity-free key would hand user A's projects to user B after
- * an in-tab account switch. `projectsListKey` is exported because every
+ * The key carries the caller's id. That is no longer what stands between
+ * user A's projects and user B — AuthContext drops the whole cache when the
+ * signed-in account changes, because a per-key fix does not generalise to the
+ * families whose keys carry no identity. It stays as the second line: the two
+ * accounts land in separate entries rather than overwriting one, and the id
+ * is already in hand. `projectsListKey` is exported because every
  * invalidator must name the same entry — `projectKeys.all` would work by
  * prefix but would also mark members, templates, HITL config, LLM endpoints
  * and AI context stale for every project in the app.
