@@ -213,6 +213,53 @@ cmd_gate() {
   return "${rc:-1}"
 }
 
+# Replaces the ship-shipper seat: four gh calls that wore a 25-turn cap, and
+# whose clean-tree precheck refused Phase 5 on every run until
+# .claude/agent-memory/ was gitignored.
+#
+# Merge-train rule (CLAUDE.md): only ONE armed auto-merge into dev at a time.
+# `dev` is strict/up-to-date, so N armed PRs just go BEHIND and invalidate each
+# other. Precheck the train; queue rather than arm when it is occupied.
+cmd_dev() {
+  local f wt branch title=${1:-} body=${2:-} pr n
+  [ -n "$title" ] || { echo "usage: ship.sh dev <pr-title> [body-file]" >&2; return 2; }
+  f=$(_active) || return 1
+  wt=$(_get "$f" worktree); [ -d "$wt" ] || wt=$ROOT
+  branch=$(git -C "$wt" rev-parse --abbrev-ref HEAD)
+  case "$branch" in
+    dev|main) echo "ship dev: refusing to ship from '$branch' — PRs come from a feature branch." >&2; return 1 ;;
+  esac
+  if [ -n "$(git -C "$wt" status --porcelain)" ]; then
+    echo "ship dev: working tree is dirty. Commit or stash first." >&2
+    git -C "$wt" status --short >&2
+    return 1
+  fi
+  git -C "$wt" push -u origin "$branch" || return 1
+  if [ -n "$body" ] && [ -f "$body" ]; then
+    pr=$(gh pr create --base dev --head "$branch" --title "$title" --body-file "$body" 2>/dev/null)
+  else
+    pr=$(gh pr create --base dev --head "$branch" --title "$title" --body "See the plan and the ledger for this run." 2>/dev/null)
+  fi
+  [ -n "$pr" ] || pr=$(gh pr view "$branch" --json url -q .url 2>/dev/null)
+  [ -n "$pr" ] || { echo "ship dev: pushed, but could not create or find the PR." >&2; return 1; }
+  _set "$f" pr "$pr"
+  n=$(gh pr list --base dev --json number,autoMergeRequest \
+        --jq '[.[] | select(.autoMergeRequest != null)][0].number' 2>/dev/null)
+  if [ -n "$n" ] && [ "$n" != null ]; then
+    _set "$f" train "queued-behind-#$n"
+    echo "queued behind #$n — arm this PR only after that one lands"
+  else
+    if gh pr merge "$pr" --auto --squash >/dev/null 2>&1; then
+      _set "$f" train armed
+      echo "armed"
+    else
+      _set "$f" train "open-unarmed"
+      echo "open, not armed (arming failed)"
+    fi
+  fi
+  echo "$pr"
+}
+
 # Let the test source this file for its pure functions without running a verb.
 if [ "${1:-}" = "--source-only" ]; then return 0 2>/dev/null || exit 0; fi
 
@@ -220,6 +267,7 @@ case ${1:-} in
   init)  shift; cmd_init "$@" ;;
   ci)    shift; cmd_ci "$@" ;;
   gate)  shift; cmd_gate "$@" ;;
+  dev)   shift; cmd_dev "$@" ;;
   phase) shift; cmd_phase "$@" ;;
   halt)  shift; cmd_halt "$@" ;;
   done)  shift; cmd_done "$@" ;;

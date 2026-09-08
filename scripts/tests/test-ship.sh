@@ -93,4 +93,22 @@ ok "red gate records its exit" "$(tail -1 "$LOG")" "GATE_EXIT=1"
 SHIP_GATE_CMD="echo hello; true" bash "$SHIP" gate >/dev/null 2>&1
 ok "gate captures command output" "$(grep -c '^hello$' "$LOG")" "1"
 
+echo "# dev (the refusals — the gh calls need a network and are not exercised here)"
+git -C "$SANDBOX" checkout -q -b feature/x
+echo dirty > "$SANDBOX/dirty.txt"
+bash "$SHIP" dev "feat: x" >/dev/null 2>&1
+ok "dirty tree refused" "$?" "1"
+rm -f "$SANDBOX/dirty.txt"
+
+git -C "$SANDBOX" checkout -q -B dev
+bash "$SHIP" dev "feat: x" >/dev/null 2>&1
+ok "refuses to ship from dev itself" "$?" "1"
+git -C "$SANDBOX" checkout -q -B main
+bash "$SHIP" dev "feat: x" >/dev/null 2>&1
+ok "refuses to ship from main"       "$?" "1"
+git -C "$SANDBOX" checkout -q feature/x
+
+bash "$SHIP" dev >/dev/null 2>&1
+ok "a title is required" "$?" "2"
+
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]
