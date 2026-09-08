@@ -133,4 +133,19 @@ yes_ "facts reads the state mtime"       "$(bash "$SHIP" facts | sed -n 's/^stat
 ok   "facts reports a measured commit count" "$(bash "$SHIP" facts | sed -n 's/^commits=//p')" "0"
 yes_ "facts echoes the recorded ceiling" "$(bash "$SHIP" facts | sed -n 's/^ceiling=//p')"
 
+echo "# promote needs its evidence at the phase boundary, not just at the gh call"
+git -C "$SANDBOX" update-ref refs/remotes/origin/dev HEAD
+DEV_SHA=$(git -C "$SANDBOX" rev-parse origin/dev)
+bash "$SHIP" phase ship >/dev/null
+bash "$SHIP" phase promote >/dev/null 2>&1
+ok "promote refused: preflight is for another sha" "$?" "1"
+ok "phase unchanged after refusal"                 "$(state phase)" "ship"
+
+grep -v '^ci=' "$ST" > "$ST.tmp" && mv "$ST.tmp" "$ST"
+printf 'ci=GREEN@%s\n' "$DEV_SHA" >> "$ST"
+bash "$SHIP" preflight-record GREEN "$DEV_SHA" >/dev/null
+bash "$SHIP" phase promote >/dev/null 2>&1
+ok "promote allowed with a GREEN preflight on origin/dev" "$?" "0"
+ok "phase advanced" "$(state phase)" "promote"
+
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]

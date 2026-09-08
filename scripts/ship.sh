@@ -105,6 +105,19 @@ cmd_phase() {
         return 1
       fi ;;
   esac
+  # Entering `promote` needs the evidence that promotion itself requires, so
+  # the error lands at the phase boundary rather than at the gh command.
+  # bash-guard.sh enforces the same rule on `gh pr create --base main`; this is
+  # the earlier, cheaper copy of it, not a replacement.
+  if [ "$to" = promote ]; then
+    local pf want
+    pf=$(_get "$f" preflight)
+    want="GREEN@$(git -C "$ROOT" rev-parse origin/dev 2>/dev/null)"
+    if [ "$pf" != "$want" ]; then
+      echo "ship phase: promote needs preflight=$want (found '${pf:-none}'). Run /preflight and record it with 'ship.sh preflight-record GREEN'." >&2
+      return 1
+    fi
+  fi
   _set "$f" phase "$to"
   _set "$f" "${to}_at" "$(_clock)"
   cat "$f"

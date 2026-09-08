@@ -88,7 +88,7 @@ hooks. Every verb is idempotent and every verb stamps its own clock.
 | Verb | Writes | Refuses when |
 |---|---|---|
 | `init <basename> --to <ceiling>` | `ceiling`, `phase=frame`, `worktree`, `orchestrator=$(pwd)`, `started=<clock>` | a live run already names this orchestrator |
-| `phase <name>` | `phase`, `<name>_at=<clock>` | the transition is not legal from the current phase |
+| `phase <name>` | `phase`, `<name>_at=<clock>` | the transition is not legal from the current phase, or `promote` is entered without `preflight=GREEN@<origin/dev>` |
 | `gate` | `gate.log` with `sha=<HEAD>` first | never; exits non-zero on red |
 | `ci [sha]` | `ci=GREEN@<sha>` or `ci=RED@<sha>:<contexts>` | never; it reports, it does not judge |
 | `dev` | `pr=<url>`, `train=<armed\|queued behind #n>` | the tree is dirty, or the branch is `dev`/`main` |
