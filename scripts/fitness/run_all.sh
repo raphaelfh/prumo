@@ -127,6 +127,16 @@ run_check "test-reinject.sh" \
 run_check "test-ledger-clock.sh" \
   bash "${REPO_ROOT}/.claude/hooks/tests/test-ledger-clock.sh"
 
+# The state machine that owns every run fact, and the hook that stops the model
+# writing those facts by hand. Both sandbox in $TMPDIR — a test that read real
+# run state would turn a live run's own gate red, which is exactly how the
+# pipeline deadlocked itself on its first live run (#847).
+run_check "test-ship.sh" \
+  bash "${REPO_ROOT}/scripts/tests/test-ship.sh"
+
+run_check "test-protect-run-state.sh" \
+  bash "${REPO_ROOT}/.claude/hooks/tests/test-protect-run-state.sh"
+
 echo ""
 echo "Summary:"
 for line in "${results[@]}"; do
