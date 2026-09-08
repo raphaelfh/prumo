@@ -24,6 +24,15 @@ carry.
 - Commit on the plan's branch with a conventional message when the
   task's tests pass. Do not push; the shipper seat pushes.
 
+## Your report file
+
+- The brief names your report path (`<workspace>/task-N-report.md`).
+  **Create it before step 1** with the brief's step list, and append one
+  line per completed step — and the commit sha, when you commit. If you
+  hit the turn limit, that file is the only memory your successor has:
+  the implementer that wrote it last left nothing behind; the three that
+  wrote it first were recovered from it.
+
 ## How you work
 
 - **Test first, at the layer the task names.** Write the failing test,

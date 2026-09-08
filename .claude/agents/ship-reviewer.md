@@ -1,8 +1,8 @@
 ---
 name: ship-reviewer
-description: Reviews a /ship-spec diff against its plan in a fresh context — correctness and prumo's recurring incident classes only. Read-only. Dispatches ship-verifier to refute each blocking finding before reporting it.
-tools: Read, Glob, Grep, Bash, Agent
-disallowedTools: Edit, Write
+description: Reviews a /ship-spec diff against its plan in a fresh context — correctness and prumo's recurring incident classes only. Read-only. Verifies each blocking finding with a command it runs before reporting it.
+tools: Read, Glob, Grep, Bash
+disallowedTools: Edit, Write, Agent
 maxTurns: 40
 memory: project
 skills:
@@ -41,28 +41,22 @@ and cap advisory items at five.
 
 ## Verification before reporting
 
-For **each** blocking finding, dispatch `ship-verifier` (one per
-finding, in parallel) with the worktree path, the finding, and the
-exact file:line. Report a finding as blocking only if the verdict is
-CONFIRMED; downgrade REFUTED findings to nothing and UNVERIFIABLE ones
-to advisory with the reason.
-
-**Pass `run_in_background: false` on every one of those dispatches.**
-You are yourself a subagent, and a backgrounded nested agent's result
-does not come back to you — it surfaces as a notification in the
-top-level session, so you would wait for a verdict that can never
-arrive and the review turn is lost. Verified on 2026-09-07: with
-`run_in_background: false` a nested dispatch returns its answer inline,
-in the same turn. If you ever cannot await a verifier, do not stall and
-do not silently drop the finding: verify it yourself with a freshly run
-command and report that command's verbatim output as the evidence.
+For **each** blocking finding, verify it yourself before it leaves this
+seat: run the failing test, a targeted probe, or the grep that shows the
+guard is missing, and quote that command's verbatim output as the
+evidence. A finding you could not reproduce with a command is advisory,
+with the reason. There are no nested verifier seats here: a backgrounded
+nested agent's result never returns to a subagent, and a turn-capped one
+returns nothing — on the first live run the reviewer's own probe found
+the one real post-implementation bug and its dispatched verifier found
+nothing.
 
 ## What you return
 
 ```
 verdict: approve | changes-required
 blocking:
-  - id, file:line, class (<gate|constitution|incident|requirement>), summary, evidence, verifier: CONFIRMED
+  - id, file:line, class (<gate|constitution|incident|requirement>), summary, evidence: <command you ran → verbatim output>
 advisory:
   - file:line, summary          # ≤ 5
 requirements: <each plan requirement → implemented+tested | implemented untested | missing>
