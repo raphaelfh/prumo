@@ -144,7 +144,7 @@ if [ "$is_promotion" = 1 ] || [ "$is_deploy" = 1 ]; then
   # cannot touch main" while the behaviour was "nobody may touch main".
   #
   # Keying on orchestrator= costs the prod path nothing, because promotion is
-  # the orchestrator's own Phase 6 and no seat ever promotes. A --to prod run
+  # the orchestrator's own `promote` phase and no seat ever promotes. A --to prod run
   # therefore keeps its full autonomous cycle; the evidence gate below, not
   # ownership, is what stands between it and main.
   ACTIVE=""
