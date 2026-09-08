@@ -18,6 +18,14 @@ interface BackgroundJobsState {
    * unread on load. Persisted, so unread survives across reloads.
    */
   lastReadAt: number;
+  /**
+   * The account these jobs belong to; null while signed out, and also for
+   * state persisted before this field existed. Persisted alongside the jobs,
+   * because only a value that survives the reload can tell "the same user
+   * came back" (keep the jobs — surviving a reload is why they are persisted
+   * at all) from "somebody else is here now" (drop them).
+   */
+  ownerId: string | null;
 
   // Actions
   addJob: (job: BackgroundJob) => void;
@@ -26,6 +34,14 @@ interface BackgroundJobsState {
   clearCompletedJobs: () => void;
   /** Mark every finished job as read (clears the bell's unread badge). */
   markAllRead: () => void;
+  /**
+   * Point the store at `userId`, emptying it first if the jobs it is holding
+   * belong to a different account. Called from the one place that knows the
+   * identity changed (AuthContext); adopting the same account again is a
+   * no-op, so a reload, a token refresh or a re-announcement from another tab
+   * never costs the user their own in-flight jobs.
+   */
+  adoptOwner: (userId: string | null) => void;
 
   // Queries
   getJob: (jobId: string) => BackgroundJob | undefined;
@@ -85,6 +101,11 @@ export const useBackgroundJobs = create<BackgroundJobsState>()(
       // On rehydrate, the persisted lastReadAt shallow-merges over this default;
       // pre-update persisted state (no lastReadAt key) keeps this default.
       lastReadAt: Date.now(),
+      // No account until AuthContext announces one. State persisted before
+      // this field existed carries no `ownerId` key, so the shallow merge on
+      // rehydrate leaves this default and the first adoption drops it — those
+      // jobs cannot be shown to belong to whoever is signed in now.
+      ownerId: null,
 
       addJob: (job) => {
         set((state) => ({
@@ -126,6 +147,11 @@ export const useBackgroundJobs = create<BackgroundJobsState>()(
         set({ lastReadAt: Date.now() });
       },
 
+      adoptOwner: (userId) => {
+        if (get().ownerId === userId) return;
+        set({ jobs: [], lastReadAt: Date.now(), ownerId: userId });
+      },
+
       getJob: (jobId) => {
         return get().jobs.find((job) => job.id === jobId);
       },
@@ -141,19 +167,19 @@ export const useBackgroundJobs = create<BackgroundJobsState>()(
     {
       name: 'review-hub-background-jobs',
       version: 1,
-      // Limpar jobs muito antigos ao hidratar
+      // Drop long-stale jobs on rehydrate.
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        
+
         const now = Date.now();
         const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
-        
-        // Remover jobs completos com mais de 1 semana
+
+        // Discard jobs that finished over a week ago.
         state.jobs = state.jobs.filter((job) => {
           if (job.status === 'running' || job.status === 'pending') {
-            return true; // Manter jobs ativos
+            return true; // Keep active jobs.
           }
-          
+
           const jobTime = job.completedAt || job.createdAt;
           return now - jobTime < ONE_WEEK;
         });
