@@ -81,7 +81,19 @@ for f in "$ROOT"/.superpowers/ship-spec/*/state; do
   log_sha=""
   [ -f "$log" ] && log_sha=$(sed -n '1s/^sha=//p' "$log" | tr -d '[:space:]')
   if [ -z "$log_sha" ] || [ "$log_sha" != "$head_sha" ]; then
-    block "ship-spec phase $phase: no quality-scan.log for HEAD ${head_sha:-?} of $wt in $dir (found: ${log_sha:-none}). Dispatch ship-gate-runner and read its result before ending the turn. To stop with a HALT report instead, set phase=halted in $f."
+    block "ship-spec phase $phase: no quality-scan.log for HEAD ${head_sha:-?} of $wt in $dir (found: ${log_sha:-none}). Run \`make quality-scan\` into $log with sha=<HEAD> as its first line and read its Summary before ending the turn. To stop with a HALT report instead, set phase=halted in $f."
+  # The log must be COMPLETE and CLEAN, not merely addressed to HEAD. A gate
+  # runner cut off by its turn cap leaves a correct first line and no
+  # Summary; `make quality-scan` reports a lane it could not run as SKIP
+  # among the OKs and still exits 0. Both passed the sha-only check twice on
+  # 2026-09-07. Only verify_all.sh's own structured lines count as markers —
+  # pytest's negative tests print Postgres ERRORs by design.
+  elif ! grep -q '^QUALITY_SCAN_EXIT=0$' "$log"; then
+    block "ship-spec phase $phase: $log has no QUALITY_SCAN_EXIT=0 line — the gate did not finish, or went red. Re-run \`make quality-scan\` on HEAD $head_sha and read its Summary. To stop with a HALT report instead, set phase=halted in $f."
+  elif bad=$(grep -E '^(  [a-z:_-]+: SKIP \(|=== .* exit=[1-9])' "$log") && [ -z "$(trimmed skip-ack "$f")" ]; then
+    block "ship-spec phase $phase: $log has a SKIPPED or red stage:
+$(printf '%s\n' "$bad" | head -5)
+A skipped lane is not a green lane. Make it runnable and re-run the gate on HEAD $head_sha, or — only for a lane this machine cannot run at all — write skip-ack=<lane>:<reason> in $f and name it in the verdict."
   fi
 done
 

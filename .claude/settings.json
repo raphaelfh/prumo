@@ -81,6 +81,11 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-format.sh",
             "timeout": 60,
             "statusMessage": "Formatting edited file"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ledger-clock.sh",
+            "timeout": 5
           }
         ]
       }

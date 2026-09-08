@@ -75,8 +75,33 @@ expect_block "phase 4, no gate log" "$MAIN"
 printf 'sha=%s\n' "deadbeef" >"$LOG"
 expect_block "gate log for the wrong sha" "$MAIN"
 
-printf 'sha=%s\nall green\n' "$HEAD_SHA" >"$LOG"
-expect_pass "gate log matching HEAD" "$MAIN"
+printf 'sha=%s\n  lint:ruff: OK (1 ms)\nQUALITY_SCAN_EXIT=0\n' "$HEAD_SHA" >"$LOG"
+expect_pass "complete, clean gate log matching HEAD" "$MAIN"
+
+echo "# the log must be COMPLETE and CLEAN, not merely addressed to HEAD"
+# A gate runner cut off by its turn cap leaves a correct first line and no
+# Summary; `make quality-scan` reports a lane it could not run as SKIP among
+# the OKs and still exits 0. Both satisfied the sha-only check on 2026-09-07.
+printf 'sha=%s\n  lint:ruff: OK (1 ms)\n' "$HEAD_SHA" >"$LOG"
+expect_block "truncated log: no QUALITY_SCAN_EXIT line" "$MAIN"
+
+printf 'sha=%s\n  lint:ruff: OK (1 ms)\nQUALITY_SCAN_EXIT=1\n' "$HEAD_SHA" >"$LOG"
+expect_block "red gate: QUALITY_SCAN_EXIT=1" "$MAIN"
+
+printf 'sha=%s\n=== test:pytest exit=2 ===\n  test:pytest: FAIL (9 ms)\nQUALITY_SCAN_EXIT=0\n' "$HEAD_SHA" >"$LOG"
+expect_block "a stage with a non-zero exit" "$MAIN"
+
+printf 'sha=%s\n  lint:ruff: OK (1 ms)\n  smoke:playwright: SKIP (local stack unreachable)\nQUALITY_SCAN_EXIT=0\n' "$HEAD_SHA" >"$LOG"
+expect_block "a SKIPPED lane with no skip-ack" "$MAIN"
+
+printf 'ceiling=dev\nphase=4\nworktree=%s\norchestrator=%s\nskip-ack=smoke:playwright:no browser on this host\n' "$MAIN" "$MAIN" >"$STATE"
+expect_pass "a SKIPPED lane acknowledged in state" "$MAIN"
+
+# pytest's negative tests print Postgres ERROR lines by design; only
+# verify_all.sh's own structured markers may trip the content check.
+printf 'ceiling=dev\nphase=4\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$STATE"
+printf 'sha=%s\nERROR:  permission denied for table x\nFAILED to connect (retrying)\n  test:pytest: OK (9 ms)\nQUALITY_SCAN_EXIT=0\n' "$HEAD_SHA" >"$LOG"
+expect_pass "ERROR/FAILED words in test output are not gate markers" "$MAIN"
 
 echo "# an uninvolved session in the SAME repo is not gated"
 rm -f "$LOG"

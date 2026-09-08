@@ -117,6 +117,16 @@ run_check "test-bash-guard.sh" \
 run_check "test-stop-gate.sh" \
   bash "${REPO_ROOT}/.claude/hooks/tests/test-stop-gate.sh"
 
+# What a compacted session gets back about a live run: the state, and the
+# ledger even when SDD keyed its workspace off a different basename.
+run_check "test-reinject.sh" \
+  bash "${REPO_ROOT}/.claude/hooks/tests/test-reinject.sh"
+
+# The wall-clock line appended after every ledger edit — the one timestamp
+# in the ledger the orchestrator did not write itself.
+run_check "test-ledger-clock.sh" \
+  bash "${REPO_ROOT}/.claude/hooks/tests/test-ledger-clock.sh"
+
 echo ""
 echo "Summary:"
 for line in "${results[@]}"; do
