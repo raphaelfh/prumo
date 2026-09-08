@@ -48,4 +48,32 @@ yes_ "halt stamps ended"     "$(state ended)"
 bash "$SHIP" phase build >/dev/null
 ok "resume from halted goes anywhere" "$(state phase)" "build"
 
+echo "# ci verdict (pure — no network, so this runs in CI)"
+# shellcheck disable=SC1090
+. "$SHIP" --source-only
+
+RUNS_GREEN=$'Backend Lint\tcompleted\tsuccess\nSupabase Preview\tcompleted\tskipped'
+ok "all required success -> GREEN" "$(_ci_verdict 'Backend Lint' "$RUNS_GREEN")" "GREEN"
+
+RUNS_PENDING=$'Backend Lint\tin_progress\t'
+ok "required still running -> PENDING" "$(_ci_verdict 'Backend Lint' "$RUNS_PENDING")" "PENDING"
+
+RUNS_MISSING=$'Frontend Lint\tcompleted\tsuccess'
+ok "required context absent -> PENDING" "$(_ci_verdict 'Backend Lint' "$RUNS_MISSING")" "PENDING"
+
+RUNS_RED=$'Backend Lint\tcompleted\tfailure'
+ok "required failed -> RED" "$(_ci_verdict 'Backend Lint' "$RUNS_RED")" "RED:Backend Lint"
+
+# markdownlint is NOT a required context, yet it produced the only red of the
+# first prod run. A non-required failure is still RED.
+RUNS_NONREQ=$'Backend Lint\tcompleted\tsuccess\nmarkdownlint\tcompleted\tfailure'
+ok "non-required failure -> RED" "$(_ci_verdict 'Backend Lint' "$RUNS_NONREQ")" "RED:markdownlint"
+
+# A pending required context must never mask a failure that already happened.
+RUNS_MIXED=$'Backend Lint\tin_progress\t\nmarkdownlint\tcompleted\tfailure'
+ok "failure wins over pending" "$(_ci_verdict 'Backend Lint' "$RUNS_MIXED")" "RED:markdownlint"
+
+RUNS_CANCELLED=$'Backend Lint\tcompleted\tcancelled'
+ok "cancelled counts as red" "$(_ci_verdict 'Backend Lint' "$RUNS_CANCELLED")" "RED:Backend Lint"
+
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]

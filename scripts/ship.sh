@@ -125,8 +125,66 @@ cmd_done() {
   cat "$f"
 }
 
+
+# Pure verdict function: $1 = required contexts (newline separated),
+# $2 = check-runs as name<TAB>status<TAB>conclusion lines.
+#
+# GREEN iff every required context completed successfully AND nothing on the
+# SHA hard-failed. Three rules, each from an observed defect:
+#   * `skipped` is not a failure (Supabase Preview is skipped on every run).
+#   * a NON-required failure is still RED — markdownlint is not a required
+#     context and produced the only red of the first prod run.
+#   * a required context that is absent or not `completed` is PENDING, never
+#     RED. Waiting is not evidence, and a gate that calls pending red
+#     deadlocks on its own CI.
+# A failure that already happened outranks anything still pending.
+#
+# The while loop reads a heredoc, NOT a pipe: a pipe would run it in a
+# subshell and `pending` would not survive.
+_ci_verdict() {
+  local required=$1 runs=$2 bad line st cc ctx pending=0
+  bad=$(printf '%s\n' "$runs" | awk -F'\t' '$3=="failure"||$3=="timed_out"||$3=="cancelled"||$3=="action_required"{print $1}')
+  while IFS= read -r ctx; do
+    [ -n "$ctx" ] || continue
+    line=$(printf '%s\n' "$runs" | awk -F'\t' -v n="$ctx" '$1==n{print;exit}')
+    if [ -z "$line" ]; then pending=1; continue; fi
+    st=$(printf '%s' "$line" | cut -f2)
+    cc=$(printf '%s' "$line" | cut -f3)
+    if [ "$st" != completed ]; then pending=1
+    elif [ "$cc" != success ] && [ "$cc" != skipped ]; then bad=$(printf '%s\n%s' "$bad" "$ctx"); fi
+  done <<EOF
+$required
+EOF
+  bad=$(printf '%s\n' "$bad" | grep -v '^$' | sort -u | paste -sd, -)
+  if [ -n "$bad" ]; then echo "RED:$bad"
+  elif [ "$pending" = 1 ]; then echo PENDING
+  else echo GREEN; fi
+}
+
+cmd_ci() {
+  local f sha repo runs required verdict kind rest=""
+  f=$(_active) || return 1
+  sha=${1:-$(git -C "$(_get "$f" worktree)" rev-parse HEAD 2>/dev/null)}
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+  if [ -z "$repo" ]; then _set "$f" ci "UNKNOWN@$sha"; echo "UNKNOWN@$sha"; return 1; fi
+  runs=$(gh api "repos/$repo/commits/$sha/check-runs" --paginate \
+           --jq '.check_runs[] | [.name,.status,.conclusion] | @tsv' 2>/dev/null)
+  if [ -z "$runs" ]; then _set "$f" ci "UNKNOWN@$sha"; echo "UNKNOWN@$sha"; return 1; fi
+  required=$(gh api "repos/$repo/branches/dev/protection" \
+               --jq '.required_status_checks.contexts[]' 2>/dev/null)
+  verdict=$(_ci_verdict "$required" "$runs")
+  kind=${verdict%%:*}
+  case "$verdict" in *:*) rest=":${verdict#*:}" ;; esac
+  _set "$f" ci "$kind@$sha$rest"
+  printf '%s@%s%s\n' "$kind" "$sha" "$rest"
+}
+
+# Let the test source this file for its pure functions without running a verb.
+if [ "${1:-}" = "--source-only" ]; then return 0 2>/dev/null || exit 0; fi
+
 case ${1:-} in
   init)  shift; cmd_init "$@" ;;
+  ci)    shift; cmd_ci "$@" ;;
   phase) shift; cmd_phase "$@" ;;
   halt)  shift; cmd_halt "$@" ;;
   done)  shift; cmd_done "$@" ;;
