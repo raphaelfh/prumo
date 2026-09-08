@@ -111,7 +111,7 @@ fi
 # /ship-spec autonomy ceiling — read from the active run state, never from
 # the model's memory of what was asked.
 #
-# State file: <main checkout>/.superpowers/ship-spec/<plan-basename>/state
+# State file: <main checkout>/.superpowers/ship-spec/<basename>/state
 #   ceiling=dev|staging|prod  phase=<n>|halted|done  preflight=GREEN@<sha>|RED@<sha>
 #   worktree=<absolute path of the run's working tree>
 # `halted`/`done` are terminal; a state untouched for 24h is a crashed run.

@@ -1,10 +1,10 @@
 export const meta = {
   name: 'ship-panel',
-  description: 'Adversarial plan review for /ship-spec: five lenses in parallel, blocking findings cross-verified by independent refuters before they are reported',
+  description: 'Adversarial plan review for /ship-spec: five lenses in parallel (six with a spec — its claims are checked against the tree), blocking findings cross-verified by independent refuters; a finding no refuter answered stays blocking',
   whenToUse: 'Phase 2 of /ship-spec, on a written plan. args: { plan, worktree, spec? }',
   phases: [
-    { title: 'Lenses', detail: 'constitution/layering, security/RLS/BOLA, migration-safety, simplicity/YAGNI, test-coverage' },
-    { title: 'Verify', detail: 'two independent refuters per blocking finding; any refutation kills it' },
+    { title: 'Lenses', detail: 'constitution/layering, security/RLS/BOLA, migration-safety, simplicity/YAGNI, test-coverage, spec-conformance (with a spec)' },
+    { title: 'Verify', detail: 'two independent refuters per blocking finding; any refutation kills it; none answering keeps it blocking as unverified' },
   ],
 }
 
@@ -67,6 +67,24 @@ register in diff coverage); tests interleaved, never batched at the end; diff-co
   },
 ]
 
+// With a spec in hand, a sixth lens reviews the plan's PARENT. A spec written
+// without implementing drifts: on the first live run, 12 of its concrete
+// claims contradicted the tree, two changed scope, and one prescribed a
+// constitution violation — every one of which the plan inherited. Catching
+// them here is cheaper than at design review.
+if (args.spec) {
+  LENSES.push({
+    key: 'spec',
+    prompt: `Review the SPEC at ${args.spec} — not only the plan — through the SPEC-CONFORMANCE lens: every
+file, line, symbol, table, column, route or ADR status it names must exist as described (quote what the
+tree actually says where it differs); every write path it prescribes must comply with
+docs/reference/constitution.md §VI — no new direct-PostgREST write for application data; every
+user-visible state it implies (loading, empty, error, not-found, unauthorized) must be enumerated. A spec
+claim the plan carried forward unchanged is BLOCKING when the tree contradicts it or the constitution
+forbids it. Cite the spec section and the plan step.`,
+  })
+}
+
 const FINDINGS_SCHEMA = {
   type: 'object',
   required: ['findings'],
@@ -127,7 +145,7 @@ const deduped = all.filter(f => {
 })
 const blocking = deduped.filter(f => f.severity === 'blocking')
 const advisory = deduped.filter(f => f.severity === 'advisory')
-log(`${deduped.length} findings (${blocking.length} blocking, ${advisory.length} advisory) from ${covered.length}/${LENSES.length} lenses`)
+log(`${deduped.length} findings before verification (${blocking.length} blocking candidates, ${advisory.length} advisory) from ${covered.length}/${LENSES.length} lenses`)
 
 // ---------------------------------------------------------------------------
 // Phase 2 — adversarial verification of blocking findings only. Two refuters
@@ -140,7 +158,7 @@ const REFUTERS = [
 ]
 
 const verified = await parallel(
-  blocking.map(f => () =>
+  blocking.map((f, idx) => () =>
     parallel(
       REFUTERS.map((lens, i) => () =>
         agent(
@@ -152,7 +170,7 @@ A reviewer raised this BLOCKING finding on the plan:
 Try to REFUTE it through this lens — ${lens}
 Read the actual code and docs; quote what you found. Default to refuted=true only with evidence that
 the finding is wrong or already handled; otherwise refuted=false with the reason.`,
-          { label: `verify:${f.lens}:${i}`, phase: 'Verify', schema: VERDICT_SCHEMA, agentType: 'ship-verifier' },
+          { label: `verify:B${idx + 1}:${f.lens}:${i}`, phase: 'Verify', schema: VERDICT_SCHEMA, agentType: 'ship-verifier' },
         ),
       ),
     ).then(votes => {
@@ -171,10 +189,17 @@ the finding is wrong or already handled; otherwise refuted=false with the reason
 const confirmed = verified.filter(Boolean).filter(v => v.confirmed)
 const refuted = verified.filter(Boolean).filter(v => !v.confirmed && !v.unverified)
 const unverified = verified.filter(Boolean).filter(v => v.unverified)
-if (unverified.length) log(`${unverified.length} blocking finding(s) could not be verified (listed as unverified, not refuted)`)
+// A finding whose refuters did not return is NOT cleared: it stays blocking
+// until the orchestrator checks it. On the first live run one such finding —
+// a deleted error surface rendered as a permanent aria-hidden shimmer — was
+// real, and a verdict keyed on `confirmed` alone would have cleared the plan.
+if (unverified.length) log(`${unverified.length} blocking finding(s) got no refuter answer — kept as blocking (unverified), not refuted`)
+if (advisory.length > 15) log(`advisory truncated to 15: ${advisory.length - 15} dropped`)
+const verdict = confirmed.length + unverified.length === 0 ? 'no-blocking-objection' : 'revise-plan'
+log(`verdict ${verdict}: ${confirmed.length} blocking confirmed, ${unverified.length} unverified, ${refuted.length} refuted, ${Math.min(advisory.length, 15)} advisory`)
 
 return {
-  verdict: confirmed.length === 0 ? 'no-blocking-objection' : 'revise-plan',
+  verdict,
   lenses_covered: covered.map(c => c.lens),
   lenses_missing: missing,
   blocking: confirmed,

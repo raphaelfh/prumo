@@ -197,7 +197,7 @@ branch. Fix throughput without weakening the gate:
 ## Compaction
 
 When compacting, always preserve: the active `/ship-spec` ceiling and
-run-state path (`.superpowers/sdd/<plan>/state`); the spec, plan and
+run-state path (`<main>/.superpowers/ship-spec/<basename>/state`); the spec, plan and
 ledger paths; the list of modified files; every test or gate command
 with its last result and the SHA it ran on; open questions and rulings.
 Drop raw tool output — it is in the ledger or the gate log. After a

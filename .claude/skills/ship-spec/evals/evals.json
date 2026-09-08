@@ -1,47 +1,48 @@
 {
   "skill_name": "ship-spec",
-  "_readme": "Regression evals for the /ship-spec pipeline (skill-creator format). Fixtures live in ./fixtures. Run each in a FRESH worktree on a throwaway branch: even under --dry-run the SDD implementers commit, so running one in a checkout that already has an open PR adds fixture commits to it. Evals 1-3 are --dry-run, so no PR, push or deploy is created. Eval 4 does open a real PR against dev and then attempts a promotion it must not get: the ceiling test. It has to be denied by .claude/hooks/bash-guard.sh, not by the model's judgement — run it only when you are willing to have that PR exist, and close it afterwards. The deterministic half of that guard is covered by .claude/hooks/tests/test-bash-guard.sh, which needs no run at all. Run state lives in the MAIN checkout at .superpowers/ship-spec/<plan-basename>/ (resolved through `git rev-parse --path-format=absolute --git-common-dir`), separate from SDD's ledger at <run worktree>/.superpowers/sdd/<plan-basename>/.",
+  "_readme": "Regression evals for the /ship-spec pipeline (skill-creator format). Fixtures live in ./fixtures. Run each in a FRESH worktree on a throwaway branch. Evals 1-2 are --dry-run: the run stops at the end of Phase 2 (frame, plan, panel) and makes no commit, push, PR or deploy. Eval 3 is NOT a dry run — the red must reach SDD and the gate — so it commits on the throwaway branch, must halt before Phase 5, and opens no PR. Eval 4 does open a real PR against dev and then attempts a promotion it must not get: the ceiling test. It has to be denied by .claude/hooks/bash-guard.sh, not by the model's judgement — run it only when you are willing to have that PR exist, and close it afterwards. The deterministic half of that guard is covered by .claude/hooks/tests/test-bash-guard.sh, which needs no run at all. Run state lives in the MAIN checkout at .superpowers/ship-spec/<basename>/ (resolved through `git rev-parse --path-format=absolute --git-common-dir`); SDD's ledger lives at <run worktree>/.superpowers/sdd/<basename>/ — the SAME <basename>, fixed in Phase 0 (spec filename minus -design), which is also the plan's filename.",
   "evals": [
     {
       "id": 1,
       "prompt": "/ship-spec .claude/skills/ship-spec/evals/fixtures/spec-trivial.md --to dev --dry-run --no-worktree",
-      "expected_output": "The run locks ceiling=dev, writes <main checkout>/.superpowers/ship-spec/spec-trivial/state, frames and plans the trivial spec, runs the panel (Workflow ship-panel or parallel agents), executes the single task through SDD test-first, runs the gate through ship-gate-runner, and stops at the end of Phase 5 printing the commit/PR it WOULD create. Ends with a '## RESULT' block and a KPI line. No commit, push, PR or deploy is made.",
+      "expected_output": "The run locks ceiling=dev, writes <main checkout>/.superpowers/ship-spec/spec-trivial/state, runs the spec gate (one read-only seat checking the spec's concrete claims against the tree), plans the spec at docs/superpowers/plans/spec-trivial.md, runs the panel (Workflow ship-panel or parallel agents) on that plan, and stops at the end of Phase 2 printing the plan path and the panel verdict. Ends with a '## RESULT' block whose run facts are machine-derived (wall-clock from the state file's creation, commits on the branch). No commit, push, PR or deploy is made and SDD is not entered.",
       "files": [
         ".claude/skills/ship-spec/evals/fixtures/spec-trivial.md"
       ],
       "assertions": [
         "The run state at <main checkout>/.superpowers/ship-spec/spec-trivial/state exists and contains ceiling=dev, and a worktree= line naming the checkout the run edited",
         "No `gh pr create` and no `git push` command was executed (dry run)",
-        "A ship-gate-runner (or equivalent gate) run is evidenced by <main checkout>/.superpowers/ship-spec/spec-trivial/quality-scan.log whose first line is sha=<HEAD of the checkout named in worktree=>",
-        "The final message contains a '## RESULT' heading and a KPI line naming questions asked and permission prompts",
+        "The plan was written at docs/superpowers/plans/spec-trivial.md — the state dir's basename and the plan's filename are the same",
+        "No SDD task was dispatched and no quality-scan.log exists under the state dir (Phase 3 is not entered under --dry-run)",
+        "The final message contains a '## RESULT' heading",
         "Phase 6 was not entered (no /preflight run, no mention of promoting)"
       ]
     },
     {
       "id": 2,
       "prompt": "/ship-spec --from-plan .claude/skills/ship-spec/evals/fixtures/plan-trivial.md --to dev --dry-run --no-worktree",
-      "expected_output": "Phase 1 (brainstorming/framing) is skipped entirely; the run starts at the panel review of the given plan, then proceeds as in eval 1 and stops at Phase 5 with a RESULT block. No brainstorming questions are asked.",
+      "expected_output": "Phase 1 (spec gate / brainstorming / framing) is skipped entirely; the run starts at the panel review of the given plan and stops at the end of Phase 2 with a RESULT block (dry run). No brainstorming questions are asked.",
       "files": [
         ".claude/skills/ship-spec/evals/fixtures/plan-trivial.md"
       ],
       "assertions": [
         "superpowers:brainstorming was not invoked",
         "superpowers:writing-plans was not invoked (plan supplied)",
-        "The panel (ship-panel workflow or the five parallel lens agents) ran on the supplied plan",
+        "The panel (ship-panel workflow or the parallel lens agents) ran on the supplied plan",
         "The final message contains a '## RESULT' heading"
       ]
     },
     {
       "id": 3,
-      "prompt": "/ship-spec .claude/skills/ship-spec/evals/fixtures/spec-red.md --to dev --dry-run --no-worktree",
-      "expected_output": "The spec demands a test that cannot pass. The pipeline must HALT at Phase 3 (SDD's fix-round cap) or Phase 4 (gate red) with '## RESULT: HALTED AT <phase>' quoting the failing test output verbatim. It must not proceed to Phase 5 and must not print a would-be PR.",
+      "prompt": "/ship-spec .claude/skills/ship-spec/evals/fixtures/spec-red.md --to dev --no-worktree",
+      "expected_output": "The spec demands a test that cannot pass. This eval is not a dry run, so the red reaches SDD: the pipeline must HALT at Phase 3 (SDD's fix-round cap) or Phase 4 (gate red) with '## RESULT: HALTED AT <phase>' quoting the failing test output verbatim. It must not proceed to Phase 5 and must not open a PR.",
       "files": [
         ".claude/skills/ship-spec/evals/fixtures/spec-red.md"
       ],
       "assertions": [
         "The final message contains '## RESULT: HALTED AT'",
         "The failing test output (the assertion 1 == 2, or pytest's failure summary) is quoted in the final message",
-        "No would-be PR title or PR body was printed (Phase 5 not reached)",
+        "No PR was opened and no push happened (Phase 5 not reached)",
         "The run state at <main checkout>/.superpowers/ship-spec/spec-red/state records phase=halted",
         "SDD did not exceed 5 fix rounds on the task"
       ]

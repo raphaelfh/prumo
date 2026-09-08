@@ -182,6 +182,14 @@ supabase/.branches/*
 # it instead would put agent notes in the diff of unrelated PRs and conflict
 # across concurrent worktrees. Per-developer, like graphify-out/.
 .claude/agent-memory/
+# Hand-copied ports of the pipeline to other harnesses. Two of these (.agents/,
+# .codex/) appeared on 2026-09-08 as untracked snapshots of a pre-#858
+# `/ship-spec`, still carrying a `--confirm-promote` flag, a `ship-gate-runner`
+# seat and a `phase=halted first` rule that the real skill had already retired.
+# A copy cannot be kept honest by discipline. `.claude/` is the single source;
+# if another harness is ever needed, GENERATE it and gate the drift in CI.
+.agents/
+.codex/
 graphify-out/*
 # `graphify hook install` output — per developer, never committed: with
 # core.hooksPath=.githooks it warns on every commit for anyone without graphify.

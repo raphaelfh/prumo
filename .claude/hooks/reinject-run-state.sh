@@ -30,14 +30,23 @@ for f in "$ROOT"/.superpowers/ship-spec/*/state; do
   ctx="${ctx}ACTIVE /ship-spec RUN — ${dir}
 $(cat "$f")
 "
-  for ledger in "$wt/.superpowers/sdd/$slug/progress.md" "$ROOT/.superpowers/sdd/$slug/progress.md"; do
-    if [ -f "$ledger" ]; then
-      ctx="${ctx}--- ledger tail ($ledger, last 40 lines) ---
+  ledger=""
+  for cand in "$wt/.superpowers/sdd/$slug/progress.md" "$ROOT/.superpowers/sdd/$slug/progress.md"; do
+    [ -f "$cand" ] && { ledger="$cand"; break; }
+  done
+  # SDD keys its workspace off the PLAN basename; the state is keyed off the
+  # basename fixed in Phase 0. When they diverge (a `*-design.md` spec whose
+  # plan drops the suffix) the exact path misses, and a compacted session
+  # would resume a run with no memory — this hook's state for 4.5 h on
+  # 2026-09-07. Fall back to the newest ledger in the run worktree.
+  if [ -z "$ledger" ]; then
+    ledger=$(ls -t "$wt"/.superpowers/sdd/*/progress.md 2>/dev/null | head -1)
+  fi
+  if [ -n "$ledger" ] && [ -f "$ledger" ]; then
+    ctx="${ctx}--- ledger tail ($ledger, last 40 lines) ---
 $(tail -40 "$ledger")
 "
-      break
-    fi
-  done
+  fi
 done
 
 [ -z "$ctx" ] && exit 0

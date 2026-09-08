@@ -194,7 +194,20 @@ capture exit code + last 20 lines of stdout+stderr:
   2. npm run test:run
   3. npm run test:e2e:local
 
-Any non-zero exit → FAIL. All zero → PASS.
+Any non-zero exit → FAIL. All zero → PASS — with ONE attribution rule:
+
+  If command 3 (`test:e2e:local`) is the only failure AND the failing
+  case belongs to the `local-hitl` Playwright project (the stateful HITL
+  suites that share one fixture triple on this machine's shared Supabase
+  stack), check the clean room for the same commit:
+    gh run list --commit "$(git rev-parse HEAD)" --workflow ci.yml --json conclusion,url,headSha --limit 1
+  If that run concluded `success` — the identical suite passed on an
+  ephemeral stack on the exact SHA under test — the local e2e failure is
+  environmental: return WARN with summary "e2e red on shared local
+  stack; identical suite green in CI on <sha>: <url>" and the failing
+  case in evidence. Any other outcome stays FAIL. Never skip the local
+  run because CI is green: run it, and only downgrade a failure that has
+  a clean-room counterexample on the same commit.
 
 Return ONLY the following YAML block (no prose before or after):
 
