@@ -76,4 +76,21 @@ ok "failure wins over pending" "$(_ci_verdict 'Backend Lint' "$RUNS_MIXED")" "RE
 RUNS_CANCELLED=$'Backend Lint\tcompleted\tcancelled'
 ok "cancelled counts as red" "$(_ci_verdict 'Backend Lint' "$RUNS_CANCELLED")" "RED:Backend Lint"
 
+echo "# gate"
+# The gate log must be addressed to HEAD and must carry its own TERMINAL
+# marker. A seat cut off mid-run leaves a correct sha= line and no marker;
+# that passed the Stop hook twice on 2026-09-07.
+bash "$SHIP" phase harden >/dev/null
+LOG="$SANDBOX/.superpowers/ship-spec/demo/gate.log"
+SHIP_GATE_CMD="true" bash "$SHIP" gate >/dev/null 2>&1
+ok "gate log first line is the HEAD sha" "$(sed -n '1s/^sha=//p' "$LOG")" "$(git -C "$SANDBOX" rev-parse HEAD)"
+ok "gate log ends with its marker"       "$(tail -1 "$LOG")"                "GATE_EXIT=0"
+
+SHIP_GATE_CMD="false" bash "$SHIP" gate >/dev/null 2>&1
+ok "red gate exits non-zero"   "$?"                "1"
+ok "red gate records its exit" "$(tail -1 "$LOG")" "GATE_EXIT=1"
+
+SHIP_GATE_CMD="echo hello; true" bash "$SHIP" gate >/dev/null 2>&1
+ok "gate captures command output" "$(grep -c '^hello$' "$LOG")" "1"
+
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]

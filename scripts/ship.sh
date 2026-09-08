@@ -179,12 +179,47 @@ cmd_ci() {
   printf '%s@%s%s\n' "$kind" "$sha" "$rest"
 }
 
+# The FAST local subset, not the full gate. `.githooks/pre-push` already
+# defines this policy in its own header — ruff/tsc on the layers that changed,
+# heavy gates in CI — and /ship-spec was the only place in the repo
+# contradicting it. Moving the arbiter to CI also retires three friction
+# classes the first prod run paid for: a leftover fixture on the SHARED local
+# Supabase, the markdownlint blind spot, and re-gating a four-minute scan on
+# every docs commit.
+#
+# The log carries a terminal GATE_EXIT marker because a truncated log with a
+# correct sha= first line passed the Stop hook twice on 2026-09-07. A consumer
+# treats a missing marker as failure.
+#
+# SHIP_GATE_CMD exists so the sandboxed test can drive the log format without
+# a toolchain; it is not a production escape hatch.
+cmd_gate() {
+  local f wt log rc
+  f=$(_active) || return 1
+  wt=$(_get "$f" worktree); [ -d "$wt" ] || wt=$ROOT
+  log="$(dirname "$f")/gate.log"
+  {
+    printf 'sha=%s\n' "$(git -C "$wt" rev-parse HEAD)"
+    if [ -n "${SHIP_GATE_CMD:-}" ]; then
+      ( cd "$wt" && eval "$SHIP_GATE_CMD" 2>&1 )
+    else
+      ( cd "$wt" && bash .githooks/pre-push 2>&1 )
+    fi
+    rc=$?
+    printf 'GATE_EXIT=%s\n' "$rc"
+  } >"$log"
+  rc=$(sed -n 's/^GATE_EXIT=//p' "$log" | tail -1)
+  tail -20 "$log"
+  return "${rc:-1}"
+}
+
 # Let the test source this file for its pure functions without running a verb.
 if [ "${1:-}" = "--source-only" ]; then return 0 2>/dev/null || exit 0; fi
 
 case ${1:-} in
   init)  shift; cmd_init "$@" ;;
   ci)    shift; cmd_ci "$@" ;;
+  gate)  shift; cmd_gate "$@" ;;
   phase) shift; cmd_phase "$@" ;;
   halt)  shift; cmd_halt "$@" ;;
   done)  shift; cmd_done "$@" ;;
