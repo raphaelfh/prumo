@@ -545,3 +545,96 @@ a plan will fail CI on its own artefact, and only discover it after the PR is op
 line matches the current HEAD. Fixing docs moves HEAD, which invalidates a
 four-minute gate run that could not have covered the docs lane anyway. This run
 paid that cost twice.
+
+## 2026-09-07T20:40Z — Phase 6 — preflight RED on a dirty shared stack, not on the code
+
+**Expected.** `dev` CI green on the merge commit, so `/preflight` would be GREEN
+and the promotion would proceed.
+
+**Happened.** Preflight came back RED on one gate. `local-tests` failed a single
+Playwright case — `qa-flow.ui.e2e.ts:31`, waiting for a
+`start consensus|finish assessment` button that was never going to appear.
+
+The captured accessibility tree explains it completely: the run was **already
+Finalized and Published** — `button "Run status: Finalized"`, `text: Published —
+read-only. Reopen to edit.`, `button "Reopen for revision"`, every input
+`[disabled]`. That is leftover fixture state on a local Supabase stack this
+machine shares across sessions, and it survived Playwright's own retry, so it is
+persistent rather than flaky.
+
+Four independent things say it is not this change: CI ran the *identical* command
+(`npm run test:e2e:local`, `local-hitl` included) on this exact commit against an
+ephemeral self-provisioned stack and passed in 6m34s; the diff touches no
+QA/HITL/session file; the failing page is a full-screen run route on
+`RunWorkspaceShell`, explicitly out of scope per spec §3.3 and never wrapped by
+`AppShell`; and `playwright.config.ts:100-105` documents this exact hazard in its
+own comment.
+
+**Action.** Recorded `preflight=RED@36690b03`, set `phase=halted`, did not attempt
+the promotion. Deliberately did **not** take either of the two shortcuts
+available: resetting the shared QA fixture to manufacture a green (it would have
+worked, and it would have disturbed other sessions on the same stack), or
+hand-editing the verdict in `state`. Both defeat the gate the user installed.
+
+**Skill gap — preflight has no clean-room notion.** `local-tests` runs the
+stateful HITL suite against whatever local stack happens to exist, while the
+repo's own CI runs the same suite against an ephemeral one precisely because the
+shared stack cannot be trusted. So preflight's most failure-prone gate is
+structurally *less* trustworthy than a signal it already has available. It should
+either consult the CI run for the commit under test, or say plainly that a
+`local-hitl` failure on a shared stack is not attributable without a differential.
+
+**Second gap.** A RED preflight is defined as terminal, with no way to record
+"RED, attributed to the environment, here is the clean-room evidence". The
+orchestrator's only options are to halt or to fake it. That asymmetry is worth
+fixing, because the second option is always available and always cheaper.
+
+## 2026-09-07T23:35Z — Phase 7 — verifying prod, and three things the gate would have missed
+
+**Expected.** Wait for the deploy, `/health` 200, re-run the smoke, check the
+bundle hash. Done.
+
+**Happened.** All of that, plus three checks the prescribed list does not contain,
+each of which could have hidden a broken production:
+
+1. **The bundle hash proves nothing.** Prod served
+   `/assets/index-DuPObT8k.js` while my local build of the same source produced
+   `index-C55uRsKF.js` — Vercel bakes different env, so hashes legitimately
+   differ and a hash comparison is not evidence either way. What *is* evidence is
+   content: I fetched the prod `copy-*.js` chunk and found `"No active projects"`
+   (added in the very last commit), `"Unknown project"`, `"Could not load
+   project"` — and, decisively, **zero** occurrences of `"No additional
+   description"`, the string this change deleted. An older build would still
+   carry it. Absence is the stronger proof and the skill never asks for it.
+
+2. **CORS on a brand-new endpoint.** The smoke checks `/health` and the frontend;
+   it does not check that the new route is reachable *from the frontend's origin*.
+   A new endpoint plus a cross-origin SPA is a real split-brain risk. OPTIONS
+   preflight from `https://prumoai.vercel.app` returned 200 with `PATCH` in
+   allow-methods and `authorization` in allow-headers, matched by a control
+   preflight against a pre-existing endpoint.
+
+3. **My own probe was wrong before the app was.** I first probed
+   `/openapi.json`, got zero paths, and briefly had evidence pointing at a broken
+   deploy. The app serves it at `{API_V1_PREFIX}/openapi.json` (`main.py:138`).
+   The correct URL showed 70 paths including
+   `PATCH /api/v1/projects/{project_id}/archive` with both new schemas. Worth
+   recording because the failure mode — a verification probe that is itself
+   wrong — reads exactly like a real regression, and the independent 401-vs-404
+   route probe is what disambiguated it.
+
+**And one gap I closed rather than reported.** Nothing in the whole pipeline had
+exercised archive end-to-end: the unit tests mock the API client, and the E2E
+suite has no archive case. I drove it through the real UI against the real
+backend — ⋯ menu → Archive → row leaves Active → appears under Archived, badged →
+Restore → back in Active. It passed, and I verified before and after that no
+project was left archived. That run also confirmed something previously only
+asserted against a mock: `canManage` renders the menu on every row, so the
+embedded member-role read works against a real PostgREST.
+
+**Skill gap.** Phase 7's checklist is deploy-shaped (health, smoke, bundle hash)
+rather than change-shaped. Nothing in it asks "what did this change actually add,
+and is *that* live?" For an API change it says to probe openapi or do the
+401-vs-404 probe — good — but it has nothing about CORS for a new route, nothing
+about proving removed code is gone, and nothing about exercising the feature.
+The three most convincing pieces of evidence in this run were all outside it.
