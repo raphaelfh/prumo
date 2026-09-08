@@ -13,7 +13,7 @@ vi.mock('@/components/layout/ProjectSidebar', () => ({
 // The footer pulls in the authed user menu; not under test here.
 vi.mock('@/components/layout/SidebarFooter', () => ({ SidebarFooter: () => null }));
 vi.mock('@/hooks/useProjectsList', () => ({
-  useProjectsList: () => ({ projects: [], loading: false, switchProject: vi.fn() }),
+  useProjectsList: () => ({ projects: [], loading: false, isError: false, retry: vi.fn(), switchProject: vi.fn() }),
 }));
 
 const headerValue = {

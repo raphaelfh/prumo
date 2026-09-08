@@ -65,10 +65,10 @@ describe('AppBreadcrumb', () => {
         expect(crumbs.querySelector('.animate-pulse')).toHaveAttribute('aria-hidden', 'true');
     });
 
-    it('failed — says the project could not be loaded, and stops shimmering', () => {
+    it('failed — says the breadcrumb itself could not resolve a name, and stops shimmering', () => {
         const crumbs = renderAt('/projects/p1', FAILED);
 
-        expect(crumbs).toHaveTextContent('Could not load project');
+        expect(crumbs).toHaveTextContent('Project name unavailable');
         expect(crumbs.querySelector('.animate-pulse')).toBeNull();
     });
 
@@ -76,7 +76,7 @@ describe('AppBreadcrumb', () => {
         const crumbs = renderAt('/projects/p1', NOT_IN_LIST);
 
         expect(crumbs).toHaveTextContent('Unknown project');
-        expect(crumbs).not.toHaveTextContent('Could not load project');
+        expect(crumbs).not.toHaveTextContent('Project name unavailable');
         expect(crumbs.querySelector('.animate-pulse')).toBeNull();
     });
 
