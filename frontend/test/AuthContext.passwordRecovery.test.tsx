@@ -1,5 +1,6 @@
 import {describe, expect, it, vi, beforeEach} from 'vitest';
 import {act, render, screen, waitFor} from '@testing-library/react';
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {MemoryRouter, useLocation} from 'react-router';
 
 /**
@@ -43,13 +44,17 @@ function LocationProbe() {
 // validateSessionForEnv, which is not what this test is about.
 const recoverySession = {user: {id: 'u1'}};
 
+// AuthProvider drops the query cache when the signed-in account changes, so
+// it reads the client off context (see AuthContext.identityCacheReset).
 const renderAt = (path: string) =>
   render(
-    <MemoryRouter initialEntries={[path]}>
-      <AuthProvider>
-        <LocationProbe />
-      </AuthProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={[path]}>
+        <AuthProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 
 const emit = async (event: string) => {
