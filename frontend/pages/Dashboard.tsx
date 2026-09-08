@@ -113,7 +113,7 @@ export default function Dashboard() {
   // rather than duplicating the tablist — two `role="tab"` sets with the same
   // names would be two entries in the a11y tree, and ambiguous to query.
   const header = (
-    <div className={cn("@container/hubbar sticky top-0 z-10 shrink-0 border-b border-border/40 bg-background/80 backdrop-blur-md", GUTTER)}>
+    <div className={cn("@container/hubbar shrink-0 border-b border-border/40 bg-background/80 backdrop-blur-md", GUTTER)}>
       <div className="flex min-h-12 flex-wrap items-center gap-2 py-1.5 @[34rem]/hubbar:flex-nowrap @[34rem]/hubbar:py-0">
         <ListToolbarSearch
           placeholder={t('pages', 'dashboardSearchPlaceholder')}

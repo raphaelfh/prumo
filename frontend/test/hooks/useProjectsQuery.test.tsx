@@ -7,9 +7,10 @@
  *    of the stale-cache defect (ledger discrepancy I) an invalidation test
  *    cannot see: `invalidateQueries` was always being called, and nothing was
  *    subscribed to the key it named.
- * 2. The entry is keyed by the caller, so an in-tab account switch cannot
- *    serve user A's rows to user B out of a module-scope QueryClient that
- *    nothing clears on sign-out.
+ * 2. The entry is keyed by the caller, so the two accounts in one tab land in
+ *    separate entries. The cache-wide reset at the identity boundary is what
+ *    actually contains that leak (AuthContext.identityCacheReset.test.tsx);
+ *    this pins the key shape the invalidators depend on.
  * 3. The query waits for an identity instead of fetching under an empty one —
  *    otherwise a disabled query and an empty account look identical downstream.
  * 4. A FAILED read is reported as a failure, not as an empty list. `projects`

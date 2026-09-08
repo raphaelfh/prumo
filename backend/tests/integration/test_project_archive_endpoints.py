@@ -78,13 +78,19 @@ async def test_a_reviewer_is_refused_and_the_row_is_untouched(
 
 @pytest.mark.asyncio
 async def test_an_outsider_is_refused_on_a_real_project(
-    client_as_outsider: AsyncClient,
+    db_session: AsyncSession, client_as_outsider: AsyncClient
 ) -> None:
     """A REAL project id, so this proves membership is checked — not just id validity."""
+    before = await _is_active(db_session, SEED.primary_project)
+
     res = await client_as_outsider.patch(
         _URL.format(pid=SEED.primary_project), json={"archived": True}
     )
+
     assert res.status_code == 403, res.text
+    # Refused, not merely un-echoed: assert the row, not the response.
+    assert await _is_active(db_session, SEED.primary_project) is before
+    await db_session.rollback()
 
 
 @pytest.mark.asyncio

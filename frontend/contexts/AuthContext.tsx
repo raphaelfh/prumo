@@ -1,9 +1,11 @@
-import {createContext, ReactNode, useContext, useEffect, useState} from "react";
+import {createContext, ReactNode, useContext, useEffect, useRef, useState} from "react";
+import {useQueryClient} from "@tanstack/react-query";
 import {Session, User} from "@supabase/supabase-js";
 import {supabase} from "@/integrations/supabase/client";
 import {IS_LOCAL_SUPABASE, SUPABASE_ENV, SUPABASE_EXPECTED_ISSUER, SUPABASE_STORAGE_KEY,} from "@/config/supabase-env";
 import {useNavigate} from "react-router";
 import {RESET_PASSWORD_PATH} from "@/lib/routes";
+import {useBackgroundJobs} from "@/stores/useBackgroundJobs";
 
 const ALLOWED_ALGS = IS_LOCAL_SUPABASE
   ? new Set(["HS256", "RS256", "ES256"])
@@ -70,8 +72,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  // The account the query cache currently holds data for; null while signed
+  // out, which is also how the tab starts.
+  const cachedIdentity = useRef<string | null>(null);
 
   useEffect(() => {
+    /**
+     * Announce the account the client state now belongs to, and drop what
+     * belonged to the previous one.
+     *
+     * One tab keeps its client state for as long as it is open — the
+     * QueryClient is built at module scope (App.tsx), the job store is a
+     * module-scope zustand store — and sign-out is a client-side navigate()
+     * that tears nothing down. TanStack serves a cache hit synchronously
+     * during render and every query here carries a staleTime, so the next
+     * account paints the previous account's rows with no refetch to correct
+     * them; the bell reads the same persisted jobs whatever remounts around
+     * it. Scoping a key or a component by user id fixes one of those; this is
+     * the one boundary that fixes the cause, and a second one elsewhere would
+     * drift from it.
+     *
+     * It runs inside the auth notification rather than in an effect watching
+     * `user`, because the reset has to land before React renders anything
+     * under the new identity — an effect fires only after the render that has
+     * already read the stale state.
+     *
+     * The two guards below are deliberately NOT the same, because the state
+     * they protect is not the same:
+     *
+     *   - The query cache is in memory, so a fresh page load legitimately
+     *     starts empty and the ref here is the right record. Adopting the
+     *     same account again must not clear: getSession() and the listener
+     *     report the same session from two paths, and auth-js re-emits for
+     *     the same user on every refresh, on visibilitychange and on every
+     *     broadcast from another tab — clearing on those would drop rows the
+     *     signed-in user is still reading. A tab that boots straight into a
+     *     session does clear once, before setUser, on a cache no observer has
+     *     reached yet.
+     *
+     *   - The background jobs are PERSISTED, precisely so they survive a
+     *     reload, and a reload re-announces the same account from a clean
+     *     slate. This ref would read that as a change of account and throw
+     *     away the import the user is watching, so the comparison lives in
+     *     the store instead, against an ownerId persisted with the jobs.
+     */
+    const adoptIdentity = (userId: string | null) => {
+      // Compares against its own persisted record; see above.
+      useBackgroundJobs.getState().adoptOwner(userId);
+
+      const previous = cachedIdentity.current;
+      cachedIdentity.current = userId;
+      if (previous === userId) return;
+      queryClient.clear();
+    };
+
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -91,12 +146,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
           clearStoredSession();
           void supabase.auth.signOut();
+          adoptIdentity(null);
           setSession(null);
           setUser(null);
           setLoading(false);
           return;
         }
 
+        adoptIdentity(session?.user?.id ?? null);
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
@@ -131,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearStoredSession();
         supabase.auth.signOut();
       }
+      adoptIdentity(envCheck.valid ? session?.user?.id ?? null : null);
       setSession(envCheck.valid ? session : null);
       setUser(envCheck.valid ? session?.user ?? null : null);
       setLoading(false);

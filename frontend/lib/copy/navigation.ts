@@ -43,7 +43,7 @@ export const navigation = {
     notifProjectCompletedMessage: 'The project was completed successfully',
     topbarBrandFull: 'Prumo',
     breadcrumbAria: 'Breadcrumb',
-    breadcrumbProjectLoadFailed: 'Could not load project',
+    breadcrumbProjectLoadFailed: 'Project name unavailable',
     breadcrumbProjectNotFound: 'Unknown project',
     ariaOpenMenu: 'Open menu',
     ariaExpandSidebar: 'Expand sidebar',
