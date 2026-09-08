@@ -111,4 +111,26 @@ git -C "$SANDBOX" checkout -q feature/x
 bash "$SHIP" dev >/dev/null 2>&1
 ok "a title is required" "$?" "2"
 
+echo "# preflight-record: a ruling the model may make, bounded by a fact it may not"
+ST="$SANDBOX/.superpowers/ship-spec/demo/state"
+bash "$SHIP" preflight-record GREEN deadbeef >/dev/null 2>&1
+ok "GREEN without a green CI is refused" "$?" "1"
+
+bash "$SHIP" preflight-record RED deadbeef >/dev/null 2>&1
+ok "RED needs no CI evidence" "$?" "0"
+
+grep -v '^ci=' "$ST" > "$ST.tmp" && mv "$ST.tmp" "$ST"
+printf 'ci=GREEN@deadbeef\n' >> "$ST"
+bash "$SHIP" preflight-record GREEN cafebabe >/dev/null 2>&1
+ok "GREEN for a DIFFERENT sha is refused" "$?" "1"
+bash "$SHIP" preflight-record GREEN deadbeef >/dev/null 2>&1
+ok "GREEN matching the green CI is accepted" "$?" "0"
+ok "preflight recorded" "$(state preflight)" "GREEN@deadbeef"
+
+echo "# facts: every line measured, none authored"
+yes_ "facts stamps now= from the clock"  "$(bash "$SHIP" facts | sed -n 's/^now=//p')"
+yes_ "facts reads the state mtime"       "$(bash "$SHIP" facts | sed -n 's/^state_mtime=//p')"
+ok   "facts reports a measured commit count" "$(bash "$SHIP" facts | sed -n 's/^commits=//p')" "0"
+yes_ "facts echoes the recorded ceiling" "$(bash "$SHIP" facts | sed -n 's/^ceiling=//p')"
+
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]

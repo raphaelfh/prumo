@@ -260,6 +260,46 @@ cmd_dev() {
   echo "$pr"
 }
 
+# A ruling the model IS allowed to make, bounded by a fact it is not: the model
+# decides whether a preflight note is benign (a `local-tests` WARN it can
+# attribute to the shared local stack, say). It cannot record GREEN over a CI
+# verdict that is not green on the same commit. RED needs no evidence — you may
+# always report worse than the machine can prove.
+cmd_preflight_record() {
+  local f verdict=${1:-} sha=${2:-} ci
+  case "$verdict" in
+    GREEN|RED) ;;
+    *) echo "usage: ship.sh preflight-record <GREEN|RED> [sha]" >&2; return 2 ;;
+  esac
+  f=$(_active) || return 1
+  [ -n "$sha" ] || sha=$(git -C "$ROOT" rev-parse origin/dev 2>/dev/null)
+  if [ "$verdict" = GREEN ]; then
+    ci=$(_get "$f" ci)
+    if [ "$ci" != "GREEN@$sha" ]; then
+      echo "ship preflight-record: refusing GREEN@$sha while ci is '${ci:-none}'. Run 'ship ci $sha' first; red or unknown evidence never promotes." >&2
+      return 1
+    fi
+  fi
+  _set "$f" preflight "$verdict@$sha"
+  _get "$f" preflight
+}
+
+# Every line here is MEASURED. The v2 skill asserted its run facts were "every
+# one machine-derived" and they were not — saying so was the only thing making
+# it true, and 8+ of them were up to 43 minutes wrong. Paste this; never retype
+# it.
+cmd_facts() {
+  local f wt; f=$(_active) || return 1
+  wt=$(_get "$f" worktree); [ -d "$wt" ] || wt=$ROOT
+  grep -E '^(ceiling|phase|started|ended|ci|preflight|pr|train|reason)=' "$f"
+  printf 'now=%s\n' "$(_clock)"
+  printf 'state_mtime=%s\n' "$(date -u -r "$f" +%FT%TZ 2>/dev/null)"
+  printf 'gate_log_sha=%s\n' "$(sed -n '1s/^sha=//p' "$(dirname "$f")/gate.log" 2>/dev/null)"
+  printf 'gate_log_exit=%s\n' "$(sed -n 's/^GATE_EXIT=//p' "$(dirname "$f")/gate.log" 2>/dev/null | tail -1)"
+  printf 'commits=%s\n' "$(git -C "$wt" rev-list --count origin/dev..HEAD 2>/dev/null || echo 0)"
+  git -C "$wt" log --oneline origin/dev..HEAD 2>/dev/null | sed 's/^/commit: /'
+}
+
 # Let the test source this file for its pure functions without running a verb.
 if [ "${1:-}" = "--source-only" ]; then return 0 2>/dev/null || exit 0; fi
 
@@ -268,6 +308,8 @@ case ${1:-} in
   ci)    shift; cmd_ci "$@" ;;
   gate)  shift; cmd_gate "$@" ;;
   dev)   shift; cmd_dev "$@" ;;
+  preflight-record) shift; cmd_preflight_record "$@" ;;
+  facts) shift; cmd_facts "$@" ;;
   phase) shift; cmd_phase "$@" ;;
   halt)  shift; cmd_halt "$@" ;;
   done)  shift; cmd_done "$@" ;;
