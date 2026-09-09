@@ -209,13 +209,23 @@ export function ArticleFieldRow({
         }
     };
 
-    const handleBlur = () => {
+    /**
+     * Shared entry point for every exit-path `onBlur`. Removing the
+     * still-focused control from the DOM (which `commit()`/`revert()`
+     * trigger via `setEditing(false)`) fires a second, synchronous native
+     * blur in real browsers -- see the `suppressBlurRef` comment above.
+     * Routing every control's blur through this one guard means a new
+     * control added later cannot forget to consult it.
+     */
+    const guardedBlur = (onRealBlur: () => void) => {
         if (suppressBlurRef.current) {
             suppressBlurRef.current = false;
             return;
         }
-        commit(draft);
+        onRealBlur();
     };
+
+    const handleBlur = () => guardedBlur(() => commit(draft));
 
     /**
      * Blur handler for the `control='select'` trigger. Skips the revert
@@ -223,14 +233,11 @@ export function ArticleFieldRow({
      * option -- which blurs the trigger on its way to `onValueChange` --
      * does not revert the row out from under the commit.
      */
-    const handleSelectBlur = () => {
-        if (suppressBlurRef.current) {
-            suppressBlurRef.current = false;
-            return;
-        }
-        if (selectOpenRef.current) return;
-        revert();
-    };
+    const handleSelectBlur = () =>
+        guardedBlur(() => {
+            if (selectOpenRef.current) return;
+            revert();
+        });
 
     const resolvedSwitchLabels = switchLabels ?? {
         on: t("articles", "switchOn"),
@@ -281,7 +288,7 @@ export function ArticleFieldRow({
                                     revert({ refocus: true });
                                 }
                             }}
-                            onBlur={() => revert()}
+                            onBlur={() => guardedBlur(() => revert())}
                         />
                     ) : control === "select" ? (
                         <Select

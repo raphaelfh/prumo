@@ -436,6 +436,30 @@ describe("ArticleFieldRow", () => {
     expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   });
 
+  // Same removal-triggered-blur ordering as the text input's Escape guard
+  // test above, but for the Switch: Escape's revert({refocus: true}) sets
+  // restoreFocusRef, then setEditing(false) removes the still-focused
+  // Switch node, which fires a second native blur reaching this same
+  // onBlur handler. If that second call isn't guarded by suppressBlurRef,
+  // it calls revert() with no options and overwrites restoreFocusRef back
+  // to false before the [editing] effect reads it, so focus lands on
+  // document.body instead of returning to the row button.
+  it("Escape's guard blocks the switch's removal-triggered blur from stranding focus off the row", async () => {
+    const user = userEvent.setup();
+    render(<ArticleFieldRow label="Open access" value="false" onCommit={vi.fn()} control="switch" />);
+
+    await user.click(screen.getByRole("button"));
+    const toggle = screen.getByRole("switch");
+
+    act(() => {
+      fireEvent.keyDown(toggle, { key: "Escape" });
+      fireEvent.blur(toggle);
+    });
+
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.getByRole("button")).toHaveFocus();
+  });
+
   it("only one row is ever in edit state: blurring a select without choosing lets a second row enter edit", async () => {
     const user = userEvent.setup();
     render(
