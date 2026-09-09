@@ -34,6 +34,7 @@ import {ArticleFormSteps, type ArticleFormStep, type FormStep} from './ArticleFo
 import {ArticleAuthorsField} from './ArticleAuthorsField';
 import {ArticleKeywordsField} from './ArticleKeywordsField';
 import {ArticleFormActions, ArticleFormHeader, ArticleFormLoadingState} from './ArticleFormHeader';
+import {isScrolledToBottom, resolveActiveStep} from '@/lib/articleFormScrollspy';
 import {SettingsCard, SettingsField, SettingsSection} from '@/components/settings';
 import {t} from '@/lib/copy';
 import {triggerDownload} from '@/lib/download';
@@ -368,6 +369,7 @@ export function ArticleForm({
 
     const scrollToSection = (step: FormStep) => {
         document.getElementById(`article-section-${step}`)?.scrollIntoView({behavior: 'smooth', block: 'start'});
+        setActiveSection(step); // explicit click wins immediately; see the bottom-of-scroll override below
     };
 
     useEffect(() => {
@@ -378,7 +380,11 @@ export function ArticleForm({
             (n): n is HTMLElement => n !== null
         );
         if (els.length === 0) return;
+        const lastStepId = STEPS[STEPS.length - 1].id; // "root" is reused below; no second listener on window
         const ratios = new Map<string, number>();
+        const applyActiveStep = () => {
+            const next = resolveActiveStep(ratios, lastStepId, isScrolledToBottom(root)); if (next) setActiveSection(next);
+        };
         const io = new IntersectionObserver(
             (entries) => {
                 for (const en of entries) {
@@ -389,22 +395,16 @@ export function ArticleForm({
                         ratios.delete(id);
                     }
                 }
-                let best: FormStep | null = null;
-                let bestR = 0;
-                for (const [id, r] of ratios) {
-                    if (r > bestR) {
-                        bestR = r;
-                        best = id as FormStep;
-                    }
-                }
-                if (best) {
-                    setActiveSection(best);
-                }
+                applyActiveStep();
             },
             {root, threshold: [0, 0.08, 0.2, 0.35, 0.5, 1], rootMargin: '-8% 0px -45% 0px'}
         );
         els.forEach((el) => io.observe(el));
-        return () => io.disconnect();
+        root.addEventListener('scroll', applyActiveStep, {passive: true});
+        return () => {
+            io.disconnect();
+            root.removeEventListener('scroll', applyActiveStep);
+        };
     }, [loading, mode, articleId]);
 
     // Date field validation
