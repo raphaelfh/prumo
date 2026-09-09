@@ -9,6 +9,15 @@ import {render, screen} from '@testing-library/react';
 import {MemoryRouter, Route, Routes} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+// ProjectView's import graph reaches `@/integrations/supabase/client`, which
+// calls createClient at MODULE scope and throws without a URL. A developer
+// with a local .env never sees this; CI has none, so the failure is CI-only.
+// Same guard as the ArticleForm specs.
+vi.hoisted(() => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'test-anon-key');
+});
+
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn(), warning: vi.fn()}}));
 vi.mock('@/services/projectsService', () => ({
     loadProjectById: vi.fn(),
