@@ -92,10 +92,13 @@ describe('ArticleForm dirty reporting', () => {
         // Precondition: it must have been clean, or "becomes dirty" is vacuous.
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
 
-        // Title is a Zotero-style row: click to enter edit state, then commit.
+        // Title is a Zotero-style row rendered with control='multiline':
+        // click to enter edit state, type, then commit with Ctrl+Enter
+        // (plain Enter inserts a newline in a multiline row).
         await userEvent.click(titleValue);
         const input = screen.getByRole('textbox', {name: 'titleRequired'});
-        await userEvent.type(input, ' revised{Enter}');
+        await userEvent.type(input, ' revised');
+        await userEvent.keyboard('{Control>}{Enter}{/Control}');
 
         await waitFor(() => {
             expect(onDirtyChange).toHaveBeenLastCalledWith(true);
@@ -123,7 +126,8 @@ describe('ArticleForm dirty reporting', () => {
 
         await userEvent.click(titleValue);
         const input = screen.getByRole('textbox', {name: 'titleRequired'});
-        await userEvent.type(input, ' revised{Enter}');
+        await userEvent.type(input, ' revised');
+        await userEvent.keyboard('{Control>}{Enter}{/Control}');
         // Precondition: it must actually go dirty, or "clean after save" proves nothing.
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
 
