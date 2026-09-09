@@ -6,7 +6,7 @@
  * switch; both bodies are the components the run screens and the old editor
  * sheet already use, unchanged.
  */
-import {useState} from 'react';
+import {useId, useState} from 'react';
 import {FileText} from 'lucide-react';
 
 import {Button} from '@/components/ui/button';
@@ -48,10 +48,16 @@ export function ArticleSidePanel({
   // and destroy its staged files), so the form hands it to us directly.
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const documentHintId = useId();
 
   const effectiveArticleId = articleId ?? createdId ?? undefined;
   const documentAvailable = Boolean(effectiveArticleId);
   const {files} = useArticleDocuments(effectiveArticleId ?? null);
+  // The panel decides its own body defensively: `view` is host-driven and can
+  // still say 'document' right after switching to add mode (articleId cleared,
+  // view untouched) — falling back to 'details' here avoids stranding the user
+  // on a dead "Add file" button gated behind an article id that doesn't exist yet.
+  const effectiveView = documentAvailable ? view : 'details';
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="article-side-panel">
@@ -63,12 +69,21 @@ export function ArticleSidePanel({
             label={t('articles', 'panelViewDetails')}
           />
           <ViewButton
-            active={view === 'document'}
-            onClick={() => onViewChange('document')}
+            active={effectiveView === 'document'}
+            onClick={() => {
+              if (!documentAvailable) return;
+              onViewChange('document');
+            }}
             label={t('articles', 'panelViewDocument')}
             disabled={!documentAvailable}
             title={documentAvailable ? undefined : t('articles', 'panelViewDocumentAfterSave')}
+            describedById={documentAvailable ? undefined : documentHintId}
           />
+          {!documentAvailable && (
+            <span id={documentHintId} className="sr-only">
+              {t('articles', 'panelViewDocumentAfterSave')}
+            </span>
+          )}
         </div>
         <PanelToggleButton
           side="right"
@@ -79,7 +94,7 @@ export function ArticleSidePanel({
       </div>
 
       <div className="min-h-0 flex-1">
-        {view === 'details' ? (
+        {effectiveView === 'details' ? (
           <ArticleForm
             variant="panel"
             mode={mode}
@@ -125,20 +140,23 @@ function ViewButton({
   label,
   disabled,
   title,
+  describedById,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   disabled?: boolean;
   title?: string;
+  describedById?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
       title={title}
       aria-pressed={active}
+      aria-disabled={disabled}
+      aria-describedby={describedById}
       className={cn(
         'h-6 rounded-sm px-2 text-[12px] transition-colors',
         active ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',

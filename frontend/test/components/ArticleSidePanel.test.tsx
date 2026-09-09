@@ -89,30 +89,84 @@ describe('ArticleSidePanel', () => {
     it('disables the document view in add mode until the article is created', async () => {
         render(<ArticleSidePanel {...baseProps} mode="add" view="details"/>);
 
-        expect(screen.getByRole('button', {name: /panelViewDocument/})).toBeDisabled();
+        // aria-disabled, not the `disabled` attribute — see the a11y test below
+        // for why: the button must stay focusable to announce the reason.
+        expect(screen.getByRole('button', {name: /panelViewDocument/})).toHaveAttribute(
+            'aria-disabled',
+            'true',
+        );
     });
 
     it('enables the document view once the form reports the created id', async () => {
         render(<ArticleSidePanel {...baseProps} mode="add" view="details"/>);
 
         // Precondition: it must start disabled, or "becomes enabled" proves nothing.
-        expect(screen.getByRole('button', {name: /panelViewDocument/})).toBeDisabled();
+        expect(screen.getByRole('button', {name: /panelViewDocument/})).toHaveAttribute(
+            'aria-disabled',
+            'true',
+        );
 
         await userEvent.click(screen.getByRole('button', {name: 'create'}));
 
-        expect(screen.getByRole('button', {name: /panelViewDocument/})).toBeEnabled();
+        expect(screen.getByRole('button', {name: /panelViewDocument/})).not.toHaveAttribute(
+            'aria-disabled',
+            'true',
+        );
     });
 
-    it('shows the document for the created id after an add', async () => {
+    it('asks the host to change view again after an add (created id enables the toggle)', async () => {
         render(<ArticleSidePanel {...baseProps} mode="add" view="details"/>);
         await userEvent.click(screen.getByRole('button', {name: 'create'}));
 
-        // Re-render in document view with the same mounted panel: the id came
-        // from the callback, not from props, so this is the only thing proving
-        // the panel actually kept it.
+        // Renamed from "shows the document for the created id after an add":
+        // clicking the (now-enabled) toggle only calls onViewChange — the panel's
+        // own view is controlled by the `view` prop, which this test never
+        // changes, so it never actually renders RunPdfContent. This assertion is
+        // exactly what the click proves; see the next test for the render itself.
         await userEvent.click(screen.getByRole('button', {name: 'panelViewDocument'}));
 
         expect(baseProps.onViewChange).toHaveBeenCalledWith('document');
+    });
+
+    it('renders the document viewer for the created id once the host flips view', async () => {
+        const {rerender} = render(<ArticleSidePanel {...baseProps} mode="add" view="details"/>);
+        await userEvent.click(screen.getByRole('button', {name: 'create'}));
+
+        // The created id lives in the panel's own state (mode="add" never gets
+        // an articleId prop), so re-rendering with view="document" is the only
+        // way to prove the panel actually kept it.
+        rerender(<ArticleSidePanel {...baseProps} mode="add" view="document"/>);
+
+        expect(screen.getByTestId('run-pdf-content')).toHaveTextContent('new-art-9');
+    });
+
+    it('exposes the disabled-toggle reason to assistive tech and ignores clicks on it', async () => {
+        const onViewChange = vi.fn();
+        render(<ArticleSidePanel {...baseProps} mode="add" view="details" onViewChange={onViewChange}/>);
+
+        const toggle = screen.getByRole('button', {name: /panelViewDocument/});
+        expect(toggle).toHaveAttribute('aria-disabled', 'true');
+        expect(toggle).not.toHaveAttribute('disabled');
+
+        const describedBy = toggle.getAttribute('aria-describedby');
+        expect(describedBy).toBeTruthy();
+        expect(document.getElementById(describedBy as string)).toHaveTextContent(
+            'panelViewDocumentAfterSave',
+        );
+
+        await userEvent.click(toggle);
+
+        expect(onViewChange).not.toHaveBeenCalled();
+    });
+
+    it('renders the details body in add mode with no article id, even when view is document', () => {
+        render(<ArticleSidePanel {...baseProps} mode="add" view="document"/>);
+
+        // Precondition: the panel actually mounted, so the absence below isn't vacuous.
+        expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
+
+        expect(screen.getByTestId('article-form')).toBeInTheDocument();
+        expect(screen.queryByText('panelNoDocumentTitle')).not.toBeInTheDocument();
     });
 
     it('shows the empty state instead of the viewer when there are no files', () => {
