@@ -41,7 +41,7 @@ export function PublicationSection({
 
     return (
         <section id="article-section-publication" className="scroll-mt-4 min-w-0 space-y-1">
-            <SettingsSection title={t('articles', 'publication')}>
+            <SettingsSection title={t('articles', 'publication')} density="compact">
                 <ArticleFieldRow
                     label={t('articles', 'journalTitle')}
                     value={formData.journal_title}

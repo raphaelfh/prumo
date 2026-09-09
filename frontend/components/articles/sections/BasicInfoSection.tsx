@@ -47,7 +47,7 @@ export function BasicInfoSection({
 
     return (
         <section id="article-section-basic" className="scroll-mt-4 space-y-1">
-            <SettingsSection title={t('articles', 'basicInfo')}>
+            <SettingsSection title={t('articles', 'basicInfo')} density="compact">
                 <ArticleFieldRow
                     label={t('articles', 'itemTypeLabel')}
                     value={itemTypeSelectValue}

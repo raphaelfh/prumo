@@ -46,7 +46,7 @@ export function FilesSection({
 }: FilesSectionProps) {
     return (
         <section id="article-section-files" className="scroll-mt-4 space-y-1">
-            <SettingsSection title={t('articles', 'filesLabel')}>
+            <SettingsSection title={t('articles', 'filesLabel')} density="compact">
                 <ArticleFilesSection
                     files={files}
                     stagedFiles={stagedFiles}

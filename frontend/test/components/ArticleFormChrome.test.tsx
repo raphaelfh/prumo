@@ -93,6 +93,24 @@ describe('ArticleForm chrome', () => {
         }
     });
 
+    it('renders a dense row list, not a card-spaced one (SettingsSection space-y-6)', () => {
+        renderForm();
+
+        for (const id of [
+            'article-section-basic',
+            'article-section-publication',
+            'article-section-identifiers',
+            'article-section-additional',
+            'article-section-files',
+        ]) {
+            const section = document.getElementById(id)!;
+            // SettingsSection's root is the section's sole direct child; its
+            // default space-y-6 was sized for cards, not 4px-tall field rows.
+            const rowContainer = section.firstElementChild!;
+            expect(rowContainer.className).not.toMatch(/\bspace-y-6\b/);
+        }
+    });
+
     it('renders the section anchors in rail order: basic, publication, identifiers, additional, files', () => {
         renderForm();
 

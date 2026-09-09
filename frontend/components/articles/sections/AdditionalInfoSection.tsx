@@ -26,7 +26,7 @@ interface AdditionalInfoSectionProps {
 export function AdditionalInfoSection({formData, setFormData, saving}: AdditionalInfoSectionProps) {
     return (
         <section id="article-section-additional" className="scroll-mt-4 space-y-1">
-            <SettingsSection title={t('articles', 'additionalInfo')}>
+            <SettingsSection title={t('articles', 'additionalInfo')} density="compact">
                 <ArticleKeywordsField
                     value={formData.keywords}
                     onChange={(keywords) => setFormData((prev) => ({...prev, keywords}))}

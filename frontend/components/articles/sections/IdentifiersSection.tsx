@@ -20,7 +20,7 @@ interface IdentifiersSectionProps {
 export function IdentifiersSection({formData, setFormData}: IdentifiersSectionProps) {
     return (
         <section id="article-section-identifiers" className="scroll-mt-4 min-w-0 space-y-1">
-            <SettingsSection title={t('articles', 'identifiersLabel')}>
+            <SettingsSection title={t('articles', 'identifiersLabel')} density="compact">
                 <ArticleFieldRow
                     label={t('articles', 'doi')}
                     value={formData.doi}
