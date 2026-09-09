@@ -57,7 +57,10 @@ function renderShell() {
             onDismiss={vi.fn()}
             onComplete={vi.fn()}
             list={({onArticleClick}) => (
-                <button onClick={() => onArticleClick('a2')}>row a2</button>
+                <>
+                    <button onClick={() => onArticleClick('a1')}>row a1</button>
+                    <button onClick={() => onArticleClick('a2')}>row a2</button>
+                </>
             )}
         />,
     );
@@ -111,12 +114,14 @@ describe('ArticlesSplitShell dirty guard', () => {
     });
 
     it('does not ask when the same article is clicked again', async () => {
-        renderShell();
+        const {onSelectArticle} = renderShell();
 
         await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
-        // Re-clicking the SAME row is not a swap and must not nag.
-        await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
+        // Re-clicking the SAME (currently open) row is not a swap and must not nag.
+        await userEvent.click(screen.getByRole('button', {name: 'row a1'}));
 
         expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
+        // The click still flows through (proving it wasn't just swallowed).
+        expect(onSelectArticle).toHaveBeenCalledWith('a1');
     });
 });
