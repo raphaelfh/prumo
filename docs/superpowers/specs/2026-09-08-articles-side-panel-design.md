@@ -273,3 +273,55 @@ Articles route.
   only; `variant="page"` unchanged)
 - `frontend/hooks/use-mobile.tsx` — export the `lg` media-query helper
 - `frontend/lib/copy/articles.ts` — new strings
+
+---
+
+## Amendment A (2026-09-09) — panel density and orientation
+
+Verified in the browser after the original nine tasks shipped, at a 1600px
+viewport with the panel open on Details:
+
+| Region | Width |
+| --- | --- |
+| table | 725 px |
+| panel | 594 px |
+| ↳ `ArticleFormSteps` rail | **224 px (38% of the panel)** |
+| ↳ fields column | 370 px |
+
+The rail costs more than a third of the panel, and the fields column holds
+two-across author rows. At 1280px the panel is ~470px and the fields column
+falls to ~250px. §6's accepted "two stacked header rows" was the wrong thing
+to worry about; the rail is what hurts.
+
+Reference: Zotero, which puts its section switcher in a narrow icon strip and
+flips the split to horizontal (list above, item below) as the window narrows.
+
+### A1 — the section rail is compact by prop, not by viewport
+
+`ArticleFormSteps` already carries a `LucideIcon` per step and already folds
+its labels to `sr-only` with a tooltip — but keyed to the **viewport** `lg:`
+breakpoint. Inside the panel the viewport is wide while the container is not,
+so the full-width rail renders anyway.
+
+Change: `ArticleFormSteps` takes `compact?: boolean`. When set, it renders the
+icon-only column unconditionally — vertical, labels `sr-only` (never `hidden`,
+which would strip the accessible name), tooltip always available.
+`ArticleForm` passes `compact={isPanel}`. `variant="page"` is unchanged.
+
+Expected: the fields column goes from ~370px to ~555px at 1600px, a ~50% gain,
+with no change to the form's contents.
+
+### A2 — the split flips to vertical instead of falling back to an overlay
+
+The below-`lg` overlay `Sheet` in `ArticlesSplitShell` is **removed**. Below
+1024px the same `ResizablePanelGroup` renders `orientation="vertical"`: the
+table on top, the panel underneath. The table therefore stays visible at every
+width, which was the point of docking the panel in the first place.
+
+`useIsBelowDesktop` is unchanged and now selects orientation rather than a
+layout. The 1024px threshold stays: with A1's icon rail, side-by-side remains
+comfortable down to it. Tunable in design review.
+
+This supersedes §5's "Below `lg` the shell renders the existing overlay
+`Sheet`" and the Sheet half of §7's layout notes. Spec §10's non-goals are
+otherwise unaffected.
