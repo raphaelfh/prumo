@@ -45,7 +45,10 @@ export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing, com
             className={cn(
                 'shrink-0 bg-[#fafafa] dark:bg-[#0c0c0c]',
                 compact
-                    ? 'w-full border-b border-border/40 lg:w-auto lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto'
+                    // The panel puts this rail on the RIGHT at lg+ (`lg:flex-row-reverse`
+                    // on the split container in ArticleForm.tsx) — the divider follows it
+                    // to its new left edge instead of its right one.
+                    ? 'w-full border-b border-border/40 lg:w-auto lg:border-b-0 lg:border-l overflow-x-auto lg:overflow-y-auto'
                     : 'w-full border-b border-border/40 lg:w-56 lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto',
             )}
         >

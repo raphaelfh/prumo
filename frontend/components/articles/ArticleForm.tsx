@@ -732,7 +732,7 @@ export function ArticleForm({
                 />
             )}
 
-            <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row">
+            <div className={cn('flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row', isPanel && 'lg:flex-row-reverse')}>
                 <ArticleFormSteps
                     steps={STEPS}
                     activeStep={activeSection}

@@ -205,3 +205,36 @@ describe('article editor — compact section rail in the panel', () => {
         expect(emitted).toContain('lg:flex-col');
     });
 });
+
+describe('article editor — rail placement in the side-by-side (lg+) layout', () => {
+    it('puts the panel rail on the right: split container reverses, rail borders its left edge', async () => {
+        renderAdd(); // panel variant
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        const aside = rail.closest('aside')!;
+        const splitContainer = aside.parentElement!;
+
+        // Icons before fields in source order + row-reverse at lg+ is what
+        // lands the rail on the right edge, Zotero-style.
+        expect(splitContainer.className).toContain('lg:flex-row-reverse');
+        // Sitting on the right, its divider belongs on its LEFT edge now.
+        expect(aside.className).toContain('lg:border-l');
+        expect(aside.className).not.toMatch(/(^|\s)lg:border-r(\s|$)/);
+    });
+
+    it('leaves the page-variant rail on the left, unchanged', async () => {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        const aside = rail.closest('aside')!;
+        const splitContainer = aside.parentElement!;
+
+        expect(splitContainer.className).not.toContain('lg:flex-row-reverse');
+        expect(aside.className).toContain('lg:border-r');
+        expect(aside.className).not.toMatch(/(^|\s)lg:border-l(\s|$)/);
+    });
+});
