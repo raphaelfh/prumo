@@ -2,17 +2,23 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "frontend-attach",
+      "url": "http://127.0.0.1:8080",
+      "port": 8080
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 8080,
-      "autoPort": true
+      "autoPort": false
     },
     {
       "name": "backend",
       "runtimeExecutable": "make",
       "runtimeArgs": ["backend"],
-      "port": 8000
+      "port": 8000,
+      "autoPort": false
     },
     {
       "name": "full-stack",
