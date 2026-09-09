@@ -28,6 +28,9 @@ interface BasicInfoSectionProps {
     onAuthorRowsChange: (rows: AuthorFormRow[]) => void;
     itemTypeSelectValue: string;
     onItemTypeSelectChange: (value: string) => void;
+    /** Surfaced on the Title row after a failed save attempt (see ArticleForm.handleSave). */
+    titleError?: string;
+    onTitleCommit: (next: string) => void;
 }
 
 export function BasicInfoSection({
@@ -38,6 +41,8 @@ export function BasicInfoSection({
     onAuthorRowsChange,
     itemTypeSelectValue,
     onItemTypeSelectChange,
+    titleError,
+    onTitleCommit,
 }: BasicInfoSectionProps) {
     const itemTypeOptions = [
         {value: ITEM_TYPE_NONE_SELECT_VALUE, label: t('articles', 'itemTypeNone')},
@@ -70,9 +75,10 @@ export function BasicInfoSection({
                 <ArticleFieldRow
                     label={t('articles', 'titleRequired')}
                     value={formData.title}
-                    onCommit={(next) => setFormData({...formData, title: next})}
+                    onCommit={onTitleCommit}
                     control="multiline"
                     placeholder={t('articles', 'titlePlaceholder')}
+                    error={titleError}
                 />
                 <ArticleFieldRow
                     label={t('articles', 'abstract')}

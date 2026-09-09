@@ -35,6 +35,7 @@ vi.mock('@/services/articlesService', async (importOriginal) => ({
 
 import {ArticleForm} from '@/components/articles/ArticleForm';
 import {fetchArticle, fetchArticleFiles, insertArticle, updateArticle} from '@/services/articlesService';
+import {toast} from 'sonner';
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -216,5 +217,70 @@ describe('ArticleForm create reporting', () => {
             expect(onArticleCreated).toHaveBeenCalledWith('new-art-9');
         });
         expect(onArticleCreated).toHaveBeenCalledTimes(1);
+    });
+});
+
+/**
+ * Regression tests for the "click Create twice" bug (browser-verified at
+ * 1600px, not a jsdom finding): the Title row only commits its value into
+ * `formData` on blur/Enter, and mousedown-before-click fires that blur, so a
+ * button disabled on `!formData.title.trim()` is briefly still-disabled at
+ * mousedown and only re-enables after the commit lands — a REAL browser never
+ * activates that click. `userEvent`'s mouse implementation rechecks `disabled`
+ * between its synthetic mousedown and click, so it *does* activate it — which
+ * is exactly why the old jsdom suite stayed green while the button was
+ * unusable in production. Do not "simplify" the Create/Save button back to a
+ * disabled-on-invalid-state gate on the strength of a passing test here: the
+ * fix is validate-on-click, not a disabled predicate, and only a real browser
+ * (or a human) can prove the disabled-gate version is broken.
+ */
+describe('ArticleForm create-button gating (no disabled-on-empty-title gate)', () => {
+    it('does not disable the Create button when the title is empty', async () => {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const createButton = await screen.findByRole('button', {name: /createArticle/});
+        expect(createButton).not.toBeDisabled();
+    });
+
+    it('does not create the article and surfaces the error when clicked with an empty title', async () => {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const createButton = await screen.findByRole('button', {name: /createArticle/});
+        await userEvent.click(createButton);
+
+        expect(insertArticle).not.toHaveBeenCalled();
+        expect(toast.error).toHaveBeenCalledWith('titleRequiredToast');
+        // The requirement is visible on the Title row itself, not only in a toast.
+        expect(await screen.findByText('titleRequiredToast')).toBeInTheDocument();
+    });
+
+    it('creates the article when clicked with a valid, committed title', async () => {
+        vi.mocked(insertArticle).mockResolvedValue({ok: true, data: {id: 'new-art-1'}} as never);
+
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const titleReadState = await screen.findByLabelText(/titleRequired/);
+        await userEvent.click(titleReadState);
+        const titleInput = screen.getByRole('textbox', {name: /titleRequired/});
+        await userEvent.type(titleInput, 'A committed title');
+        await userEvent.keyboard('{Control>}{Enter}{/Control}');
+
+        await userEvent.click(screen.getByRole('button', {name: /createArticle/}));
+
+        await waitFor(() => {
+            expect(insertArticle).toHaveBeenCalledTimes(1);
+        });
     });
 });

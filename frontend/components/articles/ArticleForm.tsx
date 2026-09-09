@@ -215,6 +215,10 @@ export function ArticleForm({
     publication_month?: string;
     publication_day?: string;
   }>({});
+  // Surfaced on the Title row after a failed save attempt (handleSave's own
+  // guard, below). NOT used to gate the Create/Save button — see the note on
+  // `formActions`'s `disabled` prop for why.
+  const [titleError, setTitleError] = useState<string | undefined>(undefined);
 
     // Form
     const [authorRows, setAuthorRows] = useState<AuthorFormRow[]>(() => [newAuthorRow()]);
@@ -438,10 +442,13 @@ export function ArticleForm({
 
   const handleSave = async () => {
     if (!formData.title.trim()) {
-        toast.error(t('articles', 'titleRequiredToast'));
+        const message = t('articles', 'titleRequiredToast');
+        setTitleError(message);
+        toast.error(message);
         scrollToSection('basic');
       return;
     }
+    setTitleError(undefined);
 
       // Validate all date fields before save
     const yearError = validateDateField('publication_year', formData.publication_year);
@@ -683,10 +690,17 @@ export function ArticleForm({
     }
 
     const formActions = (
+        // Gating this on `!isStepValid('basic')` used to make a single real
+        // click impossible: the Title row only commits into `formData` on
+        // blur, mousedown-before-click fires that blur, and by the time the
+        // click itself would fire the button had only JUST re-enabled — a
+        // real browser never activates a click on an element that was
+        // disabled at mousedown. Validate on click instead (handleSave
+        // already does) and only gate on `saving`.
         <ArticleFormActions
             mode={mode}
             saving={saving}
-            disabled={saving || !isStepValid('basic')}
+            disabled={saving}
             onCancel={handleDismiss}
             onSave={handleSave}
         />
@@ -728,6 +742,11 @@ export function ArticleForm({
                             onAuthorRowsChange={setAuthorRows}
                             itemTypeSelectValue={itemTypeSelectValue}
                             onItemTypeSelectChange={onItemTypeSelectChange}
+                            titleError={titleError}
+                            onTitleCommit={(next) => {
+                                setFormData((prev) => ({...prev, title: next}));
+                                if (next.trim()) setTitleError(undefined);
+                            }}
                         />
 
                         <PublicationSection
