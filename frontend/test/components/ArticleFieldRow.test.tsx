@@ -228,6 +228,42 @@ describe("ArticleFieldRow", () => {
     expect(screen.getByRole("textbox").tagName).toBe("TEXTAREA");
   });
 
+  it("control='multiline': plain Enter inserts a newline and does not commit", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <ArticleFieldRow label="Abstract" value="Long text" onCommit={onCommit} control="multiline" />,
+    );
+
+    await user.click(screen.getByText("Long text"));
+    const textarea = screen.getByRole("textbox");
+    await user.keyboard("{Enter}");
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(textarea).toBeInTheDocument();
+    expect(textarea).toHaveFocus();
+  });
+
+  it("control='multiline': Cmd/Ctrl+Enter commits the edited value", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <ControlledHarness
+        label="Abstract"
+        initialValue="Long text"
+        onCommit={onCommit}
+        control="multiline"
+      />,
+    );
+
+    await user.click(screen.getByText("Long text"));
+    await user.keyboard(" more{Control>}{Enter}{/Control}");
+
+    expect(onCommit).toHaveBeenCalledWith("Long text more");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("Long text more")).toBeInTheDocument();
+  });
+
   it("control='switch' commits on toggle", async () => {
     const user = userEvent.setup();
     const onCommit = vi.fn();

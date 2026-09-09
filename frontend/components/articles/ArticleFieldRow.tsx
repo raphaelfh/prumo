@@ -10,9 +10,15 @@
  * one row is ever in edit state at a time because each instance owns its own
  * `editing` flag.
  *
- * Focus management: entering edit state focuses the control (and selects its
- * text, for text/multiline) in an effect keyed on `editing` — never during
- * render, per the React Compiler's `panicThreshold: 'all_errors'`. Leaving
+ * For `control='multiline'`, plain Enter inserts a newline (it is a
+ * paragraph field); Cmd/Ctrl+Enter is the explicit keyboard commit. Blur
+ * still commits too.
+ *
+ * Focus management: entering edit state focuses the control and places the
+ * caret at the END of its existing text, for text/multiline (never
+ * select-all -- that would make the first keystroke replace the whole
+ * value instead of appending to it) in an effect keyed on `editing` — never
+ * during render, per the React Compiler's `panicThreshold: 'all_errors'`. Leaving
  * edit state (commit or revert) returns focus to the read-state button via
  * the same effect, so keyboard users are never stranded. The label and the
  * currently-rendered control always share one `id` (via `useId`), so the
@@ -151,10 +157,22 @@ export function ArticleFieldRow({
     };
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        if (event.key === "Enter" && !event.shiftKey) {
+        if (event.key === "Enter") {
+            if (control === "multiline") {
+                // Plain Enter must keep inserting a newline (this is a
+                // paragraph field); Cmd/Ctrl+Enter is the explicit keyboard
+                // commit, since blur-to-commit is the only other path here.
+                if (!(event.metaKey || event.ctrlKey)) return;
+                event.preventDefault();
+                commit(draft);
+                return;
+            }
+            if (event.shiftKey) return;
             event.preventDefault();
             commit(draft);
-        } else if (event.key === "Escape") {
+            return;
+        }
+        if (event.key === "Escape") {
             event.preventDefault();
             revert();
         }
