@@ -78,6 +78,27 @@ export function ArticleFieldRow({
     const rowRef = useRef<HTMLButtonElement>(null);
     const controlRef = useRef<EditableControlElement>(null);
     const wasEditingRef = useRef(false);
+    /**
+     * Set by commit()/revert() immediately before setEditing(false), and
+     * consumed (and cleared) by the next handleBlur. In a real browser,
+     * removing the still-focused control from the DOM -- which
+     * setEditing(false) triggers -- synchronously fires a native
+     * blur/focusout on the node being detached. That event reaches this
+     * component's onBlur through React's delegation, i.e. handleBlur runs
+     * AGAIN after Escape/Enter already handled the edit: Escape's revert()
+     * would be followed by a blur-triggered commit(draft) of the value the
+     * user just discarded, and Enter's commit() would be followed by a
+     * second, duplicate commit(draft) call. This guard makes that second
+     * call a no-op.
+     *
+     * jsdom does not implement synchronous blur-on-removal, so it can
+     * never generate this ordering on its own -- a green Vitest run is NOT
+     * evidence this guard is safe to delete. It was removed once already
+     * on exactly that reasoning, and the deletion was a regression. See
+     * the "guard blocks the removal-triggered blur" tests in
+     * ArticleFieldRow.test.tsx, which reproduce the ordering by hand.
+     */
+    const suppressBlurRef = useRef(false);
 
     useEffect(() => {
         if (editing) {
@@ -99,11 +120,13 @@ export function ArticleFieldRow({
     };
 
     const commit = (next: string) => {
+        suppressBlurRef.current = true;
         onCommit(next);
         setEditing(false);
     };
 
     const revert = () => {
+        suppressBlurRef.current = true;
         setEditing(false);
     };
 
@@ -118,6 +141,10 @@ export function ArticleFieldRow({
     };
 
     const handleBlur = () => {
+        if (suppressBlurRef.current) {
+            suppressBlurRef.current = false;
+            return;
+        }
         commit(draft);
     };
 

@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -148,7 +148,18 @@ describe("ArticleFieldRow", () => {
     expect(screen.getByRole("textbox", { name: "Title" })).toBeInTheDocument();
   });
 
-  it("Escape does not leave a stray blur-triggered commit (stale closure guard)", async () => {
+  // Real browsers fire a synchronous native blur/focusout on a focused
+  // node the instant React removes it from the DOM. jsdom does NOT
+  // implement that step, so it can never generate this ordering on its
+  // own — a prior version of this test called `input.blur()` on an
+  // already-detached, already-unfocused node, which is a no-op regardless
+  // of the guard's presence and proved nothing. To exercise the guard for
+  // real, dispatch Escape/blur on the SAME still-mounted node inside one
+  // shared `act()` block: nested `act()` calls only flush once the
+  // outermost one returns, so both events are processed against the
+  // pre-flush render — the input is still attached and still focused when
+  // the blur reaches it, exactly the window a real browser produces.
+  it("Escape's guard blocks the removal-triggered blur from committing the discarded draft", async () => {
     const user = userEvent.setup();
     const onCommit = vi.fn();
     render(<ArticleFieldRow label="Title" value="Some title" onCommit={onCommit} />);
@@ -156,10 +167,36 @@ describe("ArticleFieldRow", () => {
     await user.click(screen.getByText("Some title"));
     const input = screen.getByRole("textbox");
     await user.type(input, " more");
-    await user.keyboard("{Escape}");
-    input.blur();
+
+    act(() => {
+      fireEvent.keyDown(input, { key: "Escape" });
+      fireEvent.blur(input);
+    });
 
     expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("Some title")).toBeInTheDocument();
+  });
+
+  // Same ordering, Enter side: without the guard, commit() fires once from
+  // handleKeyDown and a SECOND time from the removal-triggered blur.
+  it("Enter's guard blocks the removal-triggered blur from double-committing", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<ArticleFieldRow label="Title" value="Some title" onCommit={onCommit} />);
+
+    await user.click(screen.getByText("Some title"));
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "New title");
+
+    act(() => {
+      fireEvent.keyDown(input, { key: "Enter" });
+      fireEvent.blur(input);
+    });
+
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("New title");
   });
 
   it("control='multiline' renders a textarea in edit state", async () => {
