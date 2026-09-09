@@ -46,7 +46,6 @@ import {useIsNarrow} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
 import {ArticlesListDialogs} from "./ArticlesListDialogs";
 import {ArticlesExportDialog} from "./ArticlesExportDialog";
-import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 import type {Article} from "@/types/article";
 import {ARTICLES_DATA_COLUMN_DEFS, formatArticleListCell} from "@/lib/articlesListDisplay";
@@ -62,10 +61,6 @@ interface ArticlesListProps {
     onOpenRisDialog: () => void;
     /** Opens the article editor panel (toolbar "Add" and the empty state). */
     onOpenAddArticle: () => void;
-    /** Whether the article side panel is currently expanded. */
-    panelOpen: boolean;
-    /** Collapses / expands the article side panel. */
-    onTogglePanel: () => void;
 }
 
 type SortField =
@@ -273,8 +268,6 @@ export function ArticlesList({
                                  onOpenZoteroDialog,
                                  onOpenRisDialog,
                                  onOpenAddArticle,
-                                 panelOpen,
-                                 onTogglePanel,
                              }: ArticlesListProps) {
     const isNarrow = useIsNarrow();
   const [searchTerm, setSearchTerm] = useState("");
@@ -1209,12 +1202,6 @@ export function ArticlesList({
                             icon={Plus}
                             onClick={onOpenAddArticle}
                             className="bg-foreground text-background hover:bg-foreground/90 hover:text-background"
-                        />
-                        <PanelToggleButton
-                            side="right"
-                            pressed={panelOpen}
-                            onToggle={onTogglePanel}
-                            ariaLabel={t('articles', 'panelToggle')}
                         />
                         </TooltipProvider>
                     </div>

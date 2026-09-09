@@ -30,6 +30,20 @@ vi.mock('@/components/articles/ArticleSidePanel', () => ({
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 
 import {ArticlesSplitShell} from '@/components/articles/ArticlesSplitShell';
+import {HeaderActionsProvider, useHeaderActions} from '@/contexts/HeaderActionsContext';
+
+/** Renders whatever the current page filled into the header-actions slot —
+ *  stands in for the real Topbar's `{headerActions}`. */
+function HeaderActionsOutlet() {
+    return <>{useHeaderActions()}</>;
+}
+
+/** The header slot's toggle: `t()` is mocked to the raw key, so its
+ *  accessible name is the `articles.panelToggle` key. `hidden: true` because
+ *  several assertions read it while Radix's alert dialog has marked the rest
+ *  of the tree `aria-hidden` — that hides it from the a11y tree, not from the
+ *  DOM state this test is actually checking. */
+const getToggle = () => screen.getByRole('button', {name: 'panelToggle', hidden: true});
 
 function setDesktop() {
     Object.defineProperty(window, 'matchMedia', {
@@ -50,25 +64,26 @@ function setDesktop() {
 function renderShell(overrides: Partial<Parameters<typeof ArticlesSplitShell>[0]> = {}) {
     const onSelectArticle = vi.fn();
     render(
-        <ArticlesSplitShell
-            projectId="p1"
-            mode="edit"
-            articleId="a1"
-            view="details"
-            onViewChange={vi.fn()}
-            onSelectArticle={onSelectArticle}
-            onDismiss={vi.fn()}
-            onComplete={vi.fn()}
-            list={({onArticleClick, panelOpen, onTogglePanel}) => (
-                <>
-                    <button onClick={() => onArticleClick('a1')}>row a1</button>
-                    <button onClick={() => onArticleClick('a2')}>row a2</button>
-                    <button onClick={onTogglePanel}>toggle</button>
-                    <span data-testid="panel-open">{String(panelOpen)}</span>
-                </>
-            )}
-            {...overrides}
-        />,
+        <HeaderActionsProvider>
+            <ArticlesSplitShell
+                projectId="p1"
+                mode="edit"
+                articleId="a1"
+                view="details"
+                onViewChange={vi.fn()}
+                onSelectArticle={onSelectArticle}
+                onDismiss={vi.fn()}
+                onComplete={vi.fn()}
+                list={({onArticleClick}) => (
+                    <>
+                        <button onClick={() => onArticleClick('a1')}>row a1</button>
+                        <button onClick={() => onArticleClick('a2')}>row a2</button>
+                    </>
+                )}
+                {...overrides}
+            />
+            <HeaderActionsOutlet />
+        </HeaderActionsProvider>,
     );
     return {onSelectArticle};
 }
@@ -143,7 +158,7 @@ describe('ArticlesSplitShell dirty guard', () => {
 
         expect(await screen.findByText('panelDiscardTitle')).toBeInTheDocument();
         expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
-        expect(screen.getByTestId('panel-open')).toHaveTextContent('true');
+        expect(getToggle()).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('collapses when the collapse is confirmed', async () => {
@@ -154,7 +169,7 @@ describe('ArticlesSplitShell dirty guard', () => {
         await userEvent.click(await screen.findByRole('button', {name: 'panelDiscardConfirm'}));
 
         expect(screen.queryByTestId('article-side-panel')).not.toBeInTheDocument();
-        expect(screen.getByTestId('panel-open')).toHaveTextContent('false');
+        expect(getToggle()).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('keeps the panel open when the collapse is declined', async () => {
@@ -165,7 +180,7 @@ describe('ArticlesSplitShell dirty guard', () => {
         await userEvent.click(await screen.findByRole('button', {name: 'panelDiscardCancel'}));
 
         expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
-        expect(screen.getByTestId('panel-open')).toHaveTextContent('true');
+        expect(getToggle()).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('collapses immediately with no dialog while the panel is clean', async () => {
@@ -175,18 +190,18 @@ describe('ArticlesSplitShell dirty guard', () => {
 
         expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
         expect(screen.queryByTestId('article-side-panel')).not.toBeInTheDocument();
-        expect(screen.getByTestId('panel-open')).toHaveTextContent('false');
+        expect(getToggle()).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('never guards toggling the panel open', async () => {
         renderShell({mode: null, articleId: null});
 
         // No selection: the panel starts closed, so there is nothing dirty to lose.
-        expect(screen.getByTestId('panel-open')).toHaveTextContent('false');
+        expect(getToggle()).toHaveAttribute('aria-pressed', 'false');
 
-        await userEvent.click(screen.getByRole('button', {name: 'toggle'}));
+        await userEvent.click(getToggle());
 
         expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
-        expect(screen.getByTestId('panel-open')).toHaveTextContent('true');
+        expect(getToggle()).toHaveAttribute('aria-pressed', 'true');
     });
 });

@@ -18,6 +18,7 @@ import {Menu} from 'lucide-react';
 import {HeaderIconButton} from '@/components/layout/HeaderIconButton';
 import {useUserProfile} from '@/hooks/useNavigation';
 import {useSidebar} from '@/contexts/SidebarContext';
+import {useHeaderActions} from '@/contexts/HeaderActionsContext';
 import {HeaderShell} from '@/components/layout/HeaderShell';
 import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
 import {useScrolled} from '@/components/layout/useScrolled';
@@ -31,6 +32,9 @@ export const Topbar: React.FC<TopbarProps> = ({className}) => {
   const {isLoading} = useUserProfile();
   const scrolled = useScrolled();
   const {sidebarCollapsed, toggleSidebar, toggleMobile} = useSidebar();
+  // Read directly here, not off a prop from a memoized ancestor — the
+  // documented React Compiler hazard for a subscription like this one.
+  const headerActions = useHeaderActions();
 
   // Loading state: skeleton with final content dimensions to avoid layout
   // shift. Routed through HeaderShell so it shares the exact final chrome.
@@ -72,9 +76,11 @@ export const Topbar: React.FC<TopbarProps> = ({className}) => {
         <SectionViewSwitcher />
       </div>
 
-      {/* Right — notifications */}
+      {/* Right — notifications, then whatever the current page slots in
+          (e.g. the Articles panel toggle) immediately to their right. */}
       <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
         <NotificationCenter />
+        {headerActions}
       </div>
     </HeaderShell>
   );

@@ -40,13 +40,13 @@ import {
   ArticleSidePanel,
   type ArticleSidePanelView,
 } from '@/components/articles/ArticleSidePanel';
+import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
+import {useSetHeaderActions} from '@/contexts/HeaderActionsContext';
 import {t} from '@/lib/copy';
 
 export interface ArticlesSplitShellListApi {
   /** Row click: opens the panel on that article. */
   onArticleClick: (id: string) => void;
-  panelOpen: boolean;
-  onTogglePanel: () => void;
 }
 
 export interface ArticlesSplitShellProps {
@@ -130,11 +130,23 @@ export function ArticlesSplitShell({
 
   const listApi: ArticlesSplitShellListApi = {
     onArticleClick: handleArticleClick,
-    panelOpen,
-    // Opening is never guarded (nothing to lose); only closing goes through
-    // the same confirm path as the strip's collapse control.
-    onTogglePanel: () => (panelOpen ? requestCollapse() : setPanelOpen(true)),
   };
+
+  // Opening is never guarded (nothing to lose); only closing goes through the
+  // same confirm path as the strip's collapse control.
+  const togglePanel = () => (panelOpen ? requestCollapse() : setPanelOpen(true));
+
+  // The toggle is page-specific state that Topbar must not know about — it
+  // fills Topbar's generic header-actions slot instead of being threaded in
+  // as a Topbar prop. See HeaderActionsContext for the rationale.
+  useSetHeaderActions(
+    <PanelToggleButton
+      side={belowDesktop ? 'bottom' : 'right'}
+      pressed={panelOpen}
+      onToggle={togglePanel}
+      ariaLabel={t('articles', 'panelToggle')}
+    />,
+  );
 
   const panelBody = hasSelection ? (
     <ArticleSidePanel
