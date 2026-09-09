@@ -76,12 +76,24 @@ cmd_init() {
     dev|prod) ;;
     *) echo "ship init: --to must be dev or prod (got '${ceiling}'). The staging rung was deleted in v3." >&2; return 2 ;;
   esac
-  if _active >/dev/null 2>&1; then
-    echo "ship init: a live run already names $PWD as orchestrator. End it with 'ship done' or 'ship halt <reason>'." >&2
+  # Re-running init for the SAME basename from the same checkout UPDATES the
+  # run — that is how you attach a worktree you created after init, and how a
+  # resumed session repairs a path. A DIFFERENT basename still refuses: two
+  # live runs owned by one checkout is the ambiguity the hooks deny.
+  local live; live=$(_active 2>/dev/null)
+  if [ -n "$live" ] && [ "$live" != "$BASE/$name/state" ]; then
+    echo "ship init: a live run already names $PWD as orchestrator ($live). End it with 'ship done' or 'ship halt <reason>'." >&2
     return 1
   fi
   local f="$BASE/$name/state"
-  mkdir -p "$BASE/$name"; : >"$f"
+  mkdir -p "$BASE/$name"
+  if [ -n "$live" ]; then
+    _set "$f" ceiling "$ceiling"
+    _set "$f" worktree "$worktree"
+    cat "$f"
+    return 0
+  fi
+  : >"$f"
   _set "$f" ceiling "$ceiling"
   _set "$f" phase frame
   _set "$f" worktree "$worktree"

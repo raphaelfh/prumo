@@ -141,12 +141,15 @@ basename is the plan's.
 
 Then, in order:
 
-1. `bash scripts/ship.sh init <basename> --to <ceiling>` — this writes the run
-   state, including `orchestrator=` (the checkout the Stop gate applies to).
-2. Isolate with `superpowers:using-git-worktrees` unless `pwd` is already a
-   dedicated worktree on this task's branch, then
-   `ship.sh init … --worktree <abs path>` — or re-init if you isolated after.
-   Deps come from the parent checkout; frontend tooling runs from the repo root.
+1. **Isolate first**, with `superpowers:using-git-worktrees` — unless `pwd` is
+   already a dedicated worktree on this task's branch. Deps come from the
+   parent checkout; frontend tooling runs from the repo root.
+2. `bash scripts/ship.sh init <basename> --to <ceiling> --worktree <abs path>`,
+   run **from the main checkout**: `orchestrator=` is captured as your `$PWD`
+   and is the checkout the Stop gate applies to, while `--worktree` is where
+   the implementers edit. Isolating first makes this one call. If you did it
+   the other way round, re-run the same `init` with `--worktree` — same
+   basename from the same checkout updates the run rather than refusing.
 3. If **subject** is not a written, agreed spec, run `superpowers:brainstorming`.
    This is the one phase designed to talk to the user; surface ambiguity here.
 4. **Spec gate — before any plan.** Dispatch one read-only `Explore` seat over

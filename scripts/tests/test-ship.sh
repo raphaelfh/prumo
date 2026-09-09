@@ -24,7 +24,15 @@ ok "init records orchestrator" "$(state orchestrator)" "$SANDBOX"
 yes_ "init stamps started"     "$(state started)"
 
 bash "$SHIP" init other --to dev >/dev/null 2>&1
-ok "second init on same checkout refused" "$?" "1"
+ok "a DIFFERENT basename on the same checkout is refused" "$?" "1"
+
+# Re-init of the SAME basename updates: this is how a worktree created after
+# init gets attached, and how a resumed session repairs a path.
+bash "$SHIP" init demo --to dev --worktree /tmp >/dev/null 2>&1
+ok "same basename re-init succeeds" "$?" "0"
+ok "re-init attaches the worktree"  "$(state worktree)" "/tmp"
+ok "re-init does not reset the phase" "$(state phase)" "frame"
+bash "$SHIP" init demo --to dev --worktree "$SANDBOX" >/dev/null   # restore for later tests
 bash "$SHIP" init bad --to staging >/dev/null 2>&1
 ok "unknown ceiling refused"              "$?" "2"
 
