@@ -108,6 +108,9 @@ interface ArticleFormProps {
     variant?: 'page' | 'panel';
     /** Called for Back/Cancel in panel mode; optional in page mode (falls back to navigate(-1)). */
     onDismiss?: () => void;
+    /** Reports whether the form holds unsaved edits, so a host panel can guard
+     *  navigation away from it. Fires on every transition of the flag. */
+    onDirtyChange?: (dirty: boolean) => void;
 }
 
 
@@ -184,6 +187,7 @@ export function ArticleForm({
                                 onComplete,
                                 variant = 'page',
                                 onDismiss,
+                                onDirtyChange,
                             }: ArticleFormProps) {
   const navigate = useNavigate();
     const {user: _user} = useAuth();
@@ -204,6 +208,7 @@ export function ArticleForm({
   const [files, setFiles] = useState<ArticleFile[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<StagedArticleFile[]>([]);
+
   // Set once the add-mode row lands. Its ONLY job is to stop a retry from
   // inserting a second article; the form deliberately does NOT derive a mode
   // from it — `mode` is a prop owned by the URL, and rewriting the URL would
@@ -252,6 +257,34 @@ export function ArticleForm({
     open_access: false,
     license: ''
   });
+
+  /**
+   * Dirty tracking. The fingerprint is the SAVED shape, not the widget state:
+   * AuthorFormRow.id is a uuidv4 minted fresh by rowsFromAuthorsArray on every
+   * load, so comparing rows directly would report dirty forever and make the
+   * host panel's guard fire on every row click.
+   */
+  const dirtyFingerprint = JSON.stringify({
+    formData,
+    authors: authorsFromRows(authorRows),
+    staged: stagedFiles.length,
+  });
+  const dirtyBaselineRef = useRef<string | null>(null);
+  const lastReportedDirtyRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    // Edit mode captures its baseline only once the fetched article has been
+    // written into formData; add mode's baseline is the empty form at mount.
+    if (dirtyBaselineRef.current === null) {
+      if (mode === 'edit' && !article) return;
+      dirtyBaselineRef.current = dirtyFingerprint;
+    }
+    const dirty = dirtyFingerprint !== dirtyBaselineRef.current;
+    if (lastReportedDirtyRef.current !== dirty) {
+      lastReportedDirtyRef.current = dirty;
+      onDirtyChange?.(dirty);
+    }
+  }, [dirtyFingerprint, mode, article, onDirtyChange]);
 
   const effectiveArticleId = articleId ?? createdArticleId ?? undefined;
 
