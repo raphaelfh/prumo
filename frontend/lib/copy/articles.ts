@@ -337,6 +337,8 @@ export const articles = {
     panelDiscardBody: 'This article has edits that have not been saved.',
     panelDiscardConfirm: 'Discard changes',
     panelDiscardCancel: 'Keep editing',
+    // ArticleFieldRow: read/edit label -> value row primitive
+    fieldRowEmptyPlaceholder: 'Click to add',
 } as const;
 
 export type ArticlesCopy = typeof articles;

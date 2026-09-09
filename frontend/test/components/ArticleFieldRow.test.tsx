@@ -1,0 +1,183 @@
+/**
+ * ArticleFieldRow: the Zotero-style label -> value row primitive.
+ * Read state is plain text; clicking (or Enter/Space while focused) swaps
+ * the value area for the appropriate control, focused. Enter/blur commit,
+ * Escape reverts. See task-2-brief.md for the full contract.
+ */
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+
+import { ArticleFieldRow } from "@/components/articles/ArticleFieldRow";
+
+describe("ArticleFieldRow", () => {
+  it("shows the value as read-only text, not an input", () => {
+    render(<ArticleFieldRow label="Title" value="Some title" onCommit={vi.fn()} />);
+
+    expect(screen.getByText("Title")).toBeInTheDocument();
+    expect(screen.getByText("Some title")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("click enters edit state with the current value in the input", async () => {
+    const user = userEvent.setup();
+    render(<ArticleFieldRow label="Title" value="Some title" onCommit={vi.fn()} />);
+
+    await user.click(screen.getByText("Some title"));
+
+    const input = screen.getByRole("textbox");
+    expect(input).toHaveValue("Some title");
+    expect(input).toHaveFocus();
+  });
+
+  it("Enter commits the typed value and returns to read state showing it", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<ArticleFieldRow label="Title" value="Some title" onCommit={onCommit} />);
+
+    await user.click(screen.getByText("Some title"));
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "New title{Enter}");
+
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("New title");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("New title")).toBeInTheDocument();
+  });
+
+  it("Esc reverts without committing, restoring the original value", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<ArticleFieldRow label="Title" value="Some title" onCommit={onCommit} />);
+
+    await user.click(screen.getByText("Some title"));
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "Discarded edit");
+    // Precondition: the input really held the edited text before Esc.
+    expect(input).toHaveValue("Discarded edit");
+
+    await user.keyboard("{Escape}");
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("Some title")).toBeInTheDocument();
+  });
+
+  it("blur commits the current draft", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <>
+        <ArticleFieldRow label="Title" value="Some title" onCommit={onCommit} />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+
+    await user.click(screen.getByText("Some title"));
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "Blurred edit");
+    await user.click(screen.getByRole("button", { name: "elsewhere" }));
+
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("Blurred edit");
+    expect(screen.getByText("Blurred edit")).toBeInTheDocument();
+  });
+
+  it("is keyboard reachable: Enter on the focused read state enters edit state", async () => {
+    const user = userEvent.setup();
+    render(<ArticleFieldRow label="Title" value="Some title" onCommit={vi.fn()} />);
+
+    await user.tab();
+    expect(screen.getByRole("button")).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+
+    const input = screen.getByRole("textbox");
+    expect(input).toHaveValue("Some title");
+    expect(input).toHaveFocus();
+  });
+
+  it("an empty value still renders a clickable placeholder that can be entered", async () => {
+    const user = userEvent.setup();
+    render(<ArticleFieldRow label="Title" value="" onCommit={vi.fn()} />);
+
+    const readButton = screen.getByRole("button");
+    expect(readButton).toHaveTextContent(/.+/);
+
+    await user.click(readButton);
+
+    expect(screen.getByRole("textbox")).toHaveValue("");
+  });
+
+  it("the label stays associated with the control across the swap", async () => {
+    const user = userEvent.setup();
+    render(<ArticleFieldRow label="Title" value="Some title" onCommit={vi.fn()} />);
+
+    await user.click(screen.getByText("Some title"));
+
+    expect(screen.getByRole("textbox", { name: "Title" })).toBeInTheDocument();
+  });
+
+  it("Escape does not leave a stray blur-triggered commit (stale closure guard)", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<ArticleFieldRow label="Title" value="Some title" onCommit={onCommit} />);
+
+    await user.click(screen.getByText("Some title"));
+    const input = screen.getByRole("textbox");
+    await user.type(input, " more");
+    await user.keyboard("{Escape}");
+    input.blur();
+
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("control='multiline' renders a textarea in edit state", async () => {
+    const user = userEvent.setup();
+    render(
+      <ArticleFieldRow label="Abstract" value="Long text" onCommit={vi.fn()} control="multiline" />,
+    );
+
+    await user.click(screen.getByText("Long text"));
+
+    expect(screen.getByRole("textbox").tagName).toBe("TEXTAREA");
+  });
+
+  it("control='switch' commits on toggle", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<ArticleFieldRow label="Open access" value="false" onCommit={onCommit} control="switch" />);
+
+    await user.click(screen.getByText("false"));
+    const toggle = screen.getByRole("switch");
+    await user.click(toggle);
+
+    expect(onCommit).toHaveBeenCalledWith("true");
+  });
+
+  it("control='select' commits on choosing an option", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <ArticleFieldRow
+        label="Item type"
+        value="article"
+        onCommit={onCommit}
+        control="select"
+        options={[
+          { value: "article", label: "Article" },
+          { value: "review", label: "Review" },
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByText("article"));
+    await user.click(screen.getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: "Review" }));
+
+    expect(onCommit).toHaveBeenCalledWith("review");
+  });
+});
