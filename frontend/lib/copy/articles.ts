@@ -334,6 +334,10 @@ export const articles = {
     panelPlaceholderTitle: 'No article selected',
     panelPlaceholderBody: 'Select an article to read its document or edit its details.',
     panelToggle: 'Toggle the article panel',
+    panelDiscardTitle: 'Discard unsaved changes?',
+    panelDiscardBody: 'This article has edits that have not been saved.',
+    panelDiscardConfirm: 'Discard changes',
+    panelDiscardCancel: 'Keep editing',
 } as const;
 
 export type ArticlesCopy = typeof articles;

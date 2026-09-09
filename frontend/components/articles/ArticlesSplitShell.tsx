@@ -21,6 +21,16 @@
 import {type ReactNode, useEffect, useRef, useState} from 'react';
 
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -66,6 +76,8 @@ export function ArticlesSplitShell({
   const hasSelection = mode === 'add' || (mode === 'edit' && Boolean(articleId));
   // Open on mount when the URL already carries a selection (deep link, reload).
   const [panelOpen, setPanelOpen] = useState(hasSelection);
+  const [dirty, setDirty] = useState(false);
+  const [pendingArticleId, setPendingArticleId] = useState<string | null>(null);
   const belowDesktop = useIsBelowDesktop();
 
   // Open the panel on a false->true transition of hasSelection (e.g. "Add
@@ -81,9 +93,20 @@ export function ArticlesSplitShell({
     prevHasSelectionRef.current = hasSelection;
   }, [hasSelection]);
 
-  const handleArticleClick = (id: string) => {
+  const selectArticle = (id: string) => {
     setPanelOpen(true);
+    setDirty(false);
     onSelectArticle(id);
+  };
+
+  const handleArticleClick = (id: string) => {
+    // Only a genuine swap is guarded: re-clicking the open article is a no-op,
+    // and nagging there would make the guard feel broken.
+    if (dirty && id !== articleId) {
+      setPendingArticleId(id);
+      return;
+    }
+    selectArticle(id);
   };
 
   const listApi: ArticlesSplitShellListApi = {
@@ -102,6 +125,7 @@ export function ArticlesSplitShell({
       onCollapse={() => setPanelOpen(false)}
       onDismiss={onDismiss}
       onComplete={onComplete}
+      onDirtyChange={setDirty}
     />
   ) : (
     <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
@@ -110,6 +134,34 @@ export function ArticlesSplitShell({
         {t('articles', 'panelPlaceholderBody')}
       </p>
     </div>
+  );
+
+  const discardDialog = (
+    <AlertDialog
+      open={pendingArticleId !== null}
+      onOpenChange={(open) => !open && setPendingArticleId(null)}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('articles', 'panelDiscardTitle')}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t('articles', 'panelDiscardBody')}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('articles', 'panelDiscardCancel')}</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              const id = pendingArticleId;
+              setPendingArticleId(null);
+              if (id) selectArticle(id);
+            }}
+          >
+            {t('articles', 'panelDiscardConfirm')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 
   if (belowDesktop) {
@@ -125,28 +177,32 @@ export function ArticlesSplitShell({
             {panelBody}
           </SheetContent>
         </Sheet>
+        {discardDialog}
       </div>
     );
   }
 
   return (
-    <ResizablePanelGroup orientation="horizontal" className="h-full">
-      <ResizablePanel id="articles-shell-list" defaultSize={panelOpen ? '55%' : '100%'} minSize="35%">
-        <div className="flex h-full min-h-0 flex-col">{list(listApi)}</div>
-      </ResizablePanel>
-      {panelOpen ? (
-        <>
-          <ResizableHandle withHandle/>
-          <ResizablePanel
-            id="articles-shell-panel"
-            defaultSize="45%"
-            minSize="30%"
-            maxSize="65%"
-          >
-            {panelBody}
-          </ResizablePanel>
-        </>
-      ) : null}
-    </ResizablePanelGroup>
+    <>
+      <ResizablePanelGroup orientation="horizontal" className="h-full">
+        <ResizablePanel id="articles-shell-list" defaultSize={panelOpen ? '55%' : '100%'} minSize="35%">
+          <div className="flex h-full min-h-0 flex-col">{list(listApi)}</div>
+        </ResizablePanel>
+        {panelOpen ? (
+          <>
+            <ResizableHandle withHandle/>
+            <ResizablePanel
+              id="articles-shell-panel"
+              defaultSize="45%"
+              minSize="30%"
+              maxSize="65%"
+            >
+              {panelBody}
+            </ResizablePanel>
+          </>
+        ) : null}
+      </ResizablePanelGroup>
+      {discardDialog}
+    </>
   );
 }
