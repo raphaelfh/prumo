@@ -94,6 +94,14 @@ export function ArticlesSplitShell({
     if (!prevHasSelectionRef.current && hasSelection) {
       setPanelOpen(true);
     }
+    // A true->false transition means the selection was cleared out from
+    // under the panel (e.g. Cancel clears the URL): ArticleSidePanel
+    // unmounts without ever calling onDirtyChange(false), so `dirty` would
+    // otherwise strand at whatever it last reported and make the header
+    // toggle raise a discard dialog over an empty placeholder.
+    if (prevHasSelectionRef.current && !hasSelection) {
+      setDirty(false);
+    }
     prevHasSelectionRef.current = hasSelection;
   }, [hasSelection]);
 

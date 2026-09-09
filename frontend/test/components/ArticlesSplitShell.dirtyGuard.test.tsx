@@ -63,29 +63,38 @@ function setDesktop() {
 
 function renderShell(overrides: Partial<Parameters<typeof ArticlesSplitShell>[0]> = {}) {
     const onSelectArticle = vi.fn();
-    render(
+    const props: Parameters<typeof ArticlesSplitShell>[0] = {
+        projectId: 'p1',
+        mode: 'edit',
+        articleId: 'a1',
+        view: 'details',
+        onViewChange: vi.fn(),
+        onSelectArticle,
+        onDismiss: vi.fn(),
+        onComplete: vi.fn(),
+        list: ({onArticleClick}) => (
+            <>
+                <button onClick={() => onArticleClick('a1')}>row a1</button>
+                <button onClick={() => onArticleClick('a2')}>row a2</button>
+            </>
+        ),
+        ...overrides,
+    };
+    const {rerender} = render(
         <HeaderActionsProvider>
-            <ArticlesSplitShell
-                projectId="p1"
-                mode="edit"
-                articleId="a1"
-                view="details"
-                onViewChange={vi.fn()}
-                onSelectArticle={onSelectArticle}
-                onDismiss={vi.fn()}
-                onComplete={vi.fn()}
-                list={({onArticleClick}) => (
-                    <>
-                        <button onClick={() => onArticleClick('a1')}>row a1</button>
-                        <button onClick={() => onArticleClick('a2')}>row a2</button>
-                    </>
-                )}
-                {...overrides}
-            />
+            <ArticlesSplitShell {...props} />
             <HeaderActionsOutlet />
         </HeaderActionsProvider>,
     );
-    return {onSelectArticle};
+    const rerenderShell = (nextOverrides: Partial<Parameters<typeof ArticlesSplitShell>[0]> = {}) => {
+        rerender(
+            <HeaderActionsProvider>
+                <ArticlesSplitShell {...props} {...nextOverrides} />
+                <HeaderActionsOutlet />
+            </HeaderActionsProvider>,
+        );
+    };
+    return {onSelectArticle, rerenderShell};
 }
 
 beforeEach(() => {
@@ -203,5 +212,30 @@ describe('ArticlesSplitShell dirty guard', () => {
 
         expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
         expect(getToggle()).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('resets dirty when the selection clears, so toggling afterward does not nag over an empty panel', async () => {
+        const {rerenderShell} = renderShell();
+
+        await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
+        // Precondition: the shell was actually told the form is dirty, or a
+        // shell that never wires onDirtyChange (or that already resets it too
+        // early) would pass the rest of this test vacuously. Prove it via the
+        // existing swap guard, then decline the swap so the article stays put.
+        await userEvent.click(screen.getByRole('button', {name: 'row a2'}));
+        expect(await screen.findByText('panelDiscardTitle')).toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', {name: 'panelDiscardCancel'}));
+        expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
+
+        // Simulate Cancel clearing the URL: ProjectView drops mode/articleId,
+        // unmounting ArticleSidePanel and swapping in the placeholder -- while
+        // the shell's `dirty` must reset even though nothing explicitly told it
+        // to (ArticleSidePanel is gone, so it cannot call onDirtyChange(false)).
+        rerenderShell({mode: null, articleId: null});
+        expect(screen.queryByTestId('article-side-panel')).not.toBeInTheDocument();
+
+        await userEvent.click(getToggle());
+
+        expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
     });
 });
