@@ -34,7 +34,7 @@ vi.mock('@/services/articlesService', async (importOriginal) => ({
 }));
 
 import {ArticleForm} from '@/components/articles/ArticleForm';
-import {fetchArticle, fetchArticleFiles} from '@/services/articlesService';
+import {fetchArticle, fetchArticleFiles, insertArticle} from '@/services/articlesService';
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -118,5 +118,36 @@ describe('ArticleForm dirty reporting', () => {
         await waitFor(() => {
             expect(onDirtyChange).toHaveBeenLastCalledWith(false);
         });
+    });
+});
+
+describe('ArticleForm create reporting', () => {
+    it('reports the new id after an add-mode save', async () => {
+        vi.mocked(insertArticle).mockResolvedValue({
+            ok: true,
+            data: {id: 'new-art-9'},
+        } as never);
+
+        const onArticleCreated = vi.fn();
+        render(
+            <MemoryRouter>
+                <ArticleForm
+                    mode="add"
+                    projectId="proj-1"
+                    variant="panel"
+                    onDismiss={vi.fn()}
+                    onComplete={vi.fn()}
+                    onArticleCreated={onArticleCreated}
+                />
+            </MemoryRouter>,
+        );
+
+        await userEvent.type(await screen.findByLabelText(/titleRequired/), 'A new paper');
+        await userEvent.click(screen.getByRole('button', {name: /createArticle/}));
+
+        await waitFor(() => {
+            expect(onArticleCreated).toHaveBeenCalledWith('new-art-9');
+        });
+        expect(onArticleCreated).toHaveBeenCalledTimes(1);
     });
 });

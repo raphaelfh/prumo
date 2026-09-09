@@ -111,6 +111,11 @@ interface ArticleFormProps {
     /** Reports whether the form holds unsaved edits, so a host panel can guard
      *  navigation away from it. Fires on every transition of the flag. */
     onDirtyChange?: (dirty: boolean) => void;
+    /** Fired once when add mode's insert succeeds, with the new article's id.
+     *  The form deliberately does NOT put this in the URL — that would remount
+     *  the tree and destroy the staged File objects (see the note at the
+     *  createdArticleId declaration) — so a host panel learns the id here. */
+    onArticleCreated?: (articleId: string) => void;
 }
 
 
@@ -188,6 +193,7 @@ export function ArticleForm({
                                 variant = 'page',
                                 onDismiss,
                                 onDirtyChange,
+                                onArticleCreated,
                             }: ArticleFormProps) {
   const navigate = useNavigate();
     const {user: _user} = useAuth();
@@ -535,6 +541,7 @@ export function ArticleForm({
       }
       savedArticleId = created.data.id;
       setCreatedArticleId(savedArticleId);
+      onArticleCreated?.(savedArticleId);
     } else {
       const targetId = articleId ?? createdArticleId;
       if (!targetId) {
