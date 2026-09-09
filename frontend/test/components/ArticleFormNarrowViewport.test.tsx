@@ -97,9 +97,17 @@ describe('article editor — step rail below lg', () => {
     });
 });
 
-describe('article editor — header identity', () => {
+describe('article editor — header identity (page variant)', () => {
+    function renderPageAdd() {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+    }
+
     it('renders the title in add mode and folds only the redundant description', async () => {
-        renderAdd();
+        renderPageAdd();
 
         expect(await screen.findByText('addArticle')).toBeInTheDocument();
         // addArticleDesc restates the title, so it is what gives way — the
@@ -110,25 +118,38 @@ describe('article editor — header identity', () => {
     it('keeps the article title in edit mode, where the description is the only identity', async () => {
         render(
             <MemoryRouter>
-                <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" variant="panel" onDismiss={vi.fn()}/>
+                <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" variant="page" onDismiss={vi.fn()}/>
             </MemoryRouter>,
         );
 
         // Scoped to the header: the title also appears in the title textarea,
         // so an unscoped query would pass even with the header identity gone.
         const header = (await screen.findByText('editArticle')).closest('[data-slot="page-header"]')!;
-        // Folding this below sm would leave mobile edit reading "Edit article"
-        // with no indication of WHICH article — worse than the bug being fixed.
         expect(within(header as HTMLElement).getByText('A stored-markdown study')).toBeInTheDocument();
     });
 
     it('folds the Back label but keeps the button named', async () => {
-        renderAdd();
+        renderPageAdd();
 
         const back = await screen.findByRole('button', {name: 'back'});
         const label = back.querySelector('[data-slot="back-label"]');
         expect(label!.className).toContain('sr-only');
         expect(label!.className).toContain('sm:not-sr-only');
         expect(label!.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    });
+});
+
+describe('article editor — panel variant has no header', () => {
+    it('renders the actions without the page header, title or back button', async () => {
+        renderAdd(); // panel variant
+
+        // Precondition: the form actually rendered, so the absences below mean
+        // "the header is gone", not "nothing mounted".
+        expect(await screen.findByTestId('article-form-actions')).toBeInTheDocument();
+        expect(screen.getByRole('button', {name: /createArticle/})).toBeInTheDocument();
+
+        expect(screen.queryByText('addArticle')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', {name: 'back'})).not.toBeInTheDocument();
+        expect(document.querySelector('[data-slot="page-header"]')).toBeNull();
     });
 });

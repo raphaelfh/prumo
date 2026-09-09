@@ -712,6 +712,32 @@ export function ArticleForm({
         );
     }
 
+    const formActions = (
+        <div className="flex items-center gap-2" data-testid="article-form-actions">
+            <Button variant="outline" size="sm" className="h-8 px-3 text-[12px]" onClick={handleDismiss}>
+                {t('common', 'cancel')}
+            </Button>
+            <Button
+                size="sm"
+                className="h-8 px-3 text-[12px] font-medium"
+                onClick={handleSave}
+                disabled={saving || !isStepValid('basic')}
+            >
+                {saving ? (
+                    <>
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/>
+                        {t('articles', 'saving')}
+                    </>
+                ) : (
+                    <>
+                        <Save className="mr-1.5 h-3.5 w-3.5"/>
+                        {mode === 'add' ? t('articles', 'createArticle') : t('common', 'save')}
+                    </>
+                )}
+            </Button>
+        </div>
+    );
+
     return (
       <TooltipProvider delayDuration={200}>
         <div
@@ -720,58 +746,42 @@ export function ArticleForm({
                 isPanel ? 'h-full' : 'h-screen'
             )}
         >
-            <PageHeader
-                leading={
-                    <Button variant="ghost" size="sm" onClick={handleDismiss} aria-label={t('common', 'back')}>
-                        {/*
-                          * At 375px this bar is 374px wide and the actions group takes 206
-                          * of it, so the identity group was compressed until the title
-                          * rendered as nothing. The label folds first — the arrow plus the
-                          * aria-label still name the button — and sr-only rather than
-                          * `hidden` keeps that name in the accessibility tree.
-                          */}
-                        <ArrowLeft className="h-4 w-4 sm:mr-2"/>
-                        <span data-slot="back-label" className="sr-only sm:not-sr-only">
-                            {t('common', 'back')}
-                        </span>
-                    </Button>
-                }
-                title={mode === 'add' ? t('articles', 'addArticle') : t('articles', 'editArticle')}
-                description={
-                    /*
-                     * Edit mode's description IS the article's title, and it is the only
-                     * thing naming which article this is — so it must never fold. Add
-                     * mode's merely restates the title next to it, so it is the one that
-                     * gives way rather than the title.
-                     */
-                    mode === 'edit' && article ? article.title : undefined
-                }
-                actions={
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" className="h-8 px-3 text-[12px]" onClick={handleDismiss}>
-                            {t('common', 'cancel')}
+            {isPanel ? (
+                /* The hosting panel's strip already names the article and owns
+                   the exit, so the panel variant keeps only the actions. */
+                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border/40 px-3 py-1.5">
+                    {formActions}
+                </div>
+            ) : (
+                <PageHeader
+                    leading={
+                        <Button variant="ghost" size="sm" onClick={handleDismiss} aria-label={t('common', 'back')}>
+                            {/*
+                              * At 375px this bar is 374px wide and the actions group takes 206
+                              * of it, so the identity group was compressed until the title
+                              * rendered as nothing. The label folds first — the arrow plus the
+                              * aria-label still name the button — and sr-only rather than
+                              * `hidden` keeps that name in the accessibility tree.
+                              */}
+                            <ArrowLeft className="h-4 w-4 sm:mr-2"/>
+                            <span data-slot="back-label" className="sr-only sm:not-sr-only">
+                                {t('common', 'back')}
+                            </span>
                         </Button>
-                        <Button
-                            size="sm"
-                            className="h-8 px-3 text-[12px] font-medium"
-                            onClick={handleSave}
-                            disabled={saving || !isStepValid('basic')}
-                        >
-                            {saving ? (
-                                <>
-                                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/>
-                                    {t('articles', 'saving')}
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="mr-1.5 h-3.5 w-3.5"/>
-                                    {mode === 'add' ? t('articles', 'createArticle') : t('common', 'save')}
-                                </>
-                            )}
-                        </Button>
-                    </div>
-                }
-            />
+                    }
+                    title={mode === 'add' ? t('articles', 'addArticle') : t('articles', 'editArticle')}
+                    description={
+                        /*
+                         * Edit mode's description IS the article's title, and it is the only
+                         * thing naming which article this is — so it must never fold. Add
+                         * mode's merely restates the title next to it, so it is the one that
+                         * gives way rather than the title.
+                         */
+                        mode === 'edit' && article ? article.title : undefined
+                    }
+                    actions={formActions}
+                />
+            )}
 
             <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row">
                 <ArticleFormSteps
