@@ -34,7 +34,7 @@ vi.mock('@/services/articlesService', async (importOriginal) => ({
 }));
 
 import {ArticleForm} from '@/components/articles/ArticleForm';
-import {fetchArticle, fetchArticleFiles, insertArticle} from '@/services/articlesService';
+import {fetchArticle, fetchArticleFiles, insertArticle, updateArticle} from '@/services/articlesService';
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -99,6 +99,36 @@ describe('ArticleForm dirty reporting', () => {
         await waitFor(() => {
             expect(onDirtyChange).toHaveBeenLastCalledWith(true);
         });
+    });
+
+    it('reports clean again after a successful edit-mode save', async () => {
+        vi.mocked(updateArticle).mockResolvedValue({ok: true, data: {id: 'art-1'}} as never);
+        const onDirtyChange = vi.fn();
+        render(
+            <MemoryRouter>
+                <ArticleForm
+                    mode="edit"
+                    projectId="proj-1"
+                    articleId="art-1"
+                    variant="panel"
+                    onDismiss={vi.fn()}
+                    onComplete={vi.fn()}
+                    onDirtyChange={onDirtyChange}
+                />
+            </MemoryRouter>,
+        );
+
+        const title = await screen.findByDisplayValue('A stored-markdown study');
+        await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+
+        await userEvent.type(title, ' revised');
+        // Precondition: it must actually go dirty, or "clean after save" proves nothing.
+        await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+
+        await userEvent.click(screen.getByRole('button', {name: 'save'}));
+
+        await waitFor(() => expect(updateArticle).toHaveBeenCalled());
+        await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
     });
 
     it('reports clean on a fresh add form', async () => {

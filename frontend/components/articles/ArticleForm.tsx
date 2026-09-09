@@ -559,6 +559,9 @@ export function ArticleForm({
 
     setSaving(false);
 
+    dirtyBaselineRef.current = JSON.stringify({formData, authors: authorsFromRows(authorRows), staged: failedIds.length});
+    lastReportedDirtyRef.current = false; onDirtyChange?.(false);
+
     if (failedIds.length > 0) {
       // The row persisted, so the sheet MUST stay open: these `File` objects
       // exist nowhere else and dismissing would drop them silently.
