@@ -14,13 +14,16 @@ vi.mock('@/components/articles/ArticleSidePanel', () => ({
     ArticleSidePanel: ({
         articleId,
         onDirtyChange,
+        onCollapse,
     }: {
         articleId?: string;
         onDirtyChange?: (d: boolean) => void;
+        onCollapse?: () => void;
     }) => (
         <div data-testid="article-side-panel">
             {articleId ?? 'none'}
             <button onClick={() => onDirtyChange?.(true)}>make dirty</button>
+            <button onClick={() => onCollapse?.()}>strip collapse</button>
         </div>
     ),
 }));
@@ -44,7 +47,7 @@ function setDesktop() {
     });
 }
 
-function renderShell() {
+function renderShell(overrides: Partial<Parameters<typeof ArticlesSplitShell>[0]> = {}) {
     const onSelectArticle = vi.fn();
     render(
         <ArticlesSplitShell
@@ -56,12 +59,15 @@ function renderShell() {
             onSelectArticle={onSelectArticle}
             onDismiss={vi.fn()}
             onComplete={vi.fn()}
-            list={({onArticleClick}) => (
+            list={({onArticleClick, panelOpen, onTogglePanel}) => (
                 <>
                     <button onClick={() => onArticleClick('a1')}>row a1</button>
                     <button onClick={() => onArticleClick('a2')}>row a2</button>
+                    <button onClick={onTogglePanel}>toggle</button>
+                    <span data-testid="panel-open">{String(panelOpen)}</span>
                 </>
             )}
+            {...overrides}
         />,
     );
     return {onSelectArticle};
@@ -123,5 +129,64 @@ describe('ArticlesSplitShell dirty guard', () => {
         expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
         // The click still flows through (proving it wasn't just swallowed).
         expect(onSelectArticle).toHaveBeenCalledWith('a1');
+    });
+
+    it('asks before collapsing via the strip control when the panel reported dirty', async () => {
+        renderShell();
+
+        await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
+        // Precondition: the shell was actually told the form is dirty, or a
+        // shell that never wires onDirtyChange would pass this test vacuously.
+        expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', {name: 'strip collapse'}));
+
+        expect(await screen.findByText('panelDiscardTitle')).toBeInTheDocument();
+        expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
+        expect(screen.getByTestId('panel-open')).toHaveTextContent('true');
+    });
+
+    it('collapses when the collapse is confirmed', async () => {
+        renderShell();
+
+        await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
+        await userEvent.click(screen.getByRole('button', {name: 'strip collapse'}));
+        await userEvent.click(await screen.findByRole('button', {name: 'panelDiscardConfirm'}));
+
+        expect(screen.queryByTestId('article-side-panel')).not.toBeInTheDocument();
+        expect(screen.getByTestId('panel-open')).toHaveTextContent('false');
+    });
+
+    it('keeps the panel open when the collapse is declined', async () => {
+        renderShell();
+
+        await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
+        await userEvent.click(screen.getByRole('button', {name: 'strip collapse'}));
+        await userEvent.click(await screen.findByRole('button', {name: 'panelDiscardCancel'}));
+
+        expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
+        expect(screen.getByTestId('panel-open')).toHaveTextContent('true');
+    });
+
+    it('collapses immediately with no dialog while the panel is clean', async () => {
+        renderShell();
+
+        await userEvent.click(screen.getByRole('button', {name: 'strip collapse'}));
+
+        expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('article-side-panel')).not.toBeInTheDocument();
+        expect(screen.getByTestId('panel-open')).toHaveTextContent('false');
+    });
+
+    it('never guards toggling the panel open', async () => {
+        renderShell({mode: null, articleId: null});
+
+        // No selection: the panel starts closed, so there is nothing dirty to lose.
+        expect(screen.getByTestId('panel-open')).toHaveTextContent('false');
+
+        await userEvent.click(screen.getByRole('button', {name: 'toggle'}));
+
+        expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
+        expect(screen.getByTestId('panel-open')).toHaveTextContent('true');
     });
 });

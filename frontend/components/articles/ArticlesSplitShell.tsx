@@ -76,7 +76,12 @@ export function ArticlesSplitShell({
   // Open on mount when the URL already carries a selection (deep link, reload).
   const [panelOpen, setPanelOpen] = useState(hasSelection);
   const [dirty, setDirty] = useState(false);
-  const [pendingArticleId, setPendingArticleId] = useState<string | null>(null);
+  // Two entry points can close the panel (the toolbar toggle and the strip's
+  // collapse control) on top of the swap-article guard, so one pending action
+  // models all three: which thing is waiting on the confirm dialog.
+  const [pendingAction, setPendingAction] = useState<
+    {type: 'select'; id: string} | {type: 'collapse'} | null
+  >(null);
   const belowDesktop = useIsBelowDesktop();
 
   // Open the panel on a false->true transition of hasSelection (e.g. "Add
@@ -102,16 +107,33 @@ export function ArticlesSplitShell({
     // Only a genuine swap is guarded: re-clicking the open article is a no-op,
     // and nagging there would make the guard feel broken.
     if (dirty && id !== articleId) {
-      setPendingArticleId(id);
+      setPendingAction({type: 'select', id});
       return;
     }
     selectArticle(id);
   };
 
+  const collapsePanel = () => {
+    setPanelOpen(false);
+    // Nothing left to lose once the panel is gone: an un-cleared `dirty`
+    // would nag about edits that no longer exist on the next row click.
+    setDirty(false);
+  };
+
+  const requestCollapse = () => {
+    if (dirty) {
+      setPendingAction({type: 'collapse'});
+      return;
+    }
+    collapsePanel();
+  };
+
   const listApi: ArticlesSplitShellListApi = {
     onArticleClick: handleArticleClick,
     panelOpen,
-    onTogglePanel: () => setPanelOpen((v) => !v),
+    // Opening is never guarded (nothing to lose); only closing goes through
+    // the same confirm path as the strip's collapse control.
+    onTogglePanel: () => (panelOpen ? requestCollapse() : setPanelOpen(true)),
   };
 
   const panelBody = hasSelection ? (
@@ -121,7 +143,7 @@ export function ArticlesSplitShell({
       articleId={articleId ?? undefined}
       view={view}
       onViewChange={onViewChange}
-      onCollapse={() => setPanelOpen(false)}
+      onCollapse={requestCollapse}
       onDismiss={onDismiss}
       onComplete={onComplete}
       onDirtyChange={setDirty}
@@ -137,8 +159,8 @@ export function ArticlesSplitShell({
 
   const discardDialog = (
     <AlertDialog
-      open={pendingArticleId !== null}
-      onOpenChange={(open) => !open && setPendingArticleId(null)}
+      open={pendingAction !== null}
+      onOpenChange={(open) => !open && setPendingAction(null)}
     >
       <AlertDialogContent>
         <AlertDialogHeader>
@@ -151,9 +173,10 @@ export function ArticlesSplitShell({
           <AlertDialogCancel>{t('articles', 'panelDiscardCancel')}</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
-              const id = pendingArticleId;
-              setPendingArticleId(null);
-              if (id) selectArticle(id);
+              const action = pendingAction;
+              setPendingAction(null);
+              if (action?.type === 'select') selectArticle(action.id);
+              else if (action?.type === 'collapse') collapsePanel();
             }}
           >
             {t('articles', 'panelDiscardConfirm')}
