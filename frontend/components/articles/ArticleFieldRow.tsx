@@ -7,8 +7,16 @@
  * `control`, focused. Enter or blur commits the draft via `onCommit`; Escape
  * reverts. Committing is NOT saving — it only updates the parent's in-memory
  * form state, exactly like typing into an always-on input does today. Only
- * one row is ever in edit state at a time because each instance owns its own
- * `editing` flag.
+ * one row is ever in edit state at a time -- each instance owns its own
+ * `editing` flag, but that alone would not stop two rows from both being
+ * `true`. What actually enforces it: entering edit on a row focuses its
+ * control, and focusing one element natively blurs whatever was focused
+ * before, so the previous row's blur handler always commits or reverts it
+ * before the new row's `editing` flips to true. `control='select'` adds one
+ * more piece -- Radix's Select is modal while open (it sets
+ * `pointer-events: none` on the rest of the page and traps focus in its
+ * portal), so a second row cannot be reached at all until the popover closes
+ * and its own blur/commit has run.
  *
  * For `control='multiline'`, plain Enter inserts a newline (it is a
  * paragraph field); Cmd/Ctrl+Enter is the explicit keyboard commit. Blur
@@ -129,6 +137,17 @@ export function ArticleFieldRow({
      * swallow the Tab that just fired it.
      */
     const restoreFocusRef = useRef(false);
+    /**
+     * Tracks whether the `control='select'` popover is currently open, via
+     * Radix's `onOpenChange`. Radix's Select renders its options in a
+     * PORTAL, so opening it -- and choosing an option inside it -- both
+     * blur the trigger. A blur-to-revert handler that does not know the
+     * popover is open would revert the row (and unmount the Select) before
+     * the option's `onValueChange` commit lands, which is exactly the bug
+     * this ref fixes: the trigger's blur handler skips the revert while
+     * this is true.
+     */
+    const selectOpenRef = useRef(false);
 
     useEffect(() => {
         if (editing) {
@@ -198,6 +217,21 @@ export function ArticleFieldRow({
         commit(draft);
     };
 
+    /**
+     * Blur handler for the `control='select'` trigger. Skips the revert
+     * while the popover is open (see `selectOpenRef`) so that choosing an
+     * option -- which blurs the trigger on its way to `onValueChange` --
+     * does not revert the row out from under the commit.
+     */
+    const handleSelectBlur = () => {
+        if (suppressBlurRef.current) {
+            suppressBlurRef.current = false;
+            return;
+        }
+        if (selectOpenRef.current) return;
+        revert();
+    };
+
     const resolvedSwitchLabels = switchLabels ?? {
         on: t("articles", "switchOn"),
         off: t("articles", "switchOff"),
@@ -247,18 +281,26 @@ export function ArticleFieldRow({
                                     revert({ refocus: true });
                                 }
                             }}
+                            onBlur={() => revert()}
                         />
                     ) : control === "select" ? (
-                        <Select value={draft} onValueChange={(next) => commit(next)}>
+                        <Select
+                            value={draft}
+                            onValueChange={(next) => commit(next)}
+                            onOpenChange={(open) => {
+                                selectOpenRef.current = open;
+                            }}
+                        >
                             <SelectTrigger
                                 id={fieldId}
                                 ref={controlRef as React.RefObject<HTMLButtonElement>}
                                 onKeyDown={(event) => {
                                     if (event.key === "Escape") {
                                         event.preventDefault();
-                                        revert();
+                                        revert({ refocus: true });
                                     }
                                 }}
+                                onBlur={handleSelectBlur}
                             >
                                 <SelectValue placeholder={placeholder} />
                             </SelectTrigger>

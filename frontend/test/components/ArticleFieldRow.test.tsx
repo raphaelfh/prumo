@@ -394,6 +394,76 @@ describe("ArticleFieldRow", () => {
     expect(valueButton.parentElement).toBe(hint.parentElement);
   });
 
+  it("control='select': blurring the trigger returns to read state without committing", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <>
+        <ArticleFieldRow
+          label="Item type"
+          value="article"
+          onCommit={onCommit}
+          control="select"
+          options={[
+            { value: "article", label: "Article" },
+            { value: "review", label: "Review" },
+          ]}
+        />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+
+    await user.click(screen.getByText("Article"));
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
+
+    fireEvent.blur(screen.getByRole("combobox"));
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByText("Article")).toBeInTheDocument();
+  });
+
+  it("control='switch': blurring the toggle returns to read state", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<ArticleFieldRow label="Open access" value="false" onCommit={onCommit} control="switch" />);
+
+    await user.click(screen.getByRole("button"));
+    expect(screen.getByRole("switch")).toBeInTheDocument();
+
+    fireEvent.blur(screen.getByRole("switch"));
+
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  it("only one row is ever in edit state: blurring a select without choosing lets a second row enter edit", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <ArticleFieldRow
+          label="Item type"
+          value="article"
+          onCommit={vi.fn()}
+          control="select"
+          options={[
+            { value: "article", label: "Article" },
+            { value: "review", label: "Review" },
+          ]}
+        />
+        <ArticleFieldRow label="Title" value="Some title" onCommit={vi.fn()} />
+      </>,
+    );
+
+    await user.click(screen.getByText("Article"));
+    fireEvent.blur(screen.getByRole("combobox"));
+    await user.click(screen.getByText("Some title"));
+
+    // Only the Title row's textbox is in edit state; the select row is back
+    // to read state, so at most one row is ever editing at a time.
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
   it("control='select': Escape reverts to read state without committing", async () => {
     const user = userEvent.setup();
     const onCommit = vi.fn();
