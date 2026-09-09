@@ -45,7 +45,7 @@ export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing, com
             className={cn(
                 'shrink-0 bg-[#fafafa] dark:bg-[#0c0c0c]',
                 compact
-                    ? 'w-auto border-r border-border/40 overflow-y-auto'
+                    ? 'w-full border-b border-border/40 lg:w-auto lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto'
                     : 'w-full border-b border-border/40 lg:w-56 lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto',
             )}
         >
@@ -54,7 +54,7 @@ export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing, com
                 aria-label={t('articles', 'formStepsAria')}
                 className={cn(
                     'flex gap-0.5',
-                    compact ? 'flex-col px-1.5 py-3' : 'flex-row px-2 py-3 lg:flex-col lg:px-2 lg:py-4',
+                    compact ? 'flex-row px-2 py-1.5 lg:flex-col lg:px-1.5 lg:py-3' : 'flex-row px-2 py-3 lg:flex-col lg:px-2 lg:py-4',
                 )}
             >
                 {steps.map((step) => {

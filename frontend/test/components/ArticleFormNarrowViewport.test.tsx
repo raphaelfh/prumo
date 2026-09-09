@@ -187,4 +187,21 @@ describe('article editor — compact section rail in the panel', () => {
         const label = within(rail).getAllByRole('button')[0].querySelector('[data-slot="step-label"]');
         expect(label!.className).toContain('lg:not-sr-only');
     });
+
+    it('keeps the compact rail a horizontal strip below lg and a column at lg+', async () => {
+        renderAdd(); // panel variant, compact rail
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        // Precondition: the rail actually rendered all five steps, so the
+        // direction assertion below cannot pass vacuously against an empty nav.
+        expect(within(rail).getAllByRole('button')).toHaveLength(5);
+
+        const emitted = rail.className;
+        // Below lg the surrounding ArticleForm container is already a column
+        // (`flex-col … lg:flex-row`), so the compact rail must render as a
+        // horizontal icon strip across the top — not a tall stack of icons.
+        expect(emitted).toMatch(/(^|\s)flex-row(\s|$)/);
+        // At lg+ it folds back into the narrow icon column.
+        expect(emitted).toContain('lg:flex-col');
+    });
 });
