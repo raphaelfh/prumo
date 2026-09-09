@@ -78,9 +78,10 @@ describe('article editor — step rail below lg', () => {
 
         for (const label of labels) {
             const emitted = label!.className;
-            // The fold itself.
+            // The fold itself. The panel variant is compact, so the fold is
+            // unconditional here — no `lg:not-sr-only` escape hatch (see the
+            // "compact section rail in the panel" describe block below).
             expect(emitted).toContain('sr-only');
-            expect(emitted).toContain('lg:not-sr-only');
             // `hidden` would drop the label out of the accessibility tree and
             // the step would lose its accessible name (.claude/rules/frontend.md).
             expect(emitted).not.toMatch(/(^|\s)hidden(\s|$)/);
@@ -151,5 +152,39 @@ describe('article editor — panel variant has no header', () => {
         expect(screen.queryByText('addArticle')).not.toBeInTheDocument();
         expect(screen.queryByRole('button', {name: 'back'})).not.toBeInTheDocument();
         expect(document.querySelector('[data-slot="page-header"]')).toBeNull();
+    });
+});
+
+describe('article editor — compact section rail in the panel', () => {
+    it('keeps every step label sr-only in the panel, whatever the viewport', async () => {
+        renderAdd(); // panel variant
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        // Precondition: the rail actually rendered all five steps.
+        const buttons = within(rail).getAllByRole('button');
+        expect(buttons).toHaveLength(5);
+
+        for (const button of buttons) {
+            const label = button.querySelector('[data-slot="step-label"]');
+            // sr-only, never `hidden` — `hidden` would strip the accessible name.
+            expect(label!.className).toContain('sr-only');
+            expect(label!.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+            // The lg: escape hatch must NOT be present in compact mode: inside
+            // the panel the viewport is wide while the container is not, so a
+            // viewport-keyed un-fold is exactly the bug being fixed.
+            expect(label!.className).not.toContain('lg:not-sr-only');
+        }
+    });
+
+    it('still un-folds the labels at lg in the page variant', async () => {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        const label = within(rail).getAllByRole('button')[0].querySelector('[data-slot="step-label"]');
+        expect(label!.className).toContain('lg:not-sr-only');
     });
 });

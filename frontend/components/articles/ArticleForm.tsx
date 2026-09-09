@@ -735,6 +735,7 @@ export function ArticleForm({
                     activeStep={activeSection}
                     onSelect={scrollToSection}
                     titleMissing={!isStepValid('basic')}
+                    compact={isPanel}
                 />
 
                 <main
