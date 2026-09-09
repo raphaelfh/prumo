@@ -5,7 +5,6 @@
 
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
-import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
 import {Textarea} from "@/components/ui/textarea";
@@ -22,12 +21,9 @@ import {TooltipProvider} from "@/components/ui/tooltip";
 import {toast} from "sonner";
 import {
   AlertCircle,
-  ArrowLeft,
   BookOpen,
   FileText,
   Hash,
-  Loader2,
-  Save,
   Tag,
   Upload
 } from "lucide-react";
@@ -37,7 +33,8 @@ import {ArticleFilesSection, type StagedArticleFile} from './ArticleFilesSection
 import {ArticleFormSteps, type ArticleFormStep, type FormStep} from './ArticleFormSteps';
 import {ArticleAuthorsField} from './ArticleAuthorsField';
 import {ArticleKeywordsField} from './ArticleKeywordsField';
-import {PageHeader} from '@/components/patterns/PageHeader';
+import {ArticleFormActions, ArticleFormHeader, ArticleFormLoadingState} from './ArticleFormHeader';
+import {isScrolledToBottom, resolveActiveStep} from '@/lib/articleFormScrollspy';
 import {SettingsCard, SettingsField, SettingsSection} from '@/components/settings';
 import {t} from '@/lib/copy';
 import {triggerDownload} from '@/lib/download';
@@ -108,6 +105,14 @@ interface ArticleFormProps {
     variant?: 'page' | 'panel';
     /** Called for Back/Cancel in panel mode; optional in page mode (falls back to navigate(-1)). */
     onDismiss?: () => void;
+    /** Reports whether the form holds unsaved edits, so a host panel can guard
+     *  navigation away from it. Fires on every transition of the flag. */
+    onDirtyChange?: (dirty: boolean) => void;
+    /** Fired once when add mode's insert succeeds, with the new article's id.
+     *  The form deliberately does NOT put this in the URL — that would remount
+     *  the tree and destroy the staged File objects (see the note at the
+     *  createdArticleId declaration) — so a host panel learns the id here. */
+    onArticleCreated?: (articleId: string) => void;
 }
 
 
@@ -184,6 +189,8 @@ export function ArticleForm({
                                 onComplete,
                                 variant = 'page',
                                 onDismiss,
+                                onDirtyChange,
+                                onArticleCreated,
                             }: ArticleFormProps) {
   const navigate = useNavigate();
     const {user: _user} = useAuth();
@@ -204,6 +211,7 @@ export function ArticleForm({
   const [files, setFiles] = useState<ArticleFile[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<StagedArticleFile[]>([]);
+
   // Set once the add-mode row lands. Its ONLY job is to stop a retry from
   // inserting a second article; the form deliberately does NOT derive a mode
   // from it — `mode` is a prop owned by the URL, and rewriting the URL would
@@ -252,6 +260,34 @@ export function ArticleForm({
     open_access: false,
     license: ''
   });
+
+  /**
+   * Dirty tracking. The fingerprint is the SAVED shape, not the widget state:
+   * AuthorFormRow.id is a uuidv4 minted fresh by rowsFromAuthorsArray on every
+   * load, so comparing rows directly would report dirty forever and make the
+   * host panel's guard fire on every row click.
+   */
+  const dirtyFingerprint = JSON.stringify({
+    formData,
+    authors: authorsFromRows(authorRows),
+    staged: stagedFiles.length,
+  });
+  const dirtyBaselineRef = useRef<string | null>(null);
+  const lastReportedDirtyRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    // Edit mode captures its baseline only once the fetched article has been
+    // written into formData; add mode's baseline is the empty form at mount.
+    if (dirtyBaselineRef.current === null) {
+      if (mode === 'edit' && !article) return;
+      dirtyBaselineRef.current = dirtyFingerprint;
+    }
+    const dirty = dirtyFingerprint !== dirtyBaselineRef.current;
+    if (lastReportedDirtyRef.current !== dirty) {
+      lastReportedDirtyRef.current = dirty;
+      onDirtyChange?.(dirty);
+    }
+  }, [dirtyFingerprint, mode, article, onDirtyChange]);
 
   const effectiveArticleId = articleId ?? createdArticleId ?? undefined;
 
@@ -333,6 +369,7 @@ export function ArticleForm({
 
     const scrollToSection = (step: FormStep) => {
         document.getElementById(`article-section-${step}`)?.scrollIntoView({behavior: 'smooth', block: 'start'});
+        setActiveSection(step); // explicit click wins immediately; see the bottom-of-scroll override below
     };
 
     useEffect(() => {
@@ -343,7 +380,11 @@ export function ArticleForm({
             (n): n is HTMLElement => n !== null
         );
         if (els.length === 0) return;
+        const lastStepId = STEPS[STEPS.length - 1].id; // "root" is reused below; no second listener on window
         const ratios = new Map<string, number>();
+        const applyActiveStep = () => {
+            const next = resolveActiveStep(ratios, lastStepId, isScrolledToBottom(root)); if (next) setActiveSection(next);
+        };
         const io = new IntersectionObserver(
             (entries) => {
                 for (const en of entries) {
@@ -354,22 +395,16 @@ export function ArticleForm({
                         ratios.delete(id);
                     }
                 }
-                let best: FormStep | null = null;
-                let bestR = 0;
-                for (const [id, r] of ratios) {
-                    if (r > bestR) {
-                        bestR = r;
-                        best = id as FormStep;
-                    }
-                }
-                if (best) {
-                    setActiveSection(best);
-                }
+                applyActiveStep();
             },
             {root, threshold: [0, 0.08, 0.2, 0.35, 0.5, 1], rootMargin: '-8% 0px -45% 0px'}
         );
         els.forEach((el) => io.observe(el));
-        return () => io.disconnect();
+        root.addEventListener('scroll', applyActiveStep, {passive: true});
+        return () => {
+            io.disconnect();
+            root.removeEventListener('scroll', applyActiveStep);
+        };
     }, [loading, mode, articleId]);
 
     // Date field validation
@@ -502,6 +537,7 @@ export function ArticleForm({
       }
       savedArticleId = created.data.id;
       setCreatedArticleId(savedArticleId);
+      onArticleCreated?.(savedArticleId);
     } else {
       const targetId = articleId ?? createdArticleId;
       if (!targetId) {
@@ -522,6 +558,9 @@ export function ArticleForm({
     const failedIds = await uploadStagedFiles(savedArticleId);
 
     setSaving(false);
+
+    dirtyBaselineRef.current = JSON.stringify({formData, authors: authorsFromRows(authorRows), staged: failedIds.length});
+    lastReportedDirtyRef.current = false; onDirtyChange?.(false);
 
     if (failedIds.length > 0) {
       // The row persisted, so the sheet MUST stay open: these `File` objects
@@ -657,20 +696,18 @@ export function ArticleForm({
   };
 
     if (loading) {
-        return (
-            <div
-                className={cn(
-                    'flex items-center justify-center',
-                    isPanel ? 'h-full min-h-[240px]' : 'h-screen'
-                )}
-            >
-                <div className="text-center">
-                    <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3 text-muted-foreground"/>
-                    <p className="text-[13px] text-muted-foreground">{t('articles', 'loadingArticle')}</p>
-                </div>
-            </div>
-        );
+        return <ArticleFormLoadingState isPanel={isPanel}/>;
     }
+
+    const formActions = (
+        <ArticleFormActions
+            mode={mode}
+            saving={saving}
+            disabled={saving || !isStepValid('basic')}
+            onCancel={handleDismiss}
+            onSave={handleSave}
+        />
+    );
 
     return (
       <TooltipProvider delayDuration={200}>
@@ -680,65 +717,28 @@ export function ArticleForm({
                 isPanel ? 'h-full' : 'h-screen'
             )}
         >
-            <PageHeader
-                leading={
-                    <Button variant="ghost" size="sm" onClick={handleDismiss} aria-label={t('common', 'back')}>
-                        {/*
-                          * At 375px this bar is 374px wide and the actions group takes 206
-                          * of it, so the identity group was compressed until the title
-                          * rendered as nothing. The label folds first — the arrow plus the
-                          * aria-label still name the button — and sr-only rather than
-                          * `hidden` keeps that name in the accessibility tree.
-                          */}
-                        <ArrowLeft className="h-4 w-4 sm:mr-2"/>
-                        <span data-slot="back-label" className="sr-only sm:not-sr-only">
-                            {t('common', 'back')}
-                        </span>
-                    </Button>
-                }
-                title={mode === 'add' ? t('articles', 'addArticle') : t('articles', 'editArticle')}
-                description={
-                    /*
-                     * Edit mode's description IS the article's title, and it is the only
-                     * thing naming which article this is — so it must never fold. Add
-                     * mode's merely restates the title next to it, so it is the one that
-                     * gives way rather than the title.
-                     */
-                    mode === 'edit' && article ? article.title : undefined
-                }
-                actions={
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" className="h-8 px-3 text-[12px]" onClick={handleDismiss}>
-                            {t('common', 'cancel')}
-                        </Button>
-                        <Button
-                            size="sm"
-                            className="h-8 px-3 text-[12px] font-medium"
-                            onClick={handleSave}
-                            disabled={saving || !isStepValid('basic')}
-                        >
-                            {saving ? (
-                                <>
-                                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/>
-                                    {t('articles', 'saving')}
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="mr-1.5 h-3.5 w-3.5"/>
-                                    {mode === 'add' ? t('articles', 'createArticle') : t('common', 'save')}
-                                </>
-                            )}
-                        </Button>
-                    </div>
-                }
-            />
+            {isPanel ? (
+                /* The hosting panel's strip already names the article and owns
+                   the exit, so the panel variant keeps only the actions. */
+                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border/40 px-3 py-1.5">
+                    {formActions}
+                </div>
+            ) : (
+                <ArticleFormHeader
+                    mode={mode}
+                    articleTitle={article?.title}
+                    onDismiss={handleDismiss}
+                    actions={formActions}
+                />
+            )}
 
-            <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row">
+            <div className={cn('flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row', isPanel && 'lg:flex-row-reverse')}>
                 <ArticleFormSteps
                     steps={STEPS}
                     activeStep={activeSection}
                     onSelect={scrollToSection}
                     titleMissing={!isStepValid('basic')}
+                    compact={isPanel}
                 />
 
                 <main

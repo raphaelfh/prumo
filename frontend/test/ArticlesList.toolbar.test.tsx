@@ -45,6 +45,8 @@ function renderList(articles: Article[]) {
         onOpenRisDialog: vi.fn(),
         onOpenAddArticle: vi.fn(),
         onArticlesChange: vi.fn(),
+        panelOpen: false,
+        onTogglePanel: vi.fn(),
     };
     render(
         <MemoryRouter>
@@ -93,5 +95,20 @@ describe("ArticlesList toolbar", () => {
         await userEvent.click(exportButton);
 
         expect(await screen.findByTestId("export-dialog")).toBeInTheDocument();
+    });
+
+    it("toggles the article panel from the toolbar", async () => {
+        const handlers = renderList([article("a1", "First")]);
+
+        await userEvent.click(screen.getByRole("button", {name: "Toggle the article panel"}));
+
+        expect(handlers.onTogglePanel).toHaveBeenCalledTimes(1);
+    });
+
+    it("reflects the panel state on the toggle", () => {
+        renderList([article("a1", "First")]);
+
+        expect(screen.getByRole("button", {name: "Toggle the article panel"}))
+            .toHaveAttribute("aria-pressed", "false");
     });
 });

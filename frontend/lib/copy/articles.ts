@@ -323,6 +323,22 @@ export const articles = {
     // ArticleDetailDialog: per-file re-parse action
     reparse: 'Re-parse',
     reparseQueued: 'Re-parse queued',
+    // Side panel (docked article panel in the Articles tab)
+    panelViewDetails: 'Details',
+    panelViewDocument: 'Document',
+    panelViewDocumentAfterSave: 'Available once the article is saved',
+    panelCollapse: 'Hide the article panel',
+    panelNoDocumentTitle: 'No file attached',
+    panelNoDocumentBody: 'Attach a PDF to read it beside the list.',
+    panelDocumentLoading: 'Loading document…',
+    panelAddFile: 'Add file',
+    panelPlaceholderTitle: 'No article selected',
+    panelPlaceholderBody: 'Select an article to read its document or edit its details.',
+    panelToggle: 'Toggle the article panel',
+    panelDiscardTitle: 'Discard unsaved changes?',
+    panelDiscardBody: 'This article has edits that have not been saved.',
+    panelDiscardConfirm: 'Discard changes',
+    panelDiscardCancel: 'Keep editing',
 } as const;
 
 export type ArticlesCopy = typeof articles;

@@ -3,7 +3,7 @@
 # The scale owns height: see .claude/skills/frontend-ux/SKILL.md.
 frontend/components/articles/ArticleAuthorsField.tsx:4
 frontend/components/articles/ArticleFileUploadDialogNew.tsx:1
-frontend/components/articles/ArticleForm.tsx:2
+frontend/components/articles/ArticleFormHeader.tsx:2
 frontend/components/articles/ArticleKeywordsField.tsx:3
 frontend/components/articles/ArticlesList.tsx:7
 frontend/components/assessment/DerivedDefaultChip.tsx:1

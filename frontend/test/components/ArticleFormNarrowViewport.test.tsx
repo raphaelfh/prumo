@@ -78,9 +78,10 @@ describe('article editor — step rail below lg', () => {
 
         for (const label of labels) {
             const emitted = label!.className;
-            // The fold itself.
+            // The fold itself. The panel variant is compact, so the fold is
+            // unconditional here — no `lg:not-sr-only` escape hatch (see the
+            // "compact section rail in the panel" describe block below).
             expect(emitted).toContain('sr-only');
-            expect(emitted).toContain('lg:not-sr-only');
             // `hidden` would drop the label out of the accessibility tree and
             // the step would lose its accessible name (.claude/rules/frontend.md).
             expect(emitted).not.toMatch(/(^|\s)hidden(\s|$)/);
@@ -97,9 +98,17 @@ describe('article editor — step rail below lg', () => {
     });
 });
 
-describe('article editor — header identity', () => {
+describe('article editor — header identity (page variant)', () => {
+    function renderPageAdd() {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+    }
+
     it('renders the title in add mode and folds only the redundant description', async () => {
-        renderAdd();
+        renderPageAdd();
 
         expect(await screen.findByText('addArticle')).toBeInTheDocument();
         // addArticleDesc restates the title, so it is what gives way — the
@@ -110,25 +119,122 @@ describe('article editor — header identity', () => {
     it('keeps the article title in edit mode, where the description is the only identity', async () => {
         render(
             <MemoryRouter>
-                <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" variant="panel" onDismiss={vi.fn()}/>
+                <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" variant="page" onDismiss={vi.fn()}/>
             </MemoryRouter>,
         );
 
         // Scoped to the header: the title also appears in the title textarea,
         // so an unscoped query would pass even with the header identity gone.
         const header = (await screen.findByText('editArticle')).closest('[data-slot="page-header"]')!;
-        // Folding this below sm would leave mobile edit reading "Edit article"
-        // with no indication of WHICH article — worse than the bug being fixed.
         expect(within(header as HTMLElement).getByText('A stored-markdown study')).toBeInTheDocument();
     });
 
     it('folds the Back label but keeps the button named', async () => {
-        renderAdd();
+        renderPageAdd();
 
         const back = await screen.findByRole('button', {name: 'back'});
         const label = back.querySelector('[data-slot="back-label"]');
         expect(label!.className).toContain('sr-only');
         expect(label!.className).toContain('sm:not-sr-only');
         expect(label!.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    });
+});
+
+describe('article editor — panel variant has no header', () => {
+    it('renders the actions without the page header, title or back button', async () => {
+        renderAdd(); // panel variant
+
+        // Precondition: the form actually rendered, so the absences below mean
+        // "the header is gone", not "nothing mounted".
+        expect(await screen.findByTestId('article-form-actions')).toBeInTheDocument();
+        expect(screen.getByRole('button', {name: /createArticle/})).toBeInTheDocument();
+
+        expect(screen.queryByText('addArticle')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', {name: 'back'})).not.toBeInTheDocument();
+        expect(document.querySelector('[data-slot="page-header"]')).toBeNull();
+    });
+});
+
+describe('article editor — compact section rail in the panel', () => {
+    it('keeps every step label sr-only in the panel, whatever the viewport', async () => {
+        renderAdd(); // panel variant
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        // Precondition: the rail actually rendered all five steps.
+        const buttons = within(rail).getAllByRole('button');
+        expect(buttons).toHaveLength(5);
+
+        for (const button of buttons) {
+            const label = button.querySelector('[data-slot="step-label"]');
+            // sr-only, never `hidden` — `hidden` would strip the accessible name.
+            expect(label!.className).toContain('sr-only');
+            expect(label!.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+            // The lg: escape hatch must NOT be present in compact mode: inside
+            // the panel the viewport is wide while the container is not, so a
+            // viewport-keyed un-fold is exactly the bug being fixed.
+            expect(label!.className).not.toContain('lg:not-sr-only');
+        }
+    });
+
+    it('still un-folds the labels at lg in the page variant', async () => {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        const label = within(rail).getAllByRole('button')[0].querySelector('[data-slot="step-label"]');
+        expect(label!.className).toContain('lg:not-sr-only');
+    });
+
+    it('keeps the compact rail a horizontal strip below lg and a column at lg+', async () => {
+        renderAdd(); // panel variant, compact rail
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        // Precondition: the rail actually rendered all five steps, so the
+        // direction assertion below cannot pass vacuously against an empty nav.
+        expect(within(rail).getAllByRole('button')).toHaveLength(5);
+
+        const emitted = rail.className;
+        // Below lg the surrounding ArticleForm container is already a column
+        // (`flex-col … lg:flex-row`), so the compact rail must render as a
+        // horizontal icon strip across the top — not a tall stack of icons.
+        expect(emitted).toMatch(/(^|\s)flex-row(\s|$)/);
+        // At lg+ it folds back into the narrow icon column.
+        expect(emitted).toContain('lg:flex-col');
+    });
+});
+
+describe('article editor — rail placement in the side-by-side (lg+) layout', () => {
+    it('puts the panel rail on the right: split container reverses, rail borders its left edge', async () => {
+        renderAdd(); // panel variant
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        const aside = rail.closest('aside')!;
+        const splitContainer = aside.parentElement!;
+
+        // Icons before fields in source order + row-reverse at lg+ is what
+        // lands the rail on the right edge, Zotero-style.
+        expect(splitContainer.className).toContain('lg:flex-row-reverse');
+        // Sitting on the right, its divider belongs on its LEFT edge now.
+        expect(aside.className).toContain('lg:border-l');
+        expect(aside.className).not.toMatch(/(^|\s)lg:border-r(\s|$)/);
+    });
+
+    it('leaves the page-variant rail on the left, unchanged', async () => {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        const aside = rail.closest('aside')!;
+        const splitContainer = aside.parentElement!;
+
+        expect(splitContainer.className).not.toContain('lg:flex-row-reverse');
+        expect(aside.className).toContain('lg:border-r');
+        expect(aside.className).not.toMatch(/(^|\s)lg:border-l(\s|$)/);
     });
 });
