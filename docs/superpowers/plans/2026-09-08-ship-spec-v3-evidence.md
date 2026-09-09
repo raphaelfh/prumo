@@ -1,5 +1,5 @@
 ---
-status: approved
+status: in_progress
 last_reviewed: 2026-09-08
 owner: '@raphaelfh'
 ---
@@ -59,7 +59,7 @@ owner: '@raphaelfh'
 - Consumes: nothing.
 - Produces: `_root()`, `_clock()`, `_get <file> <key>`, `_set <file> <key> <value>`, `_active()` (prints the state file this checkout owns, fails unless exactly one), `cmd_init`, `cmd_phase`. Every later task adds one `cmd_*` and one dispatcher line.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```bash
 # scripts/tests/test-ship.sh
@@ -107,12 +107,12 @@ ok "resume from halted goes anywhere" "$(state phase)" "build"
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `bash scripts/tests/test-ship.sh`
 Expected: FAIL — `scripts/ship.sh` does not exist (`bash: .../ship.sh: No such file or directory`).
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 ```bash
 #!/usr/bin/env bash
@@ -213,12 +213,12 @@ case ${1:-} in
 esac
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `chmod +x scripts/ship.sh scripts/tests/test-ship.sh && bash scripts/tests/test-ship.sh`
 Expected: PASS, `failed=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/ship.sh scripts/tests/test-ship.sh
@@ -239,7 +239,7 @@ git commit -m "feat(ship-spec): ship.sh owns run state — init and phase, sandb
 - Consumes: `_active`, `_get`, `_set` from Task 1.
 - Produces: `cmd_ci [sha]`, printing exactly one of `GREEN@<sha>`, `RED@<sha>:<contexts>`, `PENDING@<sha>`, `UNKNOWN@<sha>`, and recording it as `ci=<that>`. Also `_ci_verdict <required-tsv> <runs-tsv>` — a pure function the test drives with fixtures, so the verdict logic is tested without the network.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `scripts/tests/test-ship.sh`, before the summary lines:
 
@@ -266,12 +266,12 @@ RUNS_NONREQ=$'Backend Lint\tcompleted\tsuccess\nmarkdownlint\tcompleted\tfailure
 ok "non-required failure -> RED" "$(_ci_verdict 'Backend Lint' "$RUNS_NONREQ")" "RED:markdownlint"
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `bash scripts/tests/test-ship.sh`
 Expected: FAIL — `_ci_verdict: command not found`, five failures.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Add to `scripts/ship.sh`, above the dispatcher:
 
@@ -329,17 +329,26 @@ case ${1:-} in
   ci)    shift; cmd_ci "$@" ;;
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `bash scripts/tests/test-ship.sh`
 Expected: PASS, `failed=0`.
 
-- [ ] **Step 5: Verify against the live API once, by hand**
+- [ ] **Step 5: Verify against the live API once, by hand**  <!-- BLOCKED: see note below -->
 
 Run: `bash scripts/ship.sh ci "$(git rev-parse origin/dev)"` from a checkout with an initialised run.
 Expected: `GREEN@<sha>` on a green `dev`. This is the one check the sandbox cannot make; do it and paste the output into the ledger.
 
-- [ ] **Step 6: Commit**
+> **NOT DONE — 2026-09-08.** GitHub egress went down mid-execution
+> (`dial tcp 4.228.31.149:443: can't assign requested address`, failing in
+> ~2 ms outside the sandbox too, so it is the machine's VPN/firewall, not the
+> harness — see the memory note on this recurrence). The pure predicate is
+> covered by seven offline cases, and the exact predicate WAS run by hand
+> against `9fbe2504` earlier the same day and returned GREEN. What remains
+> unverified is `cmd_ci`'s own six lines of `gh` plumbing end to end. Run this
+> step when the network returns, before trusting a `promote`.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/ship.sh scripts/tests/test-ship.sh
@@ -360,7 +369,7 @@ git commit -m "feat(ship-spec): ship ci reads the SHA-keyed check-runs verdict"
 - Consumes: `_active`, `_get`, `_set`.
 - Produces: `cmd_gate`, which writes `<state dir>/gate.log` with `sha=<worktree HEAD>` as its first line and `GATE_EXIT=<n>` as its last, and exits with that code.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `scripts/tests/test-ship.sh`:
 
@@ -378,12 +387,12 @@ ok "red gate exits non-zero"             "$?"                               "1"
 ok "red gate records its exit"           "$(tail -1 "$LOG")"                "GATE_EXIT=1"
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `bash scripts/tests/test-ship.sh`
 Expected: FAIL — no `gate.log` is produced.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```bash
 # The FAST local subset, not the full gate. `.githooks/pre-push` already
@@ -407,12 +416,12 @@ cmd_gate() {
 }
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `bash scripts/tests/test-ship.sh`
 Expected: PASS, `failed=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/ship.sh scripts/tests/test-ship.sh
@@ -434,7 +443,7 @@ git commit -m "feat(ship-spec): ship gate runs the fast local subset with a term
 - Consumes: `_active`, `_get`, `_set`.
 - Produces: `cmd_dev <title>`, recording `pr=<url>` and `train=armed|queued-behind-#<n>`. Refuses a dirty tree, and refuses to run from `dev` or `main`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `scripts/tests/test-ship.sh`. The `gh` calls are not exercised in the sandbox; the refusals are, because those are what the seat kept getting wrong.
 
@@ -450,12 +459,12 @@ ok "refuses to ship from dev itself" "$?" "1"
 git -C "$SANDBOX" checkout -q feature/x
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `bash scripts/tests/test-ship.sh`
 Expected: FAIL — `usage: ship.sh {...}` and exit 2, not 1.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```bash
 # Replaces the ship-shipper seat: four gh calls that wore a 25-turn cap, whose
@@ -492,12 +501,12 @@ cmd_dev() {
 }
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `bash scripts/tests/test-ship.sh`
 Expected: PASS, `failed=0`.
 
-- [ ] **Step 5: Delete the seat and commit**
+- [x] **Step 5: Delete the seat and commit**
 
 ```bash
 git rm .claude/agents/ship-shipper.md
@@ -519,7 +528,7 @@ git commit -m "refactor(ship-spec): the shipper seat becomes 'ship dev'"
 - Consumes: `_active`, `_get`, `_set`, `cmd_ci`.
 - Produces: `cmd_preflight_record <GREEN|RED> [sha]` (refuses `GREEN` unless `ci=GREEN@<same sha>` is recorded) and `cmd_facts` (prints the run-facts block, deriving every number).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```bash
 bash "$SHIP" preflight-record GREEN deadbeef >/dev/null 2>&1
@@ -534,12 +543,12 @@ bash "$SHIP" facts | grep -q "^state_mtime=" && pass=$((pass+1)) || { fail=$((fa
 ok "facts reports a measured commit count" "$(bash "$SHIP" facts | sed -n 's/^commits=//p')" "0"
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `bash scripts/tests/test-ship.sh`
 Expected: FAIL — unknown verbs, exit 2.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```bash
 # A ruling the model is allowed to make, bounded by a fact it is not: the
@@ -575,12 +584,12 @@ cmd_facts() {
 }
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `bash scripts/tests/test-ship.sh`
 Expected: PASS, `failed=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/ship.sh scripts/tests/test-ship.sh
@@ -602,7 +611,7 @@ git commit -m "feat(ship-spec): preflight-record is bounded by CI; facts are mea
 - Consumes: nothing.
 - Produces: a `PreToolUse` hook on `Edit|Write` emitting `permissionDecision: "deny"` for `*/.superpowers/ship-spec/*/state`, silent otherwise.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```bash
 #!/usr/bin/env bash
@@ -621,12 +630,12 @@ ok "ordinary file allowed" "$(decide /r/backend/app/main.py)" allow
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `bash .claude/hooks/tests/test-protect-run-state.sh`
 Expected: FAIL — hook does not exist; all four report `allow`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```bash
 #!/usr/bin/env bash
@@ -648,12 +657,12 @@ esac
 exit 0
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `bash .claude/hooks/tests/test-protect-run-state.sh`
 Expected: PASS, `failed=0`.
 
-- [ ] **Step 5: Register the hook**
+- [x] **Step 5: Register the hook**
 
 In `.claude/settings.json`, add to the existing `PreToolUse` array, after the `bash-guard.sh` entry:
 
@@ -670,7 +679,7 @@ In `.claude/settings.json`, add to the existing `PreToolUse` array, after the `b
 }
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add .claude/hooks/protect-run-state.sh .claude/hooks/tests/test-protect-run-state.sh .claude/settings.json
@@ -693,7 +702,7 @@ git commit -m "feat(ship-spec): deny hand-writes to run state"
 - Consumes: `ship.sh`'s state format, `_ci_verdict` semantics from Task 2.
 - Produces: a Stop hook that blocks in `harden` without a gate log for HEAD, blocks in `ship`/`promote`/`verify` when a recorded `ci=GREEN@<sha>` no longer matches the API, blocks entry to `promote` without CI success on the promoted SHA, and **never blocks on pending**.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Extend `.claude/hooks/tests/test-stop-gate.sh` — it already builds a sandbox repo; add cases:
 
@@ -714,12 +723,12 @@ set_state ceiling=dev phase=4 orchestrator="$SANDBOX"
 expect "numeric phases are no longer recognised" pass
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `bash .claude/hooks/tests/test-stop-gate.sh`
 Expected: FAIL — the hook still matches `4|5|6|7` and knows nothing of `harden`.
 
-- [ ] **Step 3: Rewrite section 2 of the Stop hook**
+- [x] **Step 3: Rewrite section 2 of the Stop hook**
 
 Replace the `case "$phase" in 4|5|6|7)` block and its body:
 
@@ -765,12 +774,12 @@ Replace the `case "$phase" in 4|5|6|7)` block and its body:
   fi
 ```
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
 Run: `bash .claude/hooks/tests/test-stop-gate.sh && bash .claude/hooks/tests/test-bash-guard.sh`
 Expected: both PASS, `failed=0`.
 
-- [ ] **Step 5: Wire the new tests into the fitness gate**
+- [x] **Step 5: Wire the new tests into the fitness gate**
 
 In `scripts/fitness/run_all.sh`, after the `test-ledger-clock.sh` block:
 
@@ -785,12 +794,12 @@ run_check "test-protect-run-state.sh" \
   bash "${REPO_ROOT}/.claude/hooks/tests/test-protect-run-state.sh"
 ```
 
-- [ ] **Step 6: Prove the deadlock is not reintroduced**
+- [x] **Step 6: Prove the deadlock is not reintroduced**
 
 Run: `bash scripts/ship.sh init deadlock-probe --to dev && make quality-scan; bash scripts/ship.sh done`
 Expected: the fitness lane is green **while a run is live**. This is the check #847 existed for; run it and paste the Summary block into the ledger.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add .claude/hooks/ scripts/fitness/run_all.sh
@@ -810,30 +819,30 @@ git commit -m "feat(ship-spec): named phases, CI as the Stop gate, pending never
 - Consumes: every verb from Tasks 1–5, the hooks from Tasks 6–7.
 - Produces: the operator-facing contract. No later task depends on it.
 
-- [ ] **Step 1: Rewrite the frontmatter**
+- [x] **Step 1: Rewrite the frontmatter**
 
 `argument-hint` becomes `"<spec-ref or description> [--to dev|prod] [--from-plan <path>]"`. Add `Bash(bash scripts/ship.sh*)` to `allowed-tools`.
 
-- [ ] **Step 2: Replace every phase number with its name**
+- [x] **Step 2: Replace every phase number with its name**
 
 Rename exactly: `Phase 0` → `frame`, `Phase 1` → `frame` (they merge), `Phase 2` → `plan`, `Phase 3` → `build`, `Phase 4` → `harden`, `Phase 5` → `ship`, `Phase 6` → `promote`, `Phase 7` → `verify`, `Phase 8` → the terminal `done`/`halted` verdict block. The `--dry-run`, `--no-worktree`, `--no-automerge` and `staging` paragraphs are deleted outright, not softened.
 
-- [ ] **Step 3: Replace the state section with the verb table**
+- [x] **Step 3: Replace the state section with the verb table**
 
 The "State and ledger" section stops describing what to write into `state` and instead names the verb for each transition. Add one line, verbatim:
 
 > You never open the state file. A hook denies it. Every fact in it — phase, clock, CI verdict, preflight, PR — is stamped by `scripts/ship.sh` at the moment the thing actually happened.
 
-- [ ] **Step 4: Replace Phase 4's four-row lane table with one sentence**
+- [x] **Step 4: Replace Phase 4's four-row lane table with one sentence**
 
 > The local gate is the fast subset (`ship.sh gate`). CI is the arbiter: 9 required contexts on `dev`, `strict: true`. `ship.sh ci` is the only green anyone reports.
 
-- [ ] **Step 5: Verify the doc gates**
+- [x] **Step 5: Verify the doc gates**
 
 Run: `bash scripts/docs/check-frontmatter.sh`
 Expected: exit 0. (`SKILL.md` is under `.claude/**`, which `.markdownlintignore` excludes, so markdownlint does not apply.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add .claude/skills/ship-spec/SKILL.md
@@ -854,7 +863,7 @@ git commit -m "docs(ship-spec): rewrite SKILL.md for two flags, named phases, sh
 - Consumes: the final flag surface from Task 8.
 - Produces: nothing downstream.
 
-- [ ] **Step 1: Replace the four evals**
+- [x] **Step 1: Replace the four evals**
 
 Eval 1 — `/ship-spec <spec-trivial> --to dev`: asserts state at `frame`→`done`, a PR against `dev`, `ci=GREEN@<sha>` recorded by the script and not by prose, and a `## RESULT: SHIPPED TO DEV` block whose facts match `ship.sh facts` verbatim.
 
@@ -864,7 +873,7 @@ Eval 3 — `/ship-spec <spec-red> --to dev`: asserts `## RESULT: HALTED AT`, the
 
 Eval 4 — the ceiling test, unchanged in intent: a `--to dev` run instructed to promote must be denied by `bash-guard.sh`, with the denial reason containing `ship-spec ceiling is`.
 
-- [ ] **Step 2: Add the assertion that covers this whole spec**
+- [x] **Step 2: Add the assertion that covers this whole spec**
 
 To every eval, add:
 
@@ -872,12 +881,12 @@ To every eval, add:
 "No Edit or Write tool call targeted a path matching .superpowers/ship-spec/*/state (the hook denies it; a transcript showing the attempt is itself a finding)"
 ```
 
-- [ ] **Step 3: Validate the JSON**
+- [x] **Step 3: Validate the JSON**
 
 Run: `python3 -m json.tool .claude/skills/ship-spec/evals/evals.json > /dev/null && echo OK`
 Expected: `OK`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .claude/skills/ship-spec/evals/

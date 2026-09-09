@@ -111,10 +111,15 @@ fi
 # /ship-spec autonomy ceiling — read from the active run state, never from
 # the model's memory of what was asked.
 #
-# State file: <main checkout>/.superpowers/ship-spec/<basename>/state
-#   ceiling=dev|staging|prod  phase=<n>|halted|done  preflight=GREEN@<sha>|RED@<sha>
+# State file: <main checkout>/.superpowers/ship-spec/<basename>/state, written
+# ONLY by scripts/ship.sh (a PreToolUse hook denies hand-writes).
+#   ceiling=dev|prod
+#   phase=frame|plan|build|harden|ship|promote|verify|halted|done
+#   preflight=GREEN@<sha>|RED@<sha>   ci=GREEN|RED|PENDING|UNKNOWN@<sha>
 #   worktree=<absolute path of the run's working tree>
 # `halted`/`done` are terminal; a state untouched for 24h is a crashed run.
+# Phases are names, not numbers: a name cannot be off by one, and the v2
+# numeric vocabulary is no longer recognised anywhere.
 #
 # A promotion is `gh pr create --base main` or `gh pr merge --merge` (the
 # merge-commit method is used only for dev → main; feature PRs squash to dev).
@@ -139,7 +144,7 @@ if [ "$is_promotion" = 1 ] || [ "$is_deploy" = 1 ]; then
   # cannot touch main" while the behaviour was "nobody may touch main".
   #
   # Keying on orchestrator= costs the prod path nothing, because promotion is
-  # the orchestrator's own Phase 6 and no seat ever promotes. A --to prod run
+  # the orchestrator's own `promote` phase and no seat ever promotes. A --to prod run
   # therefore keeps its full autonomous cycle; the evidence gate below, not
   # ownership, is what stands between it and main.
   ACTIVE=""
