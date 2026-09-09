@@ -2,13 +2,14 @@
  * PublicationSection — the article editor's "publication" step: journal
  * details and publication date. Date fields render inline validation errors
  * that ArticleForm computes; this section only reports change/blur.
+ *
+ * Zotero-style: each field is a label -> value row (ArticleFieldRow) that
+ * renders as text and becomes an input only when clicked. No card chrome.
  */
 
 import type {Dispatch, SetStateAction} from 'react';
-import {AlertCircle} from 'lucide-react';
-import {Input} from "@/components/ui/input";
-import {cn} from "@/lib/utils";
-import {SettingsCard, SettingsField, SettingsSection} from '@/components/settings';
+import {ArticleFieldRow} from '../ArticleFieldRow';
+import {SettingsSection} from '@/components/settings';
 import {t} from '@/lib/copy';
 import type {FormData} from '../ArticleForm';
 
@@ -33,158 +34,76 @@ export function PublicationSection({
     onDateFieldChange,
     onValidateDateField,
 }: PublicationSectionProps) {
+    const commitDateField = (field: DateField) => (next: string) => {
+        onDateFieldChange(field, next);
+        onValidateDateField(field, next);
+    };
+
     return (
-        <section id="article-section-publication" className="scroll-mt-4 min-w-0 space-y-6">
-            <SettingsSection title={t('articles', 'publication')}
-                             description={t('articles', 'publicationDesc')}>
-                <SettingsCard
-                    title={t('articles', 'publicationDetails')}
-                    description={t('articles', 'publicationDetailsDesc')}
-                >
-                    <SettingsField label={t('articles', 'journalTitle')} htmlFor="journal_title"
-                                   hint={t('articles', 'journalPlaceholder')}>
-                        <Input
-                            id="journal_title"
-                            value={formData.journal_title}
-                            onChange={(e) => setFormData({
-                                ...formData,
-                                journal_title: e.target.value
-                            })}
-                            placeholder={t('articles', 'journalPlaceholder')}
-                            className="h-9 w-full min-w-0 text-[13px]"
-                        />
-                    </SettingsField>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <SettingsField label={t('articles', 'publicationYear')}
-                                       htmlFor="publication_year">
-                            <Input
-                                id="publication_year"
-                                type="number"
-                                value={formData.publication_year}
-                                onChange={(e) => onDateFieldChange('publication_year', e.target.value)}
-                                onBlur={(e) => onValidateDateField('publication_year', e.target.value)}
-                                placeholder="2024"
-                                min={1600}
-                                max={2500}
-                                className={cn('h-9 text-[13px]', validationErrors.publication_year && 'border-destructive')}
-                            />
-                            {validationErrors.publication_year && (
-                                <p className="text-[12px] text-destructive flex items-center gap-1 pt-1">
-                                    <AlertCircle className="h-3 w-3 shrink-0"/>
-                                    {validationErrors.publication_year}
-                                </p>
-                            )}
-                        </SettingsField>
-                        <SettingsField label={t('articles', 'publicationMonth')}
-                                       htmlFor="publication_month">
-                            <Input
-                                id="publication_month"
-                                type="number"
-                                value={formData.publication_month}
-                                onChange={(e) => onDateFieldChange('publication_month', e.target.value)}
-                                onBlur={(e) => onValidateDateField('publication_month', e.target.value)}
-                                placeholder="1-12"
-                                min={1}
-                                max={12}
-                                className={cn('h-9 text-[13px]', validationErrors.publication_month && 'border-destructive')}
-                            />
-                            {validationErrors.publication_month && (
-                                <p className="text-[12px] text-destructive flex items-center gap-1 pt-1">
-                                    <AlertCircle className="h-3 w-3 shrink-0"/>
-                                    {validationErrors.publication_month}
-                                </p>
-                            )}
-                        </SettingsField>
-                    </div>
-                    <SettingsField label={t('articles', 'publicationDay')}
-                                   htmlFor="publication_day">
-                        <Input
-                            id="publication_day"
-                            type="number"
-                            value={formData.publication_day}
-                            onChange={(e) => onDateFieldChange('publication_day', e.target.value)}
-                            onBlur={(e) => onValidateDateField('publication_day', e.target.value)}
-                            placeholder="1-31"
-                            min={1}
-                            max={31}
-                            className={cn('h-9 max-w-xs text-[13px]', validationErrors.publication_day && 'border-destructive')}
-                        />
-                        {validationErrors.publication_day && (
-                            <p className="text-[12px] text-destructive flex items-center gap-1 pt-1">
-                                <AlertCircle className="h-3 w-3 shrink-0"/>
-                                {validationErrors.publication_day}
-                            </p>
-                        )}
-                    </SettingsField>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                        <SettingsField label={t('articles', 'volume')} htmlFor="volume">
-                            <Input
-                                id="volume"
-                                value={formData.volume}
-                                onChange={(e) => setFormData({...formData, volume: e.target.value})}
-                                placeholder={t('articles', 'volumePlaceholder')}
-                                className="h-9 text-[13px]"
-                            />
-                        </SettingsField>
-                        <SettingsField label={t('articles', 'edition')} htmlFor="issue">
-                            <Input
-                                id="issue"
-                                value={formData.issue}
-                                onChange={(e) => setFormData({...formData, issue: e.target.value})}
-                                placeholder="3"
-                                className="h-9 text-[13px]"
-                            />
-                        </SettingsField>
-                        <SettingsField label={t('articles', 'pages')} htmlFor="pages">
-                            <Input
-                                id="pages"
-                                value={formData.pages}
-                                onChange={(e) => setFormData({...formData, pages: e.target.value})}
-                                placeholder={t('articles', 'pagesPlaceholder')}
-                                className="h-9 text-[13px]"
-                            />
-                        </SettingsField>
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <SettingsField label={t('articles', 'issnLabel')} htmlFor="journal_issn">
-                            <Input
-                                id="journal_issn"
-                                value={formData.journal_issn}
-                                onChange={(e) => setFormData({
-                                    ...formData,
-                                    journal_issn: e.target.value
-                                })}
-                                placeholder="1234-5678"
-                                className="h-9 text-[13px]"
-                            />
-                        </SettingsField>
-                        <SettingsField label={t('articles', 'formJournalEissn')}
-                                       htmlFor="journal_eissn">
-                            <Input
-                                id="journal_eissn"
-                                value={formData.journal_eissn}
-                                onChange={(e) => setFormData({
-                                    ...formData,
-                                    journal_eissn: e.target.value
-                                })}
-                                placeholder="1234-5678"
-                                className="h-9 text-[13px]"
-                            />
-                        </SettingsField>
-                    </div>
-                    <SettingsField label={t('articles', 'formJournalPublisher')}
-                                   htmlFor="journal_publisher">
-                        <Input
-                            id="journal_publisher"
-                            value={formData.journal_publisher}
-                            onChange={(e) => setFormData({
-                                ...formData,
-                                journal_publisher: e.target.value
-                            })}
-                            className="h-9 w-full min-w-0 text-[13px]"
-                        />
-                    </SettingsField>
-                </SettingsCard>
+        <section id="article-section-publication" className="scroll-mt-4 min-w-0 space-y-1">
+            <SettingsSection title={t('articles', 'publication')}>
+                <ArticleFieldRow
+                    label={t('articles', 'journalTitle')}
+                    value={formData.journal_title}
+                    onCommit={(next) => setFormData({...formData, journal_title: next})}
+                    placeholder={t('articles', 'journalPlaceholder')}
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'publicationYear')}
+                    value={formData.publication_year}
+                    onCommit={commitDateField('publication_year')}
+                    placeholder="2024"
+                    error={validationErrors.publication_year}
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'publicationMonth')}
+                    value={formData.publication_month}
+                    onCommit={commitDateField('publication_month')}
+                    placeholder="1-12"
+                    error={validationErrors.publication_month}
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'publicationDay')}
+                    value={formData.publication_day}
+                    onCommit={commitDateField('publication_day')}
+                    placeholder="1-31"
+                    error={validationErrors.publication_day}
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'volume')}
+                    value={formData.volume}
+                    onCommit={(next) => setFormData({...formData, volume: next})}
+                    placeholder={t('articles', 'volumePlaceholder')}
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'edition')}
+                    value={formData.issue}
+                    onCommit={(next) => setFormData({...formData, issue: next})}
+                    placeholder="3"
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'pages')}
+                    value={formData.pages}
+                    onCommit={(next) => setFormData({...formData, pages: next})}
+                    placeholder={t('articles', 'pagesPlaceholder')}
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'issnLabel')}
+                    value={formData.journal_issn}
+                    onCommit={(next) => setFormData({...formData, journal_issn: next})}
+                    placeholder="1234-5678"
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'formJournalEissn')}
+                    value={formData.journal_eissn}
+                    onCommit={(next) => setFormData({...formData, journal_eissn: next})}
+                    placeholder="1234-5678"
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'formJournalPublisher')}
+                    value={formData.journal_publisher}
+                    onCommit={(next) => setFormData({...formData, journal_publisher: next})}
+                />
             </SettingsSection>
         </section>
     );

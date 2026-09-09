@@ -66,7 +66,7 @@ describe('ArticleForm dirty reporting', () => {
             </MemoryRouter>,
         );
 
-        await screen.findByDisplayValue('A stored-markdown study');
+        await screen.findByText('A stored-markdown study');
         // The uuid trap: rowsFromAuthorsArray mints fresh ids on load, so a
         // row-object compare would already be reporting dirty here.
         await waitFor(() => {
@@ -88,11 +88,14 @@ describe('ArticleForm dirty reporting', () => {
             </MemoryRouter>,
         );
 
-        const title = await screen.findByDisplayValue('A stored-markdown study');
+        const titleValue = await screen.findByText('A stored-markdown study');
         // Precondition: it must have been clean, or "becomes dirty" is vacuous.
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
 
-        await userEvent.type(title, ' revised');
+        // Title is a Zotero-style row: click to enter edit state, then commit.
+        await userEvent.click(titleValue);
+        const input = screen.getByRole('textbox', {name: 'titleRequired'});
+        await userEvent.type(input, ' revised{Enter}');
 
         await waitFor(() => {
             expect(onDirtyChange).toHaveBeenLastCalledWith(true);
@@ -115,10 +118,12 @@ describe('ArticleForm dirty reporting', () => {
             </MemoryRouter>,
         );
 
-        const title = await screen.findByDisplayValue('A stored-markdown study');
+        const titleValue = await screen.findByText('A stored-markdown study');
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
 
-        await userEvent.type(title, ' revised');
+        await userEvent.click(titleValue);
+        const input = screen.getByRole('textbox', {name: 'titleRequired'});
+        await userEvent.type(input, ' revised{Enter}');
         // Precondition: it must actually go dirty, or "clean after save" proves nothing.
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
 
@@ -167,7 +172,12 @@ describe('ArticleForm create reporting', () => {
             </MemoryRouter>,
         );
 
-        await userEvent.type(await screen.findByLabelText(/titleRequired/), 'A new paper');
+        // Title starts empty: it is a Zotero-style row, so it reads as its
+        // (labelled) read-state control until clicked into edit state.
+        const titleReadState = await screen.findByLabelText(/titleRequired/);
+        await userEvent.click(titleReadState);
+        const titleInput = screen.getByRole('textbox', {name: /titleRequired/});
+        await userEvent.type(titleInput, 'A new paper{Enter}');
         await userEvent.click(screen.getByRole('button', {name: /createArticle/}));
 
         await waitFor(() => {

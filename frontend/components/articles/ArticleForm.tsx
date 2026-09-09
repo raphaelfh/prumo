@@ -720,17 +720,15 @@ export function ArticleForm({
                             onItemTypeSelectChange={onItemTypeSelectChange}
                         />
 
-                        <div className="grid grid-cols-1 gap-8 xl:grid-cols-2 xl:items-start xl:gap-8">
-                            <PublicationSection
-                                formData={formData}
-                                setFormData={setFormData}
-                                validationErrors={validationErrors}
-                                onDateFieldChange={handleDateFieldChange}
-                                onValidateDateField={validateDateField}
-                            />
+                        <PublicationSection
+                            formData={formData}
+                            setFormData={setFormData}
+                            validationErrors={validationErrors}
+                            onDateFieldChange={handleDateFieldChange}
+                            onValidateDateField={validateDateField}
+                        />
 
-                            <IdentifiersSection formData={formData} setFormData={setFormData}/>
-                        </div>
+                        <IdentifiersSection formData={formData} setFormData={setFormData}/>
 
                         <AdditionalInfoSection formData={formData} setFormData={setFormData} saving={saving}/>
 

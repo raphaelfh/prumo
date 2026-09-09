@@ -2,20 +2,15 @@
  * BasicInfoSection — the article editor's "basic" step: item type, title,
  * abstract, and authors. Presentational; ArticleForm owns `formData` and
  * `authorRows` and passes down exactly the setters this section needs.
+ *
+ * Zotero-style: each field is a label -> value row (ArticleFieldRow) that
+ * renders as text and becomes an input only when clicked. No card chrome.
  */
 
 import type {Dispatch, SetStateAction} from 'react';
-import {Input} from "@/components/ui/input";
-import {Textarea} from "@/components/ui/textarea";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+import {ArticleFieldRow} from '../ArticleFieldRow';
 import {ArticleAuthorsField} from '../ArticleAuthorsField';
-import {SettingsCard, SettingsField, SettingsSection} from '@/components/settings';
+import {SettingsSection} from '@/components/settings';
 import {t} from '@/lib/copy';
 import {
     ITEM_TYPE_CUSTOM_SELECT_VALUE,
@@ -44,80 +39,53 @@ export function BasicInfoSection({
     itemTypeSelectValue,
     onItemTypeSelectChange,
 }: BasicInfoSectionProps) {
+    const itemTypeOptions = [
+        {value: ITEM_TYPE_NONE_SELECT_VALUE, label: t('articles', 'itemTypeNone')},
+        ...ZOTERO_ITEM_TYPES.map((opt) => ({value: opt.value, label: opt.label})),
+        {value: ITEM_TYPE_CUSTOM_SELECT_VALUE, label: t('articles', 'itemTypeCustom')},
+    ];
+
     return (
-        <section id="article-section-basic" className="scroll-mt-4 space-y-6">
-            <SettingsSection title={t('articles', 'basicInfo')}
-                             description={t('articles', 'basicInfoDesc')}>
-                <SettingsCard
-                    title={t('articles', 'articleContentCardTitle')}
-                    description={t('articles', 'titleAbstractAuthors')}
-                >
-                    <SettingsField label={t('articles', 'itemTypeLabel')} htmlFor="article_item_type">
-                        <Select value={itemTypeSelectValue} onValueChange={onItemTypeSelectChange}
-                                disabled={saving}>
-                            <SelectTrigger id="article_item_type"
-                                           className="h-9 w-full min-w-0 text-[13px]">
-                                <SelectValue placeholder={t('articles', 'itemTypePlaceholder')}/>
-                            </SelectTrigger>
-                            <SelectContent className="max-h-[min(70vh,360px)]">
-                                <SelectItem value={ITEM_TYPE_NONE_SELECT_VALUE} className="text-[13px]">
-                                    {t('articles', 'itemTypeNone')}
-                                </SelectItem>
-                                {ZOTERO_ITEM_TYPES.map((opt) => (
-                                    <SelectItem key={opt.value} value={opt.value}
-                                                className="text-[13px]">
-                                        {opt.label}
-                                    </SelectItem>
-                                ))}
-                                <SelectItem value={ITEM_TYPE_CUSTOM_SELECT_VALUE}
-                                            className="text-[13px]">
-                                    {t('articles', 'itemTypeCustom')}
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                        {itemTypeSelectValue === ITEM_TYPE_CUSTOM_SELECT_VALUE && (
-                            <div className="space-y-2 pt-1">
-                                <p className="text-[12px] text-muted-foreground/70">{t('articles', 'itemTypeCustomHint')}</p>
-                                <Input
-                                    id="article_type_custom"
-                                    value={formData.article_type}
-                                    onChange={(e) => setFormData({
-                                        ...formData,
-                                        article_type: e.target.value
-                                    })}
-                                    className="h-9 w-full min-w-0 text-[13px]"
-                                    placeholder={t('articles', 'itemTypeCustomPlaceholder')}
-                                    disabled={saving}
-                                />
-                            </div>
-                        )}
-                    </SettingsField>
-                    <SettingsField label={t('articles', 'titleRequired')} htmlFor="title" required>
-                        <Textarea
-                            id="title"
-                            value={formData.title}
-                            onChange={(e) => setFormData({...formData, title: e.target.value})}
-                            placeholder={t('articles', 'titlePlaceholder')}
-                            className="min-h-[88px] resize-y text-[13px] leading-snug w-full min-w-0"
-                            required
+        <section id="article-section-basic" className="scroll-mt-4 space-y-1">
+            <SettingsSection title={t('articles', 'basicInfo')}>
+                <ArticleFieldRow
+                    label={t('articles', 'itemTypeLabel')}
+                    value={itemTypeSelectValue}
+                    onCommit={onItemTypeSelectChange}
+                    control="select"
+                    options={itemTypeOptions}
+                    placeholder={t('articles', 'itemTypePlaceholder')}
+                    disabled={saving}
+                />
+                {itemTypeSelectValue === ITEM_TYPE_CUSTOM_SELECT_VALUE && (
+                    <>
+                        <ArticleFieldRow
+                            label={t('articles', 'itemTypeCustom')}
+                            value={formData.article_type}
+                            onCommit={(next) => setFormData({...formData, article_type: next})}
+                            placeholder={t('articles', 'itemTypeCustomPlaceholder')}
+                            disabled={saving}
                         />
-                    </SettingsField>
-                    <SettingsField label={t('articles', 'abstract')} htmlFor="abstract"
-                                   hint={t('articles', 'abstractPlaceholder')}>
-                        <Textarea
-                            id="abstract"
-                            value={formData.abstract}
-                            onChange={(e) => setFormData({...formData, abstract: e.target.value})}
-                            placeholder={t('articles', 'abstractPlaceholder')}
-                            rows={5}
-                            className="w-full min-w-0 text-[13px] leading-snug"
-                        />
-                    </SettingsField>
-                </SettingsCard>
-                <SettingsCard title={t('articles', 'authors')}
-                              description={t('articles', 'authorsPlaceholderComma')}>
-                    <ArticleAuthorsField rows={authorRows} onChange={onAuthorRowsChange} disabled={saving}/>
-                </SettingsCard>
+                        <p className="pl-[8.5rem] text-[12px] text-muted-foreground/70">
+                            {t('articles', 'itemTypeCustomHint')}
+                        </p>
+                    </>
+                )}
+                <ArticleFieldRow
+                    label={t('articles', 'titleRequired')}
+                    value={formData.title}
+                    onCommit={(next) => setFormData({...formData, title: next})}
+                    control="multiline"
+                    placeholder={t('articles', 'titlePlaceholder')}
+                />
+                <ArticleFieldRow
+                    label={t('articles', 'abstract')}
+                    value={formData.abstract}
+                    onCommit={(next) => setFormData({...formData, abstract: next})}
+                    control="multiline"
+                    placeholder={t('articles', 'abstractPlaceholder')}
+                />
+                <ArticleAuthorsField rows={authorRows} onChange={onAuthorRowsChange} disabled={saving}/>
             </SettingsSection>
         </section>
     );
