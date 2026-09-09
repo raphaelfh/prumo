@@ -172,9 +172,11 @@ export function ArticleFieldRow({
             ? value === "true"
                 ? resolvedSwitchLabels.on
                 : resolvedSwitchLabels.off
-            : value.trim().length > 0
-              ? value
-              : t("articles", "fieldRowEmptyPlaceholder");
+            : control === "select" && value.trim().length > 0
+              ? ((options ?? []).find((option) => option.value === value)?.label ?? value)
+              : value.trim().length > 0
+                ? value
+                : t("articles", "fieldRowEmptyPlaceholder");
     const isEmpty = control === "switch" ? false : value.trim().length === 0;
 
     return (

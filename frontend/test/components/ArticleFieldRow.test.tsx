@@ -268,7 +268,7 @@ describe("ArticleFieldRow", () => {
       />,
     );
 
-    await user.click(screen.getByText("article"));
+    await user.click(screen.getByText("Article"));
     await user.click(screen.getByRole("combobox"));
     await user.click(await screen.findByRole("option", { name: "Review" }));
 
@@ -308,11 +308,87 @@ describe("ArticleFieldRow", () => {
       />,
     );
 
-    await user.click(screen.getByText("article"));
+    await user.click(screen.getByText("Article"));
     await user.keyboard("{Escape}");
 
     expect(onCommit).not.toHaveBeenCalled();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-    expect(screen.getByText("article")).toBeInTheDocument();
+    expect(screen.getByText("Article")).toBeInTheDocument();
+  });
+
+  it("control='select' renders the matching option's LABEL in read state, not the raw value", () => {
+    render(
+      <ArticleFieldRow
+        label="Item type"
+        value="article"
+        onCommit={vi.fn()}
+        control="select"
+        options={[
+          { value: "article", label: "Article" },
+          { value: "review", label: "Review" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Article")).toBeInTheDocument();
+    expect(screen.queryByText("article")).not.toBeInTheDocument();
+  });
+
+  it("control='select' still commits the option's VALUE, not its label, when a different option is chosen", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <ArticleFieldRow
+        label="Item type"
+        value="article"
+        onCommit={onCommit}
+        control="select"
+        options={[
+          { value: "article", label: "Article" },
+          { value: "review", label: "Review" },
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByText("Article"));
+    await user.click(screen.getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: "Review" }));
+
+    expect(onCommit).toHaveBeenCalledWith("review");
+  });
+
+  it("control='select' falls back to rendering the raw value when it matches no option", () => {
+    render(
+      <ArticleFieldRow
+        label="Item type"
+        value="__unknown_sentinel__"
+        onCommit={vi.fn()}
+        control="select"
+        options={[
+          { value: "article", label: "Article" },
+          { value: "review", label: "Review" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("__unknown_sentinel__")).toBeInTheDocument();
+  });
+
+  it("control='select' never renders the internal '__no_item_type__' sentinel; it reads as the option's label", () => {
+    render(
+      <ArticleFieldRow
+        label="Item type"
+        value="__no_item_type__"
+        onCommit={vi.fn()}
+        control="select"
+        options={[
+          { value: "__no_item_type__", label: "Not set" },
+          { value: "article", label: "Article" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Not set")).toBeInTheDocument();
+    expect(screen.queryByText("__no_item_type__")).not.toBeInTheDocument();
   });
 });
