@@ -1,0 +1,151 @@
+/**
+ * The docked article panel in the Articles tab.
+ *
+ * Shows EITHER the article's document (PDF or the markdown reader — the
+ * viewer owns that switch) OR its edit fields. Owns only the strip and the
+ * switch; both bodies are the components the run screens and the old editor
+ * sheet already use, unchanged.
+ */
+import {useState} from 'react';
+import {FileText} from 'lucide-react';
+
+import {Button} from '@/components/ui/button';
+import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
+import {ArticleForm} from '@/components/articles/ArticleForm';
+import {ArticleFileUploadDialogNew} from '@/components/articles/ArticleFileUploadDialogNew';
+import {RunPdfContent} from '@/components/runs/RunPdfContent';
+import {useArticleDocuments} from '@/hooks/extraction/useArticleDocuments';
+import {t} from '@/lib/copy';
+import {cn} from '@/lib/utils';
+
+export type ArticleSidePanelView = 'details' | 'document';
+
+export interface ArticleSidePanelProps {
+  projectId: string;
+  /** 'add' has no article yet; 'edit' always carries articleId. */
+  mode: 'add' | 'edit';
+  articleId?: string;
+  view: ArticleSidePanelView;
+  onViewChange: (view: ArticleSidePanelView) => void;
+  onCollapse: () => void;
+  onDismiss: () => void;
+  onComplete: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+export function ArticleSidePanel({
+  projectId,
+  mode,
+  articleId,
+  view,
+  onViewChange,
+  onCollapse,
+  onDismiss,
+  onComplete,
+  onDirtyChange,
+}: ArticleSidePanelProps) {
+  // Add mode does not put the new id in the URL (that would remount the form
+  // and destroy its staged files), so the form hands it to us directly.
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  const effectiveArticleId = articleId ?? createdId ?? undefined;
+  const documentAvailable = Boolean(effectiveArticleId);
+  const {files} = useArticleDocuments(effectiveArticleId ?? null);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="article-side-panel">
+      <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border/40 px-2">
+        <div className="flex items-center gap-0.5" role="group">
+          <ViewButton
+            active={view === 'details'}
+            onClick={() => onViewChange('details')}
+            label={t('articles', 'panelViewDetails')}
+          />
+          <ViewButton
+            active={view === 'document'}
+            onClick={() => onViewChange('document')}
+            label={t('articles', 'panelViewDocument')}
+            disabled={!documentAvailable}
+            title={documentAvailable ? undefined : t('articles', 'panelViewDocumentAfterSave')}
+          />
+        </div>
+        <PanelToggleButton
+          side="right"
+          pressed
+          onToggle={onCollapse}
+          ariaLabel={t('articles', 'panelCollapse')}
+        />
+      </div>
+
+      <div className="min-h-0 flex-1">
+        {view === 'details' ? (
+          <ArticleForm
+            variant="panel"
+            mode={mode}
+            projectId={projectId}
+            articleId={articleId}
+            onDismiss={onDismiss}
+            onComplete={onComplete}
+            onDirtyChange={onDirtyChange}
+            onArticleCreated={setCreatedId}
+          />
+        ) : files.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            <FileText className="h-5 w-5 text-muted-foreground" aria-hidden="true"/>
+            <p className="text-[13px] font-medium">{t('articles', 'panelNoDocumentTitle')}</p>
+            <p className="text-[12px] text-muted-foreground">
+              {t('articles', 'panelNoDocumentBody')}
+            </p>
+            <Button size="sm" variant="outline" className="h-7 text-[12px]" onClick={() => setUploadOpen(true)}>
+              {t('articles', 'panelAddFile')}
+            </Button>
+          </div>
+        ) : (
+          <RunPdfContent articleId={effectiveArticleId as string} projectId={projectId}/>
+        )}
+      </div>
+
+      {effectiveArticleId && (
+        <ArticleFileUploadDialogNew
+          open={uploadOpen}
+          onOpenChange={setUploadOpen}
+          articleId={effectiveArticleId}
+          projectId={projectId}
+          onFileUploaded={() => setUploadOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ViewButton({
+  active,
+  onClick,
+  label,
+  disabled,
+  title,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-pressed={active}
+      className={cn(
+        'h-6 rounded-sm px-2 text-[12px] transition-colors',
+        active ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
+        disabled && 'cursor-not-allowed opacity-50',
+      )}
+    >
+      {label}
+    </button>
+  );
+}

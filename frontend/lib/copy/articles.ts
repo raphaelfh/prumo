@@ -323,6 +323,14 @@ export const articles = {
     // ArticleDetailDialog: per-file re-parse action
     reparse: 'Re-parse',
     reparseQueued: 'Re-parse queued',
+    // Side panel (docked article panel in the Articles tab)
+    panelViewDetails: 'Details',
+    panelViewDocument: 'Document',
+    panelViewDocumentAfterSave: 'Available once the article is saved',
+    panelCollapse: 'Hide the article panel',
+    panelNoDocumentTitle: 'No file attached',
+    panelNoDocumentBody: 'Attach a PDF to read it beside the list.',
+    panelAddFile: 'Add file',
 } as const;
 
 export type ArticlesCopy = typeof articles;
