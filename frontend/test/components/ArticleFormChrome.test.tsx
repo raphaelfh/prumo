@@ -1,10 +1,8 @@
 /**
  * ArticleForm's Zotero-lean rework: no nested card chrome, one column, and
- * a section order that reads top to bottom. Covers BasicInfoSection,
- * PublicationSection and IdentifiersSection — the three sections this task
- * converted to ArticleFieldRow. AdditionalInfoSection and FilesSection are a
- * sibling task's scope and still carry their own card chrome and
- * `sm:grid-cols-2`, so tests 2 and 3 below are scoped/commented accordingly.
+ * a section order that reads top to bottom. Covers all five sections:
+ * BasicInfoSection, PublicationSection, IdentifiersSection,
+ * AdditionalInfoSection and FilesSection.
  */
 import {render, screen, within} from '@testing-library/react';
 import {MemoryRouter} from 'react-router';
@@ -47,7 +45,7 @@ function renderForm() {
     );
 }
 
-describe('ArticleForm chrome — basic/publication/identifiers', () => {
+describe('ArticleForm chrome', () => {
     it('has no nested card headings while the section headings remain', () => {
         renderForm();
 
@@ -73,19 +71,21 @@ describe('ArticleForm chrome — basic/publication/identifiers', () => {
         expect(within(identifiersSection).getAllByText('identifiersLabel')).toHaveLength(1);
     });
 
-    it('renders basic/publication/identifiers in a single column', () => {
+    it('renders every section in a single column', () => {
         renderForm();
 
-        // Scoped to the three sections this task converted, and to the
-        // responsive `sm:grid-cols-*` utility the task removed (a
-        // section-field-grid, side-by-side cards at `sm+`). This deliberately
-        // does not flag ArticleAuthorsField's own internal, non-responsive
-        // `grid-cols-2` (last name / first name pair within one author row) —
-        // that is a compound-field layout, not the removed section chrome,
-        // and ArticleAuthorsField is out of this task's scope. AdditionalInfoSection
-        // still has `sm:grid-cols-2` (sibling task's scope) — do not widen
-        // this check to the whole form until that section is converted too.
-        for (const id of ['article-section-basic', 'article-section-publication', 'article-section-identifiers']) {
+        // Applies to the whole form now that all five sections are
+        // converted. This deliberately does not flag ArticleAuthorsField's
+        // own internal, non-responsive `grid-cols-2` (last name / first name
+        // pair within one author row) — that is a compound-field layout, not
+        // section chrome.
+        for (const id of [
+            'article-section-basic',
+            'article-section-publication',
+            'article-section-identifiers',
+            'article-section-additional',
+            'article-section-files',
+        ]) {
             const section = document.getElementById(id);
             expect(section).not.toBeNull();
             const gridOffenders = section!.querySelectorAll('[class*="sm:grid-cols-2"], [class*="sm:grid-cols-3"]');

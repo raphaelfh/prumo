@@ -133,6 +133,34 @@ describe('ArticleForm dirty reporting', () => {
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
     });
 
+    it('does not report dirty when Escape reverts a row edit', async () => {
+        const onDirtyChange = vi.fn();
+        render(
+            <MemoryRouter>
+                <ArticleForm
+                    mode="edit"
+                    projectId="proj-1"
+                    articleId="art-1"
+                    onDismiss={vi.fn()}
+                    onDirtyChange={onDirtyChange}
+                />
+            </MemoryRouter>,
+        );
+
+        const titleValue = await screen.findByText('A stored-markdown study');
+        // Precondition: it must have been clean, or "stays clean" is vacuous.
+        await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+
+        await userEvent.click(titleValue);
+        const input = screen.getByRole('textbox', {name: 'titleRequired'});
+        await userEvent.type(input, ' revised{Escape}');
+
+        // Give any dirty-reporting effect a chance to run, then confirm it
+        // never fired with true.
+        await screen.findByText('A stored-markdown study');
+        expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+    });
+
     it('reports clean on a fresh add form', async () => {
         const onDirtyChange = vi.fn();
         render(

@@ -128,8 +128,6 @@ export const articles = {
     filesDesc: 'PDFs and documents',
     additionalInfo: 'Additional information',
     additionalInfoDesc: 'Keywords and metadata',
-    keywordsAndMetadata: 'Keywords, metadata and other information',
-    keywordsLabel: 'Keywords',
     meshPlaceholder: 'MeSH terms separated by comma',
     languagePlaceholder: 'Portuguese, English, etc.',
     typePlaceholder: 'Original article, Review, etc.',
