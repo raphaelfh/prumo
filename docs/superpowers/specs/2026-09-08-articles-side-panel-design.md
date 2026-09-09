@@ -107,20 +107,27 @@ ProjectView (tab=articles)
 ArticleSidePanel
 ├── strip (h-8):  [ Details | Document ]  ······  [ collapse ▸ ]
 └── articleView === 'details'  → <ArticleForm variant="panel" … />
+    │                            ├── actions row: ······ [ Cancel ] [ Save ]
+    │                            └── section nav + fields
     articleView === 'document' → <RunPdfContent articleId projectId />
                                  or <NoDocumentEmptyState /> when files.length === 0
 ```
 
-- **Both children are used as-is.** `ArticleForm` keeps its own header
-  (title + Cancel/Save) and section nav; `RunPdfContent` brings the document
-  switcher, parse-status control, and the PDF/reader toggle. Details mode
-  therefore shows two stacked header rows (panel strip, then form header).
-  Accepted rather than performing surgery on `ArticleForm`'s header; revisit in
-  design review, and if merged, by extracting the form header as its own
-  component.
+- **`ArticleForm`'s header is retired in the panel.** Today it renders a back
+  button, the add/edit title, the article's title as description, and
+  Cancel/Save. In `variant="panel"` it keeps **only the actions** — a slim
+  right-aligned Cancel/Save row — and drops the back button, title and
+  description. The panel strip already says which article you are on and how
+  to leave, so that row was restating it. `variant="page"` is unchanged; the
+  header block becomes conditional on the variant, which is the smallest edit
+  that removes the duplication without hoisting `saving`/validation state out
+  of the form.
+- **`RunPdfContent` is used as-is** — it brings the document switcher,
+  parse-status control, and the PDF/reader toggle.
 - **Two dismiss affordances, two meanings:** the strip's collapse control
   (`PanelToggleButton side="right"`) hides the panel and keeps the selected
-  article; the form's Cancel/back clears the selection (§7).
+  article; the form's Cancel clears the selection (§7). The form's back button
+  is gone with the header, so Cancel is the only in-form exit.
 - **Empty document state:** when the article has no files, Document mode shows
   a small empty state with an "Add file" button opening
   `ArticleFileUploadDialogNew` — the dialog `ArticlesList` already opens from
@@ -212,9 +219,20 @@ The dirty-guard tests **assert the precondition** (the form reported dirty)
 before asserting the dialog — a guard test that passes because the form never
 became dirty is a vacuous green.
 
-**Existing tests:** `ArticlesList.toolbar.test.tsx` gains the new sidebar icon.
-`legacyArticleRoutes.test.tsx` must pass untouched; if it does not, the URL
-contract was broken.
+**Existing tests:**
+
+- `ArticlesList.toolbar.test.tsx` gains the new sidebar icon.
+- `ArticleFormNarrowViewport.test.tsx` **must change**: it asserts the
+  panel-variant header that §6 retires — the `addArticle` title, the
+  `editArticle` header block and its `back` button. Its narrow-viewport
+  intent survives as assertions on the step rail and the actions row; the
+  header assertions are deleted, not adapted, because the header is gone in
+  that variant. The `variant="page"` header keeps its coverage.
+- `ArticleForm.characterization.test.tsx` and `ArticleForm.stagedFiles.test.tsx`
+  assert the step rail and staged-file behaviour, not the header, so they
+  should pass untouched. If they fail, the variant split leaked.
+- `legacyArticleRoutes.test.tsx` must pass untouched; if it does not, the URL
+  contract was broken.
 
 **E2E:** `articles-side-panel.ui.e2e.ts`, following
 `pdf-collapsed-default.ui.e2e.ts` — open a project, click a row, assert the
@@ -251,6 +269,7 @@ Articles route.
   `articleView` cleanup
 - `frontend/components/articles/ArticlesList.tsx` — toolbar sidebar icon
 - `frontend/components/articles/ArticleForm.tsx` — `onDirtyChange`,
-  `onArticleCreated`
+  `onArticleCreated`, and the header retired in `variant="panel"` (actions row
+  only; `variant="page"` unchanged)
 - `frontend/hooks/use-mobile.tsx` — export the `lg` media-query helper
 - `frontend/lib/copy/articles.ts` — new strings
