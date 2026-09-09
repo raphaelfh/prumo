@@ -178,13 +178,27 @@ cmd_ci() {
   local f sha repo runs required verdict kind rest=""
   f=$(_active) || return 1
   sha=${1:-$(git -C "$(_get "$f" worktree)" rev-parse HEAD 2>/dev/null)}
-  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
-  if [ -z "$repo" ]; then _set "$f" ci "UNKNOWN@$sha"; echo "UNKNOWN@$sha"; return 1; fi
-  runs=$(gh api "repos/$repo/commits/$sha/check-runs" --paginate \
-           --jq '.check_runs[] | [.name,.status,.conclusion] | @tsv' 2>/dev/null)
-  if [ -z "$runs" ]; then _set "$f" ci "UNKNOWN@$sha"; echo "UNKNOWN@$sha"; return 1; fi
-  required=$(gh api "repos/$repo/branches/dev/protection" \
-               --jq '.required_status_checks.contexts[]' 2>/dev/null)
+  # Key on gh's EXIT STATUS, never on whether its output is empty. On an HTTP
+  # error gh writes the error JSON to STDOUT, so a 404/422/500 arrives as ~200
+  # non-empty bytes; the emptiness check accepted it, _ci_verdict parsed it as
+  # check data, matched no required context, and reported PENDING. A dead API
+  # then looks exactly like "CI is still running" and a run waits forever for a
+  # green that cannot arrive. Found 2026-09-08 by running this against a bogus
+  # SHA — the one check the offline suite cannot make.
+  #
+  # gh exiting 0 with NO output is different and legitimate: a real commit that
+  # has no check-runs yet. That is PENDING, and _ci_verdict says so.
+  if ! repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) || [ -z "$repo" ]; then
+    _set "$f" ci "UNKNOWN@$sha"; echo "UNKNOWN@$sha"; return 1
+  fi
+  if ! runs=$(gh api "repos/$repo/commits/$sha/check-runs" --paginate \
+                --jq '.check_runs[] | [.name,.status,.conclusion] | @tsv' 2>/dev/null); then
+    _set "$f" ci "UNKNOWN@$sha"; echo "UNKNOWN@$sha"; return 1
+  fi
+  if ! required=$(gh api "repos/$repo/branches/dev/protection" \
+                    --jq '.required_status_checks.contexts[]' 2>/dev/null); then
+    _set "$f" ci "UNKNOWN@$sha"; echo "UNKNOWN@$sha"; return 1
+  fi
   verdict=$(_ci_verdict "$required" "$runs")
   kind=${verdict%%:*}
   case "$verdict" in *:*) rest=":${verdict#*:}" ;; esac

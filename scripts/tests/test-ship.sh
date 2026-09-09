@@ -148,4 +148,41 @@ bash "$SHIP" phase promote >/dev/null 2>&1
 ok "promote allowed with a GREEN preflight on origin/dev" "$?" "0"
 ok "phase advanced" "$(state phase)" "promote"
 
+echo "# cmd_ci error handling (stub gh — an API error must not read as PENDING)"
+# gh writes HTTP-error JSON to STDOUT, so a 404/422/500 arrives as non-empty
+# output. Keying on emptiness reported PENDING for a dead API, and a run would
+# wait forever for a green that cannot arrive. Key on the exit status.
+STUB="$SANDBOX/stub"; mkdir -p "$STUB"
+mk_gh() { printf '#!/usr/bin/env bash\n%s\n' "$1" > "$STUB/gh"; chmod +x "$STUB/gh"; }
+
+# These run against the existing `demo` run: `init` correctly refuses a second
+# live run for this checkout, so there is only ever one to write to.
+
+# 1. HTTP error: non-zero exit WITH json on stdout (the case that shipped wrong)
+mk_gh 'case "$1" in repo) echo raphaelfh/prumo ;; *) echo "{\"message\":\"No commit found for SHA\",\"status\":\"422\"}"; exit 1 ;; esac'
+out=$(PATH="$STUB:$PATH" bash "$SHIP" ci deadbeef 2>/dev/null)
+ok "HTTP error -> UNKNOWN (not PENDING)" "$out" "UNKNOWN@deadbeef"
+ok "and UNKNOWN is what gets recorded"   "$(state ci)" "UNKNOWN@deadbeef"
+
+# 2. Network failure: non-zero exit, nothing on stdout
+mk_gh 'exit 1'
+out=$(PATH="$STUB:$PATH" bash "$SHIP" ci deadbeef 2>/dev/null)
+ok "network failure -> UNKNOWN" "$out" "UNKNOWN@deadbeef"
+
+# 3. A real commit with no check-runs yet: exit 0, empty output. That is
+#    genuinely pending, not unknown.
+mk_gh 'case "$1" in repo) echo raphaelfh/prumo ;; api) case "$2" in *protection*) echo "Backend Lint" ;; *) : ;; esac ;; esac; exit 0'
+out=$(PATH="$STUB:$PATH" bash "$SHIP" ci deadbeef 2>/dev/null)
+ok "no checks yet -> PENDING" "$out" "PENDING@deadbeef"
+
+# 4. Happy path through the real plumbing
+mk_gh 'case "$1" in repo) echo raphaelfh/prumo ;; api) case "$2" in *protection*) echo "Backend Lint" ;; *) printf "Backend Lint\tcompleted\tsuccess\n" ;; esac ;; esac; exit 0'
+out=$(PATH="$STUB:$PATH" bash "$SHIP" ci deadbeef 2>/dev/null)
+ok "all required green -> GREEN" "$out" "GREEN@deadbeef"
+
+# 5. Red carries the failing contexts through
+mk_gh 'case "$1" in repo) echo raphaelfh/prumo ;; api) case "$2" in *protection*) echo "Backend Lint" ;; *) printf "Backend Lint\tcompleted\tfailure\n" ;; esac ;; esac; exit 0'
+out=$(PATH="$STUB:$PATH" bash "$SHIP" ci deadbeef 2>/dev/null)
+ok "red names the context" "$out" "RED@deadbeef:Backend Lint"
+
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]
