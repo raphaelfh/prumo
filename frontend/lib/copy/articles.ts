@@ -332,6 +332,11 @@ export const articles = {
     panelDiscardCancel: 'Keep editing',
     // ArticleFieldRow: read/edit label -> value row primitive
     fieldRowEmptyPlaceholder: 'Click to add',
+    switchOn: 'On',
+    switchOff: 'Off',
+    // AdditionalInfoSection: open_access switch wording
+    openAccessOn: 'Open access',
+    openAccessOff: 'Not open access',
 } as const;
 
 export type ArticlesCopy = typeof articles;

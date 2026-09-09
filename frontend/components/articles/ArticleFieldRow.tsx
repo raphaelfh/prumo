@@ -54,6 +54,13 @@ export interface ArticleFieldRowProps {
     control?: "text" | "multiline" | "select" | "switch";
     /** For control='select'. */
     options?: { value: string; label: string }[];
+    /**
+     * For control='switch': the read-state label for each state. Defaults to
+     * shared copy keys ("On"/"Off"). The commit contract is unaffected --
+     * `onCommit` always receives the literal string "true"/"false" regardless
+     * of this wording.
+     */
+    switchLabels?: { on: string; off: string };
     placeholder?: string;
     /** Marks the row required and surfaces the error. */
     error?: string;
@@ -68,6 +75,7 @@ export function ArticleFieldRow({
     onCommit,
     control = "text",
     options,
+    switchLabels,
     placeholder,
     error,
     disabled,
@@ -148,8 +156,19 @@ export function ArticleFieldRow({
         commit(draft);
     };
 
-    const displayValue = value.trim().length > 0 ? value : t("articles", "fieldRowEmptyPlaceholder");
-    const isEmpty = value.trim().length === 0;
+    const resolvedSwitchLabels = switchLabels ?? {
+        on: t("articles", "switchOn"),
+        off: t("articles", "switchOff"),
+    };
+    const displayValue =
+        control === "switch"
+            ? value === "true"
+                ? resolvedSwitchLabels.on
+                : resolvedSwitchLabels.off
+            : value.trim().length > 0
+              ? value
+              : t("articles", "fieldRowEmptyPlaceholder");
+    const isEmpty = control === "switch" ? false : value.trim().length === 0;
 
     return (
         <div className="flex items-baseline gap-2 py-1">

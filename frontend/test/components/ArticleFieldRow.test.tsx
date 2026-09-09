@@ -215,11 +215,41 @@ describe("ArticleFieldRow", () => {
     const onCommit = vi.fn();
     render(<ArticleFieldRow label="Open access" value="false" onCommit={onCommit} control="switch" />);
 
-    await user.click(screen.getByText("false"));
+    await user.click(screen.getByRole("button"));
     const toggle = screen.getByRole("switch");
     await user.click(toggle);
 
     expect(onCommit).toHaveBeenCalledWith("true");
+  });
+
+  it("control='switch' renders a human label in read state, never the raw \"true\"/\"false\" string", () => {
+    render(<ArticleFieldRow label="Open access" value="true" onCommit={vi.fn()} control="switch" />);
+
+    expect(screen.queryByText("true")).not.toBeInTheDocument();
+    expect(screen.getByRole("button")).not.toHaveTextContent(/^(true|false)$/);
+  });
+
+  it("control='switch' with custom switchLabels renders the caller's wording and still commits \"true\"/\"false\"", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <ArticleFieldRow
+        label="Open access"
+        value="true"
+        onCommit={onCommit}
+        control="switch"
+        switchLabels={{ on: "Yes, open access", off: "Not open access" }}
+      />,
+    );
+
+    expect(screen.getByRole("button")).toHaveTextContent("Yes, open access");
+
+    await user.click(screen.getByRole("button"));
+    const toggle = screen.getByRole("switch");
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+
+    expect(onCommit).toHaveBeenCalledWith("false");
   });
 
   it("control='select' commits on choosing an option", async () => {

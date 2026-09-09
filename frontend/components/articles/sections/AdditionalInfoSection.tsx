@@ -75,6 +75,7 @@ export function AdditionalInfoSection({formData, setFormData, saving}: Additiona
                     value={String(formData.open_access)}
                     onCommit={(next) => setFormData({...formData, open_access: next === 'true'})}
                     control="switch"
+                    switchLabels={{on: t('articles', 'openAccessOn'), off: t('articles', 'openAccessOff')}}
                     disabled={saving}
                 />
                 <ArticleFieldRow
