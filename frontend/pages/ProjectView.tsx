@@ -215,7 +215,7 @@ export default function ProjectView() {
                           ? 'edit'
                           : null
                 }
-                articleId={editorArticleIdFromUrl}
+                articleId={articleEditorMode === 'edit' ? editorArticleIdFromUrl : null}
                 view={searchParams.get('articleView') === 'document' ? 'document' : 'details'}
                 onViewChange={setArticleView}
                 onSelectArticle={openArticleEditorEdit}
