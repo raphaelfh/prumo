@@ -73,6 +73,24 @@ describe("ArticleFieldRow", () => {
     expect(screen.getByText("New title")).toBeInTheDocument();
   });
 
+  it("entering edit places the caret at the end so typing appends instead of replacing the value", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(<ControlledHarness label="Title" initialValue="Some title" onCommit={onCommit} />);
+
+    // Precondition: the original value is present before the edit.
+    expect(screen.getByText("Some title")).toBeInTheDocument();
+
+    await user.click(screen.getByText("Some title"));
+    // user.keyboard (not user.type, which re-clicks and masks this) types
+    // against the control's live selection state, exactly like a real
+    // keypress would after focus places the caret.
+    await user.keyboard(" continued{Enter}");
+
+    expect(onCommit).toHaveBeenCalledWith("Some title continued");
+    expect(screen.getByText("Some title continued")).toBeInTheDocument();
+  });
+
   it("Esc reverts without committing, restoring the original value", async () => {
     const user = userEvent.setup();
     const onCommit = vi.fn();

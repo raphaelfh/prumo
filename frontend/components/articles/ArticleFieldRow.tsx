@@ -120,7 +120,12 @@ export function ArticleFieldRow({
             const node = controlRef.current;
             node?.focus();
             if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement) {
-                node.select();
+                // Place the caret at the end rather than selecting the whole
+                // value: Zotero-style click-to-edit means the user edits the
+                // existing value, not retypes it. `select()` would highlight
+                // everything, so the first keystroke wipes it out.
+                const end = node.value.length;
+                node.setSelectionRange(end, end);
             }
         } else if (wasEditingRef.current) {
             rowRef.current?.focus();
