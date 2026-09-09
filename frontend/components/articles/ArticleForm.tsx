@@ -15,6 +15,7 @@ import {
   Upload
 } from "lucide-react";
 import {useAuth} from "@/contexts/AuthContext";
+import {useIsBelowDesktop} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from './ArticleFileUploadDialogNew';
 import {type StagedArticleFile} from './ArticleFilesSection';
 import {ArticleFormSteps, type ArticleFormStep, type FormStep} from './ArticleFormSteps';
@@ -179,6 +180,10 @@ export function ArticleForm({
                             }: ArticleFormProps) {
   const navigate = useNavigate();
     const {user: _user} = useAuth();
+    // Below lg, Save/Cancel join the section-rail row instead of their own bar
+    // — reclaiming a whole bar of vertical space in the pane that has least
+    // of it (the stacked layout's panel). At lg+ they keep their own strip.
+    const belowDesktop = useIsBelowDesktop();
 
     const handleDismiss = () => {
         if (onDismiss) {
@@ -691,10 +696,14 @@ export function ArticleForm({
       <TooltipProvider delayDuration={200}>
         <div className="flex flex-col bg-background min-h-0 h-full">
             {/* The hosting panel's strip already names the article and owns
-                the exit, so the form itself keeps only the actions. */}
-            <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border/40 px-3 py-1.5">
-                {formActions}
-            </div>
+                the exit, so the form itself keeps only the actions. Below lg
+                they move onto the section-rail row instead (see `actions`
+                below) to reclaim a whole bar of vertical space. */}
+            {!belowDesktop && (
+                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border/40 px-3 py-1.5">
+                    {formActions}
+                </div>
+            )}
 
             <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row lg:flex-row-reverse">
                 <ArticleFormSteps
@@ -703,6 +712,7 @@ export function ArticleForm({
                     onSelect={scrollToSection}
                     titleMissing={!isStepValid('basic')}
                     compact
+                    actions={belowDesktop ? formActions : undefined}
                 />
 
                 <main

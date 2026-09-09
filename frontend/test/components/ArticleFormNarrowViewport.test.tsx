@@ -66,14 +66,38 @@ function renderAdd() {
     );
 }
 
+/** setup.ts stubs matchMedia to `matches: false` for every query, which is
+ *  exactly the "below lg" reading `useIsBelowDesktop()` needs — real jsdom
+ *  has no viewport to speak of. This override simulates the lg+ (desktop
+ *  split) reading for the one test that needs it. */
+function mockDesktopViewport(matchesLg: boolean) {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+        matches: matchesLg,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    return () => {
+        window.matchMedia = original;
+    };
+}
+
 describe('article editor — step rail below lg', () => {
     it('folds every step label to sr-only, never to hidden', async () => {
         renderAdd();
         const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
 
+        // Scoped to step buttons — below lg the rail row also hosts
+        // Save/Cancel, which carry no step label to fold.
         const labels = within(rail)
             .getAllByRole('button')
-            .map((b) => b.querySelector('[data-slot="step-label"]'));
+            .map((b) => b.querySelector('[data-slot="step-label"]'))
+            .filter((label): label is Element => label !== null);
         expect(labels).toHaveLength(5);
 
         for (const label of labels) {
@@ -118,8 +142,12 @@ describe('article editor — compact section rail in the panel', () => {
         renderAdd(); // panel variant
 
         const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
-        // Precondition: the rail actually rendered all five steps.
-        const buttons = within(rail).getAllByRole('button');
+        // Precondition: the rail actually rendered all five steps. Scoped to
+        // step buttons (those carrying the step label) — below lg the rail
+        // row also hosts Save/Cancel, which carry no such label.
+        const buttons = within(rail)
+            .getAllByRole('button')
+            .filter((b) => b.querySelector('[data-slot="step-label"]'));
         expect(buttons).toHaveLength(5);
 
         for (const button of buttons) {
@@ -140,7 +168,11 @@ describe('article editor — compact section rail in the panel', () => {
         const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
         // Precondition: the rail actually rendered all five steps, so the
         // direction assertion below cannot pass vacuously against an empty nav.
-        expect(within(rail).getAllByRole('button')).toHaveLength(5);
+        expect(
+            within(rail)
+                .getAllByRole('button')
+                .filter((b) => b.querySelector('[data-slot="step-label"]')),
+        ).toHaveLength(5);
 
         const emitted = rail.className;
         // Below lg the surrounding ArticleForm container is already a column
@@ -166,5 +198,29 @@ describe('article editor — rail placement in the side-by-side (lg+) layout', (
         // Sitting on the right, its divider belongs on its LEFT edge now.
         expect(aside.className).toContain('lg:border-l');
         expect(aside.className).not.toMatch(/(^|\s)lg:border-r(\s|$)/);
+    });
+});
+
+describe('article editor — panel actions follow the lg breakpoint, never duplicated', () => {
+    it('below lg, merges Save/Cancel into the rail row instead of a dedicated strip', async () => {
+        renderAdd(); // default matchMedia mock reads as "below lg"
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        expect(within(rail).getByRole('button', {name: /createArticle/})).toBeInTheDocument();
+        expect(within(rail).getByRole('button', {name: 'cancel'})).toBeInTheDocument();
+        // Exactly one instance renders — the dedicated strip must not also exist.
+        expect(screen.getAllByTestId('article-form-actions')).toHaveLength(1);
+    });
+
+    it('at lg+, keeps Save/Cancel in the dedicated strip, not merged into the rail row', async () => {
+        const restore = mockDesktopViewport(true);
+        renderAdd();
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        expect(within(rail).queryByRole('button', {name: /createArticle/})).not.toBeInTheDocument();
+        expect(screen.getByRole('button', {name: /createArticle/})).toBeInTheDocument();
+        expect(screen.getAllByTestId('article-form-actions')).toHaveLength(1);
+
+        restore();
     });
 });
