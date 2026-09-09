@@ -186,4 +186,45 @@ describe('useArticleDocuments', () => {
       await waitFor(() => expect(result.current.readerLoading).toBe(false));
     });
   });
+
+  describe('filesLoading — the FILES query alone, independent of the blocks query', () => {
+    // A disabled useQuery reports isPending=true forever (see readerLoading's
+    // own trap above). When the files list is genuinely empty, there is no
+    // selection, so the real (unmocked) blocks query would be disabled and
+    // readerLoading would never settle false — callers that need to
+    // distinguish "still fetching the files list" from "confirmed empty"
+    // need a signal that never touches the blocks query.
+    it('is true while the files list is resolving', async () => {
+      let resolveFiles!: (files: ArticleFileListItem[]) => void;
+      listMock.mockReturnValue(
+        new Promise<ArticleFileListItem[]>((r) => {
+          resolveFiles = r;
+        }),
+      );
+
+      const {wrapper} = createWrapper();
+      const {result} = renderHook(() => useArticleDocuments('art-1'), {wrapper});
+
+      expect(result.current.filesLoading).toBe(true);
+
+      resolveFiles([]);
+      await waitFor(() => expect(result.current.filesLoading).toBe(false));
+    });
+
+    it('settles false once the files list resolves empty, with no selection ever made', async () => {
+      listMock.mockResolvedValue([]);
+      const {wrapper} = createWrapper();
+      const {result} = renderHook(() => useArticleDocuments('art-1'), {wrapper});
+
+      await waitFor(() => expect(result.current.filesLoading).toBe(false));
+      expect(result.current.selectedFileId).toBeNull();
+    });
+
+    it('is false when disabled (no articleId)', () => {
+      const {wrapper} = createWrapper();
+      const {result} = renderHook(() => useArticleDocuments(null), {wrapper});
+
+      expect(result.current.filesLoading).toBe(false);
+    });
+  });
 });

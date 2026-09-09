@@ -170,12 +170,31 @@ describe('ArticleSidePanel', () => {
     });
 
     it('shows the empty state instead of the viewer when there are no files', () => {
-        documentsMock.mockReturnValue({files: []});
+        documentsMock.mockReturnValue({files: [], filesLoading: false});
 
         render(<ArticleSidePanel {...baseProps} mode="edit" articleId="a1" view="document"/>);
 
         expect(screen.getByText('panelNoDocumentTitle')).toBeInTheDocument();
         expect(screen.queryByTestId('run-pdf-content')).not.toBeInTheDocument();
+    });
+
+    it('shows a neutral loading state instead of the empty state while the files query is pending', () => {
+        documentsMock.mockReturnValue({files: [], filesLoading: true});
+
+        render(<ArticleSidePanel {...baseProps} mode="edit" articleId="a1" view="document"/>);
+
+        expect(screen.queryByText('panelNoDocumentTitle')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('run-pdf-content')).not.toBeInTheDocument();
+        expect(screen.getByText('panelDocumentLoading')).toBeInTheDocument();
+    });
+
+    it('renders the viewer, not the loading state, once files resolve non-empty even if filesLoading lingers stale', () => {
+        documentsMock.mockReturnValue({files: [{id: 'f1'}], filesLoading: false});
+
+        render(<ArticleSidePanel {...baseProps} mode="edit" articleId="a1" view="document"/>);
+
+        expect(screen.getByTestId('run-pdf-content')).toBeInTheDocument();
+        expect(screen.queryByText('panelDocumentLoading')).not.toBeInTheDocument();
     });
 
     it('collapses on request', async () => {

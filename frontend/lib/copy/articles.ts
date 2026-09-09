@@ -330,6 +330,7 @@ export const articles = {
     panelCollapse: 'Hide the article panel',
     panelNoDocumentTitle: 'No file attached',
     panelNoDocumentBody: 'Attach a PDF to read it beside the list.',
+    panelDocumentLoading: 'Loading document…',
     panelAddFile: 'Add file',
     panelPlaceholderTitle: 'No article selected',
     panelPlaceholderBody: 'Select an article to read its document or edit its details.',

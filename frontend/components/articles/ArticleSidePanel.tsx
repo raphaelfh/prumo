@@ -7,7 +7,7 @@
  * sheet already use, unchanged.
  */
 import {useId, useState} from 'react';
-import {FileText} from 'lucide-react';
+import {FileText, Loader2} from 'lucide-react';
 
 import {Button} from '@/components/ui/button';
 import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
@@ -52,7 +52,7 @@ export function ArticleSidePanel({
 
   const effectiveArticleId = articleId ?? createdId ?? undefined;
   const documentAvailable = Boolean(effectiveArticleId);
-  const {files} = useArticleDocuments(effectiveArticleId ?? null);
+  const {files, filesLoading} = useArticleDocuments(effectiveArticleId ?? null);
   // The panel decides its own body defensively: `view` is host-driven and can
   // still say 'document' right after switching to add mode (articleId cleared,
   // view untouched) — falling back to 'details' here avoids stranding the user
@@ -105,6 +105,13 @@ export function ArticleSidePanel({
             onDirtyChange={onDirtyChange}
             onArticleCreated={setCreatedId}
           />
+        ) : filesLoading ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden="true"/>
+            <p className="text-[12px] text-muted-foreground">
+              {t('articles', 'panelDocumentLoading')}
+            </p>
+          </div>
         ) : files.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <FileText className="h-5 w-5 text-muted-foreground" aria-hidden="true"/>
