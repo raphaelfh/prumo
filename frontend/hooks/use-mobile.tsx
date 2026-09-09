@@ -28,3 +28,12 @@ function useMediaQuery(query: string): boolean {
 export function useIsNarrow() {
   return useMediaQuery(`(max-width: ${NARROW_BREAKPOINT - 1}px)`);
 }
+
+/** Tailwind lg (1024px). Below it the docked split is not viable and the
+ *  articles panel falls back to an overlay sheet. */
+const DESKTOP_BREAKPOINT = 1024;
+
+/** True when the viewport is below Tailwind lg (1024px). */
+export function useIsBelowDesktop() {
+  return !useMediaQuery(`(min-width: ${DESKTOP_BREAKPOINT}px)`);
+}

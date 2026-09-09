@@ -331,6 +331,9 @@ export const articles = {
     panelNoDocumentTitle: 'No file attached',
     panelNoDocumentBody: 'Attach a PDF to read it beside the list.',
     panelAddFile: 'Add file',
+    panelPlaceholderTitle: 'No article selected',
+    panelPlaceholderBody: 'Select an article to read its document or edit its details.',
+    panelToggle: 'Toggle the article panel',
 } as const;
 
 export type ArticlesCopy = typeof articles;
