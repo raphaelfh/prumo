@@ -131,6 +131,40 @@ describe("ArticleFieldRow", () => {
     expect(screen.getByText("Blurred edit")).toBeInTheDocument();
   });
 
+  it("blur-commit does NOT bounce focus back to the row button, so Tab can move on", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <>
+        <ControlledHarness label="Title" initialValue="Some title" onCommit={onCommit} />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+
+    await user.click(screen.getByText("Some title"));
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "Blurred edit");
+    const elsewhere = screen.getByRole("button", { name: "elsewhere" });
+    act(() => {
+      elsewhere.focus();
+      fireEvent.blur(input);
+    });
+
+    expect(onCommit).toHaveBeenCalledWith("Blurred edit");
+    expect(await screen.findByText("Blurred edit")).not.toHaveFocus();
+  });
+
+  it("Escape DOES restore focus to the row button", async () => {
+    const user = userEvent.setup();
+    render(<ArticleFieldRow label="Title" value="Some title" onCommit={vi.fn()} />);
+
+    await user.click(screen.getByText("Some title"));
+    await user.keyboard("{Escape}");
+
+    expect(screen.getByRole("button")).toHaveFocus();
+  });
+
   it("is keyboard reachable: Enter on the focused read state enters edit state", async () => {
     const user = userEvent.setup();
     render(<ArticleFieldRow label="Title" value="Some title" onCommit={vi.fn()} />);

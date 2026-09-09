@@ -120,6 +120,15 @@ export function ArticleFieldRow({
      * ArticleFieldRow.test.tsx, which reproduce the ordering by hand.
      */
     const suppressBlurRef = useRef(false);
+    /**
+     * Set by commit()/revert() immediately before setEditing(false), read
+     * (and reset) by the editing-effect below. Only the explicit keyboard
+     * exits (Enter, Cmd/Ctrl+Enter, Escape) set this to true -- blur is also
+     * a valid way to leave edit state (Tab, clicking elsewhere), and
+     * refocusing the row button on blur would yank focus right back and
+     * swallow the Tab that just fired it.
+     */
+    const restoreFocusRef = useRef(false);
 
     useEffect(() => {
         if (editing) {
@@ -133,9 +142,10 @@ export function ArticleFieldRow({
                 const end = node.value.length;
                 node.setSelectionRange(end, end);
             }
-        } else if (wasEditingRef.current) {
+        } else if (wasEditingRef.current && restoreFocusRef.current) {
             rowRef.current?.focus();
         }
+        restoreFocusRef.current = false;
         wasEditingRef.current = editing;
     }, [editing]);
 
@@ -145,14 +155,16 @@ export function ArticleFieldRow({
         setEditing(true);
     };
 
-    const commit = (next: string) => {
+    const commit = (next: string, options?: { refocus?: boolean }) => {
         suppressBlurRef.current = true;
+        restoreFocusRef.current = options?.refocus ?? false;
         onCommit(next);
         setEditing(false);
     };
 
-    const revert = () => {
+    const revert = (options?: { refocus?: boolean }) => {
         suppressBlurRef.current = true;
+        restoreFocusRef.current = options?.refocus ?? false;
         setEditing(false);
     };
 
@@ -164,17 +176,17 @@ export function ArticleFieldRow({
                 // commit, since blur-to-commit is the only other path here.
                 if (!(event.metaKey || event.ctrlKey)) return;
                 event.preventDefault();
-                commit(draft);
+                commit(draft, { refocus: true });
                 return;
             }
             if (event.shiftKey) return;
             event.preventDefault();
-            commit(draft);
+            commit(draft, { refocus: true });
             return;
         }
         if (event.key === "Escape") {
             event.preventDefault();
-            revert();
+            revert({ refocus: true });
         }
     };
 
@@ -232,7 +244,7 @@ export function ArticleFieldRow({
                             onKeyDown={(event) => {
                                 if (event.key === "Escape") {
                                     event.preventDefault();
-                                    revert();
+                                    revert({ refocus: true });
                                 }
                             }}
                         />
