@@ -35,7 +35,6 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
-import {Sheet, SheetContent} from '@/components/ui/sheet';
 import {useIsBelowDesktop} from '@/hooks/use-mobile';
 import {
   ArticleSidePanel,
@@ -164,27 +163,15 @@ export function ArticlesSplitShell({
     </AlertDialog>
   );
 
-  if (belowDesktop) {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        {list(listApi)}
-        <Sheet open={panelOpen} onOpenChange={(open) => !open && setPanelOpen(false)}>
-          <SheetContent
-            side="right"
-            showCloseButton={false}
-            className="flex h-full w-full max-w-full min-h-0 flex-col gap-0 border-l border-border/40 p-0 sm:max-w-none sm:w-[min(960px,96vw)]"
-          >
-            {panelBody}
-          </SheetContent>
-        </Sheet>
-        {discardDialog}
-      </div>
-    );
-  }
-
   return (
     <>
-      <ResizablePanelGroup orientation="horizontal" className="h-full">
+      {/*
+       * Below lg the group flips to vertical (table on top, panel
+       * underneath) instead of falling back to an overlay: docking the
+       * panel is the point, and an overlay Sheet would defeat it by
+       * covering the table it was supposed to keep visible.
+       */}
+      <ResizablePanelGroup orientation={belowDesktop ? 'vertical' : 'horizontal'} className="h-full">
         <ResizablePanel id="articles-shell-list" defaultSize={panelOpen ? '55%' : '100%'} minSize="35%">
           <div className="flex h-full min-h-0 flex-col">{list(listApi)}</div>
         </ResizablePanel>

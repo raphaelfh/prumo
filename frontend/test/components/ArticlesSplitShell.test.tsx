@@ -47,6 +47,9 @@ const baseProps = {
     onComplete: vi.fn(),
 };
 
+// `render()`'s own result already carries `unmount`, so `renderShell`'s
+// spread of `utils` doubles as the "raw" variant the direction test needs
+// to render twice in one test — no second JSX copy required.
 function renderShell(overrides: Partial<Parameters<typeof ArticlesSplitShell>[0]> = {}) {
     const onSelectArticle = vi.fn();
     const utils = render(
@@ -123,12 +126,36 @@ describe('ArticlesSplitShell', () => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    it('falls back to the overlay sheet below lg', () => {
+    it('stacks the panel under the table below lg instead of overlaying it', () => {
         setNarrow();
         renderShell({mode: 'edit', articleId: 'a1'});
 
-        expect(screen.getByRole('dialog')).toBeInTheDocument();
-        expect(document.querySelector('[data-testid="articles-shell-panel"]')).toBeNull();
+        // Same docked panel, no overlay: the table must remain in the tree.
+        expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(screen.getByTestId('panel-open')).toHaveTextContent('true');
+    });
+
+    // `react-resizable-panels` v4 exposes no `data-panel-group-direction` (or
+    // any data-attribute) for orientation — verified by rendering the group
+    // and inspecting the DOM: the container gets `data-group="true"` and an
+    // inline `style.flexDirection` of `column` (vertical) or `row`
+    // (horizontal). That inline style is real DOM state set by the library
+    // itself (not a Tailwind class jsdom can't resolve), so it is a valid
+    // assertion target.
+    it('uses a vertical panel group below lg and a horizontal one above', () => {
+        setNarrow();
+        const {unmount} = renderShell({mode: 'edit', articleId: 'a1'});
+        expect(
+            document.querySelector<HTMLElement>('[data-group]')?.style.flexDirection,
+        ).toBe('column');
+        unmount();
+
+        setDesktop();
+        renderShell({mode: 'edit', articleId: 'a1'});
+        expect(
+            document.querySelector<HTMLElement>('[data-group]')?.style.flexDirection,
+        ).toBe('row');
     });
 
     // Controller ruling: `panelOpen` must react to hasSelection transitioning
