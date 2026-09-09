@@ -279,7 +279,10 @@ export function ArticleFieldRow({
                         disabled={disabled}
                         onClick={enterEdit}
                         className={cn(
-                            "block w-full truncate rounded-sm px-1 py-0.5 text-left text-[13px] hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                            "block w-full rounded-sm px-1 py-0.5 text-left text-[13px] hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                            control === "multiline"
+                                ? "line-clamp-3 whitespace-pre-line"
+                                : "truncate",
                             isEmpty && "text-muted-foreground",
                         )}
                     >

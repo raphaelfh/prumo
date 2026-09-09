@@ -217,6 +217,20 @@ describe("ArticleFieldRow", () => {
     expect(onCommit).toHaveBeenCalledWith("New title");
   });
 
+  it("control='multiline' does not truncate its long read-state value; control='text' still does", () => {
+    const longValue = "A very long abstract that would otherwise be clipped to one line.\nSecond line.";
+    render(
+      <>
+        <ArticleFieldRow label="Abstract" value={longValue} onCommit={vi.fn()} control="multiline" />
+        <ArticleFieldRow label="Title" value="Some title" onCommit={vi.fn()} control="text" />
+      </>,
+    );
+
+    const [multilineButton, textButton] = screen.getAllByRole("button");
+    expect(multilineButton.className).not.toMatch(/\btruncate\b/);
+    expect(textButton.className).toMatch(/\btruncate\b/);
+  });
+
   it("control='multiline' renders a textarea in edit state", async () => {
     const user = userEvent.setup();
     render(
