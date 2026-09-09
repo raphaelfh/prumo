@@ -275,6 +275,23 @@ describe("ArticleFieldRow", () => {
     expect(onCommit).toHaveBeenCalledWith("review");
   });
 
+  it("hint renders supplementary text inside the value column, alongside the control", () => {
+    render(
+      <ArticleFieldRow
+        label="Item type"
+        value="Custom…"
+        onCommit={vi.fn()}
+        hint="Enter a custom type (e.g. RIS code or legacy value)."
+      />,
+    );
+
+    const hint = screen.getByText("Enter a custom type (e.g. RIS code or legacy value).");
+    const valueButton = screen.getByRole("button");
+    // Same value-column container -- proves the hint is aligned with the
+    // control, not positioned via a caller-side magic offset.
+    expect(valueButton.parentElement).toBe(hint.parentElement);
+  });
+
   it("control='select': Escape reverts to read state without committing", async () => {
     const user = userEvent.setup();
     const onCommit = vi.fn();

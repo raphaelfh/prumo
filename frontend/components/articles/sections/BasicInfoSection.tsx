@@ -58,18 +58,14 @@ export function BasicInfoSection({
                     disabled={saving}
                 />
                 {itemTypeSelectValue === ITEM_TYPE_CUSTOM_SELECT_VALUE && (
-                    <>
-                        <ArticleFieldRow
-                            label={t('articles', 'itemTypeCustom')}
-                            value={formData.article_type}
-                            onCommit={(next) => setFormData({...formData, article_type: next})}
-                            placeholder={t('articles', 'itemTypeCustomPlaceholder')}
-                            disabled={saving}
-                        />
-                        <p className="pl-[8.5rem] text-[12px] text-muted-foreground/70">
-                            {t('articles', 'itemTypeCustomHint')}
-                        </p>
-                    </>
+                    <ArticleFieldRow
+                        label={t('articles', 'itemTypeCustom')}
+                        value={formData.article_type}
+                        onCommit={(next) => setFormData({...formData, article_type: next})}
+                        placeholder={t('articles', 'itemTypeCustomPlaceholder')}
+                        hint={t('articles', 'itemTypeCustomHint')}
+                        disabled={saving}
+                    />
                 )}
                 <ArticleFieldRow
                     label={t('articles', 'titleRequired')}

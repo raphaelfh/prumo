@@ -28,7 +28,7 @@
  * different record's field while a row is mid-edit, without remounting,
  * will show a stale draft against the new record.
  */
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,6 +65,12 @@ export interface ArticleFieldRowProps {
     /** Marks the row required and surfaces the error. */
     error?: string;
     disabled?: boolean;
+    /**
+     * Supplementary text rendered beneath the value, inside the same value
+     * column -- already aligned with the control, so callers never need a
+     * hardcoded offset to line it up under the label column.
+     */
+    hint?: ReactNode;
 }
 
 type EditableControlElement = HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement;
@@ -79,6 +85,7 @@ export function ArticleFieldRow({
     placeholder,
     error,
     disabled,
+    hint,
 }: ArticleFieldRowProps) {
     const fieldId = useId();
     const [editing, setEditing] = useState(false);
@@ -255,6 +262,7 @@ export function ArticleFieldRow({
                     </button>
                 )}
                 {error && <p className="mt-0.5 text-xs text-destructive">{error}</p>}
+                {hint && <p className="mt-0.5 text-[12px] text-muted-foreground/70">{hint}</p>}
             </div>
         </div>
     );
