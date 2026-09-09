@@ -4,11 +4,38 @@
  * the value area for the appropriate control, focused. Enter/blur commit,
  * Escape reverts. See task-2-brief.md for the full contract.
  */
+import { useState } from "react";
+
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { ArticleFieldRow } from "@/components/articles/ArticleFieldRow";
+import { ArticleFieldRow, type ArticleFieldRowProps } from "@/components/articles/ArticleFieldRow";
+
+// A minimal stand-in for a real parent: holds `value` in state and passes
+// `onCommit` straight to `setValue`, exercising the real controlled-component
+// contract (commit -> parent setState -> new `value` prop) rather than a
+// bare `vi.fn()` that never feeds anything back.
+function ControlledHarness({
+    initialValue,
+    onCommit,
+    ...rest
+}: Omit<ArticleFieldRowProps, "value" | "onCommit"> & {
+    initialValue: string;
+    onCommit: (next: string) => void;
+}) {
+    const [value, setValue] = useState(initialValue);
+    return (
+        <ArticleFieldRow
+            {...rest}
+            value={value}
+            onCommit={(next) => {
+                onCommit(next);
+                setValue(next);
+            }}
+        />
+    );
+}
 
 describe("ArticleFieldRow", () => {
   it("shows the value as read-only text, not an input", () => {
@@ -33,7 +60,7 @@ describe("ArticleFieldRow", () => {
   it("Enter commits the typed value and returns to read state showing it", async () => {
     const user = userEvent.setup();
     const onCommit = vi.fn();
-    render(<ArticleFieldRow label="Title" value="Some title" onCommit={onCommit} />);
+    render(<ControlledHarness label="Title" initialValue="Some title" onCommit={onCommit} />);
 
     await user.click(screen.getByText("Some title"));
     const input = screen.getByRole("textbox");
@@ -70,7 +97,7 @@ describe("ArticleFieldRow", () => {
     const onCommit = vi.fn();
     render(
       <>
-        <ArticleFieldRow label="Title" value="Some title" onCommit={onCommit} />
+        <ControlledHarness label="Title" initialValue="Some title" onCommit={onCommit} />
         <button type="button">elsewhere</button>
       </>,
     );
@@ -179,5 +206,29 @@ describe("ArticleFieldRow", () => {
     await user.click(await screen.findByRole("option", { name: "Review" }));
 
     expect(onCommit).toHaveBeenCalledWith("review");
+  });
+
+  it("control='select': Escape reverts to read state without committing", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <ArticleFieldRow
+        label="Item type"
+        value="article"
+        onCommit={onCommit}
+        control="select"
+        options={[
+          { value: "article", label: "Article" },
+          { value: "review", label: "Review" },
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByText("article"));
+    await user.keyboard("{Escape}");
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByText("article")).toBeInTheDocument();
   });
 });

@@ -17,6 +17,16 @@
  * the same effect, so keyboard users are never stranded. The label and the
  * currently-rendered control always share one `id` (via `useId`), so the
  * accessible name survives the read/edit swap.
+ *
+ * `draft` contract: `draft` is seeded from `value` only when `enterEdit`
+ * runs (the read -> edit transition); it is never resynced while
+ * `editing === true`, even if `value` changes underneath. That is safe only
+ * because the caller remounts this row (not merely re-renders it) whenever
+ * the underlying record identity changes — `ArticleForm` does this by
+ * keying its field rows on article identity. This component does not and
+ * cannot enforce that convention itself; a caller that swaps `value` for a
+ * different record's field while a row is mid-edit, without remounting,
+ * will show a stale draft against the new record.
  */
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -65,23 +75,9 @@ export function ArticleFieldRow({
     const fieldId = useId();
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value);
-    // Echoes `value`, plus an optimistic update on commit. A real parent
-    // applies the commit to its own state and hands back an updated `value`
-    // prop next render — this local echo just means the row does not have to
-    // wait a tick for that round trip to show what was just typed.
-    const [committedValue, setCommittedValue] = useState(value);
-    const lastPropValueRef = useRef(value);
     const rowRef = useRef<HTMLButtonElement>(null);
     const controlRef = useRef<EditableControlElement>(null);
     const wasEditingRef = useRef(false);
-    const suppressBlurRef = useRef(false);
-
-    useEffect(() => {
-        if (value !== lastPropValueRef.current) {
-            lastPropValueRef.current = value;
-            setCommittedValue(value);
-        }
-    }, [value]);
 
     useEffect(() => {
         if (editing) {
@@ -98,14 +94,12 @@ export function ArticleFieldRow({
 
     const enterEdit = () => {
         if (disabled) return;
-        setDraft(committedValue);
+        setDraft(value);
         setEditing(true);
     };
 
     const commit = (next: string) => {
         onCommit(next);
-        lastPropValueRef.current = next;
-        setCommittedValue(next);
         setEditing(false);
     };
 
@@ -116,26 +110,19 @@ export function ArticleFieldRow({
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
-            suppressBlurRef.current = true;
             commit(draft);
         } else if (event.key === "Escape") {
             event.preventDefault();
-            suppressBlurRef.current = true;
             revert();
         }
     };
 
     const handleBlur = () => {
-        if (suppressBlurRef.current) {
-            suppressBlurRef.current = false;
-            return;
-        }
         commit(draft);
     };
 
-    const displayValue =
-        committedValue.trim().length > 0 ? committedValue : t("articles", "fieldRowEmptyPlaceholder");
-    const isEmpty = committedValue.trim().length === 0;
+    const displayValue = value.trim().length > 0 ? value : t("articles", "fieldRowEmptyPlaceholder");
+    const isEmpty = value.trim().length === 0;
 
     return (
         <div className="flex items-baseline gap-2 py-1">
@@ -173,7 +160,16 @@ export function ArticleFieldRow({
                         />
                     ) : control === "select" ? (
                         <Select value={draft} onValueChange={(next) => commit(next)}>
-                            <SelectTrigger id={fieldId} ref={controlRef as React.RefObject<HTMLButtonElement>}>
+                            <SelectTrigger
+                                id={fieldId}
+                                ref={controlRef as React.RefObject<HTMLButtonElement>}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Escape") {
+                                        event.preventDefault();
+                                        revert();
+                                    }
+                                }}
+                            >
                                 <SelectValue placeholder={placeholder} />
                             </SelectTrigger>
                             <SelectContent>
