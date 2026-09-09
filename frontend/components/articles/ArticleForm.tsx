@@ -5,7 +5,6 @@
 
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
-import {cn} from "@/lib/utils";
 import {TooltipProvider} from "@/components/ui/tooltip";
 import {toast} from "sonner";
 import {
@@ -19,7 +18,7 @@ import {useAuth} from "@/contexts/AuthContext";
 import {ArticleFileUploadDialogNew} from './ArticleFileUploadDialogNew';
 import {type StagedArticleFile} from './ArticleFilesSection';
 import {ArticleFormSteps, type ArticleFormStep, type FormStep} from './ArticleFormSteps';
-import {ArticleFormActions, ArticleFormHeader, ArticleFormLoadingState} from './ArticleFormHeader';
+import {ArticleFormActions, ArticleFormLoadingState} from './ArticleFormHeader';
 import {isScrolledToBottom, resolveActiveStep} from '@/lib/articleFormScrollspy';
 import {BasicInfoSection} from './sections/BasicInfoSection';
 import {PublicationSection} from './sections/PublicationSection';
@@ -90,9 +89,7 @@ interface ArticleFormProps {
   projectId: string;
   articleId?: string;
   onComplete?: () => void;
-    /** When "panel", uses height constraints for embedded layout and onDismiss instead of navigate(-1) for back/cancel. */
-    variant?: 'page' | 'panel';
-    /** Called for Back/Cancel in panel mode; optional in page mode (falls back to navigate(-1)). */
+    /** Called for Back/Cancel. */
     onDismiss?: () => void;
     /** Reports whether the form holds unsaved edits, so a host panel can guard
      *  navigation away from it. Fires on every transition of the flag. */
@@ -176,17 +173,15 @@ export function ArticleForm({
                                 projectId,
                                 articleId,
                                 onComplete,
-                                variant = 'page',
                                 onDismiss,
                                 onDirtyChange,
                                 onArticleCreated,
                             }: ArticleFormProps) {
   const navigate = useNavigate();
     const {user: _user} = useAuth();
-    const isPanel = variant === 'panel';
 
     const handleDismiss = () => {
-        if (isPanel && onDismiss) {
+        if (onDismiss) {
             onDismiss();
             return;
         }
@@ -563,15 +558,9 @@ export function ArticleForm({
 
     toast.success(isCreating ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));
 
+    onComplete?.();
     if (mode === 'add') {
-        if (isPanel) {
-            onComplete?.();
-            onDismiss?.();
-        } else {
-            navigate(`/projects/${projectId}?tab=articles`);
-        }
-    } else {
-      onComplete?.();
+        onDismiss?.();
     }
   };
 
@@ -685,7 +674,7 @@ export function ArticleForm({
   };
 
     if (loading) {
-        return <ArticleFormLoadingState isPanel={isPanel}/>;
+        return <ArticleFormLoadingState/>;
     }
 
     const formActions = (
@@ -700,34 +689,20 @@ export function ArticleForm({
 
     return (
       <TooltipProvider delayDuration={200}>
-        <div
-            className={cn(
-                'flex flex-col bg-background min-h-0',
-                isPanel ? 'h-full' : 'h-screen'
-            )}
-        >
-            {isPanel ? (
-                /* The hosting panel's strip already names the article and owns
-                   the exit, so the panel variant keeps only the actions. */
-                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border/40 px-3 py-1.5">
-                    {formActions}
-                </div>
-            ) : (
-                <ArticleFormHeader
-                    mode={mode}
-                    articleTitle={article?.title}
-                    onDismiss={handleDismiss}
-                    actions={formActions}
-                />
-            )}
+        <div className="flex flex-col bg-background min-h-0 h-full">
+            {/* The hosting panel's strip already names the article and owns
+                the exit, so the form itself keeps only the actions. */}
+            <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border/40 px-3 py-1.5">
+                {formActions}
+            </div>
 
-            <div className={cn('flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row', isPanel && 'lg:flex-row-reverse')}>
+            <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row lg:flex-row-reverse">
                 <ArticleFormSteps
                     steps={STEPS}
                     activeStep={activeSection}
                     onSelect={scrollToSection}
                     titleMissing={!isStepValid('basic')}
-                    compact={isPanel}
+                    compact
                 />
 
                 <main

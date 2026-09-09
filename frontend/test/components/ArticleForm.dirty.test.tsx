@@ -60,7 +60,6 @@ describe('ArticleForm dirty reporting', () => {
                     mode="edit"
                     projectId="proj-1"
                     articleId="art-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onDirtyChange={onDirtyChange}
                 />
@@ -83,7 +82,6 @@ describe('ArticleForm dirty reporting', () => {
                     mode="edit"
                     projectId="proj-1"
                     articleId="art-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onDirtyChange={onDirtyChange}
                 />
@@ -110,7 +108,6 @@ describe('ArticleForm dirty reporting', () => {
                     mode="edit"
                     projectId="proj-1"
                     articleId="art-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onComplete={vi.fn()}
                     onDirtyChange={onDirtyChange}
@@ -138,7 +135,6 @@ describe('ArticleForm dirty reporting', () => {
                 <ArticleForm
                     mode="add"
                     projectId="proj-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onDirtyChange={onDirtyChange}
                 />
@@ -164,7 +160,6 @@ describe('ArticleForm create reporting', () => {
                 <ArticleForm
                     mode="add"
                     projectId="proj-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onComplete={vi.fn()}
                     onArticleCreated={onArticleCreated}

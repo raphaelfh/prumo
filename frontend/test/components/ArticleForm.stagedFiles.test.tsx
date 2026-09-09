@@ -77,7 +77,6 @@ async function stageOnePdf(onDismiss = vi.fn(), onComplete = vi.fn()) {
             <ArticleForm
                 mode="add"
                 projectId="proj-SENTINEL"
-                variant="panel"
                 onDismiss={onDismiss}
                 onComplete={onComplete}
             />
@@ -178,7 +177,7 @@ describe('ArticleForm — staged files', () => {
         const user = userEvent.setup();
         render(
             <MemoryRouter>
-                <ArticleForm mode="add" projectId="proj-1" variant="panel" onDismiss={vi.fn()}/>
+                <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
             </MemoryRouter>,
         );
         await user.click(screen.getByRole('button', {name: /addFiles/}));
@@ -197,7 +196,7 @@ describe('ArticleForm — staged files', () => {
         const user = userEvent.setup();
         render(
             <MemoryRouter>
-                <ArticleForm mode="add" projectId="proj-1" variant="panel" onDismiss={vi.fn()}/>
+                <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
             </MemoryRouter>,
         );
 

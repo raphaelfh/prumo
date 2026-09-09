@@ -97,7 +97,6 @@ export function ArticleSidePanel({
         {effectiveView === 'details' ? (
           <ArticleForm
             key={mode === 'add' ? 'add' : articleId}
-            variant="panel"
             mode={mode}
             projectId={projectId}
             articleId={articleId}

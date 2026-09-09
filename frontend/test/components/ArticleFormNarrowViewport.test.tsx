@@ -61,7 +61,7 @@ beforeEach(() => {
 function renderAdd() {
     render(
         <MemoryRouter>
-            <ArticleForm mode="add" projectId="proj-1" variant="panel" onDismiss={vi.fn()}/>
+            <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
         </MemoryRouter>,
     );
 }
@@ -95,48 +95,6 @@ describe('article editor — step rail below lg', () => {
         for (const step of ['basicInfo', 'publication', 'identifiersLabel', 'additionalInfo', 'filesLabel']) {
             expect(within(rail).getByRole('button', {name: new RegExp(step)})).toBeInTheDocument();
         }
-    });
-});
-
-describe('article editor — header identity (page variant)', () => {
-    function renderPageAdd() {
-        render(
-            <MemoryRouter>
-                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
-            </MemoryRouter>,
-        );
-    }
-
-    it('renders the title in add mode and folds only the redundant description', async () => {
-        renderPageAdd();
-
-        expect(await screen.findByText('addArticle')).toBeInTheDocument();
-        // addArticleDesc restates the title, so it is what gives way — the
-        // title itself must survive at every width.
-        expect(screen.queryByText('addArticleDesc')).not.toBeInTheDocument();
-    });
-
-    it('keeps the article title in edit mode, where the description is the only identity', async () => {
-        render(
-            <MemoryRouter>
-                <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" variant="page" onDismiss={vi.fn()}/>
-            </MemoryRouter>,
-        );
-
-        // Scoped to the header: the title also appears in the title textarea,
-        // so an unscoped query would pass even with the header identity gone.
-        const header = (await screen.findByText('editArticle')).closest('[data-slot="page-header"]')!;
-        expect(within(header as HTMLElement).getByText('A stored-markdown study')).toBeInTheDocument();
-    });
-
-    it('folds the Back label but keeps the button named', async () => {
-        renderPageAdd();
-
-        const back = await screen.findByRole('button', {name: 'back'});
-        const label = back.querySelector('[data-slot="back-label"]');
-        expect(label!.className).toContain('sr-only');
-        expect(label!.className).toContain('sm:not-sr-only');
-        expect(label!.className).not.toMatch(/(^|\s)hidden(\s|$)/);
     });
 });
 
@@ -176,18 +134,6 @@ describe('article editor — compact section rail in the panel', () => {
         }
     });
 
-    it('still un-folds the labels at lg in the page variant', async () => {
-        render(
-            <MemoryRouter>
-                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
-            </MemoryRouter>,
-        );
-
-        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
-        const label = within(rail).getAllByRole('button')[0].querySelector('[data-slot="step-label"]');
-        expect(label!.className).toContain('lg:not-sr-only');
-    });
-
     it('keeps the compact rail a horizontal strip below lg and a column at lg+', async () => {
         renderAdd(); // panel variant, compact rail
 
@@ -220,21 +166,5 @@ describe('article editor — rail placement in the side-by-side (lg+) layout', (
         // Sitting on the right, its divider belongs on its LEFT edge now.
         expect(aside.className).toContain('lg:border-l');
         expect(aside.className).not.toMatch(/(^|\s)lg:border-r(\s|$)/);
-    });
-
-    it('leaves the page-variant rail on the left, unchanged', async () => {
-        render(
-            <MemoryRouter>
-                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
-            </MemoryRouter>,
-        );
-
-        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
-        const aside = rail.closest('aside')!;
-        const splitContainer = aside.parentElement!;
-
-        expect(splitContainer.className).not.toContain('lg:flex-row-reverse');
-        expect(aside.className).toContain('lg:border-r');
-        expect(aside.className).not.toMatch(/(^|\s)lg:border-l(\s|$)/);
     });
 });

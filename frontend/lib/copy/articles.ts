@@ -19,7 +19,6 @@ export const articles = {
     risFailCount: 'record(s) could not be imported. Check the console.',
     // AddArticleDialog / ArticleForm shared
     addArticle: 'Add article',
-    addArticleDesc: 'Fill in the article bibliographic information',
     titleRequired: 'Title *',
     titlePlaceholder: 'Article title',
     abstract: 'Abstract',
@@ -87,7 +86,6 @@ export const articles = {
     notProvided: 'Not provided',
     saving: 'Saving…',
     createArticle: 'Create article',
-    editArticle: 'Edit article',
     titleRequiredToast: 'Title is required',
     errorLoadArticle: 'Error loading article',
     errorUpdateArticle: 'Error updating article',
