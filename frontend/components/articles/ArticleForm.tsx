@@ -5,7 +5,6 @@
 
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
-import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
 import {Textarea} from "@/components/ui/textarea";
@@ -22,12 +21,9 @@ import {TooltipProvider} from "@/components/ui/tooltip";
 import {toast} from "sonner";
 import {
   AlertCircle,
-  ArrowLeft,
   BookOpen,
   FileText,
   Hash,
-  Loader2,
-  Save,
   Tag,
   Upload
 } from "lucide-react";
@@ -37,7 +33,7 @@ import {ArticleFilesSection, type StagedArticleFile} from './ArticleFilesSection
 import {ArticleFormSteps, type ArticleFormStep, type FormStep} from './ArticleFormSteps';
 import {ArticleAuthorsField} from './ArticleAuthorsField';
 import {ArticleKeywordsField} from './ArticleKeywordsField';
-import {PageHeader} from '@/components/patterns/PageHeader';
+import {ArticleFormActions, ArticleFormHeader, ArticleFormLoadingState} from './ArticleFormHeader';
 import {SettingsCard, SettingsField, SettingsSection} from '@/components/settings';
 import {t} from '@/lib/copy';
 import {triggerDownload} from '@/lib/download';
@@ -697,45 +693,17 @@ export function ArticleForm({
   };
 
     if (loading) {
-        return (
-            <div
-                className={cn(
-                    'flex items-center justify-center',
-                    isPanel ? 'h-full min-h-[240px]' : 'h-screen'
-                )}
-            >
-                <div className="text-center">
-                    <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3 text-muted-foreground"/>
-                    <p className="text-[13px] text-muted-foreground">{t('articles', 'loadingArticle')}</p>
-                </div>
-            </div>
-        );
+        return <ArticleFormLoadingState isPanel={isPanel}/>;
     }
 
     const formActions = (
-        <div className="flex items-center gap-2" data-testid="article-form-actions">
-            <Button variant="outline" size="sm" className="h-8 px-3 text-[12px]" onClick={handleDismiss}>
-                {t('common', 'cancel')}
-            </Button>
-            <Button
-                size="sm"
-                className="h-8 px-3 text-[12px] font-medium"
-                onClick={handleSave}
-                disabled={saving || !isStepValid('basic')}
-            >
-                {saving ? (
-                    <>
-                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/>
-                        {t('articles', 'saving')}
-                    </>
-                ) : (
-                    <>
-                        <Save className="mr-1.5 h-3.5 w-3.5"/>
-                        {mode === 'add' ? t('articles', 'createArticle') : t('common', 'save')}
-                    </>
-                )}
-            </Button>
-        </div>
+        <ArticleFormActions
+            mode={mode}
+            saving={saving}
+            disabled={saving || !isStepValid('basic')}
+            onCancel={handleDismiss}
+            onSave={handleSave}
+        />
     );
 
     return (
@@ -753,32 +721,10 @@ export function ArticleForm({
                     {formActions}
                 </div>
             ) : (
-                <PageHeader
-                    leading={
-                        <Button variant="ghost" size="sm" onClick={handleDismiss} aria-label={t('common', 'back')}>
-                            {/*
-                              * At 375px this bar is 374px wide and the actions group takes 206
-                              * of it, so the identity group was compressed until the title
-                              * rendered as nothing. The label folds first — the arrow plus the
-                              * aria-label still name the button — and sr-only rather than
-                              * `hidden` keeps that name in the accessibility tree.
-                              */}
-                            <ArrowLeft className="h-4 w-4 sm:mr-2"/>
-                            <span data-slot="back-label" className="sr-only sm:not-sr-only">
-                                {t('common', 'back')}
-                            </span>
-                        </Button>
-                    }
-                    title={mode === 'add' ? t('articles', 'addArticle') : t('articles', 'editArticle')}
-                    description={
-                        /*
-                         * Edit mode's description IS the article's title, and it is the only
-                         * thing naming which article this is — so it must never fold. Add
-                         * mode's merely restates the title next to it, so it is the one that
-                         * gives way rather than the title.
-                         */
-                        mode === 'edit' && article ? article.title : undefined
-                    }
+                <ArticleFormHeader
+                    mode={mode}
+                    articleTitle={article?.title}
+                    onDismiss={handleDismiss}
                     actions={formActions}
                 />
             )}

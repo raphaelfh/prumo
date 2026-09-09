@@ -112,7 +112,7 @@ export function ArticleSidePanel({
             <p className="text-[12px] text-muted-foreground">
               {t('articles', 'panelNoDocumentBody')}
             </p>
-            <Button size="sm" variant="outline" className="h-7 text-[12px]" onClick={() => setUploadOpen(true)}>
+            <Button size="sm" variant="outline" className="text-[12px]" onClick={() => setUploadOpen(true)}>
               {t('articles', 'panelAddFile')}
             </Button>
           </div>
