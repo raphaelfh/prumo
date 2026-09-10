@@ -39,8 +39,7 @@ Currently exposed:
 Multi-instance is verified: two `<ViewerProvider>`s on the same page have
 fully isolated state.
 
-**Not yet:** IntersectionObserver-driven currentPage sync on scroll
-(stubbed with TODO in `Viewer.Body`), thumbnails, citation rendering
+**Not yet:** thumbnails, citation rendering
 (Phase 3), W3C annotations (Phase 4), reader view (Phase 5).
 
 The refactor plan files:

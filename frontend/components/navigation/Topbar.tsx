@@ -73,7 +73,7 @@ export const Topbar: React.FC<TopbarProps> = ({className}) => {
             pressed={!sidebarCollapsed}
             onToggle={toggleSidebar}
             ariaLabel={t('layout', 'sidebarToggleAriaLabel')}
-            keyShortcuts="Meta+B"
+            shortcut={['mod', 'B']}
           />
         </span>
         <AppBreadcrumb />

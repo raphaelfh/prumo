@@ -14,14 +14,16 @@ describe('RunHeader.SidebarToggle', () => {
     );
     expect(container.querySelector('button')).toBeNull();
   });
-  it('toggles, exposes aria-pressed and Meta+B', async () => {
+  it('toggles, exposes aria-pressed and mod+B', async () => {
     const onToggle = vi.fn();
     render(
       <RunHeader value={base}><RunHeader.Left><RunHeader.SidebarToggle pressed onToggle={onToggle} /></RunHeader.Left></RunHeader>,
     );
     const btn = screen.getByRole('button', { name: 'sidebarToggle' });
     expect(btn).toHaveAttribute('aria-pressed', 'true');
-    expect(btn).toHaveAttribute('aria-keyshortcuts', 'Meta+B');
+    // jsdom's userAgent is not a Mac, so `mod` spells as Control — the key
+    // useKeyboardShortcuts actually binds on that platform.
+    expect(btn).toHaveAttribute('aria-keyshortcuts', 'Control+B');
     await userEvent.click(btn);
     expect(onToggle).toHaveBeenCalledOnce();
   });

@@ -1,8 +1,10 @@
 import {useState} from 'react';
 import {ChevronLeft, ChevronRight} from 'lucide-react';
-import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
+import {t} from '@/lib/copy';
+import {cn} from '@/lib/utils';
 import {useViewerStore} from '../core/context';
+import {ToolbarIconButton} from './ToolbarIconButton';
 
 export function NavigationControls({className}: {className?: string}) {
   const currentPage = useViewerStore((s) => s.currentPage);
@@ -25,17 +27,15 @@ export function NavigationControls({className}: {className?: string}) {
   };
 
   return (
-    <div className={`flex items-center gap-1 ${className ?? ''}`}>
-      <Button
-        variant="ghost"
-        size="icon"
+    <div className={cn('flex items-center gap-0.5', className)}>
+      <ToolbarIconButton
+        label={t('pdf', 'viewerPrevPage')}
         disabled={currentPage <= 1}
         onClick={() => goToPage(currentPage - 1)}
-        aria-label="Previous page"
-        className="h-8 w-8"
+        data-viewer-step=""
       >
-        <ChevronLeft className="h-4 w-4" />
-      </Button>
+        <ChevronLeft strokeWidth={1.5} />
+      </ToolbarIconButton>
       <Input
         value={local}
         onChange={(e) => setLocal(e.target.value)}
@@ -45,22 +45,20 @@ export function NavigationControls({className}: {className?: string}) {
             (e.target as HTMLInputElement).blur();
           }
         }}
-        className="w-12 h-8 text-center text-sm px-1"
-        aria-label="Current page"
+        className="h-7 w-10 px-1 text-center text-[13px] tabular-nums"
+        aria-label={t('pdf', 'viewerCurrentPage')}
       />
-      <span className="text-sm text-muted-foreground whitespace-nowrap">
+      <span className="whitespace-nowrap px-1 text-[13px] tabular-nums text-muted-foreground">
         / {numPages || '—'}
       </span>
-      <Button
-        variant="ghost"
-        size="icon"
+      <ToolbarIconButton
+        label={t('pdf', 'viewerNextPage')}
         disabled={currentPage >= numPages}
         onClick={() => goToPage(currentPage + 1)}
-        aria-label="Next page"
-        className="h-8 w-8"
+        data-viewer-step=""
       >
-        <ChevronRight className="h-4 w-4" />
-      </Button>
+        <ChevronRight strokeWidth={1.5} />
+      </ToolbarIconButton>
     </div>
   );
 }

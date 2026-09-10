@@ -2,16 +2,17 @@
  * Document switcher for the extraction / QA PDF panel.
  *
  * Presentational dropdown over an article's files (MAIN + supplements), with a
- * per-file parse-status dot. Selecting a document is the caller's concern
- * (it also clears the viewer's locate highlight, search, and page to avoid
- * cross-document leak).
- * `ParseStatusControl` is a status-aware control that shows parse status and
- * surfaces a contextual re-parse action (with a confirm dialog for already-parsed
- * files and an error tooltip for parse failures).
+ * per-file parse-status dot. It sits centred in the viewer toolbar, so the
+ * trigger is borderless chrome rather than a form field. Selecting a document
+ * is the caller's concern (it also clears the viewer's locate highlight,
+ * search, and page to avoid cross-document leak).
+ * `ParseStatusControl` is an icon button beside the viewer's mode toggle: its
+ * tooltip states the parse status and what re-parsing does, with a confirm
+ * dialog for already-parsed files and the error detail for parse failures.
  */
 import { memo } from 'react';
 import { cva } from 'class-variance-authority';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RotateCw } from 'lucide-react';
 
 import {
   Select,
@@ -84,27 +85,26 @@ function DocumentSwitcherComponent({
 
   const selected = files.find((f) => f.id === selectedFileId) ?? null;
 
+  // The dot and the name are DIRECT span children on purpose: the trigger's
+  // base `[&>span]:line-clamp-1` turns a wrapping flex span into a
+  // -webkit-box, which collapsed the inline dot to zero width.
   return (
     <Select value={selectedFileId ?? undefined} onValueChange={onSelect}>
       <SelectTrigger
         aria-label={t('pdf', 'docSwitcherAria')}
-        className={cn('h-8 w-[min(20rem,45vw)] gap-2 text-xs', className)}
+        className={cn(
+          'h-7 w-auto min-w-0 max-w-72 justify-center gap-1.5 border-transparent bg-transparent px-2 text-[13px] font-medium hover:bg-accent focus:ring-offset-0 data-[state=open]:bg-accent [&>svg]:size-3.5',
+          className,
+        )}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          {selected && (
-            <span
-              aria-hidden
-              className={statusDot({ status: toStatus(selected.extractionStatus) })}
-            />
-          )}
-          <span className="truncate">
-            {selected ? fileLabel(selected) : ''}
-          </span>
-        </span>
+        {selected && (
+          <span aria-hidden className={statusDot({ status: toStatus(selected.extractionStatus) })} />
+        )}
+        <span className="min-w-0 truncate">{selected ? fileLabel(selected) : ''}</span>
       </SelectTrigger>
       <SelectContent>
         {files.map((file) => (
-          <SelectItem key={file.id} value={file.id} className="text-xs">
+          <SelectItem key={file.id} value={file.id} className="text-[13px]">
             <span className="flex items-center gap-2">
               <span
                 aria-hidden
@@ -131,86 +131,95 @@ export interface ParseStatusControlProps {
 }
 
 /**
- * Status-aware control showing parse status + a contextual re-parse action.
- * - `pending`     → spinner + "Processing…" + ghost Retry
- * - `parsed`      → "Ready" + low-emphasis Re-parse behind an AlertDialog confirm
- * - `parse_failed`→ "Parse failed" (error in Tooltip) + prominent Retry parse
+ * Icon-only re-parse control; the status lives in its tooltip (and in the
+ * switcher's dot), announced to assistive tech through a polite live region.
+ * - `pending`     → spinner; click retries
+ * - `parsed`      → re-parse icon behind an AlertDialog confirm
+ * - `parse_failed`→ destructive re-parse icon; tooltip carries the error
  */
 export function ParseStatusControl({ articleId, file }: ParseStatusControlProps) {
   const status = toStatus(file.extractionStatus);
   const reparse = useReparseArticleFile(articleId);
   const fire = () => reparse.mutate(file.id);
 
+  if (status === 'unknown') {
+    return null;
+  }
+
   const label =
     status === 'parsed' ? t('pdf', 'docStatusReady')
     : status === 'pending' ? t('pdf', 'docStatusPending')
-    : status === 'parse_failed' ? t('pdf', 'docStatusFailed')
-    : '';
+    : t('pdf', 'docStatusFailed');
 
-  const reparseAction =
-    status === 'parsed' ? (
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-xs"
-            disabled={reparse.isPending}
-            aria-label={t('pdf', 'docReparse')}
-          >
-            {t('pdf', 'docReparse')}
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('pdf', 'docReparseConfirmTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('pdf', 'docReparseConfirmBody')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={fire} aria-label={t('pdf', 'docReparseConfirmCta')}>
-              {t('pdf', 'docReparseConfirmCta')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    ) : status !== 'unknown' ? (
-      <Button
-        size="sm"
-        variant={status === 'parse_failed' ? 'outline' : 'ghost'}
-        className="text-xs"
-        disabled={reparse.isPending}
-        onClick={fire}
-        aria-label={t('pdf', 'docReparse')}
-      >
-        {t('pdf', 'docReparse')}
-      </Button>
-    ) : null;
+  const hint =
+    status === 'parsed' ? t('pdf', 'docReparseHint')
+    : status === 'pending' ? t('pdf', 'docReparsePendingHint')
+    : t('pdf', 'docReparseRetryHint');
+
+  const button = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={cn(
+        'text-muted-foreground',
+        status === 'parse_failed' && 'text-destructive hover:text-destructive',
+      )}
+      disabled={reparse.isPending}
+      onClick={status === 'parsed' ? undefined : fire}
+      aria-label={t('pdf', 'docReparse')}
+    >
+      {status === 'pending' ? (
+        <Loader2 className="animate-spin" strokeWidth={1.5} aria-hidden />
+      ) : (
+        <RotateCw strokeWidth={1.5} aria-hidden />
+      )}
+    </Button>
+  );
+
+  const tooltip = (
+    <TooltipContent side="bottom" className="max-w-64 px-2.5 py-1.5 text-[12px]">
+      <p className="font-medium">{label}</p>
+      {status === 'parse_failed' && (
+        <p className="break-words text-muted-foreground">
+          {file.extractionError
+            ? `${t('pdf', 'docParseErrorLabel')}: ${file.extractionError}`
+            : t('pdf', 'docParseErrorUnknown')}
+        </p>
+      )}
+      <p className="text-muted-foreground">{hint}</p>
+    </TooltipContent>
+  );
 
   return (
-    <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-muted-foreground">
-      {status === 'pending' ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden />
+    <>
+      <span role="status" className="sr-only">{label}</span>
+      {status === 'parsed' ? (
+        <AlertDialog>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <AlertDialogTrigger asChild>{button}</AlertDialogTrigger>
+            </TooltipTrigger>
+            {tooltip}
+          </Tooltip>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('pdf', 'docReparseConfirmTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('pdf', 'docReparseConfirmBody')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={fire} aria-label={t('pdf', 'docReparseConfirmCta')}>
+                {t('pdf', 'docReparseConfirmCta')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       ) : (
-        <span aria-hidden className={statusDot({ status })} />
-      )}
-
-      {status === 'parse_failed' ? (
         <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="cursor-default">{label}</span>
-          </TooltipTrigger>
-          <TooltipContent>
-            {file.extractionError
-              ? `${t('pdf', 'docParseErrorLabel')}: ${file.extractionError}`
-              : t('pdf', 'docParseErrorUnknown')}
-          </TooltipContent>
+          <TooltipTrigger asChild>{button}</TooltipTrigger>
+          {tooltip}
         </Tooltip>
-      ) : (
-        <span>{label}</span>
       )}
-
-      {reparseAction}
-    </div>
+    </>
   );
 }

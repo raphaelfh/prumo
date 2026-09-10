@@ -1,6 +1,8 @@
-import {useEffect, useRef, type ReactNode} from 'react';
-import {ViewerProvider, useViewerStore, useViewerStoreApi} from '../core/context';
+import {useRef, type CSSProperties, type ReactNode} from 'react';
+import {ViewerProvider, useViewerStore} from '../core/context';
 import {useDocumentLoader} from '../hooks/useDocumentLoader';
+import {usePageHandle} from '../hooks/usePageHandle';
+import {usePageScrollSync} from '../hooks/usePageScrollSync';
 import type {PDFSource} from '../core/source';
 import type {StoreApi} from 'zustand';
 import type {ViewerState} from '../core/state';
@@ -43,104 +45,17 @@ function RootInner({
 
 function Body({children, className}: {children: ReactNode; className?: string}) {
   const ref = useRef<HTMLDivElement>(null);
-  const currentPage = useViewerStore((s) => s.currentPage);
   const numPages = useViewerStore((s) => s.numPages);
-  const storeApi = useViewerStoreApi();
 
-  // The two-way scroll-sync coordination:
-  //   - When `currentPage` changes from outside (nav buttons, page input,
-  //     `goToCitation`), this Body smoothly scrolls to that page.
-  //   - When the user scrolls manually, an IntersectionObserver finds the
-  //     page closest to the viewport top and writes it back to `currentPage`.
-  // The ref below suppresses the observer feedback for ~500ms after a
-  // programmatic scroll so the smooth-scroll animation does not race with
-  // the observer firing for transient intermediate pages.
-  const isProgrammaticScrollRef = useRef(false);
-  const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Programmatic scroll: page → scroll position.
-  useEffect(() => {
-    const container = ref.current;
-    if (!container) return;
-    const target = container.querySelector(`[data-page-number="${currentPage}"]`);
-    if (target instanceof HTMLElement) {
-      isProgrammaticScrollRef.current = true;
-      if (programmaticScrollTimerRef.current !== null) {
-        clearTimeout(programmaticScrollTimerRef.current);
-      }
-      programmaticScrollTimerRef.current = setTimeout(() => {
-        isProgrammaticScrollRef.current = false;
-        programmaticScrollTimerRef.current = null;
-      }, 500);
-
-      const containerRect = container.getBoundingClientRect();
-      const targetRect = target.getBoundingClientRect();
-      const top = targetRect.top - containerRect.top + container.scrollTop;
-      if (typeof container.scrollTo === 'function') {
-        container.scrollTo({top, behavior: 'smooth'});
-      } else {
-        container.scrollTop = top;
-      }
-    }
-  }, [currentPage]);
-
-  // Inverse: scroll position → currentPage via IntersectionObserver.
-  useEffect(() => {
-    const container = ref.current;
-    if (!container || numPages <= 0) return;
-    if (typeof IntersectionObserver === 'undefined') return; // SSR / jsdom safety
-
-    // Track which pages are currently intersecting and pick the one closest
-    // to the viewport top on each batch.
-    const visibleEntries = new Map<number, IntersectionObserverEntry>();
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const pageAttr = (entry.target as HTMLElement).dataset.pageNumber;
-          const page = pageAttr ? parseInt(pageAttr, 10) : NaN;
-          if (Number.isNaN(page)) continue;
-          if (entry.isIntersecting) {
-            visibleEntries.set(page, entry);
-          } else {
-            visibleEntries.delete(page);
-          }
-        }
-
-        if (isProgrammaticScrollRef.current) return;
-        if (visibleEntries.size === 0) return;
-
-        // Pick the page whose top is closest to (but not below) the
-        // container's top edge. This matches what the user feels is the
-        // "current" page while scrolling.
-        let bestPage = -1;
-        let bestDistance = Infinity;
-        for (const [page, entry] of visibleEntries) {
-          const distance = Math.abs(entry.boundingClientRect.top);
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            bestPage = page;
-          }
-        }
-
-        if (bestPage > 0 && bestPage !== storeApi.getState().currentPage) {
-          storeApi.getState().actions.goToPage(bestPage);
-        }
-      },
-      {
-        root: container,
-        threshold: [0, 0.1, 0.5, 1],
-        // Pages at the top of the viewport are "current"; pages below
-        // contribute only when they cross the upper half.
-        rootMargin: '0px 0px -50% 0px',
-      },
-    );
-
-    const pageEls = container.querySelectorAll<HTMLElement>('[data-page-number]');
-    pageEls.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-    // Re-attach when numPages changes (new page elements appear after load).
-  }, [numPages, storeApi]);
+  // Navigation scrolls to the current page; scrolling publishes the page at
+  // the top of the viewport. The observer re-attaches when numPages changes
+  // (new page elements appear after load).
+  usePageScrollSync({
+    rootRef: ref,
+    scrollerSelector: '[data-pdf-viewer-body]',
+    pageAttribute: 'data-page-number',
+    pagesKey: numPages,
+  });
 
   return (
     <div
@@ -173,12 +88,33 @@ function Page({
   pageNumber: number;
   children?: ReactNode;
 }) {
+  const handle = usePageHandle(pageNumber);
+  const scale = useViewerStore((s) => s.scale);
+  const rotation = useViewerStore((s) => s.rotation);
+
+  // Off-screen pages skip style, layout and paint. Without this, anything that
+  // resizes the viewer — dragging the Articles or run split — laid out EVERY
+  // page's text layer (hundreds of absolutely positioned spans each) again on
+  // every frame. A skipped page takes its size from `contain-intrinsic-size`,
+  // so that is the size CanvasLayer renders at — its viewport at `scale`,
+  // turned for a quarter rotation — exact, not a guess, or scroll-to-page and
+  // the page-sync observer (`usePageScrollSync`) would drift. `auto` keeps the
+  // real rendered size once the page has been on screen; a visible page still
+  // sizes to its content, so nothing is ever clipped.
+  let style: CSSProperties | undefined;
+  if (handle) {
+    const quarterTurn = rotation % 180 !== 0;
+    const width = (quarterTurn ? handle.size.height : handle.size.width) * scale;
+    const height = (quarterTurn ? handle.size.width : handle.size.height) * scale;
+    style = {contentVisibility: 'auto', containIntrinsicSize: `auto ${width}px auto ${height}px`};
+  }
+
   return (
     // bg-white is intentional, not a missed token: a PDF page is a
     // physical sheet of white paper. It must stay white in both light
     // and dark themes so the page contents render with the contrast
     // and colour the document author intended.
-    <div data-page-number={pageNumber} className="relative shadow-md bg-white">
+    <div data-page-number={pageNumber} className="relative shadow-md bg-white" style={style}>
       {children}
     </div>
   );

@@ -1,10 +1,10 @@
 ---
 status: stable
-last_reviewed: 2026-06-21
+last_reviewed: 2026-09-10
 owner: '@raphaelfh'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-06-21 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-09-10 · Owner: @raphaelfh
 
 # Side Panels — Design System
 
@@ -23,7 +23,8 @@ This document is the **single source of truth** for any side panel in Prumo: the
   - Shared Radix tooltip (not a native `title`) on hover **and** keyboard focus,
     ~400 ms delay: `Click to collapse · Drag to resize` plus the toggle shortcut
     chip (e.g. `⌘B`). The label is supplied by the caller via copy.
-- **Keyboard:** every persistent panel has a toggle shortcut. The main sidebar uses `⌘B` (industry standard). Secondary panels define their own (e.g. `⌘\` for an inspector).
+- **Keyboard:** every persistent panel has a toggle shortcut. The main sidebar uses `⌘B` (industry standard). Secondary panels define their own (e.g. `⌘\` for an inspector); the Articles panel on the opposite edge uses `⌘⇧B`.
+- **One toggle per panel, and it says its shortcut.** A panel is shown/hidden from ONE header button (`PanelToggleButton`) — never a second copy inside the panel. Its `shortcut` prop renders the label + chord chip in a tooltip on hover and focus AND sets `aria-keyshortcuts`, from the same keys.
 - **Persistence:** width and collapsed state persist in `localStorage` under `prumo:<panel-id>:{width,collapsed}`. Cross-tab sync via the `storage` event.
 
 ## 2. Sizing
@@ -92,7 +93,7 @@ Anything new must declare these four values explicitly in its `<ResizablePanel>`
 
 | Class | Pattern | Example |
 |---|---|---|
-| Toggle a panel | `⌘<letter>` | `⌘B` (sidebar), `⌘\` (inspector) |
+| Toggle a panel | `⌘<letter>`, `⌘⇧<letter>` for an opposite-edge twin | `⌘B` (sidebar), `⌘⇧B` (articles panel), `⌘\` (inspector) |
 | Navigate to a section / open switcher | `G` then `<letter>` | `G O` (overview), `G A` (articles), `G P` (project switcher) |
 | Global action | `⌘<letter>` or `⌘<symbol>` | `⌘,` (settings), `⌘⇧Q` (sign out) |
 | Contextual action | single letter | reserved for future (article selection, screening decisions etc.) |

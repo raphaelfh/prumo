@@ -6,7 +6,10 @@
  * the pressed/label contract, and the opt-in shortcut hint.
  */
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { modifierLabel } from '@/lib/platform';
 
 import { PanelToggleButton } from './PanelToggleButton';
 
@@ -76,17 +79,53 @@ describe('PanelToggleButton', () => {
     expect(screen.getByRole('button', { name: 'Toggle panel' })).not.toHaveAttribute('aria-keyshortcuts');
   });
 
-  it('passes through the shortcut a caller does bind', () => {
-    render(
-      <PanelToggleButton
-        side="right"
-        pressed={false}
-        onToggle={vi.fn()}
-        ariaLabel="Toggle panel"
-        keyShortcuts={'\\'}
-      />,
-    );
+  describe('with a bound shortcut', () => {
+    afterEach(() => vi.unstubAllGlobals());
 
-    expect(screen.getByRole('button', { name: 'Toggle panel' })).toHaveAttribute('aria-keyshortcuts', '\\');
+    // One `shortcut` feeds both the chip and aria-keyshortcuts, so the two can
+    // never drift. `mod` is the platform modifier the binding actually uses
+    // (useKeyboardShortcuts reads metaKey on macOS, ctrlKey elsewhere).
+    it('announces it in the spelling the platform binds', () => {
+      vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Macintosh)' });
+      const { unmount } = render(
+        <PanelToggleButton side="right" pressed={false} onToggle={vi.fn()} ariaLabel="Toggle panel" shortcut={['mod', '⇧', 'B']} />,
+      );
+      expect(screen.getByRole('button', { name: 'Toggle panel' })).toHaveAttribute('aria-keyshortcuts', 'Meta+Shift+B');
+      unmount();
+
+      vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Windows NT 10.0)' });
+      render(
+        <PanelToggleButton side="right" pressed={false} onToggle={vi.fn()} ariaLabel="Toggle panel" shortcut={['mod', '⇧', 'B']} />,
+      );
+      expect(screen.getByRole('button', { name: 'Toggle panel' })).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+B');
+    });
+
+    it('passes a bare key through unchanged', () => {
+      render(<PanelToggleButton side="right" pressed={false} onToggle={vi.fn()} ariaLabel="Toggle panel" shortcut={['\\']} />);
+
+      expect(screen.getByRole('button', { name: 'Toggle panel' })).toHaveAttribute('aria-keyshortcuts', '\\');
+    });
+
+    it('shows the label and the shortcut chip on hover', async () => {
+      render(
+        <PanelToggleButton side="right" pressed={false} onToggle={vi.fn()} ariaLabel="Toggle panel" shortcut={['mod', '⇧', 'B']} />,
+      );
+
+      await userEvent.hover(screen.getByRole('button', { name: 'Toggle panel' }));
+
+      const tooltip = await screen.findByRole('tooltip');
+      expect(tooltip).toHaveTextContent('Toggle panel');
+      expect(tooltip).toHaveTextContent(`${modifierLabel()}⇧B`);
+    });
+  });
+
+  it('still explains itself on hover when no shortcut is bound', async () => {
+    render(<PanelToggleButton side="left" pressed onToggle={vi.fn()} ariaLabel="Toggle nav" />);
+
+    await userEvent.hover(screen.getByRole('button', { name: 'Toggle nav' }));
+
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent('Toggle nav');
+    expect(tooltip.querySelector('kbd')).toBeNull();
   });
 });
