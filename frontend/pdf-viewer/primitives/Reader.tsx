@@ -20,6 +20,7 @@ import {cn} from '@/lib/utils';
 import {useViewerStore, useViewerStoreApi, useViewerStoreApiOptional} from '../core/context';
 import type {ReaderLocateRequest} from '../core/state';
 import {subscribeReaderLocate} from '../core/subscribeReaderLocate';
+import {usePageScrollSync} from '../hooks/usePageScrollSync';
 import {MarkdownContent} from '../markdown/MarkdownContent';
 import {findBlockByIndex, findBlockForQuote} from './readerLocate';
 import './reader.css';
@@ -113,40 +114,18 @@ const BlockBody = memo(function BlockBody({block}: {block: ReaderTextBlock}) {
   }
 });
 
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
-}
-
-/**
- * Suppress the page-sync IntersectionObserver for ~500ms so a programmatic
- * scroll (page nav OR find reveal) isn't mistaken for a user scroll — otherwise
- * the observer writes currentPage, which triggers a competing section-scroll
- * that fights the reveal (snapping to the page header instead of the match).
- */
-function armScrollGuard(
-  flagRef: {current: boolean},
-  timerRef: {current: ReturnType<typeof setTimeout> | null},
-) {
-  flagRef.current = true;
-  if (timerRef.current) clearTimeout(timerRef.current);
-  timerRef.current = setTimeout(() => {
-    flagRef.current = false;
-    timerRef.current = null;
-  }, 500);
-}
-
 /**
  * Reveal a match Range inside the reader's scroll container, centering the exact
  * match (not its enclosing block — a long paragraph centered would still hide
  * the hit). No-op when the match is already comfortably visible, so stepping
- * through nearby matches (or typing) doesn't jangle the view. `onBeforeScroll`
- * fires only when a scroll will actually happen (used to arm the scroll guard).
+ * through nearby matches (or typing) doesn't jangle the view. Scrolls through
+ * the page sync's `scrollTo`, so the sync holds while the reveal travels.
  */
-function revealRange(scroller: Element | null, range: Range, onBeforeScroll?: () => void) {
+function revealRange(
+  scroller: Element | null,
+  range: Range,
+  scrollTo: (scroller: HTMLElement, top: number) => void,
+) {
   if (!scroller || typeof range.getBoundingClientRect !== 'function') return;
   const rRect = range.getBoundingClientRect();
   // jsdom returns all-zero rects — nothing meaningful to scroll there.
@@ -159,11 +138,7 @@ function revealRange(scroller: Element | null, range: Range, onBeforeScroll?: ()
     scrollTop: el.scrollTop,
     clientHeight: el.clientHeight,
   });
-  if (!needsScroll) return;
-  onBeforeScroll?.();
-  const behavior: ScrollBehavior = prefersReducedMotion() ? 'auto' : 'smooth';
-  if (typeof el.scrollTo === 'function') el.scrollTo({top, behavior});
-  else el.scrollTop = top;
+  if (needsScroll) scrollTo(el, top);
 }
 
 /**
@@ -173,8 +148,8 @@ function revealRange(scroller: Element | null, range: Range, onBeforeScroll?: ()
  * so it may use the non-optional store hooks. It supplies the behaviours the PDF
  * engine gives canvas mode but that have no equivalent for the markdown reader:
  *   - find-in-document over the rendered markdown (highlight + count + scroll)
- *   - page nav: scroll to a page's reader section, and report the visible page
- *     back as the user scrolls (mirrors <Viewer.Body>'s two-way sync)
+ *   - page nav: the page ⇄ scroll sync <Viewer.Body> uses (`usePageScrollSync`),
+ *     over the reader's page sections
  * Renders nothing.
  */
 function ReaderInteractions({
@@ -190,11 +165,14 @@ function ReaderInteractions({
   const caseSensitive = useViewerStore((s) => s.search.options.caseSensitive);
   const wholeWords = useViewerStore((s) => s.search.options.wholeWords);
   const activeIndex = useViewerStore((s) => s.search.activeIndex);
-  const currentPage = useViewerStore((s) => s.currentPage);
 
   const rangesRef = useRef<Range[]>([]);
-  const isProgrammaticScrollRef = useRef(false);
-  const programmaticTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollTo = usePageScrollSync({
+    rootRef,
+    scrollerSelector: '[data-reader-scroll]',
+    pageAttribute: 'data-reader-page',
+    pagesKey: blocks,
+  });
 
   // Find-in-document: recompute matches when the query, options, mode, or the
   // rendered blocks change. Highlights live in the CSS Custom Highlight registry
@@ -221,13 +199,11 @@ function ReaderInteractions({
       // won't re-fire (0 → 0), so reveal here; otherwise the active effect
       // (prev → 0) owns the reveal and we skip to avoid a double scroll.
       if (ranges.length > 0 && prevActive === 0) {
-        revealRange(root.closest('[data-reader-scroll]'), ranges[0], () =>
-          armScrollGuard(isProgrammaticScrollRef, programmaticTimerRef),
-        );
+        revealRange(root.closest('[data-reader-scroll]'), ranges[0], scrollTo);
       }
     }, 200);
     return () => clearTimeout(timer);
-  }, [rootRef, mode, query, caseSensitive, wholeWords, blocks, storeApi]);
+  }, [rootRef, mode, query, caseSensitive, wholeWords, blocks, storeApi, scrollTo]);
 
   // Move the active highlight + reveal it as the user steps through matches
   // (next/prev). Re-anchors first if a re-render detached the stored Ranges
@@ -242,56 +218,8 @@ function ReaderInteractions({
     }
     if (activeIndex < 0 || activeIndex >= ranges.length) return;
     setReaderSearchHighlights(ranges, activeIndex);
-    revealRange(root?.closest('[data-reader-scroll]') ?? null, ranges[activeIndex], () =>
-      armScrollGuard(isProgrammaticScrollRef, programmaticTimerRef),
-    );
-  }, [activeIndex, rootRef, storeApi]);
-
-  // Page nav (programmatic): currentPage → scroll the matching reader section.
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const section = root.querySelector<HTMLElement>(`[data-reader-page="${currentPage}"]`);
-    if (!section || typeof section.scrollIntoView !== 'function') return;
-    armScrollGuard(isProgrammaticScrollRef, programmaticTimerRef);
-    section.scrollIntoView({block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth'});
-  }, [currentPage, rootRef]);
-
-  // Page nav (inverse): report the section closest to the top as currentPage.
-  useEffect(() => {
-    const root = rootRef.current;
-    const scroller = root?.closest('[data-reader-scroll]') ?? null;
-    if (!root || !scroller) return;
-    if (typeof IntersectionObserver === 'undefined') return; // jsdom / SSR safety
-
-    const visible = new Map<number, IntersectionObserverEntry>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const page = parseInt((entry.target as HTMLElement).dataset.readerPage ?? '', 10);
-          if (Number.isNaN(page)) continue;
-          if (entry.isIntersecting) visible.set(page, entry);
-          else visible.delete(page);
-        }
-        if (isProgrammaticScrollRef.current || visible.size === 0) return;
-        let best = -1;
-        let bestDistance = Infinity;
-        for (const [page, entry] of visible) {
-          const distance = Math.abs(entry.boundingClientRect.top);
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            best = page;
-          }
-        }
-        if (best > 0 && best !== storeApi.getState().currentPage) {
-          storeApi.getState().actions.goToPage(best);
-        }
-      },
-      {root: scroller, threshold: [0, 0.1, 0.5, 1], rootMargin: '0px 0px -50% 0px'},
-    );
-    root.querySelectorAll<HTMLElement>('[data-reader-page]').forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [blocks, rootRef, storeApi]);
+    revealRange(root?.closest('[data-reader-scroll]') ?? null, ranges[activeIndex], scrollTo);
+  }, [activeIndex, rootRef, storeApi, scrollTo]);
 
   // Clear search highlights + count on unmount (mode switch / document switch).
   useEffect(
