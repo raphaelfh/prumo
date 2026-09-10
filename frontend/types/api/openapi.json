@@ -15155,7 +15155,7 @@
     },
     "/api/v1/runs/{run_id}/reopen-extraction": {
       "post": {
-        "description": "Return a consensus-stage extraction run to extract, discarding consensus work.\n\nArbitrator-only (manager/consensus): this hard-deletes the run's consensus\ndecisions + published values so reviewers can edit again. The gate lives at the\nAPI layer because the service-role session bypasses RLS. See ADR-0017.",
+        "description": "Return a consensus-stage run (either kind) to extract, discarding consensus work.\n\nArbitrator-only (manager/consensus): this hard-deletes the run's consensus\ndecisions + published values so reviewers can edit again. The gate lives at the\nAPI layer because the service-role session bypasses RLS. See ADR-0017.",
         "operationId": "reopen_run_to_extract_api_v1_runs__run_id__reopen_extraction_post",
         "parameters": [
           {
