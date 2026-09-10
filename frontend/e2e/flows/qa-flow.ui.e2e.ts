@@ -15,7 +15,7 @@
  * live stack. Pure read+write of state we own — does not call the LLM.
  */
 
-import { expect, test } from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
@@ -25,6 +25,66 @@ interface OpenSessionResponse {
   run_id: string;
   project_template_id: string;
   instances_by_entity_type: Record<string, string>;
+}
+
+/**
+ * Put the shared fixture's QA run back into the EXTRACT stage.
+ *
+ * Both tests need an editable, domains-rendering run, and the staged-publish
+ * test below finalizes it. `_reuse_or_create_run` deliberately never
+ * auto-creates over a terminal run, so it hands the same read-only run back on
+ * every open: the suite passed exactly once per clean stack and failed on every
+ * re-run. CI never saw it because CI gets an ephemeral stack. So each test
+ * arranges its own precondition instead of inheriting the previous one's.
+ *
+ *   finalized -> POST /reopen  (forks a fresh EXTRACT run seeded from the
+ *                               published state)
+ *   extract   -> no-op
+ *   consensus -> unrecoverable here; fail loudly (see below)
+ *
+ * A QA run parked in CONSENSUS has no API path back: approve-finalize rejects
+ * without consensus decisions, and reopen-extraction is extraction-only
+ * ("quality-assessment runs publish via their own flow"). The staged-publish
+ * test therefore asserts a reviewer decision landed BEFORE it advances, so this
+ * suite cannot create that state; reaching it means something else did.
+ */
+async function ensureEditableRun(
+  request: APIRequestContext,
+  apiUrl: string,
+  headers: Record<string, string>,
+  sessionPayload: Record<string, string | undefined>,
+): Promise<void> {
+  const opened = await request.post(`${apiUrl}/api/v1/hitl/sessions`, {
+    headers,
+    data: sessionPayload,
+    timeout: 30000,
+  });
+  expect(opened.ok()).toBeTruthy();
+  const { run_id: runId } = (await parseEnvelope<OpenSessionResponse>(opened)).data;
+
+  const runRes = await request.get(`${apiUrl}/api/v1/runs/${runId}`, {
+    headers,
+    timeout: 15000,
+  });
+  expect(runRes.ok()).toBeTruthy();
+  const { stage } = (await parseEnvelope<{ run: { stage: string } }>(runRes)).data.run;
+  if (stage !== "finalized") {
+    expect(
+      stage,
+      `fixture run ${runId} is parked in stage=${stage}, which has no API path back to extract. `
+        + "Record a consensus decision, approve-finalize, then reopen it.",
+    ).not.toBe("consensus");
+    return;
+  }
+
+  const res = await request.post(`${apiUrl}/api/v1/runs/${runId}/reopen`, {
+    headers,
+    timeout: 30000,
+  });
+  expect(
+    res.ok(),
+    `failed to reopen finalized fixture run ${runId}: ${res.status()} ${await res.text()}`,
+  ).toBeTruthy();
 }
 
 test.describe("Quality Assessment HITL flow", () => {
@@ -56,6 +116,12 @@ test.describe("Quality Assessment HITL flow", () => {
       article_id: env.articleId,
       global_template_id: qaTemplateId,
     };
+    await ensureEditableRun(
+      request,
+      env.apiUrl,
+      authHeaders(token, traceId),
+      sessionPayload,
+    );
     const first = await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
       headers: authHeaders(token, traceId),
       data: sessionPayload,
@@ -96,6 +162,12 @@ test.describe("Quality Assessment HITL flow", () => {
   });
 
   test("Staged publish: Start consensus, then Approve & finalize", async ({ page, request }) => {
+    // The longest flow in the suite: login, arrange the run back to EXTRACT,
+    // load the form, fill a field, drive TWO stage transitions, follow the
+    // end-of-queue redirect, then reload and re-read the run. It does not fit
+    // the default 30s budget once the arrange step is included.
+    test.slow();
+
     const required = missingEnvKeys([
       "E2E_USER_EMAIL",
       "E2E_USER_PASSWORD",
@@ -113,14 +185,21 @@ test.describe("Quality Assessment HITL flow", () => {
     const traceId = createTraceId("e2e-qa-publish");
 
     // Set up a fresh session (or resume).
+    const sessionPayload = {
+      kind: "quality_assessment",
+      project_id: env.projectId,
+      article_id: env.articleId,
+      global_template_id: qaTemplateId,
+    };
+    await ensureEditableRun(
+      request,
+      env.apiUrl,
+      authHeaders(token, traceId),
+      sessionPayload,
+    );
     const sessionRes = await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
       headers: authHeaders(token, traceId),
-      data: {
-        kind: "quality_assessment",
-        project_id: env.projectId,
-        article_id: env.articleId,
-        global_template_id: qaTemplateId,
-      },
+      data: sessionPayload,
       timeout: 30000,
     });
     expect(sessionRes.ok()).toBeTruthy();
@@ -149,14 +228,53 @@ test.describe("Quality Assessment HITL flow", () => {
 
     // Try to fill any visible select field; pick the first one. Different
     // QA templates have different field sets, so we don't hard-code a value.
+    // ensureEditableRun guarantees an EXTRACT-stage run, so the domains form
+    // MUST have rendered its selects. This used to be a `test.skip`, which
+    // turned every consensus-parked fixture into a silent pass and hid the
+    // re-runnability defect above — assert the precondition instead.
     const selectTriggers = page.locator("[data-testid^='qa-domain-'] [role='combobox']");
-    const visible = await selectTriggers.count();
-    test.skip(visible === 0, "No select fields rendered for this template");
-    await selectTriggers.first().click();
-    await page
-      .locator("[role='option']")
-      .first()
-      .click();
+    await expect(selectTriggers.first()).toBeVisible({ timeout: 15000 });
+    const trigger = selectTriggers.first();
+
+    // Pick an option that DIFFERS from what the field already holds. Autosave
+    // persists a per-reviewer decision on CHANGE, so re-picking the current
+    // value writes nothing — and a run whose fields were seeded by a reopen
+    // already holds the first option, which is exactly how this suite used to
+    // advance a decision-less run into the unrecoverable consensus state.
+    const current = ((await trigger.textContent()) ?? "").trim();
+    await trigger.click();
+    const options = page.locator("[role='option']");
+    await expect(options.first()).toBeVisible({ timeout: 5000 });
+    const labels = (await options.allTextContents()).map((l) => l.trim());
+    const differing = labels.findIndex((l) => l.length > 0 && l !== current);
+    expect(
+      differing,
+      `every option equals the current value ${JSON.stringify(current)}; `
+        + "nothing would autosave and the run would strand on advance",
+    ).toBeGreaterThanOrEqual(0);
+    await options.nth(differing).click();
+
+    // The staged transition materializes each REVIEWER's proposals as consensus
+    // decisions. Advancing with none — e.g. when only the `source='system'`
+    // proposals a reopen seeds exist — lands the run in consensus with nothing
+    // to reconcile, where it can neither finalize nor return to extract. That
+    // strands this shared fixture for every later run, so prove the autosave
+    // landed before advancing rather than discovering it three tests later.
+    await expect
+      .poll(
+        async () => {
+          const r = await request.get(`${env.apiUrl}/api/v1/runs/${session.run_id}`, {
+            headers: authHeaders(token, traceId),
+            timeout: 15000,
+          });
+          return (await parseEnvelope<{ decisions: unknown[] }>(r)).data.decisions.length;
+        },
+        {
+          timeout: 15000,
+          message: "no reviewer decision was recorded — advancing would strand the run",
+        },
+      )
+      .toBeGreaterThan(0);
 
     // Staged flow (extraction parity): the manager opens consensus first —
     // the run must LAND on the consensus stage, never skip it.
