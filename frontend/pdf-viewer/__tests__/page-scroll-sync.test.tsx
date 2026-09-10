@@ -60,18 +60,23 @@ const elapse = (ms: number) =>
     vi.advanceTimersByTime(ms);
   });
 
-/** Give `scroller` and its pages the measured geometry; return the browser's moves. */
-function playBrowser(scroller: HTMLElement, pageSelector: string) {
+/**
+ * Give `scroller` and its pages the measured geometry, the scroller's top edge
+ * `scrollerTop` px below the top of the window; return the browser's moves.
+ */
+function playBrowser(scroller: HTMLElement, pageSelector: string, scrollerTop = 0) {
   const pages = [...scroller.querySelectorAll<HTMLElement>(pageSelector)];
   Object.defineProperty(scroller, 'clientHeight', {configurable: true, value: VIEWPORT});
   Object.defineProperty(scroller, 'scrollHeight', {
     configurable: true,
     value: PAGE_GAP + pages.length * PAGE_PITCH,
   });
-  scroller.getBoundingClientRect = () => box(0, VIEWPORT);
+  scroller.getBoundingClientRect = () => box(scrollerTop, VIEWPORT);
   pages.forEach((page, i) => {
-    page.getBoundingClientRect = () => box(pageTop(i + 1) - scroller.scrollTop, PAGE_HEIGHT);
+    page.getBoundingClientRect = () => box(scrollerTop + pageTop(i + 1) - scroller.scrollTop, PAGE_HEIGHT);
   });
+  // The observer's root is the scroller's top half (rootMargin -50%).
+  const rootBounds = box(scrollerTop, VIEWPORT / 2);
   const scrollTo = vi.fn();
   scroller.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
 
@@ -81,11 +86,11 @@ function playBrowser(scroller: HTMLElement, pageSelector: string) {
     frame(top: number) {
       scroller.scrollTop = top;
       scroller.dispatchEvent(new Event('scroll'));
+      // As in the browser, every entry rect is in window coordinates.
       const entries = pages.map((page) => {
         const rect = page.getBoundingClientRect();
-        // The observer's root is the scroller's top half (rootMargin -50%).
-        const isIntersecting = rect.top < VIEWPORT / 2 && rect.bottom > 0;
-        return {target: page, isIntersecting, boundingClientRect: rect} as unknown as IntersectionObserverEntry;
+        const isIntersecting = rect.top < rootBounds.bottom && rect.bottom > rootBounds.top;
+        return {target: page, isIntersecting, boundingClientRect: rect, rootBounds} as unknown as IntersectionObserverEntry;
       });
       const observer = observers.at(-1);
       if (!observer) throw new Error('no IntersectionObserver is attached to the pages');
@@ -117,7 +122,7 @@ afterEach(() => {
 });
 
 describe('Viewer.Body page sync', () => {
-  function renderBody(initial: {numPages: number; currentPage: number}) {
+  function renderBody(initial: {numPages: number; currentPage: number}, scrollerTop = 0) {
     const store = createViewerStore(initial);
     const {container} = render(
       <ViewerProvider store={store}>
@@ -127,7 +132,7 @@ describe('Viewer.Body page sync', () => {
       </ViewerProvider>,
     );
     const scroller = container.querySelector<HTMLElement>('[data-pdf-viewer-body]')!;
-    const browser = playBrowser(scroller, '[data-page-number]');
+    const browser = playBrowser(scroller, '[data-page-number]', scrollerTop);
     elapse(1000); // nothing the mount started is still pending
     return {store, scroller, ...browser};
   }
@@ -165,6 +170,18 @@ describe('Viewer.Body page sync', () => {
 
     expect(store.getState().currentPage).toBe(2);
     expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('measures the page nearest the top edge from the scroller, not the window', () => {
+    // Where the Articles document panel puts the scroller: ~175px down the window.
+    const {store, frame} = renderBody({numPages: 14, currentPage: 1}, 175);
+
+    // Page 3's top is 300px below the scroller's top edge and page 2's is 558px
+    // above it, so page 3 is nearer. Measured from the window's top instead
+    // (475px against 383px), page 2 would win.
+    frame(pageTop(3) - 300);
+
+    expect(store.getState().currentPage).toBe(3);
   });
 
   it('publishes the page the user stopped on when they take over a navigation', () => {

@@ -66,13 +66,15 @@ function createPageScrollSync(storeApi: StoreApi<ViewerState>, pageAttribute: st
   let unsettled: (() => void) | null = null;
 
   function publishVisiblePage() {
-    // Pick the page whose top is nearest the top edge — of the viewport, as
-    // entry rects are viewport coordinates. This approximates what the user
-    // feels is the "current" page while scrolling.
+    // Pick the page whose top is nearest the container's top edge, which
+    // approximates what the user feels is the "current" page while scrolling.
+    // Entry rects are in viewport coordinates, so measure from the root's top
+    // (`rootBounds`, always set for an element root) — measured from the
+    // viewport's, the pick would move with where the container sits on screen.
     let bestPage = -1;
     let bestDistance = Infinity;
     for (const [page, entry] of visible) {
-      const distance = Math.abs(entry.boundingClientRect.top);
+      const distance = Math.abs(entry.boundingClientRect.top - entry.rootBounds!.top);
       if (distance < bestDistance) {
         bestDistance = distance;
         bestPage = page;
