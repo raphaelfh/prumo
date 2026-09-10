@@ -45,6 +45,13 @@ export const Topbar: React.FC<TopbarProps> = ({className}) => {
           <div className="h-5 w-5 shrink-0 animate-pulse rounded bg-muted" />
           <div className="h-[13px] w-28 shrink-0 animate-pulse rounded bg-muted" />
         </div>
+        {/* The slot belongs to the PAGE, not to the profile query this branch
+            waits on. Dropping it here unmounted the current page's action
+            (e.g. the Articles panel toggle) and popped it back on load —
+            the very layout shift this skeleton exists to avoid. */}
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+          {headerActions}
+        </div>
       </HeaderShell>
     );
   }
@@ -66,6 +73,7 @@ export const Topbar: React.FC<TopbarProps> = ({className}) => {
             pressed={!sidebarCollapsed}
             onToggle={toggleSidebar}
             ariaLabel={t('layout', 'sidebarToggleAriaLabel')}
+            keyShortcuts="Meta+B"
           />
         </span>
         <AppBreadcrumb />

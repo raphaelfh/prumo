@@ -10,7 +10,7 @@
  * the right of the notification icon, and a page that fills nothing leaves
  * Topbar rendering exactly what it renders today.
  */
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 import {render, screen} from '@testing-library/react';
 import {MemoryRouter} from 'react-router';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
@@ -18,10 +18,12 @@ import {Topbar} from '@/components/navigation/Topbar';
 import {SidebarProvider} from '@/contexts/SidebarContext';
 import {HeaderActionsProvider, useSetHeaderActions} from '@/contexts/HeaderActionsContext';
 
+const profile = vi.hoisted(() => ({isLoading: false}));
+
 vi.mock('@/hooks/useNavigation', () => ({
     useUserProfile: () => ({
         user: {id: 'u1', name: 'Test User', email: 't@example.com', initials: 'T'},
-        isLoading: false,
+        isLoading: profile.isLoading,
         error: null,
         refreshProfile: vi.fn(),
     }),
@@ -61,6 +63,10 @@ function PageFillingSlot() {
 }
 
 describe('Topbar header-actions slot', () => {
+    afterEach(() => {
+        profile.isLoading = false;
+    });
+
     it('renders unchanged when no page fills the slot', () => {
         render(<Harness />);
 
@@ -83,5 +89,20 @@ describe('Topbar header-actions slot', () => {
         expect(
             notificationCenter.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING,
         ).toBeTruthy();
+    });
+
+    // The slot is filled by the PAGE; the skeleton branch waits on the PROFILE
+    // query. Tying them together unmounted the current page's action and
+    // popped it back when the profile resolved.
+    it('keeps a page-provided action mounted while the profile is still loading', () => {
+        profile.isLoading = true;
+
+        render(
+            <Harness>
+                <PageFillingSlot />
+            </Harness>,
+        );
+
+        expect(screen.getByRole('button', {name: 'Test page action'})).toBeInTheDocument();
     });
 });
