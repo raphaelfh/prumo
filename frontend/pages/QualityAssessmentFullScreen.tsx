@@ -32,8 +32,7 @@ import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
 import { OverallJudgmentBanner } from "@/components/assessment/OverallJudgmentBanner";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { SectionNavLayout } from "@/components/runs/SectionNavLayout";
-import { useActiveSection } from "@/hooks/extraction/useActiveSection";
-import { buildFlatSectionRegistry } from "@/lib/extraction/sectionRegistry";
+import { useQASectionNav } from "@/hooks/qa/useQASectionNav";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
   ComparisonEntityType,
@@ -561,27 +560,8 @@ export default function QualityAssessmentFullScreen() {
     (instanceId, fieldId) => keyOf({ instanceId, fieldId }),
   );
 
-  // The domains the form renders — those with a session instance — and the
-  // section rail over them, shared with extraction.
-  const renderedDomains = domains.flatMap((domain) => {
-    const instanceId = session?.instancesByEntityType[domain.entityType.id];
-    return instanceId ? [{ domain, instanceId }] : [];
-  });
-  const qaSections = buildFlatSectionRegistry(
-    renderedDomains.map(({ domain, instanceId }) => ({
-      id: domain.entityType.id,
-      label: domain.entityType.label || domain.entityType.name,
-      fields: domain.fields,
-      isRequired: domain.entityType.is_required,
-      instanceId,
-    })),
-    values,
-  );
-  const {
-    activeId: activeDomainId,
-    registerSection: registerDomain,
-    scrollToSection: scrollToDomain,
-  } = useActiveSection(qaSections.map((s) => s.id));
+  // The rendered domains and the section rail over them, shared with extraction.
+  const sectionNav = useQASectionNav(domains, session?.instancesByEntityType, values);
 
   // Compare-view inputs derived from the QA template tree: one instance per
   // domain (session.instancesByEntityType), shaped for the shared
@@ -947,11 +927,7 @@ export default function QualityAssessmentFullScreen() {
       ) : null}
 
       {showFormStage && template && session && effectiveViewMode === "assess" ? (
-        <SectionNavLayout
-          items={qaSections}
-          activeId={activeDomainId}
-          onSelect={scrollToDomain}
-        >
+        <SectionNavLayout items={sectionNav.items} activeId={sectionNav.activeId} onSelect={sectionNav.scrollToSection}>
           <div className="space-y-3">
             {template.description ? (
               <p className="text-sm text-muted-foreground">
@@ -969,7 +945,7 @@ export default function QualityAssessmentFullScreen() {
               </p>
             ) : (
               <div data-testid="qa-domains">
-                {renderedDomains.map(({ domain, instanceId }, idx) => {
+                {sectionNav.renderedDomains.map(({ domain, instanceId }, idx) => {
                   const valuesForDomain: Record<string, unknown> = {};
                   for (const f of domain.fields) {
                     const k = keyOf({ instanceId, fieldId: f.id });
@@ -978,7 +954,7 @@ export default function QualityAssessmentFullScreen() {
                   return (
                     <div
                       key={domain.entityType.id}
-                      ref={(el) => registerDomain(domain.entityType.id, el)}
+                      ref={(el) => sectionNav.registerSection(domain.entityType.id, el)}
                       tabIndex={-1}
                       className="scroll-mt-4 outline-hidden"
                     >
