@@ -14,23 +14,23 @@ vi.mock('@/components/articles/ArticleSidePanel', () => ({
     ArticleSidePanel: ({
         articleId,
         onDirtyChange,
-        onCollapse,
     }: {
         articleId?: string;
         onDirtyChange?: (d: boolean) => void;
-        onCollapse?: () => void;
     }) => (
         <div data-testid="article-side-panel">
             {articleId ?? 'none'}
             <button onClick={() => onDirtyChange?.(true)}>make dirty</button>
-            <button onClick={() => onCollapse?.()}>strip collapse</button>
         </div>
     ),
 }));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 
+import {fireEvent} from '@testing-library/react';
+
 import {ArticlesSplitShell} from '@/components/articles/ArticlesSplitShell';
 import {HeaderActionsProvider, useHeaderActions} from '@/contexts/HeaderActionsContext';
+import {isMac} from '@/lib/platform';
 
 /** Renders whatever the current page filled into the header-actions slot —
  *  stands in for the real Topbar's `{headerActions}`. */
@@ -155,7 +155,7 @@ describe('ArticlesSplitShell dirty guard', () => {
         expect(onSelectArticle).toHaveBeenCalledWith('a1');
     });
 
-    it('asks before collapsing via the strip control when the panel reported dirty', async () => {
+    it('asks before collapsing from the header toggle when the panel reported dirty', async () => {
         renderShell();
 
         await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
@@ -163,10 +163,38 @@ describe('ArticlesSplitShell dirty guard', () => {
         // shell that never wires onDirtyChange would pass this test vacuously.
         expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
 
-        await userEvent.click(screen.getByRole('button', {name: 'strip collapse'}));
+        await userEvent.click(getToggle());
 
         expect(await screen.findByText('panelDiscardTitle')).toBeInTheDocument();
         expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
+        expect(getToggle()).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('routes the panel shortcut through the same guard', async () => {
+        renderShell();
+
+        await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
+        fireEvent.keyDown(window, {key: 'B', shiftKey: true, [isMac() ? 'metaKey' : 'ctrlKey']: true});
+
+        expect(await screen.findByText('panelDiscardTitle')).toBeInTheDocument();
+        expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
+    });
+
+    // The discard dialog is a Radix AlertDialog (role="alertdialog"), which
+    // useKeyboardShortcuts' dialog guard does not match — so without its own
+    // gate the chord could rewrite a pending swap into a collapse, and
+    // "Discard" would hide the panel instead of opening the clicked article.
+    it('ignores the panel shortcut while the discard dialog is asking', async () => {
+        const {onSelectArticle} = renderShell();
+
+        await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
+        await userEvent.click(screen.getByRole('button', {name: 'row a2'}));
+        expect(await screen.findByText('panelDiscardTitle')).toBeInTheDocument();
+
+        fireEvent.keyDown(window, {key: 'B', shiftKey: true, [isMac() ? 'metaKey' : 'ctrlKey']: true});
+        await userEvent.click(screen.getByRole('button', {name: 'panelDiscardConfirm'}));
+
+        expect(onSelectArticle).toHaveBeenCalledWith('a2');
         expect(getToggle()).toHaveAttribute('aria-pressed', 'true');
     });
 
@@ -174,7 +202,7 @@ describe('ArticlesSplitShell dirty guard', () => {
         renderShell();
 
         await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
-        await userEvent.click(screen.getByRole('button', {name: 'strip collapse'}));
+        await userEvent.click(getToggle());
         await userEvent.click(await screen.findByRole('button', {name: 'panelDiscardConfirm'}));
 
         expect(screen.queryByTestId('article-side-panel')).not.toBeInTheDocument();
@@ -185,7 +213,7 @@ describe('ArticlesSplitShell dirty guard', () => {
         renderShell();
 
         await userEvent.click(screen.getByRole('button', {name: 'make dirty'}));
-        await userEvent.click(screen.getByRole('button', {name: 'strip collapse'}));
+        await userEvent.click(getToggle());
         await userEvent.click(await screen.findByRole('button', {name: 'panelDiscardCancel'}));
 
         expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
@@ -195,7 +223,7 @@ describe('ArticlesSplitShell dirty guard', () => {
     it('collapses immediately with no dialog while the panel is clean', async () => {
         renderShell();
 
-        await userEvent.click(screen.getByRole('button', {name: 'strip collapse'}));
+        await userEvent.click(getToggle());
 
         expect(screen.queryByText('panelDiscardTitle')).not.toBeInTheDocument();
         expect(screen.queryByTestId('article-side-panel')).not.toBeInTheDocument();

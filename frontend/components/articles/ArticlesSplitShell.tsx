@@ -36,6 +36,7 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import {useIsBelowDesktop} from '@/hooks/use-mobile';
+import {useKeyboardShortcuts} from '@/hooks/useKeyboardShortcuts';
 import {
   ArticleSidePanel,
   type ArticleSidePanelView,
@@ -76,9 +77,9 @@ export function ArticlesSplitShell({
   // Open on mount when the URL already carries a selection (deep link, reload).
   const [panelOpen, setPanelOpen] = useState(hasSelection);
   const [dirty, setDirty] = useState(false);
-  // Two entry points can close the panel (the toolbar toggle and the strip's
-  // collapse control) on top of the swap-article guard, so one pending action
-  // models all three: which thing is waiting on the confirm dialog.
+  // Collapsing (the header toggle or its shortcut) and swapping the article
+  // both wait on the same discard dialog, so one pending action models both:
+  // which thing is waiting on the confirm.
   const [pendingAction, setPendingAction] = useState<
     {type: 'select'; id: string} | {type: 'collapse'} | null
   >(null);
@@ -140,9 +141,20 @@ export function ArticlesSplitShell({
     onArticleClick: handleArticleClick,
   };
 
-  // Opening is never guarded (nothing to lose); only closing goes through the
-  // same confirm path as the strip's collapse control.
+  // Opening is never guarded (nothing to lose); closing goes through the
+  // discard confirm.
   const togglePanel = () => (panelOpen ? requestCollapse() : setPanelOpen(true));
+
+  // ⌘⇧B / Ctrl+Shift+B: ⌘B already toggles the app sidebar on the other
+  // edge, so this panel takes the same letter plus Shift. The header toggle
+  // below is the one control for it and shows the chord on hover. Off while
+  // the discard dialog is asking: it is an alertdialog, which the hook's own
+  // dialog guard does not match, and a press there would rewrite a pending
+  // swap into a collapse.
+  useKeyboardShortcuts({
+    bindings: [{type: 'chord', key: 'b', mod: true, shift: true, handler: togglePanel}],
+    enabled: pendingAction === null,
+  });
 
   // The toggle is page-specific state that Topbar must not know about — it
   // fills Topbar's generic header-actions slot instead of being threaded in
@@ -153,6 +165,7 @@ export function ArticlesSplitShell({
       pressed={panelOpen}
       onToggle={togglePanel}
       ariaLabel={t('articles', 'panelToggle')}
+      shortcut={['mod', '⇧', 'B']}
     />,
   );
 
@@ -163,7 +176,6 @@ export function ArticlesSplitShell({
       articleId={articleId ?? undefined}
       view={view}
       onViewChange={onViewChange}
-      onCollapse={requestCollapse}
       onDismiss={onDismiss}
       onComplete={onComplete}
       onDirtyChange={setDirty}
@@ -216,7 +228,10 @@ export function ArticlesSplitShell({
        */}
       <ResizablePanelGroup orientation={belowDesktop ? 'vertical' : 'horizontal'} className="h-full">
         <ResizablePanel id="articles-shell-list" defaultSize={panelOpen ? '55%' : '100%'} minSize="35%">
-          <div className="flex h-full min-h-0 flex-col">{list(listApi)}</div>
+          {/* The tab is full-bleed (no page gutter), so the list owns a minimal
+              inset — without it the toolbar and the table card sat flush
+              against the window edge and the split handle. */}
+          <div className="flex h-full min-h-0 flex-col p-2">{list(listApi)}</div>
         </ResizablePanel>
         {panelOpen ? (
           <>

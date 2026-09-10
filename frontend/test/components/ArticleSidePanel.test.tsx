@@ -41,30 +41,9 @@ vi.mock('@/hooks/extraction/useArticleDocuments', () => ({
 
 import {ArticleSidePanel} from '@/components/articles/ArticleSidePanel';
 
-/** setup.ts stubs matchMedia to `matches: false` for every query, so
- *  `useIsBelowDesktop()` reads "below lg" by default here. setDesktop() makes
- *  the lg+ reading explicit for the one test that needs it. */
-function setMatches(matches: boolean) {
-    Object.defineProperty(window, 'matchMedia', {
-        writable: true,
-        value: (query: string) => ({
-            matches,
-            media: query,
-            onchange: null,
-            addListener: () => {},
-            removeListener: () => {},
-            addEventListener: () => {},
-            removeEventListener: () => {},
-            dispatchEvent: () => {},
-        }),
-    });
-}
-const setDesktop = () => setMatches(true);
-
 const baseProps = {
     projectId: 'p1',
     onViewChange: vi.fn(),
-    onCollapse: vi.fn(),
     onDismiss: vi.fn(),
     onComplete: vi.fn(),
 };
@@ -217,39 +196,17 @@ describe('ArticleSidePanel', () => {
         expect(screen.queryByText('panelDocumentLoading')).not.toBeInTheDocument();
     });
 
-    it('collapses on request', async () => {
-        const onCollapse = vi.fn();
-        render(
-            <ArticleSidePanel
-                {...baseProps}
-                mode="edit"
-                articleId="a1"
-                view="details"
-                onCollapse={onCollapse}
-            />,
-        );
+    // Show/hide lives in the Topbar only (ArticlesSplitShell's header toggle and
+    // its shortcut). A second toggle here duplicated it one row below.
+    it('has no panel toggle of its own — the strip is only the view switch', () => {
+        render(<ArticleSidePanel {...baseProps} mode="edit" articleId="a1" view="document"/>);
 
-        await userEvent.click(screen.getByRole('button', {name: 'panelCollapse'}));
-
-        expect(onCollapse).toHaveBeenCalledTimes(1);
-    });
-
-    it('shows the bottom-panel glyph on the collapse toggle when the layout is stacked (below lg)', () => {
-        render(<ArticleSidePanel {...baseProps} mode="edit" articleId="a1" view="details"/>);
-
-        const toggle = screen.getByRole('button', {name: 'panelCollapse'});
-        const classes = Array.from(toggle.querySelectorAll('svg')).map((svg) => svg.getAttribute('class') ?? '');
-        expect(classes.some((c) => c.includes('lucide-panel-bottom'))).toBe(true);
-        expect(classes.some((c) => c.includes('lucide-panel-right'))).toBe(false);
-    });
-
-    it('shows the right-panel glyph on the collapse toggle at lg+ (side-by-side split)', () => {
-        setDesktop();
-        render(<ArticleSidePanel {...baseProps} mode="edit" articleId="a1" view="details"/>);
-
-        const toggle = screen.getByRole('button', {name: 'panelCollapse'});
-        const classes = Array.from(toggle.querySelectorAll('svg')).map((svg) => svg.getAttribute('class') ?? '');
-        expect(classes.some((c) => c.includes('lucide-panel-right'))).toBe(true);
-        expect(classes.some((c) => c.includes('lucide-panel-bottom'))).toBe(false);
+        // Precondition: the stubbed document body (which renders no buttons) is
+        // what's mounted, so every button left belongs to the strip.
+        expect(screen.getByTestId('run-pdf-content')).toBeInTheDocument();
+        expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+            'panelViewDetails',
+            'panelViewDocument',
+        ]);
     });
 });

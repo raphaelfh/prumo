@@ -318,7 +318,6 @@ export const articles = {
     panelViewDetails: 'Details',
     panelViewDocument: 'Document',
     panelViewDocumentAfterSave: 'Available once the article is saved',
-    panelCollapse: 'Hide the article panel',
     panelNoDocumentTitle: 'No file attached',
     panelNoDocumentBody: 'Attach a PDF to read it beside the list.',
     panelDocumentLoading: 'Loading document…',

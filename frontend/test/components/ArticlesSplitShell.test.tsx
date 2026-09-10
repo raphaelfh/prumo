@@ -11,7 +11,7 @@
  * every query, so without an override every test here would silently exercise
  * the below-lg Sheet path. setDesktop()/setNarrow() make the choice explicit.
  */
-import {render, screen} from '@testing-library/react';
+import {fireEvent, render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -24,6 +24,7 @@ vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 
 import {ArticlesSplitShell} from '@/components/articles/ArticlesSplitShell';
 import {HeaderActionsProvider, useHeaderActions} from '@/contexts/HeaderActionsContext';
+import {isMac, modifierLabel} from '@/lib/platform';
 
 function setMatches(matches: boolean) {
     Object.defineProperty(window, 'matchMedia', {
@@ -228,5 +229,62 @@ describe('ArticlesSplitShell', () => {
         );
 
         expect(screen.queryByTestId('article-side-panel')).not.toBeInTheDocument();
+    });
+
+    it('draws the header toggle as a right panel beside the list and a bottom panel when stacked', () => {
+        const glyphs = () =>
+            Array.from(getToggle().querySelectorAll('svg')).map((svg) => svg.getAttribute('class') ?? '');
+
+        const {unmount} = renderShell({mode: 'edit', articleId: 'a1'});
+        expect(glyphs().some((c) => c.includes('lucide-panel-right'))).toBe(true);
+        expect(glyphs().some((c) => c.includes('lucide-panel-bottom'))).toBe(false);
+        unmount();
+
+        setNarrow();
+        renderShell({mode: 'edit', articleId: 'a1'});
+        expect(glyphs().some((c) => c.includes('lucide-panel-bottom'))).toBe(true);
+        expect(glyphs().some((c) => c.includes('lucide-panel-right'))).toBe(false);
+    });
+
+    describe('panel shortcut (⌘⇧B, Ctrl+Shift+B off macOS)', () => {
+        /** useKeyboardShortcuts reads metaKey on macOS and ctrlKey elsewhere. */
+        const pressModB = ({shift}: {shift: boolean}) =>
+            fireEvent.keyDown(window, {
+                key: shift ? 'B' : 'b',
+                shiftKey: shift,
+                [isMac() ? 'metaKey' : 'ctrlKey']: true,
+            });
+
+        it('collapses and re-expands the panel without losing the selection', () => {
+            renderShell({mode: 'edit', articleId: 'a1'});
+
+            pressModB({shift: true});
+            expect(getToggle()).toHaveAttribute('aria-pressed', 'false');
+            expect(screen.queryByTestId('article-side-panel')).not.toBeInTheDocument();
+
+            pressModB({shift: true});
+            expect(screen.getByTestId('article-side-panel')).toHaveTextContent('a1:details');
+        });
+
+        it('leaves the bare mod+B chord to the app sidebar', () => {
+            renderShell({mode: 'edit', articleId: 'a1'});
+
+            pressModB({shift: false});
+
+            expect(getToggle()).toHaveAttribute('aria-pressed', 'true');
+            expect(screen.getByTestId('article-side-panel')).toBeInTheDocument();
+        });
+
+        it('is advertised on the header toggle — on hover and to assistive tech', async () => {
+            renderShell();
+
+            expect(getToggle()).toHaveAttribute('aria-keyshortcuts', `${isMac() ? 'Meta' : 'Control'}+Shift+B`);
+
+            await userEvent.hover(getToggle());
+
+            const tooltip = await screen.findByRole('tooltip');
+            expect(tooltip).toHaveTextContent('panelToggle');
+            expect(tooltip).toHaveTextContent(`${modifierLabel()}⇧B`);
+        });
     });
 });
