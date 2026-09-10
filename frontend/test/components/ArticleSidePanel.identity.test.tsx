@@ -53,7 +53,6 @@ const baseProps = {
     projectId: 'p1',
     view: 'details' as const,
     onViewChange: vi.fn(),
-    onCollapse: vi.fn(),
     onDismiss: vi.fn(),
     onComplete: vi.fn(),
 };

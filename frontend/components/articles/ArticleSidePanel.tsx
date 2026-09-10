@@ -10,12 +10,10 @@ import {useId, useState} from 'react';
 import {FileText, Loader2} from 'lucide-react';
 
 import {Button} from '@/components/ui/button';
-import {PanelToggleButton} from '@/components/layout/PanelToggleButton';
 import {ArticleForm} from '@/components/articles/ArticleForm';
 import {ArticleFileUploadDialogNew} from '@/components/articles/ArticleFileUploadDialogNew';
 import {RunPdfContent} from '@/components/runs/RunPdfContent';
 import {useArticleDocuments} from '@/hooks/extraction/useArticleDocuments';
-import {useIsBelowDesktop} from '@/hooks/use-mobile';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 
@@ -28,7 +26,6 @@ export interface ArticleSidePanelProps {
   articleId?: string;
   view: ArticleSidePanelView;
   onViewChange: (view: ArticleSidePanelView) => void;
-  onCollapse: () => void;
   onDismiss: () => void;
   onComplete: () => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -40,7 +37,6 @@ export function ArticleSidePanel({
   articleId,
   view,
   onViewChange,
-  onCollapse,
   onDismiss,
   onComplete,
   onDirtyChange,
@@ -51,7 +47,6 @@ export function ArticleSidePanel({
   const [uploadOpen, setUploadOpen] = useState(false);
   const documentHintId = useId();
 
-  const belowDesktop = useIsBelowDesktop();
   const effectiveArticleId = articleId ?? createdId ?? undefined;
   const documentAvailable = Boolean(effectiveArticleId);
   const {files, filesLoading} = useArticleDocuments(effectiveArticleId ?? null);
@@ -63,7 +58,9 @@ export function ArticleSidePanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="article-side-panel">
-      <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border/40 px-2">
+      {/* Show/hide is the Topbar toggle's job (ArticlesSplitShell, ⌘⇧B); the
+          strip carries only the view switch. */}
+      <div className="flex h-8 shrink-0 items-center border-b border-border/40 px-2">
         <div className="flex items-center gap-0.5" role="group">
           <ViewButton
             active={view === 'details'}
@@ -87,12 +84,6 @@ export function ArticleSidePanel({
             </span>
           )}
         </div>
-        <PanelToggleButton
-          side={belowDesktop ? 'bottom' : 'right'}
-          pressed
-          onToggle={onCollapse}
-          ariaLabel={t('articles', 'panelCollapse')}
-        />
       </div>
 
       <div className="min-h-0 flex-1">

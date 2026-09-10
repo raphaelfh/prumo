@@ -11,7 +11,7 @@ export function PanelToggle({ pressed, onToggle }: { pressed: boolean; onToggle:
       pressed={pressed}
       onToggle={onToggle}
       ariaLabel={t('runs', 'togglePanel')}
-      keyShortcuts={'\\'}
+      shortcut={['\\']}
     />
   );
 }

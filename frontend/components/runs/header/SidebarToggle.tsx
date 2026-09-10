@@ -3,7 +3,7 @@ import { t } from '@/lib/copy';
 
 /**
  * Left app-navigation toggle. Delegates to the shared PanelToggleButton
- * (Meta+B, PanelLeft crossfade) so the header toggles stay unified.
+ * (⌘B, PanelLeft crossfade) so the header toggles stay unified.
  *
  * Gated to `lg+` to match the desktop ProjectSidebar (`hidden lg:block`): below
  * `lg` the sidebar is `display:none`, so collapsing/expanding it is a no-op.
@@ -19,7 +19,7 @@ export function SidebarToggle({ pressed, onToggle }: { pressed?: boolean; onTogg
       pressed={!!pressed}
       onToggle={onToggle}
       ariaLabel={t('runs', 'sidebarToggle')}
-      keyShortcuts="Meta+B"
+      shortcut={['mod', 'B']}
       className="hidden lg:inline-flex"
     />
   );
