@@ -159,12 +159,11 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
   const [statusOpen, setStatusOpen] = useState(false);
 
   // Header keyboard shortcuts (documented in the "?" Help panel). ⌘B (sidebar)
-  // is owned by the RunWorkspaceShell, not here.
+  // is owned by the RunWorkspaceShell and ⌘⇧B by RunHeader.PanelToggle, not here.
   useRunShortcuts({
     articles,
     currentArticleId,
     onNavigateToArticle,
-    onTogglePanel: onTogglePDF,
     onTogglePalette: () => setPaletteOpen((prev) => !prev),
     onClosePalette: () => setPaletteOpen(false),
   });

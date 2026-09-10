@@ -46,12 +46,9 @@ describe('SectionNavRail jump-to-next-unfilled', () => {
     expect(screen.queryByRole('button', { name: /sectionNavJumpNext/ })).not.toBeInTheDocument();
   });
 
-  it('keeps the control reachable and labelled when the rail is collapsed', () => {
-    // Collapsed rail (PDF panel open) drops the labels — the jump control must
-    // survive as an icon button with an accessible name, not disappear.
-    render(
-      <SectionNavRail items={incomplete} activeId={null} onSelect={vi.fn()} onJumpToNextPending={vi.fn()} collapsed />,
-    );
-    expect(screen.getByRole('button', { name: /sectionNavJumpNext/ })).toBeInTheDocument();
+  it('announces the chord SectionNavLayout binds', () => {
+    render(<SectionNavRail items={incomplete} activeId={null} onSelect={vi.fn()} onJumpToNextPending={vi.fn()} />);
+    // jsdom is not macOS, so `mod` announces as Control.
+    expect(screen.getByRole('button', { name: /sectionNavJumpNext/ })).toHaveAttribute('aria-keyshortcuts', 'Control+Enter');
   });
 });

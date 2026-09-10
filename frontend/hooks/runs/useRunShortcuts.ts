@@ -6,8 +6,6 @@ export interface RunShortcutHandlers {
   articles: { id: string }[];
   currentArticleId: string;
   onNavigateToArticle: (id: string) => void;
-  /** "\" — the source (PDF) panel. */
-  onTogglePanel: () => void;
   /** ⌘K / Ctrl+K. Omit on a screen with no palette. */
   onTogglePalette?: () => void;
   /** Escape. Omit on a screen with no palette. */
@@ -22,8 +20,10 @@ export interface RunShortcutHandlers {
  * `return`, never `try/finally` — the React Compiler runs with
  * `panicThreshold: 'all_errors'` and rejects the latter in a hook body.
  *
- * ⌘B (sidebar) is deliberately absent: it is owned by RunWorkspaceShell, and
- * appears in `RUN_SHORTCUTS` only so the help panel can document it.
+ * Deliberately absent, and in `RUN_SHORTCUTS` only so the help panel can document
+ * them — each is bound through `useKeyboardShortcuts` by what it toggles: ⌘B
+ * (sidebar) by RunWorkspaceShell; ⌘⇧B (source panel) by RunHeader.PanelToggle;
+ * ⌘↵ (next required field) and ⌘\ (section rail) by SectionNavLayout.
  */
 export function useRunShortcuts(handlers: RunShortcutHandlers): void {
   const ref = useRef(handlers);
@@ -53,11 +53,6 @@ export function useRunShortcuts(handlers: RunShortcutHandlers): void {
 
       if (e.key === 'Escape') {
         h.onClosePalette?.();
-        return;
-      }
-      if (e.key === '\\') {
-        e.preventDefault();
-        h.onTogglePanel();
         return;
       }
 

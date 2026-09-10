@@ -82,8 +82,13 @@ export const runs = {
   glossaryHeading: 'Workflow',
   shortcutPalette: 'Command palette',
   shortcutNextPrev: 'Next / previous article',
+  shortcutJumpNext: 'Next required field',
   shortcutTogglePdf: 'Toggle source panel',
+  shortcutSectionNav: 'Show / hide sections',
   shortcutSidebar: 'Toggle navigation',
+  // SectionNavLayout — the form's section rail toggle
+  sectionNavShow: 'Show sections',
+  sectionNavHide: 'Hide sections',
   shortcutEsc: 'Close dialogs',
   glossaryExtract: 'Extraction — fill the form and review AI suggestions.',
   glossaryAssessment: 'Assessment — answer the signaling questions and review AI suggestions.',

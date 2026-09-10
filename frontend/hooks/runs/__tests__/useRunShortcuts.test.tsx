@@ -10,7 +10,6 @@ function Harness(props: Partial<RunShortcutHandlers>) {
     articles: ARTICLES,
     currentArticleId: 'a2',
     onNavigateToArticle: vi.fn(),
-    onTogglePanel: vi.fn(),
     ...props,
   });
   return <input data-testid="field" />;
@@ -67,13 +66,6 @@ describe('useRunShortcuts', () => {
     );
     await userEvent.keyboard('j');
     expect(onNavigateToArticle).not.toHaveBeenCalled();
-  });
-
-  it('backslash toggles the source panel', async () => {
-    const onTogglePanel = vi.fn();
-    render(<Harness onTogglePanel={onTogglePanel} />);
-    await userEvent.keyboard('\\');
-    expect(onTogglePanel).toHaveBeenCalledTimes(1);
   });
 
   it('mod+K toggles the palette and Escape closes it', async () => {

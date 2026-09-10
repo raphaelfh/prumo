@@ -22,6 +22,7 @@ import {Popover, PopoverTrigger} from '@/components/ui/popover';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Separator} from '@/components/ui/separator';
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
@@ -127,7 +128,8 @@ function ProvenanceSummaryRow({
   const summary = parts.join(' · ');
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border bg-background/40 px-2.5 py-1.5">
+    // A plain line, not a bordered box: it already sits inside the version card.
+    <div className="flex items-center justify-between gap-2">
       <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={summary}>
         {summary}
       </span>
@@ -192,7 +194,7 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
   return (
     <div
       className={cn(
-        'rounded-lg border p-2.5 transition-colors duration-75',
+        'rounded-md border p-2 transition-colors duration-75',
         isSelected ? 'border-ai/30 bg-ai/10' : 'border-border/60 bg-background hover:bg-muted/40',
       )}
     >
@@ -200,7 +202,7 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
         <div className="min-w-0 flex-1">
           {valueless ? (
             <div>
-              <p className="text-sm font-medium text-foreground/90">
+              <p className="text-[13px] font-medium text-foreground/90">
                 {t('extraction', valueless === 'marker' ? 'reviewNoInformation' : 'reviewNoValue')}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
@@ -209,7 +211,7 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
             </div>
           ) : (
             <p
-              className="line-clamp-3 break-words text-sm font-medium"
+              className="line-clamp-3 break-words text-[13px] font-medium"
               title={formatFullSuggestionValue(version.value, fieldContext)}
             >
               {formatFullSuggestionValue(version.value, fieldContext)}
@@ -278,7 +280,7 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
       )}
 
       {showDetails && hasDetails && (
-        <div className="mt-2 space-y-2">
+        <div className="mt-1.5 space-y-1.5">
           {version.provenance && (
             <ProvenanceSummaryRow
               provenance={version.provenance}
@@ -286,11 +288,11 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
             />
           )}
           {hasReasoning && (
-            <div className="space-y-1">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="space-y-0.5">
+              <div className="text-[11px] font-medium text-muted-foreground">
                 {t('extraction', 'aiRationaleLabel')}
               </div>
-              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/90">
+              <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-foreground/90">
                 {version.reasoning}
               </p>
             </div>
@@ -455,19 +457,27 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <AIPopoverShell
-        icon={<Sparkles className="h-4 w-4" />}
+        icon={<Sparkles className="h-3.5 w-3.5" />}
         title={title ?? t('extraction', 'reviewTitle')}
         count={countLabel}
         align={align}
         footer={
           onClear && !readOnlyEffective ? (
-            <div className="flex items-center justify-between gap-2 px-3 py-2">
-              <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={t('extraction', 'reviewClearHint')}>
-                {t('extraction', 'reviewClearHint')}
-              </span>
-              <Button size="sm" variant="ghost" className="shrink-0 px-2 text-xs" onClick={handleClear}>
-                {t('extraction', 'reviewClear')}
-              </Button>
+            // The audit note lives on Clear's tooltip: it explains the one action
+            // here, and a permanent row for it cost the versions a line of space.
+            <div className="flex justify-end px-2 py-1">
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button size="xs" variant="ghost" onClick={handleClear}>
+                      {t('extraction', 'reviewClear')}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[16rem]">
+                    <p>{t('extraction', 'reviewClearHint')}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           ) : undefined
         }
@@ -483,7 +493,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
             {t('extraction', 'reviewNoVersions')}
           </div>
         ) : (
-          <div className="space-y-3 p-2.5">
+          <div className="space-y-2 p-2">
             {pinMissing && (
               <p className="rounded border border-border/60 bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
                 {t('extraction', 'reviewPinNotInHistory')}
@@ -494,8 +504,9 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
                 ? groupedByRun[runId][0].provenance?.ranByName
                 : undefined;
               return (
-              <div key={runId} className="space-y-2">
-                <div className="flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs font-medium text-muted-foreground">
+              <div key={runId} className="space-y-1">
+                {/* A caption, not a banner: the versions below are the content. */}
+                <div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
                   {ranByName ? (
                     <>
                       <span

@@ -31,6 +31,8 @@ import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext"
 import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
 import { OverallJudgmentBanner } from "@/components/assessment/OverallJudgmentBanner";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
+import { SectionNavLayout } from "@/components/runs/SectionNavLayout";
+import { useQASectionNav } from "@/hooks/qa/useQASectionNav";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
   ComparisonEntityType,
@@ -408,7 +410,7 @@ export default function QualityAssessmentFullScreen() {
   const goToArticle = (targetArticleId: string) =>
     navigate(qaArticleRoute(targetArticleId));
 
-  // Every run-screen keyboard binding (J/K, "\", ⌘K, Escape) lives in the one
+  // Every run-screen keyboard binding (J/K, ⌘K, Escape) lives in the one
   // shared hook, which owns the not-while-typing / no-modifier / end-of-list
   // guards — never re-stated here. Declared after goToArticle: the handler
   // object is built during render, so a call above it would hit the TDZ.
@@ -416,7 +418,6 @@ export default function QualityAssessmentFullScreen() {
     articles: worklist,
     currentArticleId: articleId ?? "",
     onNavigateToArticle: goToArticle,
-    onTogglePanel: pdfPanelState.toggle,
     onTogglePalette: () => setPaletteOpen((prev) => !prev),
     onClosePalette: () => setPaletteOpen(false),
   });
@@ -558,6 +559,9 @@ export default function QualityAssessmentFullScreen() {
     values,
     (instanceId, fieldId) => keyOf({ instanceId, fieldId }),
   );
+
+  // The rendered domains and the section rail over them, shared with extraction.
+  const sectionNav = useQASectionNav(domains, session?.instancesByEntityType, values);
 
   // Compare-view inputs derived from the QA template tree: one instance per
   // domain (session.instancesByEntityType), shaped for the shared
@@ -923,65 +927,70 @@ export default function QualityAssessmentFullScreen() {
       ) : null}
 
       {showFormStage && template && session && effectiveViewMode === "assess" ? (
-        <>
-          {template.description ? (
-            <p className="text-sm text-muted-foreground">
-              {template.description}
-            </p>
-          ) : null}
+        <SectionNavLayout items={sectionNav.items} activeId={sectionNav.activeId} onSelect={sectionNav.scrollToSection}>
+          <div className="space-y-3">
+            {template.description ? (
+              <p className="text-sm text-muted-foreground">
+                {template.description}
+              </p>
+            ) : null}
 
-          <OverallJudgmentBanner
-            judgments={runDetail?.derived_judgments ?? []}
-          />
+            <OverallJudgmentBanner
+              judgments={runDetail?.derived_judgments ?? []}
+            />
 
-          {domains.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              This template has no domains defined.
-            </p>
-          ) : (
-            <div data-testid="qa-domains">
-              {domains.map((domain, idx) => {
-                const instanceId =
-                  session.instancesByEntityType[domain.entityType.id];
-                if (!instanceId) return null;
-                const valuesForDomain: Record<string, unknown> = {};
-                for (const f of domain.fields) {
-                  const k = keyOf({ instanceId, fieldId: f.id });
-                  if (k in values) valuesForDomain[f.id] = values[k];
-                }
-                return (
-                  <QASectionAccordion
-                    key={domain.entityType.id}
-                    domain={domain}
-                    values={valuesForDomain}
-                    onValueChange={(fieldId, value) =>
-                      handleValueChange(instanceId, fieldId, value)
-                    }
-                    projectId={projectId}
-                    articleId={articleId}
-                    templateId={session.projectTemplateId}
-                    runId={session.runId}
-                    onExtractionComplete={handleSectionExtractionComplete}
-                    defaultOpen={idx === 0}
-                    reviewerActivity={{
-                      decisionsByCoord: reviewerSummary.decisionsByCoord,
-                      labelById: reviewerProfiles.labelById,
-                      avatarById: reviewerProfiles.avatarById,
-                    }}
-                    instanceId={instanceId}
-                    aiSuggestions={aiSuggestions}
-                    onAcceptAI={acceptAISuggestion}
-                    onRejectAI={rejectAISuggestion}
-                    selectSuggestion={selectAISuggestion}
-                    getSuggestionsHistory={getAISuggestionsHistory}
-                    derivedJudgments={runDetail?.derived_judgments}
-                    outOfScope={outOfScope.has(domain.entityType.name)}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </>
+            {domains.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                This template has no domains defined.
+              </p>
+            ) : (
+              <div data-testid="qa-domains">
+                {sectionNav.renderedDomains.map(({ domain, instanceId }, idx) => {
+                  const valuesForDomain: Record<string, unknown> = {};
+                  for (const f of domain.fields) {
+                    const k = keyOf({ instanceId, fieldId: f.id });
+                    if (k in values) valuesForDomain[f.id] = values[k];
+                  }
+                  return (
+                    <div
+                      key={domain.entityType.id}
+                      ref={(el) => sectionNav.registerSection(domain.entityType.id, el)}
+                      tabIndex={-1}
+                      className="scroll-mt-4 outline-hidden"
+                    >
+                      <QASectionAccordion
+                        domain={domain}
+                        values={valuesForDomain}
+                        onValueChange={(fieldId, value) =>
+                          handleValueChange(instanceId, fieldId, value)
+                        }
+                        projectId={projectId}
+                        articleId={articleId}
+                        templateId={session.projectTemplateId}
+                        runId={session.runId}
+                        onExtractionComplete={handleSectionExtractionComplete}
+                        defaultOpen={idx === 0}
+                        reviewerActivity={{
+                          decisionsByCoord: reviewerSummary.decisionsByCoord,
+                          labelById: reviewerProfiles.labelById,
+                          avatarById: reviewerProfiles.avatarById,
+                        }}
+                        instanceId={instanceId}
+                        aiSuggestions={aiSuggestions}
+                        onAcceptAI={acceptAISuggestion}
+                        onRejectAI={rejectAISuggestion}
+                        selectSuggestion={selectAISuggestion}
+                        getSuggestionsHistory={getAISuggestionsHistory}
+                        derivedJudgments={runDetail?.derived_judgments}
+                        outOfScope={outOfScope.has(domain.entityType.name)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </SectionNavLayout>
       ) : null}
     </div>
     </RunEditabilityProvider>

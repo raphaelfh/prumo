@@ -1069,7 +1069,6 @@ export default function ExtractionFullScreen() {
     ) : (
       <ExtractionFormPanel
         viewMode={viewMode}
-        showPDF={pdf.isOpen}
         formViewProps={{
           instances,
           values,

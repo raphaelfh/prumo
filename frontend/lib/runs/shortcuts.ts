@@ -7,12 +7,14 @@
  * panel promised J/K on both run screens while only extraction bound them.
  */
 
-type RunShortcutId = 'palette' | 'nextPrev' | 'togglePdf' | 'sidebar' | 'esc';
+type RunShortcutId = 'palette' | 'nextPrev' | 'jumpNext' | 'togglePdf' | 'sectionNav' | 'sidebar' | 'esc';
 
 type RunShortcutCopyKey =
   | 'shortcutPalette'
   | 'shortcutNextPrev'
+  | 'shortcutJumpNext'
   | 'shortcutTogglePdf'
+  | 'shortcutSectionNav'
   | 'shortcutSidebar'
   | 'shortcutEsc';
 
@@ -31,7 +33,9 @@ export const ARTICLE_PREV_KEY = 'K';
 export const RUN_SHORTCUTS: readonly RunShortcut[] = [
   { id: 'palette', combo: '⌘K', copyKey: 'shortcutPalette' },
   { id: 'nextPrev', combo: `${ARTICLE_NEXT_KEY} / ${ARTICLE_PREV_KEY}`, copyKey: 'shortcutNextPrev' },
-  { id: 'togglePdf', combo: '\\', copyKey: 'shortcutTogglePdf' },
+  { id: 'jumpNext', combo: '⌘↵', copyKey: 'shortcutJumpNext' },
+  { id: 'togglePdf', combo: '⌘⇧B', copyKey: 'shortcutTogglePdf' },
+  { id: 'sectionNav', combo: '⌘\\', copyKey: 'shortcutSectionNav' },
   { id: 'sidebar', combo: '⌘B', copyKey: 'shortcutSidebar' },
   { id: 'esc', combo: 'Esc', copyKey: 'shortcutEsc' },
 ];

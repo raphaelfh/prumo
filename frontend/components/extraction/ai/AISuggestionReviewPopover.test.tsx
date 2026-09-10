@@ -144,6 +144,27 @@ describe('AISuggestionReviewPopover', () => {
     await user.click(clearBtn);
     expect(onClear).toHaveBeenCalled();
   });
+
+  it('keeps the audit note on Clear’s tooltip instead of a footer row', async () => {
+    const user = userEvent.setup();
+    render(
+      <AISuggestionReviewPopover
+        instanceId="i"
+        fieldId="f"
+        getHistory={async () => [v({})]}
+        selectedProposalId="p1"
+        onSelect={vi.fn()}
+        onClear={vi.fn()}
+        trigger={<button>open</button>}
+      />,
+    );
+
+    await user.click(screen.getByText('open'));
+    const clearBtn = await screen.findByRole('button', { name: /reviewClear/ });
+    expect(screen.queryByText('reviewClearHint')).not.toBeInTheDocument();
+    await user.hover(clearBtn);
+    expect((await screen.findAllByText('reviewClearHint')).length).toBeGreaterThan(0);
+  });
 });
 
 describe('AISuggestionReviewPopover — consensus reuse (D2/D3)', () => {
