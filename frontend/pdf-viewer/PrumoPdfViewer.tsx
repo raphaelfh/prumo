@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react';
+import {useEffect, useRef, useState, type ReactNode} from 'react';
 import type {StoreApi} from 'zustand';
 import {Viewer} from './primitives/Viewer';
 import {CanvasLayer} from './primitives/CanvasLayer';
@@ -17,6 +17,10 @@ export interface PrumoPdfViewerProps {
   className?: string;
   /** Show the built-in toolbar. Defaults to true. */
   toolbar?: boolean;
+  /** Rendered beside the toolbar's mode toggle (e.g. a parse-status control). */
+  toolbarLeading?: ReactNode;
+  /** Rendered centred in the toolbar (e.g. a document switcher). */
+  toolbarCenter?: ReactNode;
   /**
    * Reader-view content. When provided AND the user toggles the viewer to
    * `mode === 'reader'`, the canvas surface is hidden and these blocks are
@@ -47,6 +51,8 @@ export function PrumoPdfViewer({
   source,
   className,
   toolbar = true,
+  toolbarLeading,
+  toolbarCenter,
   readerBlocks,
   readerLoading,
   store,
@@ -74,7 +80,13 @@ export function PrumoPdfViewer({
   return (
     <div ref={rootRef} className={`flex flex-col h-full min-w-0 overflow-hidden ${className ?? ''}`} tabIndex={-1}>
       <Viewer.Root source={source} store={store} className="flex flex-col flex-1 min-h-0 min-w-0">
-        {toolbar && <Toolbar onSearchToggle={() => setSearchOpen((v) => !v)} />}
+        {toolbar && (
+          <Toolbar
+            leading={toolbarLeading}
+            center={toolbarCenter}
+            onSearchToggle={() => setSearchOpen((v) => !v)}
+          />
+        )}
         <SearchBar open={searchOpen} onClose={() => setSearchOpen(false)} />
         <ViewerContent
           readerBlocks={readerBlocks}

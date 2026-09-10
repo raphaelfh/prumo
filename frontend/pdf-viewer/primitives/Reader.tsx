@@ -15,6 +15,7 @@
  */
 import {memo, useCallback, useEffect, useRef, useState, type ReactNode, type RefObject} from 'react';
 
+import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import {useViewerStore, useViewerStoreApi, useViewerStoreApiOptional} from '../core/context';
 import type {ReaderLocateRequest} from '../core/state';
@@ -65,9 +66,7 @@ const DEFAULT_EMPTY: ReactNode = (
     data-testid="reader-empty"
     className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground"
   >
-    Reader view requires the document to be indexed. Processing typically
-    completes shortly after upload — try again in a minute, or switch back
-    to the page view.
+    {t('pdf', 'readerEmpty')}
   </div>
 );
 
@@ -78,7 +77,7 @@ const DEFAULT_LOADING: ReactNode = (
     data-testid="reader-loading"
     className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground"
   >
-    Loading reader view…
+    {t('pdf', 'readerLoading')}
   </div>
 );
 
