@@ -15,6 +15,7 @@ import {ArticleForm} from '@/components/articles/ArticleForm';
 import {ArticleFileUploadDialogNew} from '@/components/articles/ArticleFileUploadDialogNew';
 import {RunPdfContent} from '@/components/runs/RunPdfContent';
 import {useArticleDocuments} from '@/hooks/extraction/useArticleDocuments';
+import {useIsBelowDesktop} from '@/hooks/use-mobile';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 
@@ -50,6 +51,7 @@ export function ArticleSidePanel({
   const [uploadOpen, setUploadOpen] = useState(false);
   const documentHintId = useId();
 
+  const belowDesktop = useIsBelowDesktop();
   const effectiveArticleId = articleId ?? createdId ?? undefined;
   const documentAvailable = Boolean(effectiveArticleId);
   const {files, filesLoading} = useArticleDocuments(effectiveArticleId ?? null);
@@ -86,7 +88,7 @@ export function ArticleSidePanel({
           )}
         </div>
         <PanelToggleButton
-          side="right"
+          side={belowDesktop ? 'bottom' : 'right'}
           pressed
           onToggle={onCollapse}
           ariaLabel={t('articles', 'panelCollapse')}
@@ -97,7 +99,6 @@ export function ArticleSidePanel({
         {effectiveView === 'details' ? (
           <ArticleForm
             key={mode === 'add' ? 'add' : articleId}
-            variant="panel"
             mode={mode}
             projectId={projectId}
             articleId={articleId}

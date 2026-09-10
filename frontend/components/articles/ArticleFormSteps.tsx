@@ -15,6 +15,7 @@ import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {AlertCircle} from 'lucide-react';
 import {t} from '@/lib/copy';
 import type {LucideIcon} from 'lucide-react';
+import type {ReactNode} from 'react';
 
 export type FormStep = 'basic' | 'publication' | 'identifiers' | 'additional' | 'files';
 
@@ -37,9 +38,16 @@ interface ArticleFormStepsProps {
      * constraint that matters; the container's owner passes this instead.
      */
     compact?: boolean;
+    /**
+     * Save/Cancel, rendered at the trailing edge of this row when the host
+     * wants them merged into the rail instead of on their own bar — the
+     * caller decides WHEN (below `lg`), passing `undefined` otherwise, so
+     * exactly one instance of the actions ever mounts.
+     */
+    actions?: ReactNode;
 }
 
-export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing, compact = false}: ArticleFormStepsProps) {
+export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing, compact = false, actions}: ArticleFormStepsProps) {
     return (
         <aside
             className={cn(
@@ -112,6 +120,11 @@ export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing, com
                         </Tooltip>
                     );
                 })}
+                {actions && (
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                        {actions}
+                    </div>
+                )}
             </nav>
         </aside>
     );

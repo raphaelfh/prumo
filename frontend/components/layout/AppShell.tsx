@@ -17,6 +17,7 @@ import {Topbar} from '@/components/navigation';
 import {ProjectSidebar} from './ProjectSidebar';
 import {MobileSidebar} from './MobileSidebar';
 import {useSidebar} from '@/contexts/SidebarContext';
+import {HeaderActionsProvider} from '@/contexts/HeaderActionsContext';
 import {useShellLocation} from '@/hooks/useShellLocation';
 import {useProjectsQuery} from '@/hooks/useProjectsQuery';
 import {useNavigationShortcuts} from '@/hooks/useNavigationShortcuts';
@@ -40,35 +41,37 @@ export const AppShell: React.FC = () => {
     : projects?.find((project) => project.id === projectId)?.name;
 
   return (
-    <div
-      data-testid="app-shell"
-      data-project-id={projectId ?? ''}
-      className="flex h-screen flex-col overflow-hidden bg-background"
-    >
-      <div className="shrink-0">
-        <Topbar />
-      </div>
+    <HeaderActionsProvider>
+      <div
+        data-testid="app-shell"
+        data-project-id={projectId ?? ''}
+        className="flex h-screen flex-col overflow-hidden bg-background"
+      >
+        <div className="shrink-0">
+          <Topbar />
+        </div>
 
-      <MobileSidebar
-        open={mobileOpen}
-        onOpenChange={setMobileOpen}
-        projectId={projectId}
-        activeTab={activeSection ?? ''}
-        projectName={projectName}
-      />
-
-      <div className="flex flex-1 overflow-hidden">
-        <ProjectSidebar
+        <MobileSidebar
+          open={mobileOpen}
+          onOpenChange={setMobileOpen}
           projectId={projectId}
           activeTab={activeSection ?? ''}
           projectName={projectName}
-          switcherOpen={switcherOpen}
-          onSwitcherOpenChange={setSwitcherOpen}
         />
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <Outlet />
-        </main>
+
+        <div className="flex flex-1 overflow-hidden">
+          <ProjectSidebar
+            projectId={projectId}
+            activeTab={activeSection ?? ''}
+            projectName={projectName}
+            switcherOpen={switcherOpen}
+            onSwitcherOpenChange={setSwitcherOpen}
+          />
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <Outlet />
+          </main>
+        </div>
       </div>
-    </div>
+    </HeaderActionsProvider>
   );
 };

@@ -61,9 +61,30 @@ beforeEach(() => {
 function renderAdd() {
     render(
         <MemoryRouter>
-            <ArticleForm mode="add" projectId="proj-1" variant="panel" onDismiss={vi.fn()}/>
+            <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
         </MemoryRouter>,
     );
+}
+
+/** setup.ts stubs matchMedia to `matches: false` for every query, which is
+ *  exactly the "below lg" reading `useIsBelowDesktop()` needs — real jsdom
+ *  has no viewport to speak of. This override simulates the lg+ (desktop
+ *  split) reading for the one test that needs it. */
+function mockDesktopViewport(matchesLg: boolean) {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+        matches: matchesLg,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    return () => {
+        window.matchMedia = original;
+    };
 }
 
 describe('article editor — step rail below lg', () => {
@@ -71,9 +92,12 @@ describe('article editor — step rail below lg', () => {
         renderAdd();
         const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
 
+        // Scoped to step buttons — below lg the rail row also hosts
+        // Save/Cancel, which carry no step label to fold.
         const labels = within(rail)
             .getAllByRole('button')
-            .map((b) => b.querySelector('[data-slot="step-label"]'));
+            .map((b) => b.querySelector('[data-slot="step-label"]'))
+            .filter((label): label is Element => label !== null);
         expect(labels).toHaveLength(5);
 
         for (const label of labels) {
@@ -98,48 +122,6 @@ describe('article editor — step rail below lg', () => {
     });
 });
 
-describe('article editor — header identity (page variant)', () => {
-    function renderPageAdd() {
-        render(
-            <MemoryRouter>
-                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
-            </MemoryRouter>,
-        );
-    }
-
-    it('renders the title in add mode and folds only the redundant description', async () => {
-        renderPageAdd();
-
-        expect(await screen.findByText('addArticle')).toBeInTheDocument();
-        // addArticleDesc restates the title, so it is what gives way — the
-        // title itself must survive at every width.
-        expect(screen.queryByText('addArticleDesc')).not.toBeInTheDocument();
-    });
-
-    it('keeps the article title in edit mode, where the description is the only identity', async () => {
-        render(
-            <MemoryRouter>
-                <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" variant="page" onDismiss={vi.fn()}/>
-            </MemoryRouter>,
-        );
-
-        // Scoped to the header: the title also appears in the title textarea,
-        // so an unscoped query would pass even with the header identity gone.
-        const header = (await screen.findByText('editArticle')).closest('[data-slot="page-header"]')!;
-        expect(within(header as HTMLElement).getByText('A stored-markdown study')).toBeInTheDocument();
-    });
-
-    it('folds the Back label but keeps the button named', async () => {
-        renderPageAdd();
-
-        const back = await screen.findByRole('button', {name: 'back'});
-        const label = back.querySelector('[data-slot="back-label"]');
-        expect(label!.className).toContain('sr-only');
-        expect(label!.className).toContain('sm:not-sr-only');
-        expect(label!.className).not.toMatch(/(^|\s)hidden(\s|$)/);
-    });
-});
-
 describe('article editor — panel variant has no header', () => {
     it('renders the actions without the page header, title or back button', async () => {
         renderAdd(); // panel variant
@@ -160,8 +142,12 @@ describe('article editor — compact section rail in the panel', () => {
         renderAdd(); // panel variant
 
         const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
-        // Precondition: the rail actually rendered all five steps.
-        const buttons = within(rail).getAllByRole('button');
+        // Precondition: the rail actually rendered all five steps. Scoped to
+        // step buttons (those carrying the step label) — below lg the rail
+        // row also hosts Save/Cancel, which carry no such label.
+        const buttons = within(rail)
+            .getAllByRole('button')
+            .filter((b) => b.querySelector('[data-slot="step-label"]'));
         expect(buttons).toHaveLength(5);
 
         for (const button of buttons) {
@@ -176,25 +162,17 @@ describe('article editor — compact section rail in the panel', () => {
         }
     });
 
-    it('still un-folds the labels at lg in the page variant', async () => {
-        render(
-            <MemoryRouter>
-                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
-            </MemoryRouter>,
-        );
-
-        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
-        const label = within(rail).getAllByRole('button')[0].querySelector('[data-slot="step-label"]');
-        expect(label!.className).toContain('lg:not-sr-only');
-    });
-
     it('keeps the compact rail a horizontal strip below lg and a column at lg+', async () => {
         renderAdd(); // panel variant, compact rail
 
         const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
         // Precondition: the rail actually rendered all five steps, so the
         // direction assertion below cannot pass vacuously against an empty nav.
-        expect(within(rail).getAllByRole('button')).toHaveLength(5);
+        expect(
+            within(rail)
+                .getAllByRole('button')
+                .filter((b) => b.querySelector('[data-slot="step-label"]')),
+        ).toHaveLength(5);
 
         const emitted = rail.className;
         // Below lg the surrounding ArticleForm container is already a column
@@ -221,20 +199,28 @@ describe('article editor — rail placement in the side-by-side (lg+) layout', (
         expect(aside.className).toContain('lg:border-l');
         expect(aside.className).not.toMatch(/(^|\s)lg:border-r(\s|$)/);
     });
+});
 
-    it('leaves the page-variant rail on the left, unchanged', async () => {
-        render(
-            <MemoryRouter>
-                <ArticleForm mode="add" projectId="proj-1" variant="page" onDismiss={vi.fn()}/>
-            </MemoryRouter>,
-        );
+describe('article editor — panel actions follow the lg breakpoint, never duplicated', () => {
+    it('below lg, merges Save/Cancel into the rail row instead of a dedicated strip', async () => {
+        renderAdd(); // default matchMedia mock reads as "below lg"
 
         const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
-        const aside = rail.closest('aside')!;
-        const splitContainer = aside.parentElement!;
+        expect(within(rail).getByRole('button', {name: /createArticle/})).toBeInTheDocument();
+        expect(within(rail).getByRole('button', {name: 'cancel'})).toBeInTheDocument();
+        // Exactly one instance renders — the dedicated strip must not also exist.
+        expect(screen.getAllByTestId('article-form-actions')).toHaveLength(1);
+    });
 
-        expect(splitContainer.className).not.toContain('lg:flex-row-reverse');
-        expect(aside.className).toContain('lg:border-r');
-        expect(aside.className).not.toMatch(/(^|\s)lg:border-l(\s|$)/);
+    it('at lg+, keeps Save/Cancel in the dedicated strip, not merged into the rail row', async () => {
+        const restore = mockDesktopViewport(true);
+        renderAdd();
+
+        const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
+        expect(within(rail).queryByRole('button', {name: /createArticle/})).not.toBeInTheDocument();
+        expect(screen.getByRole('button', {name: /createArticle/})).toBeInTheDocument();
+        expect(screen.getAllByTestId('article-form-actions')).toHaveLength(1);
+
+        restore();
     });
 });

@@ -41,6 +41,26 @@ vi.mock('@/hooks/extraction/useArticleDocuments', () => ({
 
 import {ArticleSidePanel} from '@/components/articles/ArticleSidePanel';
 
+/** setup.ts stubs matchMedia to `matches: false` for every query, so
+ *  `useIsBelowDesktop()` reads "below lg" by default here. setDesktop() makes
+ *  the lg+ reading explicit for the one test that needs it. */
+function setMatches(matches: boolean) {
+    Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: (query: string) => ({
+            matches,
+            media: query,
+            onchange: null,
+            addListener: () => {},
+            removeListener: () => {},
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            dispatchEvent: () => {},
+        }),
+    });
+}
+const setDesktop = () => setMatches(true);
+
 const baseProps = {
     projectId: 'p1',
     onViewChange: vi.fn(),
@@ -212,5 +232,24 @@ describe('ArticleSidePanel', () => {
         await userEvent.click(screen.getByRole('button', {name: 'panelCollapse'}));
 
         expect(onCollapse).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the bottom-panel glyph on the collapse toggle when the layout is stacked (below lg)', () => {
+        render(<ArticleSidePanel {...baseProps} mode="edit" articleId="a1" view="details"/>);
+
+        const toggle = screen.getByRole('button', {name: 'panelCollapse'});
+        const classes = Array.from(toggle.querySelectorAll('svg')).map((svg) => svg.getAttribute('class') ?? '');
+        expect(classes.some((c) => c.includes('lucide-panel-bottom'))).toBe(true);
+        expect(classes.some((c) => c.includes('lucide-panel-right'))).toBe(false);
+    });
+
+    it('shows the right-panel glyph on the collapse toggle at lg+ (side-by-side split)', () => {
+        setDesktop();
+        render(<ArticleSidePanel {...baseProps} mode="edit" articleId="a1" view="details"/>);
+
+        const toggle = screen.getByRole('button', {name: 'panelCollapse'});
+        const classes = Array.from(toggle.querySelectorAll('svg')).map((svg) => svg.getAttribute('class') ?? '');
+        expect(classes.some((c) => c.includes('lucide-panel-right'))).toBe(true);
+        expect(classes.some((c) => c.includes('lucide-panel-bottom'))).toBe(false);
     });
 });

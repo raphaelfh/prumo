@@ -35,6 +35,7 @@ vi.mock('@/services/articlesService', async (importOriginal) => ({
 
 import {ArticleForm} from '@/components/articles/ArticleForm';
 import {fetchArticle, fetchArticleFiles, insertArticle, updateArticle} from '@/services/articlesService';
+import {toast} from 'sonner';
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -60,14 +61,13 @@ describe('ArticleForm dirty reporting', () => {
                     mode="edit"
                     projectId="proj-1"
                     articleId="art-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onDirtyChange={onDirtyChange}
                 />
             </MemoryRouter>,
         );
 
-        await screen.findByDisplayValue('A stored-markdown study');
+        await screen.findByText('A stored-markdown study');
         // The uuid trap: rowsFromAuthorsArray mints fresh ids on load, so a
         // row-object compare would already be reporting dirty here.
         await waitFor(() => {
@@ -83,18 +83,23 @@ describe('ArticleForm dirty reporting', () => {
                     mode="edit"
                     projectId="proj-1"
                     articleId="art-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onDirtyChange={onDirtyChange}
                 />
             </MemoryRouter>,
         );
 
-        const title = await screen.findByDisplayValue('A stored-markdown study');
+        const titleValue = await screen.findByText('A stored-markdown study');
         // Precondition: it must have been clean, or "becomes dirty" is vacuous.
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
 
-        await userEvent.type(title, ' revised');
+        // Title is a Zotero-style row rendered with control='multiline':
+        // click to enter edit state, type, then commit with Ctrl+Enter
+        // (plain Enter inserts a newline in a multiline row).
+        await userEvent.click(titleValue);
+        const input = screen.getByRole('textbox', {name: 'titleRequired'});
+        await userEvent.type(input, ' revised');
+        await userEvent.keyboard('{Control>}{Enter}{/Control}');
 
         await waitFor(() => {
             expect(onDirtyChange).toHaveBeenLastCalledWith(true);
@@ -110,7 +115,6 @@ describe('ArticleForm dirty reporting', () => {
                     mode="edit"
                     projectId="proj-1"
                     articleId="art-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onComplete={vi.fn()}
                     onDirtyChange={onDirtyChange}
@@ -118,10 +122,13 @@ describe('ArticleForm dirty reporting', () => {
             </MemoryRouter>,
         );
 
-        const title = await screen.findByDisplayValue('A stored-markdown study');
+        const titleValue = await screen.findByText('A stored-markdown study');
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
 
-        await userEvent.type(title, ' revised');
+        await userEvent.click(titleValue);
+        const input = screen.getByRole('textbox', {name: 'titleRequired'});
+        await userEvent.type(input, ' revised');
+        await userEvent.keyboard('{Control>}{Enter}{/Control}');
         // Precondition: it must actually go dirty, or "clean after save" proves nothing.
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
 
@@ -131,6 +138,34 @@ describe('ArticleForm dirty reporting', () => {
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
     });
 
+    it('does not report dirty when Escape reverts a row edit', async () => {
+        const onDirtyChange = vi.fn();
+        render(
+            <MemoryRouter>
+                <ArticleForm
+                    mode="edit"
+                    projectId="proj-1"
+                    articleId="art-1"
+                    onDismiss={vi.fn()}
+                    onDirtyChange={onDirtyChange}
+                />
+            </MemoryRouter>,
+        );
+
+        const titleValue = await screen.findByText('A stored-markdown study');
+        // Precondition: it must have been clean, or "stays clean" is vacuous.
+        await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+
+        await userEvent.click(titleValue);
+        const input = screen.getByRole('textbox', {name: 'titleRequired'});
+        await userEvent.type(input, ' revised{Escape}');
+
+        // Give any dirty-reporting effect a chance to run, then confirm it
+        // never fired with true.
+        await screen.findByText('A stored-markdown study');
+        expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+    });
+
     it('reports clean on a fresh add form', async () => {
         const onDirtyChange = vi.fn();
         render(
@@ -138,7 +173,6 @@ describe('ArticleForm dirty reporting', () => {
                 <ArticleForm
                     mode="add"
                     projectId="proj-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onDirtyChange={onDirtyChange}
                 />
@@ -164,7 +198,6 @@ describe('ArticleForm create reporting', () => {
                 <ArticleForm
                     mode="add"
                     projectId="proj-1"
-                    variant="panel"
                     onDismiss={vi.fn()}
                     onComplete={vi.fn()}
                     onArticleCreated={onArticleCreated}
@@ -172,12 +205,82 @@ describe('ArticleForm create reporting', () => {
             </MemoryRouter>,
         );
 
-        await userEvent.type(await screen.findByLabelText(/titleRequired/), 'A new paper');
+        // Title starts empty: it is a Zotero-style row, so it reads as its
+        // (labelled) read-state control until clicked into edit state.
+        const titleReadState = await screen.findByLabelText(/titleRequired/);
+        await userEvent.click(titleReadState);
+        const titleInput = screen.getByRole('textbox', {name: /titleRequired/});
+        await userEvent.type(titleInput, 'A new paper{Enter}');
         await userEvent.click(screen.getByRole('button', {name: /createArticle/}));
 
         await waitFor(() => {
             expect(onArticleCreated).toHaveBeenCalledWith('new-art-9');
         });
         expect(onArticleCreated).toHaveBeenCalledTimes(1);
+    });
+});
+
+/**
+ * Regression tests for the "click Create twice" bug (browser-verified at
+ * 1600px, not a jsdom finding): the Title row only commits its value into
+ * `formData` on blur/Enter, and mousedown-before-click fires that blur, so a
+ * button disabled on `!formData.title.trim()` is briefly still-disabled at
+ * mousedown and only re-enables after the commit lands — a REAL browser never
+ * activates that click. `userEvent`'s mouse implementation rechecks `disabled`
+ * between its synthetic mousedown and click, so it *does* activate it — which
+ * is exactly why the old jsdom suite stayed green while the button was
+ * unusable in production. Do not "simplify" the Create/Save button back to a
+ * disabled-on-invalid-state gate on the strength of a passing test here: the
+ * fix is validate-on-click, not a disabled predicate, and only a real browser
+ * (or a human) can prove the disabled-gate version is broken.
+ */
+describe('ArticleForm create-button gating (no disabled-on-empty-title gate)', () => {
+    it('does not disable the Create button when the title is empty', async () => {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const createButton = await screen.findByRole('button', {name: /createArticle/});
+        expect(createButton).not.toBeDisabled();
+    });
+
+    it('does not create the article and surfaces the error when clicked with an empty title', async () => {
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const createButton = await screen.findByRole('button', {name: /createArticle/});
+        await userEvent.click(createButton);
+
+        expect(insertArticle).not.toHaveBeenCalled();
+        expect(toast.error).toHaveBeenCalledWith('titleRequiredToast');
+        // The requirement is visible on the Title row itself, not only in a toast.
+        expect(await screen.findByText('titleRequiredToast')).toBeInTheDocument();
+    });
+
+    it('creates the article when clicked with a valid, committed title', async () => {
+        vi.mocked(insertArticle).mockResolvedValue({ok: true, data: {id: 'new-art-1'}} as never);
+
+        render(
+            <MemoryRouter>
+                <ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>
+            </MemoryRouter>,
+        );
+
+        const titleReadState = await screen.findByLabelText(/titleRequired/);
+        await userEvent.click(titleReadState);
+        const titleInput = screen.getByRole('textbox', {name: /titleRequired/});
+        await userEvent.type(titleInput, 'A committed title');
+        await userEvent.keyboard('{Control>}{Enter}{/Control}');
+
+        await userEvent.click(screen.getByRole('button', {name: /createArticle/}));
+
+        await waitFor(() => {
+            expect(insertArticle).toHaveBeenCalledTimes(1);
+        });
     });
 });

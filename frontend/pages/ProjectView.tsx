@@ -224,7 +224,7 @@ export default function ProjectView() {
                     void loadArticles();
                     closeArticleEditor();
                 }}
-                list={({onArticleClick, panelOpen, onTogglePanel}) => (
+                list={({onArticleClick}) => (
                     <ArticlesList
                         articles={articles}
                         onArticleClick={onArticleClick}
@@ -233,8 +233,6 @@ export default function ProjectView() {
                         onOpenZoteroDialog={() => setZoteroDialogOpen(true)}
                         onOpenRisDialog={() => setRisDialogOpen(true)}
                         onOpenAddArticle={openArticleEditorAdd}
-                        panelOpen={panelOpen}
-                        onTogglePanel={onTogglePanel}
                     />
                 )}
             />

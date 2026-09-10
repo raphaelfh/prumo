@@ -19,14 +19,12 @@ export const articles = {
     risFailCount: 'record(s) could not be imported. Check the console.',
     // AddArticleDialog / ArticleForm shared
     addArticle: 'Add article',
-    addArticleDesc: 'Fill in the article bibliographic information',
     titleRequired: 'Title *',
     titlePlaceholder: 'Article title',
     abstract: 'Abstract',
     abstractPlaceholder: 'Article abstract or summary',
     authors: 'Authors',
     authorsPlaceholder: 'Silva A, Santos B, Oliveira C',
-    authorsPlaceholderComma: 'Separate authors with commas',
     authorLastName: 'Last name',
     authorFirstName: 'First name',
     authorLastNamePlaceholder: 'Doe',
@@ -87,7 +85,6 @@ export const articles = {
     notProvided: 'Not provided',
     saving: 'Saving…',
     createArticle: 'Create article',
-    editArticle: 'Edit article',
     titleRequiredToast: 'Title is required',
     errorLoadArticle: 'Error loading article',
     errorUpdateArticle: 'Error updating article',
@@ -110,7 +107,6 @@ export const articles = {
     delete: 'Delete',
     loadingArticle: 'Loading article…',
     formStepsAria: 'Form steps',
-    articleContentCardTitle: 'Article details',
     meshTermsLabel: 'MeSH terms',
     languageLabel: 'Language',
     licenseLabel: 'License',
@@ -132,11 +128,6 @@ export const articles = {
     filesDesc: 'PDFs and documents',
     additionalInfo: 'Additional information',
     additionalInfoDesc: 'Keywords and metadata',
-    publicationDetails: 'Publication details',
-    publicationDetailsDesc: 'Journal, volume and pages information',
-    titleAbstractAuthors: 'Title, abstract and author information',
-    keywordsAndMetadata: 'Keywords, metadata and other information',
-    keywordsLabel: 'Keywords',
     meshPlaceholder: 'MeSH terms separated by comma',
     languagePlaceholder: 'Portuguese, English, etc.',
     typePlaceholder: 'Original article, Review, etc.',
@@ -339,6 +330,13 @@ export const articles = {
     panelDiscardBody: 'This article has edits that have not been saved.',
     panelDiscardConfirm: 'Discard changes',
     panelDiscardCancel: 'Keep editing',
+    // ArticleFieldRow: read/edit label -> value row primitive
+    fieldRowEmptyPlaceholder: 'Click to add',
+    switchOn: 'On',
+    switchOff: 'Off',
+    // AdditionalInfoSection: open_access switch wording
+    openAccessOn: 'Open access',
+    openAccessOff: 'Not open access',
 } as const;
 
 export type ArticlesCopy = typeof articles;

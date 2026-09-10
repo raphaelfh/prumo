@@ -84,7 +84,7 @@ describe('ArticleSidePanel article identity', () => {
         );
 
         // Precondition: article A's title is actually in the field.
-        await screen.findByDisplayValue('Article A title');
+        await screen.findByText('Article A title');
 
         mockArticle('art-b', 'Article B title');
         rerender(
@@ -93,8 +93,8 @@ describe('ArticleSidePanel article identity', () => {
             </MemoryRouter>,
         );
 
-        await screen.findByDisplayValue('Article B title');
-        expect(screen.queryByDisplayValue('Article A title')).not.toBeInTheDocument();
+        await screen.findByText('Article B title');
+        expect(screen.queryByText('Article A title')).not.toBeInTheDocument();
     });
 
     it('clears the title field when switching from editing an article to adding one', async () => {
@@ -106,7 +106,7 @@ describe('ArticleSidePanel article identity', () => {
         );
 
         // Precondition: article A's title is actually loaded before the swap.
-        await screen.findByDisplayValue('Article A title');
+        await screen.findByText('Article A title');
 
         rerender(
             <MemoryRouter>
@@ -117,9 +117,11 @@ describe('ArticleSidePanel article identity', () => {
         // The duplicate-insert path: without the key, formData still holds
         // article A and the title field would still show it.
         await waitFor(() => {
-            expect(screen.queryByDisplayValue('Article A title')).not.toBeInTheDocument();
+            expect(screen.queryByText('Article A title')).not.toBeInTheDocument();
         });
-        const title = screen.getByLabelText(/titleRequired/) as HTMLTextAreaElement;
-        expect(title.value).toBe('');
+        // Title is a Zotero-style row: an empty value reads as the row's
+        // placeholder text, not an empty input value.
+        const title = screen.getByLabelText(/titleRequired/);
+        expect(title).toHaveTextContent('fieldRowEmptyPlaceholder');
     });
 });
