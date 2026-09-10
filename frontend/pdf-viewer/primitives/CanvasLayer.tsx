@@ -20,14 +20,17 @@ export function CanvasLayer({pageNumber, className}: CanvasLayerProps) {
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     const renderScale = scale * dpr;
 
+    // Display size in CSS pixels, set BEFORE rendering: the engine sizes the
+    // DPR-scaled backing store up front, and a canvas without a CSS size lays
+    // out at its backing size — DPR× too large until the render resolves.
+    const quarterTurn = rotation === 90 || rotation === 270;
+    const {width, height} = page.size;
+    canvas.style.width = `${(quarterTurn ? height : width) * scale}px`;
+    canvas.style.height = `${(quarterTurn ? width : height) * scale}px`;
+
     const controller = new AbortController();
     page
       .render({canvas, scale: renderScale, rotation, signal: controller.signal})
-      .then(({width, height}) => {
-        // Display size in CSS pixels (independent of DPR)
-        canvas.style.width = `${width / dpr}px`;
-        canvas.style.height = `${height / dpr}px`;
-      })
       .catch((err) => {
         if ((err as DOMException).name !== 'AbortError') {
           console.warn(`CanvasLayer page ${pageNumber} render failed:`, err);
