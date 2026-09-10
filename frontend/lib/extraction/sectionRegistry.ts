@@ -1,6 +1,7 @@
 import { computeRequiredFieldProgress } from '@/lib/extraction/progress';
 import type {
   ExtractionEntityTypeWithFields,
+  ExtractionField,
   ExtractionInstance,
   ExtractionValue,
 } from '@/types/extraction';
@@ -65,19 +66,52 @@ function sectionItem(
     if (parentInstanceId !== undefined && inst.parent_instance_id !== parentInstanceId) continue;
     ids.add(inst.id);
   }
+  return navItem({ id: et.id, label: et.label, fields: et.fields, isRequired: et.is_required }, ids, values, level);
+}
+
+interface NavSection {
+  id: string;
+  label: string;
+  fields: ExtractionField[];
+  isRequired: boolean;
+}
+
+/** One rail entry: required-field progress scoped to the section's own instances. */
+function navItem(
+  section: NavSection,
+  instanceIds: Set<string>,
+  values: Record<string, unknown>,
+  level: number,
+): SectionNavItem {
   const progress = computeRequiredFieldProgress(
     values,
-    [{ id: et.id, fields: et.fields, is_required: et.is_required }],
-    new Map([[et.id, ids]]),
+    [{ id: section.id, fields: section.fields, is_required: section.isRequired }],
+    new Map([[section.id, instanceIds]]),
   );
   return {
-    id: et.id,
-    label: et.label,
+    id: section.id,
+    label: section.label,
     requiredTotal: progress.totalFields,
     requiredFilled: progress.completedFields,
     state: toState(progress.completedFields, progress.totalFields),
     level,
   };
+}
+
+export interface FlatSection extends NavSection {
+  /** The one instance this section's values belong to. */
+  instanceId: string;
+}
+
+/**
+ * The rail for a flat form — one level, one instance per section (the QA
+ * domains). Built from the same `navItem` as the extraction tree.
+ */
+export function buildFlatSectionRegistry(
+  sections: FlatSection[],
+  values: Record<string, unknown>,
+): SectionNavItem[] {
+  return sections.map((s) => navItem(s, new Set([s.instanceId]), values, 0));
 }
 
 /** The entry a group is currently showing in one parent slot, if any. */

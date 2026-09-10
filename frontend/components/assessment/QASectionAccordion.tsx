@@ -30,6 +30,7 @@ import { DerivedDefaultChip } from "@/components/assessment/DerivedDefaultChip";
 import { toneFor } from "@/components/assessment/OverallJudgmentBanner";
 import { isJudgmentOutOfScope } from "@/lib/qa/derivedInputState";
 import { FieldInput } from "@/components/extraction/FieldInput";
+import { useSectionOpen } from "@/components/runs/SectionOpenContext";
 import { useRunEditability } from "@/components/runs/RunEditabilityContext";
 import { isJudgmentField, isSignalingSelect } from "@/lib/extraction/judgmentFields";
 import { cn } from "@/lib/utils";
@@ -208,6 +209,7 @@ export function QASectionAccordion({
 
   const sectionLabel = entityType.label || entityType.name;
   const itemValue = `qa-domain-${entityType.id}`;
+  const [open, setOpen] = useSectionOpen(entityType.id, defaultOpen);
 
   // Build a per-field avatar map so each FieldInput row shows just the
   // reviewers that touched THAT field. Fall back to the empty stack
@@ -305,7 +307,8 @@ export function QASectionAccordion({
     <Accordion
       type="single"
       collapsible
-      defaultValue={defaultOpen ? itemValue : undefined}
+      value={open ? itemValue : ""}
+      onValueChange={(value) => setOpen(value === itemValue)}
       data-testid={`qa-domain-${entityType.name}`}
       data-section-id={entityType.id}
     >

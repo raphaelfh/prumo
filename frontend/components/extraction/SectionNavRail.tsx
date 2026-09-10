@@ -2,7 +2,9 @@
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
+import { ariaKeyShortcuts } from '@/lib/platform';
 import { Button } from '@/components/ui/button';
+import { KbdBadge } from '@/components/ui/kbd-badge';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRunEditability } from '@/components/runs/RunEditabilityContext';
@@ -16,7 +18,6 @@ export interface SectionNavRailProps {
   items: SectionNavItem[];
   activeId: string | null;
   onSelect: (id: string) => void;
-  collapsed?: boolean;
   /**
    * Scroll to (and focus) the next required field still waiting for an answer.
    * Optional: without it the rail keeps its counters and simply omits the control.
@@ -30,11 +31,15 @@ const DOT_COLOR: Record<SectionNavState, string> = {
   empty: 'bg-muted-foreground/40',
 };
 
+/**
+ * The section list. Its frame, width and show/hide toggle belong to
+ * `SectionNavLayout`, which also binds the jump to ⌘↵ — hence the chord in the
+ * jump button's tooltip.
+ */
 export default function SectionNavRail({
   items,
   activeId,
   onSelect,
-  collapsed,
   onJumpToNextPending,
 }: SectionNavRailProps) {
   // Read-only run: the "N required left" footer is a fill-completion CTA —
@@ -46,13 +51,7 @@ export default function SectionNavRail({
   // once there is nothing left to answer.
   const showJump = !readOnly && !!onJumpToNextPending && global.requiredLeft > 0;
   return (
-    <nav
-      aria-label={t('extraction', 'sectionNavAria')}
-      className={cn(
-        'sticky top-0 self-start flex flex-col bg-muted/30 border-r border-border/40 py-2',
-        collapsed ? 'w-11 items-center' : 'w-[184px]',
-      )}
-    >
+    <nav aria-label={t('extraction', 'sectionNavAria')} className="flex flex-col">
       <ul className="flex-1 space-y-px">
         {items.map((item) => {
           const isActive = item.id === activeId;
@@ -62,40 +61,31 @@ export default function SectionNavRail({
                 type="button"
                 aria-current={isActive ? 'true' : undefined}
                 onClick={() => onSelect(item.id)}
-                title={collapsed ? `${item.label} — ${item.requiredFilled}/${item.requiredTotal}` : undefined}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground',
                   'hover:bg-muted/40 duration-75 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                  item.level === 1 && !collapsed && 'pl-6',
+                  item.level === 1 && 'pl-6',
                   isActive && 'bg-info/10 text-foreground',
                 )}
               >
                 <span className={cn('h-[7px] w-[7px] shrink-0 rounded-full', DOT_COLOR[item.state])} aria-hidden="true" />
-                {!collapsed && (
-                  <>
-                    <span className="truncate">{item.label}</span>
-                    <span className="ml-auto text-[11px] font-medium text-muted-foreground">
-                      {item.requiredFilled}/{item.requiredTotal}
-                    </span>
-                  </>
-                )}
+                <span className="truncate">{item.label}</span>
+                <span className="ml-auto text-[11px] font-medium text-muted-foreground">
+                  {item.requiredFilled}/{item.requiredTotal}
+                </span>
               </button>
             </li>
           );
         })}
       </ul>
-      {(showJump || (!collapsed && !readOnly)) && (
-        <div className={cn('mt-2 border-t border-border/40 pt-2', collapsed ? 'w-full px-1' : 'px-2.5')}>
-          {!collapsed && !readOnly && (
-            <>
-              <Progress value={global.percentage} className="h-1" />
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {global.requiredLeft > 0
-                  ? t('extraction', 'sectionNavRequiredLeft').replace('{{count}}', String(global.requiredLeft))
-                  : t('extraction', 'sectionNavComplete')}
-              </p>
-            </>
-          )}
+      {!readOnly && (
+        <div className="mt-2 border-t border-border/40 px-2.5 pt-2">
+          <Progress value={global.percentage} className="h-1" />
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {global.requiredLeft > 0
+              ? t('extraction', 'sectionNavRequiredLeft').replace('{{count}}', String(global.requiredLeft))
+              : t('extraction', 'sectionNavComplete')}
+          </p>
           {showJump && (
             // Local provider: the rail is mounted deep in the form tree and
             // cannot assume a caller-supplied TooltipProvider (same reason the
@@ -103,32 +93,21 @@ export default function SectionNavRail({
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  {collapsed ? (
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      onClick={onJumpToNextPending}
-                      aria-label={t('extraction', 'sectionNavJumpNext')}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <ArrowDown className="h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={onJumpToNextPending}
-                      className="mt-2 w-full justify-start gap-1.5 px-2 text-[11px] font-normal"
-                    >
-                      <ArrowDown className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{t('extraction', 'sectionNavJumpNext')}</span>
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={onJumpToNextPending}
+                    aria-keyshortcuts={ariaKeyShortcuts(['mod', 'Enter'])}
+                    className="mt-2 w-full justify-start gap-1.5 px-2 text-[11px] font-normal"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{t('extraction', 'sectionNavJumpNext')}</span>
+                  </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right">
-                  <p>{t('extraction', 'sectionNavJumpNextHint')}</p>
+                <TooltipContent side="right" className="flex items-center gap-2">
+                  <span>{t('extraction', 'sectionNavJumpNextHint')}</span>
+                  <KbdBadge keys={['mod', '↵']} />
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

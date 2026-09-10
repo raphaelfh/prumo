@@ -25,7 +25,7 @@ interface PanelToggleButtonProps {
    * `['mod', 'B']`). ONE value feeds both the tooltip chip and
    * `aria-keyshortcuts`, so what is shown and what is announced cannot drift.
    * It used to be derived from `side` — 'Meta+B' for left, '\\' otherwise —
-   * which conflated a shortcut with a geometry: '\\' is bound only by
+   * which conflated a shortcut with a geometry: '\\' was bound only by
    * `useRunShortcuts`, so the articles panel toggles promised a key nothing
    * handled there. Screen readers announce it, so a wrong value is worse than
    * none. Opt in; never infer.
