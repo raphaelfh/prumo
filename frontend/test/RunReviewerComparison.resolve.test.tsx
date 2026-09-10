@@ -218,6 +218,26 @@ describe('RunReviewerComparison — resolve mode', () => {
     expect(screen.getByTestId('consensus-resolved-inst-1::field-1')).toBeInTheDocument();
   });
 
+  it('with no reviewer value and nothing resolved, the empty state points at Reopen, not Approve & finalize', () => {
+    // Nothing to publish: approve-finalize would reject, so "use Approve &
+    // finalize" sends the arbitrator into a dead click. Resolve mode is
+    // arbitrator-only, and every arbitrator has a Reopen action in More.
+    render(
+      <RunReviewerComparison
+        decisionsByCoord={new Map()}
+        entityTypes={entityTypes}
+        instances={instances}
+        ownValues={{}}
+        reviewerLabelById={{}}
+        reviewerAvatarById={{}}
+        resolution={buildResolution({ divergentCoords: new Set() })}
+      />,
+    );
+    const empty = screen.getByTestId('consensus-nothing');
+    expect(empty).toHaveTextContent('nothingRecordedToReconcile');
+    expect(empty).not.toHaveTextContent('nothingToReconcile');
+  });
+
   it('an untouched optional field is neutral under All — never mislabeled Agreed', () => {
     // Add a second field with no decision and not required ⇒ no status entry.
     const entityTypesTwoFields = [
