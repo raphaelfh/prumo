@@ -81,9 +81,24 @@ describe("DocumentSwitcher", () => {
 describe("ParseStatusControl", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("failed: shows the error in a tooltip trigger and a Retry that POSTs", async () => {
+  it("parsed: re-parse is an icon button whose tooltip explains status and action", async () => {
+    const user = userEvent.setup();
+    renderControl({ id: "f5", extractionStatus: "parsed" });
+    const btn = screen.getByRole("button", { name: /docReparse/ });
+    expect(btn).toHaveTextContent("");
+    expect(screen.queryByText("docReparse")).not.toBeInTheDocument();
+    await user.hover(btn);
+    const tip = await screen.findByRole("tooltip");
+    expect(tip).toHaveTextContent("docStatusReady");
+    expect(tip).toHaveTextContent("docReparseHint");
+  });
+
+  it("failed: shows the error in the tooltip and a Retry that POSTs", async () => {
+    const user = userEvent.setup();
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValue({});
     renderControl({ id: "f1", extractionStatus: "parse_failed", extractionError: "libxcb.so.1 missing" });
+    await user.hover(screen.getByRole("button", { name: /docReparse/ }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("libxcb.so.1 missing");
     fireEvent.click(screen.getByRole("button", { name: /docReparse/ }));
     await waitFor(() => {
       expect(apiClient).toHaveBeenCalledWith("/api/v1/article-files/f1/reparse", { method: "POST" });

@@ -48,30 +48,22 @@ function RunPdfContentComponent({articleId, store}: RunPdfContentProps) {
     setSelectedFileId(id);
   };
 
+  // One bar: the switcher and the re-parse control live INSIDE the viewer
+  // toolbar (centre / beside the mode toggle), not in a second strip above it.
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {files.length > 0 && (
-        <div className="flex items-center gap-2 border-b px-2 py-1.5">
-          <DocumentSwitcher
-            files={files}
-            selectedFileId={selectedFileId}
-            onSelect={handleSelect}
-          />
-          {selectedFile && (
-            <ParseStatusControl articleId={articleId} file={selectedFile} />
-          )}
-        </div>
-      )}
-      <div className="min-h-0 flex-1">
-        <PrumoPdfViewer
-          source={source}
-          store={store}
-          readerBlocks={readerBlocks}
-          readerLoading={readerLoading}
-          className="h-full"
-        />
-      </div>
-    </div>
+    <PrumoPdfViewer
+      source={source}
+      store={store}
+      readerBlocks={readerBlocks}
+      readerLoading={readerLoading}
+      className="h-full"
+      toolbarLeading={
+        selectedFile && <ParseStatusControl articleId={articleId} file={selectedFile} />
+      }
+      toolbarCenter={
+        <DocumentSwitcher files={files} selectedFileId={selectedFileId} onSelect={handleSelect} />
+      }
+    />
   );
 }
 
