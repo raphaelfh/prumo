@@ -19,6 +19,7 @@ export function SidebarToggle({ pressed, onToggle }: { pressed?: boolean; onTogg
       pressed={!!pressed}
       onToggle={onToggle}
       ariaLabel={t('runs', 'sidebarToggle')}
+      keyShortcuts="Meta+B"
       className="hidden lg:inline-flex"
     />
   );

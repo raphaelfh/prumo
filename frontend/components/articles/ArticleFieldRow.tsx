@@ -58,6 +58,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/copy";
 
+/**
+ * Input types whose selection API is defined. `setSelectionRange` throws
+ * InvalidStateError on every other type (number, email, date...), so the
+ * caret-at-end step below has to ask first.
+ * https://html.spec.whatwg.org/multipage/input.html#do-not-apply
+ */
+const SELECTABLE_INPUT_TYPES = new Set(["text", "search", "url", "tel", "password"]);
+
 export interface ArticleFieldRowProps {
     label: string;
     /** Current committed value, rendered as text in read state. */
@@ -75,6 +83,15 @@ export interface ArticleFieldRowProps {
      * of this wording.
      */
     switchLabels?: { on: string; off: string };
+    /**
+     * `type` for the default text control, with its numeric bounds. Restores
+     * the native keypad and browser validation the pre-panel form had on the
+     * publication-date and URL fields; a plain text input silently dropped
+     * both. Ignored by the other controls.
+     */
+    inputType?: "text" | "number" | "url";
+    min?: number;
+    max?: number;
     placeholder?: string;
     /** Marks the row required and surfaces the error. */
     error?: string;
@@ -96,12 +113,21 @@ export function ArticleFieldRow({
     control = "text",
     options,
     switchLabels,
+    inputType = "text",
+    min,
+    max,
     placeholder,
     error,
     disabled,
     hint,
 }: ArticleFieldRowProps) {
     const fieldId = useId();
+    // `aria-invalid` alone announces "invalid" without saying why, and the
+    // error paragraph is a sibling the control does not point at. Link them so
+    // the message is part of the control's accessible description. Also the
+    // read-state button: the row can be invalid before it is ever opened.
+    const errorId = `${fieldId}-error`;
+    const describedBy = error ? errorId : undefined;
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value);
     const rowRef = useRef<HTMLButtonElement>(null);
@@ -158,8 +184,17 @@ export function ArticleFieldRow({
                 // value: Zotero-style click-to-edit means the user edits the
                 // existing value, not retypes it. `select()` would highlight
                 // everything, so the first keystroke wipes it out.
-                const end = node.value.length;
-                node.setSelectionRange(end, end);
+                //
+                // Only text-like inputs expose a selection: per the HTML spec
+                // `setSelectionRange` THROWS InvalidStateError on type=number
+                // (and email/date), which would break every publication-date
+                // row the moment it is clicked. Textareas always support it.
+                const selectable =
+                    node instanceof HTMLTextAreaElement || SELECTABLE_INPUT_TYPES.has(node.type);
+                if (selectable) {
+                    const end = node.value.length;
+                    node.setSelectionRange(end, end);
+                }
             }
         } else if (wasEditingRef.current && restoreFocusRef.current) {
             rowRef.current?.focus();
@@ -323,6 +358,9 @@ export function ArticleFieldRow({
                         <Input
                             id={fieldId}
                             ref={controlRef as React.RefObject<HTMLInputElement>}
+                            type={inputType}
+                            min={min}
+                            max={max}
                             value={draft}
                             placeholder={placeholder}
                             onChange={(event) => setDraft(event.target.value)}
@@ -330,6 +368,7 @@ export function ArticleFieldRow({
                             onBlur={handleBlur}
                             className="h-8 text-[13px]"
                             aria-invalid={error ? true : undefined}
+                            aria-describedby={describedBy}
                         />
                     )
                 ) : (
@@ -339,6 +378,8 @@ export function ArticleFieldRow({
                         type="button"
                         disabled={disabled}
                         onClick={enterEdit}
+                        aria-invalid={error ? true : undefined}
+                        aria-describedby={describedBy}
                         className={cn(
                             "block w-full rounded-sm px-1 py-0.5 text-left text-[13px] hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                             control === "multiline"
@@ -350,7 +391,11 @@ export function ArticleFieldRow({
                         {displayValue}
                     </button>
                 )}
-                {error && <p className="mt-0.5 text-xs text-destructive">{error}</p>}
+                {error && (
+                    <p id={errorId} className="mt-0.5 text-xs text-destructive">
+                        {error}
+                    </p>
+                )}
                 {hint && <p className="mt-0.5 text-[12px] text-muted-foreground/70">{hint}</p>}
             </div>
         </div>

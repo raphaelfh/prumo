@@ -47,6 +47,7 @@ export function AdditionalInfoSection({formData, setFormData, saving}: Additiona
                     label={t('articles', 'articleUrl')}
                     value={formData.url_landing}
                     onCommit={(next) => setFormData({...formData, url_landing: next})}
+                    inputType="url"
                     placeholder="https://…"
                     disabled={saving}
                 />
@@ -54,6 +55,7 @@ export function AdditionalInfoSection({formData, setFormData, saving}: Additiona
                     label={t('articles', 'formPdfUrl')}
                     value={formData.url_pdf}
                     onCommit={(next) => setFormData({...formData, url_pdf: next})}
+                    inputType="url"
                     placeholder="https://…"
                     disabled={saving}
                 />

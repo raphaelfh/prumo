@@ -52,6 +52,9 @@ export function PublicationSection({
                     label={t('articles', 'publicationYear')}
                     value={formData.publication_year}
                     onCommit={commitDateField('publication_year')}
+                    inputType="number"
+                    min={1600}
+                    max={2500}
                     placeholder="2024"
                     error={validationErrors.publication_year}
                 />
@@ -59,6 +62,9 @@ export function PublicationSection({
                     label={t('articles', 'publicationMonth')}
                     value={formData.publication_month}
                     onCommit={commitDateField('publication_month')}
+                    inputType="number"
+                    min={1}
+                    max={12}
                     placeholder="1-12"
                     error={validationErrors.publication_month}
                 />
@@ -66,6 +72,9 @@ export function PublicationSection({
                     label={t('articles', 'publicationDay')}
                     value={formData.publication_day}
                     onCommit={commitDateField('publication_day')}
+                    inputType="number"
+                    min={1}
+                    max={31}
                     placeholder="1-31"
                     error={validationErrors.publication_day}
                 />

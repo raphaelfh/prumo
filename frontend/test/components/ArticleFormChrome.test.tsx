@@ -4,7 +4,7 @@
  * BasicInfoSection, PublicationSection, IdentifiersSection,
  * AdditionalInfoSection and FilesSection.
  */
-import {render, screen, within} from '@testing-library/react';
+import {render, within} from '@testing-library/react';
 import {MemoryRouter} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -57,10 +57,17 @@ describe('ArticleForm chrome', () => {
         expect(within(basicSection).getByRole('heading', {level: 2, name: 'basicInfo'})).toBeInTheDocument();
         expect(within(publicationSection).getByRole('heading', {level: 2, name: 'publication'})).toBeInTheDocument();
 
-        // The inner SettingsCard headings that were unique to the now-deleted
-        // card wrapper are gone entirely — nothing renders them any more.
-        expect(screen.queryByText('articleContentCardTitle')).not.toBeInTheDocument();
-        expect(screen.queryByText('publicationDetails')).not.toBeInTheDocument();
+        // The deleted card wrapper nested a SECOND heading inside each
+        // section, so the real contract is "one heading per section, at
+        // level 2". This replaces two `queryByText` checks on the old cards'
+        // copy keys: those keys exist nowhere in the codebase any more and
+        // `t()` is mocked to echo its key, so they asserted the absence of
+        // strings nothing could render — they could never fail.
+        for (const section of [basicSection, publicationSection]) {
+            const headings = within(section).getAllByRole('heading');
+            expect(headings).toHaveLength(1);
+            expect(headings[0].tagName).toBe('H2');
+        }
 
         // Identifiers previously reused the same copy key for both the
         // section heading AND the inner card's heading — two elements with

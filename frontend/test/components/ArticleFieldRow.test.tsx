@@ -587,4 +587,74 @@ describe("ArticleFieldRow", () => {
     expect(screen.getByText("Not set")).toBeInTheDocument();
     expect(screen.queryByText("__no_item_type__")).not.toBeInTheDocument();
   });
+
+  // The pre-panel form gave the publication-date fields type="number" with
+  // bounds and the URL fields type="url". The row primitive rendered a bare
+  // text input, silently dropping the numeric keypad on touch devices and the
+  // browser's own validation, and no test noticed.
+  it("edit state honours inputType and its numeric bounds", async () => {
+    const user = userEvent.setup();
+    render(
+      <ControlledHarness
+        label="Year"
+        initialValue="2024"
+        onCommit={vi.fn()}
+        inputType="number"
+        min={1600}
+        max={2500}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /year/i }));
+
+    const input = screen.getByLabelText("Year");
+    expect(input).toHaveAttribute("type", "number");
+    expect(input).toHaveAttribute("min", "1600");
+    expect(input).toHaveAttribute("max", "2500");
+  });
+
+  it("edit state renders a url input when asked, and a text input by default", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <ControlledHarness
+        label="Article URL"
+        initialValue="https://example.org"
+        onCommit={vi.fn()}
+        inputType="url"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /article url/i }));
+    expect(screen.getByLabelText("Article URL")).toHaveAttribute("type", "url");
+    unmount();
+
+    render(<ControlledHarness label="Volume" initialValue="12" onCommit={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: /volume/i }));
+    expect(screen.getByLabelText("Volume")).toHaveAttribute("type", "text");
+  });
+
+  // aria-invalid on its own announces "invalid" without the reason; the error
+  // paragraph was a sibling nothing pointed at.
+  it("links the error message to the control in both read and edit state", async () => {
+    const user = userEvent.setup();
+    render(
+      <ControlledHarness
+        label="Year"
+        initialValue="99999"
+        onCommit={vi.fn()}
+        inputType="number"
+        error="Enter a year between 1600 and 2500"
+      />,
+    );
+
+    const row = screen.getByRole("button", { name: /year/i });
+    expect(row).toHaveAttribute("aria-invalid", "true");
+    expect(row).toHaveAccessibleDescription("Enter a year between 1600 and 2500");
+
+    await user.click(row);
+
+    const input = screen.getByLabelText("Year");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAccessibleDescription("Enter a year between 1600 and 2500");
+  });
 });
