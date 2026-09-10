@@ -37,16 +37,12 @@ interface OpenSessionResponse {
  * re-run. CI never saw it because CI gets an ephemeral stack. So each test
  * arranges its own precondition instead of inheriting the previous one's.
  *
- *   finalized -> POST /reopen  (forks a fresh EXTRACT run seeded from the
- *                               published state)
+ *   finalized -> POST /reopen             (forks a fresh EXTRACT run seeded
+ *                                          from the published state)
+ *   consensus -> POST /reopen-extraction  (same run back to EXTRACT; this
+ *                                          fixture's consensus work is ours to
+ *                                          discard — ADR-0017, QA included)
  *   extract   -> no-op
- *   consensus -> unrecoverable here; fail loudly (see below)
- *
- * A QA run parked in CONSENSUS has no API path back: approve-finalize rejects
- * without consensus decisions, and reopen-extraction is extraction-only
- * ("quality-assessment runs publish via their own flow"). The staged-publish
- * test therefore asserts a reviewer decision landed BEFORE it advances, so this
- * suite cannot create that state; reaching it means something else did.
  */
 async function ensureEditableRun(
   request: APIRequestContext,
@@ -68,22 +64,19 @@ async function ensureEditableRun(
   });
   expect(runRes.ok()).toBeTruthy();
   const { stage } = (await parseEnvelope<{ run: { stage: string } }>(runRes)).data.run;
-  if (stage !== "finalized") {
-    expect(
-      stage,
-      `fixture run ${runId} is parked in stage=${stage}, which has no API path back to extract. `
-        + "Record a consensus decision, approve-finalize, then reopen it.",
-    ).not.toBe("consensus");
-    return;
-  }
 
-  const res = await request.post(`${apiUrl}/api/v1/runs/${runId}/reopen`, {
-    headers,
-    timeout: 30000,
-  });
+  const reset =
+    stage === "finalized"
+      ? `${apiUrl}/api/v1/runs/${runId}/reopen`
+      : stage === "consensus"
+        ? `${apiUrl}/api/v1/runs/${runId}/reopen-extraction`
+        : null;
+  if (!reset) return;
+
+  const res = await request.post(reset, { headers, timeout: 30000 });
   expect(
     res.ok(),
-    `failed to reopen finalized fixture run ${runId}: ${res.status()} ${await res.text()}`,
+    `failed to reset fixture run ${runId} from stage=${stage}: ${res.status()} ${await res.text()}`,
   ).toBeTruthy();
 }
 
@@ -250,16 +243,15 @@ test.describe("Quality Assessment HITL flow", () => {
     expect(
       differing,
       `every option equals the current value ${JSON.stringify(current)}; `
-        + "nothing would autosave and the run would strand on advance",
+        + "nothing would autosave and approve-finalize would have nothing to publish",
     ).toBeGreaterThanOrEqual(0);
     await options.nth(differing).click();
 
     // The staged transition materializes each REVIEWER's proposals as consensus
     // decisions. Advancing with none — e.g. when only the `source='system'`
     // proposals a reopen seeds exist — lands the run in consensus with nothing
-    // to reconcile, where it can neither finalize nor return to extract. That
-    // strands this shared fixture for every later run, so prove the autosave
-    // landed before advancing rather than discovering it three tests later.
+    // to publish, where approve-finalize can only be blocked. Prove the autosave
+    // landed before advancing rather than discovering it at the approve click.
     await expect
       .poll(
         async () => {
@@ -271,7 +263,7 @@ test.describe("Quality Assessment HITL flow", () => {
         },
         {
           timeout: 15000,
-          message: "no reviewer decision was recorded — advancing would strand the run",
+          message: "no reviewer decision was recorded — approve-finalize would have nothing to publish",
         },
       )
       .toBeGreaterThan(0);

@@ -11,6 +11,7 @@ function makeArgs(overrides: Partial<Parameters<typeof buildQaTransition>[0]> = 
     canResolveConflicts: false,
     isReady: false,
     divergencesResolved: true,
+    nothingRecorded: false,
     onMarkReady: noop,
     onOpenConsensus: noop,
     onApproveFinalize: noop,
@@ -92,6 +93,27 @@ describe('buildQaTransition', () => {
     void result!.onAdvance();
     expect(onApproveFinalize).not.toHaveBeenCalled();
     expect(onGuide).toHaveBeenCalledWith('runHeaderApproveBlocked');
+  });
+
+  it('consensus + manager + nothing recorded → blocked gate names the way out', () => {
+    // Nothing to publish and nothing resolved: approve-finalize would 400 with
+    // EmptyFinalizeError, so the gate explains instead of letting the click fail.
+    const onApproveFinalize = vi.fn();
+    const onGuide = vi.fn();
+    const result = buildQaTransition(
+      makeArgs({
+        stage: 'consensus',
+        canResolveConflicts: true,
+        nothingRecorded: true,
+        onApproveFinalize,
+        onGuide,
+      }),
+    );
+    expect(result).not.toBeNull();
+    expect(result!.gate.ok).toBe(false);
+    void result!.onAdvance();
+    expect(onApproveFinalize).not.toHaveBeenCalled();
+    expect(onGuide).toHaveBeenCalledWith('runHeaderApproveNothingRecorded');
   });
 
   it('consensus + reviewer → null (manager finalizes)', () => {

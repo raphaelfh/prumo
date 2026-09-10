@@ -88,6 +88,11 @@ export const consensus = {
     badgeRequiredGap: 'Required · not filled',
     badgeSingleFiller: 'Only one reviewer',
     nothingToReconcile: 'Nothing to reconcile. Use “Approve & finalize” in the header.',
+    // Nothing any reviewer recorded and nothing resolved — approve-finalize has
+    // nothing to publish. Resolve mode is arbitrator-only, and every arbitrator
+    // has a Reopen action in the More menu (extraction and QA alike).
+    nothingRecordedToReconcile:
+      'Nothing was recorded, so there is nothing to publish. Reopen from the More options menu to edit.',
     panelFinalize: 'Finalize',
     panelFinalizing: 'Finalizing…',
     panelResolved: 'Resolved',

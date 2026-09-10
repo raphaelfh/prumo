@@ -1523,7 +1523,7 @@ export interface paths {
         put?: never;
         /**
          * Reopen Run To Extract
-         * @description Return a consensus-stage extraction run to extract, discarding consensus work.
+         * @description Return a consensus-stage run (either kind) to extract, discarding consensus work.
          *
          *     Arbitrator-only (manager/consensus): this hard-deletes the run's consensus
          *     decisions + published values so reviewers can edit again. The gate lives at the
