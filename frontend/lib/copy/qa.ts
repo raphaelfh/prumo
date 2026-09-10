@@ -112,6 +112,16 @@ export const qa = {
   finalizationSuccess: 'Assessment finalized.',
   reopenSuccess: 'Assessment reopened for revision.',
   reopenError: 'Failed to reopen assessment',
+  // Consensus -> Assessment on the SAME run (arbitrator-only, destructive):
+  // ADR-0017, QA included since its 2026-09-10 amendment. The confirm labels
+  // reuse the kind-neutral extraction keys.
+  reopenAssessmentMenuItem: 'Reopen assessment',
+  reopenAssessmentTitle: 'Reopen for assessment?',
+  reopenAssessmentBodyDiscard:
+    'This discards {{count}} resolved consensus decision(s), and any evidence attached to them, and returns the article to Assessment where reviewers can edit again. This cannot be undone.',
+  reopenAssessmentBodyClean:
+    'This returns the article to Assessment so reviewers can edit again. Nothing has been resolved yet, so nothing is discarded.',
+  reopenAssessmentToast: 'Article reopened for assessment.',
   // Run-header staged transition (extraction-parity: Mark ready / Start
   // consensus / Approve & finalize — kind-neutral labels reuse the
   // extraction namespace keys, these carry the QA-specific wording).
@@ -119,6 +129,7 @@ export const qa = {
   runHeaderFinishAssessmentTooltip: 'Signal that you are done assessing this article.',
   runHeaderAssessmentFinished: 'Assessment finished',
   runHeaderApproveBlocked: 'Resolve every diverging question first',
+  runHeaderApproveNothingRecorded: 'Nothing recorded to publish — reopen the assessment to edit first',
   markReadySuccess: 'Assessment marked as ready.',
 
   // Active template bar

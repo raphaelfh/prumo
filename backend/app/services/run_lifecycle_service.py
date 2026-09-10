@@ -591,7 +591,7 @@ class RunLifecycleService:
         run_id: UUID,
         user_id: UUID,  # noqa: ARG002 — parity with sibling transitions; endpoint owns the audit log
     ) -> tuple[ExtractionRun, int, int]:
-        """Return a CONSENSUS extraction run to EXTRACT, discarding consensus work.
+        """Return a CONSENSUS run to EXTRACT, discarding consensus work.
 
         The arbitrator-only escape hatch for "opened consensus too early". Hard-deletes
         the run's ``ExtractionConsensusDecision`` + ``ExtractionPublishedState`` rows so
@@ -604,17 +604,15 @@ class RunLifecycleService:
         Sets ``stage`` directly (NOT via ``advance_stage``, and ``consensus -> extract``
         is deliberately absent from ``_ALLOWED_TRANSITIONS``) so the forward-only
         transition map and the reviewer-gated ``/advance`` endpoint cannot reach the
-        backward move. Extraction-only. ``user_id`` is captured for the endpoint's audit
-        log. Returns ``(run, discarded_consensus, discarded_published)``.
+        backward move. Kind-neutral: quality-assessment runs park in consensus exactly
+        like extraction since ADR-0018, and without this exit a QA run that entered
+        consensus with nothing decided could neither finalize nor go back. ``user_id``
+        is captured for the endpoint's audit log. Returns
+        ``(run, discarded_consensus, discarded_published)``.
         """
         run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise ValueError(f"Run {run_id} not found")
-        if run.kind != TemplateKind.EXTRACTION.value:
-            raise InvalidStageTransitionError(
-                "reopen_to_extract applies to extraction runs only; "
-                "quality-assessment runs publish via their own flow."
-            )
         if run.stage != ExtractionRunStage.CONSENSUS.value:
             raise InvalidStageTransitionError(
                 f"reopen_to_extract requires stage 'consensus', got '{run.stage}'."

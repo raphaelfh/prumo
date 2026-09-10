@@ -1,8 +1,9 @@
 /**
- * Destructive confirmation for sending a consensus-stage article back to
- * Extraction (arbitrator-only). Copy adapts to how much consensus work will be
- * discarded: `resolvedCount > 0` warns about the discard, `=== 0` is the clean
- * "opened by mistake" path. Modelled on DeleteFieldConfirm. See ADR-0017.
+ * Destructive confirmation for sending a consensus-stage article back to its
+ * editable stage — Extraction, or Assessment on the QA screen (arbitrator-only).
+ * Copy adapts to how much consensus work will be discarded: `resolvedCount > 0`
+ * warns about the discard, `=== 0` is the clean "opened by mistake" path.
+ * Modelled on DeleteFieldConfirm. See ADR-0017 (QA included since 2026-09-10).
  *
  * @component
  */
@@ -21,6 +22,8 @@ import { AlertTriangle, Loader2 } from 'lucide-react';
 import { t } from '@/lib/copy';
 
 interface ReopenExtractionDialogProps {
+  /** Which run screen asks — the copy names that screen's editable stage. */
+  kind: 'extraction' | 'qa';
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Distinct coords with a consensus decision — the number of resolutions discarded. */
@@ -30,6 +33,7 @@ interface ReopenExtractionDialogProps {
 }
 
 export function ReopenExtractionDialog({
+  kind,
   open,
   onOpenChange,
   resolvedCount,
@@ -37,9 +41,14 @@ export function ReopenExtractionDialog({
   pending = false,
 }: ReopenExtractionDialogProps) {
   const hasDiscard = resolvedCount > 0;
-  const body = hasDiscard
-    ? t('extraction', 'reopenExtractionBodyDiscard').replace('{{count}}', String(resolvedCount))
-    : t('extraction', 'reopenExtractionBodyClean');
+  const isQa = kind === 'qa';
+  // Literal t() calls on both branches: the copy-key fitness gate only sees literals.
+  const title = isQa ? t('qa', 'reopenAssessmentTitle') : t('extraction', 'reopenExtractionTitle');
+  const discard = isQa
+    ? t('qa', 'reopenAssessmentBodyDiscard')
+    : t('extraction', 'reopenExtractionBodyDiscard');
+  const clean = isQa ? t('qa', 'reopenAssessmentBodyClean') : t('extraction', 'reopenExtractionBodyClean');
+  const body = hasDiscard ? discard.replace('{{count}}', String(resolvedCount)) : clean;
   const confirmLabel = hasDiscard
     ? t('extraction', 'reopenExtractionConfirmDiscard')
     : t('extraction', 'reopenExtractionConfirmClean');
@@ -50,7 +59,7 @@ export function ReopenExtractionDialog({
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-warning" />
-            {t('extraction', 'reopenExtractionTitle')}
+            {title}
           </AlertDialogTitle>
           <AlertDialogDescription>{body}</AlertDialogDescription>
         </AlertDialogHeader>

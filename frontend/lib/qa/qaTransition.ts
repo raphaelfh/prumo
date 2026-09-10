@@ -10,6 +10,11 @@ export interface BuildQaTransitionArgs {
   isReady: boolean;
   /** Every diverging coord carries a consensus decision (reviewerSummary-derived). */
   divergencesResolved: boolean;
+  /**
+   * Nothing any reviewer filled and nothing resolved — approve-finalize would
+   * reject with EmptyFinalizeError, so the gate names the exit instead.
+   */
+  nothingRecorded: boolean;
   /** Extract, reviewer: flag this reviewer ready (advisory — no stage move). */
   onMarkReady: () => void | Promise<void>;
   /** Extract, manager/consensus: advance extract → consensus. */
@@ -39,6 +44,7 @@ export function buildQaTransition(args: BuildQaTransitionArgs): StageTransition 
     canResolveConflicts,
     isReady,
     divergencesResolved,
+    nothingRecorded,
     onMarkReady,
     onOpenConsensus,
     onApproveFinalize,
@@ -72,6 +78,19 @@ export function buildQaTransition(args: BuildQaTransitionArgs): StageTransition 
   if (stage === 'consensus' && canResolveConflicts) {
     const label = t('extraction', 'runHeaderApproveFinalize');
     const tooltip = t('extraction', 'runHeaderApproveFinalizeTooltip');
+    if (nothingRecorded) {
+      // A consensus opened before anyone recorded anything (e.g. Reopen for
+      // revision -> Start consensus) has nothing to publish: point at the
+      // Reopen assessment exit rather than letting the click 400.
+      const reason = t('qa', 'runHeaderApproveNothingRecorded');
+      return {
+        to: 'finalized',
+        label,
+        tooltip,
+        gate: { ok: false, reason, remaining: 0 },
+        onAdvance: () => onGuide(reason),
+      };
+    }
     if (divergencesResolved) {
       return { to: 'finalized', label, tooltip, gate: { ok: true }, onAdvance: onApproveFinalize };
     }
