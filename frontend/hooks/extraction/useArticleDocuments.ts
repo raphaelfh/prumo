@@ -40,6 +40,15 @@ export interface UseArticleDocumentsResult {
   readerBlocks: ArticleTextBlock[];
   /** True while the files list or the selected file's text blocks are still resolving. */
   readerLoading: boolean;
+  /**
+   * True only while the FILES query itself is resolving — unlike
+   * `readerLoading`, this never folds in the blocks query. When the files
+   * list is genuinely empty there is no selection, so the blocks query stays
+   * disabled and its `isPending` never turns false; a caller that needs to
+   * tell "still fetching the files list" apart from "confirmed empty" must
+   * use this instead of `readerLoading`, which would never settle.
+   */
+  filesLoading: boolean;
 }
 
 export function useArticleDocuments(
@@ -83,6 +92,11 @@ export function useArticleDocuments(
     [selectedFile],
   );
 
+  // isPending gated by enablement, not isLoading (see useActiveTemplateStructure
+  // for the paused/offline trap); the gate matters because a disabled query is
+  // isPending forever.
+  const filesLoading = Boolean(articleId) && filesQuery.isPending;
+
   return {
     files,
     selectedFileId,
@@ -93,9 +107,8 @@ export function useArticleDocuments(
     // The blocks query is disabled until the files list yields a selection, and
     // a disabled query is never "loading" — so the blocks flag alone would read
     // "loaded, empty" during the files fetch and the reader would flash its
-    // "requires indexing" empty state. isPending gated by enablement, not
-    // isLoading (see useActiveTemplateStructure for the paused/offline trap);
-    // the gate matters because a disabled query is isPending forever.
-    readerLoading: (Boolean(articleId) && filesQuery.isPending) || blocksQuery.isPending,
+    // "requires indexing" empty state.
+    readerLoading: filesLoading || blocksQuery.isPending,
+    filesLoading,
   };
 }

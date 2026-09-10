@@ -59,7 +59,7 @@ import {
     fetchArticleFiles,
 } from '@/services/articlesService';
 
-// ArticleForm calls useNavigate() for the page-variant back button.
+// ArticleForm calls useNavigate() as a fallback when no onDismiss is passed.
 function renderForm(ui: React.ReactElement) {
     return render(<MemoryRouter>{ui}</MemoryRouter>);
 }
@@ -90,7 +90,7 @@ beforeEach(() => {
 
 describe('ArticleForm — add mode', () => {
     it('renders the whole step rail and the required title field', async () => {
-        renderForm(<ArticleForm mode="add" projectId="proj-1" variant="panel" onDismiss={vi.fn()}/>);
+        renderForm(<ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>);
 
         const rail = await screen.findByRole('navigation', {name: 'formStepsAria'});
         for (const step of ['basicInfo', 'publication', 'identifiersLabel', 'additionalInfo', 'filesLabel']) {
@@ -100,7 +100,7 @@ describe('ArticleForm — add mode', () => {
     });
 
     it('does not load an article or its files when there is no id yet', async () => {
-        renderForm(<ArticleForm mode="add" projectId="proj-1" variant="panel" onDismiss={vi.fn()}/>);
+        renderForm(<ArticleForm mode="add" projectId="proj-1" onDismiss={vi.fn()}/>);
 
         await screen.findByRole('navigation', {name: 'formStepsAria'});
         expect(fetchArticle).not.toHaveBeenCalled();
@@ -111,7 +111,7 @@ describe('ArticleForm — add mode', () => {
 describe('ArticleForm — edit mode', () => {
     it('lists each stored file with its role and size', async () => {
         renderForm(
-            <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" variant="panel" onDismiss={vi.fn()}/>,
+            <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" onDismiss={vi.fn()}/>,
         );
 
         expect(await screen.findByText('paper.pdf')).toBeInTheDocument();
@@ -125,7 +125,7 @@ describe('ArticleForm — edit mode', () => {
         const user = userEvent.setup();
         vi.mocked(deleteArticleFile).mockResolvedValue({ok: true, data: undefined} as never);
         renderForm(
-            <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" variant="panel" onDismiss={vi.fn()}/>,
+            <ArticleForm mode="edit" projectId="proj-1" articleId="art-1" onDismiss={vi.fn()}/>,
         );
         await screen.findByText('paper.pdf');
 

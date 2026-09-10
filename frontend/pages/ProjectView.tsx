@@ -5,8 +5,7 @@ import {FileBarChart, LayoutDashboard, ListChecks} from "lucide-react";
 import {ComingSoonPanel} from "@/components/layout/ComingSoonPanel";
 import {toast} from "sonner";
 import {ArticlesList} from "@/components/articles/ArticlesList";
-import {ArticleForm} from "@/components/articles/ArticleForm";
-import {Sheet, SheetContent} from "@/components/ui/sheet";
+import {ArticlesSplitShell} from "@/components/articles/ArticlesSplitShell";
 import {ProjectSettings} from "@/components/project/ProjectSettings";
 import {ExtractionInterface} from "@/components/extraction/ExtractionInterface";
 import {QualityAssessmentInterface} from "@/components/quality/QualityAssessmentInterface";
@@ -19,7 +18,7 @@ import type {Article} from "@/types/article";
 type ProjectArticle = Article;
 
 /** Tabs whose content owns the full pane — no page gutter, no max-width wrapper. */
-const FULL_BLEED_TABS = new Set(['settings', 'overview', 'screening', 'prisma']);
+const FULL_BLEED_TABS = new Set(['articles', 'settings', 'overview', 'screening', 'prisma']);
 
 export default function ProjectView() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -43,8 +42,22 @@ export default function ProjectView() {
                 const next = new URLSearchParams(prev);
                 next.delete('articleEditor');
                 next.delete('articleId');
+                next.delete('articleView');
                 return next;
             },
+            {replace: true}
+        );
+    };
+
+    const setArticleView = (view: 'details' | 'document') => {
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('articleView', view);
+                return next;
+            },
+            // replace: toggling the view is not a navigation step — without
+            // this, Back walks through every toggle instead of leaving.
             {replace: true}
         );
     };
@@ -79,12 +92,13 @@ export default function ProjectView() {
         if (activeTab !== 'articles') {
             setSearchParams(
                 (prev) => {
-                    if (!prev.get('articleEditor') && !prev.get('articleId')) {
+                    if (!prev.get('articleEditor') && !prev.get('articleId') && !prev.get('articleView')) {
                         return prev;
                     }
                     const next = new URLSearchParams(prev);
                     next.delete('articleEditor');
                     next.delete('articleId');
+                    next.delete('articleView');
                     return next;
                 },
                 {replace: true}
@@ -104,6 +118,7 @@ export default function ProjectView() {
                     const next = new URLSearchParams(prev);
                     next.delete('articleEditor');
                     next.delete('articleId');
+                    next.delete('articleView');
                     return next;
                 },
                 {replace: true}
@@ -183,19 +198,43 @@ export default function ProjectView() {
     );
   }
 
+    const articleEditorMode = searchParams.get('articleEditor');
+    const editorArticleIdFromUrl = searchParams.get('articleId');
+
     // Render content based on active tab
   const renderContent = () => {
     switch (activeTab) {
       case 'articles':
         return (
-            <ArticlesList
-                articles={articles}
-                onArticleClick={openArticleEditorEdit}
+            <ArticlesSplitShell
                 projectId={projectId || ''}
-                onArticlesChange={loadArticles}
-                onOpenZoteroDialog={() => setZoteroDialogOpen(true)}
-                onOpenRisDialog={() => setRisDialogOpen(true)}
-                onOpenAddArticle={openArticleEditorAdd}
+                mode={
+                    articleEditorMode === 'add'
+                        ? 'add'
+                        : articleEditorMode === 'edit' && editorArticleIdFromUrl
+                          ? 'edit'
+                          : null
+                }
+                articleId={articleEditorMode === 'edit' ? editorArticleIdFromUrl : null}
+                view={searchParams.get('articleView') === 'document' ? 'document' : 'details'}
+                onViewChange={setArticleView}
+                onSelectArticle={openArticleEditorEdit}
+                onDismiss={closeArticleEditor}
+                onComplete={() => {
+                    void loadArticles();
+                    closeArticleEditor();
+                }}
+                list={({onArticleClick}) => (
+                    <ArticlesList
+                        articles={articles}
+                        onArticleClick={onArticleClick}
+                        projectId={projectId || ''}
+                        onArticlesChange={loadArticles}
+                        onOpenZoteroDialog={() => setZoteroDialogOpen(true)}
+                        onOpenRisDialog={() => setRisDialogOpen(true)}
+                        onOpenAddArticle={openArticleEditorAdd}
+                    />
+                )}
             />
         );
 
@@ -221,13 +260,6 @@ export default function ProjectView() {
         return null;
     }
   };
-
-    const articleEditorMode = searchParams.get('articleEditor');
-    const editorArticleIdFromUrl = searchParams.get('articleId');
-    const articleEditorSheetOpen =
-        activeTab === 'articles' &&
-        (articleEditorMode === 'add' ||
-            (articleEditorMode === 'edit' && Boolean(editorArticleIdFromUrl)));
 
     const isFullBleed = FULL_BLEED_TABS.has(activeTab);
 
@@ -255,46 +287,6 @@ export default function ProjectView() {
               projectId={projectId || ''}
               onImportComplete={loadArticles}
           />
-
-          <Sheet
-              open={articleEditorSheetOpen}
-              onOpenChange={(open) => {
-                  if (!open) {
-                      closeArticleEditor();
-                  }
-              }}
-          >
-              <SheetContent
-                  side="right"
-                  showCloseButton={false}
-                  className="flex h-full w-full max-w-full min-h-0 flex-col gap-0 border-l border-border/40 p-0 sm:max-w-none sm:w-[min(960px,96vw)] lg:w-[min(1100px,92vw)]"
-              >
-                  {articleEditorMode === 'add' && projectId ? (
-                      <ArticleForm
-                          key="article-editor-add"
-                          variant="panel"
-                          mode="add"
-                          projectId={projectId}
-                          onDismiss={closeArticleEditor}
-                          onComplete={loadArticles}
-                      />
-                  ) : null}
-                  {articleEditorMode === 'edit' && editorArticleIdFromUrl && projectId ? (
-                      <ArticleForm
-                          key={editorArticleIdFromUrl}
-                          variant="panel"
-                          mode="edit"
-                          projectId={projectId}
-                          articleId={editorArticleIdFromUrl}
-                          onDismiss={closeArticleEditor}
-                          onComplete={() => {
-                              void loadArticles();
-                              closeArticleEditor();
-                          }}
-                      />
-                  ) : null}
-              </SheetContent>
-          </Sheet>
     </div>
   );
 }

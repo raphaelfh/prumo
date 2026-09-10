@@ -34,7 +34,7 @@ cd "$MAIN" || exit 2
 HEAD_SHA=$(git -C "$MAIN" rev-parse HEAD)
 DIR="$MAIN/.superpowers/ship-spec/__stop_test__"
 STATE="$DIR/state"
-LOG="$DIR/quality-scan.log"
+LOG="$DIR/gate.log"
 mkdir -p "$DIR"
 
 pass=0
@@ -67,55 +67,72 @@ echo "# no run"
 rm -f "$STATE"
 expect_pass "no state file" "$MAIN"
 
-echo "# the run's own session is gated"
-printf 'ceiling=dev\nphase=4\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$STATE"
+echo "# harden: the fast local gate must have run, on this HEAD, and finished"
+printf 'ceiling=dev\nphase=harden\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$STATE"
 rm -f "$LOG"
-expect_block "phase 4, no gate log" "$MAIN"
+expect_block "harden, no gate log" "$MAIN"
 
 printf 'sha=%s\n' "deadbeef" >"$LOG"
 expect_block "gate log for the wrong sha" "$MAIN"
 
-printf 'sha=%s\n  lint:ruff: OK (1 ms)\nQUALITY_SCAN_EXIT=0\n' "$HEAD_SHA" >"$LOG"
+# A seat cut off by its turn cap leaves a correct first line and no terminal
+# marker; that satisfied the sha-only check twice on 2026-09-07.
+printf 'sha=%s\n> pre-push: ok\n' "$HEAD_SHA" >"$LOG"
+expect_block "truncated log: no GATE_EXIT line" "$MAIN"
+
+printf 'sha=%s\n> pre-push\nGATE_EXIT=1\n' "$HEAD_SHA" >"$LOG"
+expect_block "red gate: GATE_EXIT=1" "$MAIN"
+
+printf 'sha=%s\n> pre-push\nGATE_EXIT=0\n' "$HEAD_SHA" >"$LOG"
 expect_pass "complete, clean gate log matching HEAD" "$MAIN"
 
-echo "# the log must be COMPLETE and CLEAN, not merely addressed to HEAD"
-# A gate runner cut off by its turn cap leaves a correct first line and no
-# Summary; `make quality-scan` reports a lane it could not run as SKIP among
-# the OKs and still exits 0. Both satisfied the sha-only check on 2026-09-07.
-printf 'sha=%s\n  lint:ruff: OK (1 ms)\n' "$HEAD_SHA" >"$LOG"
-expect_block "truncated log: no QUALITY_SCAN_EXIT line" "$MAIN"
+# The gate's own output is data, not markers: only the structured first and
+# last lines are read, so a test that prints the word FAILED is not a red gate.
+printf 'sha=%s\nERROR:  permission denied for table x\nFAILED to connect (retrying)\nGATE_EXIT=0\n' "$HEAD_SHA" >"$LOG"
+expect_pass "ERROR/FAILED words in gate output are not markers" "$MAIN"
 
-printf 'sha=%s\n  lint:ruff: OK (1 ms)\nQUALITY_SCAN_EXIT=1\n' "$HEAD_SHA" >"$LOG"
-expect_block "red gate: QUALITY_SCAN_EXIT=1" "$MAIN"
+echo "# ship: CI is the arbiter, and PENDING never blocks"
+printf 'ceiling=dev\nphase=ship\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$STATE"
+expect_pass "ship with no CI recorded yet (pending) does not block" "$MAIN"
 
-printf 'sha=%s\n=== test:pytest exit=2 ===\n  test:pytest: FAIL (9 ms)\nQUALITY_SCAN_EXIT=0\n' "$HEAD_SHA" >"$LOG"
-expect_block "a stage with a non-zero exit" "$MAIN"
+printf 'ceiling=dev\nphase=ship\nworktree=%s\norchestrator=%s\nci=PENDING@%s\n' "$MAIN" "$MAIN" "$HEAD_SHA" >"$STATE"
+expect_pass "ship with CI explicitly PENDING does not block" "$MAIN"
 
-printf 'sha=%s\n  lint:ruff: OK (1 ms)\n  smoke:playwright: SKIP (local stack unreachable)\nQUALITY_SCAN_EXIT=0\n' "$HEAD_SHA" >"$LOG"
-expect_block "a SKIPPED lane with no skip-ack" "$MAIN"
+printf 'ceiling=dev\nphase=ship\nworktree=%s\norchestrator=%s\nci=RED@%s\n' "$MAIN" "$MAIN" "$HEAD_SHA" >"$STATE"
+expect_pass "ship with CI RED does not block the TURN (the run must report it)" "$MAIN"
 
-printf 'ceiling=dev\nphase=4\nworktree=%s\norchestrator=%s\nskip-ack=smoke:playwright:no browser on this host\n' "$MAIN" "$MAIN" >"$STATE"
-expect_pass "a SKIPPED lane acknowledged in state" "$MAIN"
+printf 'ceiling=dev\nphase=ship\nworktree=%s\norchestrator=%s\nci=GREEN@%s\n' "$MAIN" "$MAIN" "$HEAD_SHA" >"$STATE"
+expect_pass "ship with a green matching HEAD" "$MAIN"
 
-# pytest's negative tests print Postgres ERROR lines by design; only
-# verify_all.sh's own structured markers may trip the content check.
-printf 'ceiling=dev\nphase=4\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$STATE"
-printf 'sha=%s\nERROR:  permission denied for table x\nFAILED to connect (retrying)\n  test:pytest: OK (9 ms)\nQUALITY_SCAN_EXIT=0\n' "$HEAD_SHA" >"$LOG"
-expect_pass "ERROR/FAILED words in test output are not gate markers" "$MAIN"
+# The lie this hook exists to catch: a green recorded for a commit that is no
+# longer HEAD. Same class as hand-editing a gate log's sha= line.
+printf 'ceiling=dev\nphase=ship\nworktree=%s\norchestrator=%s\nci=GREEN@deadbeef\n' "$MAIN" "$MAIN" >"$STATE"
+expect_block "a recorded green for a STALE sha blocks" "$MAIN"
+
+echo "# promote: absence of evidence blocks (no gh in the sandbox -> unknown)"
+printf 'ceiling=prod\nphase=promote\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$STATE"
+expect_block "promote without a live green blocks" "$MAIN"
+
+echo "# verify is gated for staleness only"
+printf 'ceiling=prod\nphase=verify\nworktree=%s\norchestrator=%s\nci=GREEN@%s\n' "$MAIN" "$MAIN" "$HEAD_SHA" >"$STATE"
+expect_pass "verify with a green matching HEAD" "$MAIN"
 
 echo "# an uninvolved session in the SAME repo is not gated"
+printf 'ceiling=dev\nphase=harden\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$STATE"
 rm -f "$LOG"
 expect_block "owner session still blocked without a log" "$MAIN"
 expect_pass  "peer worktree of the same repo" "$OTHER"
 
 echo "# phases outside the window, and terminal states"
-for ph in 0 1 2 3 8 halted done; do
+# The numeric phases are v2 vocabulary and must no longer be recognised — a
+# stale state from an old run cannot gate a v3 session.
+for ph in frame plan build halted done 0 3 4 5 6 7 8; do
   printf 'ceiling=dev\nphase=%s\nworktree=%s\norchestrator=%s\n' "$ph" "$MAIN" "$MAIN" >"$STATE"
   expect_pass "phase=$ph is not gated" "$MAIN"
 done
 
 echo "# loop guard"
-printf 'ceiling=dev\nphase=4\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$STATE"
+printf 'ceiling=dev\nphase=harden\nworktree=%s\norchestrator=%s\n' "$MAIN" "$MAIN" >"$STATE"
 out=$(jq -cn --arg c "$MAIN" '{hook_event_name:"Stop", cwd:$c, stop_hook_active:true}' | bash "$GATE" 2>&1)
 if [ -z "$out" ]; then
   pass=$((pass + 1)); echo "ok   stop_hook_active → pass"
@@ -124,7 +141,7 @@ else
 fi
 
 echo "# legacy state with no orchestrator= line"
-printf 'ceiling=dev\nphase=4\nworktree=%s\n' "$MAIN" >"$STATE"
+printf 'ceiling=dev\nphase=harden\nworktree=%s\n' "$MAIN" >"$STATE"
 expect_block "legacy state gates the main checkout" "$MAIN"
 expect_pass  "legacy state does not gate a peer worktree" "$OTHER"
 

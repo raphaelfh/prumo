@@ -15,6 +15,7 @@ import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {AlertCircle} from 'lucide-react';
 import {t} from '@/lib/copy';
 import type {LucideIcon} from 'lucide-react';
+import type {ReactNode} from 'react';
 
 export type FormStep = 'basic' | 'publication' | 'identifiers' | 'additional' | 'files';
 
@@ -31,16 +32,41 @@ interface ArticleFormStepsProps {
     onSelect: (step: FormStep) => void;
     /** Flags the one step that can actually be invalid — the title lives there. */
     titleMissing: boolean;
+    /**
+     * Icon-only rail, regardless of viewport width. The panel host is narrow
+     * while the VIEWPORT is wide, so the `lg:` fold below cannot see the
+     * constraint that matters; the container's owner passes this instead.
+     */
+    compact?: boolean;
+    /**
+     * Save/Cancel, rendered at the trailing edge of this row when the host
+     * wants them merged into the rail instead of on their own bar — the
+     * caller decides WHEN (below `lg`), passing `undefined` otherwise, so
+     * exactly one instance of the actions ever mounts.
+     */
+    actions?: ReactNode;
 }
 
-export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing}: ArticleFormStepsProps) {
+export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing, compact = false, actions}: ArticleFormStepsProps) {
     return (
         <aside
-            className="w-full shrink-0 border-b border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] lg:w-56 lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto">
+            className={cn(
+                'shrink-0 bg-[#fafafa] dark:bg-[#0c0c0c]',
+                compact
+                    // The panel puts this rail on the RIGHT at lg+ (`lg:flex-row-reverse`
+                    // on the split container in ArticleForm.tsx) — the divider follows it
+                    // to its new left edge instead of its right one.
+                    ? 'w-full border-b border-border/40 lg:w-auto lg:border-b-0 lg:border-l overflow-x-auto lg:overflow-y-auto'
+                    : 'w-full border-b border-border/40 lg:w-56 lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto',
+            )}
+        >
             <nav
                 role="navigation"
                 aria-label={t('articles', 'formStepsAria')}
-                className="flex flex-row gap-0.5 px-2 py-3 lg:flex-col lg:px-2 lg:py-4"
+                className={cn(
+                    'flex gap-0.5',
+                    compact ? 'flex-row px-2 py-1.5 lg:flex-col lg:px-1.5 lg:py-3' : 'flex-row px-2 py-3 lg:flex-col lg:px-2 lg:py-4',
+                )}
             >
                 {steps.map((step) => {
                     const Icon = step.icon;
@@ -55,7 +81,7 @@ export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing}: Ar
                                     className={cn(
                                         'flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium transition-colors duration-75',
                                         'hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
-                                        'lg:w-full lg:shrink',
+                                        compact ? 'w-auto' : 'lg:w-full lg:shrink',
                                         isActive
                                             ? 'bg-muted text-foreground border-l-2 border-l-primary pl-1.5'
                                             : 'text-muted-foreground border-l-2 border-l-transparent pl-1.5'
@@ -69,11 +95,16 @@ export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing}: Ar
                                       * out of the accessibility tree and the step would lose its
                                       * accessible name. A viewport breakpoint rather than the repo's
                                       * usual container query, because it has to fold at exactly the
-                                      * lg where the rail stops being a column.
+                                      * lg where the rail stops being a column. In compact mode (the
+                                      * docked panel: narrow container, wide viewport) the fold is
+                                      * unconditional — there is no width at which the label un-folds.
                                       */}
                                     <span
                                         data-slot="step-label"
-                                        className="sr-only whitespace-nowrap lg:not-sr-only lg:whitespace-normal"
+                                        className={cn(
+                                            'sr-only whitespace-nowrap',
+                                            !compact && 'lg:not-sr-only lg:whitespace-normal',
+                                        )}
                                     >
                                         {step.label}
                                     </span>
@@ -83,12 +114,17 @@ export function ArticleFormSteps({steps, activeStep, onSelect, titleMissing}: Ar
                                 </button>
                             </TooltipTrigger>
                             {/* Sighted mouse users at a narrow window; the fold covers screen readers. */}
-                            <TooltipContent side="bottom" className="lg:hidden">
+                            <TooltipContent side={compact ? 'right' : 'bottom'} className={cn(!compact && 'lg:hidden')}>
                                 {step.label}
                             </TooltipContent>
                         </Tooltip>
                     );
                 })}
+                {actions && (
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                        {actions}
+                    </div>
+                )}
             </nav>
         </aside>
     );

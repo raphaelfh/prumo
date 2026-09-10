@@ -5,40 +5,27 @@
 
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
-import {Button} from "@/components/ui/button";
-import {Input} from "@/components/ui/input";
-import {Label} from "@/components/ui/label";
-import {Textarea} from "@/components/ui/textarea";
-import {Switch} from "@/components/ui/switch";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import {cn} from "@/lib/utils";
 import {TooltipProvider} from "@/components/ui/tooltip";
 import {toast} from "sonner";
 import {
-  AlertCircle,
-  ArrowLeft,
   BookOpen,
   FileText,
   Hash,
-  Loader2,
-  Save,
   Tag,
   Upload
 } from "lucide-react";
 import {useAuth} from "@/contexts/AuthContext";
+import {useIsBelowDesktop} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from './ArticleFileUploadDialogNew';
-import {ArticleFilesSection, type StagedArticleFile} from './ArticleFilesSection';
+import {type StagedArticleFile} from './ArticleFilesSection';
 import {ArticleFormSteps, type ArticleFormStep, type FormStep} from './ArticleFormSteps';
-import {ArticleAuthorsField} from './ArticleAuthorsField';
-import {ArticleKeywordsField} from './ArticleKeywordsField';
-import {PageHeader} from '@/components/patterns/PageHeader';
-import {SettingsCard, SettingsField, SettingsSection} from '@/components/settings';
+import {ArticleFormActions, ArticleFormLoadingState} from './ArticleFormHeader';
+import {isScrolledToBottom, resolveActiveStep} from '@/lib/articleFormScrollspy';
+import {BasicInfoSection} from './sections/BasicInfoSection';
+import {PublicationSection} from './sections/PublicationSection';
+import {IdentifiersSection} from './sections/IdentifiersSection';
+import {AdditionalInfoSection} from './sections/AdditionalInfoSection';
+import {FilesSection} from './sections/FilesSection';
 import {t} from '@/lib/copy';
 import {triggerDownload} from '@/lib/download';
 import {
@@ -58,7 +45,6 @@ import {normalizeArticleKeywordsForSave} from '@/lib/articleKeywords';
 import {
     ITEM_TYPE_CUSTOM_SELECT_VALUE,
     ITEM_TYPE_NONE_SELECT_VALUE,
-    ZOTERO_ITEM_TYPES,
     isKnownZoteroItemType,
 } from '@/lib/zoteroItemTypes';
 
@@ -104,14 +90,20 @@ interface ArticleFormProps {
   projectId: string;
   articleId?: string;
   onComplete?: () => void;
-    /** When "panel", uses height constraints for embedded layout and onDismiss instead of navigate(-1) for back/cancel. */
-    variant?: 'page' | 'panel';
-    /** Called for Back/Cancel in panel mode; optional in page mode (falls back to navigate(-1)). */
+    /** Called for Back/Cancel. */
     onDismiss?: () => void;
+    /** Reports whether the form holds unsaved edits, so a host panel can guard
+     *  navigation away from it. Fires on every transition of the flag. */
+    onDirtyChange?: (dirty: boolean) => void;
+    /** Fired once when add mode's insert succeeds, with the new article's id.
+     *  The form deliberately does NOT put this in the URL — that would remount
+     *  the tree and destroy the staged File objects (see the note at the
+     *  createdArticleId declaration) — so a host panel learns the id here. */
+    onArticleCreated?: (articleId: string) => void;
 }
 
 
-interface FormData {
+export interface FormData {
   title: string;
   abstract: string;
   publication_year: string;
@@ -182,15 +174,19 @@ export function ArticleForm({
                                 projectId,
                                 articleId,
                                 onComplete,
-                                variant = 'page',
                                 onDismiss,
+                                onDirtyChange,
+                                onArticleCreated,
                             }: ArticleFormProps) {
   const navigate = useNavigate();
     const {user: _user} = useAuth();
-    const isPanel = variant === 'panel';
+    // Below lg, Save/Cancel join the section-rail row instead of their own bar
+    // — reclaiming a whole bar of vertical space in the pane that has least
+    // of it (the stacked layout's panel). At lg+ they keep their own strip.
+    const belowDesktop = useIsBelowDesktop();
 
     const handleDismiss = () => {
-        if (isPanel && onDismiss) {
+        if (onDismiss) {
             onDismiss();
             return;
         }
@@ -204,6 +200,7 @@ export function ArticleForm({
   const [files, setFiles] = useState<ArticleFile[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<StagedArticleFile[]>([]);
+
   // Set once the add-mode row lands. Its ONLY job is to stop a retry from
   // inserting a second article; the form deliberately does NOT derive a mode
   // from it — `mode` is a prop owned by the URL, and rewriting the URL would
@@ -218,6 +215,10 @@ export function ArticleForm({
     publication_month?: string;
     publication_day?: string;
   }>({});
+  // Surfaced on the Title row after a failed save attempt (handleSave's own
+  // guard, below). NOT used to gate the Create/Save button — see the note on
+  // `formActions`'s `disabled` prop for why.
+  const [titleError, setTitleError] = useState<string | undefined>(undefined);
 
     // Form
     const [authorRows, setAuthorRows] = useState<AuthorFormRow[]>(() => [newAuthorRow()]);
@@ -252,6 +253,34 @@ export function ArticleForm({
     open_access: false,
     license: ''
   });
+
+  /**
+   * Dirty tracking. The fingerprint is the SAVED shape, not the widget state:
+   * AuthorFormRow.id is a uuidv4 minted fresh by rowsFromAuthorsArray on every
+   * load, so comparing rows directly would report dirty forever and make the
+   * host panel's guard fire on every row click.
+   */
+  const dirtyFingerprint = JSON.stringify({
+    formData,
+    authors: authorsFromRows(authorRows),
+    staged: stagedFiles.length,
+  });
+  const dirtyBaselineRef = useRef<string | null>(null);
+  const lastReportedDirtyRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    // Edit mode captures its baseline only once the fetched article has been
+    // written into formData; add mode's baseline is the empty form at mount.
+    if (dirtyBaselineRef.current === null) {
+      if (mode === 'edit' && !article) return;
+      dirtyBaselineRef.current = dirtyFingerprint;
+    }
+    const dirty = dirtyFingerprint !== dirtyBaselineRef.current;
+    if (lastReportedDirtyRef.current !== dirty) {
+      lastReportedDirtyRef.current = dirty;
+      onDirtyChange?.(dirty);
+    }
+  }, [dirtyFingerprint, mode, article, onDirtyChange]);
 
   const effectiveArticleId = articleId ?? createdArticleId ?? undefined;
 
@@ -333,6 +362,7 @@ export function ArticleForm({
 
     const scrollToSection = (step: FormStep) => {
         document.getElementById(`article-section-${step}`)?.scrollIntoView({behavior: 'smooth', block: 'start'});
+        setActiveSection(step); // explicit click wins immediately; see the bottom-of-scroll override below
     };
 
     useEffect(() => {
@@ -343,7 +373,11 @@ export function ArticleForm({
             (n): n is HTMLElement => n !== null
         );
         if (els.length === 0) return;
+        const lastStepId = STEPS[STEPS.length - 1].id; // "root" is reused below; no second listener on window
         const ratios = new Map<string, number>();
+        const applyActiveStep = () => {
+            const next = resolveActiveStep(ratios, lastStepId, isScrolledToBottom(root)); if (next) setActiveSection(next);
+        };
         const io = new IntersectionObserver(
             (entries) => {
                 for (const en of entries) {
@@ -354,22 +388,16 @@ export function ArticleForm({
                         ratios.delete(id);
                     }
                 }
-                let best: FormStep | null = null;
-                let bestR = 0;
-                for (const [id, r] of ratios) {
-                    if (r > bestR) {
-                        bestR = r;
-                        best = id as FormStep;
-                    }
-                }
-                if (best) {
-                    setActiveSection(best);
-                }
+                applyActiveStep();
             },
             {root, threshold: [0, 0.08, 0.2, 0.35, 0.5, 1], rootMargin: '-8% 0px -45% 0px'}
         );
         els.forEach((el) => io.observe(el));
-        return () => io.disconnect();
+        root.addEventListener('scroll', applyActiveStep, {passive: true});
+        return () => {
+            io.disconnect();
+            root.removeEventListener('scroll', applyActiveStep);
+        };
     }, [loading, mode, articleId]);
 
     // Date field validation
@@ -414,10 +442,13 @@ export function ArticleForm({
 
   const handleSave = async () => {
     if (!formData.title.trim()) {
-        toast.error(t('articles', 'titleRequiredToast'));
+        const message = t('articles', 'titleRequiredToast');
+        setTitleError(message);
+        toast.error(message);
         scrollToSection('basic');
       return;
     }
+    setTitleError(undefined);
 
       // Validate all date fields before save
     const yearError = validateDateField('publication_year', formData.publication_year);
@@ -502,6 +533,7 @@ export function ArticleForm({
       }
       savedArticleId = created.data.id;
       setCreatedArticleId(savedArticleId);
+      onArticleCreated?.(savedArticleId);
     } else {
       const targetId = articleId ?? createdArticleId;
       if (!targetId) {
@@ -523,6 +555,9 @@ export function ArticleForm({
 
     setSaving(false);
 
+    dirtyBaselineRef.current = JSON.stringify({formData, authors: authorsFromRows(authorRows), staged: failedIds.length});
+    lastReportedDirtyRef.current = false; onDirtyChange?.(false);
+
     if (failedIds.length > 0) {
       // The row persisted, so the sheet MUST stay open: these `File` objects
       // exist nowhere else and dismissing would drop them silently.
@@ -535,15 +570,9 @@ export function ArticleForm({
 
     toast.success(isCreating ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));
 
+    onComplete?.();
     if (mode === 'add') {
-        if (isPanel) {
-            onComplete?.();
-            onDismiss?.();
-        } else {
-            navigate(`/projects/${projectId}?tab=articles`);
-        }
-    } else {
-      onComplete?.();
+        onDismiss?.();
     }
   };
 
@@ -657,88 +686,47 @@ export function ArticleForm({
   };
 
     if (loading) {
-        return (
-            <div
-                className={cn(
-                    'flex items-center justify-center',
-                    isPanel ? 'h-full min-h-[240px]' : 'h-screen'
-                )}
-            >
-                <div className="text-center">
-                    <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3 text-muted-foreground"/>
-                    <p className="text-[13px] text-muted-foreground">{t('articles', 'loadingArticle')}</p>
-                </div>
-            </div>
-        );
+        return <ArticleFormLoadingState/>;
     }
+
+    const formActions = (
+        // Gating this on `!isStepValid('basic')` used to make a single real
+        // click impossible: the Title row only commits into `formData` on
+        // blur, mousedown-before-click fires that blur, and by the time the
+        // click itself would fire the button had only JUST re-enabled — a
+        // real browser never activates a click on an element that was
+        // disabled at mousedown. Validate on click instead (handleSave
+        // already does) and only gate on `saving`.
+        <ArticleFormActions
+            mode={mode}
+            saving={saving}
+            disabled={saving}
+            onCancel={handleDismiss}
+            onSave={handleSave}
+        />
+    );
 
     return (
       <TooltipProvider delayDuration={200}>
-        <div
-            className={cn(
-                'flex flex-col bg-background min-h-0',
-                isPanel ? 'h-full' : 'h-screen'
+        <div className="flex flex-col bg-background min-h-0 h-full">
+            {/* The hosting panel's strip already names the article and owns
+                the exit, so the form itself keeps only the actions. Below lg
+                they move onto the section-rail row instead (see `actions`
+                below) to reclaim a whole bar of vertical space. */}
+            {!belowDesktop && (
+                <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border/40 px-3 py-1.5">
+                    {formActions}
+                </div>
             )}
-        >
-            <PageHeader
-                leading={
-                    <Button variant="ghost" size="sm" onClick={handleDismiss} aria-label={t('common', 'back')}>
-                        {/*
-                          * At 375px this bar is 374px wide and the actions group takes 206
-                          * of it, so the identity group was compressed until the title
-                          * rendered as nothing. The label folds first — the arrow plus the
-                          * aria-label still name the button — and sr-only rather than
-                          * `hidden` keeps that name in the accessibility tree.
-                          */}
-                        <ArrowLeft className="h-4 w-4 sm:mr-2"/>
-                        <span data-slot="back-label" className="sr-only sm:not-sr-only">
-                            {t('common', 'back')}
-                        </span>
-                    </Button>
-                }
-                title={mode === 'add' ? t('articles', 'addArticle') : t('articles', 'editArticle')}
-                description={
-                    /*
-                     * Edit mode's description IS the article's title, and it is the only
-                     * thing naming which article this is — so it must never fold. Add
-                     * mode's merely restates the title next to it, so it is the one that
-                     * gives way rather than the title.
-                     */
-                    mode === 'edit' && article ? article.title : undefined
-                }
-                actions={
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" className="h-8 px-3 text-[12px]" onClick={handleDismiss}>
-                            {t('common', 'cancel')}
-                        </Button>
-                        <Button
-                            size="sm"
-                            className="h-8 px-3 text-[12px] font-medium"
-                            onClick={handleSave}
-                            disabled={saving || !isStepValid('basic')}
-                        >
-                            {saving ? (
-                                <>
-                                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/>
-                                    {t('articles', 'saving')}
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="mr-1.5 h-3.5 w-3.5"/>
-                                    {mode === 'add' ? t('articles', 'createArticle') : t('common', 'save')}
-                                </>
-                            )}
-                        </Button>
-                    </div>
-                }
-            />
 
-            <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row">
+            <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row lg:flex-row-reverse">
                 <ArticleFormSteps
                     steps={STEPS}
                     activeStep={activeSection}
                     onSelect={scrollToSection}
                     titleMissing={!isStepValid('basic')}
+                    compact
+                    actions={belowDesktop ? formActions : undefined}
                 />
 
                 <main
@@ -746,438 +734,48 @@ export function ArticleForm({
                     className="min-h-0 flex-1 overflow-y-auto bg-muted/25 dark:bg-muted/10"
                 >
                     <div className="mx-auto w-full max-w-6xl 2xl:max-w-7xl space-y-8 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-                        <section id="article-section-basic" className="scroll-mt-4 space-y-6">
-                            <SettingsSection title={t('articles', 'basicInfo')}
-                                             description={t('articles', 'basicInfoDesc')}>
-                                <SettingsCard
-                                    title={t('articles', 'articleContentCardTitle')}
-                                    description={t('articles', 'titleAbstractAuthors')}
-                                >
-                                    <SettingsField label={t('articles', 'itemTypeLabel')} htmlFor="article_item_type">
-                                        <Select value={itemTypeSelectValue} onValueChange={onItemTypeSelectChange}
-                                                disabled={saving}>
-                                            <SelectTrigger id="article_item_type"
-                                                           className="h-9 w-full min-w-0 text-[13px]">
-                                                <SelectValue placeholder={t('articles', 'itemTypePlaceholder')}/>
-                                            </SelectTrigger>
-                                            <SelectContent className="max-h-[min(70vh,360px)]">
-                                                <SelectItem value={ITEM_TYPE_NONE_SELECT_VALUE} className="text-[13px]">
-                                                    {t('articles', 'itemTypeNone')}
-                                                </SelectItem>
-                                                {ZOTERO_ITEM_TYPES.map((opt) => (
-                                                    <SelectItem key={opt.value} value={opt.value}
-                                                                className="text-[13px]">
-                                                        {opt.label}
-                                                    </SelectItem>
-                                                ))}
-                                                <SelectItem value={ITEM_TYPE_CUSTOM_SELECT_VALUE}
-                                                            className="text-[13px]">
-                                                    {t('articles', 'itemTypeCustom')}
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        {itemTypeSelectValue === ITEM_TYPE_CUSTOM_SELECT_VALUE && (
-                                            <div className="space-y-2 pt-1">
-                                                <p className="text-[12px] text-muted-foreground/70">{t('articles', 'itemTypeCustomHint')}</p>
-                                                <Input
-                                                    id="article_type_custom"
-                                                    value={formData.article_type}
-                                                    onChange={(e) => setFormData({
-                                                        ...formData,
-                                                        article_type: e.target.value
-                                                    })}
-                                                    className="h-9 w-full min-w-0 text-[13px]"
-                                                    placeholder={t('articles', 'itemTypeCustomPlaceholder')}
-                                                    disabled={saving}
-                                                />
-                                            </div>
-                                        )}
-                                    </SettingsField>
-                                    <SettingsField label={t('articles', 'titleRequired')} htmlFor="title" required>
-                                        <Textarea
-                                            id="title"
-                                            value={formData.title}
-                                            onChange={(e) => setFormData({...formData, title: e.target.value})}
-                                            placeholder={t('articles', 'titlePlaceholder')}
-                                            className="min-h-[88px] resize-y text-[13px] leading-snug w-full min-w-0"
-                                            required
-                                        />
-                                    </SettingsField>
-                                    <SettingsField label={t('articles', 'abstract')} htmlFor="abstract"
-                                                   hint={t('articles', 'abstractPlaceholder')}>
-                                        <Textarea
-                                            id="abstract"
-                                            value={formData.abstract}
-                                            onChange={(e) => setFormData({...formData, abstract: e.target.value})}
-                                            placeholder={t('articles', 'abstractPlaceholder')}
-                                            rows={5}
-                                            className="w-full min-w-0 text-[13px] leading-snug"
-                                        />
-                                    </SettingsField>
-                                </SettingsCard>
-                                <SettingsCard title={t('articles', 'authors')}
-                                              description={t('articles', 'authorsPlaceholderComma')}>
-                                    <ArticleAuthorsField rows={authorRows} onChange={setAuthorRows} disabled={saving}/>
-                                </SettingsCard>
-                            </SettingsSection>
-                        </section>
+                        <BasicInfoSection
+                            formData={formData}
+                            setFormData={setFormData}
+                            saving={saving}
+                            authorRows={authorRows}
+                            onAuthorRowsChange={setAuthorRows}
+                            itemTypeSelectValue={itemTypeSelectValue}
+                            onItemTypeSelectChange={onItemTypeSelectChange}
+                            titleError={titleError}
+                            onTitleCommit={(next) => {
+                                setFormData((prev) => ({...prev, title: next}));
+                                if (next.trim()) setTitleError(undefined);
+                            }}
+                        />
 
-                        <div className="grid grid-cols-1 gap-8 xl:grid-cols-2 xl:items-start xl:gap-8">
-                            <section id="article-section-publication" className="scroll-mt-4 min-w-0 space-y-6">
-                                <SettingsSection title={t('articles', 'publication')}
-                                                 description={t('articles', 'publicationDesc')}>
-                                    <SettingsCard
-                                        title={t('articles', 'publicationDetails')}
-                                        description={t('articles', 'publicationDetailsDesc')}
-                                    >
-                                        <SettingsField label={t('articles', 'journalTitle')} htmlFor="journal_title"
-                                                       hint={t('articles', 'journalPlaceholder')}>
-                                            <Input
-                                                id="journal_title"
-                                                value={formData.journal_title}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    journal_title: e.target.value
-                                                })}
-                                                placeholder={t('articles', 'journalPlaceholder')}
-                                                className="h-9 w-full min-w-0 text-[13px]"
-                                            />
-                                        </SettingsField>
-                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                            <SettingsField label={t('articles', 'publicationYear')}
-                                                           htmlFor="publication_year">
-                                                <Input
-                                                    id="publication_year"
-                                                    type="number"
-                                                    value={formData.publication_year}
-                                                    onChange={(e) => handleDateFieldChange('publication_year', e.target.value)}
-                                                    onBlur={(e) => validateDateField('publication_year', e.target.value)}
-                                                    placeholder="2024"
-                                                    min={1600}
-                                                    max={2500}
-                                                    className={cn('h-9 text-[13px]', validationErrors.publication_year && 'border-destructive')}
-                                                />
-                                                {validationErrors.publication_year && (
-                                                    <p className="text-[12px] text-destructive flex items-center gap-1 pt-1">
-                                                        <AlertCircle className="h-3 w-3 shrink-0"/>
-                                                        {validationErrors.publication_year}
-                                                    </p>
-                                                )}
-                                            </SettingsField>
-                                            <SettingsField label={t('articles', 'publicationMonth')}
-                                                           htmlFor="publication_month">
-                                                <Input
-                                                    id="publication_month"
-                                                    type="number"
-                                                    value={formData.publication_month}
-                                                    onChange={(e) => handleDateFieldChange('publication_month', e.target.value)}
-                                                    onBlur={(e) => validateDateField('publication_month', e.target.value)}
-                                                    placeholder="1-12"
-                                                    min={1}
-                                                    max={12}
-                                                    className={cn('h-9 text-[13px]', validationErrors.publication_month && 'border-destructive')}
-                                                />
-                                                {validationErrors.publication_month && (
-                                                    <p className="text-[12px] text-destructive flex items-center gap-1 pt-1">
-                                                        <AlertCircle className="h-3 w-3 shrink-0"/>
-                                                        {validationErrors.publication_month}
-                                                    </p>
-                                                )}
-                                            </SettingsField>
-                                        </div>
-                                        <SettingsField label={t('articles', 'publicationDay')}
-                                                       htmlFor="publication_day">
-                                            <Input
-                                                id="publication_day"
-                                                type="number"
-                                                value={formData.publication_day}
-                                                onChange={(e) => handleDateFieldChange('publication_day', e.target.value)}
-                                                onBlur={(e) => validateDateField('publication_day', e.target.value)}
-                                                placeholder="1-31"
-                                                min={1}
-                                                max={31}
-                                                className={cn('h-9 max-w-xs text-[13px]', validationErrors.publication_day && 'border-destructive')}
-                                            />
-                                            {validationErrors.publication_day && (
-                                                <p className="text-[12px] text-destructive flex items-center gap-1 pt-1">
-                                                    <AlertCircle className="h-3 w-3 shrink-0"/>
-                                                    {validationErrors.publication_day}
-                                                </p>
-                                            )}
-                                        </SettingsField>
-                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                                            <SettingsField label={t('articles', 'volume')} htmlFor="volume">
-                                                <Input
-                                                    id="volume"
-                                                    value={formData.volume}
-                                                    onChange={(e) => setFormData({...formData, volume: e.target.value})}
-                                                    placeholder={t('articles', 'volumePlaceholder')}
-                                                    className="h-9 text-[13px]"
-                                                />
-                                            </SettingsField>
-                                            <SettingsField label={t('articles', 'edition')} htmlFor="issue">
-                                                <Input
-                                                    id="issue"
-                                                    value={formData.issue}
-                                                    onChange={(e) => setFormData({...formData, issue: e.target.value})}
-                                                    placeholder="3"
-                                                    className="h-9 text-[13px]"
-                                                />
-                                            </SettingsField>
-                                            <SettingsField label={t('articles', 'pages')} htmlFor="pages">
-                                                <Input
-                                                    id="pages"
-                                                    value={formData.pages}
-                                                    onChange={(e) => setFormData({...formData, pages: e.target.value})}
-                                                    placeholder={t('articles', 'pagesPlaceholder')}
-                                                    className="h-9 text-[13px]"
-                                                />
-                                            </SettingsField>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                            <SettingsField label={t('articles', 'issnLabel')} htmlFor="journal_issn">
-                                                <Input
-                                                    id="journal_issn"
-                                                    value={formData.journal_issn}
-                                                    onChange={(e) => setFormData({
-                                                        ...formData,
-                                                        journal_issn: e.target.value
-                                                    })}
-                                                    placeholder="1234-5678"
-                                                    className="h-9 text-[13px]"
-                                                />
-                                            </SettingsField>
-                                            <SettingsField label={t('articles', 'formJournalEissn')}
-                                                           htmlFor="journal_eissn">
-                                                <Input
-                                                    id="journal_eissn"
-                                                    value={formData.journal_eissn}
-                                                    onChange={(e) => setFormData({
-                                                        ...formData,
-                                                        journal_eissn: e.target.value
-                                                    })}
-                                                    placeholder="1234-5678"
-                                                    className="h-9 text-[13px]"
-                                                />
-                                            </SettingsField>
-                                        </div>
-                                        <SettingsField label={t('articles', 'formJournalPublisher')}
-                                                       htmlFor="journal_publisher">
-                                            <Input
-                                                id="journal_publisher"
-                                                value={formData.journal_publisher}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    journal_publisher: e.target.value
-                                                })}
-                                                className="h-9 w-full min-w-0 text-[13px]"
-                                            />
-                                        </SettingsField>
-                                    </SettingsCard>
-                                </SettingsSection>
-                            </section>
+                        <PublicationSection
+                            formData={formData}
+                            setFormData={setFormData}
+                            validationErrors={validationErrors}
+                            onDateFieldChange={handleDateFieldChange}
+                            onValidateDateField={validateDateField}
+                        />
 
-                            <section id="article-section-identifiers" className="scroll-mt-4 min-w-0 space-y-6">
-                                <SettingsSection title={t('articles', 'identifiersLabel')}
-                                                 description={t('articles', 'identifiersDesc')}>
-                                    <SettingsCard title={t('articles', 'identifiersLabel')}>
-                                        <SettingsField label={t('articles', 'doi')} htmlFor="doi">
-                                            <Input
-                                                id="doi"
-                                                value={formData.doi}
-                                                onChange={(e) => setFormData({...formData, doi: e.target.value})}
-                                                placeholder="10.xxxx/xxxxx"
-                                                className="h-9 w-full min-w-0 text-[13px]"
-                                            />
-                                        </SettingsField>
-                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                            <SettingsField label={t('articles', 'pmid')} htmlFor="pmid">
-                                                <Input
-                                                    id="pmid"
-                                                    value={formData.pmid}
-                                                    onChange={(e) => setFormData({...formData, pmid: e.target.value})}
-                                                    placeholder="PubMed ID"
-                                                    className="h-9 text-[13px]"
-                                                />
-                                            </SettingsField>
-                                            <SettingsField label={t('articles', 'pmcidLabel')} htmlFor="pmcid">
-                                                <Input
-                                                    id="pmcid"
-                                                    value={formData.pmcid}
-                                                    onChange={(e) => setFormData({...formData, pmcid: e.target.value})}
-                                                    placeholder="PMC ID"
-                                                    className="h-9 text-[13px]"
-                                                />
-                                            </SettingsField>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                            <SettingsField label={t('articles', 'arxivIdLabel')} htmlFor="arxiv_id">
-                                                <Input
-                                                    id="arxiv_id"
-                                                    value={formData.arxiv_id}
-                                                    onChange={(e) => setFormData({
-                                                        ...formData,
-                                                        arxiv_id: e.target.value
-                                                    })}
-                                                    placeholder="arXiv:1234.5678"
-                                                    className="h-9 text-[13px]"
-                                                />
-                                            </SettingsField>
-                                            <SettingsField label={t('articles', 'piiLabel')} htmlFor="pii">
-                                                <Input id="pii" value={formData.pii}
-                                                       onChange={(e) => setFormData({...formData, pii: e.target.value})}
-                                                       className="h-9 text-[13px]"/>
-                                            </SettingsField>
-                                        </div>
-                                    </SettingsCard>
-                                </SettingsSection>
-                            </section>
-                        </div>
+                        <IdentifiersSection formData={formData} setFormData={setFormData}/>
 
-                        <section id="article-section-additional" className="scroll-mt-4 space-y-6">
-                            <SettingsSection title={t('articles', 'additionalInfo')}
-                                             description={t('articles', 'additionalInfoDesc')}>
-                                <SettingsCard title={t('articles', 'keywordsAndMetadata')}>
-                                    <SettingsField
-                                        label={t('articles', 'keywordsLabel')}
-                                        htmlFor="article_keywords_draft"
-                                        hint={t('articles', 'keywordsFieldHint')}
-                                    >
-                                        <ArticleKeywordsField
-                                            value={formData.keywords}
-                                            onChange={(keywords) => setFormData((prev) => ({...prev, keywords}))}
-                                            disabled={saving}
-                                            draftInputId="article_keywords_draft"
-                                        />
-                                    </SettingsField>
-                                    <SettingsField label={t('articles', 'meshTermsLabel')} htmlFor="mesh_terms"
-                                                   hint={t('articles', 'meshPlaceholder')}>
-                                        <Input
-                                            id="mesh_terms"
-                                            value={formData.mesh_terms}
-                                            onChange={(e) => setFormData({...formData, mesh_terms: e.target.value})}
-                                            placeholder={t('articles', 'meshPlaceholder')}
-                                            className="h-9 w-full min-w-0 text-[13px]"
-                                        />
-                                    </SettingsField>
-                                    <SettingsField label={t('articles', 'articleUrl')} htmlFor="url_landing">
-                                        <Input
-                                            id="url_landing"
-                                            type="url"
-                                            value={formData.url_landing}
-                                            onChange={(e) => setFormData({...formData, url_landing: e.target.value})}
-                                            placeholder="https://…"
-                                            className="h-9 w-full min-w-0 text-[13px]"
-                                        />
-                                    </SettingsField>
-                                    <SettingsField label={t('articles', 'formPdfUrl')} htmlFor="url_pdf">
-                                        <Input
-                                            id="url_pdf"
-                                            type="url"
-                                            value={formData.url_pdf}
-                                            onChange={(e) => setFormData({...formData, url_pdf: e.target.value})}
-                                            placeholder="https://…"
-                                            className="h-9 w-full min-w-0 text-[13px]"
-                                        />
-                                    </SettingsField>
-                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                        <SettingsField label={t('articles', 'languageLabel')} htmlFor="language"
-                                                       hint={t('articles', 'languagePlaceholder')}>
-                                            <Input
-                                                id="language"
-                                                value={formData.language}
-                                                onChange={(e) => setFormData({...formData, language: e.target.value})}
-                                                placeholder={t('articles', 'languagePlaceholder')}
-                                                className="h-9 text-[13px]"
-                                            />
-                                        </SettingsField>
-                                        <SettingsField label={t('articles', 'formPublicationStatus')}
-                                                       htmlFor="publication_status">
-                                            <Input
-                                                id="publication_status"
-                                                value={formData.publication_status}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    publication_status: e.target.value
-                                                })}
-                                                className="h-9 text-[13px]"
-                                            />
-                                        </SettingsField>
-                                    </div>
-                                    <div
-                                        className="flex items-center justify-between gap-4 rounded-md border border-border/40 px-3 py-2">
-                                        <Label htmlFor="open_access" className="cursor-pointer text-[13px] font-normal">
-                                            {t('articles', 'formOpenAccess')}
-                                        </Label>
-                                        <Switch id="open_access" checked={formData.open_access}
-                                                onCheckedChange={(c) => setFormData({...formData, open_access: c})}/>
-                                    </div>
-                                    <SettingsField label={t('articles', 'licenseLabel')} htmlFor="license">
-                                        <Input
-                                            id="license"
-                                            value={formData.license}
-                                            onChange={(e) => setFormData({...formData, license: e.target.value})}
-                                            className="h-9 w-full min-w-0 text-[13px]"
-                                        />
-                                    </SettingsField>
-                                    <SettingsField label={t('articles', 'studyDesignLabel')} htmlFor="study_design">
-                                        <Input
-                                            id="study_design"
-                                            value={formData.study_design}
-                                            onChange={(e) => setFormData({...formData, study_design: e.target.value})}
-                                            className="h-9 w-full min-w-0 text-[13px]"
-                                        />
-                                    </SettingsField>
-                                    <SettingsField label={t('articles', 'conflictsOfInterestLabel')}
-                                                   htmlFor="conflicts_of_interest">
-                                        <Textarea
-                                            id="conflicts_of_interest"
-                                            value={formData.conflicts_of_interest}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                conflicts_of_interest: e.target.value
-                                            })}
-                                            rows={2}
-                                            className="w-full min-w-0 text-[13px] leading-snug"
-                                        />
-                                    </SettingsField>
-                                    <SettingsField label={t('articles', 'dataAvailabilityLabel')}
-                                                   htmlFor="data_availability">
-                                        <Textarea
-                                            id="data_availability"
-                                            value={formData.data_availability}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                data_availability: e.target.value
-                                            })}
-                                            rows={2}
-                                            className="w-full min-w-0 text-[13px] leading-snug"
-                                        />
-                                    </SettingsField>
-                                </SettingsCard>
-                            </SettingsSection>
-                        </section>
+                        <AdditionalInfoSection formData={formData} setFormData={setFormData} saving={saving}/>
 
-                        <section id="article-section-files" className="scroll-mt-4 space-y-6">
-                            <SettingsSection title={t('articles', 'filesLabel')}
-                                             description={t('articles', 'filesDesc')}>
-                                <ArticleFilesSection
-                                    files={files}
-                                    stagedFiles={stagedFiles}
-                                    onRemoveStaged={(id) =>
-                                        setStagedFiles(prev => prev.filter(f => f.id !== id))
-                                    }
-                                    fileToDelete={fileToDelete}
-                                    deleting={deletingFile}
-                                    onView={viewPDF}
-                                    onDownload={downloadFile}
-                                    onRequestDelete={openDeleteDialog}
-                                    onCancelDelete={() => setFileToDelete(null)}
-                                    onConfirmDelete={handleDeleteFile}
-                                    onAddFiles={() => setShowFileUpload(true)}
-                                />
-                            </SettingsSection>
-                        </section>
+                        <FilesSection
+                            files={files}
+                            stagedFiles={stagedFiles}
+                            onRemoveStaged={(id) =>
+                                setStagedFiles(prev => prev.filter(f => f.id !== id))
+                            }
+                            fileToDelete={fileToDelete}
+                            deleting={deletingFile}
+                            onView={viewPDF}
+                            onDownload={downloadFile}
+                            onRequestDelete={openDeleteDialog}
+                            onCancelDelete={() => setFileToDelete(null)}
+                            onConfirmDelete={handleDeleteFile}
+                            onAddFiles={() => setShowFileUpload(true)}
+                        />
                     </div>
                 </main>
       </div>
