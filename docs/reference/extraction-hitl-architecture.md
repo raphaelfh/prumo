@@ -40,13 +40,14 @@ pending → extract → consensus → finalized
 The `consensus → extract` **back-edge** is arbitrator-only and destructive:
 `RunLifecycleService.reopen_to_extract`
 (`POST /api/v1/runs/{id}/reopen-extraction`, `ensure_project_arbitrator`) sends a
-consensus-stage extraction run back to `extract` **in place** (same run), hard-
+consensus-stage run (either kind) back to `extract` **in place** (same run), hard-
 deleting that run's `ExtractionConsensusDecision` + `ExtractionPublishedState`
 rows (consensus-attached evidence cascades) while preserving reviewer
 decisions/states/proposals and `reviewers_ready`. It sets `stage` directly and is
 **deliberately absent from `_ALLOWED_TRANSITIONS`** so the reviewer-gated
-`/advance` cannot reach it and `advance_stage` stays forward-only. Extraction
-only. The discard is deliberate (constitution §IX reconciliation) and confirmed in
+`/advance` cannot reach it and `advance_stage` stays forward-only. Both kinds:
+QA parks in `consensus` too since ADR-0018 (amended into ADR-0017 on 2026-09-10).
+The discard is deliberate (constitution §IX reconciliation) and confirmed in
 the UI — see [ADR-0017](../adr/0017-reopen-consensus-to-extract.md). Distinct from
 the `finalized` reopen (`reopen_run` / `POST /runs/{id}/reopen`), which forks a
 *new* child run.

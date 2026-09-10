@@ -466,7 +466,10 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
     },
   ];
 
-  function mockConsensusView(consensusDecisions: unknown[] = []) {
+  function mockConsensusView(
+    consensusDecisions: unknown[] = [],
+    decisions: unknown[] = DIVERGENT_DECISIONS,
+  ) {
     vi.mocked(apiClient).mockImplementation(async (url: string) => {
       if (url === "/api/v1/hitl/sessions") {
         return {
@@ -494,7 +497,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
             created_by: "u-1",
           },
           proposals: [],
-          decisions: DIVERGENT_DECISIONS,
+          decisions,
           consensus_decisions: consensusDecisions,
           published_states: [],
           entity_types: [],
@@ -560,6 +563,68 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
       screen.queryByRole("button", { name: /publish this reviewer/i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^override$/i })).not.toBeInTheDocument();
+  });
+
+  it("consensus: an arbitrator can reopen the assessment from the More menu", async () => {
+    // QA parks in consensus like extraction (ADR-0018), so the ADR-0017 undo is
+    // offered here too — without it a consensus opened with nothing decided
+    // could neither finalize nor go back.
+    mockedPermissions.mockReturnValue({
+      ...SEEING_REVIEWER,
+      userRole: "manager" as const,
+      canResolveConflicts: true,
+    });
+    mockConsensusView();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /more options/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /reopen assessment/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^reopen$/i }));
+    await waitFor(() =>
+      expect(apiClient).toHaveBeenCalledWith(
+        "/api/v1/runs/run-1/reopen-extraction",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
+  it("consensus: a plain reviewer is not offered Reopen assessment", async () => {
+    mockedPermissions.mockReturnValue(SEEING_REVIEWER);
+    mockConsensusView();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /more options/i }));
+    // Precondition: the menu really opened, so the absence below is not vacuous.
+    expect(await screen.findByRole("menuitem", { name: /help/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: /reopen assessment/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("consensus: with nothing recorded, Approve & finalize explains instead of failing", async () => {
+    // Nothing to publish and nothing resolved: the backend would reject
+    // approve-finalize (EmptyFinalizeError), so the click must not reach it.
+    mockedPermissions.mockReturnValue({
+      ...SEEING_REVIEWER,
+      userRole: "manager" as const,
+      canResolveConflicts: true,
+    });
+    mockConsensusView([], []);
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /approve & finalize/i }));
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringMatching(/nothing recorded to publish/i),
+    );
+    expect(
+      vi.mocked(apiClient).mock.calls.some(([url]) => String(url).includes("approve-finalize")),
+    ).toBe(false);
   });
 
   it("consensus: a read-only viewer gets no resolve chrome (its writes 403)", async () => {

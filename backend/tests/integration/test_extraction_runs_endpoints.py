@@ -1181,11 +1181,12 @@ async def test_reopen_extraction_wrong_stage_returns_400(
 
 
 @pytest.mark.asyncio
-async def test_reopen_extraction_qa_kind_returns_400(
+async def test_reopen_extraction_qa_kind_manager_ok(
     db_client: AsyncClient,
     db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001 — manager caller reaches the service kind-check
+    auth_as_profile: UUID,  # noqa: ARG001 — default caller is the seed manager (arbitrator)
 ) -> None:
+    """QA parks in consensus since ADR-0018, so the arbitrator undo applies to it too."""
     from tests.integration.test_qa_publish_flow import _qa_run_in_consensus
 
     fx = await _qa_run_in_consensus(db_client, db_session)
@@ -1193,5 +1194,5 @@ async def test_reopen_extraction_qa_kind_returns_400(
         pytest.skip("QA template seed unavailable")
     run_id, *_ = fx
     resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
-    assert resp.status_code == 400, resp.text
-    assert "extraction runs only" in resp.json()["error"]["message"].lower()
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["stage"] == "extract"

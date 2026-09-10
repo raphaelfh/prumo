@@ -612,7 +612,7 @@ async def reopen_run_to_extract(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
-    """Return a consensus-stage extraction run to extract, discarding consensus work.
+    """Return a consensus-stage run (either kind) to extract, discarding consensus work.
 
     Arbitrator-only (manager/consensus): this hard-deletes the run's consensus
     decisions + published values so reviewers can edit again. The gate lives at the

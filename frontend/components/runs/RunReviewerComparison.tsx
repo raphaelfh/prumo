@@ -492,7 +492,11 @@ function ResolveTable({
 
         {visible.length === 0 ? (
           <p className="p-6 text-sm text-muted-foreground" data-testid="consensus-nothing">
-            {t('consensus', 'nothingToReconcile')}
+            {/* No reviewer recorded anything and nothing is resolved: approve-finalize has
+                nothing to publish, so name the arbitrator's real exit instead. */}
+            {reviewerIds.length === 0 && resolution.resolvedCount === 0
+              ? t('consensus', 'nothingRecordedToReconcile')
+              : t('consensus', 'nothingToReconcile')}
           </p>
         ) : (
           <div className="overflow-x-auto">

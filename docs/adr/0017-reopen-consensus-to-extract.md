@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-07-08
+last_reviewed: 2026-09-10
 owner: '@raphaelfh'
 adr_number: '0017'
 ---
@@ -126,3 +126,29 @@ run** like the finalized reopen (revision-lineage noise for what is an *undo*).
 - Builds on [ADR-0015](0015-finalize-via-approve-publish.md) (consensus stage,
   arbitrator gates, auto-reveal) and [ADR-0016](0016-typed-absent-reason-marker.md).
 - [Extraction + HITL architecture](../reference/extraction-hitl-architecture.md)
+
+## Amendment — 2026-09-10: quality-assessment runs included
+
+The `kind` guard that rejected quality-assessment runs is removed.
+
+It rested on the premise that QA "passes through `consensus` transiently in a
+single publish action". [ADR-0018](0018-qa-mirrors-extraction-staged-consensus.md)
+retired that one-shot publish the next day: QA now parks in `consensus` behind
+an explicit **Start consensus**, exactly like extraction, so the premature
+consensus this ADR makes undoable happens on QA too — and without the undo it
+was a dead end. A QA run that entered consensus with nothing decided could
+neither finalize (`EmptyFinalizeError`) nor return to `extract`, and every
+session open resumed it. It was reachable through *Reopen for revision → Start
+consensus* before anyone edits: `reopen` seeds only `source='system'`
+proposals, and consensus entry materializes reviewer proposals only.
+
+Everything else in this decision applies to QA unchanged: arbitrator-only, in
+place, the forward-only transition map untouched, consensus decisions and
+published states discarded, reviewer work preserved. The QA screen offers it as
+**Reopen assessment** in the header's More menu, and its Approve & finalize gate
+names that exit when nothing is recorded instead of failing with a 400.
+
+Validation delta: `test_reopen_extraction_qa_kind_returns_400` is replaced by
+`test_reopen_extraction_qa_kind_manager_ok`, and
+`test_reopen_to_extract_frees_a_qa_run_stranded_in_consensus` proves a stranded
+run reopens and then finalizes through the normal staged flow.

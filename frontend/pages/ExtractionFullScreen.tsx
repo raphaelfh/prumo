@@ -1242,6 +1242,7 @@ export default function ExtractionFullScreen() {
       />
 
       <ReopenExtractionDialog
+        kind="extraction"
         open={reopenExtractionOpen}
         onOpenChange={setReopenExtractionOpen}
         resolvedCount={reopenResolvedCount}

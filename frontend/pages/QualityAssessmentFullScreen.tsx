@@ -43,6 +43,7 @@ import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { resolveQATemplateKind } from "@/services/projectSettingsService";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
 import { useQAWorklist } from "@/hooks/qa/useQAWorklist";
+import { useQAReopen } from "@/hooks/qa/useQAReopen";
 import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
 import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
 import { countActionableSuggestions } from "@/lib/ai-extraction/suggestionUtils";
@@ -53,7 +54,6 @@ import {
   useCreateConsensus,
   useMarkReady,
   useRefetchOnSave,
-  useReopenRun,
   useReviewerSummary,
   useRun,
   useRunReviewers,
@@ -69,6 +69,8 @@ import { RunHeader } from "@/components/runs/header";
 // stays free of the supabase-reaching NotificationCenter/feedback deps.
 import { Utility } from "@/components/runs/header/Utility";
 import { buildQaTransition } from "@/lib/qa/qaTransition";
+import { deriveCanReopenExtraction } from "@/lib/extraction/reopenExtraction";
+import { ReopenExtractionDialog } from "@/components/extraction/dialogs/ReopenExtractionDialog";
 import { rationaleGapCoords } from "@/lib/qa/rationaleGaps";
 import { usePdfPanel } from "@/hooks/usePdfPanel";
 import { setManagerReviewVisibility } from "@/services/hitlConfigService";
@@ -190,7 +192,6 @@ export default function QualityAssessmentFullScreen() {
   const consensusMutation = useCreateConsensus(session?.runId ?? "");
   const markReady = useMarkReady(session?.runId ?? "");
   const approveFinalize = useApproveFinalize(session?.runId ?? "");
-  const reopenMutation = useReopenRun();
   const reviewerSummary = useReviewerSummary(runDetail);
   // Role-derived "N of M reviewers" denominator — same source as the
   // extraction header (never the run's inert hitl_config_snapshot).
@@ -374,8 +375,6 @@ export default function QualityAssessmentFullScreen() {
       ? String(runDetail.run.parameters.parent_run_id)
       : null;
 
-  const [reopening, setReopening] = useState(false);
-
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
   const pdfPanelState = usePdfPanel({ initialOpen: false });
 
@@ -541,23 +540,12 @@ export default function QualityAssessmentFullScreen() {
     toast.error(message ?? t("qa", "runHeaderApproveBlocked"));
   };
 
-  const handleReopen = async () => {
-    if (!sessionRunId) return;
-    setReopening(true);
-    await reopenMutation.mutateAsync(sessionRunId).then(async () => {
-      // The new run is now the latest non-terminal one for this triple,
-      // so refetching the session picks it up. Local form state is reset
-      // since the new run carries its own seeded proposals.
-      setValues({});
-      await refetchSession();
-      toast.success(t("qa", "reopenSuccess"));
-    }).catch((err: unknown) => {
-      toast.error(
-        err instanceof Error ? err.message : t("qa", "reopenError"),
-      );
-    });
-    setReopening(false);
-  };
+  const reopen = useQAReopen({
+    runId: sessionRunId,
+    resetValues: () => setValues({}),
+    refetchSession,
+    refetchRun,
+  });
 
   // Step-2 display hint (PROBAST+AI v2): the template's own `scope_rules`
   // name the sections the classified study type takes out of play — the same
@@ -633,11 +621,14 @@ export default function QualityAssessmentFullScreen() {
     resolvedCoordKeys.has(c),
   );
   const isReady = (runDetail?.reviewers_ready ?? []).includes(userId ?? "");
+  // Nothing filled and nothing resolved: approve-finalize would 400 (EmptyFinalizeError).
+  const nothingRecorded = reviewerSummary.filledCoords.size === 0 && resolvedCoordKeys.size === 0;
   const qaTransition = buildQaTransition({
     stage: runStage,
     canResolveConflicts: permissions.canResolveConflicts,
     isReady,
     divergencesResolved,
+    nothingRecorded,
     onMarkReady,
     onOpenConsensus,
     onApproveFinalize: handleApproveFinalize,
@@ -807,12 +798,13 @@ export default function QualityAssessmentFullScreen() {
           <RunHeader.PrimaryAction />
           <Utility>
             {finalized && (
-              <RunHeader.MenuItem
-                onSelect={() => void handleReopen()}
-              >
-                {reopening
-                  ? t("qa", "reopenProgress")
-                  : t("qa", "reopenButton")}
+              <RunHeader.MenuItem onSelect={() => void reopen.reopenRevision()}>
+                {reopen.reopening ? t("qa", "reopenProgress") : t("qa", "reopenButton")}
+              </RunHeader.MenuItem>
+            )}
+            {deriveCanReopenExtraction(permissions.canResolveConflicts, runStage) && (
+              <RunHeader.MenuItem onSelect={() => reopen.setConfirmOpen(true)}>
+                {t("qa", "reopenAssessmentMenuItem")}
               </RunHeader.MenuItem>
             )}
           </Utility>
@@ -829,6 +821,14 @@ export default function QualityAssessmentFullScreen() {
         actions={paletteActions}
         articles={worklist.length > 1 ? worklist : undefined}
         onNavigate={worklist.length > 1 ? goToArticle : undefined}
+      />
+      <ReopenExtractionDialog
+        kind="qa"
+        open={reopen.confirmOpen}
+        onOpenChange={reopen.setConfirmOpen}
+        resolvedCount={resolvedCoordKeys.size}
+        onConfirm={reopen.reopenToExtract}
+        pending={reopen.reopenToExtractPending}
       />
     </>
   );
@@ -994,8 +994,8 @@ export default function QualityAssessmentFullScreen() {
       kind="qa"
       finalized={finalized}
       parentRunId={parentRunId}
-      onReopen={() => void handleReopen()}
-      reopening={reopening}
+      onReopen={() => void reopen.reopenRevision()}
+      reopening={reopen.reopening}
     />
   );
 

@@ -8,7 +8,7 @@ docs/superpowers/specs/2026-07-08-manager-reopen-consensus-to-extract-design.md.
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -22,6 +22,7 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecision,
 )
 from app.services.run_lifecycle_service import (
+    EmptyFinalizeError,
     InvalidStageTransitionError,
     RunLifecycleService,
 )
@@ -32,6 +33,7 @@ from tests.integration.test_extraction_runs_endpoints import (
     _setup_consensus_run,
     _setup_review_run,
 )
+from tests.integration.test_qa_publish_flow import _advance, _qa_run_in_consensus
 
 pytestmark = pytest.mark.asyncio
 
@@ -167,3 +169,46 @@ async def test_reopen_to_extract_cascades_consensus_evidence(
     ).scalar_one()
     assert ev_consensus == 0
     assert ev_reviewer == 1
+
+
+async def test_reopen_to_extract_frees_a_qa_run_stranded_in_consensus(
+    db_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """QA parks in consensus exactly like extraction since ADR-0018, so the ADR-0017
+    undo must reach it. Without it, a QA run that entered consensus with nothing
+    decided (Reopen for revision -> Start consensus before anyone edits) could
+    neither finalize nor go back, and every session open landed on it again."""
+    _auth_as(SEED.primary_profile)  # manager / arbitrator
+    fx = await _qa_run_in_consensus(db_client, db_session)
+    if fx is None:
+        pytest.skip("QA template seed unavailable")
+    run_id, instance_id, field_id = fx
+    service = RunLifecycleService(db_session)
+
+    # Precondition: the stranded state — there is nothing to approve.
+    with pytest.raises(EmptyFinalizeError):
+        await service.approve_and_finalize(run_id=UUID(run_id), user_id=SEED.primary_profile)
+
+    reopened, discarded_consensus, discarded_published = await service.reopen_to_extract(
+        run_id=UUID(run_id), user_id=SEED.primary_profile
+    )
+    assert reopened.stage == ExtractionRunStage.EXTRACT.value
+    assert (discarded_consensus, discarded_published) == (0, 0)
+
+    # The article is finishable again through the normal staged flow.
+    r = await db_client.post(
+        f"{API_PREFIX}/{run_id}/decisions",
+        json={
+            "instance_id": instance_id,
+            "field_id": field_id,
+            "decision": "edit",
+            "value": {"value": "Y"},
+        },
+    )
+    assert r.status_code == 201, r.text
+    await _advance(db_client, run_id, "consensus")
+    finalized, published = await service.approve_and_finalize(
+        run_id=UUID(run_id), user_id=SEED.primary_profile
+    )
+    assert finalized.stage == ExtractionRunStage.FINALIZED.value
+    assert published == 1
