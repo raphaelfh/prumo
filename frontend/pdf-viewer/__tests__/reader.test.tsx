@@ -15,7 +15,10 @@ describe('<Reader>', () => {
 
   it('renders an EmptyState when blocks is empty and not loading', () => {
     render(<Reader blocks={[]} />);
-    expect(screen.getByTestId('reader-empty')).toBeInTheDocument();
+    // Same vocabulary as the toolbar toggle ("parsed text" / "original file").
+    expect(screen.getByTestId('reader-empty')).toHaveTextContent(/parsed text/i);
+    expect(screen.getByTestId('reader-empty')).toHaveTextContent(/original file/i);
+    expect(screen.getByTestId('reader-empty')).not.toHaveTextContent(/page view|reader view/i);
   });
 
   it('renders a polite live-region when loading', () => {
