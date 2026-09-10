@@ -29,7 +29,4 @@ frontend/components/shared/list/ListDisplaySortPopover.tsx:2
 frontend/components/shared/list/SortIconHeader.tsx:1
 frontend/components/user/ApiKeysSection.tsx:6
 frontend/components/user/SecuritySection.tsx:2
-frontend/pdf-viewer/ui/NavigationControls.tsx:2
 frontend/pdf-viewer/ui/SearchBar.tsx:3
-frontend/pdf-viewer/ui/Toolbar.tsx:2
-frontend/pdf-viewer/ui/ZoomControls.tsx:3
