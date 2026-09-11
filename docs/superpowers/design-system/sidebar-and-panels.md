@@ -102,6 +102,7 @@ All shortcut handlers MUST use the shared `useKeyboardShortcuts` hook so input-f
 
 - **Typing and modifiers:** a bare key (a sequence, or a chord without `mod`) never fires in an input, textarea or contenteditable, and only while no modifier is held. A `mod` chord types nothing, so it fires mid-field unless it sets `allowInInputs: false` (the run screens' `⌘K`).
 - **Dialogs:** nothing fires while an open `role="dialog"` (Radix Dialog or Popover) is in the document, unless a chord sets `allowInDialogs` — for keys that operate that dialog, like the palette's own `⌘K` and `Esc`. The document is queried only for a keystroke that matches a binding.
+- **Focused controls:** a `mod` chord claims its keystroke in the capture phase, before the focused control reacts to it. Radix primitives skip a key already `defaultPrevented`, so `⌘↵` on a focused Select trigger moves to the next required field instead of opening the select. A bare key reaches the focused control first (bubble phase), so `Esc` still closes the innermost Radix layer.
 - **Known gap:** the dialog guard does not match `role="alertdialog"`. A binding that must stay quiet under a confirm passes `enabled: false` while the confirm is pending.
 
 ## 8. Accessibility
