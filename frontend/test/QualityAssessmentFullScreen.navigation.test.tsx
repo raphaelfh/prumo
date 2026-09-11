@@ -247,7 +247,8 @@ describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
   it("⌘K opens the command palette with the run's actions", async () => {
     renderPage();
     await screen.findByTestId("run-stage-current");
-    await userEvent.keyboard("{Meta>}k{/Meta}");
+    // jsdom's userAgent is not a Mac, so ⌘K is Ctrl+K here.
+    await userEvent.keyboard("{Control>}k{/Control}");
     const dialog = await screen.findByRole("dialog");
     expect(
       within(dialog).getByText("Toggle source panel"),

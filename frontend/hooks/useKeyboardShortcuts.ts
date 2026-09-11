@@ -11,7 +11,10 @@ type ChordBinding = {
   mod?: boolean;
   shift?: boolean;
   handler: () => void;
+  /** Fire while typing in a field. Defaults to `mod`: a mod chord types nothing, a bare key would. */
   allowInInputs?: boolean;
+  /** Fire while a dialog is open — for a binding that operates that dialog, like a palette's own toggle. */
+  allowInDialogs?: boolean;
 };
 
 type SequenceBinding = {
@@ -69,26 +72,27 @@ export function useKeyboardShortcuts({
       }
     }
 
+    // Match first, guard dialogs last: `isDialogOpen` queries the whole document,
+    // and most keystrokes — typing in a form above all — match no binding.
     function onKeyDown(e: KeyboardEvent) {
       const key = e.key.toLowerCase();
       const modActive = (e as unknown as Record<string, boolean>)[modProp] === true;
 
-      if (isDialogOpen()) {
-        clearPending();
-        return;
-      }
-
-      // Chord bindings (always considered first; mod chords bypass input guard).
+      // Chord bindings (always considered first; mod chords bypass input guard
+      // unless they opt out).
       for (const b of bindingsRef.current) {
         if (b.type !== 'chord') continue;
         const requireMod = !!b.mod;
         const requireShift = !!b.shift;
         if (key !== b.key.toLowerCase()) continue;
         if (requireMod !== modActive) continue;
+        // A bare chord is an unmodified key, whichever platform the modifier is.
+        if (!requireMod && (e.metaKey || e.ctrlKey || e.altKey)) continue;
         if (requireShift !== e.shiftKey) continue;
-        if (!requireMod && !b.allowInInputs && isTypingTarget(e)) continue;
-        e.preventDefault();
+        if (!(b.allowInInputs ?? requireMod) && isTypingTarget(e)) continue;
         clearPending();
+        if (!b.allowInDialogs && isDialogOpen()) return;
+        e.preventDefault();
         b.handler();
         return;
       }
@@ -105,24 +109,24 @@ export function useKeyboardShortcuts({
 
       const prefix = pendingPrefixRef.current;
       if (prefix) {
+        clearPending();
         for (const b of bindingsRef.current) {
           if (b.type !== 'sequence') continue;
           if (b.prefix.toLowerCase() === prefix && b.key.toLowerCase() === key) {
+            if (isDialogOpen()) return;
             e.preventDefault();
-            clearPending();
             b.handler();
             return;
           }
         }
-        clearPending();
         return;
       }
 
-      // Start a sequence if any binding uses this prefix.
+      // Start a sequence if any binding uses this prefix — not under a dialog.
       const startsSeq = bindingsRef.current.some(
         (b) => b.type === 'sequence' && b.prefix.toLowerCase() === key,
       );
-      if (startsSeq) {
+      if (startsSeq && !isDialogOpen()) {
         pendingPrefixRef.current = key;
         pendingTimerRef.current = setTimeout(clearPending, sequenceTimeoutMs);
       }
