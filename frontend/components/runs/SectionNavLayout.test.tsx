@@ -8,6 +8,7 @@ vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 import { SectionNavLayout, type SectionNavHandle } from './SectionNavLayout';
 import { RunEditabilityProvider } from './RunEditabilityContext';
 import { useSectionOpen } from './SectionOpenContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { SectionNavItem } from '@/lib/extraction/sectionRegistry';
 
 const items: SectionNavItem[] = [
@@ -78,6 +79,33 @@ describe('SectionNavLayout', () => {
     screen.getByLabelText('answered').focus();
     await userEvent.keyboard('{Control>}{Enter}{/Control}');
     await waitFor(() => expect(screen.getByLabelText('pending')).toHaveFocus());
+  });
+
+  it('mod+Enter on a focused select moves to the next required field without opening it', async () => {
+    render(
+      <SectionNavLayout items={items} activeId="s1" onSelect={vi.fn()}>
+        <div data-pending-required="">
+          <Select>
+            <SelectTrigger aria-label="judgment">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div data-pending-required="">
+          <input aria-label="pending" />
+        </div>
+      </SectionNavLayout>,
+    );
+    const judgment = screen.getByRole('combobox', { name: 'judgment' });
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    expect(judgment).toHaveFocus();
+
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    expect(screen.getByLabelText('pending')).toHaveFocus();
+    expect(judgment).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('mod+Enter does nothing on a read-only run', async () => {
