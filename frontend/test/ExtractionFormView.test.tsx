@@ -16,8 +16,10 @@
  *   and no comparator now, so there is nothing left to pin.
  */
 
-import {render, screen, within} from '@testing-library/react';
+import {act, render, screen, within} from '@testing-library/react';
+import {createRef} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
+import type {SectionNavHandle} from '@/components/runs/SectionNavLayout';
 
 vi.mock('@/lib/copy', () => ({
   t: (_ns: string, key: string) => key,
@@ -192,5 +194,20 @@ describe('ExtractionFormView → section nav rail', () => {
     const rail = screen.getByRole('navigation');
     expect(within(rail).getByText('Study Metadata')).toBeInTheDocument();
     expect(within(rail).getByText('Participants')).toBeInTheDocument();
+  });
+});
+
+describe('ExtractionFormView → section nav handle', () => {
+  it("hands the page the layout's revealSection, which scrolls to the registered section", () => {
+    // jsdom has no scrollIntoView; the section registry calls it on the wrapper.
+    Element.prototype.scrollIntoView = vi.fn();
+    const nav = createRef<SectionNavHandle>();
+    render(<ExtractionFormView {...baseProps({entityTypes: [STUDY, SECOND_STUDY], sectionNavRef: nav})} />);
+    expect(nav.current).not.toBeNull();
+
+    act(() => nav.current?.revealSection('study2-et'));
+
+    const wrapper = screen.getByTestId('section-participants').parentElement;
+    expect(vi.mocked(Element.prototype.scrollIntoView).mock.contexts).toContain(wrapper);
   });
 });

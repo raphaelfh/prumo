@@ -53,16 +53,6 @@ vi.mock("@prumo/pdf-viewer", async () => {
   };
 });
 
-// Spy the DOM-scroll half of the header suggestion-locate pair (jsdom has no
-// scrollIntoView); the key-parsing half stays real so the reverse lookup is
-// covered end to end.
-vi.mock("@/lib/runs/suggestionLocate", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/runs/suggestionLocate")>(
-    "@/lib/runs/suggestionLocate",
-  );
-  return { ...actual, scrollToSectionById: vi.fn(() => true) };
-});
-
 vi.mock("@/integrations/api", async () => {
   const { makeApiClientDefault } = await import("./helpers/qaFullScreenMocks");
   return { apiClient: vi.fn(makeApiClientDefault()) };

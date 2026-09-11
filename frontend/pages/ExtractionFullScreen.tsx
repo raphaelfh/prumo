@@ -23,7 +23,8 @@ import {extractionLogger} from '@/lib/extraction/observability';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 import {useAiLinkMaps} from '@/hooks/runs/useAiLinkMaps';
 import {isRunEditable} from '@/lib/runs/editability';
-import {firstPendingInstanceId, scrollToSectionById} from '@/lib/runs/suggestionLocate';
+import {firstPendingInstanceId} from '@/lib/runs/suggestionLocate';
+import type {SectionNavHandle} from '@/components/runs/SectionNavLayout';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
@@ -149,6 +150,8 @@ export default function ExtractionFullScreen() {
     openPdfRef.current = pdf.open;
   }, [pdf.open]);
   useEffect(() => subscribeReaderLocate(viewerStore, () => openPdfRef.current()), [viewerStore]);
+  // The form's section layout: the header's suggestion locate opens a section through it.
+  const sectionNavRef = useRef<SectionNavHandle>(null);
 
     // AI extraction progress state
   const [aiExtractionState, setAiExtractionState] = useState<{
@@ -1094,6 +1097,7 @@ export default function ExtractionFullScreen() {
           templateId: template?.id || '',
           runId: activeRunId,
           onExtractionComplete: handleExtractionComplete,
+          sectionNavRef,
         }}
         compareViewProps={{
           decisionsByCoord: reviewerSummary.decisionsByCoord,
@@ -1186,13 +1190,11 @@ export default function ExtractionFullScreen() {
         canRunAI={!!activeRunId && (stage === 'extract' || stage == null)}
         aiPendingCount={isFinalized ? 0 : aiPendingCount}
         onAISuggestionsClick={() => {
-          // Header "Review N pending suggestions": scroll the form to the
-          // section holding the first pending suggestion.
+          // Header "Review N pending suggestions": open the section holding the
+          // first pending suggestion and scroll the form to it.
           const instanceId = firstPendingInstanceId(aiSuggestions);
-          const entityTypeId = instanceId
-            ? instances.find((i) => i.id === instanceId)?.entity_type_id
-            : undefined;
-          if (entityTypeId) scrollToSectionById(entityTypeId);
+          const entityTypeId = instances.find((i) => i.id === instanceId)?.entity_type_id;
+          if (entityTypeId) sectionNavRef.current?.revealSection(entityTypeId);
         }}
         onExtractWithAI={onExtractWithAI}
         extractingAI={extractingAI}
