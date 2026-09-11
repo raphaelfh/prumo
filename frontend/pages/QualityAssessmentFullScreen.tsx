@@ -31,7 +31,7 @@ import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext"
 import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
 import { OverallJudgmentBanner } from "@/components/assessment/OverallJudgmentBanner";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
-import { SectionNavLayout } from "@/components/runs/SectionNavLayout";
+import { SectionNavLayout, type SectionNavHandle } from "@/components/runs/SectionNavLayout";
 import { useQASectionNav } from "@/hooks/qa/useQASectionNav";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
@@ -84,7 +84,7 @@ import { t } from "@/lib/copy";
 import { isRunEditable } from "@/lib/runs/editability";
 import { useAiLinkMaps } from "@/hooks/runs/useAiLinkMaps";
 import { useRunShortcuts } from "@/hooks/runs/useRunShortcuts";
-import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
+import { firstPendingInstanceId } from "@/lib/runs/suggestionLocate";
 import {
   currentValuesToValuesMap,
   publishedStatesToValuesMap,
@@ -395,6 +395,8 @@ export default function QualityAssessmentFullScreen() {
     () => subscribeReaderLocate(viewerStore, () => openPdfRef.current()),
     [viewerStore],
   );
+  // The form's section layout: the header's suggestion locate opens a section through it.
+  const sectionNavRef = useRef<SectionNavHandle>(null);
 
   // App navigation sidebar (provided by RunWorkspaceShell). SidebarToggle + ⌘B
   // collapse the desktop sidebar (lg+); toggleMobile opens the drawer below lg.
@@ -788,15 +790,11 @@ export default function QualityAssessmentFullScreen() {
             extracting={extractingAI}
             onExtract={onExtractWithAI}
             onOpenSuggestions={() => {
-              // Header "Review N pending suggestions": scroll to the domain
-              // holding the first pending suggestion.
+              // Header "Review N pending suggestions": open the domain holding the
+              // first pending suggestion and scroll to it.
               const instanceId = firstPendingInstanceId(aiSuggestions);
-              const domain = instanceId
-                ? domains.find(
-                    (d) => session?.instancesByEntityType[d.entityType.id] === instanceId,
-                  )
-                : undefined;
-              if (domain) scrollToSectionById(domain.entityType.id);
+              const pending = sectionNav.renderedDomains.find((r) => r.instanceId === instanceId);
+              if (pending) sectionNavRef.current?.revealSection(pending.domain.entityType.id);
             }}
           />
           <RunHeader.PrimaryAction />
@@ -927,7 +925,7 @@ export default function QualityAssessmentFullScreen() {
       ) : null}
 
       {showFormStage && template && session && effectiveViewMode === "assess" ? (
-        <SectionNavLayout items={sectionNav.items} activeId={sectionNav.activeId} onSelect={sectionNav.scrollToSection}>
+        <SectionNavLayout ref={sectionNavRef} items={sectionNav.items} activeId={sectionNav.activeId} onSelect={sectionNav.scrollToSection}>
           <div className="space-y-3">
             {template.description ? (
               <p className="text-sm text-muted-foreground">

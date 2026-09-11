@@ -31,8 +31,9 @@
  * hosts in production), not a contrived one.
  *
  * The J/K shortcut (`useRunShortcuts`) ignores keypresses while an editable
- * element has focus (see `hooks/runs/useRunShortcuts.ts`'s `isEditing` guard,
- * pinned by the unit test "ignores J/K while the user is typing in a field").
+ * element has focus (the typing guard it inherits from
+ * `hooks/useKeyboardShortcuts.ts`, pinned by the unit test "ignores J/K while
+ * the user is typing in a field").
  * So the field is blurred (not waited on) right after typing, before the
  * pager key is pressed — otherwise the keystroke would just be typed into
  * the field and the pager would never navigate at all.
