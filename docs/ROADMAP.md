@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-09-05
+last_reviewed: 2026-09-10
 owner: '@raphaelfh'
 ---
 
 # Roadmap
 
-> **Status:** Stable · Last reviewed: 2026-09-05 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-09-10 · Owner: @raphaelfh
 
 The day-to-day roadmap with status, priority, owner, and target dates lives
 on the GitHub Project:
@@ -18,7 +18,6 @@ This file records only the **top-level milestones** (one bullet each) — the
 
 ## Current cycle (2026-Q2)
 
-- [ ] **Entry-group trees** — any repeating section owns children at any depth, several root groups, no `role` (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`). All slices merged to `dev` 2026-09-05 → 2026-09-06: B1 ancestry (#818), B2 entry creation (#822), B3 recursive run form (#824), B4 tree-derived exports (#826), B5 migration 0069 (#827), B5b the Config tab at any depth (#828), B6 the model pipeline retired (#829), B7 bulk entry delete (#830). **Not yet promoted to `main`.** §14 (recreate every prod project) is owed AFTER promotion and is a human step.
 - [ ] **Structured PDF parsing + grounded extraction** — layout-aware parse at ingest, page-anchored evidence, verbatim-verified citations (ADR-0011, ADR-0013).
 - [ ] **Quality of extracted data** — refine extraction prompts, add evidence-linked citations, surface page-anchored references in the PDF viewer.
 - [ ] **Multi-reviewer reliability** — close the open bugs around inviting reviewers, concurrent assessment, and final-reviewer assignment.
@@ -47,6 +46,7 @@ Carved out of the template-config redesign (`docs/superpowers/specs/2026-08-05-t
 
 ## Recently shipped (2026-Q2)
 
+- ✅ Entry-group trees — any repeating section owns children at any depth, several root groups, no `role` (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`): B1 ancestry (#816), B2 entry creation (#822), B3 recursive run form (#824), B4 tree-derived exports (#826), B5 migration 0069 (#827), B5b the Config tab at any depth (#828), B6 the model pipeline retired (#829), B7 bulk entry delete (#830); promoted to production in #832 (2026-09-05 → 2026-09-06). §14's prod project delete ran the same day; re-importing projects from the global catalogue is a human step.
 - ✅ Entry-group identity + follow-up train — every repeating section is an entry group with a versioned entry key (`is_entity_key`, migrations `0059`/`0066`/`0067`) and a required entry noun (migration `0068`); AI identification, resolution and extraction once per entry; typed `MISSING_ENTITY_KEY` refusal; the manual add dialog asks for the key only; rename/re-key with append-only history; identity E2E on a dedicated fixture project (2026-09-03 → 2026-09-05, #798–#812). Next: the entry-group trees spec (`docs/superpowers/specs/2026-09-03-entry-group-trees-design.md`).
 - ✅ PICOT in the AI context — the project's structured review question (`projects.picots_config_ai_review`) now renders into every LLM call as a `Review question and scope:` block, pinned per run under `results.provenance.review_context`; one editor behind a manager-gated `PUT /projects/:id/ai-context`, plus the AI-instruction editor QA templates never had (migration `0064`) (2026-08-30).
 - ✅ Table-cell + figure citations — native fitz table-cell grid with cell-scoped entailment (migration `0036`); `figure` region blocks + a "Verify manually" badge for ungroundable values (migration `0037`); P3/P4 of the grounded-extraction citation work (2026-06-29).
