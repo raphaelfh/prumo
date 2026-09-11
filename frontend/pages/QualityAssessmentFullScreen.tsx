@@ -31,6 +31,8 @@ import { RunEditabilityProvider } from "@/components/runs/RunEditabilityContext"
 import { HITLPublishedBanner } from "@/components/runs/HITLStatusBadges";
 import { OverallJudgmentBanner } from "@/components/assessment/OverallJudgmentBanner";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
+import { SectionNavLayout, type SectionNavHandle } from "@/components/runs/SectionNavLayout";
+import { useQASectionNav } from "@/hooks/qa/useQASectionNav";
 import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
 import type {
   ComparisonEntityType,
@@ -82,7 +84,7 @@ import { t } from "@/lib/copy";
 import { isRunEditable } from "@/lib/runs/editability";
 import { useAiLinkMaps } from "@/hooks/runs/useAiLinkMaps";
 import { useRunShortcuts } from "@/hooks/runs/useRunShortcuts";
-import { firstPendingInstanceId, scrollToSectionById } from "@/lib/runs/suggestionLocate";
+import { firstPendingInstanceId } from "@/lib/runs/suggestionLocate";
 import {
   currentValuesToValuesMap,
   publishedStatesToValuesMap,
@@ -393,6 +395,8 @@ export default function QualityAssessmentFullScreen() {
     () => subscribeReaderLocate(viewerStore, () => openPdfRef.current()),
     [viewerStore],
   );
+  // The form's section layout: the header's suggestion locate opens a section through it.
+  const sectionNavRef = useRef<SectionNavHandle>(null);
 
   // App navigation sidebar (provided by RunWorkspaceShell). SidebarToggle + ⌘B
   // collapse the desktop sidebar (lg+); toggleMobile opens the drawer below lg.
@@ -408,7 +412,7 @@ export default function QualityAssessmentFullScreen() {
   const goToArticle = (targetArticleId: string) =>
     navigate(qaArticleRoute(targetArticleId));
 
-  // Every run-screen keyboard binding (J/K, "\", ⌘K, Escape) lives in the one
+  // Every run-screen keyboard binding (J/K, ⌘K, Escape) lives in the one
   // shared hook, which owns the not-while-typing / no-modifier / end-of-list
   // guards — never re-stated here. Declared after goToArticle: the handler
   // object is built during render, so a call above it would hit the TDZ.
@@ -416,7 +420,6 @@ export default function QualityAssessmentFullScreen() {
     articles: worklist,
     currentArticleId: articleId ?? "",
     onNavigateToArticle: goToArticle,
-    onTogglePanel: pdfPanelState.toggle,
     onTogglePalette: () => setPaletteOpen((prev) => !prev),
     onClosePalette: () => setPaletteOpen(false),
   });
@@ -547,10 +550,10 @@ export default function QualityAssessmentFullScreen() {
     refetchRun,
   });
 
-  // Step-2 display hint (PROBAST+AI v2): the template's own `scope_rules`
-  // name the sections the classified study type takes out of play — the same
-  // declared data the derivation reads, so screen and payload agree. Never
-  // gates input.
+  // Step-2 scope (PROBAST+AI v2): the template's own `scope_rules` name the
+  // sections the classified study type takes out of play — the same declared
+  // data the derivation reads, so screen and payload agree. It badges those
+  // domains and takes them out of the rail's counts; it never gates input.
   const outOfScope = outOfScopeSectionsOnForm(
     template?.schema,
     domains,
@@ -558,6 +561,9 @@ export default function QualityAssessmentFullScreen() {
     values,
     (instanceId, fieldId) => keyOf({ instanceId, fieldId }),
   );
+
+  // The rendered domains and the section rail over them, shared with extraction.
+  const sectionNav = useQASectionNav(domains, session?.instancesByEntityType, values, outOfScope);
 
   // Compare-view inputs derived from the QA template tree: one instance per
   // domain (session.instancesByEntityType), shaped for the shared
@@ -784,15 +790,11 @@ export default function QualityAssessmentFullScreen() {
             extracting={extractingAI}
             onExtract={onExtractWithAI}
             onOpenSuggestions={() => {
-              // Header "Review N pending suggestions": scroll to the domain
-              // holding the first pending suggestion.
+              // Header "Review N pending suggestions": open the domain holding the
+              // first pending suggestion and scroll to it.
               const instanceId = firstPendingInstanceId(aiSuggestions);
-              const domain = instanceId
-                ? domains.find(
-                    (d) => session?.instancesByEntityType[d.entityType.id] === instanceId,
-                  )
-                : undefined;
-              if (domain) scrollToSectionById(domain.entityType.id);
+              const pending = sectionNav.renderedDomains.find((r) => r.instanceId === instanceId);
+              if (pending) sectionNavRef.current?.revealSection(pending.domain.entityType.id);
             }}
           />
           <RunHeader.PrimaryAction />
@@ -923,65 +925,70 @@ export default function QualityAssessmentFullScreen() {
       ) : null}
 
       {showFormStage && template && session && effectiveViewMode === "assess" ? (
-        <>
-          {template.description ? (
-            <p className="text-sm text-muted-foreground">
-              {template.description}
-            </p>
-          ) : null}
+        <SectionNavLayout ref={sectionNavRef} items={sectionNav.items} activeId={sectionNav.activeId} onSelect={sectionNav.scrollToSection}>
+          <div className="space-y-3">
+            {template.description ? (
+              <p className="text-sm text-muted-foreground">
+                {template.description}
+              </p>
+            ) : null}
 
-          <OverallJudgmentBanner
-            judgments={runDetail?.derived_judgments ?? []}
-          />
+            <OverallJudgmentBanner
+              judgments={runDetail?.derived_judgments ?? []}
+            />
 
-          {domains.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              This template has no domains defined.
-            </p>
-          ) : (
-            <div data-testid="qa-domains">
-              {domains.map((domain, idx) => {
-                const instanceId =
-                  session.instancesByEntityType[domain.entityType.id];
-                if (!instanceId) return null;
-                const valuesForDomain: Record<string, unknown> = {};
-                for (const f of domain.fields) {
-                  const k = keyOf({ instanceId, fieldId: f.id });
-                  if (k in values) valuesForDomain[f.id] = values[k];
-                }
-                return (
-                  <QASectionAccordion
-                    key={domain.entityType.id}
-                    domain={domain}
-                    values={valuesForDomain}
-                    onValueChange={(fieldId, value) =>
-                      handleValueChange(instanceId, fieldId, value)
-                    }
-                    projectId={projectId}
-                    articleId={articleId}
-                    templateId={session.projectTemplateId}
-                    runId={session.runId}
-                    onExtractionComplete={handleSectionExtractionComplete}
-                    defaultOpen={idx === 0}
-                    reviewerActivity={{
-                      decisionsByCoord: reviewerSummary.decisionsByCoord,
-                      labelById: reviewerProfiles.labelById,
-                      avatarById: reviewerProfiles.avatarById,
-                    }}
-                    instanceId={instanceId}
-                    aiSuggestions={aiSuggestions}
-                    onAcceptAI={acceptAISuggestion}
-                    onRejectAI={rejectAISuggestion}
-                    selectSuggestion={selectAISuggestion}
-                    getSuggestionsHistory={getAISuggestionsHistory}
-                    derivedJudgments={runDetail?.derived_judgments}
-                    outOfScope={outOfScope.has(domain.entityType.name)}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </>
+            {domains.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                This template has no domains defined.
+              </p>
+            ) : (
+              <div data-testid="qa-domains">
+                {sectionNav.renderedDomains.map(({ domain, instanceId }, idx) => {
+                  const valuesForDomain: Record<string, unknown> = {};
+                  for (const f of domain.fields) {
+                    const k = keyOf({ instanceId, fieldId: f.id });
+                    if (k in values) valuesForDomain[f.id] = values[k];
+                  }
+                  return (
+                    <div
+                      key={domain.entityType.id}
+                      ref={(el) => sectionNav.registerSection(domain.entityType.id, el)}
+                      tabIndex={-1}
+                      className="scroll-mt-4 outline-hidden"
+                    >
+                      <QASectionAccordion
+                        domain={domain}
+                        values={valuesForDomain}
+                        onValueChange={(fieldId, value) =>
+                          handleValueChange(instanceId, fieldId, value)
+                        }
+                        projectId={projectId}
+                        articleId={articleId}
+                        templateId={session.projectTemplateId}
+                        runId={session.runId}
+                        onExtractionComplete={handleSectionExtractionComplete}
+                        defaultOpen={idx === 0}
+                        reviewerActivity={{
+                          decisionsByCoord: reviewerSummary.decisionsByCoord,
+                          labelById: reviewerProfiles.labelById,
+                          avatarById: reviewerProfiles.avatarById,
+                        }}
+                        instanceId={instanceId}
+                        aiSuggestions={aiSuggestions}
+                        onAcceptAI={acceptAISuggestion}
+                        onRejectAI={rejectAISuggestion}
+                        selectSuggestion={selectAISuggestion}
+                        getSuggestionsHistory={getAISuggestionsHistory}
+                        derivedJudgments={runDetail?.derived_judgments}
+                        outOfScope={outOfScope.has(domain.entityType.name)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </SectionNavLayout>
       ) : null}
     </div>
     </RunEditabilityProvider>

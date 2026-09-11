@@ -5,7 +5,7 @@
  * Split out of the original single suite, which sat at exactly its file-size
  * baseline cap and could not take another assertion.
  */
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,16 +54,6 @@ vi.mock("@prumo/pdf-viewer", async () => {
     createViewerStore: core.createViewerStore,
     subscribeReaderLocate: core.subscribeReaderLocate,
   };
-});
-
-// Spy the DOM-scroll half of the header suggestion-locate pair (jsdom has no
-// scrollIntoView); the key-parsing half stays real so the reverse lookup is
-// covered end to end.
-vi.mock("@/lib/runs/suggestionLocate", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/runs/suggestionLocate")>(
-    "@/lib/runs/suggestionLocate",
-  );
-  return { ...actual, scrollToSectionById: vi.fn(() => true) };
 });
 
 vi.mock("@/integrations/api", async () => {
@@ -127,6 +117,16 @@ describe("QualityAssessmentFullScreen", () => {
     expect(
       screen.getByTestId("qa-domain-participants"),
     ).toBeInTheDocument();
+  });
+
+  it("gives the assessment form the same section rail as extraction, one entry per domain", async () => {
+    renderPage();
+    const rail = await screen.findByRole("navigation", { name: "Section navigation" });
+    expect(within(rail).getByRole("button", { name: /Participants/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide sections" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 
   it("first domain accordion opens by default exposing summary card", async () => {

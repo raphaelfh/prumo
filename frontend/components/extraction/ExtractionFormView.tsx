@@ -15,14 +15,13 @@
  * has moved into ``ModelSection``.
  */
 
-import {useRef} from 'react';
+import type {Ref} from 'react';
 import {EntrySection} from './entries/EntrySection';
 import {EntryFormProvider, type EntryFormContextValue} from './entries/EntryFormContext';
 import {SectionAccordion} from './SectionAccordion';
-import SectionNavRail from '@/components/extraction/SectionNavRail';
+import {SectionNavLayout, type SectionNavHandle} from '@/components/runs/SectionNavLayout';
 import {buildSectionRegistry} from '@/lib/extraction/sectionRegistry';
 import {useActiveSection} from '@/hooks/extraction/useActiveSection';
-import {useJumpToNextPendingField} from '@/hooks/extraction/useJumpToNextPendingField';
 import type {
   ExtractionEntityTypeWithFields,
   ExtractionInstance,
@@ -67,11 +66,13 @@ export interface ExtractionFormViewProps {
   runId?: string | null;
   /** Callback to refresh values/suggestions after AI extraction. */
   onExtractionComplete?: () => void;
-  /** When true (PDF panel open / narrow), the section rail collapses to a dot strip. */
-  showPDF?: boolean;
+  /** The section layout's handle: the header's suggestion locate opens a section through it. */
+  sectionNavRef?: Ref<SectionNavHandle>;
 }
 
-function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
+// `sectionNavRef` comes out of `props` first: the closures below run during render
+// and capture `props`, and the compiler rejects a render-time closure holding a ref.
+function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormViewProps) {
 
   const roots = props.entityTypes.filter((et) => !et.parent_entity_type_id);
   const sectionRegistry = buildSectionRegistry({
@@ -84,10 +85,6 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
   });
   const sectionIds = sectionRegistry.map((s) => s.id);
   const { activeId, registerSection, scrollToSection } = useActiveSection(sectionIds);
-  // Scoped to the form column so the jump only ever walks field rows, never
-  // anything the rail or surrounding chrome might render.
-  const formColumnRef = useRef<HTMLDivElement>(null);
-  const jumpToNextPending = useJumpToNextPendingField(formColumnRef);
 
   const form: EntryFormContextValue = {
     projectId: props.projectId,
@@ -117,21 +114,14 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
   };
 
   return (
-    <div className="flex gap-4">
-      <SectionNavRail
-        items={sectionRegistry}
-        activeId={activeId}
-        onSelect={scrollToSection}
-        collapsed={props.showPDF}
-        onJumpToNextPending={jumpToNextPending}
-      />
+    <SectionNavLayout ref={sectionNavRef} items={sectionRegistry} activeId={activeId} onSelect={scrollToSection}>
       {/*
         The Provider sits here, and this component is NOT memoized. Inside a
         memo boundary its comparator would gate the whole context: one
         bail-out and no consumer at any depth updates again.
       */}
       <EntryFormProvider value={form}>
-        <div ref={formColumnRef} className="min-w-0 flex-1 space-y-4">
+        <div className="space-y-4">
           {roots.map((entityType) =>
             entityType.cardinality === 'many' ? (
               <EntrySection key={entityType.id} group={entityType} parentInstanceId={null} />
@@ -167,7 +157,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
           )}
         </div>
       </EntryFormProvider>
-    </div>
+    </SectionNavLayout>
   );
 }
 

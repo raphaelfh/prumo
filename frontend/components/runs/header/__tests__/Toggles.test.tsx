@@ -57,15 +57,41 @@ describe('RunHeader.MobileNav', () => {
 });
 
 describe('RunHeader.PanelToggle (mirror)', () => {
-  it('exposes aria-pressed and the backslash shortcut', async () => {
+  it('exposes aria-pressed and the mod+Shift+B shortcut', async () => {
     const onToggle = vi.fn();
     render(
       <RunHeader value={base}><RunHeader.Right><RunHeader.PanelToggle pressed={false} onToggle={onToggle} /></RunHeader.Right></RunHeader>,
     );
     const btn = screen.getByRole('button', { name: 'togglePanel' });
     expect(btn).toHaveAttribute('aria-pressed', 'false');
-    expect(btn).toHaveAttribute('aria-keyshortcuts', '\\');
+    // jsdom is not macOS, so `mod` announces as Control.
+    expect(btn).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+B');
     await userEvent.click(btn);
     expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  it('binds mod+Shift+B, even from inside a field', async () => {
+    const onToggle = vi.fn();
+    render(
+      <>
+        <input aria-label="field" />
+        <RunHeader value={base}><RunHeader.Right><RunHeader.PanelToggle pressed={false} onToggle={onToggle} /></RunHeader.Right></RunHeader>
+      </>,
+    );
+    screen.getByLabelText('field').focus();
+    await userEvent.keyboard('{Control>}{Shift>}b{/Shift}{/Control}');
+    expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  it('leaves mod+Shift+B to an open dialog', async () => {
+    const onToggle = vi.fn();
+    render(
+      <>
+        <div role="dialog" data-state="open" />
+        <RunHeader value={base}><RunHeader.Right><RunHeader.PanelToggle pressed={false} onToggle={onToggle} /></RunHeader.Right></RunHeader>
+      </>,
+    );
+    await userEvent.keyboard('{Control>}{Shift>}b{/Shift}{/Control}');
+    expect(onToggle).not.toHaveBeenCalled();
   });
 });

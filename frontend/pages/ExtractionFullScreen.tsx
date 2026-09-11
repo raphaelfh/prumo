@@ -16,6 +16,7 @@
  */
 
 import {useEffect, useMemo, useRef, useState} from 'react';
+import {flushSync} from 'react-dom';
 import {useNavigate, useParams} from 'react-router';
 import {toast} from 'sonner';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
@@ -23,7 +24,8 @@ import {extractionLogger} from '@/lib/extraction/observability';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 import {useAiLinkMaps} from '@/hooks/runs/useAiLinkMaps';
 import {isRunEditable} from '@/lib/runs/editability';
-import {firstPendingInstanceId, scrollToSectionById} from '@/lib/runs/suggestionLocate';
+import {firstPendingInstanceId} from '@/lib/runs/suggestionLocate';
+import type {SectionNavHandle} from '@/components/runs/SectionNavLayout';
 import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
@@ -81,7 +83,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 // Additional hooks
 import {useAddEntry} from '@/hooks/extraction/useAddEntry';
 import {useDeleteEntries} from '@/hooks/extraction/useDeleteEntries';
-import {entrySlotKey} from '@/hooks/extraction/useEntryGroup';
+import {entrySlotKey, entrySlotsShowing} from '@/lib/extraction/entrySlots';
 import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
 import {displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
@@ -149,6 +151,8 @@ export default function ExtractionFullScreen() {
     openPdfRef.current = pdf.open;
   }, [pdf.open]);
   useEffect(() => subscribeReaderLocate(viewerStore, () => openPdfRef.current()), [viewerStore]);
+  // The form's section layout: the header's suggestion locate opens a section through it.
+  const sectionNavRef = useRef<SectionNavHandle>(null);
 
     // AI extraction progress state
   const [aiExtractionState, setAiExtractionState] = useState<{
@@ -1069,7 +1073,6 @@ export default function ExtractionFullScreen() {
     ) : (
       <ExtractionFormPanel
         viewMode={viewMode}
-        showPDF={pdf.isOpen}
         formViewProps={{
           instances,
           values,
@@ -1095,6 +1098,7 @@ export default function ExtractionFullScreen() {
           templateId: template?.id || '',
           runId: activeRunId,
           onExtractionComplete: handleExtractionComplete,
+          sectionNavRef,
         }}
         compareViewProps={{
           decisionsByCoord: reviewerSummary.decisionsByCoord,
@@ -1187,13 +1191,14 @@ export default function ExtractionFullScreen() {
         canRunAI={!!activeRunId && (stage === 'extract' || stage == null)}
         aiPendingCount={isFinalized ? 0 : aiPendingCount}
         onAISuggestionsClick={() => {
-          // Header "Review N pending suggestions": scroll the form to the
-          // section holding the first pending suggestion.
-          const instanceId = firstPendingInstanceId(aiSuggestions);
-          const entityTypeId = instanceId
-            ? instances.find((i) => i.id === instanceId)?.entity_type_id
-            : undefined;
-          if (entityTypeId) scrollToSectionById(entityTypeId);
+          // Header "Review N pending suggestions": select the entries holding the first pending
+          // suggestion and commit that render, so the section revealed is the one holding it.
+          const pendingId = firstPendingInstanceId(aiSuggestions);
+          const instance = instances.find((i) => i.id === pendingId);
+          if (!instance) return;
+          const slots = entrySlotsShowing(articleId ?? '', instance.id, instances, entityTypes);
+          flushSync(() => slots.forEach(([slot, entryId]) => setActiveEntry(slot, entryId)));
+          sectionNavRef.current?.revealSection(instance.entity_type_id);
         }}
         onExtractWithAI={onExtractWithAI}
         extractingAI={extractingAI}

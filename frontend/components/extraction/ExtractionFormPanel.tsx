@@ -17,7 +17,6 @@ import {RunReviewerComparison} from '@/components/runs/RunReviewerComparison';
 
 export interface ExtractionFormPanelProps {
   viewMode: 'extract' | 'compare';
-  showPDF: boolean;
   // Props for ExtractionFormView (extract mode)
   formViewProps?: ExtractionFormViewProps;
   // Props for the shared RunReviewerComparison (compare mode)
@@ -32,7 +31,6 @@ export interface ExtractionFormPanelProps {
  */
 export function ExtractionFormPanel({
   viewMode,
-  showPDF,
   formViewProps,
   compareViewProps,
 }: ExtractionFormPanelProps) {
@@ -49,7 +47,7 @@ export function ExtractionFormPanel({
       <ScrollArea className="h-full bg-muted/30">
         <div className="@container min-w-0 p-4 @md:p-6 @lg:p-8 space-y-4">
           {viewMode === 'extract' && formViewProps ? (
-            <ExtractionFormView {...formViewProps} showPDF={showPDF} />
+            <ExtractionFormView {...formViewProps} />
           ) : viewMode === 'compare' && compareViewProps ? (
             <RunReviewerComparison {...compareViewProps} />
           ) : null}

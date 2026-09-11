@@ -33,22 +33,31 @@ export function AIPopoverShell({
     <PopoverContent
       align={align}
       side="bottom"
+      // Focus the surface, not its first button: auto-focusing an action (often
+      // Clear, when a version has no details) pops that action's tooltip over
+      // the content the moment the popover opens. Tab still reaches every action.
+      onOpenAutoFocus={(e) => {
+        e.preventDefault();
+        (e.currentTarget as HTMLElement).focus();
+      }}
       className={cn(
-        // Bounded by the space Radix reports below/above the trigger (capped at
-        // 34rem) so the popover never grows past the viewport and clips. A flex
-        // column with a single scrollable body absorbs any content growth.
-        'flex max-h-[min(var(--radix-popover-content-available-height),34rem)] w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden p-0',
+        // Bounded by the space Radix reports below/above the trigger, and by a
+        // share of the viewport rather than a fixed cap, so the popover never
+        // clips yet a tall screen shows more of a long rationale. A flex column
+        // with a single scrollable body absorbs any content growth.
+        'flex max-h-[min(var(--radix-popover-content-available-height),70vh)] w-[min(420px,calc(100vw-1.5rem))] flex-col overflow-hidden p-0',
         className,
       )}
     >
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
+      {/* One compact line: the header labels the content, it isn't the content. */}
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-ai">
           {icon}
         </span>
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold">{title}</div>
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="truncate text-[13px] font-medium">{title}</span>
           {count != null && (
-            <div className="text-xs text-muted-foreground">{count}</div>
+            <span className="shrink-0 text-xs text-muted-foreground">{count}</span>
           )}
         </div>
       </div>

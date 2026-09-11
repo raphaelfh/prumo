@@ -68,7 +68,8 @@ describe('ExtractionHeader (post legacy-cascade)', () => {
 
   it('⌘K palette exposes "View run status" and it opens the status popover', async () => {
     render(<MemoryRouter><ExtractionHeader {...base} stage="extract" /></MemoryRouter>);
-    await userEvent.keyboard('{Meta>}k{/Meta}');
+    // jsdom's userAgent is not a Mac, so ⌘K is Ctrl+K here.
+    await userEvent.keyboard('{Control>}k{/Control}');
     await userEvent.click(await screen.findByText('View run status'));
     expect(await screen.findByTestId('run-status-popover')).toBeInTheDocument();
   });

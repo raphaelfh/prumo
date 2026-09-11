@@ -11,7 +11,10 @@ type ChordBinding = {
   mod?: boolean;
   shift?: boolean;
   handler: () => void;
+  /** Fire while typing in a field. Defaults to `mod`: a mod chord types nothing, a bare key would. */
   allowInInputs?: boolean;
+  /** Fire while a dialog is open — for a binding that operates that dialog, like a palette's own toggle. */
+  allowInDialogs?: boolean;
 };
 
 type SequenceBinding = {
@@ -60,6 +63,7 @@ export function useKeyboardShortcuts({
   useEffect(() => {
     if (!enabled) return;
     const modProp = modifierKey();
+    const isModActive = (e: KeyboardEvent) => (e as unknown as Record<string, boolean>)[modProp] === true;
 
     function clearPending() {
       pendingPrefixRef.current = null;
@@ -69,32 +73,48 @@ export function useKeyboardShortcuts({
       }
     }
 
-    function onKeyDown(e: KeyboardEvent) {
+    /**
+     * Runs the first mod (or bare) chord the event matches; true once one matched.
+     * Match first, guard dialogs last: `isDialogOpen` queries the whole document,
+     * and most keystrokes — typing in a form above all — match no binding.
+     */
+    function runChord(e: KeyboardEvent, mod: boolean): boolean {
+      if (isModActive(e) !== mod) return false;
+      // A bare chord is an unmodified key, whichever platform the modifier is.
+      if (!mod && (e.metaKey || e.ctrlKey || e.altKey)) return false;
       const key = e.key.toLowerCase();
-      const modActive = (e as unknown as Record<string, boolean>)[modProp] === true;
-
-      if (isDialogOpen()) {
-        clearPending();
-        return;
-      }
-
-      // Chord bindings (always considered first; mod chords bypass input guard).
       for (const b of bindingsRef.current) {
-        if (b.type !== 'chord') continue;
-        const requireMod = !!b.mod;
-        const requireShift = !!b.shift;
+        if (b.type !== 'chord' || !!b.mod !== mod) continue;
         if (key !== b.key.toLowerCase()) continue;
-        if (requireMod !== modActive) continue;
-        if (requireShift !== e.shiftKey) continue;
-        if (!requireMod && !b.allowInInputs && isTypingTarget(e)) continue;
-        e.preventDefault();
+        if (!!b.shift !== e.shiftKey) continue;
+        // Mod chords bypass the input guard unless they opt out.
+        if (!(b.allowInInputs ?? mod) && isTypingTarget(e)) continue;
         clearPending();
+        if (!b.allowInDialogs && isDialogOpen()) return true;
+        e.preventDefault();
         b.handler();
-        return;
+        return true;
       }
+      return false;
+    }
+
+    // A mod chord outranks the focused control, so it claims its key in the
+    // capture phase, before React dispatches: Radix primitives skip a
+    // defaultPrevented key, and a focused Select trigger opens on ⌘↵ otherwise
+    // (its open keys ignore modifiers).
+    function onKeyDownCapture(e: KeyboardEvent) {
+      runChord(e, true);
+    }
+
+    // A bare key is the focused control's first — Escape closes the innermost
+    // Radix layer only while it is not defaultPrevented — so bare chords and
+    // sequences match in the bubble phase, after it.
+    function onKeyDown(e: KeyboardEvent) {
+      if (runChord(e, false)) return;
+      const key = e.key.toLowerCase();
 
       // Sequence bindings — never inside inputs, never with modifiers.
-      if (modActive || e.shiftKey || e.altKey) {
+      if (isModActive(e) || e.shiftKey || e.altKey) {
         clearPending();
         return;
       }
@@ -105,31 +125,33 @@ export function useKeyboardShortcuts({
 
       const prefix = pendingPrefixRef.current;
       if (prefix) {
+        clearPending();
         for (const b of bindingsRef.current) {
           if (b.type !== 'sequence') continue;
           if (b.prefix.toLowerCase() === prefix && b.key.toLowerCase() === key) {
+            if (isDialogOpen()) return;
             e.preventDefault();
-            clearPending();
             b.handler();
             return;
           }
         }
-        clearPending();
         return;
       }
 
-      // Start a sequence if any binding uses this prefix.
+      // Start a sequence if any binding uses this prefix — not under a dialog.
       const startsSeq = bindingsRef.current.some(
         (b) => b.type === 'sequence' && b.prefix.toLowerCase() === key,
       );
-      if (startsSeq) {
+      if (startsSeq && !isDialogOpen()) {
         pendingPrefixRef.current = key;
         pendingTimerRef.current = setTimeout(clearPending, sequenceTimeoutMs);
       }
     }
 
+    window.addEventListener('keydown', onKeyDownCapture, {capture: true});
     window.addEventListener('keydown', onKeyDown);
     return () => {
+      window.removeEventListener('keydown', onKeyDownCapture, {capture: true});
       window.removeEventListener('keydown', onKeyDown);
       clearPending();
     };

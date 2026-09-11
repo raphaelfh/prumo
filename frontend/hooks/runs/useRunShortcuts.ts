@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useKeyboardShortcuts, type Binding } from '@/hooks/useKeyboardShortcuts';
 import { ARTICLE_NEXT_KEY, ARTICLE_PREV_KEY } from '@/lib/runs/shortcuts';
 
 export interface RunShortcutHandlers {
@@ -6,8 +6,6 @@ export interface RunShortcutHandlers {
   articles: { id: string }[];
   currentArticleId: string;
   onNavigateToArticle: (id: string) => void;
-  /** "\" — the source (PDF) panel. */
-  onTogglePanel: () => void;
   /** ⌘K / Ctrl+K. Omit on a screen with no palette. */
   onTogglePalette?: () => void;
   /** Escape. Omit on a screen with no palette. */
@@ -15,68 +13,51 @@ export interface RunShortcutHandlers {
 }
 
 /**
- * The single owner of the run screens' keyboard bindings (extraction + QA).
+ * The run screens' article and palette keys (extraction + QA), bound through
+ * the shared `useKeyboardShortcuts` so its guards apply: J/K are bare keys, so
+ * they stay inert while typing, with a modifier held, or under an open dialog
+ * or popover.
  *
- * The listener registers ONCE (empty deps) and reads the changing callbacks
- * through a ref, so it does not re-bind on every render. Cleanup goes through
- * `return`, never `try/finally` — the React Compiler runs with
- * `panicThreshold: 'all_errors'` and rejects the latter in a hook body.
+ * The palette is itself a dialog, so ⌘K and Escape opt in to firing under one
+ * (`allowInDialogs`). ⌘K also opts out of fields (`allowInInputs: false`),
+ * which a mod chord would otherwise reach.
  *
- * ⌘B (sidebar) is deliberately absent: it is owned by RunWorkspaceShell, and
- * appears in `RUN_SHORTCUTS` only so the help panel can document it.
+ * Deliberately absent, and in `RUN_SHORTCUTS` only so the help panel can document
+ * them — each is bound through `useKeyboardShortcuts` by what it toggles: ⌘B
+ * (sidebar) by RunWorkspaceShell; ⌘⇧B (source panel) by RunHeader.PanelToggle;
+ * ⌘↵ (next required field) and ⌘\ (section rail) by SectionNavLayout.
  */
-export function useRunShortcuts(handlers: RunShortcutHandlers): void {
-  const ref = useRef(handlers);
-  useEffect(() => {
-    ref.current = handlers;
-  });
+export function useRunShortcuts({
+  articles,
+  currentArticleId,
+  onNavigateToArticle,
+  onTogglePalette,
+  onClosePalette,
+}: RunShortcutHandlers): void {
+  // No wrap-around: past either end (so on a list of one) there is no target.
+  const step = (delta: 1 | -1) => {
+    const i = articles.findIndex((a) => a.id === currentArticleId);
+    const target = i < 0 ? undefined : articles[i + delta];
+    if (target) onNavigateToArticle(target.id);
+  };
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const h = ref.current;
-      const target = e.target as HTMLElement | null;
-      const isEditing =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        !!target?.isContentEditable;
+  const bindings: Binding[] = [
+    { type: 'chord', key: ARTICLE_NEXT_KEY, handler: () => step(1) },
+    { type: 'chord', key: ARTICLE_PREV_KEY, handler: () => step(-1) },
+  ];
+  if (onTogglePalette) {
+    bindings.push({
+      type: 'chord',
+      key: 'k',
+      mod: true,
+      allowInInputs: false,
+      allowInDialogs: true,
+      handler: onTogglePalette,
+    });
+  }
+  if (onClosePalette) {
+    bindings.push({ type: 'chord', key: 'Escape', allowInDialogs: true, handler: onClosePalette });
+  }
 
-      // ⌘K / Ctrl+K — toggle the command palette.
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        if (isEditing) return;
-        e.preventDefault();
-        h.onTogglePalette?.();
-        return;
-      }
-
-      // Everything below is an unmodified single key, never while typing.
-      if (e.metaKey || e.ctrlKey || e.altKey || isEditing) return;
-
-      if (e.key === 'Escape') {
-        h.onClosePalette?.();
-        return;
-      }
-      if (e.key === '\\') {
-        e.preventDefault();
-        h.onTogglePanel();
-        return;
-      }
-
-      if (h.articles.length < 2) return;
-      const i = h.articles.findIndex((a) => a.id === h.currentArticleId);
-      if (i < 0) return;
-      const key = e.key.toLowerCase();
-      if (key === ARTICLE_NEXT_KEY.toLowerCase()) {
-        if (i < h.articles.length - 1) h.onNavigateToArticle(h.articles[i + 1].id);
-        return;
-      }
-      if (key === ARTICLE_PREV_KEY.toLowerCase()) {
-        if (i > 0) h.onNavigateToArticle(h.articles[i - 1].id);
-      }
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, []);
+  useKeyboardShortcuts({ bindings, enabled: true });
 }

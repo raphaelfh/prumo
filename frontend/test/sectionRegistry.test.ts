@@ -4,6 +4,7 @@ import {
   globalProgressFromRegistry,
   type BuildSectionRegistryArgs,
 } from '@/lib/extraction/sectionRegistry';
+import { entrySlotKey } from '@/lib/extraction/entrySlots';
 import type { ExtractionEntityTypeWithFields, ExtractionInstance } from '@/types/extraction';
 
 function field(id: string, required: boolean) {
@@ -28,6 +29,15 @@ function instance(id: string, entity_type_id: string, parent_instance_id: string
     parent_instance_id, label: id, sort_order: 0,
     metadata: null, created_by: 'u', created_at: '', updated_at: '',
   };
+}
+
+/**
+ * The selection map as the form writes it: keyed by `entrySlotKey`, like
+ * `useEntryGroup`. A registry that built the key any other way would miss the
+ * selection and describe the first entry, which these tests would catch.
+ */
+function showing(entryId: string): Record<string, string> {
+  return { [entrySlotKey('a1', 'mc', null)]: entryId };
 }
 
 describe('buildSectionRegistry', () => {
@@ -90,7 +100,7 @@ describe('buildSectionRegistry', () => {
     // or 2 (still m1's) either way.
     const second = buildSectionRegistry({
       ...args,
-      activeEntries: { 'active-entry-a1-mc-root': 'm2' },
+      activeEntries: showing('m2'),
     });
     expect(second.find(i => i.id === 'cs')).toMatchObject({ requiredTotal: 1 });
   });
@@ -118,7 +128,7 @@ describe('buildSectionRegistry', () => {
     // m2 is the active entry: its own child entry is empty.
     const onM2 = buildSectionRegistry({
       ...args,
-      activeEntries: { 'active-entry-a1-mc-root': 'm2' },
+      activeEntries: showing('m2'),
     });
     expect(onM2.find(i => i.id === 'cs')).toMatchObject({
       requiredTotal: 1, requiredFilled: 0, state: 'empty',
@@ -128,7 +138,7 @@ describe('buildSectionRegistry', () => {
     // a fix that simply stopped counting nested values altogether.
     const onM1 = buildSectionRegistry({
       ...args,
-      activeEntries: { 'active-entry-a1-mc-root': 'm1' },
+      activeEntries: showing('m1'),
     });
     expect(onM1.find(i => i.id === 'cs')).toMatchObject({
       requiredTotal: 1, requiredFilled: 1, state: 'complete',

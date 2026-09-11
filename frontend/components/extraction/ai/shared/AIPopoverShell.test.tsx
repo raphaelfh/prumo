@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { Popover, PopoverTrigger } from '@/components/ui/popover';
 import { AIPopoverShell } from './AIPopoverShell';
@@ -15,10 +15,26 @@ describe('AIPopoverShell', () => {
     );
     const popover = document.querySelector('.bg-popover') as HTMLElement;
     expect(popover).not.toBeNull();
-    expect(popover.className).toContain('w-[min(380px,calc(100vw-1.5rem))]');
+    expect(popover.className).toContain('w-[min(420px,calc(100vw-1.5rem))]');
     expect(popover.textContent).toContain('Suggestion details');
     expect(popover.textContent).toContain('3 found');
     expect(popover.textContent).toContain('body content');
+  });
+
+  it('keeps the header to one line: the count sits beside the title', () => {
+    render(
+      <Popover defaultOpen>
+        <PopoverTrigger>open</PopoverTrigger>
+        <AIPopoverShell icon={<span>i</span>} title="Review suggestion" count="1 version">
+          <p>body</p>
+        </AIPopoverShell>
+      </Popover>,
+    );
+    const title = screen.getByText('Review suggestion');
+    const count = screen.getByText('1 version');
+    expect(count.parentElement).toBe(title.parentElement);
+    // A row, not a stacked title-over-count block.
+    expect(title.parentElement).toHaveClass('flex');
   });
 
   it('bounds the popover to the viewport with a single scroll region', () => {
@@ -32,9 +48,10 @@ describe('AIPopoverShell', () => {
     );
     const popover = document.querySelector('.bg-popover') as HTMLElement;
     // Height is bounded by the space Radix reports below/above the trigger, so
-    // the popover can never grow past the viewport and get clipped.
+    // the popover can never grow past the viewport and get clipped — and it is
+    // a share of the viewport, not a fixed cap, so a tall screen shows more.
     expect(popover.className).toContain(
-      'max-h-[min(var(--radix-popover-content-available-height),34rem)]',
+      'max-h-[min(var(--radix-popover-content-available-height),70vh)]',
     );
     expect(popover.className).toContain('flex-col');
     // The body is the ONLY scroll region and absorbs content growth.

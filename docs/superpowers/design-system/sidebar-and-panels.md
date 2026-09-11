@@ -8,7 +8,7 @@ owner: '@raphaelfh'
 
 # Side Panels — Design System
 
-**Last updated:** 2026-04-27
+**Last updated:** 2026-09-10
 
 This document is the **single source of truth** for any side panel in Prumo: the main project sidebar, future article-detail panels, filter panels, inspector panels, etc. All such panels MUST follow these rules to keep behavior and look consistent.
 
@@ -23,7 +23,7 @@ This document is the **single source of truth** for any side panel in Prumo: the
   - Shared Radix tooltip (not a native `title`) on hover **and** keyboard focus,
     ~400 ms delay: `Click to collapse · Drag to resize` plus the toggle shortcut
     chip (e.g. `⌘B`). The label is supplied by the caller via copy.
-- **Keyboard:** every persistent panel has a toggle shortcut. The main sidebar uses `⌘B` (industry standard). Secondary panels define their own (e.g. `⌘\` for an inspector); the Articles panel on the opposite edge uses `⌘⇧B`.
+- **Keyboard:** every persistent panel has a toggle shortcut. The main sidebar uses `⌘B` (industry standard). Secondary panels define their own (e.g. `⌘\` for an inspector, or the run form's section rail); the Articles panel and the run screens' source (PDF) panel, both on the opposite edge, use `⌘⇧B`.
 - **One toggle per panel, and it says its shortcut.** A panel is shown/hidden from ONE header button (`PanelToggleButton`) — never a second copy inside the panel. Its `shortcut` prop renders the label + chord chip in a tooltip on hover and focus AND sets `aria-keyshortcuts`, from the same keys.
 - **Persistence:** width and collapsed state persist in `localStorage` under `prumo:<panel-id>:{width,collapsed}`. Cross-tab sync via the `storage` event.
 
@@ -93,12 +93,17 @@ Anything new must declare these four values explicitly in its `<ResizablePanel>`
 
 | Class | Pattern | Example |
 |---|---|---|
-| Toggle a panel | `⌘<letter>`, `⌘⇧<letter>` for an opposite-edge twin | `⌘B` (sidebar), `⌘⇧B` (articles panel), `⌘\` (inspector) |
+| Toggle a panel | `⌘<letter>`, `⌘⇧<letter>` for an opposite-edge twin | `⌘B` (sidebar), `⌘⇧B` (articles / run source panel), `⌘\` (inspector, run section rail) |
 | Navigate to a section / open switcher | `G` then `<letter>` | `G O` (overview), `G A` (articles), `G P` (project switcher) |
 | Global action | `⌘<letter>` or `⌘<symbol>` | `⌘,` (settings), `⌘⇧Q` (sign out) |
-| Contextual action | single letter | reserved for future (article selection, screening decisions etc.) |
+| Contextual action | single letter | `J` / `K` (next / previous article, run screens); others reserved (article selection, screening decisions etc.) |
 
-All shortcut handlers MUST use the shared `useKeyboardShortcuts` hook so input-focus and dialog-open guards behave uniformly.
+All shortcut handlers MUST use the shared `useKeyboardShortcuts` hook so input-focus and dialog-open guards behave uniformly. Its guards, per binding:
+
+- **Typing and modifiers:** a bare key (a sequence, or a chord without `mod`) never fires in an input, textarea or contenteditable, and only while no modifier is held. A `mod` chord types nothing, so it fires mid-field unless it sets `allowInInputs: false` (the run screens' `⌘K`).
+- **Dialogs:** nothing fires while an open `role="dialog"` (Radix Dialog or Popover) is in the document, unless a chord sets `allowInDialogs` — for keys that operate that dialog, like the palette's own `⌘K` and `Esc`. The document is queried only for a keystroke that matches a binding.
+- **Focused controls:** a `mod` chord claims its keystroke in the capture phase, before the focused control reacts to it. Radix primitives skip a key already `defaultPrevented`, so `⌘↵` on a focused Select trigger moves to the next required field instead of opening the select. A bare key reaches the focused control first (bubble phase), so `Esc` still closes the innermost Radix layer.
+- **Known gap:** the dialog guard does not match `role="alertdialog"`. A binding that must stay quiet under a confirm passes `enabled: false` while the confirm is pending.
 
 ## 8. Accessibility
 

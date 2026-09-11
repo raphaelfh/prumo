@@ -8,6 +8,8 @@
  */
 
 import {Accordion, AccordionContent, AccordionItem,} from '@/components/ui/accordion';
+import {isValueEmpty} from '@/lib/extraction/valueSemantics';
+import {useSectionOpen} from '@/components/runs/SectionOpenContext';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
@@ -77,6 +79,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
   const isMultiple = entityType.cardinality === 'many';
   // Read-only run: instance add/remove affordances hide (published view).
   const { readOnly } = useRunEditability();
+  const [open, setOpen] = useSectionOpen(entityType.id, true);
   // The field identifying one entry (0059) labels the rename dialog's key
   // input; the entry noun (B-8) names the entry in its copy.
   const keyField = keyFieldOf(fields);
@@ -86,25 +89,20 @@ export function SectionAccordion(props: SectionAccordionProps) {
   const requiredFields = fields.filter(f => f.is_required);
   const totalRequired = requiredFields.length * (isMultiple ? instances.length : 1);
   
+  // Emptiness by the shared predicate the field rows and the section rail count
+  // with, so a resolved "no information" marker reads as answered here too.
   const completedRequired = requiredFields.reduce((count, field) => {
     if (isMultiple) {
         // For multiple sections, count per instance
-      return count + instances.filter(instance => {
-        const key = `${instance.id}_${field.id}`;
-        const value = values[key];
-        return value !== null && value !== undefined && value !== '';
-      }).length;
+      return count + instances.filter(instance => !isValueEmpty(values[`${instance.id}_${field.id}`])).length;
     } else {
         // For single section
       const instance = instances[0];
       if (!instance) return count;
-      const key = `${instance.id}_${field.id}`;
-      const value = values[key];
-      return count + (value !== null && value !== undefined && value !== '' ? 1 : 0);
+      return count + (isValueEmpty(values[`${instance.id}_${field.id}`]) ? 0 : 1);
     }
   }, 0);
 
-  // Calcular porcentagem de progresso
   const progressPercentage = totalRequired > 0 ? Math.round((completedRequired / totalRequired) * 100) : 0;
 
     // Ref for accordion trigger so chevron can be clicked to open/close
@@ -112,7 +110,6 @@ export function SectionAccordion(props: SectionAccordionProps) {
 
   const handleChevronClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Disparar o clique no trigger do accordion
     triggerRef.current?.click();
   };
 
@@ -120,7 +117,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
     <Accordion 
       type="single"
       collapsible
-      defaultValue={entityType.id}
+      value={open ? entityType.id : ''}
+      onValueChange={(value) => setOpen(value === entityType.id)}
       className="border-b border-border/40 last:border-b-0"
     >
       <AccordionItem value={entityType.id} className="border-none group/accordion-item">
