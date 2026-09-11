@@ -83,7 +83,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 // Additional hooks
 import {useAddEntry} from '@/hooks/extraction/useAddEntry';
 import {useDeleteEntries} from '@/hooks/extraction/useDeleteEntries';
-import {entrySlotKey, entrySlotsShowing} from '@/hooks/extraction/useEntryGroup';
+import {entrySlotKey, entrySlotsShowing} from '@/lib/extraction/entrySlots';
 import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
 import {displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';

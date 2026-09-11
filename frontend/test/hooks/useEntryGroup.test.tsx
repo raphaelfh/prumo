@@ -15,7 +15,7 @@
 import {act, renderHook} from '@testing-library/react';
 import {beforeEach, describe, expect, it} from 'vitest';
 
-import {entrySlotKey, entrySlotsShowing, useEntryGroup} from '@/hooks/extraction/useEntryGroup';
+import {useEntryGroup} from '@/hooks/extraction/useEntryGroup';
 import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/extraction';
 
 const GROUP = {
@@ -209,38 +209,5 @@ describe('useEntryGroup', () => {
         value: original,
       });
     }
-  });
-});
-
-describe('entrySlotsShowing', () => {
-  // A singleton section under a predictor: on the path, with no entries to select.
-  const DETAIL = {
-    ...GROUP,
-    id: 'et-detail',
-    cardinality: 'one',
-    parent_entity_type_id: 'et-predictors',
-  } as unknown as ExtractionEntityTypeWithFields;
-  const TYPES = [GROUP, NESTED, DETAIL];
-
-  it('selects every entry on the path, each in the slot its group renders in', () => {
-    const detail = inst('d-b1', 'et-detail', 'p-b1');
-
-    expect(entrySlotsShowing('a-1', 'd-b1', [...ALL, detail], TYPES)).toEqual([
-      [entrySlotKey('a-1', 'et-predictors', 'm-b'), 'p-b1'],
-      [entrySlotKey('a-1', 'et-models', null), 'm-b'],
-    ]);
-  });
-
-  it('selects the instance itself when it is an entry', () => {
-    // A suggestion on a group's own field: those fields bind to the active entry.
-    expect(entrySlotsShowing('a-1', 'm-b', ALL, TYPES)).toEqual([
-      [entrySlotKey('a-1', 'et-models', null), 'm-b'],
-    ]);
-  });
-
-  it('stops on a parent cycle', () => {
-    const loop = [inst('p-x', 'et-predictors', 'p-y'), inst('p-y', 'et-predictors', 'p-x')];
-
-    expect(entrySlotsShowing('a-1', 'p-x', loop, TYPES)).toHaveLength(2);
   });
 });
