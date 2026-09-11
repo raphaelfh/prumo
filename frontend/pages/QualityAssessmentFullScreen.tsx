@@ -548,10 +548,10 @@ export default function QualityAssessmentFullScreen() {
     refetchRun,
   });
 
-  // Step-2 display hint (PROBAST+AI v2): the template's own `scope_rules`
-  // name the sections the classified study type takes out of play — the same
-  // declared data the derivation reads, so screen and payload agree. Never
-  // gates input.
+  // Step-2 scope (PROBAST+AI v2): the template's own `scope_rules` name the
+  // sections the classified study type takes out of play — the same declared
+  // data the derivation reads, so screen and payload agree. It badges those
+  // domains and takes them out of the rail's counts; it never gates input.
   const outOfScope = outOfScopeSectionsOnForm(
     template?.schema,
     domains,
@@ -561,7 +561,7 @@ export default function QualityAssessmentFullScreen() {
   );
 
   // The rendered domains and the section rail over them, shared with extraction.
-  const sectionNav = useQASectionNav(domains, session?.instancesByEntityType, values);
+  const sectionNav = useQASectionNav(domains, session?.instancesByEntityType, values, outOfScope);
 
   // Compare-view inputs derived from the QA template tree: one instance per
   // domain (session.instancesByEntityType), shaped for the shared

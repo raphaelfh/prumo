@@ -88,10 +88,13 @@ export const WORKLIST_ARTICLES = [
  *
  * `members` is the caller's own `vi.hoisted` roster — hoisted state has to be
  * created in the test file, so it is passed in rather than owned here.
+ * `tables` replaces the rows of each table it names, for a suite that needs a
+ * template of its own.
  */
-export function makeSupabaseClientMock(members: {
-  rows: Array<Record<string, unknown>>;
-}) {
+export function makeSupabaseClientMock(
+  members: { rows: Array<Record<string, unknown>> },
+  tables: Record<string, unknown> = {},
+) {
   function makeQuery(rows: unknown) {
     const result = { data: rows, error: null };
     const builder: Record<string, unknown> = {
@@ -125,6 +128,9 @@ export function makeSupabaseClientMock(members: {
           : { data: null, error: null },
       ),
     from: (table: string) => {
+      if (table in tables) {
+        return makeQuery(tables[table]);
+      }
       if (table === "project_extraction_templates") {
         return makeQuery(PROBAST_TEMPLATE);
       }
