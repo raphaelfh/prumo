@@ -64,6 +64,34 @@ export function entrySlotKey(articleId: string, groupId: string, parentInstanceI
   return `active-entry-${articleId}-${groupId}-${parentInstanceId ?? 'root'}`;
 }
 
+/**
+ * The slots to select so one instance is on screen: every entry on its path,
+ * the instance itself included when it is one. A group renders its children
+ * for its active entry only, so under any other entry the instance and the
+ * section holding it do not render at all.
+ */
+export function entrySlotsShowing(
+  articleId: string,
+  instanceId: string,
+  instances: ExtractionInstance[],
+  entityTypes: ExtractionEntityTypeWithFields[],
+): [slot: string, entryId: string][] {
+  const repeating = new Set(entityTypes.filter((et) => et.cardinality === 'many').map((et) => et.id));
+  const slots: [slot: string, entryId: string][] = [];
+  const seen = new Set<string>();
+  let node = instances.find((i) => i.id === instanceId);
+  // The parent link is client data; do not trust it to be acyclic.
+  while (node && !seen.has(node.id)) {
+    seen.add(node.id);
+    const parentId = node.parent_instance_id ?? null;
+    if (repeating.has(node.entity_type_id)) {
+      slots.push([entrySlotKey(articleId, node.entity_type_id, parentId), node.id]);
+    }
+    node = instances.find((i) => i.id === parentId);
+  }
+  return slots;
+}
+
 function readStored(key: string): string | null {
   // Guarded: a private window or blocked site data throws on ACCESS, and this
   // hook runs once per rendered group, so an unguarded read throws per node.

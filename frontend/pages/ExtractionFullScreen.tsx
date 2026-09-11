@@ -16,6 +16,7 @@
  */
 
 import {useEffect, useMemo, useRef, useState} from 'react';
+import {flushSync} from 'react-dom';
 import {useNavigate, useParams} from 'react-router';
 import {toast} from 'sonner';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
@@ -82,7 +83,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 // Additional hooks
 import {useAddEntry} from '@/hooks/extraction/useAddEntry';
 import {useDeleteEntries} from '@/hooks/extraction/useDeleteEntries';
-import {entrySlotKey} from '@/hooks/extraction/useEntryGroup';
+import {entrySlotKey, entrySlotsShowing} from '@/hooks/extraction/useEntryGroup';
 import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
 import {displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
@@ -1190,11 +1191,14 @@ export default function ExtractionFullScreen() {
         canRunAI={!!activeRunId && (stage === 'extract' || stage == null)}
         aiPendingCount={isFinalized ? 0 : aiPendingCount}
         onAISuggestionsClick={() => {
-          // Header "Review N pending suggestions": open the section holding the
-          // first pending suggestion and scroll the form to it.
-          const instanceId = firstPendingInstanceId(aiSuggestions);
-          const entityTypeId = instances.find((i) => i.id === instanceId)?.entity_type_id;
-          if (entityTypeId) sectionNavRef.current?.revealSection(entityTypeId);
+          // Header "Review N pending suggestions": select the entries holding the first pending
+          // suggestion and commit that render, so the section revealed is the one holding it.
+          const pendingId = firstPendingInstanceId(aiSuggestions);
+          const instance = instances.find((i) => i.id === pendingId);
+          if (!instance) return;
+          const slots = entrySlotsShowing(articleId ?? '', instance.id, instances, entityTypes);
+          flushSync(() => slots.forEach(([slot, entryId]) => setActiveEntry(slot, entryId)));
+          sectionNavRef.current?.revealSection(instance.entity_type_id);
         }}
         onExtractWithAI={onExtractWithAI}
         extractingAI={extractingAI}
