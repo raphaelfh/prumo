@@ -1,3 +1,4 @@
+import { entrySlotKey } from '@/lib/extraction/entrySlots';
 import { computeRequiredFieldProgress } from '@/lib/extraction/progress';
 import type {
   ExtractionEntityTypeWithFields,
@@ -121,8 +122,7 @@ function activeEntryOf(
   groupId: string,
   parentInstanceId: string | null,
 ): string | null {
-  const slot = `active-entry-${args.articleId}-${groupId}-${parentInstanceId ?? 'root'}`;
-  const stored = args.activeEntries[slot];
+  const stored = args.activeEntries[entrySlotKey(args.articleId, groupId, parentInstanceId)];
   const entries = (byType.get(groupId) ?? []).filter(
     (i) => (i.parent_instance_id ?? null) === parentInstanceId,
   );
