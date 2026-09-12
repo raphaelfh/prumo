@@ -121,9 +121,13 @@ class Settings(BaseSettings):
             query_items["ssl"] = query_items.pop("sslmode")
         return urlunparse(parsed._replace(query=urlencode(query_items)))
 
-    # =================== OPENAI ===================
-    # Optional: global fallback when user does not have BYOK configured
+    # =================== GLOBAL PROVIDER KEYS ===================
+    # Optional operator keys. Each hosted provider in app.llm.registry names
+    # ONE of these; when it is empty the provider is BYOK-only in this
+    # deployment (registry.is_byok_only). Never a host-bearing provider —
+    # a host is a per-connection fact.
     OPENAI_API_KEY: str | None = None
+    ANTHROPIC_API_KEY: str | None = None
 
     # =================== LLM (provider-agnostic) ===================
     # Single authoritative model/provider for AI extraction. The former
