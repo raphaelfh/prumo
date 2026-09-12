@@ -36,7 +36,7 @@ class TestCreateAPIKeyRequest:
 
     def test_dump_by_alias_is_camel_case(self) -> None:
         req = CreateAPIKeyRequest.model_validate(
-            {"provider": "gemini", "apiKey": "0123456789", "keyName": "prod"}
+            {"provider": "anthropic", "apiKey": "0123456789", "keyName": "prod"}
         )
         wire = req.model_dump(by_alias=True)
         assert wire["apiKey"] == "0123456789"
@@ -46,7 +46,7 @@ class TestCreateAPIKeyRequest:
         assert wire["metadata"] is None
 
     def test_defaults(self) -> None:
-        req = CreateAPIKeyRequest.model_validate({"provider": "grok", "apiKey": "0123456789"})
+        req = CreateAPIKeyRequest.model_validate({"provider": "openai", "apiKey": "0123456789"})
         assert req.is_default is True
         assert req.validate_key is True
         assert req.key_name is None
@@ -160,7 +160,7 @@ class TestAPIKeyResponse:
         resp = APIKeyResponse.model_validate(
             {
                 "id": "k2",
-                "provider": "grok",
+                "provider": "openai",
                 "keyName": None,
                 "isActive": False,
                 "isDefault": True,
@@ -288,3 +288,9 @@ class TestKeyValidationResult:
     def test_message_required(self) -> None:
         with pytest.raises(ValidationError):
             KeyValidationResult.model_validate({"status": "valid"})
+
+
+def test_gemini_and_grok_are_rejected_at_the_schema() -> None:
+    for provider in ("gemini", "grok"):
+        with pytest.raises(ValidationError, match="not supported"):
+            CreateAPIKeyRequest.model_validate({"provider": provider, "apiKey": "0123456789"})
