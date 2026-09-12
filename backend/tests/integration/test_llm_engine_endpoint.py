@@ -160,3 +160,18 @@ async def test_put_smuggled_key_is_422(client_as_manager: AsyncClient) -> None:
         _url(), json={"provider": "openai", "model": "gpt-5.6-terra", "temperature": 0}
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_byok_only_reflects_the_deployment_global_key(
+    client_as_reviewer: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    body = (await client_as_reviewer.get(_url())).json()["data"]
+    anthropic = [e for e in body["catalog"] if e["provider"] == "anthropic"]
+    assert anthropic and all(e["byok_only"] is True for e in anthropic)
+
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
+    body = (await client_as_reviewer.get(_url())).json()["data"]
+    anthropic = [e for e in body["catalog"] if e["provider"] == "anthropic"]
+    assert all(e["byok_only"] is False for e in anthropic)
