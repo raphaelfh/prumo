@@ -1,6 +1,6 @@
 /**
  * Sidebar-footer bug button — opens the feedback dialog. Sits next to the
- * user menu and composes HeaderIconButton, so it stays identical to every
+ * user menu and composes IconButton, so it stays identical to every
  * other chrome icon button in size, hover, and focus.
  *
  * The dialog is mounted lazily: it pulls auth + mutation hooks, and the
@@ -9,8 +9,7 @@
 
 import {useState} from 'react';
 import {Bug} from 'lucide-react';
-import {HeaderIconButton} from '@/components/layout/HeaderIconButton';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {IconButton} from '@/components/patterns/IconButton';
 import {FeedbackDialog} from './FeedbackDialog';
 import {t} from '@/lib/copy';
 
@@ -19,17 +18,11 @@ export function FeedbackButton() {
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <HeaderIconButton
-            onClick={() => setDialogOpen(true)}
-            aria-label={t('navigation', 'sendFeedback')}
-          >
-            <Bug strokeWidth={1.5} aria-hidden="true" />
-          </HeaderIconButton>
-        </TooltipTrigger>
-        <TooltipContent>{t('navigation', 'sendFeedback')}</TooltipContent>
-      </Tooltip>
+      <IconButton
+        label={t('navigation', 'sendFeedback')}
+        onClick={() => setDialogOpen(true)}
+        icon={<Bug strokeWidth={1.5} aria-hidden="true" />}
+      />
 
       {dialogOpen && <FeedbackDialog open onOpenChange={setDialogOpen} />}
     </>

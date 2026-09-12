@@ -1,5 +1,5 @@
 import { HelpCircle } from 'lucide-react';
-import { HeaderIconButton } from '@/components/layout/HeaderIconButton';
+import { IconButton } from '@/components/patterns/IconButton';
 import { KbdBadge } from '@/components/ui/kbd-badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -56,9 +56,7 @@ export function Help() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <HeaderIconButton aria-label={t('runs', 'helpButton')}>
-          <HelpCircle strokeWidth={1.5} aria-hidden="true" />
-        </HeaderIconButton>
+        <IconButton label={t('runs', 'helpButton')} icon={<HelpCircle strokeWidth={1.5} aria-hidden="true" />} />
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 text-[13px]">
         <p className="mb-2 font-medium">{t('runs', 'helpTitle')}</p>

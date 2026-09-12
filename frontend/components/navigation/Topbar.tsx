@@ -15,7 +15,7 @@
 
 import React from 'react';
 import {Menu} from 'lucide-react';
-import {HeaderIconButton} from '@/components/layout/HeaderIconButton';
+import {IconButton} from '@/components/patterns/IconButton';
 import {useUserProfile} from '@/hooks/useNavigation';
 import {useSidebar} from '@/contexts/SidebarContext';
 import {useHeaderActions} from '@/contexts/HeaderActionsContext';
@@ -60,13 +60,12 @@ export const Topbar: React.FC<TopbarProps> = ({className}) => {
     <HeaderShell lifted={scrolled} className={className}>
       {/* Left — toggles + breadcrumb (min-w-0 so the crumbs can truncate) */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <HeaderIconButton
+        <IconButton
+          label={t('navigation', 'ariaOpenMenu')}
           onClick={toggleMobile}
-          aria-label={t('navigation', 'ariaOpenMenu')}
           className="lg:hidden"
-        >
-          <Menu strokeWidth={1.5} aria-hidden="true" />
-        </HeaderIconButton>
+          icon={<Menu strokeWidth={1.5} aria-hidden="true" />}
+        />
         <span className="hidden lg:flex">
           <PanelToggleButton
             side="left"

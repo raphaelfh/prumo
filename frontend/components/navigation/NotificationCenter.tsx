@@ -10,7 +10,7 @@
 import {useEffect, useMemo, useState} from 'react';
 import {Bell, CheckCircle2, Clock, Loader2, X, XCircle} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {HeaderIconButton} from '@/components/layout/HeaderIconButton';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Badge} from '@/components/ui/badge';
 import {
     DropdownMenu,
@@ -218,35 +218,39 @@ export function NotificationCenter() {
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
-        <HeaderIconButton
+        <IconButton
+          label={bellLabel}
+          side="bottom"
           className={cn(
               'relative',
               hasActiveBackgroundJobs && 'text-foreground/90 [&_svg]:opacity-90'
           )}
           aria-busy={hasActiveBackgroundJobs}
-          aria-label={bellLabel}
-        >
-            <Bell strokeWidth={1.5}/>
-            {hasActiveBackgroundJobs && (
-                <span
-                    className="pointer-events-none absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-info shadow-[0_0_0_1px_hsl(var(--background))] motion-safe:animate-pulse"
-                    aria-hidden
-                />
-            )}
-          {unreadCount > 0 && (
-            // Non-destructive: a finished background job is informational, not an
-            // error — a primary-accent count, not the alarming red destructive
-            // badge. The count is announced via the button's aria-label, so the
-            // badge itself is aria-hidden to avoid a double read.
-            <Badge
-              variant="default"
-              aria-hidden="true"
-              className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
-            >
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </Badge>
-          )}
-        </HeaderIconButton>
+          icon={
+            <>
+              <Bell strokeWidth={1.5}/>
+              {hasActiveBackgroundJobs && (
+                  <span
+                      className="pointer-events-none absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-info shadow-[0_0_0_1px_hsl(var(--background))] motion-safe:animate-pulse"
+                      aria-hidden
+                  />
+              )}
+              {unreadCount > 0 && (
+                // Non-destructive: a finished background job is informational, not an
+                // error — a primary-accent count, not the alarming red destructive
+                // badge. The count is announced via the button's aria-label, so the
+                // badge itself is aria-hidden to avoid a double read.
+                <Badge
+                  variant="default"
+                  aria-hidden="true"
+                  className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Badge>
+              )}
+            </>
+          }
+        />
       </DropdownMenuTrigger>
       
       <DropdownMenuContent align="end" className="w-[min(400px,calc(100vw-1rem))]">

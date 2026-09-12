@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
 import {Separator} from "@/components/ui/separator";
-import {HeaderIconButton} from "@/components/layout/HeaderIconButton";
+import {IconButton} from "@/components/patterns/IconButton";
 import {toast} from "sonner";
 import {
     deleteArticle,
@@ -248,16 +248,16 @@ function ToolbarAction({
     children?: (button: React.ReactNode) => React.ReactNode;
 }) {
     const button = (
-        <HeaderIconButton onClick={onClick} disabled={disabled} aria-label={label} className={className}>
-            <Icon className="h-4 w-4" strokeWidth={1.5}/>
-        </HeaderIconButton>
+        <IconButton
+            label={label}
+            side="bottom"
+            onClick={onClick}
+            disabled={disabled}
+            className={className}
+            icon={<Icon className="h-4 w-4" strokeWidth={1.5}/>}
+        />
     );
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>{children ? children(button) : button}</TooltipTrigger>
-            <TooltipContent side="bottom">{label}</TooltipContent>
-        </Tooltip>
-    );
+    return <>{children ? children(button) : button}</>;
 }
 
 export function ArticlesList({

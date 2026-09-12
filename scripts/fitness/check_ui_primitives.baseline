@@ -68,9 +68,7 @@ frontend/components/feedback/FeedbackDialog.tsx:cursor-class:5
 frontend/components/feedback/FeedbackDialog.tsx:overlay-size:1
 frontend/components/hitl/HITLExportDialog.tsx:cursor-class:8
 frontend/components/hitl/HITLExportDialog.tsx:overlay-size:1
-frontend/components/layout/HeaderIconButton.tsx:icon-button:1
 frontend/components/layout/MobileSidebar.tsx:overlay-size:1
-frontend/components/layout/PanelToggleButton.tsx:tooltip-provider:1
 frontend/components/layout/ThemeToggle.tsx:icon-button:1
 frontend/components/navigation/Breadcrumb.tsx:tooltip-provider:1
 frontend/components/navigation/NotificationCenter.tsx:cursor-class:1
@@ -85,7 +83,6 @@ frontend/components/quality/QualityAssessmentInterface.tsx:tooltip-provider:1
 frontend/components/runs/FieldAITrace.tsx:icon-button:1
 frontend/components/runs/ReviewerAITrace.tsx:icon-button:1
 frontend/components/runs/RunReviewerComparison.tsx:tooltip-provider:2
-frontend/components/runs/SectionNavLayout.tsx:tooltip-provider:1
 frontend/components/runs/header/AIActions.tsx:icon-button:1
 frontend/components/runs/header/Help.tsx:overlay-size:1
 frontend/components/runs/header/RunHeader.tsx:tooltip-provider:1
@@ -113,5 +110,3 @@ frontend/components/ui/switch.tsx:cursor-class:2
 frontend/components/ui/textarea.tsx:cursor-class:1
 frontend/components/user/ApiKeysSection.tsx:icon-button:3
 frontend/pdf-viewer/ui/SearchBar.tsx:icon-button:3
-frontend/pdf-viewer/ui/Toolbar.tsx:tooltip-provider:1
-frontend/pdf-viewer/ui/ToolbarIconButton.tsx:icon-button:1
