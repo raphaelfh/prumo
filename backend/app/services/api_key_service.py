@@ -22,7 +22,12 @@ from app.repositories.user_api_key_repository import UserAPIKeyRepository
 
 
 def list_providers_info() -> list[dict[str, str]]:
-    """Provider catalogue for the API, derived from the registry."""
+    """Provider catalogue for the API, derived from the registry.
+
+    Host-bearing providers (``needs_host``) are excluded: this slice has no
+    connection concept to carry a host, so ``openai_compatible`` cannot be
+    offered or stored yet. Slice 2's connections add them back.
+    """
     return [
         {
             "id": spec.id,
@@ -31,6 +36,7 @@ def list_providers_info() -> list[dict[str, str]]:
             "docsUrl": spec.docs_url or "",
         }
         for spec in REGISTRY
+        if not spec.needs_host
     ]
 
 
@@ -146,7 +152,7 @@ class APIKeyService(LoggerMixin):
         Save a new API key with optional validation.
 
         Args:
-            provider: Provider (openai, anthropic, gemini, grok).
+            provider: A registry provider.
             api_key: Plain-text API key.
             key_name: Optional name.
             is_default: Whether this key should be default.
@@ -159,7 +165,10 @@ class APIKeyService(LoggerMixin):
         Raises:
             ValueError: If provider is unsupported or key is invalid.
         """
-        if get_provider(provider) is None:
+        spec = get_provider(provider)
+        if spec is None or spec.needs_host:
+            # Host-bearing providers have no connection to carry a host in
+            # this slice (slice 2 adds that), so they cannot be stored yet.
             raise ValueError(f"Provider '{provider}' is not supported")
 
         # Validate key if requested

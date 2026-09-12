@@ -9,7 +9,7 @@ populate_by_name round-trips, defaults, and the remaining response DTOs.
 import pytest
 from pydantic import ValidationError
 
-from app.models.user_api_key import SUPPORTED_PROVIDERS
+from app.llm.registry import REGISTRY
 from app.schemas.user_api_key import (
     APIKeyResponse,
     CreateAPIKeyRequest,
@@ -22,6 +22,11 @@ from app.schemas.user_api_key import (
     UpdateAPIKeyRequest,
     UpdateAPIKeyResult,
 )
+
+# Storable providers: the schema rejects host-bearing ones (F2) even though
+# SUPPORTED_PROVIDERS (the DB CHECK) allows them — this slice has no
+# connection to carry a host.
+_STORABLE_PROVIDERS = [s.id for s in REGISTRY if not s.needs_host]
 
 
 class TestCreateAPIKeyRequest:
@@ -81,7 +86,7 @@ class TestCreateAPIKeyRequest:
         with pytest.raises(ValidationError):
             CreateAPIKeyRequest.model_validate({"apiKey": "0123456789"})
 
-    @pytest.mark.parametrize("provider", list(SUPPORTED_PROVIDERS))
+    @pytest.mark.parametrize("provider", _STORABLE_PROVIDERS)
     def test_supported_providers_accepted(self, provider: str) -> None:
         req = CreateAPIKeyRequest.model_validate({"provider": provider, "apiKey": "0123456789"})
         assert req.provider == provider
@@ -294,3 +299,14 @@ def test_gemini_and_grok_are_rejected_at_the_schema() -> None:
     for provider in ("gemini", "grok"):
         with pytest.raises(ValidationError, match="not supported"):
             CreateAPIKeyRequest.model_validate({"provider": provider, "apiKey": "0123456789"})
+
+
+def test_openai_compatible_is_rejected_at_the_schema() -> None:
+    """``openai_compatible`` is a real registry provider (the DB CHECK
+    allows it) but is host-bearing: this slice has no connection to carry
+    a host, so it must be rejected at the API boundary too, the same way
+    an unknown provider is — slice 2's connections add it back."""
+    with pytest.raises(ValidationError, match="not supported"):
+        CreateAPIKeyRequest.model_validate(
+            {"provider": "openai_compatible", "apiKey": "0123456789"}
+        )

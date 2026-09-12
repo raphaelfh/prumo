@@ -158,6 +158,15 @@ class TestSaveKey:
             await svc.save_key("unknown_provider", "key-abc")
 
     @pytest.mark.asyncio
+    async def test_raises_for_host_bearing_provider(self) -> None:
+        """``openai_compatible`` is a real registry provider but needs a
+        host this slice has no connection to carry, so it must be rejected
+        the same way an unknown provider is."""
+        svc = make_service()
+        with pytest.raises(ValueError, match="not supported"):
+            await svc.save_key("openai_compatible", "key-abc")
+
+    @pytest.mark.asyncio
     async def test_saves_key_without_validation(self) -> None:
         repo = make_repo()
         created = make_key(id=KEY_UUID)
@@ -548,12 +557,17 @@ class TestValidateAnthropic:
 
 
 def test_list_providers_info_is_the_registry() -> None:
+    """Host-bearing providers (``openai_compatible``) are excluded: this
+    slice has no connection to carry a host, so the catalogue is the three
+    hosted providers only. Slice 2's connections add it back."""
     from app.llm.registry import REGISTRY
     from app.services.api_key_service import list_providers_info
 
     infos = list_providers_info()
-    assert [i["id"] for i in infos] == [s.id for s in REGISTRY]
-    for info, spec in zip(infos, REGISTRY, strict=True):
+    hosted = [s for s in REGISTRY if not s.needs_host]
+    assert [i["id"] for i in infos] == [s.id for s in hosted]
+    assert "openai_compatible" not in [i["id"] for i in infos]
+    for info, spec in zip(infos, hosted, strict=True):
         assert info["name"] == spec.label
         assert info["description"] == spec.description
         assert info["docsUrl"] == (spec.docs_url or "")
