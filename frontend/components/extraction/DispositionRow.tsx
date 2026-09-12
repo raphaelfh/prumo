@@ -97,8 +97,6 @@ export function DispositionRow({
     onChange(activeReason === code ? '' : { value: null, absent_reason: code });
 
   return (
-    // Local provider: the row renders on EVERY field, so its tooltips must not
-    // depend on a caller-supplied provider.
       <div className="flex flex-wrap items-center gap-1.5" data-disposition-control>
         {dispositions.map((d) => {
           const active = activeReason === d.code;

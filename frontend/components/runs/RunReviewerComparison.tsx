@@ -334,8 +334,6 @@ export function RunReviewerComparison({
   }
 
   return (
-    // TooltipProvider (renders no DOM — pure context) so the per-field trace's
-    // tooltip works in the read-only branch too; harmless when no trace mounts.
     <div className="overflow-x-auto" data-testid="run-reviewer-comparison">
       <table className="w-full border-collapse text-sm">
         <thead>

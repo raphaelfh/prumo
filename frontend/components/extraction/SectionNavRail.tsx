@@ -87,9 +87,6 @@ export default function SectionNavRail({
               : t('extraction', 'sectionNavComplete')}
           </p>
           {showJump && (
-            // Local provider: the rail is mounted deep in the form tree and
-            // cannot assume a caller-supplied TooltipProvider (same reason the
-            // disposition row in FieldInput carries its own).
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
