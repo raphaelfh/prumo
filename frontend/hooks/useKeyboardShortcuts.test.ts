@@ -106,6 +106,37 @@ describe('useKeyboardShortcuts', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it('claims a mod chord before the focused element handles the key', () => {
+    // Radix skips a defaultPrevented key: a focused Select trigger opens on ⌘↵ otherwise.
+    const handler = vi.fn();
+    const bindings: Binding[] = [{type: 'chord', key: 'Enter', mod: true, handler}];
+    renderHook(() => useKeyboardShortcuts({bindings, enabled: true}));
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    let claimedBeforeTrigger: boolean | undefined;
+    trigger.addEventListener('keydown', (e) => (claimedBeforeTrigger = e.defaultPrevented));
+
+    fireKeydown('Enter', {meta: true, target: trigger});
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(claimedBeforeTrigger).toBe(true);
+  });
+
+  it('lets the focused element handle a bare key before a binding claims it', () => {
+    // Escape closes the innermost Radix layer only while it is not defaultPrevented.
+    const handler = vi.fn();
+    const bindings: Binding[] = [{type: 'chord', key: 'Escape', allowInDialogs: true, handler}];
+    renderHook(() => useKeyboardShortcuts({bindings, enabled: true}));
+    const option = document.createElement('div');
+    document.body.appendChild(option);
+    let claimedBeforeOption: boolean | undefined;
+    option.addEventListener('keydown', (e) => (claimedBeforeOption = e.defaultPrevented));
+
+    const event = fireKeydown('Escape', {target: option});
+    expect(event.defaultPrevented).toBe(true);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(claimedBeforeOption).toBe(false);
+  });
+
   it('keeps a bare chord out of inputs', () => {
     const handler = vi.fn();
     const bindings: Binding[] = [{type: 'chord', key: 'j', handler}];

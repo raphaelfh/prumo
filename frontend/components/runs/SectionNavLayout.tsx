@@ -5,7 +5,8 @@
  * - the rail's visibility — binary, the rail or nothing (never a strip),
  *   remembered in this browser, toggled by its button or ⌘\;
  * - which sections are open (`SectionOpenContext`), so picking a section in the
- *   rail, or jumping to a required field inside a closed one, opens it;
+ *   rail, jumping to a required field inside a closed one, or revealing one from
+ *   outside through `SectionNavHandle`, opens it;
  * - the form column the "next required field" jump walks, bound to ⌘↵ from
  *   anywhere, including inside a field (a chord types nothing).
  *
@@ -13,7 +14,7 @@
  * review popover included — swallows them. `RUN_SHORTCUTS` documents them beside
  * the header's own.
  */
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, type Ref, useImperativeHandle, useRef, useState } from 'react';
 import { ListTree } from 'lucide-react';
 import SectionNavRail from '@/components/extraction/SectionNavRail';
 import { HeaderIconButton } from '@/components/layout/HeaderIconButton';
@@ -47,15 +48,22 @@ function writeStoredOpen(open: boolean): void {
   }
 }
 
+/** For a caller outside the layout: the header's "Review N pending suggestions". */
+export interface SectionNavHandle {
+  /** Opens a section and scrolls to it, exactly as picking it in the rail does. */
+  revealSection: (id: string) => void;
+}
+
 export interface SectionNavLayoutProps {
   items: SectionNavItem[];
   activeId: string | null;
   onSelect: (id: string) => void;
   /** The form. Its column is the only region the jump walks. */
   children: ReactNode;
+  ref?: Ref<SectionNavHandle>;
 }
 
-export function SectionNavLayout({ items, activeId, onSelect, children }: SectionNavLayoutProps) {
+export function SectionNavLayout({ items, activeId, onSelect, children, ref }: SectionNavLayoutProps) {
   const [railOpen, setRailOpen] = useState(readStoredOpen);
   const toggleRail = () => {
     writeStoredOpen(!railOpen);
@@ -67,6 +75,11 @@ export function SectionNavLayout({ items, activeId, onSelect, children }: Sectio
     isOpen: (id, byDefault) => openById[id] ?? byDefault,
     setOpen: (id, open) => setOpenById((prev) => ({ ...prev, [id]: open })),
   };
+  const revealSection = (id: string) => {
+    sectionOpen.setOpen(id, true);
+    onSelect(id);
+  };
+  useImperativeHandle(ref, () => ({ revealSection }));
 
   const { readOnly } = useRunEditability();
   const formColumnRef = useRef<HTMLDivElement>(null);
@@ -130,10 +143,7 @@ export function SectionNavLayout({ items, activeId, onSelect, children }: Sectio
             <SectionNavRail
               items={items}
               activeId={activeId}
-              onSelect={(id) => {
-                sectionOpen.setOpen(id, true);
-                onSelect(id);
-              }}
+              onSelect={revealSection}
               onJumpToNextPending={jumpToNextPending}
             />
           )}

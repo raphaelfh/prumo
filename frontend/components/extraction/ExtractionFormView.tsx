@@ -15,10 +15,11 @@
  * has moved into ``ModelSection``.
  */
 
+import type {Ref} from 'react';
 import {EntrySection} from './entries/EntrySection';
 import {EntryFormProvider, type EntryFormContextValue} from './entries/EntryFormContext';
 import {SectionAccordion} from './SectionAccordion';
-import {SectionNavLayout} from '@/components/runs/SectionNavLayout';
+import {SectionNavLayout, type SectionNavHandle} from '@/components/runs/SectionNavLayout';
 import {buildSectionRegistry} from '@/lib/extraction/sectionRegistry';
 import {useActiveSection} from '@/hooks/extraction/useActiveSection';
 import type {
@@ -65,9 +66,13 @@ export interface ExtractionFormViewProps {
   runId?: string | null;
   /** Callback to refresh values/suggestions after AI extraction. */
   onExtractionComplete?: () => void;
+  /** The section layout's handle: the header's suggestion locate opens a section through it. */
+  sectionNavRef?: Ref<SectionNavHandle>;
 }
 
-function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
+// `sectionNavRef` comes out of `props` first: the closures below run during render
+// and capture `props`, and the compiler rejects a render-time closure holding a ref.
+function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormViewProps) {
 
   const roots = props.entityTypes.filter((et) => !et.parent_entity_type_id);
   const sectionRegistry = buildSectionRegistry({
@@ -109,7 +114,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
   };
 
   return (
-    <SectionNavLayout items={sectionRegistry} activeId={activeId} onSelect={scrollToSection}>
+    <SectionNavLayout ref={sectionNavRef} items={sectionRegistry} activeId={activeId} onSelect={scrollToSection}>
       {/*
         The Provider sits here, and this component is NOT memoized. Inside a
         memo boundary its comparator would gate the whole context: one

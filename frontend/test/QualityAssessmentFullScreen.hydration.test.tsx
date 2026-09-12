@@ -52,16 +52,6 @@ vi.mock("@prumo/pdf-viewer", async () => {
   };
 });
 
-// Spy the DOM-scroll half of the header suggestion-locate pair (jsdom has no
-// scrollIntoView); the key-parsing half stays real so the reverse lookup is
-// covered end to end.
-vi.mock("@/lib/runs/suggestionLocate", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/runs/suggestionLocate")>(
-    "@/lib/runs/suggestionLocate",
-  );
-  return { ...actual, scrollToSectionById: vi.fn(() => true) };
-});
-
 vi.mock("@/integrations/api", async () => {
   const { makeApiClientDefault } = await import("./helpers/qaFullScreenMocks");
   return { apiClient: vi.fn(makeApiClientDefault()) };
@@ -287,6 +277,8 @@ describe("QualityAssessmentFullScreen — header suggestion locate", () => {
   // Self-contained fixture (the finalized describe's restoreAllMocks wipes
   // the factory apiClient implementation for everything after it).
   beforeEach(() => {
+    // jsdom has no scrollIntoView; the section registry calls it on the domain's wrapper.
+    Element.prototype.scrollIntoView = vi.fn();
     mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
     vi.mocked(apiClient).mockImplementation(async (url: string) => {
       if (url === "/api/v1/hitl/sessions") {
@@ -352,19 +344,43 @@ describe("QualityAssessmentFullScreen — header suggestion locate", () => {
     vi.restoreAllMocks();
   });
 
-  it("Review-pending menu item scrolls to the domain of the first pending suggestion", async () => {
-    const { scrollToSectionById } = await import("@/lib/runs/suggestionLocate");
-    vi.mocked(scrollToSectionById).mockClear();
-
-    renderPage();
+  async function reviewPendingSuggestions() {
     const trigger = await screen.findByTestId("run-ai-actions");
     await waitFor(() => expect(trigger).toHaveTextContent("1"));
     await userEvent.click(trigger);
     await userEvent.click(
       await screen.findByRole("menuitem", { name: /review 1 pending/i }),
     );
-    // inst-1 belongs to et-1 (session.instancesByEntityType reverse lookup).
-    expect(vi.mocked(scrollToSectionById)).toHaveBeenCalledWith("et-1");
+  }
+
+  it("Review-pending menu item scrolls to the domain of the first pending suggestion", async () => {
+    renderPage();
+    const domain = await screen.findByTestId("qa-domain-participants");
+    await reviewPendingSuggestions();
+    // inst-1 belongs to et-1 (session.instancesByEntityType reverse lookup); the
+    // section the page registered for et-1 is the domain's wrapper.
+    expect(vi.mocked(Element.prototype.scrollIntoView).mock.contexts).toContain(
+      domain.parentElement,
+    );
+  });
+
+  it("Review-pending menu item opens the domain when it is closed", async () => {
+    renderPage();
+    const domain = await screen.findByTestId("qa-domain-participants");
+    const row = "qa-field-row-q1_1_appropriate_data_sources";
+    // Precondition: the first domain renders open, showing the suggestion's row.
+    expect(await within(domain).findByTestId(row)).toBeInTheDocument();
+    await userEvent.click(
+      within(domain).getByRole("button", { name: /participants/i, expanded: true }),
+    );
+    await waitFor(() => expect(within(domain).queryByTestId(row)).not.toBeInTheDocument());
+
+    await reviewPendingSuggestions();
+
+    expect(await within(domain).findByTestId(row)).toBeInTheDocument();
+    expect(
+      within(domain).getByRole("button", { name: /participants/i, expanded: true }),
+    ).toBeInTheDocument();
   });
 });
 

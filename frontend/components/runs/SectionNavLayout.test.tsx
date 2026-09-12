@@ -1,12 +1,14 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createRef } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
 
-import { SectionNavLayout } from './SectionNavLayout';
+import { SectionNavLayout, type SectionNavHandle } from './SectionNavLayout';
 import { RunEditabilityProvider } from './RunEditabilityContext';
 import { useSectionOpen } from './SectionOpenContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { SectionNavItem } from '@/lib/extraction/sectionRegistry';
 
 const items: SectionNavItem[] = [
@@ -79,6 +81,33 @@ describe('SectionNavLayout', () => {
     await waitFor(() => expect(screen.getByLabelText('pending')).toHaveFocus());
   });
 
+  it('mod+Enter on a focused select moves to the next required field without opening it', async () => {
+    render(
+      <SectionNavLayout items={items} activeId="s1" onSelect={vi.fn()}>
+        <div data-pending-required="">
+          <Select>
+            <SelectTrigger aria-label="judgment">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div data-pending-required="">
+          <input aria-label="pending" />
+        </div>
+      </SectionNavLayout>,
+    );
+    const judgment = screen.getByRole('combobox', { name: 'judgment' });
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    expect(judgment).toHaveFocus();
+
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    expect(screen.getByLabelText('pending')).toHaveFocus();
+    expect(judgment).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('mod+Enter does nothing on a read-only run', async () => {
     render(
       <RunEditabilityProvider stage="finalized">
@@ -119,5 +148,22 @@ describe('SectionNavLayout — section open state', () => {
     await userEvent.click(screen.getByRole('button', { name: /Complete section/ }));
     expect(onSelect).toHaveBeenCalledWith('done');
     expect(screen.getByLabelText('done field')).toBeInTheDocument();
+  });
+
+  it('revealSection opens a closed section and selects it, for a caller outside the layout', () => {
+    const onSelect = vi.fn();
+    const nav = createRef<SectionNavHandle>();
+    render(
+      <SectionNavLayout ref={nav} items={sections} activeId={null} onSelect={onSelect}>
+        <Section id="todo" pending />
+      </SectionNavLayout>,
+    );
+    expect(screen.queryByLabelText('todo field')).not.toBeInTheDocument();
+    expect(nav.current).not.toBeNull();
+
+    act(() => nav.current?.revealSection('todo'));
+
+    expect(onSelect).toHaveBeenCalledWith('todo');
+    expect(screen.getByLabelText('todo field')).toBeInTheDocument();
   });
 });

@@ -21,6 +21,7 @@ import {useMemo} from 'react';
 
 import type {Entry} from '@/components/extraction/entries/types';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
+import {entrySlotKey} from '@/lib/extraction/entrySlots';
 import {
   type ProgressEntityProjection,
   computeRequiredFieldProgress,
@@ -57,11 +58,6 @@ export interface UseEntryGroupReturn {
   activeEntryId: string | null;
   setActiveEntryId: (id: string) => void;
   noun: string;
-}
-
-/** The slot one rendered group occupies: (article, group, parent). */
-export function entrySlotKey(articleId: string, groupId: string, parentInstanceId: string | null): string {
-  return `active-entry-${articleId}-${groupId}-${parentInstanceId ?? 'root'}`;
 }
 
 function readStored(key: string): string | null {

@@ -63,6 +63,7 @@ export function useKeyboardShortcuts({
   useEffect(() => {
     if (!enabled) return;
     const modProp = modifierKey();
+    const isModActive = (e: KeyboardEvent) => (e as unknown as Record<string, boolean>)[modProp] === true;
 
     function clearPending() {
       pendingPrefixRef.current = null;
@@ -72,33 +73,48 @@ export function useKeyboardShortcuts({
       }
     }
 
-    // Match first, guard dialogs last: `isDialogOpen` queries the whole document,
-    // and most keystrokes — typing in a form above all — match no binding.
-    function onKeyDown(e: KeyboardEvent) {
+    /**
+     * Runs the first mod (or bare) chord the event matches; true once one matched.
+     * Match first, guard dialogs last: `isDialogOpen` queries the whole document,
+     * and most keystrokes — typing in a form above all — match no binding.
+     */
+    function runChord(e: KeyboardEvent, mod: boolean): boolean {
+      if (isModActive(e) !== mod) return false;
+      // A bare chord is an unmodified key, whichever platform the modifier is.
+      if (!mod && (e.metaKey || e.ctrlKey || e.altKey)) return false;
       const key = e.key.toLowerCase();
-      const modActive = (e as unknown as Record<string, boolean>)[modProp] === true;
-
-      // Chord bindings (always considered first; mod chords bypass input guard
-      // unless they opt out).
       for (const b of bindingsRef.current) {
-        if (b.type !== 'chord') continue;
-        const requireMod = !!b.mod;
-        const requireShift = !!b.shift;
+        if (b.type !== 'chord' || !!b.mod !== mod) continue;
         if (key !== b.key.toLowerCase()) continue;
-        if (requireMod !== modActive) continue;
-        // A bare chord is an unmodified key, whichever platform the modifier is.
-        if (!requireMod && (e.metaKey || e.ctrlKey || e.altKey)) continue;
-        if (requireShift !== e.shiftKey) continue;
-        if (!(b.allowInInputs ?? requireMod) && isTypingTarget(e)) continue;
+        if (!!b.shift !== e.shiftKey) continue;
+        // Mod chords bypass the input guard unless they opt out.
+        if (!(b.allowInInputs ?? mod) && isTypingTarget(e)) continue;
         clearPending();
-        if (!b.allowInDialogs && isDialogOpen()) return;
+        if (!b.allowInDialogs && isDialogOpen()) return true;
         e.preventDefault();
         b.handler();
-        return;
+        return true;
       }
+      return false;
+    }
+
+    // A mod chord outranks the focused control, so it claims its key in the
+    // capture phase, before React dispatches: Radix primitives skip a
+    // defaultPrevented key, and a focused Select trigger opens on ⌘↵ otherwise
+    // (its open keys ignore modifiers).
+    function onKeyDownCapture(e: KeyboardEvent) {
+      runChord(e, true);
+    }
+
+    // A bare key is the focused control's first — Escape closes the innermost
+    // Radix layer only while it is not defaultPrevented — so bare chords and
+    // sequences match in the bubble phase, after it.
+    function onKeyDown(e: KeyboardEvent) {
+      if (runChord(e, false)) return;
+      const key = e.key.toLowerCase();
 
       // Sequence bindings — never inside inputs, never with modifiers.
-      if (modActive || e.shiftKey || e.altKey) {
+      if (isModActive(e) || e.shiftKey || e.altKey) {
         clearPending();
         return;
       }
@@ -132,8 +148,10 @@ export function useKeyboardShortcuts({
       }
     }
 
+    window.addEventListener('keydown', onKeyDownCapture, {capture: true});
     window.addEventListener('keydown', onKeyDown);
     return () => {
+      window.removeEventListener('keydown', onKeyDownCapture, {capture: true});
       window.removeEventListener('keydown', onKeyDown);
       clearPending();
     };
