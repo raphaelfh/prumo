@@ -32,6 +32,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # openai_compatible is not in the old CHECK's allow-list; delete any
+    # rows before re-adding it, or the ADD CONSTRAINT would fail.
+    op.execute("DELETE FROM public.user_api_keys WHERE provider = 'openai_compatible'")
     op.execute(
         "ALTER TABLE public.user_api_keys DROP CONSTRAINT IF EXISTS user_api_keys_provider_check"
     )
