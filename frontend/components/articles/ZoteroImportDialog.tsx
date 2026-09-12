@@ -312,7 +312,7 @@ export function ZoteroImportDialog({
                     }
                   />
                   <div className="space-y-1 flex-1">
-                    <Label htmlFor="download-pdfs" className="cursor-pointer">
+                    <Label htmlFor="download-pdfs">
                         {t('articles', 'zoteroDownloadPdfs')}
                     </Label>
                     <p className="text-sm text-muted-foreground">
@@ -332,7 +332,7 @@ export function ZoteroImportDialog({
                       }
                     />
                     <div className="space-y-1 flex-1">
-                      <Label htmlFor="only-pdfs" className="cursor-pointer">
+                      <Label htmlFor="only-pdfs">
                           {t('articles', 'zoteroOnlyPdfs')}
                       </Label>
                       <p className="text-sm text-muted-foreground">
@@ -351,7 +351,7 @@ export function ZoteroImportDialog({
                     }
                   />
                   <div className="space-y-1 flex-1">
-                    <Label htmlFor="update-existing" className="cursor-pointer">
+                    <Label htmlFor="update-existing">
                         {t('articles', 'zoteroUpdateExisting')}
                     </Label>
                     <p className="text-sm text-muted-foreground">
@@ -369,7 +369,7 @@ export function ZoteroImportDialog({
                     }
                   />
                   <div className="space-y-1 flex-1">
-                    <Label htmlFor="import-tags" className="cursor-pointer">
+                    <Label htmlFor="import-tags">
                         {t('articles', 'zoteroImportTagsAsKeywords')}
                     </Label>
                     <p className="text-sm text-muted-foreground">

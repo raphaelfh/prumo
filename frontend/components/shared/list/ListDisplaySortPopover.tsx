@@ -102,7 +102,7 @@ export function ListDisplaySortPopover({
                                         type="button"
                                         disabled={disabled}
                                         onClick={() => !disabled && onToggleColumn?.(key)}
-                                        className={`rounded-md border px-2 py-1 text-[12px] transition-colors disabled:opacity-60 disabled:cursor-default ${
+                                        className={`rounded-md border px-2 py-1 text-[12px] transition-colors disabled:opacity-60 ${
                                             visibleKeys[key]
                                                 ? 'border-primary/50 bg-primary/10 text-foreground'
                                                 : 'border-border/40 bg-muted/30 text-muted-foreground hover:bg-muted/50'

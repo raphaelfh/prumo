@@ -464,7 +464,7 @@ export function ArticleFileUploadDialogNew({
                         id="file-upload"
                       />
                       <Button asChild size="sm" className="sm:size-default">
-                        <label htmlFor="file-upload" className="cursor-pointer">
+                        <label htmlFor="file-upload">
                           <Plus className="mr-2 h-4 w-4" />
                             {t('articles', 'uploadSelectFiles')}
                         </label>

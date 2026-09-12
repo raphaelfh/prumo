@@ -314,7 +314,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
     <div
       className={cn(
         'group relative p-3 rounded-lg border transition-colors',
-        isClickable && 'cursor-pointer hover:bg-accent',
+        isClickable && 'hover:bg-accent',
         !isClickable && 'bg-background'
       )}
       onClick={() => isClickable && onClick(job)}

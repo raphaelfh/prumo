@@ -149,7 +149,7 @@ export function ArticlesExportDialog({
                                     />
                                     <Label
                                         htmlFor={`format-${id}`}
-                                        className="text-sm font-normal cursor-pointer"
+                                        className="text-sm font-normal"
                                     >
                                         {t("articles", labelKey)}
                                     </Label>
@@ -169,7 +169,7 @@ export function ArticlesExportDialog({
                                     <RadioGroupItem value={id} id={`scope-${id}`}/>
                                     <Label
                                         htmlFor={`scope-${id}`}
-                                        className="text-sm font-normal cursor-pointer"
+                                        className="text-sm font-normal"
                                     >
                                         {t("articles", labelKey)}
                                     </Label>
@@ -188,7 +188,7 @@ export function ArticlesExportDialog({
                                 <RadioGroupItem value="current_list" id="scope-current"/>
                                 <Label
                                     htmlFor="scope-current"
-                                    className="text-sm font-normal cursor-pointer"
+                                    className="text-sm font-normal"
                                 >
                                     {t("articles", "exportArticleScopeCurrentList")} (
                                     {currentListIds.length})
@@ -198,7 +198,7 @@ export function ArticlesExportDialog({
                                 <RadioGroupItem value="selected" id="scope-selected"/>
                                 <Label
                                     htmlFor="scope-selected"
-                                    className="text-sm font-normal cursor-pointer"
+                                    className="text-sm font-normal"
                                 >
                                     {t("articles", "exportArticleScopeSelected")} ({selectedIds.length}
                                     )

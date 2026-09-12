@@ -160,7 +160,7 @@ function ViewButton({
       className={cn(
         'h-6 rounded-sm px-2 text-[12px] transition-colors',
         active ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground',
-        disabled && 'cursor-not-allowed opacity-50',
+        disabled && 'opacity-50',
       )}
     >
       {label}

@@ -130,19 +130,19 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
               <RadioGroup value={type} onValueChange={(v) => setType(v as FeedbackType)}>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="bug" id="bug" />
-                  <Label htmlFor="bug" className="font-normal cursor-pointer">🐛 {t('navigation', 'feedbackTypeBug')}</Label>
+                  <Label htmlFor="bug" className="font-normal">🐛 {t('navigation', 'feedbackTypeBug')}</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="suggestion" id="suggestion" />
-                  <Label htmlFor="suggestion" className="font-normal cursor-pointer">💡 {t('navigation', 'feedbackTypeSuggestion')}</Label>
+                  <Label htmlFor="suggestion" className="font-normal">💡 {t('navigation', 'feedbackTypeSuggestion')}</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="question" id="question" />
-                  <Label htmlFor="question" className="font-normal cursor-pointer">❓ {t('navigation', 'feedbackTypeQuestion')}</Label>
+                  <Label htmlFor="question" className="font-normal">❓ {t('navigation', 'feedbackTypeQuestion')}</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="other" id="other" />
-                  <Label htmlFor="other" className="font-normal cursor-pointer">💬 {t('navigation', 'feedbackTypeOther')}</Label>
+                  <Label htmlFor="other" className="font-normal">💬 {t('navigation', 'feedbackTypeOther')}</Label>
                 </div>
               </RadioGroup>
             </div>
@@ -201,7 +201,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
                 <Button asChild variant="outline" size="sm">
                   {/* `relative`: the sr-only input inside is absolutely positioned —
                       without a positioned ancestor it adds phantom page scroll. */}
-                  <label htmlFor={fileInputId} className="relative shrink-0 cursor-pointer">
+                  <label htmlFor={fileInputId} className="relative shrink-0">
                     <Paperclip strokeWidth={1.5} aria-hidden="true" />
                     {t('navigation', 'feedbackAttachChoose')}
                     <input

@@ -781,7 +781,7 @@ export function ArticlesList({
 
                                   {/* Title */}
                                   <TableCell
-                                      className={`${TABLE_CELL_CLASS} font-medium cursor-pointer ${colVisibilityClass('sm')}`}
+                                      className={`${TABLE_CELL_CLASS} font-medium ${colVisibilityClass('sm')}`}
                                       style={getColumnStyle('title')}
                                       onClick={() => onArticleClick(article.id)}
                                   >
@@ -798,7 +798,7 @@ export function ArticlesList({
                                           <div className="flex items-center gap-1 min-w-0">
                                           {articlesWithMainFile.has(article.id) ? (
                                               <div
-                                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight cursor-pointer hover:bg-success/20 transition-colors"
+                                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight hover:bg-success/20 transition-colors"
                                                   onClick={async (e) => {
                                                       e.stopPropagation();
                                                       const result = await fetchArticlePdfSignedUrl(article.id);

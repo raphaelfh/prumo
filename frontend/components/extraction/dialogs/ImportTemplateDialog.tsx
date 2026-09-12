@@ -173,7 +173,7 @@ export function ImportTemplateDialog({
                           key={template.id}
                           onClick={() => setSelectedTemplateId(template.id)}
                           className={cn(
-                            'group cursor-pointer border border-border/60 bg-card transition-colors duration-75',
+                            'group border border-border/60 bg-card transition-colors duration-75',
                             'hover:bg-muted/50',
                             'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
                             isSelected && 'border-primary/60 bg-muted/30 ring-1 ring-primary/30',
@@ -185,7 +185,7 @@ export function ImportTemplateDialog({
                                 <RadioGroupItem value={template.id} id={template.id} />
                                 <div>
                                   <CardTitle className="text-[13px] text-foreground">
-                                    <Label htmlFor={template.id} className="cursor-pointer">
+                                    <Label htmlFor={template.id}>
                                       {template.name}
                                     </Label>
                                   </CardTitle>

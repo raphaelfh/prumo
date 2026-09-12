@@ -175,7 +175,6 @@ export function AllowedUnitsList({
                       <CommandItem
                         key={unit}
                         onSelect={() => handleSelectSuggestion(unit)}
-                        className="cursor-pointer"
                         disabled={values.includes(unit)}
                       >
                         <span className="font-mono text-sm">{unit}</span>

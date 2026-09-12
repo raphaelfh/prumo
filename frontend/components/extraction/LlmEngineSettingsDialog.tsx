@@ -271,7 +271,7 @@ export function LlmEngineSettingsDialog({
                             'flex items-center gap-2 rounded-md px-1.5 py-1 text-xs',
                             current
                               ? 'text-muted-foreground'
-                              : 'cursor-pointer hover:bg-muted/50',
+                              : 'hover:bg-muted/50',
                           )}
                         >
                           <Checkbox

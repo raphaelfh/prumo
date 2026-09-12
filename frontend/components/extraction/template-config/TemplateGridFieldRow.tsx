@@ -352,7 +352,7 @@ export function FieldRow({
             ancestor its static position resolves against BODY, escaping the
             grid's overflow clip and stretching the page scroll area by the
             table's full height (the phantom page scroll below the card). */}
-        <label className="relative inline-flex size-6 cursor-pointer items-center justify-center align-middle">
+        <label className="relative inline-flex size-6 items-center justify-center align-middle">
           <input
             type="checkbox"
             checked={field.isRequired}
