@@ -1,7 +1,7 @@
 """Credentials → pydantic-ai model instances, driven by the registry.
 
-Three LLM providers today (``app.llm.registry``): ``openai`` and
-``anthropic`` (a caller's key, else the operator's global key), and
+Four LLM providers today (``app.llm.registry``): ``openai``,
+``anthropic`` and ``google`` (a caller's key, else the operator's global key), and
 ``openai_compatible`` (needs a ``base_url``; key optional — keyless
 hosts get the literal placeholder ``"no-key-required"``). Hosted
 providers ignore ``base_url``. A parsing provider is not buildable."""
@@ -48,4 +48,10 @@ def build_model(
         from pydantic_ai.providers.anthropic import AnthropicProvider
 
         return AnthropicModel(model_name, provider=AnthropicProvider(api_key=key))
+    if provider == "google":
+        # Lazy import: google-genai is only needed on the Gemini path.
+        from pydantic_ai.models.google import GoogleModel
+        from pydantic_ai.providers.google import GoogleProvider
+
+        return GoogleModel(model_name, provider=GoogleProvider(api_key=key))
     raise ValueError(f"Unsupported LLM provider: {provider!r}")

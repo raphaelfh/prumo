@@ -1,4 +1,4 @@
-"""Narrow ``user_api_keys.provider`` to the registry's four providers.
+"""Align ``user_api_keys.provider`` with the registry's five providers.
 
 gemini and grok were storable as keys and buildable by nothing — no code
 path ever turned them into a model. The registry (``app.llm.registry``)
@@ -17,7 +17,7 @@ down_revision = "0070_annotation_updated_at"
 branch_labels = None
 depends_on = None
 
-_NEW = "provider IN ('openai', 'anthropic', 'openai_compatible', 'llama_cloud')"
+_NEW = "provider IN ('openai', 'anthropic', 'google', 'openai_compatible', 'llama_cloud')"
 _OLD = "provider IN ('openai', 'anthropic', 'gemini', 'grok', 'llama_cloud')"
 
 
@@ -32,9 +32,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # openai_compatible is not in the old CHECK's allow-list; delete any
-    # rows before re-adding it, or the ADD CONSTRAINT would fail.
-    op.execute("DELETE FROM public.user_api_keys WHERE provider = 'openai_compatible'")
+    # google and openai_compatible are not in the old CHECK's allow-list;
+    # delete any rows before re-adding it, or the ADD CONSTRAINT would fail.
+    op.execute("DELETE FROM public.user_api_keys WHERE provider IN ('google', 'openai_compatible')")
     op.execute(
         "ALTER TABLE public.user_api_keys DROP CONSTRAINT IF EXISTS user_api_keys_provider_check"
     )

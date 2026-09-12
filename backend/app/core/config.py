@@ -131,6 +131,7 @@ class Settings(BaseSettings):
     # reference exists, so the vulture dead-code scan cannot see the read.
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
+    GOOGLE_API_KEY: str | None = None
 
     # =================== LLM (provider-agnostic) ===================
     # Single authoritative model/provider for AI extraction. The former

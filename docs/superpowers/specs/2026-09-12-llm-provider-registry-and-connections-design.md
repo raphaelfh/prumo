@@ -47,8 +47,8 @@ already drifting, and its credential model has two unrelated halves:
 ## Non-goals
 
 Audit trail and per-user rate limits (roadmap "Provider flexibility",
-own spec — the connection table is designed so they attach). Gemini and
-grok. Private or loopback hosts in SaaS (§10 of the template-config spec
+own spec — the connection table is designed so they attach). Grok.
+Private or loopback hosts in SaaS (§10 of the template-config spec
 is unchanged: the SSRF guard stays, so a laptop Ollama is reachable only
 when prumo runs on that network). Model discovery beyond the `/models`
 probe. Temperature and seed. Data migration: no active users exist, so
@@ -84,6 +84,7 @@ class ProviderSpec:
 |---|---|---|---|---|---|
 | openai | llm | no | no | `OPENAI_API_KEY` | user, project |
 | anthropic | llm | no | no | `ANTHROPIC_API_KEY` (new, optional) | user, project |
+| google | llm | no | no | `GOOGLE_API_KEY` (new, optional) | user, project |
 | openai_compatible | llm | yes | yes | none | user, project |
 | llama_cloud | parsing | no | no | `LLAMA_CLOUD_API_KEY` | user, project |
 
@@ -115,9 +116,11 @@ literally; a test asserts the literal equals the registry, so adding a
 provider is one registry entry plus one migration, and forgetting the
 migration fails the test.
 
-Slice 1 migration: delete gemini/grok rows from `user_api_keys` and
-narrow its CHECK. Slice 1 also adds the optional `ANTHROPIC_API_KEY`
-setting.
+Slice 1 migration: delete the legacy gemini/grok rows from
+`user_api_keys` (Google returns as the registry provider `google`,
+built with pydantic-ai's `GoogleModel`) and align its CHECK with the
+registry. Slice 1 also adds the optional `ANTHROPIC_API_KEY` and
+`GOOGLE_API_KEY` settings.
 
 ## 2. `llm_connections` (slice 2)
 

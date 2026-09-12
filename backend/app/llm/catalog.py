@@ -88,6 +88,34 @@ CATALOG: tuple[CatalogEntry, ...] = (
         context_window=1_000_000,
         cost_tier="$$$",
     ),
+    # Google tiers by list price against the roster above: Flash-Lite
+    # ($0.25/$1.50) sits with luna; 3.8 Flash ($1.50/$7.50 standard) and
+    # 3.1 Pro ($2/$12) sit with terra. Google's model page states no
+    # context window; 1M is the documented Gemini generation window.
+    CatalogEntry(
+        provider="google",
+        model="gemini-3.1-flash-lite",
+        label="Gemini 3.1 Flash-Lite",
+        best_for="Cheapest Gemini for high-volume extraction",
+        context_window=1_000_000,
+        cost_tier="$",
+    ),
+    CatalogEntry(
+        provider="google",
+        model="gemini-3.8-flash",
+        label="Gemini 3.8 Flash",
+        best_for="Current Gemini workhorse: strong reasoning at Flash cost",
+        context_window=1_000_000,
+        cost_tier="$$",
+    ),
+    CatalogEntry(
+        provider="google",
+        model="gemini-3.1-pro-preview",
+        label="Gemini 3.1 Pro (preview)",
+        best_for="Strongest Gemini reasoning; preview model id",
+        context_window=1_000_000,
+        cost_tier="$$",
+    ),
 )
 
 

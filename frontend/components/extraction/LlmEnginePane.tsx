@@ -49,6 +49,7 @@ const KEY_SETTINGS_ROUTE = "/settings?tab=integrations";
 const PROVIDER_LABELS: Record<string, string> = {
   openai: t("llmEngine", "providerOpenai"),
   anthropic: t("llmEngine", "providerAnthropic"),
+  google: t("llmEngine", "providerGoogle"),
 };
 
 const providerLabel = (provider: string): string =>

@@ -98,3 +98,21 @@ def test_rejects_blank_model_name():
 def test_parsing_provider_is_not_buildable():
     with pytest.raises(ValueError, match="Unsupported LLM provider"):
         build_model("llama_cloud", "anything", api_key="x")
+
+
+def test_google_branch_builds_google_model():
+    model = build_model("google", "gemini-3.8-flash", api_key="AIza-test")
+    assert type(model).__name__ == "GoogleModel"
+    assert model.model_name == "gemini-3.8-flash"
+
+
+def test_google_falls_back_to_global_key(monkeypatch):
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", "AIza-global")
+    model = build_model("google", "gemini-3.8-flash", api_key=None)
+    assert type(model).__name__ == "GoogleModel"
+
+
+def test_google_without_key_raises_missing_key(monkeypatch):
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    with pytest.raises(MissingLLMKeyError, match="GOOGLE_API_KEY"):
+        build_model("google", "gemini-3.8-flash", api_key=None)

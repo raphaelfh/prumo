@@ -58,6 +58,15 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         docs_url="https://console.anthropic.com/settings/keys",
     ),
     ProviderSpec(
+        id="google",
+        label="Google",
+        description="Gemini models",
+        serves="llm",
+        needs_host=False,
+        global_key_setting="GOOGLE_API_KEY",
+        docs_url="https://aistudio.google.com/app/apikey",
+    ),
+    ProviderSpec(
         id="openai_compatible",
         label="Custom host",
         description="Any OpenAI-compatible server (Ollama, vLLM, LM Studio, OpenRouter)",

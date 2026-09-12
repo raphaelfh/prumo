@@ -21,13 +21,14 @@ from app.llm.registry import (
 
 
 def test_registry_ids_are_exactly_the_four_providers() -> None:
-    assert provider_ids() == ("openai", "anthropic", "openai_compatible", "llama_cloud")
+    assert provider_ids() == ("openai", "anthropic", "google", "openai_compatible", "llama_cloud")
 
 
 def test_llm_providers_exclude_parsing_providers() -> None:
     assert [s.id for s in REGISTRY if s.serves == "llm"] == [
         "openai",
         "anthropic",
+        "google",
         "openai_compatible",
     ]
 
@@ -101,7 +102,7 @@ def test_user_api_keys_check_literal_equals_the_registry() -> None:
     assert len(checks) == 1
     assert str(checks[0].sqltext) == provider_check_literal()
     assert provider_check_literal() == (
-        "provider IN ('openai', 'anthropic', 'openai_compatible', 'llama_cloud')"
+        "provider IN ('openai', 'anthropic', 'google', 'openai_compatible', 'llama_cloud')"
     )
 
 
@@ -131,4 +132,4 @@ def test_removing_a_provider_breaks_the_drift_guard(monkeypatch: pytest.MonkeyPa
 
 def test_storable_providers_are_the_hosted_ones() -> None:
     """Host-bearing providers wait for slice 2's connections."""
-    assert [s.id for s in storable_providers()] == ["openai", "anthropic", "llama_cloud"]
+    assert [s.id for s in storable_providers()] == ["openai", "anthropic", "google", "llama_cloud"]

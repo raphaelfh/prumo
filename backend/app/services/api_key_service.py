@@ -419,6 +419,8 @@ class APIKeyService(LoggerMixin):
                 return await self._validate_openai(api_key)
             elif provider == "anthropic":
                 return await self._validate_anthropic(api_key)
+            elif provider == "google":
+                return await self._validate_google(api_key)
             elif provider == "llama_cloud":
                 return await self._validate_llama_cloud(api_key)
             else:
@@ -480,6 +482,25 @@ class APIKeyService(LoggerMixin):
                 if "authentication" in str(error_data).lower():
                     return {"status": "invalid", "message": "Invalid API key"}
                 return {"status": "valid", "message": "API key is likely valid"}
+
+    async def _validate_google(self, api_key: str) -> dict[str, Any]:
+        """Validate a Google Gemini API key by listing models."""
+        async with httpx.AsyncClient() as client:
+            # Key travels as a header, never in the URL query string: httpx
+            # embeds the full URL in transport-error messages, which would
+            # leak the secret into logs and the validation response.
+            response = await client.get(
+                "https://generativelanguage.googleapis.com/v1/models",
+                headers={"x-goog-api-key": api_key},
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                return {"status": "valid", "message": "Valid API key"}
+            if response.status_code in (400, 401, 403):
+                return {"status": "invalid", "message": "Invalid API key"}
+            if response.status_code == 429:
+                return {"status": "valid", "message": "Valid API key (rate limited)"}
+            return {"status": "invalid", "message": f"Error: {response.status_code}"}
 
     async def _validate_llama_cloud(self, api_key: str) -> dict[str, Any]:
         """Validate a LlamaCloud API key with a lightweight authed GET."""
