@@ -60,7 +60,7 @@ class UserAPIKeyRepository(BaseRepository[UserAPIKey]):
 
         Args:
             user_id: User ID.
-            provider: Provider name (openai, anthropic, gemini, grok).
+            provider: A registry provider.
 
         Returns:
             Default API key or None.

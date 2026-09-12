@@ -27,9 +27,9 @@ if TYPE_CHECKING:
 SUPPORTED_PROVIDERS: tuple[str, ...] = provider_ids()
 
 
-def provider_check_literal(ids: tuple[str, ...] | None = None) -> str:
-    """The exact SQL text of the ``provider`` CHECK for ``ids``."""
-    quoted = ", ".join(f"'{pid}'" for pid in (ids if ids is not None else provider_ids()))
+def provider_check_literal() -> str:
+    """The exact SQL text of the ``provider`` CHECK, from the registry."""
+    quoted = ", ".join(f"'{pid}'" for pid in provider_ids())
     return f"provider IN ({quoted})"
 
 
