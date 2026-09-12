@@ -14,7 +14,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
+import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {Separator} from "@/components/ui/separator";
 import {IconButton} from "@/components/patterns/IconButton";
 import {toast} from "sonner";
@@ -855,8 +855,7 @@ export function ArticlesList({
                                       <TableCell
                                           className={`${TABLE_CELL_CLASS} text-[13px] text-muted-foreground font-medium ${colVisibilityClass('md')}`}
                                           style={getColumnStyle('authors')}>
-                                          <TooltipProvider>
-                                              <Tooltip>
+                                          <Tooltip>
                                                   <TooltipTrigger asChild>
                                                       <div className="truncate max-w-[120px]">
                                                           {(() => {
@@ -873,7 +872,6 @@ export function ArticlesList({
                                                       </div>
                                                   </TooltipContent>
                                               </Tooltip>
-                                          </TooltipProvider>
                                       </TableCell>
                                   )}
 
@@ -936,7 +934,6 @@ export function ArticlesList({
                                       <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('lg')}`}
                                                  style={getColumnStyle('doi')}>
                                           {article.doi ? (
-                                              <TooltipProvider>
                                                   <Tooltip>
                                                       <TooltipTrigger asChild>
                                                           <button
@@ -959,7 +956,6 @@ export function ArticlesList({
                                                           <p className="text-[11px] text-background/70 mt-1">{t('articles', 'listDoiOpenHint')}</p>
                                                       </TooltipContent>
                                                   </Tooltip>
-                                              </TooltipProvider>
                                           ) : (
                                               <span className="text-[12px] text-muted-foreground/50">–</span>
                                           )}
@@ -1170,10 +1166,7 @@ export function ArticlesList({
                         {/* Actions sit on the same row as search, separated from the
                             view controls by a hairline: import / export / add. */}
                         <Separator orientation="vertical" className="h-4 bg-border/60"/>
-                        {/* Local provider like every sibling control: Radix throws
-                            without a provider ancestor, so the block stays mountable
-                            on its own rather than relying on App's. */}
-                        <TooltipProvider>
+                        <>
                         <DropdownMenu>
                             <ToolbarAction label={t('articles', 'listImportArticles')} icon={Import}>
                                 {(button) => <DropdownMenuTrigger asChild>{button}</DropdownMenuTrigger>}
@@ -1201,7 +1194,7 @@ export function ArticlesList({
                             onClick={onOpenAddArticle}
                             className="bg-foreground text-background hover:bg-foreground/90 hover:text-background"
                         />
-                        </TooltipProvider>
+                        </>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-auto">
                         {selectedArticles.size === 0 ? (

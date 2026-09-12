@@ -6,7 +6,7 @@ import { ariaKeyShortcuts } from '@/lib/platform';
 import { Button } from '@/components/ui/button';
 import { KbdBadge } from '@/components/ui/kbd-badge';
 import { Progress } from '@/components/ui/progress';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRunEditability } from '@/components/runs/RunEditabilityContext';
 import {
   globalProgressFromRegistry,
@@ -90,7 +90,6 @@ export default function SectionNavRail({
             // Local provider: the rail is mounted deep in the form tree and
             // cannot assume a caller-supplied TooltipProvider (same reason the
             // disposition row in FieldInput carries its own).
-            <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -110,7 +109,6 @@ export default function SectionNavRail({
                   <KbdBadge keys={['mod', '↵']} />
                 </TooltipContent>
               </Tooltip>
-            </TooltipProvider>
           )}
         </div>
       )}

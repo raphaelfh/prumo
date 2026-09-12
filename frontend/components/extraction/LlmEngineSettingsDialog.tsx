@@ -33,7 +33,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {ToggleGroup, ToggleGroupItem} from '@/components/ui/toggle-group';
-import {TooltipProvider} from '@/components/ui/tooltip';
 import {LlmEndpointsDialog} from '@/components/extraction/LlmEndpointsDialog';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
 import {t} from '@/lib/copy';
@@ -148,7 +147,7 @@ export function LlmEngineSettingsDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <TooltipProvider>
+          <>
             <section className="space-y-2">
               <h3 className="text-[13px] font-medium text-foreground">
                 {t('llmEngine', 'modeSectionLabel')}
@@ -317,7 +316,7 @@ export function LlmEngineSettingsDialog({
                 {t('llmEngine', 'manageEndpoints')}
               </Button>
             </section>
-          </TooltipProvider>
+          </>
         </DialogContent>
       </Dialog>
 

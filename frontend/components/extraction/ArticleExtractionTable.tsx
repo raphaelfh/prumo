@@ -41,7 +41,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Checkbox} from "@/components/ui/checkbox";
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
+import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {useArticleSelection} from "@/hooks/extraction/useArticleSelection";
 import {useFullAIExtraction} from "@/hooks/extraction/useFullAIExtraction";
 import {useListKeyboardShortcuts} from "@/hooks/useListKeyboardShortcuts";
@@ -768,7 +768,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                   <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                           <TableHead className={`w-[40px] min-w-[40px] ${TABLE_CELL_CLASS} text-left align-middle`}>
-                <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="flex items-center">
@@ -798,7 +797,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                       </p>
                     </TooltipContent>
                   </Tooltip>
-                </TooltipProvider>
               </TableHead>
                           <TableHead
                               className={`relative ${TABLE_CELL_CLASS}`} style={getColumnStyle('title')}>
@@ -858,7 +856,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                       direction={sortField === 'extraction_progress' ? sortDirection : null}
                                       onSort={() => handleSort('extraction_progress')}
                                   />
-                                  <TooltipProvider>
                                       <Tooltip>
                                           <TooltipTrigger asChild>
                                               <button
@@ -886,7 +883,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                               </ul>
                                           </TooltipContent>
                                       </Tooltip>
-                                  </TooltipProvider>
                               </div>
                               <div
                                   role="separator"
@@ -950,7 +946,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                           className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
                           style={getColumnStyle('authors')}>
                     {article.authors && article.authors.length > 0 ? (
-                        <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                     <div className="flex items-center gap-1 cursor-help">
@@ -965,7 +960,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                     <p className="text-xs">{article.authors.join(', ')}</p>
                                 </TooltipContent>
                             </Tooltip>
-                        </TooltipProvider>
                     ) : (
                         <span className="text-muted-foreground">N/A</span>
                     )}

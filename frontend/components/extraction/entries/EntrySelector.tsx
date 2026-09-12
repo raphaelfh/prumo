@@ -39,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Tabs, TabsList, TabsTrigger} from '@/components/ui/tabs';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
 
@@ -90,7 +90,6 @@ function IconAction(props: {
   children: ReactElement;
 }): ReactElement {
   return (
-    <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -111,7 +110,6 @@ function IconAction(props: {
           <p>{props.label}</p>
         </TooltipContent>
       </Tooltip>
-    </TooltipProvider>
   );
 }
 
@@ -181,7 +179,6 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
 
         <div className="flex gap-2 shrink-0">
           {!readOnly && onIdentifyEntries && (
-            <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <DropdownMenu>
@@ -233,7 +230,6 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
                   <p>{t('extraction', 'modelExtractAITitle').replace('{{noun}}', entryLabel)}</p>
                 </TooltipContent>
               </Tooltip>
-            </TooltipProvider>
           )}
 
           {bulkAvailable && !selecting && (
@@ -249,7 +245,6 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
           )}
 
           {!readOnly && (
-            <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -270,7 +265,6 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
                   <p>{addLabel}</p>
                 </TooltipContent>
               </Tooltip>
-            </TooltipProvider>
           )}
         </div>
       </div>

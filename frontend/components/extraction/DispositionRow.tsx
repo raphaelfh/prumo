@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { valueAbsentReason } from '@/lib/extraction/valueSemantics';
@@ -100,7 +99,6 @@ export function DispositionRow({
   return (
     // Local provider: the row renders on EVERY field, so its tooltips must not
     // depend on a caller-supplied provider.
-    <TooltipProvider delayDuration={300}>
       <div className="flex flex-wrap items-center gap-1.5" data-disposition-control>
         {dispositions.map((d) => {
           const active = activeReason === d.code;
@@ -135,6 +133,5 @@ export function DispositionRow({
           <span className="text-[11px] text-muted-foreground">{activeText}</span>
         ) : null}
       </div>
-    </TooltipProvider>
   );
 }

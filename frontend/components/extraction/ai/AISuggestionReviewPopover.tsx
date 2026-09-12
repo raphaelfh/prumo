@@ -22,7 +22,7 @@ import {Popover, PopoverTrigger} from '@/components/ui/popover';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Separator} from '@/components/ui/separator';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem, EvidenceCitation, RunProvenance} from '@/types/ai-extraction';
@@ -466,7 +466,6 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
             // The audit note lives on Clear's tooltip: it explains the one action
             // here, and a permanent row for it cost the versions a line of space.
             <div className="flex justify-end px-2 py-1">
-              <TooltipProvider delayDuration={300}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button size="xs" variant="ghost" onClick={handleClear}>
@@ -477,7 +476,6 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
                     <p>{t('extraction', 'reviewClearHint')}</p>
                   </TooltipContent>
                 </Tooltip>
-              </TooltipProvider>
             </div>
           ) : undefined
         }

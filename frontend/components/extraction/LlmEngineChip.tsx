@@ -27,7 +27,6 @@ import { AiConfigDialog } from "@/components/project/AiConfigDialog";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useLlmEngine } from "@/hooks/extraction/useLlmEngine";
@@ -107,8 +106,7 @@ export function LlmEngineChip({ projectId, templateId }: LlmEngineChipProps) {
 
   return (
     <div className="flex items-center justify-end">
-      <TooltipProvider delayDuration={0}>
-        <Tooltip>
+      <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="outline"
@@ -156,7 +154,6 @@ export function LlmEngineChip({ projectId, templateId }: LlmEngineChipProps) {
             {t("aiContext", "configDialogDesc")}
           </TooltipContent>
         </Tooltip>
-      </TooltipProvider>
 
       <AiConfigDialog
         projectId={projectId}

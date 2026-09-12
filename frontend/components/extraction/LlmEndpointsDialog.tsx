@@ -62,7 +62,6 @@ import {
 } from '@/components/ui/form';
 import {Input} from '@/components/ui/input';
 import {Skeleton} from '@/components/ui/skeleton';
-import {TooltipProvider} from '@/components/ui/tooltip';
 import {
   useCreateLlmEndpoint,
   useDeleteLlmEndpoint,
@@ -310,7 +309,7 @@ export function LlmEndpointsDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-xl">
-        <TooltipProvider>
+        <>
           <DialogHeader>
             <DialogTitle>{t('llmEngine', 'endpointsTitle')}</DialogTitle>
             <DialogDescription>
@@ -667,7 +666,7 @@ export function LlmEndpointsDialog({
               </form>
             </Form>
           )}
-        </TooltipProvider>
+        </>
       </DialogContent>
     </Dialog>
   );
