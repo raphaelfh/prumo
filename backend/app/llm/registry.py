@@ -3,9 +3,12 @@
 Every layer derives from this tuple: ``build_model``, the catalogue's
 provider ids, the key schema validator, the provider metadata the API
 returns, the global-key lookup, and the DB CHECK literal on
-``user_api_keys.provider`` (asserted equal by a test — adding a provider
-is one entry here plus one migration, and forgetting the migration fails
-the test).
+``user_api_keys.provider``. The CHECK literal computed here is asserted
+equal to the registry by a unit test (``tests/unit/llm/test_registry.py``)
+AND to the live database constraint by the migration roundtrip suite
+(``tests/integration/test_migration_roundtrip.py``) — adding a provider is
+one entry here plus one migration, and forgetting the migration fails
+both.
 
 Rules encoded as data, not comments elsewhere:
 
