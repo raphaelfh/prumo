@@ -23,8 +23,6 @@ from typing import Literal
 
 from app.core.config import settings
 
-Scope = Literal["user", "project"]
-
 
 @dataclass(frozen=True)
 class ProviderSpec:
@@ -36,10 +34,7 @@ class ProviderSpec:
     key_optional: bool
     global_key_setting: str | None
     docs_url: str | None
-    scopes: frozenset[Scope]
 
-
-_BOTH: frozenset[Scope] = frozenset({"user", "project"})
 
 REGISTRY: tuple[ProviderSpec, ...] = (
     ProviderSpec(
@@ -51,7 +46,6 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         key_optional=False,
         global_key_setting="OPENAI_API_KEY",
         docs_url="https://platform.openai.com/api-keys",
-        scopes=_BOTH,
     ),
     ProviderSpec(
         id="anthropic",
@@ -62,7 +56,6 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         key_optional=False,
         global_key_setting="ANTHROPIC_API_KEY",
         docs_url="https://console.anthropic.com/settings/keys",
-        scopes=_BOTH,
     ),
     ProviderSpec(
         id="openai_compatible",
@@ -73,7 +66,6 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         key_optional=True,
         global_key_setting=None,
         docs_url=None,
-        scopes=_BOTH,
     ),
     ProviderSpec(
         id="llama_cloud",
@@ -84,7 +76,6 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         key_optional=False,
         global_key_setting="LLAMA_CLOUD_API_KEY",
         docs_url="https://cloud.llamaindex.ai",
-        scopes=_BOTH,
     ),
 )
 
