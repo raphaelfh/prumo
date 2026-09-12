@@ -79,10 +79,18 @@ REGISTRY: tuple[ProviderSpec, ...] = (
 
 
 def get_provider(provider_id: str) -> ProviderSpec | None:
-    for spec in REGISTRY:
-        if spec.id == provider_id:
-            return spec
-    return None
+    return next((spec for spec in REGISTRY if spec.id == provider_id), None)
+
+
+def storable_providers() -> tuple[ProviderSpec, ...]:
+    """Providers a user key can be stored for: the hosted ones.
+
+    A host-bearing provider needs a connection to carry its host; that
+    concept arrives with slice 2, so until then it is neither offered nor
+    storable. The ONE place that rule lives — schema, service and tests
+    all read it from here.
+    """
+    return tuple(spec for spec in REGISTRY if not spec.needs_host)
 
 
 # Consumed by app.models.user_api_key (the DB CHECK literal + SUPPORTED_PROVIDERS);

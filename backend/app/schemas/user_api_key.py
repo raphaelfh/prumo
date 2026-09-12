@@ -8,14 +8,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.llm.registry import REGISTRY
-from app.models.user_api_key import SUPPORTED_PROVIDERS
+from app.llm.registry import storable_providers
 
-# Host-bearing providers (needs_host) have no connection to carry a host in
-# this slice, so they are not offered or storable yet — slice 2's
-# connections add them back. Derived from the registry, not hardcoded.
-_STORABLE_PROVIDERS_ORDERED = tuple(spec.id for spec in REGISTRY if not spec.needs_host)
-_STORABLE_PROVIDERS = frozenset(_STORABLE_PROVIDERS_ORDERED)
+_STORABLE_PROVIDERS = tuple(spec.id for spec in storable_providers())
 
 
 class CreateAPIKeyRequest(BaseModel):
@@ -23,7 +18,7 @@ class CreateAPIKeyRequest(BaseModel):
 
     provider: str = Field(
         ...,
-        description=f"Provedor da API. Valores: {_STORABLE_PROVIDERS_ORDERED}",
+        description=f"Provedor da API. Valores: {_STORABLE_PROVIDERS}",
     )
     api_key: str = Field(
         ...,
@@ -60,15 +55,13 @@ class CreateAPIKeyRequest(BaseModel):
     def _provider_must_be_supported(cls, value: str) -> str:
         """Reject unsupported providers at the schema boundary (422).
 
-        ``SUPPORTED_PROVIDERS`` (the same tuple the DB CHECK constraint
-        enforces) bounds what the DB can hold; ``_STORABLE_PROVIDERS`` further
-        excludes host-bearing providers, which this slice cannot store (no
-        connection yet to carry a host) even though the CHECK allows them.
-        A bad provider fails here with a clean ValidationError instead of
-        leaking out as a DB/500 at INSERT time.
+        ``registry.storable_providers`` is narrower than the DB CHECK (which
+        already admits host-bearing providers for slice 2). A bad provider
+        fails here with a clean ValidationError instead of leaking out as a
+        DB/500 at INSERT time.
         """
         if value not in _STORABLE_PROVIDERS:
-            raise ValueError(f"Provider '{value}' is not supported. Use: {SUPPORTED_PROVIDERS}")
+            raise ValueError(f"Provider '{value}' is not supported. Use: {_STORABLE_PROVIDERS}")
         return value
 
 

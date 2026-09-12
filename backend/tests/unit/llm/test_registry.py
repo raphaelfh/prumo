@@ -16,6 +16,7 @@ from app.llm.registry import (
     global_key_for,
     is_byok_only,
     provider_ids,
+    storable_providers,
 )
 
 
@@ -126,3 +127,8 @@ def test_removing_a_provider_breaks_the_drift_guard(monkeypatch: pytest.MonkeyPa
     trimmed = tuple(spec for spec in REGISTRY if spec.id != "anthropic")
     monkeypatch.setattr(registry, "REGISTRY", trimmed)
     assert baked != provider_check_literal()
+
+
+def test_storable_providers_are_the_hosted_ones() -> None:
+    """Host-bearing providers wait for slice 2's connections."""
+    assert [s.id for s in storable_providers()] == ["openai", "anthropic", "llama_cloud"]

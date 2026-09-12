@@ -16,18 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import LoggerMixin
 from app.core.security import derive_encryption_key
-from app.llm.registry import REGISTRY, get_provider, global_key_for
+from app.llm.registry import get_provider, global_key_for, storable_providers
 from app.models.user_api_key import UserAPIKey
 from app.repositories.user_api_key_repository import UserAPIKeyRepository
 
 
 def list_providers_info() -> list[dict[str, str]]:
-    """Provider catalogue for the API, derived from the registry.
-
-    Host-bearing providers (``needs_host``) are excluded: this slice has no
-    connection concept to carry a host, so ``openai_compatible`` cannot be
-    offered or stored yet. Slice 2's connections add them back.
-    """
+    """Provider catalogue for the API: the registry's storable providers."""
     return [
         {
             "id": spec.id,
@@ -35,8 +30,7 @@ def list_providers_info() -> list[dict[str, str]]:
             "description": spec.description,
             "docsUrl": spec.docs_url or "",
         }
-        for spec in REGISTRY
-        if not spec.needs_host
+        for spec in storable_providers()
     ]
 
 
@@ -165,10 +159,7 @@ class APIKeyService(LoggerMixin):
         Raises:
             ValueError: If provider is unsupported or key is invalid.
         """
-        spec = get_provider(provider)
-        if spec is None or spec.needs_host:
-            # Host-bearing providers have no connection to carry a host in
-            # this slice (slice 2 adds that), so they cannot be stored yet.
+        if get_provider(provider) not in storable_providers():
             raise ValueError(f"Provider '{provider}' is not supported")
 
         # Validate key if requested

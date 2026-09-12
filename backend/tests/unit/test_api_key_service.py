@@ -560,11 +560,11 @@ def test_list_providers_info_is_the_registry() -> None:
     """Host-bearing providers (``openai_compatible``) are excluded: this
     slice has no connection to carry a host, so the catalogue is the three
     hosted providers only. Slice 2's connections add it back."""
-    from app.llm.registry import REGISTRY
+    from app.llm.registry import storable_providers
     from app.services.api_key_service import list_providers_info
 
     infos = list_providers_info()
-    hosted = [s for s in REGISTRY if not s.needs_host]
+    hosted = list(storable_providers())
     assert [i["id"] for i in infos] == [s.id for s in hosted]
     assert "openai_compatible" not in [i["id"] for i in infos]
     for info, spec in zip(infos, hosted, strict=True):
@@ -576,12 +576,12 @@ def test_list_providers_info_is_the_registry() -> None:
 @pytest.mark.asyncio
 async def test_global_key_comes_from_the_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.core.config import settings
+    from app.llm.registry import global_key_for
 
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
     svc = make_service(user_id="not-a-uuid", repo=make_repo())
-    assert svc._get_global_key("anthropic") == "sk-ant-global"
-    assert svc._get_global_key("openai_compatible") is None
-    assert svc._get_global_key("grok") is None
+    # A pure passthrough; the per-provider cases live in tests/unit/llm/test_registry.py.
+    assert svc._get_global_key("anthropic") == global_key_for("anthropic") == "sk-ant-global"
 
 
 class TestHasKeyForProvider:

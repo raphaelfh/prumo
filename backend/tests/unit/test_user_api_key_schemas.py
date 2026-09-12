@@ -9,7 +9,7 @@ populate_by_name round-trips, defaults, and the remaining response DTOs.
 import pytest
 from pydantic import ValidationError
 
-from app.llm.registry import REGISTRY
+from app.llm.registry import storable_providers
 from app.schemas.user_api_key import (
     APIKeyResponse,
     CreateAPIKeyRequest,
@@ -23,10 +23,7 @@ from app.schemas.user_api_key import (
     UpdateAPIKeyResult,
 )
 
-# Storable providers: the schema rejects host-bearing ones (F2) even though
-# SUPPORTED_PROVIDERS (the DB CHECK) allows them — this slice has no
-# connection to carry a host.
-_STORABLE_PROVIDERS = [s.id for s in REGISTRY if not s.needs_host]
+_STORABLE_PROVIDERS = [s.id for s in storable_providers()]
 
 
 class TestCreateAPIKeyRequest:
@@ -92,12 +89,12 @@ class TestCreateAPIKeyRequest:
         assert req.provider == provider
 
     def test_unsupported_provider_is_rejected_by_schema(self) -> None:
-        """The schema validates provider against SUPPORTED_PROVIDERS.
+        """The schema validates provider against the registry's storable providers.
 
         A ``field_validator`` enforces the allow-list at the boundary so an
         unsupported value fails with a clean 422 ``ValidationError`` instead
-        of leaking out as a DB/500 at INSERT time. ``SUPPORTED_PROVIDERS``
-        (shared with the DB CHECK constraint) is the single source of truth.
+        of leaking out as a DB/500 at INSERT time. ``registry.storable_providers``
+        is the single source of truth.
         """
         with pytest.raises(ValidationError) as exc_info:
             CreateAPIKeyRequest.model_validate(
