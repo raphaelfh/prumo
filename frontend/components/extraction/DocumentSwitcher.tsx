@@ -180,13 +180,13 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
     <TooltipContent side="bottom" className="max-w-64 px-2.5 py-1.5 text-[12px]">
       <p className="font-medium">{label}</p>
       {status === 'parse_failed' && (
-        <p className="break-words text-muted-foreground">
+        <p className="break-words text-background/70">
           {file.extractionError
             ? `${t('pdf', 'docParseErrorLabel')}: ${file.extractionError}`
             : t('pdf', 'docParseErrorUnknown')}
         </p>
       )}
-      <p className="text-muted-foreground">{hint}</p>
+      <p className="text-background/70">{hint}</p>
     </TooltipContent>
   );
 

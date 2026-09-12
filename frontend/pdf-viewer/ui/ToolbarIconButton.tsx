@@ -27,7 +27,7 @@ export function ToolbarIconButton({label, tooltip, hint, children, ...props}: To
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-64 px-2.5 py-1.5 text-[12px]">
         <p className="font-medium">{tooltip ?? label}</p>
-        {hint && <p className="text-muted-foreground">{hint}</p>}
+        {hint && <p className="text-background/70">{hint}</p>}
       </TooltipContent>
     </Tooltip>
   );

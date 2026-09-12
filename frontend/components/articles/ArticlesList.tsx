@@ -956,7 +956,7 @@ export function ArticlesList({
                                                       </TooltipTrigger>
                                                       <TooltipContent side="top" className="max-w-sm">
                                                           <p className="break-all text-xs">{article.doi}</p>
-                                                          <p className="text-[11px] text-muted-foreground mt-1">{t('articles', 'listDoiOpenHint')}</p>
+                                                          <p className="text-[11px] text-background/70 mt-1">{t('articles', 'listDoiOpenHint')}</p>
                                                       </TooltipContent>
                                                   </Tooltip>
                                               </TooltipProvider>
