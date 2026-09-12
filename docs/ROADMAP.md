@@ -21,7 +21,7 @@ This file records only the **top-level milestones** (one bullet each) — the
 - [ ] **Structured PDF parsing + grounded extraction** — layout-aware parse at ingest, page-anchored evidence, verbatim-verified citations (ADR-0011, ADR-0013).
 - [ ] **Quality of extracted data** — refine extraction prompts, add evidence-linked citations, surface page-anchored references in the PDF viewer.
 - [ ] **Multi-reviewer reliability** — close the open bugs around inviting reviewers, concurrent assessment, and final-reviewer assignment.
-- [ ] **Provider flexibility (BYOK)** — design + ship the Bring-Your-Own-Key flow with audit + per-user rate limits.
+- [ ] **Provider flexibility (BYOK)** — design + ship the Bring-Your-Own-Key flow with audit + per-user rate limits. Slice 1 (provider registry) — see docs/superpowers/plans/2026-09-12-llm-provider-registry-slice1.md; connections + per-user engine follow as slice 2.
 
 ## Deferred to a future spec
 

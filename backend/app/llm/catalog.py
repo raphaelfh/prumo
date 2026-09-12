@@ -6,10 +6,9 @@ is a one-line diff here, and a pair dropped from this tuple is *retired*:
 projects still storing it are blocked from new runs (typed 409) until a
 manager picks a new model.
 
-``byok_only`` is a fact on the entry (not an implicit branch elsewhere):
-providers without a global service key (`app.services.api_key_service.
-APIKeyService._get_global_key`) run exclusively on each user's own stored
-key. Keep the flag in sync when a global key is introduced for a provider.
+Whether a provider needs the user's own key is NOT a catalogue fact: it
+depends on the deployment (``app.llm.registry.is_byok_only``) and is
+computed on the engine read.
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ class CatalogEntry:
     best_for: str
     context_window: int
     cost_tier: Literal["$", "$$", "$$$"]
-    byok_only: bool = False
 
 
 CATALOG: tuple[CatalogEntry, ...] = (
@@ -71,7 +69,6 @@ CATALOG: tuple[CatalogEntry, ...] = (
         best_for="High-quality reasoning and grounded evidence",
         context_window=1_000_000,
         cost_tier="$$",
-        byok_only=True,
     ),
     CatalogEntry(
         provider="anthropic",
@@ -82,7 +79,6 @@ CATALOG: tuple[CatalogEntry, ...] = (
         # $1/$5 per MTok sits with terra ($2/$12), not with luna ($0.20/$1.20):
         # tiers are honest across providers, not within one.
         cost_tier="$$",
-        byok_only=True,
     ),
     CatalogEntry(
         provider="anthropic",
@@ -91,7 +87,34 @@ CATALOG: tuple[CatalogEntry, ...] = (
         best_for="Deepest Claude reasoning for complex or degraded articles",
         context_window=1_000_000,
         cost_tier="$$$",
-        byok_only=True,
+    ),
+    # Google tiers by list price against the roster above: Flash-Lite
+    # ($0.25/$1.50) sits with luna; 3.8 Flash ($1.50/$7.50 standard) and
+    # 3.1 Pro ($2/$12) sit with terra. Google's model page states no
+    # context window; 1M is the documented Gemini generation window.
+    CatalogEntry(
+        provider="google",
+        model="gemini-3.1-flash-lite",
+        label="Gemini 3.1 Flash-Lite",
+        best_for="Cheapest Gemini for high-volume extraction",
+        context_window=1_000_000,
+        cost_tier="$",
+    ),
+    CatalogEntry(
+        provider="google",
+        model="gemini-3.8-flash",
+        label="Gemini 3.8 Flash",
+        best_for="Current Gemini workhorse: strong reasoning at Flash cost",
+        context_window=1_000_000,
+        cost_tier="$$",
+    ),
+    CatalogEntry(
+        provider="google",
+        model="gemini-3.1-pro-preview",
+        label="Gemini 3.1 Pro (preview)",
+        best_for="Strongest Gemini reasoning; preview model id",
+        context_window=1_000_000,
+        cost_tier="$$",
     ),
 )
 

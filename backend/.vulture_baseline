@@ -16,11 +16,15 @@
 #
 # Anything that does not fit one of those is dead code: delete it,
 # then regenerate with scripts/vulture_baseline.py --update.
+app/core/config.py:variable:ANTHROPIC_API_KEY
+app/core/config.py:variable:GOOGLE_API_KEY
+app/core/config.py:variable:OPENAI_API_KEY
 app/core/middleware.py:method:dispatch
 app/infrastructure/parsing/docling_parser.py:attribute:accelerator_options
 app/infrastructure/parsing/docling_parser.py:attribute:do_ocr
 app/infrastructure/parsing/docling_parser.py:attribute:do_table_structure
 app/infrastructure/parsing/docling_parser.py:attribute:table_structure_options
+app/llm/registry.py:function:provider_ids
 app/repositories/article_repository.py:attribute:last_synced_at
 app/repositories/article_repository.py:attribute:removed_at_source_at
 app/services/article_file_service.py:attribute:extraction_error

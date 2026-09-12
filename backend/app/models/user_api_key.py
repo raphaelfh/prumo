@@ -14,14 +14,24 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.llm.registry import provider_ids
 from app.models.base import BaseModel
 
 if TYPE_CHECKING:
     from app.models.user import Profile
 
 
-# Provedores suportados
-SUPPORTED_PROVIDERS = ("openai", "anthropic", "gemini", "grok", "llama_cloud")
+# Derived from the registry — the ONE list of providers. The CHECK below
+# repeats it as a literal because Postgres needs one; the registry test
+# asserts the two agree.
+SUPPORTED_PROVIDERS: tuple[str, ...] = provider_ids()
+
+
+def provider_check_literal() -> str:
+    """The exact SQL text of the ``provider`` CHECK, from the registry."""
+    quoted = ", ".join(f"'{pid}'" for pid in provider_ids())
+    return f"provider IN ({quoted})"
+
 
 # Status de validacao
 VALIDATION_STATUSES = ("valid", "invalid", "pending")
@@ -115,7 +125,7 @@ class UserAPIKey(BaseModel):
 
     __table_args__ = (
         CheckConstraint(
-            "provider IN ('openai', 'anthropic', 'gemini', 'grok', 'llama_cloud')",
+            provider_check_literal(),
             name="user_api_keys_provider_check",
         ),
         CheckConstraint(
