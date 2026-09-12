@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 last_reviewed: 2026-09-12
 owner: '@raphaelfh'
 ---
@@ -358,3 +358,44 @@ worktrees.
   `ApiKeysSection`, `IntegrationsSection`; the "no card unless it separates
   unlike things" rule (sub-project 3).
 - Field label weight and the `ArticleFieldRow` grid (sub-project 3).
+
+## 9. Amendments from planning
+
+Recorded while writing `docs/superpowers/plans/2026-09-12-interaction-primitives.md`,
+after reading the code this spec only surveyed. Where they disagree, this
+section wins.
+
+1. **Nested providers are 38, not 13.** 13 was the count that set a delay.
+   Radix throws when a `Tooltip` has no provider, so `Tooltip` now renders
+   its own provider when none is mounted. That is what makes deleting the 38
+   safe for components rendered alone in unit tests. The defaults (400/300)
+   live in the `TooltipProvider` wrapper, so `App.tsx` passes no props.
+2. **Cancel focus is already Radix behaviour.** `AlertDialogContent` focuses
+   `AlertDialogCancel` on open. The plan pins it with a test and implements
+   nothing.
+3. **`IconButton` absorbs the two existing wrappers.** `HeaderIconButton`
+   (13 usages) and `ToolbarIconButton` (6) are deleted. `IconButton` takes
+   their look (muted glyph, `hover:bg-muted/60`), and gains `tooltip`
+   (override text, or `false`), `hint` (second line) and `side`. A disabled
+   `IconButton` hangs its tooltip on a wrapping span, so the reason it is
+   disabled still shows.
+4. **Cursor block is smaller.** The separator and drag-handle rules are
+   dropped: `cursor-col-resize` and `cursor-grabbing` classes stay, because
+   base CSS cannot see drag state. The gate bans only `cursor-pointer`,
+   `cursor-default` and `cursor-not-allowed`, and allows `peer-*`/`group-*`
+   relational variants. No element gains a `role` in this sub-project.
+5. **Overlay frame mechanics.** Centring uses `inset-0 m-auto` instead of
+   translate, so Tailwind v4's `translate` property and the animate plugin's
+   keyframe `transform` never fight. `DialogBody` and `AlertDialogBody` are
+   exported. A `<form>` wrapping header, body and footer takes
+   `className="contents"`. `DialogContent` gains `showCloseButton` (the two
+   command palettes pass `false`). The close button keeps its `aria-label`
+   but gets no tooltip, because autofocus would pop it on open.
+6. **Reduced motion removes the animation**, not only the zoom.
+7. **`SheetContent` drops the unused `top`/`bottom` sides.**
+8. **Four PRs, not four steps on one branch:** foundations, icon buttons,
+   cursor, overlay frame. The overlay primitives and their 39 callers ship
+   together, so `dev` never shows a half-migrated frame.
+9. **Shortcuts shown only where bound.** List filter buttons get an `F` chip
+   (`useListKeyboardShortcuts` binds it on all three list screens). The PDF
+   search button keeps its hint text: no ⌘F binding exists in the viewer.
