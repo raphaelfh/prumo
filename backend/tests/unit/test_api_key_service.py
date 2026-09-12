@@ -562,10 +562,9 @@ def test_list_providers_info_is_the_registry() -> None:
 @pytest.mark.asyncio
 async def test_global_key_comes_from_the_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.core.config import settings
-    from app.services.api_key_service import APIKeyService
 
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
-    svc = APIKeyService(db=MagicMock(), user_id="not-a-uuid")
+    svc = make_service(user_id="not-a-uuid", repo=make_repo())
     assert svc._get_global_key("anthropic") == "sk-ant-global"
     assert svc._get_global_key("openai_compatible") is None
     assert svc._get_global_key("grok") is None
