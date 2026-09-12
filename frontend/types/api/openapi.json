@@ -3922,7 +3922,7 @@
             "title": "Metadata"
           },
           "provider": {
-            "description": "Provedor da API. Valores: ('openai', 'anthropic', 'gemini', 'grok', 'llama_cloud')",
+            "description": "Provedor da API. Valores: ('openai', 'anthropic', 'llama_cloud')",
             "title": "Provider",
             "type": "string"
           },

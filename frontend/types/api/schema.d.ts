@@ -3232,7 +3232,7 @@ export interface components {
             } | null;
             /**
              * Provider
-             * @description Provedor da API. Valores: ('openai', 'anthropic', 'gemini', 'grok', 'llama_cloud')
+             * @description Provedor da API. Valores: ('openai', 'anthropic', 'llama_cloud')
              */
             provider: string;
             /**
