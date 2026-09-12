@@ -35,6 +35,7 @@ from app.core.config import settings
 from app.core.error_handler import AppError
 from app.core.logging import get_logger
 from app.llm.catalog import CATALOG, canonical, canonical_pair, find_entry
+from app.llm.registry import is_byok_only
 from app.models.project import Project
 from app.models.project_llm_endpoint import ProjectLlmEndpoint
 from app.models.user import Profile
@@ -497,7 +498,7 @@ class LlmEngineService:
                     best_for=entry.best_for,
                     context_window=entry.context_window,
                     cost_tier=entry.cost_tier,
-                    byok_only=entry.byok_only,
+                    byok_only=is_byok_only(entry.provider),
                 )
                 for entry in CATALOG
             ],

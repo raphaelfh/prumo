@@ -6,10 +6,9 @@ is a one-line diff here, and a pair dropped from this tuple is *retired*:
 projects still storing it are blocked from new runs (typed 409) until a
 manager picks a new model.
 
-``byok_only`` is a fact on the entry (not an implicit branch elsewhere):
-providers without a global service key (`app.services.api_key_service.
-APIKeyService._get_global_key`) run exclusively on each user's own stored
-key. Keep the flag in sync when a global key is introduced for a provider.
+Whether a provider needs the user's own key is NOT a catalogue fact: it
+depends on the deployment (``app.llm.registry.is_byok_only``) and is
+computed on the engine read.
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ class CatalogEntry:
     best_for: str
     context_window: int
     cost_tier: Literal["$", "$$", "$$$"]
-    byok_only: bool = False
 
 
 CATALOG: tuple[CatalogEntry, ...] = (
@@ -71,7 +69,6 @@ CATALOG: tuple[CatalogEntry, ...] = (
         best_for="High-quality reasoning and grounded evidence",
         context_window=1_000_000,
         cost_tier="$$",
-        byok_only=True,
     ),
     CatalogEntry(
         provider="anthropic",
@@ -82,7 +79,6 @@ CATALOG: tuple[CatalogEntry, ...] = (
         # $1/$5 per MTok sits with terra ($2/$12), not with luna ($0.20/$1.20):
         # tiers are honest across providers, not within one.
         cost_tier="$$",
-        byok_only=True,
     ),
     CatalogEntry(
         provider="anthropic",
@@ -91,7 +87,6 @@ CATALOG: tuple[CatalogEntry, ...] = (
         best_for="Deepest Claude reasoning for complex or degraded articles",
         context_window=1_000_000,
         cost_tier="$$$",
-        byok_only=True,
     ),
 )
 
