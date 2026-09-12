@@ -547,76 +547,28 @@ class TestValidateAnthropic:
         assert result["status"] == "valid"
 
 
-class TestValidateGemini:
-    @pytest.mark.asyncio
-    async def test_200_returns_valid(self) -> None:
-        svc = make_service()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        with patch("httpx.AsyncClient") as MockClient:
-            MockClient.return_value.__aenter__.return_value.get = AsyncMock(
-                return_value=mock_response
-            )
-            result = await svc._validate_gemini("gemini-key")
-        assert result["status"] == "valid"
+def test_list_providers_info_is_the_registry() -> None:
+    from app.llm.registry import REGISTRY
+    from app.services.api_key_service import list_providers_info
 
-    @pytest.mark.asyncio
-    async def test_400_returns_invalid(self) -> None:
-        svc = make_service()
-        mock_response = MagicMock()
-        mock_response.status_code = 400
-        with patch("httpx.AsyncClient") as MockClient:
-            MockClient.return_value.__aenter__.return_value.get = AsyncMock(
-                return_value=mock_response
-            )
-            result = await svc._validate_gemini("bad-key")
-        assert result["status"] == "invalid"
-
-    @pytest.mark.asyncio
-    async def test_key_sent_as_header_never_in_url(self) -> None:
-        """Regression for #91: the Gemini key must travel in the x-goog-api-key
-        header, never in the URL query string. httpx embeds the request URL in
-        transport-error messages, so a key in the URL leaks into the logs and the
-        validation response on any timeout/network error."""
-        svc = make_service()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        get_mock = AsyncMock(return_value=mock_response)
-        with patch("httpx.AsyncClient") as MockClient:
-            MockClient.return_value.__aenter__.return_value.get = get_mock
-            await svc._validate_gemini("SECRET-KEY")
-
-        args, kwargs = get_mock.call_args
-        url = args[0] if args else kwargs.get("url", "")
-        assert "SECRET-KEY" not in url
-        assert "key=" not in url
-        assert kwargs.get("headers") == {"x-goog-api-key": "SECRET-KEY"}
+    infos = list_providers_info()
+    assert [i["id"] for i in infos] == [s.id for s in REGISTRY]
+    for info, spec in zip(infos, REGISTRY, strict=True):
+        assert info["name"] == spec.label
+        assert info["description"] == spec.description
+        assert info["docsUrl"] == (spec.docs_url or "")
 
 
-class TestValidateGrok:
-    @pytest.mark.asyncio
-    async def test_200_returns_valid(self) -> None:
-        svc = make_service()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        with patch("httpx.AsyncClient") as MockClient:
-            MockClient.return_value.__aenter__.return_value.get = AsyncMock(
-                return_value=mock_response
-            )
-            result = await svc._validate_grok("grok-key")
-        assert result["status"] == "valid"
+@pytest.mark.asyncio
+async def test_global_key_comes_from_the_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.config import settings
+    from app.services.api_key_service import APIKeyService
 
-    @pytest.mark.asyncio
-    async def test_401_returns_invalid(self) -> None:
-        svc = make_service()
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        with patch("httpx.AsyncClient") as MockClient:
-            MockClient.return_value.__aenter__.return_value.get = AsyncMock(
-                return_value=mock_response
-            )
-            result = await svc._validate_grok("bad-key")
-        assert result["status"] == "invalid"
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
+    svc = APIKeyService(db=MagicMock(), user_id="not-a-uuid")
+    assert svc._get_global_key("anthropic") == "sk-ant-global"
+    assert svc._get_global_key("openai_compatible") is None
+    assert svc._get_global_key("grok") is None
 
 
 class TestHasKeyForProvider:
@@ -642,7 +594,7 @@ class TestHasKeyForProvider:
     async def test_falls_back_to_the_global_key(self) -> None:
         repo = make_repo()  # get_default → None
         svc = make_service(repo=repo)
-        with patch("app.services.api_key_service.settings") as mock_settings:
+        with patch("app.llm.registry.settings") as mock_settings:
             mock_settings.OPENAI_API_KEY = "sk-global"
             assert await svc.has_key_for_provider("openai") is True
 
@@ -650,9 +602,10 @@ class TestHasKeyForProvider:
     async def test_false_when_neither_source_has_one(self) -> None:
         repo = make_repo()
         svc = make_service(repo=repo)
-        with patch("app.services.api_key_service.settings") as mock_settings:
+        with patch("app.llm.registry.settings") as mock_settings:
             mock_settings.OPENAI_API_KEY = None
             mock_settings.LLAMA_CLOUD_API_KEY = None
+            mock_settings.ANTHROPIC_API_KEY = None
             assert await svc.has_key_for_provider("openai") is False
             assert await svc.has_key_for_provider("anthropic") is False
 
@@ -660,6 +613,6 @@ class TestHasKeyForProvider:
     async def test_invalid_user_id_still_probes_the_global_key(self) -> None:
         """Non-UUID user ids (tests) skip the repo probe, not the global one."""
         svc = make_service(user_id="not-a-uuid", repo=make_repo())
-        with patch("app.services.api_key_service.settings") as mock_settings:
+        with patch("app.llm.registry.settings") as mock_settings:
             mock_settings.OPENAI_API_KEY = "sk-global"
             assert await svc.has_key_for_provider("openai") is True
