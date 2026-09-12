@@ -49,10 +49,7 @@ frontend/components/navigation/Breadcrumb.tsx:tooltip-provider:1
 frontend/components/navigation/NotificationCenter.tsx:cursor-class:1
 frontend/components/project/AiConfigDialog.tsx:overlay-size:1
 frontend/components/project/settings/ReviewDetailsSection.tsx:tooltip-provider:1
-frontend/components/runs/FieldAITrace.tsx:icon-button:1
-frontend/components/runs/ReviewerAITrace.tsx:icon-button:1
 frontend/components/runs/RunReviewerComparison.tsx:tooltip-provider:2
-frontend/components/runs/header/AIActions.tsx:icon-button:1
 frontend/components/runs/header/Help.tsx:overlay-size:1
 frontend/components/runs/header/RunHeader.tsx:tooltip-provider:1
 frontend/components/shared/list/FilterCategoricalField.tsx:cursor-class:1
@@ -68,4 +65,3 @@ frontend/components/ui/radio-group.tsx:cursor-class:1
 frontend/components/ui/select.tsx:cursor-class:4
 frontend/components/ui/switch.tsx:cursor-class:2
 frontend/components/ui/textarea.tsx:cursor-class:1
-frontend/pdf-viewer/ui/SearchBar.tsx:icon-button:3
