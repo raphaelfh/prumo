@@ -274,6 +274,14 @@ fight them. Things Radix cannot do for you:
   copy that lands on muted surfaces.
 - **`prefers-reduced-motion`** — see `field-just-updated` in `index.css` for
   the pattern; any new keyframe animation must guard the same way.
+- **Tooltips on disabled controls.** A disabled button has
+  `pointer-events-none`, so nothing on it can open a tooltip. `IconButton`
+  hangs the tooltip on a wrapping `span` when `disabled`; do the same by hand
+  for a disabled text button that must explain itself.
+- **One tooltip provider.** `Tooltip` renders its own provider when none is
+  mounted, so a component rendered alone in a test works without one. A test
+  that asserts tooltip text synchronously wraps the render in
+  `<TooltipProvider delayDuration={0}>`.
 
 Deep dive: `references/a11y.md`.
 

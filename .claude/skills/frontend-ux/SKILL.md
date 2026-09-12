@@ -79,6 +79,12 @@ on a new override (and it parses the tag, so `className={cn("h-8")}` and an
 | `icon` | h-7 w-7 | Icon-only at chrome density |
 | `icon-xs` | h-6 w-6 | Icon-only nested density |
 
+| Variant | Use |
+|---|---|
+| `ghost` | **Every chrome and row action.** No border ever; `hover:bg-accent`, `active:bg-accent/80`. |
+| `outline` | Only the secondary action beside a primary in a dialog footer. |
+| `default` / `destructive` | The one primary action of a footer or an empty state. |
+
 Font size lives in the size, not the base, so a dense call site never has to
 override it. Every dense size carries `[@media(pointer:coarse)]:h-11` (and the
 square sizes bump width too) so touch targets reach 44px — that belongs in the
@@ -101,10 +107,14 @@ only sees `h-*` overrides. Give a button an explicit size when you touch one.
 2. **Skeleton Strategy:** Skeletons must match the exact line-height and width of the expected text to prevent layout
    shift.
 3. **Status Dots:** Small (6px), glowing for "Active", muted for "Draft".
-4. **Buttons explain themselves on hover.** Every icon-only or short-label
-   control carries a `Tooltip` with its description (copy through
-   `lib/copy/`); icon-only buttons also get an `aria-label`. A terse label
-   like "No information" or a bare glyph must never leave the user guessing.
+4. **Buttons explain themselves on hover.** An icon-only control is always
+   `IconButton` (`components/patterns/IconButton.tsx`): `label` is required
+   and becomes both the accessible name and the tooltip, `shortcut` adds a
+   kbd chip only for a key the screen really binds. A text button gets a
+   tooltip only when it says something the label does not. Tooltip copy is
+   one fragment, sentence case, verb first, no period ("Add author").
+   Timing is global (400 ms, peers instant) — never mount a
+   `TooltipProvider`. `check_ui_primitives.py` gates both.
 5. **Selected = the accepted-suggestion treatment.** A control representing a
    recorded choice (accepted suggestion, active disposition, selected version)
    shows the success ring (`ring-1 ring-success bg-success/10 text-success`,
@@ -120,6 +130,12 @@ only sees `h-*` overrides. Give a button an explicit size when you touch one.
    `CELL_RING` for its selected state.) The success-ring treatment in the
    previous bullet is for a *recorded choice*, which is a different thing again
    from "the row you are pointing at".
+7. **The arrow is the cursor.** Buttons, tabs, menu items, rows and labels
+   keep the arrow; only an `a[href]` shows the hand; disabled shows
+   `not-allowed`. The rule lives in `index.css` `@layer base` — never write
+   `cursor-pointer`, `cursor-default` or `cursor-not-allowed` on an element
+   (`check_ui_primitives.py`). The hover fill is the click affordance, so a
+   clickable row must have one.
 
 ## 5. Responsive Behaviour
 
@@ -221,3 +237,5 @@ census flagging anything under 24×24.
       from, and its divider is keyboard-operable (§6.3).
 - [ ] Selection and focus use different vocabularies — no element paints both
       an `outline-ring` and a selected state (§4.6).
+- [ ] Icon-only controls are `IconButton` with a real `label`; shortcuts only where bound.
+- [ ] No `TooltipProvider` outside `App.tsx`; no `cursor-*` class except `peer-`/`group-` relations, `col-resize`, `grabbing`.
