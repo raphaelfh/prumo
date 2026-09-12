@@ -87,6 +87,10 @@ class ProviderSpec:
 | openai_compatible | llm | yes | yes | none | user, project |
 | llama_cloud | parsing | no | no | `LLAMA_CLOUD_API_KEY` | user, project |
 
+Slice 1 ships without `scopes` and `key_optional` (no consumer yet;
+`key_optional` is implied by `needs_host`); slice 2 adds `scopes` with its
+consumers.
+
 Rules the registry encodes, not comments elsewhere:
 
 - **Every hosted provider has a global key setting; only a host-bearing
