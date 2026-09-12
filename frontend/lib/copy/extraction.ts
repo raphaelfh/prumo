@@ -373,6 +373,9 @@ export const extraction = {
     unitMoveUp: 'Move up',
     unitMoveDown: 'Move down',
     unitRemove: 'Remove',
+    unitAdd: 'Add unit',
+    optionAdd: 'Add option',
+    optionRemove: 'Remove option',
     // AISuggestionEvidence
     copyCopied: 'Copied!',
     copySnippet: 'Copy snippet',

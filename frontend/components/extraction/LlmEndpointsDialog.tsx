@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
+import {IconButton} from '@/components/patterns/IconButton';
 import {
   Dialog,
   DialogContent,
@@ -61,12 +62,7 @@ import {
 } from '@/components/ui/form';
 import {Input} from '@/components/ui/input';
 import {Skeleton} from '@/components/ui/skeleton';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import {TooltipProvider} from '@/components/ui/tooltip';
 import {
   useCreateLlmEndpoint,
   useDeleteLlmEndpoint,
@@ -415,63 +411,31 @@ export function LlmEndpointsDialog({
                       )}
                     </div>
                     <div className="flex shrink-0 items-center gap-0.5">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground hover:text-foreground"
-                            aria-label={t('llmEngine', 'endpointVerifyAria')}
-                            // Scoped to the row in flight: one slow probe
-                            // (up to 60s) must not lock every other row's
-                            // Verify button with it.
-                            disabled={
-                              verifyEndpoint.isPending &&
-                              verifyEndpoint.variables === endpoint.id
-                            }
-                            onClick={() => handleVerify(endpoint.id)}
-                          >
-                            <ShieldCheck className="h-3.5 w-3.5" strokeWidth={1.5} />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {t('llmEngine', 'endpointVerifyAria')}
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground hover:text-foreground"
-                            aria-label={t('llmEngine', 'endpointEditAria')}
-                            onClick={() => openEditForm(endpoint)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {t('llmEngine', 'endpointEditAria')}
-                        </TooltipContent>
-                      </Tooltip>
+                      <IconButton
+                        label={t('llmEngine', 'endpointVerifyAria')}
+                        // Scoped to the row in flight: one slow probe
+                        // (up to 60s) must not lock every other row's
+                        // Verify button with it.
+                        disabled={
+                          verifyEndpoint.isPending &&
+                          verifyEndpoint.variables === endpoint.id
+                        }
+                        onClick={() => handleVerify(endpoint.id)}
+                        icon={<ShieldCheck strokeWidth={1.5} />}
+                      />
+                      <IconButton
+                        label={t('llmEngine', 'endpointEditAria')}
+                        onClick={() => openEditForm(endpoint)}
+                        icon={<Pencil strokeWidth={1.5} />}
+                      />
                       <AlertDialog>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-muted-foreground hover:text-destructive"
-                                aria-label={t('llmEngine', 'endpointDeleteAria')}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                              </Button>
-                            </AlertDialogTrigger>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {t('llmEngine', 'endpointDeleteAria')}
-                          </TooltipContent>
-                        </Tooltip>
+                        <AlertDialogTrigger asChild>
+                          <IconButton
+                            label={t('llmEngine', 'endpointDeleteAria')}
+                            className="hover:text-destructive"
+                            icon={<Trash2 strokeWidth={1.5} />}
+                          />
+                        </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
                             <AlertDialogTitle>
@@ -627,38 +591,24 @@ export function LlmEndpointsDialog({
                               className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px]"
                             >
                               <span className="font-mono">{model}</span>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    className="text-muted-foreground hover:text-foreground"
-                                    aria-label={t(
-                                      'llmEngine',
-                                      'endpointModelRemoveAria',
-                                    ).replace('{{model}}', model)}
-                                    disabled={saving}
-                                    onClick={() => {
-                                      field.onChange(
-                                        field.value.filter((m) => m !== model),
-                                      );
-                                      // The removed chip takes focus with
-                                      // it; land it on the draft input
-                                      // rather than on <body>.
-                                      modelInputRef.current?.focus();
-                                    }}
-                                  >
-                                    <X className="h-3 w-3" strokeWidth={1.5} />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {t(
-                                    'llmEngine',
-                                    'endpointModelRemoveAria',
-                                  ).replace('{{model}}', model)}
-                                </TooltipContent>
-                              </Tooltip>
+                              <IconButton
+                                size="icon-xs"
+                                label={t(
+                                  'llmEngine',
+                                  'endpointModelRemoveAria',
+                                ).replace('{{model}}', model)}
+                                disabled={saving}
+                                onClick={() => {
+                                  field.onChange(
+                                    field.value.filter((m) => m !== model),
+                                  );
+                                  // The removed chip takes focus with
+                                  // it; land it on the draft input
+                                  // rather than on <body>.
+                                  modelInputRef.current?.focus();
+                                }}
+                                icon={<X strokeWidth={1.5} />}
+                              />
                             </li>
                           ))}
                         </ul>

@@ -12,7 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 
-import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -373,58 +373,41 @@ export function FieldRow({
         role="gridcell"
         className={cn('w-[28px] px-0.5', ringClass(focus, rowId, ['sparkle']))}
       >
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => onDeepLink('ai')}
-              aria-label={t('extraction', 'gridAiCellAria').replace(
-                '{{label}}',
-                field.label,
-              )}
-              data-cell-row={rowId}
-              data-cell-cols="sparkle"
-              tabIndex={rovingTabIndex(focus, rowId, ['sparkle'])}
-            >
-              {field.hasAiInstruction && (
-                <Sparkles className="text-primary" aria-hidden />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {t('extraction', 'gridAiCellAria').replace('{{label}}', field.label)}
-          </TooltipContent>
-        </Tooltip>
+        <IconButton
+          size="icon-xs"
+          onClick={() => onDeepLink('ai')}
+          label={t('extraction', 'gridAiCellAria').replace(
+            '{{label}}',
+            field.label,
+          )}
+          data-cell-row={rowId}
+          data-cell-cols="sparkle"
+          tabIndex={rovingTabIndex(focus, rowId, ['sparkle'])}
+          icon={field.hasAiInstruction ? (
+            <Sparkles className="text-primary" aria-hidden />
+          ) : null}
+        />
       </td>
       <td
         role="gridcell"
         className={cn('w-[34px] px-1 text-right', ringClass(focus, rowId, ['actions']))}
       >
         <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={t('extraction', 'actionsForFieldAria').replace(
-                    '{{label}}',
-                    field.label,
-                  )}
-                  data-cell-row={rowId}
-                  data-cell-cols="actions"
-                  tabIndex={rovingTabIndex(focus, rowId, ['actions'])}
-                  className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
-                >
-                  <MoreHorizontal aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{t('extraction', 'gridRowActions')}</TooltipContent>
-          </Tooltip>
+          <DropdownMenuTrigger asChild>
+            <IconButton
+              size="icon-xs"
+              label={t('extraction', 'actionsForFieldAria').replace(
+                '{{label}}',
+                field.label,
+              )}
+              tooltip={t('extraction', 'gridRowActions')}
+              data-cell-row={rowId}
+              data-cell-cols="actions"
+              tabIndex={rovingTabIndex(focus, rowId, ['actions'])}
+              className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
+              icon={<MoreHorizontal aria-hidden />}
+            />
+          </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
             onCloseAutoFocus={(event) => {

@@ -24,6 +24,7 @@ import {toast} from 'sonner';
 
 import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
+import {IconButton} from '@/components/patterns/IconButton';
 import {
   Dialog,
   DialogContent,
@@ -32,12 +33,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {ToggleGroup, ToggleGroupItem} from '@/components/ui/toggle-group';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import {TooltipProvider} from '@/components/ui/tooltip';
 import {LlmEndpointsDialog} from '@/components/extraction/LlmEndpointsDialog';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
 import {t} from '@/lib/copy';
@@ -247,23 +243,14 @@ export function LlmEngineSettingsDialog({
                           )}
                         </div>
                         {engine.hasAlternates && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                className="shrink-0 text-muted-foreground hover:text-foreground"
-                                aria-label={t('llmEngine', 'alternatesRemoveAria')}
-                                disabled={setEngine.isPending}
-                                onClick={() => removeAlternate(alt)}
-                              >
-                                <X className="h-3 w-3" strokeWidth={1.5} />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t('llmEngine', 'alternatesRemoveAria')}
-                            </TooltipContent>
-                          </Tooltip>
+                          <IconButton
+                            size="icon-xs"
+                            className="shrink-0"
+                            label={t('llmEngine', 'alternatesRemoveAria')}
+                            disabled={setEngine.isPending}
+                            onClick={() => removeAlternate(alt)}
+                            icon={<X strokeWidth={1.5} />}
+                          />
                         )}
                       </li>
                     );

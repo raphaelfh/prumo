@@ -12,6 +12,7 @@ import type {CSSProperties, ReactNode} from 'react';
 import {useEffect, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {
     AlertCircle,
     Calendar,
@@ -981,56 +982,34 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                       <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}
                                  onClick={(e) => e.stopPropagation()}>
                     {!hasInstances ? (
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        onClick={() => handleStartExtraction(article.id)}
-                                        disabled={article.isLoading}
-                                        variant="outline"
-                                        size="icon"
-                                        aria-label={t('extraction', 'tableStart')}
-                                        className="rounded-full border-border/60 bg-background p-0 shadow-none hover:bg-muted/60"
-                                    >
-                                        {article.isLoading ? (
-                                            <Loader2 className="h-4 w-4 animate-spin"/>
-                                        ) : (
-                                            <PlayCircle className="h-4 w-4"/>
-                                        )}
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>{t('extraction', 'tableStart')}</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
+                        <IconButton
+                            onClick={() => handleStartExtraction(article.id)}
+                            disabled={article.isLoading}
+                            variant="outline"
+                            label={t('extraction', 'tableStart')}
+                            className="rounded-full border-border/60 bg-background shadow-none"
+                            icon={article.isLoading ? (
+                                <Loader2 className="animate-spin"/>
+                            ) : (
+                                <PlayCircle/>
+                            )}
+                        />
                     ) : (
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        onClick={() => handleContinueExtraction(article.id)}
-                                        variant="outline"
-                                        size="icon"
-                                        aria-label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
-                                        className={`rounded-full p-0 shadow-none ${
-                                            isComplete
-                                                ? 'border-border/60 bg-background hover:bg-muted/60'
-                                                : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
-                                        }`}
-                                    >
-                                        {isComplete ? (
-                                            <CheckCircle className="h-4 w-4"/>
-                                        ) : (
-                                            <Edit className="h-4 w-4"/>
-                                        )}
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>{isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
+                        <IconButton
+                            onClick={() => handleContinueExtraction(article.id)}
+                            variant="outline"
+                            label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
+                            className={`rounded-full shadow-none ${
+                                isComplete
+                                    ? 'border-border/60 bg-background'
+                                    : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
+                            }`}
+                            icon={isComplete ? (
+                                <CheckCircle/>
+                            ) : (
+                                <Edit/>
+                            )}
+                        />
                     )}
                   </TableCell>
                 </TableRow>
@@ -1065,48 +1044,30 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                   }
                                   primaryAction={
                                       !hasInstances ? (
-                                          <TooltipProvider>
-                                              <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                      <Button onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          handleStartExtraction(article.id);
-                                                      }} variant="outline" size="icon"
-                                                              aria-label={t('extraction', 'tableStart')}
-                                                              className="rounded-full border-border/60 bg-background p-0 shadow-none hover:bg-muted/60"
-                                                              disabled={article.isLoading}>
-                                                          {article.isLoading ? <Loader2 className="h-4 w-4 animate-spin"/> :
-                                                              <PlayCircle className="h-4 w-4"/>}
-                                                      </Button>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                      <p>{t('extraction', 'tableStart')}</p>
-                                                  </TooltipContent>
-                                              </Tooltip>
-                                          </TooltipProvider>
+                                          <IconButton onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleStartExtraction(article.id);
+                                          }} variant="outline"
+                                                  label={t('extraction', 'tableStart')}
+                                                  className="rounded-full border-border/60 bg-background shadow-none"
+                                                  disabled={article.isLoading}
+                                                  icon={article.isLoading ? <Loader2 className="animate-spin"/> :
+                                                      <PlayCircle/>}
+                                          />
                                       ) : (
-                                          <TooltipProvider>
-                                              <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                      <Button onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          handleContinueExtraction(article.id);
-                                                      }} variant="outline" size="icon"
-                                                              aria-label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
-                                                              className={`rounded-full p-0 shadow-none ${
-                                                                  isComplete
-                                                                      ? 'border-border/60 bg-background hover:bg-muted/60'
-                                                                      : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
-                                                              }`}>
-                                                          {isComplete ? <CheckCircle className="h-4 w-4"/> :
-                                                              <Edit className="h-4 w-4"/>}
-                                                      </Button>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                      <p>{isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}</p>
-                                                  </TooltipContent>
-                                              </Tooltip>
-                                          </TooltipProvider>
+                                          <IconButton onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleContinueExtraction(article.id);
+                                          }} variant="outline"
+                                                  label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
+                                                  className={`rounded-full shadow-none ${
+                                                      isComplete
+                                                          ? 'border-border/60 bg-background'
+                                                          : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
+                                                  }`}
+                                                  icon={isComplete ? <CheckCircle/> :
+                                                      <Edit/>}
+                                          />
                                       )
                                   }
                                   onClick={() => (hasInstances ? handleContinueExtraction(article.id) : handleStartExtraction(article.id))}
