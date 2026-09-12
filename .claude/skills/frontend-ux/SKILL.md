@@ -83,7 +83,7 @@ on a new override (and it parses the tag, so `className={cn("h-8")}` and an
 |---|---|
 | `ghost` | **Every chrome and row action.** No border ever; `hover:bg-accent`, `active:bg-accent/80`. |
 | `outline` | Only the secondary action beside a primary in a dialog footer. |
-| `default` / `destructive` | The one primary action of a footer or an empty state. |
+| `default` / `destructive` | The one primary action of a footer or an empty state — high contrast (Black in light mode, White in dark mode). |
 
 Font size lives in the size, not the base, so a dense call site never has to
 override it. Every dense size carries `[@media(pointer:coarse)]:h-11` (and the
@@ -96,10 +96,6 @@ a height while leaving `w-8` renders a 28×32 rectangle.
 across the app are the visible case (`Cancel` / a confirm action at 40px next
 to 28px content). They are neither migrated nor caught by the ratchet, which
 only sees `h-*` overrides. Give a button an explicit size when you touch one.
-
-- **Primary:** High contrast (Black in light mode, White in dark mode).
-- **Secondary:** Transparent background, subtle border.
-- **Ghost:** Used for all toolbar/menu items until hovered.
 
 ## 4. Interaction Patterns
 
