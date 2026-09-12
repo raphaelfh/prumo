@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Download, Eye, FileText, Plus, Trash2, Upload} from 'lucide-react';
 import {t} from '@/lib/copy';
@@ -120,16 +121,12 @@ export function ArticleFilesSection({
                                             )}
                                         </div>
                                     </div>
-                                    <Button
-                                        type="button"
-                                        size="icon"
-                                        variant="ghost"
-                                        className="shrink-0 text-destructive hover:text-destructive"
+                                    <IconButton
+                                        label={t('articles', 'stagedRemoveAria')}
+                                        className="text-destructive hover:text-destructive"
                                         onClick={() => onRemoveStaged(staged.id)}
-                                        aria-label={t('articles', 'stagedRemoveAria')}
-                                    >
-                                        <Trash2 className="h-3.5 w-3.5"/>
-                                    </Button>
+                                        icon={<Trash2 />}
+                                    />
                                 </div>
                             ))}
                             {files.map((file) => (
@@ -177,16 +174,12 @@ export function ArticleFilesSection({
                                             <Download className="mr-1 h-3 w-3"/>
                                             {t('articles', 'formDownloadPdf')}
                                         </Button>
-                                        <Button
-                                            type="button"
-                                            size="icon"
-                                            variant="ghost"
+                                        <IconButton
+                                            label={t('articles', 'removeFile')}
                                             className="text-destructive hover:text-destructive"
                                             onClick={() => onRequestDelete(file)}
-                                            aria-label={t('articles', 'removeFile')}
-                                        >
-                                            <Trash2 className="h-3.5 w-3.5"/>
-                                        </Button>
+                                            icon={<Trash2 />}
+                                        />
                                     </div>
                                 </div>
                             ))}

@@ -20,6 +20,7 @@ import {
     DialogTitle
 } from "@/components/ui/dialog";
 import {Button} from "@/components/ui/button";
+import {IconButton} from "@/components/patterns/IconButton";
 import {Label} from "@/components/ui/label";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import {Alert, AlertDescription} from "@/components/ui/alert";
@@ -563,16 +564,12 @@ export function ArticleFileUploadDialogNew({
                               </div>
 
                               <div className="shrink-0 sm:ml-auto">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
+                                <IconButton
+                                  label={t('extraction', 'removeFileAria')}
                                   onClick={() => removeFile(fileWithRole.id)}
                                   disabled={isUploading}
-                                  className="h-8 w-8 p-0"
-                                  aria-label={t('extraction', 'removeFileAria')}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
+                                  icon={<X />}
+                                />
                               </div>
                             </div>
                           </div>

@@ -686,8 +686,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                       open={filterPopoverOpen}
                       onOpenChange={setFilterPopoverOpen}
                       activeCount={activeFiltersCount}
-                      tooltipLabel={t('extraction', 'tableShortcutFilter')}
-                      ariaLabel={t('extraction', 'tableShortcutFilter')}
+                      label={t('shared', 'listFilter')}
                   >
                       <ListFilterPanel
                           fields={EXTRACTION_FILTER_FIELDS}

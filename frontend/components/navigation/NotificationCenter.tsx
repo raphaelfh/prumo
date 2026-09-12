@@ -332,14 +332,13 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
               {getJobTitle(job)}
             </p>
             
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            <IconButton
+              label={t('navigation', 'notificationDismiss')}
+              size="icon-xs"
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={(e) => onRemove(job.id, e)}
-            >
-              <X className="h-3 w-3" />
-            </Button>
+              icon={<X />}
+            />
           </div>
 
           <p className="text-xs text-muted-foreground line-clamp-2">

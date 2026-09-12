@@ -5,6 +5,7 @@
 
 import {useEffect, useState} from 'react';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {Badge} from '@/components/ui/badge';
@@ -366,41 +367,30 @@ export function ApiKeysSection() {
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
                                   {getValidationBadge(key.validationStatus)}
-                                  <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 p-0"
+                                  <IconButton
+                                      label={t('user', 'apiKeysTitleRevalidate')}
                                       onClick={() => handleValidate(key.id)}
                                       disabled={validating === key.id}
-                                      title={t('user', 'apiKeysTitleRevalidate')}
-                                  >
-                                      {validating === key.id ? (
-                                          <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5}/>
+                                      icon={validating === key.id ? (
+                                          <Loader2 className="animate-spin" strokeWidth={1.5}/>
                                       ) : (
-                                          <RefreshCw className="h-4 w-4" strokeWidth={1.5}/>
+                                          <RefreshCw strokeWidth={1.5}/>
                                       )}
-                                  </Button>
+                                  />
                                   {!key.isDefault && key.isActive && (
-                                      <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 p-0"
+                                      <IconButton
+                                          label={t('user', 'apiKeysTitleSetDefault')}
                                           onClick={() => handleSetDefault(key.id)}
-                                          title={t('user', 'apiKeysTitleSetDefault')}
-                                      >
-                                          <StarOff className="h-4 w-4" strokeWidth={1.5}/>
-                                      </Button>
+                                          icon={<StarOff strokeWidth={1.5}/>}
+                                      />
                                   )}
                                   <AlertDialog>
                                       <AlertDialogTrigger asChild>
-                                          <Button
-                                              variant="ghost"
-                                              size="icon"
-                                              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                                              title={t('user', 'apiKeysTitleRemove')}
-                                          >
-                                              <Trash2 className="h-4 w-4" strokeWidth={1.5}/>
-                                          </Button>
+                                          <IconButton
+                                              label={t('user', 'apiKeysTitleRemove')}
+                                              className="hover:text-destructive"
+                                              icon={<Trash2 strokeWidth={1.5}/>}
+                                          />
                                       </AlertDialogTrigger>
                                       <AlertDialogContent>
                                           <AlertDialogHeader>

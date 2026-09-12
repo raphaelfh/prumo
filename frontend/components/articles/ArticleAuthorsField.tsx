@@ -16,9 +16,9 @@ import {
 } from '@dnd-kit/sortable';
 import {CSS} from '@dnd-kit/utilities';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import {GripVertical, Minus, Plus, Rows2, SquareStack} from 'lucide-react';
 import {t} from '@/lib/copy';
@@ -132,54 +132,29 @@ function SortableAuthorRow({
             </div>
 
             <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">
-                <TooltipProvider delayDuration={300}>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => onToggleMode(row.id)}
-                                disabled={disabled}
-                                aria-label={t('articles', 'authorToggleModeAria')}
-                            >
-                                {row.mode === 'person' ? (
-                                    <SquareStack className="h-3.5 w-3.5"/>
-                                ) : (
-                                    <Rows2 className="h-3.5 w-3.5"/>
-                                )}
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="left" className="text-xs">
-                            {row.mode === 'person'
-                                ? t('articles', 'authorSwitchToSingle')
-                                : t('articles', 'authorSwitchToPerson')}
-                        </TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                <IconButton
+                    label={t('articles', 'authorToggleModeAria')}
+                    tooltip={row.mode === 'person'
+                        ? t('articles', 'authorSwitchToSingle')
+                        : t('articles', 'authorSwitchToPerson')}
+                    side="left"
+                    onClick={() => onToggleMode(row.id)}
+                    disabled={disabled}
+                    icon={row.mode === 'person' ? <SquareStack /> : <Rows2 />}
+                />
+                <IconButton
+                    label={t('articles', 'authorRemoveAria')}
+                    className="hover:text-destructive"
                     onClick={() => onRemove(row.id)}
                     disabled={disabled}
-                    aria-label={t('articles', 'authorRemoveAria')}
-                >
-                    <Minus className="h-3.5 w-3.5"/>
-                </Button>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
+                    icon={<Minus />}
+                />
+                <IconButton
+                    label={t('articles', 'authorAddBelowAria')}
                     onClick={() => onInsertBelow(row.id)}
                     disabled={disabled}
-                    aria-label={t('articles', 'authorAddBelowAria')}
-                >
-                    <Plus className="h-3.5 w-3.5"/>
-                </Button>
+                    icon={<Plus />}
+                />
             </div>
         </div>
     );

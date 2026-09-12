@@ -998,14 +998,13 @@ export function ArticlesList({
                                   <TableCell className={`${TABLE_CELL_CLASS} text-right`}>
                                       <DropdownMenu>
                                           <DropdownMenuTrigger asChild>
-                                              <Button
-                                                  size="icon"
-                                                  variant="ghost"
-                                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity"
+                                              <IconButton
+                                                  label={t('articles', 'listRowActions')}
+                                                  size="icon-xs"
+                                                  className="opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity"
                                                   onClick={(e) => e.stopPropagation()}
-                                              >
-                                                  <MoreHorizontal className="h-3.5 w-3.5"/>
-                                              </Button>
+                                                  icon={<MoreHorizontal />}
+                                              />
                                           </DropdownMenuTrigger>
                                           <DropdownMenuContent align="end" className="w-44">
                                               <DropdownMenuItem
@@ -1127,8 +1126,7 @@ export function ArticlesList({
                             open={filterPopoverOpen}
                             onOpenChange={setFilterPopoverOpen}
                             activeCount={activeFiltersList.length + (searchTerm.trim() ? 1 : 0)}
-                            tooltipLabel="Filter (F)"
-                            ariaLabel="Filter (F)"
+                            label={t('shared', 'listFilter')}
                         >
                             <ListFilterPanel
                                 fields={ARTICLES_FILTER_FIELDS}

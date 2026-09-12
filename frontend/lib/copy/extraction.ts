@@ -237,7 +237,6 @@ export const extraction = {
     tableSearchTitle: 'Search in title…',
     tableSearchAuthor: 'Search author…',
     tableSearchPlaceholderShortcut: 'Search… (⌘F / Ctrl+F)',
-    tableShortcutFilter: 'Filter (F)',
     tableDisplayAndSort: 'Display & sort',
     tableOrdering: 'Ordering',
     tableDisplayOptions: 'Display options',

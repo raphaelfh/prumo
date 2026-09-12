@@ -7,5 +7,6 @@ export const ui = {
     multiSelectPlaceholder: 'Select…',
     multiSelectAdd: 'Add',
     multiSelectTypeHere: 'Type here',
+    multiSelectRemoveOther: 'Remove option',
 } as const;
 
