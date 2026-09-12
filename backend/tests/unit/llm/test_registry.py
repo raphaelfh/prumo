@@ -15,7 +15,6 @@ from app.llm.registry import (
     get_provider,
     global_key_for,
     is_byok_only,
-    llm_provider_ids,
     provider_ids,
 )
 
@@ -24,8 +23,12 @@ def test_registry_ids_are_exactly_the_four_providers() -> None:
     assert provider_ids() == ("openai", "anthropic", "openai_compatible", "llama_cloud")
 
 
-def test_llm_provider_ids_exclude_parsing_providers() -> None:
-    assert llm_provider_ids() == ("openai", "anthropic", "openai_compatible")
+def test_llm_providers_exclude_parsing_providers() -> None:
+    assert [s.id for s in REGISTRY if s.serves == "llm"] == [
+        "openai",
+        "anthropic",
+        "openai_compatible",
+    ]
 
 
 def test_ids_are_unique() -> None:
@@ -50,11 +53,6 @@ def test_hosted_providers_name_a_real_settings_field(spec: ProviderSpec) -> None
         assert spec.global_key_setting is not None
         assert spec.global_key_setting in Settings.model_fields
         assert spec.docs_url is not None and spec.docs_url.startswith("https://")
-
-
-def test_only_host_bearing_providers_allow_keyless() -> None:
-    for spec in REGISTRY:
-        assert spec.key_optional == spec.needs_host
 
 
 def test_get_provider_misses_unknown_id() -> None:

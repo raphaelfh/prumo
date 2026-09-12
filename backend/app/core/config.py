@@ -126,6 +126,9 @@ class Settings(BaseSettings):
     # ONE of these; when it is empty the provider is BYOK-only in this
     # deployment (registry.is_byok_only). Never a host-bearing provider —
     # a host is a per-connection fact.
+    # Read dynamically by app.llm.registry.global_key_for via
+    # getattr(settings, spec.global_key_setting) — no static `settings.X`
+    # reference exists, so the vulture dead-code scan cannot see the read.
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
 

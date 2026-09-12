@@ -14,7 +14,7 @@ import pytest
 from app.core.config import settings
 from app.llm.catalog import CATALOG, CatalogEntry, canonical, find_entry
 from app.llm.provider import build_model
-from app.llm.registry import llm_provider_ids
+from app.llm.registry import get_provider
 
 _VALID_COST_TIERS = {"$", "$$", "$$$"}
 
@@ -77,4 +77,6 @@ def test_every_entry_is_buildable(entry: CatalogEntry) -> None:
 
 
 def test_every_catalog_provider_is_a_registry_llm_provider() -> None:
-    assert {entry.provider for entry in CATALOG} <= set(llm_provider_ids())
+    for entry in CATALOG:
+        spec = get_provider(entry.provider)
+        assert spec is not None and spec.serves == "llm"

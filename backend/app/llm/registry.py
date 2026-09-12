@@ -31,7 +31,6 @@ class ProviderSpec:
     description: str
     serves: Literal["llm", "parsing"]
     needs_host: bool
-    key_optional: bool
     global_key_setting: str | None
     docs_url: str | None
 
@@ -43,7 +42,6 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         description="GPT models",
         serves="llm",
         needs_host=False,
-        key_optional=False,
         global_key_setting="OPENAI_API_KEY",
         docs_url="https://platform.openai.com/api-keys",
     ),
@@ -53,7 +51,6 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         description="Claude models",
         serves="llm",
         needs_host=False,
-        key_optional=False,
         global_key_setting="ANTHROPIC_API_KEY",
         docs_url="https://console.anthropic.com/settings/keys",
     ),
@@ -63,7 +60,6 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         description="Any OpenAI-compatible server (Ollama, vLLM, LM Studio, OpenRouter)",
         serves="llm",
         needs_host=True,
-        key_optional=True,
         global_key_setting=None,
         docs_url=None,
     ),
@@ -73,7 +69,6 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         description="High-quality cloud PDF parsing (LlamaParse), opt-in per project",
         serves="parsing",
         needs_host=False,
-        key_optional=False,
         global_key_setting="LLAMA_CLOUD_API_KEY",
         docs_url="https://cloud.llamaindex.ai",
     ),
@@ -87,12 +82,11 @@ def get_provider(provider_id: str) -> ProviderSpec | None:
     return None
 
 
+# Consumed by app.models.user_api_key (the DB CHECK literal + SUPPORTED_PROVIDERS);
+# that module is excluded from the vulture scan ([tool.vulture].exclude), so this
+# call site is invisible to the dead-code ratchet even though it is real.
 def provider_ids() -> tuple[str, ...]:
     return tuple(spec.id for spec in REGISTRY)
-
-
-def llm_provider_ids() -> tuple[str, ...]:
-    return tuple(spec.id for spec in REGISTRY if spec.serves == "llm")
 
 
 def global_key_for(provider_id: str) -> str | None:
