@@ -114,6 +114,26 @@ def tag_end(src: str, start: int) -> int:
     return -1
 
 
+def iter_tags(src: str, name: str):
+    """Yield the opening-tag source (between tag name and closing >) for each occurrence.
+
+    Skips cases where the tag name is followed by an identifier character
+    (e.g. <ButtonGroup instead of <Button) and malformed tags without a closing >.
+    """
+    pos = 0
+    while True:
+        idx = src.find(name, pos)
+        if idx == -1:
+            return
+        after = idx + len(name)
+        pos = after
+        if after < len(src) and src[after] in IDENT_CHARS:
+            continue
+        end = tag_end(src, after)
+        if end != -1:
+            yield src[after:end]
+
+
 def _attr_value_start(tag_src: str, attr: str) -> int:
     """Index of the first char of `attr`'s value in an opening tag, or -1.
 
@@ -234,21 +254,11 @@ def is_button_height(token: str) -> bool:
 def scan_file(text: str) -> int:
     src = strip_comments(text)
     count = 0
-    pos = 0
-    while True:
-        idx = src.find(TAG, pos)
-        if idx == -1:
-            return count
-        after = idx + len(TAG)
-        pos = after
-        if after < len(src) and src[after] in IDENT_CHARS:
-            continue  # <ButtonGroup, <Button.Root — a different component
-        end = tag_end(src, after)
-        if end == -1:
-            continue
-        classes = class_text(src[after:end])
+    for tag in iter_tags(src, TAG):
+        classes = class_text(tag)
         if any(is_button_height(tok) for tok in classes.split()):
             count += 1
+    return count
 
 
 def offenders(repo_root: Path) -> dict[str, int]:

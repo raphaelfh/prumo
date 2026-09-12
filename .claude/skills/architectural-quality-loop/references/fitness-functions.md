@@ -104,6 +104,17 @@ and `max-h-*` are not overrides; `[&_svg]:h-3.5` targets a descendant, not the
 button box; `sm:h-8` is an override. Maintains a `.baseline` of `path:count`
 for grandfathered files: may shrink, never grow.
 
+### `check_ui_primitives.py`
+
+Enforces four interaction-primitive rules (spec: `docs/superpowers/specs/2026-09-12-interaction-primitives-design.md` § 4.7). Each rule walks JSX tag structure using the same parser as `check_button_scale.py`, so tag-structure edge cases (`onClick={() => …}` with a `>` inside, `className={cn(…)}`) are handled correctly:
+
+1. **icon-button**: `<Button size="icon"|"icon-xs">` outside `components/patterns/IconButton.tsx`. Icon-only controls must name themselves; `IconButton` makes the label a required prop, enforcing this at the component level.
+2. **tooltip-provider**: `<TooltipProvider>` outside `App.tsx`, `components/ui/tooltip.tsx`, and `frontend/test/`. One root provider owns the delay configuration; `Tooltip` supplies its own when rendered alone.
+3. **cursor-class**: Bans `cursor-pointer`, `cursor-default`, `cursor-not-allowed` as bare tokens. The rule lives in `index.css` `@layer base` (not in components); `peer-*` and `group-*` relational variants are allowed because base CSS cannot express them.
+4. **overlay-size**: Bans width, height, and padding utilities in the `className` of `<DialogContent>`, `<AlertDialogContent>`, and `<SheetContent>`. The `size` prop owns the frame.
+
+Maintains a `.baseline` of `path:rule:count` for grandfathered violations: may shrink, never grow. The interaction-primitives rollout plan drives this gate to zero (no violations), then deletes it. Wall-clock budget: < 500 ms.
+
 ### `check_react_query_keys.py`
 
 After the `frontend/lib/query-keys/` convention is introduced, this check parses every `**/*.ts(x)` for `useQuery({ queryKey: [...] })` literal arrays. A literal array is a violation unless its first element is a re-export from `frontend/lib/query-keys/<namespace>.ts`. Maintains a `.baseline` of grandfathered call sites.

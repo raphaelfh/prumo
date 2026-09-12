@@ -38,12 +38,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from check_button_scale import (  # noqa: E402
-    IDENT_CHARS,
     attr_text,
     class_text,
+    iter_tags,
     split_variants,
     strip_comments,
-    tag_end,
 )
 
 DEFAULT_REPO_ROOT = SCRIPT_DIR.parent.parent
@@ -88,21 +87,6 @@ GUIDANCE = {
 }
 
 
-def _tags(src: str, name: str):
-    pos = 0
-    while True:
-        idx = src.find(name, pos)
-        if idx == -1:
-            return
-        after = idx + len(name)
-        pos = after
-        if after < len(src) and src[after] in IDENT_CHARS:
-            continue
-        end = tag_end(src, after)
-        if end != -1:
-            yield src[after:end]
-
-
 def scan_file(rel: str, text: str) -> dict[str, int]:
     src = strip_comments(text)
     counts: dict[str, int] = {}
@@ -112,14 +96,14 @@ def scan_file(rel: str, text: str) -> dict[str, int]:
 
     if rel.endswith(".tsx"):
         if rel != ICON_BUTTON_HOME:
-            for tag in _tags(src, "<Button"):
+            for tag in iter_tags(src, "<Button"):
                 if set(attr_text(tag, "size").split()) & ICON_SIZES:
                     bump("icon-button")
         if rel not in PROVIDER_ALLOWED_FILES and not rel.startswith(PROVIDER_ALLOWED_DIRS):
-            for _ in _tags(src, "<TooltipProvider"):
+            for _ in iter_tags(src, "<TooltipProvider"):
                 bump("tooltip-provider")
         for name in OVERLAY_TAGS:
-            for tag in _tags(src, name):
+            for tag in iter_tags(src, name):
                 bases = (split_variants(tok)[1] for tok in class_text(tag).split())
                 if any(b.startswith(OVERLAY_BANNED_PREFIXES) for b in bases):
                     bump("overlay-size")
