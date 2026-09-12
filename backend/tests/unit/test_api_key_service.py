@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.config import settings
 from app.models.user_api_key import UserAPIKey
 from app.services.api_key_service import APIKeyService, KeyScope
 
@@ -286,12 +287,17 @@ class TestGetKeyForProvider:
 
 
 class TestGetGlobalKey:
-    def test_openai_returns_settings_key(self) -> None:
+    def test_openai_returns_settings_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Pin the value: CI's OPENAI_API_KEY secret can resolve to "", and an
+        # empty key is "no key" (registry.global_key_for), not a key.
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-global")
         svc = make_service()
-        # settings.OPENAI_API_KEY is "x" in test env
-        result = svc._get_global_key("openai")
-        # Should return the settings key when configured
-        assert result is not None
+        assert svc._get_global_key("openai") == "sk-test-global"
+
+    def test_empty_openai_key_is_no_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+        svc = make_service()
+        assert svc._get_global_key("openai") is None
 
     def test_unknown_provider_returns_none(self) -> None:
         svc = make_service()
