@@ -1367,7 +1367,7 @@ async def test_provider_check_constraint_matches_the_registry_at_head(
     )
 
 
-# --- 0071: narrow user_api_keys.provider to the registry's four providers ---
+# --- 0071: narrow user_api_keys.provider to the registry's providers ---
 # Self-contained fixture ids (0071-prefixed): the scratch DB is shared across
 # this file's tests via a session-scoped fixture and pytest-randomly can
 # reorder test execution, so this cannot rely on another test's fixture rows
@@ -1382,7 +1382,7 @@ async def test_migration_0071_deletes_orphaned_providers_and_narrows_the_check(
     migration_db_url: str, migration_session: AsyncSession
 ) -> None:
     """``0071_registry_providers`` deletes stranded gemini/grok rows and
-    narrows the ``provider`` CHECK to the registry's four providers.
+    narrows the ``provider`` CHECK to the registry's providers.
 
     Driven through alembic rather than by re-issuing the statement, so it
     is the migration's own SQL under test: seed a gemini row while

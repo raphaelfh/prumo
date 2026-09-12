@@ -20,7 +20,7 @@ from app.llm.registry import (
 )
 
 
-def test_registry_ids_are_exactly_the_four_providers() -> None:
+def test_registry_ids_are_exactly_the_registered_providers() -> None:
     assert provider_ids() == ("openai", "anthropic", "google", "openai_compatible", "llama_cloud")
 
 

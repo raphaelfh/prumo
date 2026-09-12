@@ -556,6 +556,50 @@ class TestValidateAnthropic:
         assert result["status"] == "valid"
 
 
+class TestValidateGoogle:
+    @pytest.mark.asyncio
+    async def test_200_returns_valid(self) -> None:
+        svc = make_service()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        with patch("httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__.return_value.get = AsyncMock(
+                return_value=mock_response
+            )
+            result = await svc._validate_google("gemini-key")
+        assert result["status"] == "valid"
+
+    @pytest.mark.asyncio
+    async def test_401_returns_invalid(self) -> None:
+        svc = make_service()
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        with patch("httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__.return_value.get = AsyncMock(
+                return_value=mock_response
+            )
+            result = await svc._validate_google("bad-key")
+        assert result["status"] == "invalid"
+
+    @pytest.mark.asyncio
+    async def test_key_travels_only_in_the_header(self) -> None:
+        """The key must never ride in the URL: httpx embeds the full URL in
+        transport-error messages, which would leak the secret into logs."""
+        svc = make_service()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        with patch("httpx.AsyncClient") as MockClient:
+            mock_get = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__.return_value.get = mock_get
+            await svc._validate_google("SECRET-KEY")
+        mock_get.assert_called_once()
+        args, kwargs = mock_get.call_args
+        assert kwargs["headers"] == {"x-goog-api-key": "SECRET-KEY"}
+        url = args[0] if args else kwargs["url"]
+        assert "SECRET-KEY" not in url
+        assert "params" not in kwargs
+
+
 def test_list_providers_info_is_the_registry() -> None:
     """Host-bearing providers (``openai_compatible``) are excluded: this
     slice has no connection to carry a host, so the catalogue is the three
