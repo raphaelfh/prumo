@@ -21,6 +21,7 @@ import {runs} from './runs';
 import {parsing} from './parsing';
 import {templateConfig} from './templateConfig';
 import {llmEngine} from './llmEngine';
+import {llmConnections} from './llmConnections';
 import {aiContext} from './aiContext';
 
 export {
@@ -31,6 +32,7 @@ export {
     consensus,
     templateConfig,
     llmEngine,
+    llmConnections,
     aiContext,
 };
 
@@ -54,6 +56,7 @@ const copy = {
     parsing,
     templateConfig,
     llmEngine,
+    llmConnections,
     aiContext,
 } as const;
 

@@ -118,7 +118,4 @@ frontend/lib/copy/shared.ts:youHaveNoInstancesOf
 frontend/lib/copy/templateConfig.ts:deleteGroupCascadeWarning
 frontend/lib/copy/templateConfig.ts:errors_draftLockHeld
 frontend/lib/copy/templateConfig.ts:errors_draftLockHeldBy
-frontend/lib/copy/user.ts:apiKeysDeactivated
-frontend/lib/copy/user.ts:apiKeysErrorDeactivating
-frontend/lib/copy/user.ts:apiKeysSessionExpired
 frontend/lib/copy/user.ts:ariaGoBack

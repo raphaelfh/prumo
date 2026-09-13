@@ -1,0 +1,34 @@
+/**
+ * UI copy for AI connections (spec §5.2): the Integrations list and form,
+ * the worklist engine picker, and the project AI engine card. English only.
+ */
+export const llmConnections = {
+    // --- Integrations → AI connections ---
+    integrationsTitle: 'AI connections',
+    integrationsDescription: 'Your own keys and hosts for AI providers. Encrypted, never shared.',
+    listLoading: 'Loading connections…',
+    listEmpty: 'No AI connections yet',
+    listLoadError: "Couldn't load your connections.",
+    retry: 'Retry',
+    addButton: 'Add connection',
+    providerLabel: 'Provider',
+    providerPlaceholder: 'Select provider',
+    docsLink: 'How to get a key?',
+    keyLabel: 'API key',
+    keyPlaceholder: 'sk-…',
+    keyOptionalPlaceholder: 'Leave blank for a keyless host',
+    hostLabel: 'Base URL',
+    hostHint: 'HTTPS only, reachable from the internet.',
+    labelLabel: 'Label',
+    labelPlaceholder: 'e.g. Personal key',
+    saveButton: 'Save connection',
+    saving: 'Saving…',
+    cancelButton: 'Cancel',
+    statusUnverified: 'Unverified',
+    statusOk: 'Verified',
+    statusFailed: 'Failed',
+    hostTag: 'host',
+    globalKeyNote: 'prumo provides a key for this provider; add your own to run on it instead.',
+    createSuccess: 'Connection added.',
+    createError: 'Failed to add the connection',
+} as const;

@@ -15,6 +15,7 @@ export const projectKeys = {
     [...projectKeys.all, 'templates', projectId] as const,
   hitlConfig: (projectId: string) =>
     [...projectKeys.all, 'hitl-config', projectId] as const,
+  llmEngines: () => [...projectKeys.all, 'llm-engine'] as const,
   llmEngine: (projectId: string) =>
     [...projectKeys.all, 'llm-engine', projectId] as const,
   llmEndpoints: (projectId: string) =>

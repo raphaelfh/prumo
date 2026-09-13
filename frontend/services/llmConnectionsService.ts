@@ -25,3 +25,13 @@ export function fetchProjectConnections(projectId: string): Promise<ErrorResult<
     'llmConnectionsService.fetchProjectConnections',
   );
 }
+export type ProviderRead = components['schemas']['ProviderRead'];
+export type UserConnectionCreateRequest = components['schemas']['UserConnectionCreateRequest'];
+
+export function fetchProviders(): Promise<ErrorResult<ProviderRead[]>> {
+  return toResult(() => apiClient<ProviderRead[]>('/api/v1/me/providers'), 'llmConnectionsService.fetchProviders');
+}
+
+export function createMyConnection(body: UserConnectionCreateRequest): Promise<ErrorResult<LlmConnectionRead>> {
+  return toResult(() => apiClient<LlmConnectionRead>(ME, {method: 'POST', body}), 'llmConnectionsService.createMyConnection');
+}

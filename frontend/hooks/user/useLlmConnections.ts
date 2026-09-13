@@ -1,8 +1,15 @@
-/** TanStack reads for the viewer's own connections and (Task 14) the registry (§4). */
-import {useQuery} from '@tanstack/react-query';
+/** TanStack reads and user-scope mutations for the viewer's connections and the registry (§4). */
+import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 
-import {meKeys} from '@/lib/query-keys';
-import {fetchMyConnections, type LlmConnectionRead} from '@/services/llmConnectionsService';
+import {meKeys, projectKeys} from '@/lib/query-keys';
+import {
+  createMyConnection,
+  fetchMyConnections,
+  fetchProviders,
+  type LlmConnectionRead,
+  type ProviderRead,
+  type UserConnectionCreateRequest,
+} from '@/services/llmConnectionsService';
 
 const STALE_MS = 5 * 60_000;
 
@@ -15,5 +22,38 @@ export function useMyConnections() {
       if (!result.ok) throw result.error;
       return result.data;
     },
+  });
+}
+
+export function useProviders() {
+  return useQuery({
+    queryKey: meKeys.providers(),
+    staleTime: STALE_MS,
+    queryFn: async (): Promise<ProviderRead[]> => {
+      const result = await fetchProviders();
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+  });
+}
+
+function useInvalidateMine() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({queryKey: meKeys.connections()});
+    // A new or removed credential changes every project's `availability`.
+    void queryClient.invalidateQueries({queryKey: projectKeys.llmEngines()});
+  };
+}
+
+export function useCreateMyConnection() {
+  const invalidate = useInvalidateMine();
+  return useMutation<LlmConnectionRead, Error, UserConnectionCreateRequest>({
+    mutationFn: async (body) => {
+      const result = await createMyConnection(body);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: invalidate,
   });
 }
