@@ -30,7 +30,7 @@ from app.core.error_handler import AppError
 from app.core.integrity import violates_constraint
 from app.core.net_guard import validate_endpoint_url
 from app.core.security import derive_encryption_key
-from app.llm.registry import get_provider, global_key_for
+from app.llm.registry import REGISTRY, get_provider, global_key_for
 from app.models.llm_connection import LlmConnection
 from app.schemas.llm_connection import (
     LlmConnectionDeleteResult,
@@ -38,6 +38,7 @@ from app.schemas.llm_connection import (
     LlmConnectionUpdateRequest,
     LlmConnectionVerifyResult,
     ProjectConnectionCreateRequest,
+    ProviderRead,
     UserConnectionCreateRequest,
 )
 from app.schemas.llm_endpoint import LlmEndpointCapabilities
@@ -53,6 +54,7 @@ __all__ = [
     "ResolvedKey",
     "owned_project_connection",
     "owned_user_connection",
+    "provider_reads",
     "resolve_provider_key",
 ]
 
@@ -437,3 +439,21 @@ async def resolve_provider_key(
                 return ResolvedKey(key, key_scope)
     global_key = global_key_for(provider)
     return ResolvedKey(global_key, KeyScope.GLOBAL_SERVICE) if global_key else None
+
+
+def provider_reads() -> list[ProviderRead]:
+    """§4 ``GET /me/providers``: every registry provider, registry order;
+    ``global_key_available`` is this deployment's state, not the row's."""
+    return [
+        ProviderRead(
+            id=spec.id,
+            label=spec.label,
+            description=spec.description,
+            docs_url=spec.docs_url,
+            needs_host=spec.needs_host,
+            key_optional=spec.key_optional,
+            scopes=sorted(spec.scopes),
+            global_key_available=global_key_for(spec.id) is not None,
+        )
+        for spec in REGISTRY
+    ]

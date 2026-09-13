@@ -452,6 +452,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Connections */
+        get: operations["list_my_connections_api_v1_me_connections_get"];
+        put?: never;
+        /** Create My Connection */
+        post: operations["create_my_connection_api_v1_me_connections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update My Connection */
+        put: operations["update_my_connection_api_v1_me_connections__connection_id__put"];
+        post?: never;
+        /** Delete My Connection */
+        delete: operations["delete_my_connection_api_v1_me_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/connections/{connection_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify My Connection */
+        post: operations["verify_my_connection_api_v1_me_connections__connection_id__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Providers */
+        get: operations["list_providers_api_v1_me_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/ai-context": {
         parameters: {
             query?: never;
@@ -2219,6 +2289,57 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[LlmConnectionDeleteResult] */
+        ApiResponse_LlmConnectionDeleteResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["LlmConnectionDeleteResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[LlmConnectionRead] */
+        ApiResponse_LlmConnectionRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["LlmConnectionRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[LlmConnectionVerifyResult] */
+        ApiResponse_LlmConnectionVerifyResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["LlmConnectionVerifyResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[LlmEndpointDeleteResult] */
         ApiResponse_LlmEndpointDeleteResult_: {
             /** @description Dados da resposta */
@@ -2894,6 +3015,26 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[list[LlmConnectionRead]] */
+        ApiResponse_list_LlmConnectionRead__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["LlmConnectionRead"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[list[LlmEndpointRead]] */
         ApiResponse_list_LlmEndpointRead__: {
             /**
@@ -2901,6 +3042,26 @@ export interface components {
              * @description Dados da resposta
              */
             data?: components["schemas"]["LlmEndpointRead"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[list[ProviderRead]] */
+        ApiResponse_list_ProviderRead__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["ProviderRead"][] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4096,6 +4257,89 @@ export interface components {
             /** Providers */
             providers: components["schemas"]["ProviderInfo"][];
         };
+        /** LlmConnectionDeleteResult */
+        LlmConnectionDeleteResult: {
+            /** Deleted */
+            deleted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** LlmConnectionRead */
+        LlmConnectionRead: {
+            /** Allowed Models */
+            allowed_models: string[];
+            /** Base Url */
+            base_url: string | null;
+            capabilities: components["schemas"]["LlmEndpointCapabilities"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By Name */
+            created_by_name: string | null;
+            /** Has Api Key */
+            has_api_key: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Last Validated At */
+            last_validated_at: string | null;
+            /** Provider */
+            provider: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "user" | "project";
+            /**
+             * Validation Status
+             * @enum {string}
+             */
+            validation_status: "unverified" | "ok" | "failed";
+        };
+        /**
+         * LlmConnectionUpdateRequest
+         * @description Full-replace ``label`` / ``base_url`` / ``allowed_models``; ``api_key``
+         *     tri-state: ``None`` keeps, ``""`` clears (host-bearing providers only —
+         *     the service refuses it elsewhere), non-empty re-encrypts.
+         */
+        LlmConnectionUpdateRequest: {
+            /**
+             * Allowed Models
+             * @default []
+             */
+            allowed_models: string[];
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Label */
+            label: string;
+        };
+        /** LlmConnectionVerifyResult */
+        LlmConnectionVerifyResult: {
+            /** Error */
+            error: string | null;
+            /** Models Seen */
+            models_seen: string[];
+            /** Output Mode */
+            output_mode: ("tool" | "native" | "prompted") | null;
+            /**
+             * Validation Status
+             * @enum {string}
+             */
+            validation_status: "ok" | "failed";
+        };
         /**
          * LlmEndpointCapabilities
          * @description What the probe learned about an endpoint.
@@ -4744,6 +4988,28 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /**
+         * ProviderRead
+         * @description §4 ``GET /me/providers`` row; ``global_key_available`` is per deployment.
+         */
+        ProviderRead: {
+            /** Description */
+            description: string;
+            /** Docs Url */
+            docs_url: string | null;
+            /** Global Key Available */
+            global_key_available: boolean;
+            /** Id */
+            id: string;
+            /** Key Optional */
+            key_optional: boolean;
+            /** Label */
+            label: string;
+            /** Needs Host */
+            needs_host: boolean;
+            /** Scopes */
+            scopes: string[];
         };
         /** PublishedStateResponse */
         PublishedStateResponse: {
@@ -6475,6 +6741,22 @@ export interface components {
              */
             project_template_id: string;
         };
+        /** UserConnectionCreateRequest */
+        UserConnectionCreateRequest: {
+            /**
+             * Allowed Models
+             * @default []
+             */
+            allowed_models: string[];
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -7203,6 +7485,176 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_connections_api_v1_me_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_LlmConnectionRead__"];
+                };
+            };
+        };
+    };
+    create_my_connection_api_v1_me_connections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserConnectionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_my_connection_api_v1_me_connections__connection_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmConnectionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_my_connection_api_v1_me_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionDeleteResult_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_my_connection_api_v1_me_connections__connection_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionVerifyResult_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_providers_api_v1_me_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_ProviderRead__"];
                 };
             };
         };

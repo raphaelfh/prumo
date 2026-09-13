@@ -27,6 +27,7 @@ from app.api.v1.endpoints import (
     section_extraction,
     template_structure,
     user_api_keys,
+    user_connections,
     zotero_import,
 )
 
@@ -55,6 +56,12 @@ api_router.include_router(
     user_api_keys.router,
     prefix="/user-api-keys",
     tags=["User API Keys"],
+)
+
+api_router.include_router(
+    user_connections.router,
+    prefix="/me",
+    tags=["me"],
 )
 
 api_router.include_router(
