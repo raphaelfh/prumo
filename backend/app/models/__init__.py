@@ -54,6 +54,7 @@ from app.models.extraction_workflow import (
 )
 from app.models.feedback import FeedbackAttachment, FeedbackReport  # noqa: F401
 from app.models.integration import ZoteroIntegration
+from app.models.llm_connection import LlmConnection, UserProjectEngine
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
 from app.models.project_llm_endpoint import ENDPOINT_VALIDATION_STATUSES, ProjectLlmEndpoint
 
@@ -114,6 +115,7 @@ __all__ = [
     "ProjectMember",
     "ProjectMemberRole",
     "ReviewType",
+    "LlmConnection",
     "ProjectLlmEndpoint",
     "ENDPOINT_VALIDATION_STATUSES",
     # Article
@@ -160,5 +162,6 @@ __all__ = [
     "ZoteroIntegration",
     # User API Keys
     "UserAPIKey",
+    "UserProjectEngine",
     "SUPPORTED_PROVIDERS",
 ]
