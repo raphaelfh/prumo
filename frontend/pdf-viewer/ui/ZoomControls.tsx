@@ -7,10 +7,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {IconButton} from '@/components/patterns/IconButton';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import {useViewerStore} from '../core/context';
-import {ToolbarIconButton} from './ToolbarIconButton';
 
 const PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -20,14 +20,14 @@ export function ZoomControls({className}: {className?: string}) {
 
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
-      <ToolbarIconButton
+      <IconButton
         label={t('pdf', 'viewerZoomOut')}
+        side="bottom"
         onClick={() => setScale(Math.max(0.25, scale - 0.25))}
         disabled={scale <= 0.25}
         data-viewer-step=""
-      >
-        <ZoomOut strokeWidth={1.5} />
-      </ToolbarIconButton>
+        icon={<ZoomOut strokeWidth={1.5} />}
+      />
       <DropdownMenu>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -49,14 +49,14 @@ export function ZoomControls({className}: {className?: string}) {
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <ToolbarIconButton
+      <IconButton
         label={t('pdf', 'viewerZoomIn')}
+        side="bottom"
         onClick={() => setScale(Math.min(4, scale + 0.25))}
         disabled={scale >= 4}
         data-viewer-step=""
-      >
-        <ZoomIn strokeWidth={1.5} />
-      </ToolbarIconButton>
+        icon={<ZoomIn strokeWidth={1.5} />}
+      />
     </div>
   );
 }

@@ -9,7 +9,7 @@ import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Skeleton} from '@/components/ui/skeleton';
 import {AlertCircle, FileUp, Settings} from 'lucide-react';
 import {useInvalidateProjectTemplates, useProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
@@ -310,25 +310,14 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             templateId={activeTemplate.id}
             toolbarActions={
               <>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
-                      onClick={() => setShowExportDialog(true)}
-                      disabled={articles.length === 0}
-                      data-testid="extraction-export-button"
-                      aria-label={t('extraction', 'exportButton')}
-                    >
-                      <FileUp className="h-4 w-4" strokeWidth={1.5}/>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('extraction', 'exportButton')}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <EngineGear projectId={projectId}/>
+                <IconButton
+                  label={t('extraction', 'exportButton')}
+                  onClick={() => setShowExportDialog(true)}
+                  disabled={articles.length === 0}
+                  data-testid="extraction-export-button"
+                  icon={<FileUp strokeWidth={1.5}/>}
+                />
+                <EngineGear projectId={projectId}/>
               </>
             }
           />

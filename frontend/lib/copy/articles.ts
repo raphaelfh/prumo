@@ -245,6 +245,7 @@ export const articles = {
     listPdfNotFound: 'PDF file not found',
     listErrorAccessingPdf: 'Error accessing PDF file',
     listAddPdf: 'Add PDF',
+    listOpenPdf: 'Open PDF',
     listUntitled: 'Untitled',
     listOfArticles: 'of',
     listArticle: 'article',
@@ -284,6 +285,7 @@ export const articles = {
     listSelectArticle: 'Select {{title}}',
     listAuthorsLabel: 'Authors:',
     listDoiOpenHint: 'Open on doi.org',
+    listRowActions: 'Article actions',
     // ArticlesExportDialog
     exportTitle: 'Export articles',
     exportDesc: 'Export article metadata and optional files as CSV, RIS, or RDF.',

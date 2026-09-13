@@ -3,10 +3,9 @@
  */
 import React from 'react';
 import {Moon, Monitor, Sun} from 'lucide-react';
-import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {useTheme} from '@/contexts/ThemeContext';
 import {t} from '@/lib/copy';
-import {cn} from '@/lib/utils';
 
 interface ThemeToggleProps {
   className?: string;
@@ -17,15 +16,12 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({className}) => {
   const Icon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor;
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
+    <IconButton
+      label={t('layout', 'themeToggleAriaLabel')}
       onClick={cycle}
-      aria-label={t('layout', 'themeToggleAriaLabel')}
-      className={cn('h-7 w-7 hover:bg-muted/50 text-muted-foreground hover:text-foreground', className)}
-    >
-      <Icon className="h-4 w-4" strokeWidth={1.5} />
-    </Button>
+      className={className}
+      icon={<Icon strokeWidth={1.5} />}
+    />
   );
 };
 

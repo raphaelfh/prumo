@@ -17,8 +17,7 @@
 import {memo, useState} from 'react';
 import {Label} from '@/components/ui/label';
 import {AlertCircle, History} from 'lucide-react';
-import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {IconButton} from '@/components/patterns/IconButton';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
@@ -276,31 +275,15 @@ export function FieldInput(props: FieldInputProps) {
                   was generated, locate evidence, or clear. Replaces the old
                   split history + details popovers. */}
             {reviewBinding && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div>
-                    <AISuggestionReviewPopover
-                      {...reviewBinding}
-                      trigger={
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className={cn(
-                            "",
-                            "text-muted-foreground hover:text-foreground hover:bg-muted"
-                          )}
-                          title={t('extraction', 'reviewTitle')}
-                        >
-                          <History className="h-4 w-4" />
-                        </Button>
-                      }
-                    />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                    <p>{t('extraction', 'reviewTitle')}</p>
-                </TooltipContent>
-              </Tooltip>
+              <AISuggestionReviewPopover
+                {...reviewBinding}
+                trigger={
+                  <IconButton
+                    label={t('extraction', 'reviewTitle')}
+                    icon={<History />}
+                  />
+                }
+              />
             )}
           </div>
         </div>

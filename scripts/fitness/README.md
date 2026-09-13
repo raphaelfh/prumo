@@ -41,6 +41,7 @@ Conventions that exist only as "code review will catch it" rot. Each invariant w
 | `check_skill_router_sync.py` | Every skill named in CLAUDE.md's `## Which skill to load` router resolves to a real `.claude/skills/<name>/` dir. No baseline. Exit 2 if the router section goes missing, since an unparsed router reports zero dead entries forever. |
 | `check_file_size.py` | Ratchet, not a ceiling: a baselined oversized file may not grow and no new file may cross the soft limit. Shrinking always passes and lets the baseline tighten. |
 | `check_button_scale.py` | No `h-*` utility in a `<Button>` `className` — the size scale in `ui/button.tsx` owns height. A real tag parser, not a regex, so `className={cn("h-8")}` and `onClick={() => …}` cannot hide an override. Baselined `path:count`. |
+| `check_ui_primitives.py` | four interaction-primitive rules (icon label, one tooltip provider, cursor in CSS, overlay size prop); hard zero — no baseline file, pinned by `test_baseline_file_is_gone` |
 | `check_scope_guards.py` | An ownership predicate is written ONCE. `duplicate-predicate`: the same `(model, {id, scope columns})` filtered in two functions (shrink-only baseline; mutating statements carry the scope inline and are grandfathered with a reason). `membership-sql`: raw `public.project_members` SQL outside `api/deps/security.py` — hard ban, empty baseline. |
 
 ## Adding a new check

@@ -19,7 +19,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { CheckCircle, FileText, FileUp, ShieldCheck } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/patterns/IconButton";
 import {
   Card,
   CardContent,
@@ -28,12 +28,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { t } from "@/lib/copy";
@@ -246,25 +240,14 @@ export function QualityAssessmentInterface({ projectId }: Props) {
             emptyDescription={t("qa", "noArticlesForListDesc")}
             toolbarActions={
               <>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
-                      onClick={() => setShowExportDialog(true)}
-                      disabled={worklist.length === 0}
-                      data-testid="qa-export-button"
-                      aria-label={t("extraction", "exportButton")}
-                    >
-                      <FileUp className="h-4 w-4" strokeWidth={1.5} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t("extraction", "exportButton")}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <EngineGear projectId={projectId} />
+                <IconButton
+                  label={t("extraction", "exportButton")}
+                  onClick={() => setShowExportDialog(true)}
+                  disabled={worklist.length === 0}
+                  data-testid="qa-export-button"
+                  icon={<FileUp strokeWidth={1.5} />}
+                />
+                <EngineGear projectId={projectId} />
               </>
             }
           />

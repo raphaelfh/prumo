@@ -12,6 +12,7 @@ import type {CSSProperties, ReactNode} from 'react';
 import {useEffect, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {
     AlertCircle,
     Calendar,
@@ -40,7 +41,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Checkbox} from "@/components/ui/checkbox";
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
+import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {useArticleSelection} from "@/hooks/extraction/useArticleSelection";
 import {useFullAIExtraction} from "@/hooks/extraction/useFullAIExtraction";
 import {useListKeyboardShortcuts} from "@/hooks/useListKeyboardShortcuts";
@@ -686,8 +687,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                       open={filterPopoverOpen}
                       onOpenChange={setFilterPopoverOpen}
                       activeCount={activeFiltersCount}
-                      tooltipLabel={t('extraction', 'tableShortcutFilter')}
-                      ariaLabel={t('extraction', 'tableShortcutFilter')}
+                      label={t('shared', 'listFilter')}
                   >
                       <ListFilterPanel
                           fields={EXTRACTION_FILTER_FIELDS}
@@ -768,7 +768,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                   <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                           <TableHead className={`w-[40px] min-w-[40px] ${TABLE_CELL_CLASS} text-left align-middle`}>
-                <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="flex items-center">
@@ -798,7 +797,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                       </p>
                     </TooltipContent>
                   </Tooltip>
-                </TooltipProvider>
               </TableHead>
                           <TableHead
                               className={`relative ${TABLE_CELL_CLASS}`} style={getColumnStyle('title')}>
@@ -858,7 +856,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                       direction={sortField === 'extraction_progress' ? sortDirection : null}
                                       onSort={() => handleSort('extraction_progress')}
                                   />
-                                  <TooltipProvider>
                                       <Tooltip>
                                           <TooltipTrigger asChild>
                                               <button
@@ -886,7 +883,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                               </ul>
                                           </TooltipContent>
                                       </Tooltip>
-                                  </TooltipProvider>
                               </div>
                               <div
                                   role="separator"
@@ -934,7 +930,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                 }
                             }}
                             aria-label={t('extraction', 'tableOpenRowAria').replace('{{title}}', article.title)}
-                            className="border-b border-border/40 hover:bg-muted/40 transition-colors duration-75 group h-10 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+                            className="border-b border-border/40 hover:bg-muted/40 transition-colors duration-75 group h-10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
                       {/* stopPropagation: toggling the checkbox must not open the row */}
                       <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`} onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -950,7 +946,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                           className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
                           style={getColumnStyle('authors')}>
                     {article.authors && article.authors.length > 0 ? (
-                        <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                     <div className="flex items-center gap-1 cursor-help">
@@ -965,7 +960,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                     <p className="text-xs">{article.authors.join(', ')}</p>
                                 </TooltipContent>
                             </Tooltip>
-                        </TooltipProvider>
                     ) : (
                         <span className="text-muted-foreground">N/A</span>
                     )}
@@ -982,56 +976,34 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                       <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}
                                  onClick={(e) => e.stopPropagation()}>
                     {!hasInstances ? (
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        onClick={() => handleStartExtraction(article.id)}
-                                        disabled={article.isLoading}
-                                        variant="outline"
-                                        size="icon"
-                                        aria-label={t('extraction', 'tableStart')}
-                                        className="rounded-full border-border/60 bg-background p-0 shadow-none hover:bg-muted/60"
-                                    >
-                                        {article.isLoading ? (
-                                            <Loader2 className="h-4 w-4 animate-spin"/>
-                                        ) : (
-                                            <PlayCircle className="h-4 w-4"/>
-                                        )}
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>{t('extraction', 'tableStart')}</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
+                        <IconButton
+                            onClick={() => handleStartExtraction(article.id)}
+                            disabled={article.isLoading}
+                            variant="outline"
+                            label={t('extraction', 'tableStart')}
+                            className="rounded-full border-border/60 bg-background shadow-none"
+                            icon={article.isLoading ? (
+                                <Loader2 className="animate-spin"/>
+                            ) : (
+                                <PlayCircle/>
+                            )}
+                        />
                     ) : (
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        onClick={() => handleContinueExtraction(article.id)}
-                                        variant="outline"
-                                        size="icon"
-                                        aria-label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
-                                        className={`rounded-full p-0 shadow-none ${
-                                            isComplete
-                                                ? 'border-border/60 bg-background hover:bg-muted/60'
-                                                : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
-                                        }`}
-                                    >
-                                        {isComplete ? (
-                                            <CheckCircle className="h-4 w-4"/>
-                                        ) : (
-                                            <Edit className="h-4 w-4"/>
-                                        )}
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>{isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
+                        <IconButton
+                            onClick={() => handleContinueExtraction(article.id)}
+                            variant="outline"
+                            label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
+                            className={`rounded-full shadow-none ${
+                                isComplete
+                                    ? 'border-border/60 bg-background'
+                                    : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
+                            }`}
+                            icon={isComplete ? (
+                                <CheckCircle/>
+                            ) : (
+                                <Edit/>
+                            )}
+                        />
                     )}
                   </TableCell>
                 </TableRow>
@@ -1066,48 +1038,30 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                   }
                                   primaryAction={
                                       !hasInstances ? (
-                                          <TooltipProvider>
-                                              <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                      <Button onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          handleStartExtraction(article.id);
-                                                      }} variant="outline" size="icon"
-                                                              aria-label={t('extraction', 'tableStart')}
-                                                              className="rounded-full border-border/60 bg-background p-0 shadow-none hover:bg-muted/60"
-                                                              disabled={article.isLoading}>
-                                                          {article.isLoading ? <Loader2 className="h-4 w-4 animate-spin"/> :
-                                                              <PlayCircle className="h-4 w-4"/>}
-                                                      </Button>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                      <p>{t('extraction', 'tableStart')}</p>
-                                                  </TooltipContent>
-                                              </Tooltip>
-                                          </TooltipProvider>
+                                          <IconButton onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleStartExtraction(article.id);
+                                          }} variant="outline"
+                                                  label={t('extraction', 'tableStart')}
+                                                  className="rounded-full border-border/60 bg-background shadow-none"
+                                                  disabled={article.isLoading}
+                                                  icon={article.isLoading ? <Loader2 className="animate-spin"/> :
+                                                      <PlayCircle/>}
+                                          />
                                       ) : (
-                                          <TooltipProvider>
-                                              <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                      <Button onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          handleContinueExtraction(article.id);
-                                                      }} variant="outline" size="icon"
-                                                              aria-label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
-                                                              className={`rounded-full p-0 shadow-none ${
-                                                                  isComplete
-                                                                      ? 'border-border/60 bg-background hover:bg-muted/60'
-                                                                      : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
-                                                              }`}>
-                                                          {isComplete ? <CheckCircle className="h-4 w-4"/> :
-                                                              <Edit className="h-4 w-4"/>}
-                                                      </Button>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                      <p>{isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}</p>
-                                                  </TooltipContent>
-                                              </Tooltip>
-                                          </TooltipProvider>
+                                          <IconButton onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleContinueExtraction(article.id);
+                                          }} variant="outline"
+                                                  label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
+                                                  className={`rounded-full shadow-none ${
+                                                      isComplete
+                                                          ? 'border-border/60 bg-background'
+                                                          : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
+                                                  }`}
+                                                  icon={isComplete ? <CheckCircle/> :
+                                                      <Edit/>}
+                                          />
                                       )
                                   }
                                   onClick={() => (hasInstances ? handleContinueExtraction(article.id) : handleStartExtraction(article.id))}

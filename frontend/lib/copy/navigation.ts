@@ -12,6 +12,7 @@ export const navigation = {
         'Notifications — background activity in progress',
     notificationsAriaUnread: 'Notifications, {{count}} unread',
     notificationsCleared: 'Notifications cleared',
+    notificationDismiss: 'Dismiss notification',
     viewProject: 'View project',
     errorPrefix: 'Error',
     operationFailed: 'Operation failed',

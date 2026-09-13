@@ -43,11 +43,11 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   i18n) — never hardcode strings in components.
 - shadcn/Radix primitives; `cn()` merge order matters; every
   interactive element keeps a visible focus state.
-- **Every icon-only or short-label button exposes its description on
-  hover** via the shadcn `Tooltip` (`TooltipTrigger asChild`), with the
-  description text routed through `lib/copy/`. Icon-only buttons also
-  carry an `aria-label`. A bare icon or terse label ("No information",
-  a history glyph) must never leave the user guessing what it does.
+- **Every icon-only control is `IconButton`** (`components/patterns/IconButton.tsx`):
+  its required `label`, routed through `lib/copy/`, is the accessible name
+  and the tooltip. Text buttons get a tooltip only when it adds information.
+  A bare icon or terse label must never leave the user guessing what it does.
+  Gated by `scripts/fitness/check_ui_primitives.py`.
 - **A label that folds on a narrow bar folds to `sr-only`, never to
   `hidden`.** The idiom is `sr-only @[<w>]/<container>:not-sr-only` (see
   `TemplateConfigEditor`, `TemplateConfigPublishControls`,

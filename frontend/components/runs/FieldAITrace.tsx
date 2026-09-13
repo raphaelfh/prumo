@@ -21,8 +21,7 @@
  * `RunEditabilityContext.showPeerIdentity` inside the popover (D7).
  */
 import {Sparkles} from 'lucide-react';
-import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {IconButton} from '@/components/patterns/IconButton';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem} from '@/types/ai-extraction';
 import type {PeerAdoptionMark} from '@/lib/runs/adoption';
@@ -59,40 +58,26 @@ export function FieldAITrace({
 
   const label = t('consensus', 'fieldTraceAria');
   return (
-    // Tooltip OUTSIDE the popover trigger (FieldInput / ReviewerAITrace
-    // pattern): nesting a Tooltip inside PopoverTrigger asChild drops the
-    // trigger props.
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex">
-          <AISuggestionReviewPopover
-            instanceId={instanceId}
-            fieldId={fieldId}
-            getHistory={getHistory}
-            articleId={articleId}
-            fieldType={field.field_type}
-            allowedValues={field.allowed_values}
-            title={label}
-            adoptionByProposalId={adoptionByProposalId}
-            pinNewestWhenNoSelection={false}
-            trigger={
-              <Button
-                size="icon"
-                variant="ghost"
-                // Muted at rest so the presence pattern down the column stays
-                // scannable without shouting; AI accent on hover/focus (D9).
-                className="h-4 w-4 shrink-0 text-muted-foreground/50 hover:bg-ai/10 hover:text-ai focus-visible:text-ai"
-                aria-label={label}
-              >
-                <Sparkles className="h-3 w-3" aria-hidden="true" />
-              </Button>
-            }
-          />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{label}</p>
-      </TooltipContent>
-    </Tooltip>
+    <AISuggestionReviewPopover
+      instanceId={instanceId}
+      fieldId={fieldId}
+      getHistory={getHistory}
+      articleId={articleId}
+      fieldType={field.field_type}
+      allowedValues={field.allowed_values}
+      title={label}
+      adoptionByProposalId={adoptionByProposalId}
+      pinNewestWhenNoSelection={false}
+      trigger={
+        <IconButton
+          label={label}
+          size="icon-xs"
+          // Muted at rest so the presence pattern down the column stays
+          // scannable without shouting; AI accent on hover/focus (D9).
+          className="text-muted-foreground/50 hover:bg-ai/10 hover:text-ai focus-visible:text-ai"
+          icon={<Sparkles />}
+        />
+      }
+    />
   );
 }

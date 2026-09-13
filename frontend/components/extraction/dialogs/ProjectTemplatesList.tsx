@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {
   useDeleteProjectTemplate,
@@ -129,22 +130,14 @@ export function ProjectTemplatesList({projectId, onSwitched}: ProjectTemplatesLi
                     </TooltipTrigger>
                     <TooltipContent>{t('templateConfig', 'projectTemplateSwitchTooltip')}</TooltipContent>
                   </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="text-muted-foreground hover:text-destructive"
-                        aria-label={t('templateConfig', 'projectTemplateDelete')}
-                        data-testid={`project-template-delete-${tpl.id}`}
-                        disabled={busyId !== null}
-                        onClick={() => setPendingDelete(tpl)}
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{t('templateConfig', 'projectTemplateDelete')}</TooltipContent>
-                  </Tooltip>
+                  <IconButton
+                    className="hover:text-destructive"
+                    label={t('templateConfig', 'projectTemplateDelete')}
+                    data-testid={`project-template-delete-${tpl.id}`}
+                    disabled={busyId !== null}
+                    onClick={() => setPendingDelete(tpl)}
+                    icon={<Trash2 aria-hidden />}
+                  />
                 </>
               )}
             </li>

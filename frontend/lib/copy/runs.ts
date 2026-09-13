@@ -66,6 +66,7 @@ export const runs = {
   aiPendingSuggestions: '{{n}} AI suggestions pending',
   compareToggleLabel: 'Compare',
   // CommandPalette
+  commandTitle: 'Command palette',
   commandPlaceholder: 'Type a command or search…',
   commandEmpty: 'No results',
   commandActions: 'Actions',

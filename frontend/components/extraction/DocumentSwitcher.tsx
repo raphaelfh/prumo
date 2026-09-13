@@ -20,7 +20,6 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,7 +31,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconButton } from '@/components/patterns/IconButton';
 import { FILE_ROLE_LABELS, type FileRole } from '@/lib/file-constants';
 import { t } from '@/lib/copy';
 import { cn } from '@/lib/utils';
@@ -156,38 +155,36 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
     : status === 'pending' ? t('pdf', 'docReparsePendingHint')
     : t('pdf', 'docReparseRetryHint');
 
-  const button = (
-    <Button
-      variant="ghost"
-      size="icon"
-      className={cn(
-        'text-muted-foreground',
-        status === 'parse_failed' && 'text-destructive hover:text-destructive',
-      )}
-      disabled={reparse.isPending}
-      onClick={status === 'parsed' ? undefined : fire}
-      aria-label={t('pdf', 'docReparse')}
-    >
-      {status === 'pending' ? (
-        <Loader2 className="animate-spin" strokeWidth={1.5} aria-hidden />
-      ) : (
-        <RotateCw strokeWidth={1.5} aria-hidden />
-      )}
-    </Button>
-  );
-
-  const tooltip = (
-    <TooltipContent side="bottom" className="max-w-64 px-2.5 py-1.5 text-[12px]">
-      <p className="font-medium">{label}</p>
+  const tooltipContent = (
+    <>
+      <span className="block font-medium">{label}</span>
       {status === 'parse_failed' && (
-        <p className="break-words text-muted-foreground">
+        <span className="block break-words text-background/70">
           {file.extractionError
             ? `${t('pdf', 'docParseErrorLabel')}: ${file.extractionError}`
             : t('pdf', 'docParseErrorUnknown')}
-        </p>
+        </span>
       )}
-      <p className="text-muted-foreground">{hint}</p>
-    </TooltipContent>
+      <span className="block text-background/70">{hint}</span>
+    </>
+  );
+
+  const button = (
+    <IconButton
+      label={t('pdf', 'docReparse')}
+      tooltip={tooltipContent}
+      side="bottom"
+      className={cn(status === 'parse_failed' && 'text-destructive hover:text-destructive')}
+      disabled={reparse.isPending}
+      onClick={status === 'parsed' ? undefined : fire}
+      icon={
+        status === 'pending' ? (
+          <Loader2 className="animate-spin" strokeWidth={1.5} aria-hidden />
+        ) : (
+          <RotateCw strokeWidth={1.5} aria-hidden />
+        )
+      }
+    />
   );
 
   return (
@@ -195,12 +192,7 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
       <span role="status" className="sr-only">{label}</span>
       {status === 'parsed' ? (
         <AlertDialog>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <AlertDialogTrigger asChild>{button}</AlertDialogTrigger>
-            </TooltipTrigger>
-            {tooltip}
-          </Tooltip>
+          <AlertDialogTrigger asChild>{button}</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>{t('pdf', 'docReparseConfirmTitle')}</AlertDialogTitle>
@@ -215,10 +207,7 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
           </AlertDialogContent>
         </AlertDialog>
       ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>{button}</TooltipTrigger>
-          {tooltip}
-        </Tooltip>
+        button
       )}
     </>
   );

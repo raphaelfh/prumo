@@ -14,6 +14,7 @@ import userEvent from "@testing-library/user-event";
 import {MemoryRouter} from "react-router";
 import {ArticlesList} from "@/components/articles/ArticlesList";
 import type {Article} from "@/types/article";
+import {fetchArticleIdsWithMainFile, fetchArticlePdfSignedUrl} from "@/services/articlesService";
 
 // The component tree reaches `@/integrations/supabase/client`, which builds a
 // real client at module scope. CI has no env for it, so the import throws there
@@ -93,5 +94,23 @@ describe("ArticlesList toolbar", () => {
         await userEvent.click(exportButton);
 
         expect(await screen.findByTestId("export-dialog")).toBeInTheDocument();
+    });
+});
+
+describe("ArticlesList PDF chip", () => {
+    it("opens the main PDF from the keyboard", async () => {
+        const user = userEvent.setup();
+        const open = vi.spyOn(window, "open").mockImplementation(() => null);
+        vi.mocked(fetchArticleIdsWithMainFile).mockResolvedValue({ok: true, data: ["a1"]});
+        vi.mocked(fetchArticlePdfSignedUrl).mockResolvedValue({ok: true, data: "https://example.test/a1.pdf"});
+        renderList([article("a1", "First")]);
+
+        // Named by its visible text; the "Open PDF" tooltip adds the action.
+        const chip = await screen.findByRole("button", {name: "PDF"});
+        chip.focus();
+        await user.keyboard("{Enter}");
+
+        await vi.waitFor(() => expect(open).toHaveBeenCalledWith("https://example.test/a1.pdf", "_blank"));
+        open.mockRestore();
     });
 });

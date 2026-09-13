@@ -39,5 +39,9 @@ export const shared = {
         'Other reviewers’ values appear here once they record decisions (and, for managers, once reviewer visibility is on).',
     compareRejected: 'Rejected',
     compareNoValue: '—',
+    // List toolbar
+    listSortBy: 'Sort by {{label}}',
+    listToggleSortDirection: 'Toggle sort direction',
+    listFilter: 'Filter',
 } as const;
 
