@@ -196,18 +196,35 @@ existed. Slice 2 retires each one in the same PR:
   go with them, as do the doc references in `backend/app/llm/catalog.py`
   and `backend/app/core/config.py`. `global_key_for()` stays: it is what
   `availability` reads for the `global` tier.
-- `registry.provider_ids()` is baselined in `backend/.vulture_baseline`
-  with a comment naming `app/models/user_api_key.py` as its only
-  (vulture-invisible) consumer. That model is deleted; the row is
-  re-evaluated: kept only if `app/models/llm_connection.py` becomes its
-  consumer under the same exclusion, otherwise removed with the function
-  (see §7.8).
+- `registry.provider_ids()` is baselined as a bare row
+  (`app/llm/registry.py:function:provider_ids`,
+  `backend/.vulture_baseline:27`); the justification is not in the
+  baseline but in the comment above the function
+  (`backend/app/llm/registry.py:105-107`), which names
+  `app.models.user_api_key` as its only (vulture-invisible) consumer.
+  That model is deleted; the row is re-evaluated: kept only if
+  `app/models/llm_connection.py` becomes its consumer under the same
+  exclusion, in which case the comment at `:105-107` is rewritten to
+  name it, otherwise the row and the function go together (see §7.8).
 - The `registry.py` module docstring names `user_api_keys.provider` as
   the home of the CHECK literal; it is rewritten for
-  `llm_connections.provider` and the `scopes` CHECK.
+  `llm_connections.provider` and the `scopes` CHECK. The two unit tests
+  that import `UserAPIKey` and `provider_check_literal` from
+  `app.models.user_api_key` —
+  `backend/tests/unit/llm/test_registry.py::test_user_api_keys_check_literal_equals_the_registry`
+  (`:91-104`, matching the constraint named
+  `user_api_keys_provider_check`) and
+  `::test_removing_a_provider_breaks_the_drift_guard` (`:109-130`, the
+  mutation test) — retarget to `app.models.llm_connection`'s model and
+  its `provider_check_literal()`, matching
+  `llm_connections_provider_check` (§7.8).
 - `KeyScope.SHARED_ENDPOINT` (`backend/app/services/api_key_service.py`)
   and its writer in `backend/app/services/engine_credentials.py`: read
   tolerance only (§3.3); nothing writes it again.
+- The backend unit tests of the deleted repository and router,
+  `backend/tests/unit/test_user_api_key_repository.py` and
+  `backend/tests/unit/test_user_api_keys_endpoint.py`, are deleted; the
+  frontend tests of the retiring surfaces are listed in §5.1.
 - The slice-1 migration `0071_registry_providers` narrowed the
   `user_api_keys` CHECK; its live-DB assertions in
   `backend/tests/integration/test_migration_roundtrip.py` retire with the
@@ -273,6 +290,29 @@ must be dropped explicitly):
   go in the same PR, so `alembic check` stays green.
 - Seed: `backend/app/seed.py` and `backend/app/seed_probast_ai*.py`
   write no rows to either table, so there is no seed to retire.
+- The llama_cloud parsing key path re-homes on the connections service
+  in the same PR. Today it is `APIKeyService.get_key_for_provider`
+  (`backend/app/services/api_key_service.py:215`), read for
+  `"llama_cloud"` by the parse worker
+  (`backend/app/worker/tasks/parsing_tasks.py:72`, inside `_run_parse`,
+  which already holds `project_id` and `user_id`);
+  `backend/app/services/parser_settings_service.py` only *names* the key
+  in its module docstring (`:8`) and makes no call, so it changes
+  wording only. Because llama_cloud is `serves: parsing` with scopes
+  `user, project` (§1), the worker resolves it through §3.3's ladder —
+  the kicker's user-scope connection, then the project's project-scope
+  connection, then `LLAMA_CLOUD_API_KEY` via `global_key_for` — so a
+  **project-scope llama_cloud key satisfies parsing** for every member
+  of that project. The frontend read moves with it:
+  `frontend/components/project/settings/AdvancedSettingsSection.tsx`
+  (`:24`, `:86-101`) computes `hasLlamaCloudKey` from
+  `loadKeysAndProviders()` today and passes it to
+  `frontend/components/project/settings/HighQualityParsingToggle.tsx`
+  (`:19`, gating `disabled` at `:66`); it computes it instead from the
+  connections service: a `llama_cloud` row in `GET /me/connections`, or
+  — the toggle is manager-only (`disabled={!isManager}`, `:280`) — a
+  `llama_cloud` row in `GET /projects/{id}/connections` when the viewer
+  is a manager. Same boolean, same prop, same toggle.
 - `alternates`: a data update strips the key from every
   `projects.settings -> 'llm_engine'` that carries it; the writers
   (`backend/app/services/llm_engine_service.py`,
@@ -307,7 +347,7 @@ tolerance only; nothing writes them again).
 
 `resolve_engine(db, project_id, user_id) -> LlmTarget` replaces
 `resolve_project_engine` (`backend/app/services/llm_engine_service.py`)
-at every call site in the tree:
+at every call site under `backend/app/`:
 
 - the kickoff gate, `backend/app/api/v1/endpoints/section_extraction.py`
   (the fail-fast resolve before the queue check);
@@ -327,6 +367,20 @@ at every call site in the tree:
   (`extract_section_task`, marked `DEAD ENTRY POINT`, the only other
   `resolve_project_engine` caller) is **deleted** in slice 2: the file is
   touched, and no dead code ships.
+
+The test-side references move with the symbols in the same PR, since a
+monkeypatch of a name that no longer exists fails at setup:
+`backend/tests/integration/test_worker_eager_mode.py` patches
+`app.worker.tasks.extraction_tasks.resolve_project_engine` (`:322`,
+`:414`); `backend/tests/unit/test_run_from_request.py` patches
+`app.services.section_extraction_service.resolve_project_engine`
+(`:41`); `backend/tests/unit/test_run_section_extraction_task.py`
+patches `resolve_project_engine` (`:55`) and `resolve_engine_for_run`
+(`:418-422`) on `extraction_tasks`; and
+`backend/tests/integration/test_llm_engine_service.py` imports
+`resolve_project_engine` (`:22`) and calls it directly across its
+resolution block (`:397-712`). Each retargets to `resolve_engine` (or to
+the re-signed `resolve_engine_for_run`) and passes a `user_id`.
 
 The order:
 
@@ -376,8 +430,17 @@ is unchanged except the field name; the re-key identity stays the pair
 
 ## 4. API
 
-Two connection routers replace three routers; every read carries
-`has_api_key` and never key material (`SecretStr` inward, as today).
+Two new connection routers —
+`backend/app/api/v1/endpoints/user_connections.py` mounted at `/me`, and
+`backend/app/api/v1/endpoints/project_connections.py` mounted under
+`/projects` (routes `/projects/{id}/connections…`) — replace the two
+deleted routers `backend/app/api/v1/endpoints/user_api_keys.py` (today
+at `/user-api-keys`, `backend/app/api/v1/router.py:54-58`) and
+`backend/app/api/v1/endpoints/llm_endpoints.py` (today under
+`/projects`, `router.py:126-129`). `backend/app/api/v1/endpoints/llm_engine.py`
+(`router.py:108-111`) stays and gains the `/projects/{id}/llm-engine/me`
+routes below. Every read carries `has_api_key` and never key material
+(`SecretStr` inward, as today).
 
 - `GET/POST /me/connections`, `PUT/DELETE /me/connections/{id}`,
   `POST /me/connections/{id}/verify` — user scope, any signed-in user,
@@ -411,6 +474,8 @@ Two connection routers replace three routers; every read carries
   writes or clears the viewer's own row (403 while locked for a
   non-manager; 422 when `availability` for the row's provider is null
   for the caller — the UI's *needs a key* rule, enforced server-side).
+- The parse worker's llama_cloud lookup (§2) uses the connections
+  service, not a route: no parsing endpoint changes.
 - Old routes (`user_api_keys`, `llm_endpoints`) are deleted; OpenAPI
   types regenerated.
 
@@ -427,11 +492,18 @@ settings.
   field, host field only when the provider needs one, verify. Replaces
   the API keys section and the project endpoints dialog.
 - **Worklist gear → "Your engine for new runs".** An icon button in the
-  `toolbarActions` group both article tables already expose — the
-  trailing toolbar group beside the list count, where the filter and
-  export controls sit (`frontend/components/extraction/ArticleExtractionTable.tsx`
-  and `frontend/components/hitl/HITLArticleTable.tsx`, same prop name and
-  placement on both). No new slot is added. It opens the
+  `toolbarActions` prop both article tables already expose. The two
+  tables place that prop differently and the placement stays as-is:
+  `frontend/components/extraction/ArticleExtractionTable.tsx` renders it
+  in the **leading** toolbar group, right after the display-options
+  control and before the `ml-auto` count/selection group (`:715`);
+  `frontend/components/hitl/HITLArticleTable.tsx` renders it in the
+  **trailing** `ml-auto` group after `ListCount` (`:462-469`). No layout
+  change to either table; no new slot is added. `ArticleExtractionTable`
+  also renders `toolbarActions` in its loading branch (`:591`, in place
+  of a skeleton) and its empty branch (`:660-661`, a right-aligned row
+  above the empty state), so the gear is mounted in all three branches
+  there, not only on the populated list. It opens the
   picker, writing the viewer's own row: rows grouped by provider from
   the catalogue, plus one group per host the viewer owns, models from
   `allowed_models`. Each row carries a scope tag — *your key*, *project
@@ -446,10 +518,17 @@ settings.
   project): the gear on the extraction and the QA worklist edit the same
   choice. The gear's tooltip names `effective`. Managers see nothing
   extra here: this surface is the same for every member.
-- **Project → Settings → AI engine card.** Next to Review details: the
-  project default (catalogue pairs only), mode, the lock toggle, and
-  *Shared keys*, the project's hosted-provider keys in one table with
-  the same form minus the host field. The AI configuration dialog keeps
+- **Project → Settings → AI engine card.** Mounted by
+  `frontend/components/project/ProjectSettings.tsx` (the settings tab
+  of `frontend/pages/ProjectView.tsx`, `:247-248`), which renders one
+  `settings/*.tsx` child per tab (`:118-133`). The card and the shared
+  keys table live in a new
+  `frontend/components/project/settings/AiEngineSection.tsx`, mounted
+  by `ProjectSettings.tsx` next to `ReviewDetailsSection` (`:15`,
+  `:120`) on the review tab. The card shows the project default
+  (catalogue pairs only), mode, the lock toggle, and *Shared keys*, the
+  project's hosted-provider keys in one table with the same form minus
+  the host field. The AI configuration dialog keeps
   PICOTS and the template instruction and loses its Model tab; the
   engine chip leaves the extraction config bar, and the endpoints
   dialog, engine settings dialog and alternates section are retired.
@@ -479,6 +558,17 @@ mounted:
   `frontend/services/apiKeysService.ts` becomes the connections service.
 - The settings E2E `frontend/e2e/flows/settings-api-keys.e2e.ts` is
   rewritten against connections (§7.6).
+- Tests that cover the removed surfaces retire with them:
+  `frontend/test/LlmEngineChip.test.tsx`,
+  `frontend/test/LlmEngineChip.endpoints.test.tsx`,
+  `frontend/test/LlmEngineSettingsDialog.test.tsx` and
+  `frontend/test/LlmEndpointsDialog.test.tsx` are deleted;
+  `frontend/test/AiConfigDialog.test.tsx` stays but its two
+  `'model' | 'picots' | 'instruction'` literals (`:242`, `:261`) narrow
+  with the `AiConfigTab` type. Backend:
+  `backend/tests/unit/test_user_api_key_repository.py` and
+  `backend/tests/unit/test_user_api_keys_endpoint.py` are deleted with
+  the repository and router they test (§1.2, §4).
 
 ### 5.2 Copy
 
@@ -519,7 +609,7 @@ viewer's role, not a 401 (the app shell handles an expired session).
 | loading | gear rendered, tooltip "Loading…", popover shows skeleton groups |
 | empty | catalogue never empty; a viewer with no host connection sees no host group and a link to Integrations |
 | error | popover shows the load-error line with a retry; gear stays mounted |
-| not-found | project 404 → the worklist's own not-found handles it; the gear is not rendered |
+| not-found | project 404 → `frontend/pages/ProjectView.tsx` renders its "Project not found" branch (`:193-197`) instead of any tab, so the worklist and its gear are never mounted |
 | unauthorized | non-member: gear hidden; member under lock: picker read-only with the one-line reason (§5); manager: editable |
 
 **Project Settings → AI engine card + Shared keys**
@@ -530,7 +620,7 @@ viewer's role, not a 401 (the app shell handles an expired session).
 | loading | card skeleton; the shared-keys table shows skeleton rows |
 | empty | shared keys: one-line empty state with the Add action ("No shared keys yet"); default: always set (env default) |
 | error | inline load-error with a retry per block (card and table load independently) |
-| not-found | project 404 → settings page not-found, card not rendered |
+| not-found | project 404 → the same `ProjectView.tsx` "Project not found" branch (`:193-197`); `ProjectSettings` and the card are never mounted. The SPA has no per-route not-found file: `frontend/pages/NotFound.tsx` is only the catch-all `<Route path="*">` in `frontend/App.tsx` (`:144`) for unknown paths |
 | unauthorized | non-manager: card read-only (default, mode, lock shown; no controls), shared-keys table hidden — the API is manager-gated either way |
 
 ## 6. Errors
@@ -581,6 +671,21 @@ viewer's role, not a 401 (the app shell handles an expired session).
      another viewer of the same project without the user key sees
      `project`, so the map is per caller. No `byok_only` field remains
      in the catalogue entries.
+   - Parsing key path (§2): integration — with `parsing.type = auto`,
+     a user-scope llama_cloud connection selects LlamaParse; with only a
+     project-scope llama_cloud connection on the project, LlamaParse is
+     still selected for a member without a key of their own; with
+     neither and no `LLAMA_CLOUD_API_KEY`, PyMuPDF. The existing
+     `backend/tests/integration/test_parse_article_file_task.py` (which
+     monkeypatches `APIKeyService.get_key_for_provider` at `:248`)
+     retargets to the connections-service symbol, and
+     `backend/tests/integration/test_api_key_llama_cloud.py` (save then
+     `get_key_for_provider`, `:23-27`) is ported to the connections
+     service. Vitest:
+     `frontend/test/components/HighQualityParsingToggle.test.tsx` keeps
+     its `hasLlamaCloudKey` contract; a new `AdvancedSettingsSection`
+     case asserts the boolean is true from a project-scope row when the
+     viewer is a manager and from a user-scope row otherwise.
    - Migration strips `alternates`: the roundtrip suite
      (`backend/tests/integration/test_migration_roundtrip.py`) seeds a
      project whose `settings.llm_engine` carries `alternates` and one
@@ -615,10 +720,11 @@ viewer's role, not a 401 (the app shell handles an expired session).
      the registry-equals-CHECK assertion moves to
      `llm_connections_provider_check` and gains one for the `scopes`
      CHECK.
-   - `backend/.vulture_baseline`: the `app/llm/registry.py:function:provider_ids`
-     row is re-evaluated per §1.2 (kept with a rewritten justification
-     naming `app/models/llm_connection.py`, or removed with the
-     function).
+   - `backend/.vulture_baseline:27`, the bare
+     `app/llm/registry.py:function:provider_ids` row, is re-evaluated
+     per §1.2: kept with the justification comment at
+     `backend/app/llm/registry.py:105-107` rewritten to name
+     `app/models/llm_connection.py`, or removed with the function.
    - The `backend/app/llm/registry.py` module docstring is rewritten for
      `llm_connections` (§1.2); the copy-key ratchet sees only removals
      (§5.2).
