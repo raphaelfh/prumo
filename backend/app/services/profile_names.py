@@ -16,4 +16,7 @@ __all__ = ["profile_names"]
 
 async def profile_names(db: AsyncSession, ids: set[UUID]) -> dict[UUID, str | None]:
     rows = await db.execute(select(Profile.id, Profile.full_name).where(Profile.id.in_(ids)))
-    return dict(rows.all())
+    names: dict[UUID, str | None] = {}
+    for profile_id, full_name in rows.all():
+        names[profile_id] = full_name
+    return names

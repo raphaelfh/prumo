@@ -138,6 +138,7 @@ async def test_user_row_wins_and_is_a_deviation(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-openai-global")
     await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
     await _set(db_session, SEED.reviewer_profile)
     target = await resolve_engine(db_session, _P, SEED.reviewer_profile)
