@@ -258,7 +258,7 @@ cancel lifecycle is a route, not a popup. A popup is right only when:
 |---|---|---|---|
 | `sm` | 400px | content, ≤85dvh | confirmations (the `AlertDialog` default), one field |
 | `md` | 560px | content, ≤85dvh | forms (the `Dialog` default) |
-| `lg` | 800px | fixed 85dvh | lists, pickers, imports — fixed so tabs and loading do not resize it |
+| `lg` | 800px | content, ≤85dvh | lists, pickers, imports — a loading body reserves `min-h-[50dvh]` so the frame does not jump |
 | Sheet `default` / `narrow` | 420px / 320px | full height | context / navigation rails and inspectors |
 
 - Compose `DialogHeader` → `DialogBody` → `DialogFooter`. The content has no

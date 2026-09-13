@@ -38,7 +38,7 @@ export const dialogFrame = cva(
       size: {
         sm: 'sm:h-fit sm:max-h-[85dvh] sm:max-w-[400px]',
         md: 'sm:h-fit sm:max-h-[85dvh] sm:max-w-[560px]',
-        lg: 'sm:h-[85dvh] sm:max-w-[800px]',
+        lg: 'sm:h-fit sm:max-h-[85dvh] sm:max-w-[800px]',
       },
     },
     defaultVariants: {size: 'md'},
