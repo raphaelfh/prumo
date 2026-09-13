@@ -61,6 +61,9 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
     # Mock da sessão de banco
     mock_db = AsyncMock(spec=AsyncSession)
+    # A mocked session holds no rows: ``get`` must answer None, not a mock
+    # object that every ``is None`` check reads as a real row.
+    mock_db.get = AsyncMock(return_value=None)
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield mock_db

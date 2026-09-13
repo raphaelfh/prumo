@@ -79,6 +79,12 @@ on a new override (and it parses the tag, so `className={cn("h-8")}` and an
 | `icon` | h-7 w-7 | Icon-only at chrome density |
 | `icon-xs` | h-6 w-6 | Icon-only nested density |
 
+| Variant | Use |
+|---|---|
+| `ghost` | **Every chrome and row action.** No border ever; `hover:bg-accent`, `active:bg-accent/80`. `IconButton` (the icon-only case) uses a muted fill instead — `hover:bg-muted/60`, `active:bg-muted` — for a quieter hover on icon-dense bars. |
+| `outline` | Only the secondary action beside a primary in a dialog footer. |
+| `default` / `destructive` | The one primary action of a footer or an empty state — high contrast (Black in light mode, White in dark mode). |
+
 Font size lives in the size, not the base, so a dense call site never has to
 override it. Every dense size carries `[@media(pointer:coarse)]:h-11` (and the
 square sizes bump width too) so touch targets reach 44px — that belongs in the
@@ -91,20 +97,20 @@ across the app are the visible case (`Cancel` / a confirm action at 40px next
 to 28px content). They are neither migrated nor caught by the ratchet, which
 only sees `h-*` overrides. Give a button an explicit size when you touch one.
 
-- **Primary:** High contrast (Black in light mode, White in dark mode).
-- **Secondary:** Transparent background, subtle border.
-- **Ghost:** Used for all toolbar/menu items until hovered.
-
 ## 4. Interaction Patterns
 
 1. **The "Silent" Hover:** List items should change background color instantly (`duration-0` or `duration-75`).
 2. **Skeleton Strategy:** Skeletons must match the exact line-height and width of the expected text to prevent layout
    shift.
 3. **Status Dots:** Small (6px), glowing for "Active", muted for "Draft".
-4. **Buttons explain themselves on hover.** Every icon-only or short-label
-   control carries a `Tooltip` with its description (copy through
-   `lib/copy/`); icon-only buttons also get an `aria-label`. A terse label
-   like "No information" or a bare glyph must never leave the user guessing.
+4. **Buttons explain themselves on hover.** An icon-only control is always
+   `IconButton` (`components/patterns/IconButton.tsx`): `label` is required
+   and becomes both the accessible name and the tooltip, `shortcut` adds a
+   kbd chip only for a key the screen really binds. A text button gets a
+   tooltip only when it says something the label does not. Tooltip copy is
+   one fragment, sentence case, verb first, no period ("Add author").
+   Timing is global (400 ms, peers instant) — never mount a
+   `TooltipProvider`. `check_ui_primitives.py` gates both.
 5. **Selected = the accepted-suggestion treatment.** A control representing a
    recorded choice (accepted suggestion, active disposition, selected version)
    shows the success ring (`ring-1 ring-success bg-success/10 text-success`,
@@ -120,6 +126,12 @@ only sees `h-*` overrides. Give a button an explicit size when you touch one.
    `CELL_RING` for its selected state.) The success-ring treatment in the
    previous bullet is for a *recorded choice*, which is a different thing again
    from "the row you are pointing at".
+7. **The arrow is the cursor.** Buttons, tabs, menu items, rows and labels
+   keep the arrow; only an `a[href]` shows the hand; disabled shows
+   `not-allowed`. The rule lives in `index.css` `@layer base` — never write
+   `cursor-pointer`, `cursor-default` or `cursor-not-allowed` on an element
+   (`check_ui_primitives.py`). The hover fill is the click affordance, so a
+   clickable row must have one.
 
 ## 5. Responsive Behaviour
 
@@ -221,3 +233,43 @@ census flagging anything under 24×24.
       from, and its divider is keyboard-operable (§6.3).
 - [ ] Selection and focus use different vocabularies — no element paints both
       an `outline-ring` and a selected state (§4.6).
+- [ ] Icon-only controls are `IconButton` with a real `label`; shortcuts only where bound.
+- [ ] No `TooltipProvider` outside `App.tsx`; no `cursor-pointer`, `cursor-default` or
+      `cursor-not-allowed` except in a `peer-*`/`group-*` relation — other cursor
+      utilities (`cursor-help`, `cursor-grab`, `col-resize`, `grabbing`) remain legitimate.
+- [ ] Configuration lives in a view; a popup is a confirm, a short form or a sheet (§ 8).
+- [ ] Overlays use a `size` and header/body/footer — no size or padding class on the content.
+
+## 8. Overlays (popups, confirmations, sheets)
+
+**Prefer a view.** Anything with tabs, sections, a list, or its own save and
+cancel lifecycle is a route, not a popup. A popup is right only when:
+
+| Surface | When |
+|---|---|
+| `AlertDialog` | A decision blocks the page: confirm, discard, delete. |
+| `Dialog` | A short, one-step form or a transient picker. |
+| `Sheet` | Persistent context beside a page that stays readable (inspector, history, diff). |
+
+**One frame, three sizes — never a width, height or padding class on the content**
+(`check_ui_primitives.py` gates it):
+
+| `size` | Width | Height | Use |
+|---|---|---|---|
+| `sm` | 400px | content, ≤85dvh | confirmations (the `AlertDialog` default), one field |
+| `md` | 560px | content, ≤85dvh | forms (the `Dialog` default) |
+| `lg` | 800px | fixed 85dvh | lists, pickers, imports — fixed so tabs and loading do not resize it |
+| Sheet `default` / `narrow` | 420px / 320px | full height | context / navigation rails and inspectors |
+
+- Compose `DialogHeader` → `DialogBody` → `DialogFooter`. The content has no
+  padding; the body is the only scroll region. A `<form>` around them is
+  `className="contents"`.
+- Footer: Cancel (`outline`, `sm`) immediately left of the primary
+  (`default` or `destructive`, `sm`), right-aligned; a tertiary action sits
+  far left (`sm:justify-between`). A destructive `AlertDialogAction` takes
+  `variant="destructive"`; Radix focuses Cancel, so Enter never destroys.
+- Motion is 150/100 ms (sheets 200/150), fade plus a 2% scale, off under
+  `prefers-reduced-motion`. Below `sm` every dialog is a bottom sheet.
+- Surface: hairline `border-border/40`; light mode a soft two-layer shadow
+  (`shadow-elev-overlay`), dark mode no shadow and one surface step up
+  (`bg-popover`). Backdrop `bg-black/60`.

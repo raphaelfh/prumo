@@ -119,7 +119,7 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
     // edge — a six-slot form must never hide its only save button behind a
     // full scroll.
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 pb-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Label htmlFor="picots-enabled" className="text-[13px] font-medium">
@@ -187,7 +187,7 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
 
       </div>
 
-      <div className="flex shrink-0 justify-end gap-1.5 border-t border-border/40 px-4 py-2">
+      <div className="flex shrink-0 justify-end gap-1.5 border-t border-border/40 px-5 py-2">
         <Button variant="outline" onClick={onCancel} disabled={pending}>
           {t('aiContext', 'cancel')}
         </Button>

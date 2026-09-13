@@ -1,10 +1,17 @@
 import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
-import {renderHook} from '@testing-library/react';
+import {render, renderHook} from '@testing-library/react';
+import {createElement} from 'react';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {useKeyboardShortcuts, type Binding} from './useKeyboardShortcuts';
 
 function fireKeydown(
   key: string,
-  opts: {meta?: boolean; ctrl?: boolean; alt?: boolean; target?: HTMLElement} = {},
+  opts: {meta?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean; target?: HTMLElement} = {},
 ) {
   const target = opts.target ?? document.body;
   const event = new KeyboardEvent('keydown', {
@@ -12,6 +19,7 @@ function fireKeydown(
     metaKey: opts.meta ?? false,
     ctrlKey: opts.ctrl ?? false,
     altKey: opts.alt ?? false,
+    shiftKey: opts.shift ?? false,
     bubbles: true,
     cancelable: true,
   });
@@ -189,6 +197,33 @@ describe('useKeyboardShortcuts', () => {
     openDialog();
     fireKeydown('b', {meta: true});
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('swallows a chord while a Radix AlertDialog is open', () => {
+    // A confirm renders role="alertdialog", not "dialog": a chord that fires
+    // under it silently changes what the confirm's buttons do.
+    const handler = vi.fn();
+    const bindings: Binding[] = [{type: 'chord', key: 'q', mod: true, shift: true, handler}];
+    renderHook(() => useKeyboardShortcuts({bindings, enabled: true}));
+    const {unmount} = render(
+      createElement(
+        AlertDialog,
+        {open: true},
+        createElement(
+          AlertDialogContent,
+          null,
+          createElement(AlertDialogTitle, null, 'Discard changes?'),
+          createElement(AlertDialogDescription, null, 'Unsaved edits are lost.'),
+        ),
+      ),
+    );
+
+    // Precondition: the open confirm is in the document under its real role.
+    expect(document.querySelector('[role="alertdialog"][data-state="open"]')).not.toBeNull();
+    fireKeydown('q', {meta: true, shift: true});
+    expect(handler).not.toHaveBeenCalled();
+    // Unmount before afterEach clears the body out from under the portal.
+    unmount();
   });
 
   it('fires an allowInDialogs chord while a dialog is open', () => {

@@ -31,7 +31,6 @@ import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {
     Tooltip,
     TooltipContent,
-    TooltipProvider,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import type {Project} from '@/types/project';
@@ -184,7 +183,6 @@ export function ReviewDetailsSection({ projectId, project, onChange }: ReviewDet
                           : ''}
                   </p>
               </div>
-              <TooltipProvider>
                   <Tooltip>
                       <TooltipTrigger asChild>
                           <span tabIndex={isManager ? -1 : 0}>
@@ -202,7 +200,6 @@ export function ReviewDetailsSection({ projectId, project, onChange }: ReviewDet
                           <TooltipContent>{t('aiContext', 'managerOnly')}</TooltipContent>
                       )}
                   </Tooltip>
-              </TooltipProvider>
           </div>
       </SettingsCard>
 

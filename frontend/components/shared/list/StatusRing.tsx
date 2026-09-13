@@ -1,5 +1,5 @@
 import { CheckCircle2 } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
 
@@ -27,7 +27,6 @@ export function StatusRing({ progress, className }: StatusRingProps) {
   const arcColor = status === 'complete' ? 'text-success' : 'text-warning';
 
   return (
-    <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <span
@@ -76,6 +75,5 @@ export function StatusRing({ progress, className }: StatusRingProps) {
           <p>{label}</p>
         </TooltipContent>
       </Tooltip>
-    </TooltipProvider>
   );
 }

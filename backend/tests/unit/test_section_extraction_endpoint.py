@@ -60,6 +60,9 @@ def _status_url(job_id: str) -> str:
 async def client() -> AsyncGenerator[AsyncClient, None]:
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         mock_session = AsyncMock(spec=AsyncSession)
+        # A mocked session holds no rows: ``get`` answers None, not a mock
+        # object that every ``is None`` check reads as a real row.
+        mock_session.get = AsyncMock(return_value=None)
         yield mock_session
 
     async def override_get_current_user() -> TokenPayload:

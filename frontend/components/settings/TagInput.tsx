@@ -6,6 +6,7 @@
 import * as React from 'react';
 import {Input} from '@/components/ui/input';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Plus, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
@@ -79,16 +80,13 @@ export function TagInput({
                                 className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-md bg-muted/50 text-[13px] border border-border/40"
                             >
                 {item}
-                                <Button
-                                    type="button"
+                                <IconButton
+                                    label={t('common', 'remove')}
                                     size="icon-xs"
-                                    variant="ghost"
-                                    className="rounded-full hover:bg-muted"
+                                    className="rounded-full"
                                     onClick={() => onRemove(index)}
-                                    aria-label={t('common', 'remove')}
-                                >
-                  <X strokeWidth={1.5}/>
-                </Button>
+                                    icon={<X strokeWidth={1.5}/>}
+                                />
               </span>
                         ))}
                     </div>
@@ -128,16 +126,12 @@ export function TagInput({
                             )}
                         >
                             <span className="flex-1 text-muted-foreground">{item}</span>
-                            <Button
-                                type="button"
+                            <IconButton
+                                label={t('common', 'remove')}
                                 size="icon-xs"
-                                variant="ghost"
-                                className="shrink-0"
                                 onClick={() => onRemove(index)}
-                                aria-label={t('common', 'remove')}
-                            >
-                                <X strokeWidth={1.5}/>
-                            </Button>
+                                icon={<X strokeWidth={1.5}/>}
+                            />
                         </li>
                     ))}
                 </ul>

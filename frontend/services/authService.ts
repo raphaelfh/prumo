@@ -25,7 +25,7 @@ export function getCurrentUserId(): Promise<ErrorResult<string | null>> {
 }
 
 // ---------------------------------------------------------------------------
-// ApiKeysSection: session access token
+// Settings surfaces: session access token
 // ---------------------------------------------------------------------------
 
 

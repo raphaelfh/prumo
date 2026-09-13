@@ -23,6 +23,7 @@ import {toast} from 'sonner';
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogBody,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -188,14 +189,17 @@ export function TemplateDiscardDialog({
         if (!next) onClose();
       }}
     >
-      <AlertDialogContent>
+      <AlertDialogContent size="md">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 shrink-0 text-warning" aria-hidden />
             {title}
           </AlertDialogTitle>
+        </AlertDialogHeader>
+
+        <AlertDialogBody>
           <AlertDialogDescription asChild>
-            <div className="space-y-3 pt-2 text-sm">
+            <div className="space-y-3 text-sm">
               {phase === 'confirm' && (
                 <>
                   <p className="text-foreground">{confirmBody}</p>
@@ -253,7 +257,7 @@ export function TemplateDiscardDialog({
               )}
             </div>
           </AlertDialogDescription>
-        </AlertDialogHeader>
+        </AlertDialogBody>
 
         <AlertDialogFooter>
           <AlertDialogCancel disabled={submitting}>
@@ -271,7 +275,7 @@ export function TemplateDiscardDialog({
                 submit(phase === 'ack');
               }}
               disabled={submitting}
-              className="bg-destructive hover:bg-destructive/90"
+              variant="destructive"
             >
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {phase === 'ack'

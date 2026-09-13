@@ -84,7 +84,6 @@ export const common = {
     addItemPlaceholder: 'Add item…',
     otherSpecify: 'Other (specify)',
     remove: 'Remove',
-    removeAria: 'Remove {{name}}',
     loadingEllipsis: 'Loading…',
     unknownError: 'Unknown error',
     loadingPdf: 'Loading PDF…',

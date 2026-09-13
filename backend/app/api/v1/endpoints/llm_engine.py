@@ -18,8 +18,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.api.deps.security import require_project_manager, require_project_scope
 from app.core.deps import DbSession
 from app.schemas.common import ApiResponse
-from app.schemas.llm_engine import LlmEngineRead, LlmEngineUpdateRequest
-from app.services.llm_engine_service import LlmEngineService, ProjectNotFoundError
+from app.schemas.llm_engine import (
+    LlmEngineRead,
+    LlmEngineUpdateRequest,
+    UserEngineClearResult,
+    UserEngineUpdateRequest,
+)
+from app.services.llm_engine_service import (
+    LlmEngineService,
+    ProjectNotFoundError,
+    viewer_is_manager,
+)
+from app.services.user_engine_service import clear_user_engine, set_user_engine
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
@@ -51,15 +61,11 @@ async def set_llm_engine(
     db: DbSession,
     manager_id: UUID = Depends(require_project_manager),
 ) -> ApiResponse[LlmEngineRead]:
-    """Persist the project's engine choice (validated, attributed).
+    """Persist the project's default engine choice (validated, attributed).
 
-    ``alternates`` rides the same write: ``None`` (field absent) keeps the
-    stored list, ``[]`` clears it, a list replaces it — every entry
-    catalogue-validated by the service (unknown pair → 400).
-
-    ``endpoint_id`` (B8) selects an endpoint-backed engine; the service
-    validates it against the project's endpoints instead of the catalogue
-    (shape/ownership/verification failures → 400 like any other refusal).
+    The default is always a catalogue pair (§3.1) — a host provider or an
+    off-catalogue pair is a 400. ``user_choice_allowed`` rides the same
+    write: ``False`` binds members to this default.
     """
     trace_id = getattr(request.state, "trace_id", None)
     service = LlmEngineService(db)
@@ -70,8 +76,7 @@ async def set_llm_engine(
             model=body.model,
             mode=body.mode,
             updated_by=manager_id,
-            alternates=body.alternates,
-            endpoint_id=body.endpoint_id,
+            user_choice_allowed=body.user_choice_allowed,
         )
     except ProjectNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
@@ -80,3 +85,51 @@ async def set_llm_engine(
     data = await service.get_engine_read(project_id, manager_id)
     await db.commit()
     return ApiResponse.success(data, trace_id=trace_id)
+
+
+@router.put("/{project_id}/llm-engine/me", response_model=ApiResponse[LlmEngineRead])
+@limiter.limit("30/minute")
+async def set_my_llm_engine(
+    project_id: UUID,
+    body: UserEngineUpdateRequest,
+    request: Request,
+    db: DbSession,
+    viewer_id: UUID = Depends(require_project_scope),
+) -> ApiResponse[LlmEngineRead]:
+    """The viewer's own engine for new runs (§4): 403 while locked for a
+    non-manager, 422 without a credential (AppErrors, typed envelopes)."""
+    trace_id = getattr(request.state, "trace_id", None)
+    try:
+        await set_user_engine(
+            db,
+            user_id=viewer_id,
+            project_id=project_id,
+            provider=body.provider,
+            model=body.model,
+            mode=body.mode,
+            connection_id=body.connection_id,
+            is_manager=await viewer_is_manager(db, project_id, viewer_id),
+        )
+        data = await LlmEngineService(db).get_engine_read(project_id, viewer_id)
+    except ProjectNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await db.commit()
+    return ApiResponse.success(data, trace_id=trace_id)
+
+
+@router.delete("/{project_id}/llm-engine/me", response_model=ApiResponse[UserEngineClearResult])
+@limiter.limit("30/minute")
+async def clear_my_llm_engine(
+    project_id: UUID,
+    request: Request,
+    db: DbSession,
+    viewer_id: UUID = Depends(require_project_scope),
+) -> ApiResponse[UserEngineClearResult]:
+    """Drop the viewer's own row — the project default takes over again."""
+    cleared = await clear_user_engine(db, user_id=viewer_id, project_id=project_id)
+    await db.commit()
+    return ApiResponse.success(
+        UserEngineClearResult(cleared=cleared), trace_id=getattr(request.state, "trace_id", None)
+    )

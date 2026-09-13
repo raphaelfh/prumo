@@ -237,7 +237,6 @@ export const extraction = {
     tableSearchTitle: 'Search in title…',
     tableSearchAuthor: 'Search author…',
     tableSearchPlaceholderShortcut: 'Search… (⌘F / Ctrl+F)',
-    tableShortcutFilter: 'Filter (F)',
     tableDisplayAndSort: 'Display & sort',
     tableOrdering: 'Ordering',
     tableDisplayOptions: 'Display options',
@@ -374,6 +373,9 @@ export const extraction = {
     unitMoveUp: 'Move up',
     unitMoveDown: 'Move down',
     unitRemove: 'Remove',
+    unitAdd: 'Add unit',
+    optionAdd: 'Add option',
+    optionRemove: 'Remove option',
     // AISuggestionEvidence
     copyCopied: 'Copied!',
     copySnippet: 'Copy snippet',

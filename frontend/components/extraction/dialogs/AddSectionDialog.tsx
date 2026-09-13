@@ -36,6 +36,7 @@ import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -220,7 +221,7 @@ export function AddSectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5" />
@@ -230,7 +231,8 @@ export function AddSectionDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="contents">
+            <DialogBody className="space-y-4">
 
             {/* Label */}
             <FormField
@@ -424,6 +426,7 @@ export function AddSectionDialog({
               )}
             />
             )}
+            </DialogBody>
 
             <DialogFooter>
               <Button

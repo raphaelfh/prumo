@@ -36,15 +36,18 @@ class LlmTarget(BaseModel):
     model_validates legacy pinned snapshots, and a Literal would turn a
     corrupt old snapshot into a hard read failure on a pinned run.
 
-    ``endpoint_id`` (C2 B8) pins the project custom endpoint an
-    ``openai_compatible`` engine runs through — a plain ``str`` (not UUID)
-    so the pinned JSONB snapshot stays a bag of JSON scalars end to end.
-    It defaults to ``None`` so every pre-B8 pinned snapshot (no key at
-    all) keeps validating.
+    ``connection_id`` (§3.1) pins the caller's own host connection an
+    ``openai_compatible`` engine runs through — a plain ``str`` so the
+    pinned JSONB stays a bag of JSON scalars. ``deviation`` (§3.2) says the
+    pinned engine differed from the project default at pin time; computed
+    once, never recomputed. Both default so every older snapshot — including
+    one carrying the retired ``endpoint_id`` key, which is ignored — keeps
+    validating.
     """
 
     provider: str
     model: str
     mode_requested: str = "fast"
     mode_executed: str = "fast"
-    endpoint_id: str | None = None
+    connection_id: str | None = None
+    deviation: bool = False

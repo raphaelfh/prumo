@@ -482,7 +482,7 @@ async def test_provenance_is_persisted_on_insert(db_session: AsyncSession) -> No
     engine = {
         "provider": "openai",
         "model": "gpt-5.6-luna",
-        "endpoint_id": None,
+        "connection_id": None,
         "key_scope": "global_service",
         "mode_requested": "verified",
         "mode_executed": "fast",

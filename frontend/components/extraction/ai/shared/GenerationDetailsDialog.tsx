@@ -16,12 +16,14 @@ import {useState} from 'react';
 import {Check, ChevronDown, ChevronRight, Copy} from 'lucide-react';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import type {ExtractionCopy} from '@/lib/copy/extraction';
@@ -90,15 +92,13 @@ function ScalarRow({label, value}: {label: string; value: string}) {
 function CopyButton({value}: {value: string}) {
   const {copied, copy} = useCopyToClipboard();
   return (
-    <Button
+    <IconButton
       size="icon-xs"
-      variant="ghost"
-      className="shrink-0 p-0"
+      className="shrink-0"
       onClick={() => copy(value)}
-      aria-label={copied ? t('extraction', 'provenanceCopied') : t('extraction', 'provenanceCopyPrompt')}
-    >
-      {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-    </Button>
+      label={copied ? t('extraction', 'provenanceCopied') : t('extraction', 'provenanceCopyPrompt')}
+      icon={copied ? <Check className="text-success" /> : <Copy />}
+    />
   );
 }
 
@@ -189,17 +189,15 @@ function ArticleTextExpand({articleId}: {articleId: string}) {
           )}
           {!isLoading && !isError && data && (
             <div className="relative">
-              <Button
+              <IconButton
                 size="icon-xs"
-                variant="ghost"
-                className="absolute right-1 top-1 p-0"
+                className="absolute right-1 top-1"
                 onClick={() => copy(data.contentMarkdown ?? '')}
-                aria-label={
+                label={
                   copied ? t('extraction', 'provenanceCopied') : t('extraction', 'provenanceCopyPrompt')
                 }
-              >
-                {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-              </Button>
+                icon={copied ? <Check className="text-success" /> : <Copy />}
+              />
               <pre className="max-h-[40vh] overflow-auto whitespace-pre-wrap break-words rounded border bg-muted/50 p-2 pr-8 text-[11px] leading-relaxed text-foreground/80">
                 {data.contentMarkdown}
               </pre>
@@ -255,8 +253,8 @@ export function GenerationDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85dvh] w-[min(36rem,calc(100vw-2rem))] flex-col gap-0 p-0">
-        <DialogHeader className="shrink-0 space-y-1 border-b px-5 py-4 text-left">
+      <DialogContent size="md">
+        <DialogHeader>
           <DialogTitle className="text-sm font-semibold">
             {t('extraction', 'provenanceToggle')}
           </DialogTitle>
@@ -267,7 +265,7 @@ export function GenerationDetailsDialog({
           )}
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        <DialogBody className="space-y-5">
           {/* Run parameters */}
           <section className="space-y-2">
             <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -390,7 +388,7 @@ export function GenerationDetailsDialog({
               ))}
             </section>
           )}
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

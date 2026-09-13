@@ -117,7 +117,6 @@ export function TemplateInstructionControl({
         open={open}
         onOpenChange={setOpen}
         initialTab="instruction"
-        withModel
         template={{
           id: templateId,
           instructionDraft: draft,

@@ -13,6 +13,7 @@
 import {useEffect, useState} from "react";
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -20,6 +21,7 @@ import {
     DialogTitle
 } from "@/components/ui/dialog";
 import {Button} from "@/components/ui/button";
+import {IconButton} from "@/components/patterns/IconButton";
 import {Label} from "@/components/ui/label";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import {Alert, AlertDescription} from "@/components/ui/alert";
@@ -406,15 +408,15 @@ export function ArticleFileUploadDialogNew({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[95vw] sm:max-w-2xl md:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col p-0 sm:p-0 gap-0">
-        <DialogHeader className="px-4 sm:px-6 pt-6 pb-4">
+      <DialogContent size="lg">
+        <DialogHeader>
             <DialogTitle>{t('articles', 'addFilesToArticle')}</DialogTitle>
           <DialogDescription>
               {t('articles', 'uploadDragOrClickDesc')}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6">
+        <DialogBody>
           {!isUploading ? (
             <>
               {/* Notice: this article already has a MAIN file */}
@@ -463,7 +465,7 @@ export function ArticleFileUploadDialogNew({
                         id="file-upload"
                       />
                       <Button asChild size="sm" className="sm:size-default">
-                        <label htmlFor="file-upload" className="cursor-pointer">
+                        <label htmlFor="file-upload">
                           <Plus className="mr-2 h-4 w-4" />
                             {t('articles', 'uploadSelectFiles')}
                         </label>
@@ -563,16 +565,12 @@ export function ArticleFileUploadDialogNew({
                               </div>
 
                               <div className="shrink-0 sm:ml-auto">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
+                                <IconButton
+                                  label={t('extraction', 'removeFileAria')}
                                   onClick={() => removeFile(fileWithRole.id)}
                                   disabled={isUploading}
-                                  className="h-8 w-8 p-0"
-                                  aria-label={t('extraction', 'removeFileAria')}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
+                                  icon={<X />}
+                                />
                               </div>
                             </div>
                           </div>
@@ -639,9 +637,9 @@ export function ArticleFileUploadDialogNew({
               </CardContent>
             </Card>
           )}
-        </div>
+        </DialogBody>
 
-        <DialogFooter className="flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-0 px-4 sm:px-6 pt-4 pb-6 border-t">
+        <DialogFooter className="items-stretch sm:items-center sm:justify-between">
           {!isUploading ? (
             <>
               <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">

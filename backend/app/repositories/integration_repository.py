@@ -110,24 +110,3 @@ class ZoteroIntegrationRepository(BaseRepository[ZoteroIntegration]):
             .values(last_sync_at=datetime.now(UTC))
         )
         await self.db.flush()
-
-    async def deactivate(self, user_id: UUID | str) -> bool:
-        """
-        Deactivate a user's integration.
-
-        Args:
-            user_id: User ID.
-
-        Returns:
-            True if deactivated.
-        """
-        if isinstance(user_id, str):
-            user_id = UUID(user_id)
-
-        result = await self.db.execute(
-            update(ZoteroIntegration)
-            .where(ZoteroIntegration.user_id == user_id)
-            .values(is_active=False)
-        )
-        await self.db.flush()
-        return result.rowcount > 0

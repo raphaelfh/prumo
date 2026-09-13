@@ -9,7 +9,7 @@ import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Skeleton} from '@/components/ui/skeleton';
 import {AlertCircle, FileUp, Settings} from 'lucide-react';
 import {useInvalidateProjectTemplates, useProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
@@ -18,10 +18,10 @@ import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractio
 import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
 import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
+import {EngineGear} from './EngineGear';
 import {ConfigureTemplateCards} from './config/ConfigureTemplateCards';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {HITLExportDialog} from '@/components/hitl/HITLExportDialog';
-import {LlmEngineChip} from './LlmEngineChip';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
@@ -309,24 +309,16 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             projectId={projectId}
             templateId={activeTemplate.id}
             toolbarActions={
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
-                      onClick={() => setShowExportDialog(true)}
-                      disabled={articles.length === 0}
-                      data-testid="extraction-export-button"
-                      aria-label={t('extraction', 'exportButton')}
-                    >
-                      <FileUp className="h-4 w-4" strokeWidth={1.5}/>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('extraction', 'exportButton')}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <>
+                <IconButton
+                  label={t('extraction', 'exportButton')}
+                  onClick={() => setShowExportDialog(true)}
+                  disabled={articles.length === 0}
+                  data-testid="extraction-export-button"
+                  icon={<FileUp strokeWidth={1.5}/>}
+                />
+                <EngineGear projectId={projectId}/>
+              </>
             }
           />
         ) : isManager ? (
@@ -348,14 +340,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       case 'configuration':
         return (
           <div className="flex min-h-0 flex-1 flex-col gap-4">
-            {/* Project-regime chrome (§5, C1b): the engine chip lives ABOVE
-                the versioned template card — choosing an engine never arms
-                the Draft chip and never enters the Publish diff. The chip
-                OWNS its flex row, so a failed read renders no empty strip. */}
-            {/* With a template on screen the chip rides IN the config bar
-                (2026-08-29 consolidation) — it only owns a row of its own
-                when there is no bar to ride in. */}
-            {!activeTemplate && <LlmEngineChip projectId={projectId} />}
             {activeTemplate ? (
               // Dashboard regime: the page never scrolls — the grid card
               // absorbs the leftover height and scrolls internally. The
@@ -413,18 +397,12 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   };
 
   // The versioned-card side of the Configuration tab (everything BELOW the
-  // project-regime chrome row that hosts the engine chip).
+  // project-regime chrome row).
   const renderConfigurationBody = () => {
     return activeTemplate ? (
           <TemplateConfigEditor
             projectId={projectId}
             templateId={activeTemplate.id}
-            engineSlot={
-              <LlmEngineChip
-                projectId={projectId}
-                templateId={activeTemplate.id}
-              />
-            }
             onActiveTemplateChanged={handleActiveTemplateChanged}
           />
         ) : (

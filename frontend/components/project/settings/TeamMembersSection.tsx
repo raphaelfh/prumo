@@ -14,6 +14,7 @@ import {
 import {PgError} from '@/lib/error-utils';
 import {toast} from 'sonner';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Input} from '@/components/ui/input';
 import {Badge} from '@/components/ui/badge';
 import {Separator} from '@/components/ui/separator';
@@ -284,24 +285,17 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
                                                       ))}
                                                   </SelectContent>
                                               </Select>
-                                              <Button
-                                                  size="icon"
-                                                  variant="ghost"
-                                                  className="h-8 w-8"
+                                              <IconButton
+                                                  label={t('project', 'teamAriaSaveChange')}
+                                                  className="text-success"
                                                   onClick={() => handleSaveRole(member.id)}
-                                                  aria-label={t('project', 'teamAriaSaveChange')}
-                                              >
-                                                  <Check className="h-4 w-4 text-success" strokeWidth={1.5}/>
-                                              </Button>
-                                              <Button
-                                                  size="icon"
-                                                  variant="ghost"
-                                                  className="h-8 w-8"
+                                                  icon={<Check strokeWidth={1.5}/>}
+                                              />
+                                              <IconButton
+                                                  label={t('project', 'teamAriaCancel')}
                                                   onClick={handleCancelEditRole}
-                                                  aria-label={t('project', 'teamAriaCancel')}
-                                              >
-                                                  <X className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
-                                              </Button>
+                                                  icon={<X strokeWidth={1.5}/>}
+                                              />
                                           </>
                                       ) : (
                                           <>
@@ -309,44 +303,24 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
                                                      className="text-[11px]">
                                                   {MEMBER_ROLES[member.role].label}
                                               </Badge>
-                                              <Button
-                                                  size="icon"
-                                                  variant="ghost"
-                                                  className="h-8 w-8 hover:bg-muted/50"
+                                              <IconButton
+                                                  label={t('project', 'teamAriaEditRole')}
                                                   onClick={() => handleStartEditRole(member.id, member.role)}
-                                                  aria-label={t('project', 'teamAriaEditRole')}
-                                              >
-                                                  <Edit2 className="h-4 w-4" strokeWidth={1.5}/>
-                                              </Button>
+                                                  icon={<Edit2 strokeWidth={1.5}/>}
+                                              />
                                               {isSoleManager ? (
-                                                  <Tooltip>
-                                                      <TooltipTrigger asChild>
-                                                          <span tabIndex={0} className="inline-flex">
-                                                              <Button
-                                                                  size="icon"
-                                                                  variant="ghost"
-                                                                  className="h-8 w-8 hover:bg-muted/50"
-                                                                  disabled
-                                                                  aria-label={t('project', 'teamAriaRemoveMember')}
-                                                              >
-                                                                  <Trash2 className="h-4 w-4" strokeWidth={1.5}/>
-                                                              </Button>
-                                                          </span>
-                                                      </TooltipTrigger>
-                                                      <TooltipContent>
-                                                          {t('project', 'teamLastManagerGuard')}
-                                                      </TooltipContent>
-                                                  </Tooltip>
+                                                  <IconButton
+                                                      label={t('project', 'teamAriaRemoveMember')}
+                                                      disabled
+                                                      tooltip={t('project', 'teamLastManagerGuard')}
+                                                      icon={<Trash2 strokeWidth={1.5}/>}
+                                                  />
                                               ) : (
-                                                  <Button
-                                                      size="icon"
-                                                      variant="ghost"
-                                                      className="h-8 w-8 hover:bg-muted/50"
+                                                  <IconButton
+                                                      label={t('project', 'teamAriaRemoveMember')}
                                                       onClick={() => handleRemoveMember(member.id)}
-                                                      aria-label={t('project', 'teamAriaRemoveMember')}
-                                                  >
-                                                      <Trash2 className="h-4 w-4" strokeWidth={1.5}/>
-                                                  </Button>
+                                                      icon={<Trash2 strokeWidth={1.5}/>}
+                                                  />
                                               )}
                                           </>
                                       )}

@@ -61,7 +61,8 @@ export function MoveToSectionDialog({
       }}
     >
       <DialogContent
-        className="max-w-[min(28rem,calc(100vw-2rem))] overflow-hidden p-0 shadow-lg"
+        size="sm"
+        showCloseButton={false}
         aria-describedby={undefined}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >

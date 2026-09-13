@@ -30,7 +30,6 @@ from app.repositories.extraction_run_repository import ExtractionRunRepository
 from app.repositories.hitl_config_repository import HitlConfigRepository
 from app.repositories.integration_repository import ZoteroIntegrationRepository
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
-from app.repositories.user_api_key_repository import UserAPIKeyRepository
 
 __all__ = [
     # Base
@@ -57,5 +56,4 @@ __all__ = [
     # Integration
     "ZoteroIntegrationRepository",
     # User API Keys
-    "UserAPIKeyRepository",
 ]

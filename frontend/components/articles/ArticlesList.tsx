@@ -14,9 +14,9 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
+import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {Separator} from "@/components/ui/separator";
-import {HeaderIconButton} from "@/components/layout/HeaderIconButton";
+import {IconButton} from "@/components/patterns/IconButton";
 import {toast} from "sonner";
 import {
     deleteArticle,
@@ -249,16 +249,16 @@ function ToolbarAction({
     children?: (button: React.ReactNode) => React.ReactNode;
 }) {
     const button = (
-        <HeaderIconButton onClick={onClick} disabled={disabled} aria-label={label} className={className}>
-            <Icon className="h-4 w-4" strokeWidth={1.5}/>
-        </HeaderIconButton>
+        <IconButton
+            label={label}
+            side="bottom"
+            onClick={onClick}
+            disabled={disabled}
+            className={className}
+            icon={<Icon className="h-4 w-4" strokeWidth={1.5}/>}
+        />
     );
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>{children ? children(button) : button}</TooltipTrigger>
-            <TooltipContent side="bottom">{label}</TooltipContent>
-        </Tooltip>
-    );
+    return <>{children ? children(button) : button}</>;
 }
 
 export function ArticlesList({
@@ -780,14 +780,17 @@ export function ArticlesList({
                                       className={`${TABLE_CELL_CLASS} relative font-medium ${colVisibilityClass('sm')}`}
                                       style={getColumnStyle('title')}
                                   >
-                                      {/* A real button, stretched over the cell by its ::after, so the
-                                          whole cell stays the click target and the keyboard can reach it. */}
+                                      {/* Stretched over the cell by its ::after, so the whole cell stays
+                                          the click target (as the td's onClick was) and the keyboard can reach it. */}
                                       <button
                                           type="button"
                                           onClick={() => onArticleClick(article.id)}
-                                          className="block w-full cursor-pointer rounded-sm text-left text-[13px] leading-tight text-foreground font-medium group-hover:text-primary transition-colors after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-ring"
+                                          className="block w-full min-w-0 rounded-sm text-left after:absolute after:inset-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                                       >
-                                          <span className="line-clamp-1">{article.title ?? t('articles', 'listUntitled')}</span>
+                                          <span
+                                              className="line-clamp-1 text-[13px] leading-tight text-foreground font-medium group-hover:text-primary transition-colors">
+                                              {article.title ?? t('articles', 'listUntitled')}
+                                          </span>
                                       </button>
                                   </TableCell>
 
@@ -797,13 +800,11 @@ export function ArticlesList({
                                                  style={getColumnStyle('pdf')}>
                                           <div className="flex items-center gap-1 min-w-0">
                                           {articlesWithMainFile.has(article.id) ? (
-                                              <TooltipProvider>
                                               <Tooltip>
                                               <TooltipTrigger asChild>
                                               <button
                                                   type="button"
-                                                  aria-label={t('articles', 'listOpenPdf')}
-                                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight cursor-pointer hover:bg-success/20 transition-colors focus-visible:outline-2 focus-visible:outline-ring"
+                                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight hover:bg-success/20 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                                                   onClick={async (e) => {
                                                       e.stopPropagation();
                                                       const result = await fetchArticlePdfSignedUrl(article.id);
@@ -823,7 +824,6 @@ export function ArticlesList({
                                               </TooltipTrigger>
                                               <TooltipContent>{t('articles', 'listOpenPdf')}</TooltipContent>
                                               </Tooltip>
-                                              </TooltipProvider>
                                           ) : (
                                               <Button
                                                   size="sm"
@@ -864,8 +864,7 @@ export function ArticlesList({
                                       <TableCell
                                           className={`${TABLE_CELL_CLASS} text-[13px] text-muted-foreground font-medium ${colVisibilityClass('md')}`}
                                           style={getColumnStyle('authors')}>
-                                          <TooltipProvider>
-                                              <Tooltip>
+                                          <Tooltip>
                                                   <TooltipTrigger asChild>
                                                       <div className="truncate max-w-[120px]">
                                                           {(() => {
@@ -882,7 +881,6 @@ export function ArticlesList({
                                                       </div>
                                                   </TooltipContent>
                                               </Tooltip>
-                                          </TooltipProvider>
                                       </TableCell>
                                   )}
 
@@ -945,7 +943,6 @@ export function ArticlesList({
                                       <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('lg')}`}
                                                  style={getColumnStyle('doi')}>
                                           {article.doi ? (
-                                              <TooltipProvider>
                                                   <Tooltip>
                                                       <TooltipTrigger asChild>
                                                           <button
@@ -965,10 +962,9 @@ export function ArticlesList({
                                                       </TooltipTrigger>
                                                       <TooltipContent side="top" className="max-w-sm">
                                                           <p className="break-all text-xs">{article.doi}</p>
-                                                          <p className="text-[11px] text-muted-foreground mt-1">{t('articles', 'listDoiOpenHint')}</p>
+                                                          <p className="text-[11px] text-background/70 mt-1">{t('articles', 'listDoiOpenHint')}</p>
                                                       </TooltipContent>
                                                   </Tooltip>
-                                              </TooltipProvider>
                                           ) : (
                                               <span className="text-[12px] text-muted-foreground/50">–</span>
                                           )}
@@ -1007,14 +1003,13 @@ export function ArticlesList({
                                   <TableCell className={`${TABLE_CELL_CLASS} text-right`}>
                                       <DropdownMenu>
                                           <DropdownMenuTrigger asChild>
-                                              <Button
-                                                  size="icon"
-                                                  variant="ghost"
-                                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity"
+                                              <IconButton
+                                                  label={t('articles', 'listRowActions')}
+                                                  size="icon-xs"
+                                                  className="opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity"
                                                   onClick={(e) => e.stopPropagation()}
-                                              >
-                                                  <MoreHorizontal className="h-3.5 w-3.5"/>
-                                              </Button>
+                                                  icon={<MoreHorizontal />}
+                                              />
                                           </DropdownMenuTrigger>
                                           <DropdownMenuContent align="end" className="w-44">
                                               <DropdownMenuItem
@@ -1136,8 +1131,7 @@ export function ArticlesList({
                             open={filterPopoverOpen}
                             onOpenChange={setFilterPopoverOpen}
                             activeCount={activeFiltersList.length + (searchTerm.trim() ? 1 : 0)}
-                            tooltipLabel="Filter (F)"
-                            ariaLabel="Filter (F)"
+                            label={t('shared', 'listFilter')}
                         >
                             <ListFilterPanel
                                 fields={ARTICLES_FILTER_FIELDS}
@@ -1181,10 +1175,7 @@ export function ArticlesList({
                         {/* Actions sit on the same row as search, separated from the
                             view controls by a hairline: import / export / add. */}
                         <Separator orientation="vertical" className="h-4 bg-border/60"/>
-                        {/* Local provider like every sibling control: Radix throws
-                            without a provider ancestor, so the block stays mountable
-                            on its own rather than relying on App's. */}
-                        <TooltipProvider>
+                        <>
                         <DropdownMenu>
                             <ToolbarAction label={t('articles', 'listImportArticles')} icon={Import}>
                                 {(button) => <DropdownMenuTrigger asChild>{button}</DropdownMenuTrigger>}
@@ -1212,7 +1203,7 @@ export function ArticlesList({
                             onClick={onOpenAddArticle}
                             className="bg-foreground text-background hover:bg-foreground/90 hover:text-background"
                         />
-                        </TooltipProvider>
+                        </>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-auto">
                         {selectedArticles.size === 0 ? (
