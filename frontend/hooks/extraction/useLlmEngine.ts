@@ -5,8 +5,10 @@ import {projectKeys} from '@/lib/query-keys';
 import {
   clearMyEngine,
   fetchLlmEngine,
+  setLlmEngine,
   setMyEngine,
   type LlmEngineRead,
+  type LlmEngineUpdateRequest,
   type UserEngineClearResult,
   type UserEngineUpdateRequest,
 } from '@/services/llmEngineService';
@@ -22,6 +24,22 @@ export function useLlmEngine(projectId: string | null | undefined) {
       const result = await fetchLlmEngine(projectId ?? '');
       if (!result.ok) throw result.error;
       return result.data;
+    },
+  });
+}
+
+/** Manager write of the project default (§4): the response IS the fresh read. */
+export function useSetLlmEngine(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<LlmEngineRead, Error, LlmEngineUpdateRequest>({
+    mutationFn: async (body) => {
+      const result = await setLlmEngine(projectId, body);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(projectKeys.llmEngine(projectId), data);
+      void queryClient.invalidateQueries({queryKey: projectKeys.llmEngine(projectId)});
     },
   });
 }

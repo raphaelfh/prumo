@@ -11,6 +11,7 @@ import type {components} from '@/types/api/schema';
 
 export type LlmEngineRead = components['schemas']['LlmEngineRead'];
 export type LlmEngineCatalogEntry = components['schemas']['LlmEngineCatalogEntryRead'];
+export type LlmEngineUpdateRequest = components['schemas']['LlmEngineUpdateRequest'];
 export type UserEngineUpdateRequest = components['schemas']['UserEngineUpdateRequest'];
 export type UserEngineClearResult = components['schemas']['UserEngineClearResult'];
 
@@ -18,6 +19,16 @@ export const enginePath = (projectId: string): string => `/api/v1/projects/${pro
 
 export function fetchLlmEngine(projectId: string): Promise<ErrorResult<LlmEngineRead>> {
   return toResult(() => apiClient<LlmEngineRead>(enginePath(projectId)), 'llmEngineService.fetchLlmEngine');
+}
+
+export function setLlmEngine(
+  projectId: string,
+  body: LlmEngineUpdateRequest,
+): Promise<ErrorResult<LlmEngineRead>> {
+  return toResult(
+    () => apiClient<LlmEngineRead>(enginePath(projectId), {method: 'PUT', body}),
+    'llmEngineService.setLlmEngine',
+  );
 }
 
 export function setMyEngine(

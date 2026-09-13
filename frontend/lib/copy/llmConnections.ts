@@ -66,4 +66,15 @@ export const llmConnections = {
     modeFast: 'Fast',
     modeVerified: 'Verified',
     followDefault: 'Follow the project default',
+
+    // --- Project Settings → AI engine card + Shared keys ---
+    cardTitle: 'AI engine',
+    cardDescription: 'The project default for new runs. Members may pick their own engine unless locked.',
+    cardLoadError: "Couldn't load the AI engine.",
+    defaultLabel: 'Project default',
+    lockLabel: 'Lock members to the project default',
+    lockHint: 'Managers are never bound by the lock.',
+    lockedBadge: 'Locked',
+    defaultSaveSuccess: 'Project default updated.',
+    defaultSaveError: 'Failed to update the project default',
 } as const;
