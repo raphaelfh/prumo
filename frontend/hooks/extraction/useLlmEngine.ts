@@ -3,9 +3,11 @@ import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 
 import {projectKeys} from '@/lib/query-keys';
 import {
+  clearMyEngine,
   fetchLlmEngine,
   setMyEngine,
   type LlmEngineRead,
+  type UserEngineClearResult,
   type UserEngineUpdateRequest,
 } from '@/services/llmEngineService';
 
@@ -37,5 +39,18 @@ export function useSetMyEngine(projectId: string) {
       queryClient.setQueryData(projectKeys.llmEngine(projectId), data);
       void queryClient.invalidateQueries({queryKey: projectKeys.llmEngine(projectId)});
     },
+  });
+}
+
+/** Drops the viewer's own row: the next run follows the project default. */
+export function useClearMyEngine(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<UserEngineClearResult, Error, void>({
+    mutationFn: async () => {
+      const result = await clearMyEngine(projectId);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: () => void queryClient.invalidateQueries({queryKey: projectKeys.llmEngine(projectId)}),
   });
 }

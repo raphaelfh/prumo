@@ -4,7 +4,7 @@
  * Settings. Rows are grouped by provider from the catalogue; each row carries
  * a scope tag from `availability` — a row with none is not selectable and
  * links to Integrations, so a pick can never lead to a guaranteed 409 at
- * kickoff. The lock binds members, not managers; it is enforced server-side,
+ * kickoff, plus one group per host the viewer owns. The lock binds members, not managers; it is enforced server-side,
  * this surface only mirrors it. One row per (user, project): the extraction
  * and QA worklists edit the same choice.
  */
@@ -25,10 +25,11 @@ import {
 } from '@/components/ui/command';
 import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
 import {Skeleton} from '@/components/ui/skeleton';
+import {ToggleGroup, ToggleGroupItem} from '@/components/ui/toggle-group';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
-import {useLlmEngine, useSetMyEngine} from '@/hooks/extraction/useLlmEngine';
+import {useClearMyEngine, useLlmEngine, useSetMyEngine} from '@/hooks/extraction/useLlmEngine';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
-import {useProviders} from '@/hooks/user/useLlmConnections';
+import {useMyConnections, useProviders} from '@/hooks/user/useLlmConnections';
 import {t} from '@/lib/copy';
 import type {LlmEngineCatalogEntry, LlmEngineRead} from '@/services/llmEngineService';
 
@@ -40,6 +41,22 @@ const TAG_COPY: Record<NonNullable<Availability>, 'tagYourKey' | 'tagProjectKey'
     project: 'tagProjectKey',
     global: 'tagPrumo',
 };
+
+/**
+ * A failed write is reported by its server error code (spec §6): the lock
+ * and the missing-key case get their own copy, everything else the generic
+ * line. The code is read structurally off the error (`ApiError.code` from the
+ * envelope) — importing the client here would drag it into every test.
+ */
+const ERROR_COPY: Record<string, 'lockedReason' | 'pickErrorNeedsKey'> = {
+    LLM_ENGINE_LOCKED: 'lockedReason',
+    LLM_ENGINE_NEEDS_KEY: 'pickErrorNeedsKey',
+};
+
+function writeFailed(error: unknown): void {
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : undefined;
+    toast.error(t('llmConnections', (code && ERROR_COPY[code]) || 'pickError'));
+}
 
 function engineLabel(read: LlmEngineRead): string {
     const {effective} = read;
@@ -73,11 +90,18 @@ export function EngineGear({projectId}: {projectId: string}) {
     const [open, setOpen] = useState(false);
     const engine = useLlmEngine(projectId);
     const setMine = useSetMyEngine(projectId);
+    const clearMine = useClearMyEngine(projectId);
     const {isManager} = useProjectMemberRole(projectId);
     const providers = useProviders();
+    const mine = useMyConnections();
     const read = engine.data;
     const locked = Boolean(read && !read.default.user_choice_allowed && !isManager);
     const providerLabel = (id: string) => providers.data?.find((p) => p.id === id)?.label ?? id;
+    const hosts = (mine.data ?? []).filter((c) => c.base_url !== null && c.validation_status === 'ok');
+    // Only a CATALOGUE row can be "needs a key": `openai_compatible` has no
+    // catalogue entries — its availability tracks the viewer's own hosts,
+    // which the noHostsLink covers instead.
+    const needsKey = Boolean(read?.catalog.some((e) => (read.availability[e.provider] ?? null) === null));
     const tooltip =
         engine.isPending || !read
             ? t('llmConnections', 'gearLoading')
@@ -88,11 +112,31 @@ export function EngineGear({projectId}: {projectId: string}) {
         setMine.mutate(
             {...body, mode: read.effective.mode},
             {
-                onSuccess: () => toast.success(t('llmConnections', 'pickSuccess')),
-                onError: () => toast.error(t('llmConnections', 'pickError')),
+                onSuccess: () => {
+                    setOpen(false);
+                    toast.success(t('llmConnections', 'pickSuccess'));
+                },
+                onError: writeFailed,
             },
         );
     };
+    const setMode = (mode: string) => {
+        if (!read || (mode !== 'fast' && mode !== 'verified')) return;
+        setMine.mutate(
+            {
+                provider: read.effective.provider,
+                model: read.effective.model,
+                mode,
+                connection_id: read.effective.connection_id ?? null,
+            },
+            {onError: writeFailed},
+        );
+    };
+    const followDefault = () =>
+        clearMine.mutate(undefined, {
+            onSuccess: () => setOpen(false),
+            onError: writeFailed,
+        });
     const isCurrent = (provider: string, model: string, connectionId: string | null) =>
         Boolean(
             read &&
@@ -148,6 +192,23 @@ export function EngineGear({projectId}: {projectId: string}) {
                                 {read.effective.retired && (
                                     <p className="text-destructive">{t('llmConnections', 'retiredNote')}</p>
                                 )}
+                                <div className="flex items-center gap-2">
+                                    <span>{t('llmConnections', 'modeLabel')}</span>
+                                    <ToggleGroup
+                                        type="single"
+                                        value={read.effective.mode}
+                                        onValueChange={setMode}
+                                        disabled={locked}
+                                        aria-label={t('llmConnections', 'modeLabel')}
+                                    >
+                                        <ToggleGroupItem value="fast">
+                                            {t('llmConnections', 'modeFast')}
+                                        </ToggleGroupItem>
+                                        <ToggleGroupItem value="verified">
+                                            {t('llmConnections', 'modeVerified')}
+                                        </ToggleGroupItem>
+                                    </ToggleGroup>
+                                </div>
                             </div>
                             <CommandInput placeholder={t('llmConnections', 'gearAria')} />
                             <CommandList>
@@ -187,14 +248,53 @@ export function EngineGear({projectId}: {projectId: string}) {
                                         })}
                                     </CommandGroup>
                                 ))}
+                                {hosts.map((host) => (
+                                    <CommandGroup key={host.id} heading={host.label}>
+                                        {host.allowed_models.map((model) => (
+                                            <CommandItem
+                                                key={`${host.id}:${model}`}
+                                                value={`${host.label} ${model}`}
+                                                disabled={locked}
+                                                aria-disabled={locked}
+                                                data-current={isCurrent('openai_compatible', model, host.id)}
+                                                onSelect={() =>
+                                                    pick({
+                                                        provider: 'openai_compatible',
+                                                        model,
+                                                        connection_id: host.id,
+                                                    })
+                                                }
+                                            >
+                                                <span className="flex-1">{model}</span>
+                                                <Badge variant="outline">
+                                                    {t('llmConnections', 'tagYourKey')}
+                                                </Badge>
+                                            </CommandItem>
+                                        ))}
+                                        <p className="px-2 py-1 text-[11px] text-muted-foreground">
+                                            {t('llmConnections', 'hostGroupNote')}
+                                        </p>
+                                    </CommandGroup>
+                                ))}
                             </CommandList>
-                            {Object.values(read.availability).some((a) => a === null) && (
-                                <div className="border-t border-border/40 px-3 py-2 text-[12px]">
+                            <div className="flex items-center justify-between gap-2 border-t border-border/40 px-3 py-2 text-[12px]">
+                                {needsKey ? (
                                     <Link to={INTEGRATIONS_ROUTE} className="text-primary hover:underline">
                                         {t('llmConnections', 'needsKeyLink')}
                                     </Link>
-                                </div>
-                            )}
+                                ) : hosts.length === 0 ? (
+                                    <Link to={INTEGRATIONS_ROUTE} className="text-primary hover:underline">
+                                        {t('llmConnections', 'noHostsLink')}
+                                    </Link>
+                                ) : (
+                                    <span />
+                                )}
+                                {read.source === 'user' && !locked && (
+                                    <Button size="sm" variant="ghost" onClick={followDefault}>
+                                        {t('llmConnections', 'followDefault')}
+                                    </Button>
+                                )}
+                            </div>
                         </Command>
                     )}
                 </PopoverContent>

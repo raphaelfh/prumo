@@ -6,11 +6,12 @@ import {describe, expect, it, vi} from 'vitest';
 vi.mock('@/services/llmEngineService', () => ({
   fetchLlmEngine: vi.fn(),
   setMyEngine: vi.fn(),
+  clearMyEngine: vi.fn(),
 }));
 
 import {projectKeys} from '@/lib/query-keys';
-import {fetchLlmEngine, setMyEngine} from '@/services/llmEngineService';
-import {useLlmEngine, useSetMyEngine} from '@/hooks/extraction/useLlmEngine';
+import {clearMyEngine, fetchLlmEngine, setMyEngine} from '@/services/llmEngineService';
+import {useClearMyEngine, useLlmEngine, useSetMyEngine} from '@/hooks/extraction/useLlmEngine';
 
 function harness() {
   const queryClient = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
@@ -37,5 +38,16 @@ describe('useLlmEngine / useSetMyEngine', () => {
       await result.current.mutateAsync({provider: 'openai', model: 'm', mode: 'fast', connection_id: null});
     });
     expect(queryClient.getQueryData(projectKeys.llmEngine('p1'))).toBe(read);
+  });
+
+  it('clearing the row invalidates the engine read', async () => {
+    vi.mocked(clearMyEngine).mockResolvedValue({ok: true, data: {cleared: true}});
+    const {wrapper, queryClient} = harness();
+    queryClient.setQueryData(projectKeys.llmEngine('p1'), {source: 'user'});
+    const {result} = renderHook(() => useClearMyEngine('p1'), {wrapper});
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+    expect(queryClient.getQueryState(projectKeys.llmEngine('p1'))?.isInvalidated).toBe(true);
   });
 });

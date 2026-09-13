@@ -3,7 +3,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 const {apiClientMock} = vi.hoisted(() => ({apiClientMock: vi.fn()}));
 vi.mock('@/integrations/api/client', () => ({apiClient: apiClientMock}));
 
-import {fetchLlmEngine, setMyEngine} from '@/services/llmEngineService';
+import {clearMyEngine, fetchLlmEngine, setMyEngine} from '@/services/llmEngineService';
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -19,6 +19,10 @@ describe('llmEngineService', () => {
       method: 'PUT',
       body: {provider: 'openai', model: 'gpt-4o-mini', mode: 'fast', connection_id: null},
     });
+
+    apiClientMock.mockResolvedValueOnce({cleared: true});
+    expect(await clearMyEngine('p1')).toEqual({ok: true, data: {cleared: true}});
+    expect(apiClientMock).toHaveBeenLastCalledWith('/api/v1/projects/p1/llm-engine/me', {method: 'DELETE'});
   });
 
   it('never throws across the boundary', async () => {

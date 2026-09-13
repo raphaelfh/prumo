@@ -71,9 +71,13 @@ const ENGINE_READ = {
 vi.mock('@/hooks/extraction/useLlmEngine', () => ({
   useLlmEngine: () => ({ data: ENGINE_READ, isPending: false, isError: false, refetch: vi.fn() }),
   useSetMyEngine: () => ({ mutate: vi.fn(), isPending: false }),
+  useClearMyEngine: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-vi.mock('@/hooks/user/useLlmConnections', () => ({ useProviders: () => ({ data: [] }) }));
+vi.mock('@/hooks/user/useLlmConnections', () => ({
+  useProviders: () => ({ data: [] }),
+  useMyConnections: () => ({ data: [] }),
+}));
 
 vi.mock('@/integrations/api', () => ({
   apiClient: vi.fn(async (path: string) => {

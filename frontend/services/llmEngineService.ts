@@ -12,6 +12,7 @@ import type {components} from '@/types/api/schema';
 export type LlmEngineRead = components['schemas']['LlmEngineRead'];
 export type LlmEngineCatalogEntry = components['schemas']['LlmEngineCatalogEntryRead'];
 export type UserEngineUpdateRequest = components['schemas']['UserEngineUpdateRequest'];
+export type UserEngineClearResult = components['schemas']['UserEngineClearResult'];
 
 export const enginePath = (projectId: string): string => `/api/v1/projects/${projectId}/llm-engine`;
 
@@ -26,5 +27,12 @@ export function setMyEngine(
   return toResult(
     () => apiClient<LlmEngineRead>(`${enginePath(projectId)}/me`, {method: 'PUT', body}),
     'llmEngineService.setMyEngine',
+  );
+}
+
+export function clearMyEngine(projectId: string): Promise<ErrorResult<UserEngineClearResult>> {
+  return toResult(
+    () => apiClient<UserEngineClearResult>(`${enginePath(projectId)}/me`, {method: 'DELETE'}),
+    'llmEngineService.clearMyEngine',
   );
 }

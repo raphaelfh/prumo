@@ -59,4 +59,11 @@ export const llmConnections = {
     retiredNote: 'This engine is no longer available. Pick a new model.',
     pickSuccess: 'Your engine for new runs is set.',
     pickError: 'Failed to set your engine',
+    pickErrorNeedsKey: 'That engine needs a key. Add one under Integrations.',
+    noHostsLink: 'Connect your own host under Integrations',
+    hostGroupNote: 'Your host — runs on your connection',
+    modeLabel: 'Mode',
+    modeFast: 'Fast',
+    modeVerified: 'Verified',
+    followDefault: 'Follow the project default',
 } as const;

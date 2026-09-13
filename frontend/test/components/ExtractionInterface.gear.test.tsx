@@ -45,8 +45,12 @@ vi.mock('@/components/extraction/ArticleExtractionTable', () => ({
 vi.mock('@/hooks/extraction/useLlmEngine', () => ({
   useLlmEngine: () => ({data: undefined, isPending: true, isError: false, refetch: vi.fn()}),
   useSetMyEngine: () => ({mutate: vi.fn(), isPending: false}),
+  useClearMyEngine: () => ({mutate: vi.fn(), isPending: false}),
 }));
-vi.mock('@/hooks/user/useLlmConnections', () => ({useProviders: () => ({data: []})}));
+vi.mock('@/hooks/user/useLlmConnections', () => ({
+  useProviders: () => ({data: []}),
+  useMyConnections: () => ({data: []}),
+}));
 
 import {ExtractionInterface} from '@/components/extraction/ExtractionInterface';
 
