@@ -28,7 +28,7 @@ class InvalidProposalError(Exception):
 
 
 #: The execution facts a verdict heal must carry with it; engine identity
-#: (provider/model/endpoint_id/key_scope/mode_requested) is never rewritten.
+#: (provider/model/connection_id/key_scope/mode_requested) is never rewritten.
 _EXECUTION_KEYS = ("mode_executed", "passes")
 
 

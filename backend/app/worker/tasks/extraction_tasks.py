@@ -127,7 +127,7 @@ def run_section_extraction_task(
                     trace_id=trace_id or self.request.id or "worker-missing-trace",
                     llm_credentials=credentials,
                     # F1: the provider these credentials were resolved FOR
-                    # (with their endpoint_id, the full identity). The
+                    # (with their connection_id, the full identity). The
                     # standalone branch (run_id=None) can still ADOPT the
                     # coordinate's live run's pin inside the service — an
                     # engine flip between pin and kickoff would pair these

@@ -25,7 +25,7 @@ from app.schemas.prompt_composition import PromptComposition
 from app.services.llm_engine_service import resolve_project_engine
 
 if TYPE_CHECKING:
-    from app.services.api_key_service import KeyScope
+    from app.services.llm_connection_service import KeyScope
 
 
 async def freeze_run_engine(
@@ -118,16 +118,19 @@ def build_proposal_engine(
     per-section LLM-call fact that would be a lie per field). Those keep flowing
     from the run snapshot, which readers merge underneath this.
 
-    ``endpoint_id`` is recorded here and nowhere else: ``build_run_provenance``
-    does not capture it, so custom-endpoint runs (C2) otherwise carry no engine
-    identity beyond a bare model string.
+    ``connection_id`` is recorded here and nowhere else: ``build_run_provenance``
+    does not capture it, so host-connection runs otherwise carry no engine
+    identity beyond a bare model string. ``deviation`` rides along so a reader
+    can tell a pin that departed from the project default apart from one that
+    followed it.
     """
     if snapshot is None:
         return None
     return {
         "provider": engine.provider,
         "model": engine.model,
-        "endpoint_id": engine.endpoint_id,
+        "connection_id": engine.connection_id,
+        "deviation": engine.deviation,
         "key_scope": snapshot.get("key_scope"),
         "mode_requested": snapshot.get("mode_requested"),
         "mode_executed": snapshot.get("mode_executed"),

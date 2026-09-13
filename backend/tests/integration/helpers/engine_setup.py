@@ -31,11 +31,9 @@ from app.main import app
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.repositories import ExtractionRunRepository
 from app.schemas.llm_connection import UserConnectionCreateRequest
-from app.schemas.llm_endpoint import LlmEndpointCreateRequest
 from app.schemas.llm_engine import LlmEngineStored
 from app.schemas.llm_target import LlmTarget
 from app.services.llm_connection_service import LlmConnectionService, owned_user_connection
-from app.services.llm_endpoint_service import LlmEndpointService
 from app.services.llm_engine_service import LlmEngineService
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
@@ -146,14 +144,14 @@ async def pin_run(
     provider: str,
     model: str,
     mode: str = "fast",
-    endpoint_id: str | None = None,
+    connection_id: str | None = None,
 ) -> None:
     """Pre-pin the run the way a prior attempt's freeze write would have.
 
     ``mode`` fills both frozen mode fields (the freeze is a request-echo;
     execution truth lives on the section snapshot, never here).
-    ``endpoint_id`` pins an ENDPOINT engine (B8) — a plain string, the way
-    the JSONB snapshot stores it.
+    ``connection_id`` pins a HOST-CONNECTION engine — a plain string, the
+    way the JSONB snapshot stores it.
     """
     await ExtractionRunRepository(db).freeze_engine(
         run.id,
@@ -162,7 +160,7 @@ async def pin_run(
             model=model,
             mode_requested=mode,
             mode_executed=mode,
-            endpoint_id=endpoint_id,
+            connection_id=connection_id,
         ).model_dump(),
     )
 
@@ -194,43 +192,6 @@ async def set_project_engine(
         updated_by=SEED.primary_profile,
         user_choice_allowed=user_choice_allowed,
     )
-
-
-async def make_endpoint(
-    db: AsyncSession,
-    *,
-    project_id: UUID | None = None,
-    label: str = "engine-suite-endpoint",
-    base_url: str = "https://8.8.8.8/v1",
-    api_key: str = "sk-engine-suite",
-    allowed_models: list[str] | None = None,
-    validation_status: str = "ok",
-    output_mode: str | None = "tool",
-) -> UUID:
-    """A project endpoint in the given probe state, for endpoint-engine tests.
-
-    Created through the real service (Fernet, SSRF-vetted literal public
-    IP), then armed directly on the row — the B4 suite's
-    ``_arm_probe_state`` approach: the probe itself is B5's contract, not
-    this surface's. ``base_url``/``api_key`` are parameterised so a test
-    can tell TWO endpoints apart at the wire (B9 adoption).
-    """
-    service = LlmEndpointService(db)
-    read = await service.create(
-        project_id=project_id or SEED.primary_project,
-        created_by=SEED.primary_profile,
-        payload=LlmEndpointCreateRequest(
-            label=label,
-            base_url=base_url,
-            api_key=SecretStr(api_key),
-            allowed_models=allowed_models if allowed_models is not None else ["endpoint-model-x"],
-        ),
-    )
-    row = await service.get(project_id or SEED.primary_project, read.id)
-    row.validation_status = validation_status
-    row.capabilities = {"output_mode": output_mode, "models_seen": []}
-    await db.flush()
-    return read.id
 
 
 async def make_host_connection(

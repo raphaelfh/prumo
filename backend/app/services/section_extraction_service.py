@@ -150,7 +150,7 @@ class SectionExtractionService(LoggerMixin):
                 applying them apart pairs one engine's key with another's
                 host. ``None`` means no credentials (global fallback).
             key_provider: The provider they were resolved FOR — with
-                ``endpoint_id``, the identity ``rekey_for_adopted_engine``
+                ``connection_id``, the identity ``rekey_for_adopted_engine``
                 checks an adopted pin against; ``None`` never re-resolves.
             repin: this attempt is a HUMAN kickoff, so it overwrites the
                 run's pin with the caller's engine instead of deferring to
@@ -226,7 +226,7 @@ class SectionExtractionService(LoggerMixin):
                 "section_extraction_rekeyed_for_pinned_engine",
                 trace_id=self.trace_id,
                 provider=self._engine.provider,
-                endpoint_id=self._engine.endpoint_id,
+                connection_id=self._engine.connection_id,
                 key_scope=rekeyed.key_scope.value if rekeyed.key_scope is not None else None,
             )
         return self._engine.model

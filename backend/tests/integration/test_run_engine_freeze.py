@@ -41,9 +41,13 @@ from app.schemas.llm_target import LlmTarget
 from app.services import engine_credentials as ec
 from app.services import section_extraction_service as ses
 from app.services import verified_mode as vm
-from app.services.api_key_service import KeyScope, ResolvedKey
 from app.services.engine_credentials import EngineCredentials
-from app.services.run_engine_freeze import resolve_engine_for_run
+from app.services.llm_connection_service import KeyScope, ResolvedKey
+from app.services.run_engine_freeze import (
+    build_proposal_engine,
+    read_pinned_engine,
+    resolve_engine_for_run,
+)
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
 
@@ -74,7 +78,7 @@ def _service(
         storage=MagicMock(),
         trace_id=trace_id,
         llm_credentials=EngineCredentials(
-            api_key=_SECRET_KEY, key_scope=key_scope, base_url=None, endpoint_id=None
+            api_key=_SECRET_KEY, key_scope=key_scope, base_url=None, connection_id=None
         ),
         repin=repin,
     )
@@ -203,23 +207,22 @@ async def _extract_once(
 # B8 — the endpoint pointer rides the pinned spine (dump/validate roundtrip)
 # ---------------------------------------------------------------------------
 
-#: A fixed endpoint id — the pin stores it as a plain JSON string.
-_ENDPOINT_ID = "0b8f3d3e-8a54-4c1e-9d8e-1f2a3b4c5d6e"
+#: A fixed connection id — the pin stores it as a plain JSON string.
+_CONNECTION_ID = "0b8f3d3e-8a54-4c1e-9d8e-1f2a3b4c5d6e"
 
 
 @pytest.mark.asyncio
-async def test_pinned_endpoint_engine_survives_the_freeze_roundtrip(
+async def test_pinned_connection_engine_survives_the_freeze_roundtrip(
     db_session: AsyncSession,
 ) -> None:
-    """B8 rule 5 (freeze): a pinned ``LlmTarget`` carrying ``endpoint_id``
+    """§3.1 (freeze): a pinned ``LlmTarget`` carrying ``connection_id``
     survives the write-site dump and the read-boundary validate — a retry
-    re-enters on the SAME endpoint, not a re-resolved one."""
-    from app.repositories import ExtractionRunRepository
-    from app.services.run_engine_freeze import freeze_run_engine, read_pinned_engine
+    re-enters on the SAME host connection, not a re-resolved one."""
+    from app.services.run_engine_freeze import freeze_run_engine
 
     run = await engine_setup.run_in_extract(db_session)
     candidate = LlmTarget(
-        provider="openai_compatible", model="endpoint-model-x", endpoint_id=_ENDPOINT_ID
+        provider="openai_compatible", model="endpoint-model-x", connection_id=_CONNECTION_ID
     )
 
     await freeze_run_engine(ExtractionRunRepository(db_session), run.id, candidate)
@@ -227,18 +230,16 @@ async def test_pinned_endpoint_engine_survives_the_freeze_roundtrip(
 
     assert pinned is not None
     assert (pinned.provider, pinned.model) == ("openai_compatible", "endpoint-model-x")
-    assert pinned.endpoint_id == _ENDPOINT_ID
+    assert pinned.connection_id == _CONNECTION_ID
 
 
 @pytest.mark.asyncio
-async def test_old_pinned_snapshot_without_the_endpoint_key_reads_none(
+async def test_old_pinned_snapshot_without_the_connection_key_reads_none(
     db_session: AsyncSession,
 ) -> None:
-    """B8 rule 5 (compat): a pre-B8 pinned snapshot (no ``endpoint_id`` key)
+    """§7.4 (compat): an older pinned snapshot (no ``connection_id`` key)
     still validates — the field defaults to None, never a read failure on a
     pinned run."""
-    from app.repositories import ExtractionRunRepository
-    from app.services.run_engine_freeze import read_pinned_engine
 
     run = await engine_setup.run_in_extract(db_session)
     await ExtractionRunRepository(db_session).freeze_engine(
@@ -248,7 +249,7 @@ async def test_old_pinned_snapshot_without_the_endpoint_key_reads_none(
     pinned = await read_pinned_engine(db_session, run.id)
     assert pinned is not None
     assert (pinned.provider, pinned.model) == ("openai", "gpt-4o-mini")
-    assert pinned.endpoint_id is None
+    assert pinned.connection_id is None
 
 
 def _section_provenance(run: ExtractionRun, entity_type_id: UUID) -> dict[str, Any]:
@@ -274,7 +275,8 @@ async def test_fresh_run_resolves_engine_from_settings_and_persists_it(
         "model": settings.LLM_DEFAULT_MODEL,
         "mode_requested": "fast",
         "mode_executed": "fast",
-        "endpoint_id": None,
+        "connection_id": None,
+        "deviation": False,
     }, f"engine not frozen on the run: results={run.results}"
     assert calls, "build_model was never called — the stub is not wired"
     assert calls[0] == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)
@@ -314,7 +316,8 @@ async def test_retry_after_settings_change_keeps_the_first_engine(
         "model": original_model,
         "mode_requested": "fast",
         "mode_executed": "fast",
-        "endpoint_id": None,
+        "connection_id": None,
+        "deviation": False,
     }
 
 
@@ -386,7 +389,8 @@ async def test_fresh_run_freezes_the_project_engine(
         "model": "gpt-5.6-terra",
         "mode_requested": "fast",
         "mode_executed": "fast",
-        "endpoint_id": None,
+        "connection_id": None,
+        "deviation": False,
     }, f"the project engine was not frozen: results={run.results}"
     assert calls, "build_model was never called — the stub is not wired"
     assert calls == [("openai", "gpt-5.6-terra")] * len(calls)
@@ -419,7 +423,8 @@ async def test_retry_after_set_for_project_flip_keeps_attempt_1_pair(
         "model": "gpt-5.6-terra",
         "mode_requested": "fast",
         "mode_executed": "fast",
-        "endpoint_id": None,
+        "connection_id": None,
+        "deviation": False,
     }
 
 
@@ -461,7 +466,8 @@ async def test_human_kickoff_after_project_flip_runs_the_new_engine(
         "model": "claude-haiku-4-5",
         "mode_requested": "fast",
         "mode_executed": "fast",
-        "endpoint_id": None,
+        "connection_id": None,
+        "deviation": False,
     }, f"the run was not re-pinned to the new engine: results={run.results}"
 
 
@@ -572,25 +578,15 @@ def _stub_keyed_build_model(
     return calls
 
 
-def _stub_key_service(
-    monkeypatch: pytest.MonkeyPatch,
-    resolved: ResolvedKey | None,
-) -> list[str]:
-    """Patch the RESOLVER's ``APIKeyService`` seam; return the providers a
-    cloud key was asked for (empty = it never re-keyed, or never left the
-    endpoint branch). The seam lives in ``engine_credentials`` since B9 —
-    that module is the one place any call site resolves credentials."""
+def _stub_key_service(monkeypatch: pytest.MonkeyPatch, resolved: ResolvedKey | None) -> list[str]:
+    """Patch the RESOLVER's ladder seam; return the providers asked for."""
     asked: list[str] = []
 
-    class _RecordingKeys:
-        def __init__(self, _db: Any, _user_id: Any) -> None:
-            pass
+    async def fake(_session: Any, *, provider: str, **_kwargs: Any) -> ResolvedKey | None:
+        asked.append(provider)
+        return resolved
 
-        async def get_key_for_provider(self, provider: str) -> ResolvedKey | None:
-            asked.append(provider)
-            return resolved
-
-    monkeypatch.setattr(ec, "APIKeyService", _RecordingKeys)
+    monkeypatch.setattr(ec, "resolve_provider_key", fake)
     return asked
 
 
@@ -601,12 +597,12 @@ def _keyed_service(
     *,
     api_key: str | None = None,
     base_url: str | None = None,
-    endpoint_id: str | None = None,
+    connection_id: str | None = None,
 ) -> Any:
     """A service built the way the worker builds one AFTER resolving
     credentials for ``key_provider`` (the freshly-resolved project engine).
 
-    ``base_url``/``endpoint_id`` describe an ENDPOINT engine — the identity
+    ``base_url``/``connection_id`` describe a HOST-CONNECTION engine — the identity
     the credentials were resolved FOR, which the rekey compares against the
     adopted pin.
     """
@@ -619,7 +615,7 @@ def _keyed_service(
             api_key=api_key or f"key-for-{key_provider}",
             key_scope=KeyScope.USER_BYOK,
             base_url=base_url,
-            endpoint_id=endpoint_id,
+            connection_id=connection_id,
         ),
         key_provider=key_provider,
     )
@@ -756,7 +752,7 @@ async def test_rekey_with_no_key_for_the_adopted_provider_degrades_to_none(
 
 
 # ---------------------------------------------------------------------------
-# B9 — the rekey identity is (provider, endpoint_id), and it applies the
+# B9 — the rekey identity is (provider, connection_id), and it applies the
 # whole credential atomically. Two custom endpoints share the provider
 # string "openai_compatible", so provider-equality alone would run endpoint
 # B's pin on endpoint A's key + host.
@@ -764,7 +760,7 @@ async def test_rekey_with_no_key_for_the_adopted_provider_degrades_to_none(
 
 
 @pytest.mark.asyncio
-async def test_adoption_across_two_endpoints_carries_the_pinned_endpoints_key_and_url(
+async def test_adoption_across_two_hosts_carries_the_pinned_hosts_key_and_url(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -776,14 +772,14 @@ async def test_adoption_across_two_endpoints_carries_the_pinned_endpoints_key_an
     keyed_calls = _stub_keyed_build_model(monkeypatch)
     asked = _stub_key_service(monkeypatch, ResolvedKey("cloud-key", KeyScope.GLOBAL_SERVICE))
 
-    endpoint_a = await engine_setup.make_endpoint(
+    endpoint_a = await engine_setup.make_host_connection(
         db_session,
         label="b9-endpoint-a",
         base_url="https://8.8.8.8/v1",
         api_key="sk-endpoint-a",
         allowed_models=["endpoint-model-x"],
     )
-    endpoint_b = await engine_setup.make_endpoint(
+    endpoint_b = await engine_setup.make_host_connection(
         db_session,
         label="b9-endpoint-b",
         base_url="https://8.8.4.4/v1",
@@ -797,7 +793,7 @@ async def test_adoption_across_two_endpoints_carries_the_pinned_endpoints_key_an
         run,
         "openai_compatible",
         "endpoint-model-x",
-        endpoint_id=str(endpoint_b),
+        connection_id=str(endpoint_b),
     )
 
     service = _keyed_service(
@@ -806,7 +802,7 @@ async def test_adoption_across_two_endpoints_carries_the_pinned_endpoints_key_an
         key_provider="openai_compatible",
         api_key="sk-endpoint-a",
         base_url="https://8.8.8.8/v1",
-        endpoint_id=str(endpoint_a),
+        connection_id=str(endpoint_a),
     )
     service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
         return_value="ARTICLE BODY"
@@ -822,7 +818,7 @@ async def test_adoption_across_two_endpoints_carries_the_pinned_endpoints_key_an
         engine=LlmTarget(
             provider="openai_compatible",
             model="endpoint-model-x",
-            endpoint_id=str(endpoint_a),
+            connection_id=str(endpoint_a),
         ),
     )
     await db_session.refresh(run)
@@ -836,13 +832,13 @@ async def test_adoption_across_two_endpoints_carries_the_pinned_endpoints_key_an
     )
     assert asked == [], f"an endpoint engine reached the cloud key path: {asked}"
     snapshot = _section_provenance(run, SEED.primary_entity_type)
-    assert snapshot.get("key_scope") == KeyScope.SHARED_ENDPOINT.value, (
-        "provenance must name the endpoint scope of the key that actually ran"
+    assert snapshot.get("key_scope") == KeyScope.USER_BYOK.value, (
+        "provenance must name the scope of the key that actually ran"
     )
 
 
 @pytest.mark.asyncio
-async def test_catalog_to_endpoint_adoption_populates_the_base_url(
+async def test_catalog_to_host_adoption_populates_the_base_url(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -854,7 +850,7 @@ async def test_catalog_to_endpoint_adoption_populates_the_base_url(
     keyed_calls = _stub_keyed_build_model(monkeypatch)
     asked = _stub_key_service(monkeypatch, ResolvedKey("cloud-key", KeyScope.GLOBAL_SERVICE))
 
-    endpoint = await engine_setup.make_endpoint(
+    endpoint = await engine_setup.make_host_connection(
         db_session,
         label="b9-catalog-to-endpoint",
         base_url="https://8.8.4.4/v1",
@@ -863,7 +859,7 @@ async def test_catalog_to_endpoint_adoption_populates_the_base_url(
     )
     run = await engine_setup.run_in_extract(db_session)
     await engine_setup.pin_run(
-        db_session, run, "openai_compatible", "endpoint-model-x", endpoint_id=str(endpoint)
+        db_session, run, "openai_compatible", "endpoint-model-x", connection_id=str(endpoint)
     )
 
     service = _keyed_service(db_session, "b9-catalog-to-endpoint", key_provider="openai")
@@ -952,7 +948,8 @@ async def test_fresh_run_freezes_the_stored_verified_mode(
         "model": "gpt-5.6-terra",
         "mode_requested": "verified",
         "mode_executed": "verified",
-        "endpoint_id": None,
+        "connection_id": None,
+        "deviation": False,
     }, f"the stored verified mode was not frozen: results={run.results}"
     assert len(verify_log) == 1
     snapshot = _section_provenance(run, SEED.primary_entity_type)
@@ -1332,3 +1329,43 @@ async def test_freeze_engine_repin_overwrites_where_the_default_defers(
     assert engine_setup.pinned_engine_of(run) == second.model_dump(), (
         f"the re-pin did not reach the row: results={run.results}"
     )
+
+
+def test_legacy_shared_endpoint_key_scope_is_read_through_untouched() -> None:
+    """§7.4: the retired ``shared_endpoint`` provenance value is never
+    enum-parsed on read — it passes through ``build_proposal_engine`` as the
+    string it was stored as, and ``KeyScope`` has no member for it."""
+    snapshot = {"key_scope": "shared_endpoint", "mode_requested": "fast", "mode_executed": "fast"}
+    engine = LlmTarget.model_validate(
+        {
+            "provider": "openai_compatible",
+            "model": "m",
+            "endpoint_id": "x",
+            "key_scope": "shared_endpoint",
+        }
+    )
+    assert engine.connection_id is None
+    proposal = build_proposal_engine(snapshot, engine)
+    assert proposal is not None and proposal["key_scope"] == "shared_endpoint"
+    assert proposal["connection_id"] is None and "endpoint_id" not in proposal
+    assert "shared_endpoint" not in {member.value for member in KeyScope}
+
+
+@pytest.mark.asyncio
+async def test_read_pinned_engine_tolerates_a_legacy_shared_endpoint_snapshot(
+    db_session: AsyncSession,
+) -> None:
+    """A pre-slice-2 pin carrying ``endpoint_id`` and ``key_scope:
+    shared_endpoint`` still reads (extra keys ignored, pointer gone)."""
+    run = await engine_setup.run_in_extract(db_session)
+    await ExtractionRunRepository(db_session).freeze_engine(
+        run.id,
+        {
+            "provider": "openai_compatible",
+            "model": "m",
+            "endpoint_id": "x",
+            "key_scope": "shared_endpoint",
+        },
+    )
+    pinned = await read_pinned_engine(db_session, run.id)
+    assert pinned is not None and (pinned.connection_id, pinned.deviation) == (None, False)
