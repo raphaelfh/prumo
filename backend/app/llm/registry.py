@@ -34,8 +34,10 @@ class ProviderSpec:
     description: str
     serves: Literal["llm", "parsing"]
     needs_host: bool
+    key_optional: bool
     global_key_setting: str | None
     docs_url: str | None
+    scopes: frozenset[str]
 
 
 REGISTRY: tuple[ProviderSpec, ...] = (
@@ -45,8 +47,10 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         description="GPT models",
         serves="llm",
         needs_host=False,
+        key_optional=False,
         global_key_setting="OPENAI_API_KEY",
         docs_url="https://platform.openai.com/api-keys",
+        scopes=frozenset({"user", "project"}),
     ),
     ProviderSpec(
         id="anthropic",
@@ -54,8 +58,10 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         description="Claude models",
         serves="llm",
         needs_host=False,
+        key_optional=False,
         global_key_setting="ANTHROPIC_API_KEY",
         docs_url="https://console.anthropic.com/settings/keys",
+        scopes=frozenset({"user", "project"}),
     ),
     ProviderSpec(
         id="google",
@@ -63,8 +69,10 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         description="Gemini models",
         serves="llm",
         needs_host=False,
+        key_optional=False,
         global_key_setting="GOOGLE_API_KEY",
         docs_url="https://aistudio.google.com/app/apikey",
+        scopes=frozenset({"user", "project"}),
     ),
     ProviderSpec(
         id="openai_compatible",
@@ -72,8 +80,10 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         description="Any OpenAI-compatible server (Ollama, vLLM, LM Studio, OpenRouter)",
         serves="llm",
         needs_host=True,
+        key_optional=True,
         global_key_setting=None,
         docs_url=None,
+        scopes=frozenset({"user"}),
     ),
     ProviderSpec(
         id="llama_cloud",
@@ -81,8 +91,10 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         description="High-quality cloud PDF parsing (LlamaParse), opt-in per project",
         serves="parsing",
         needs_host=False,
+        key_optional=False,
         global_key_setting="LLAMA_CLOUD_API_KEY",
         docs_url="https://cloud.llamaindex.ai",
+        scopes=frozenset({"user", "project"}),
     ),
 )
 
@@ -107,6 +119,15 @@ def storable_providers() -> tuple[ProviderSpec, ...]:
 # call site is invisible to the dead-code ratchet even though it is real.
 def provider_ids() -> tuple[str, ...]:
     return tuple(spec.id for spec in REGISTRY)
+
+
+def llm_provider_ids() -> tuple[str, ...]:
+    """Registry-order ids of providers that serve LLM completions.
+
+    Excludes ``llama_cloud`` (a parsing-only provider): the catalogue and
+    anything else picker-shaped iterates this, not ``provider_ids``.
+    """
+    return tuple(spec.id for spec in REGISTRY if spec.serves == "llm")
 
 
 def global_key_for(provider_id: str) -> str | None:

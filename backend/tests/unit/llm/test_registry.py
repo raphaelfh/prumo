@@ -15,6 +15,7 @@ from app.llm.registry import (
     get_provider,
     global_key_for,
     is_byok_only,
+    llm_provider_ids,
     provider_ids,
     storable_providers,
 )
@@ -133,3 +134,31 @@ def test_removing_a_provider_breaks_the_drift_guard(monkeypatch: pytest.MonkeyPa
 def test_storable_providers_are_the_hosted_ones() -> None:
     """Host-bearing providers wait for slice 2's connections."""
     assert [s.id for s in storable_providers()] == ["openai", "anthropic", "google", "llama_cloud"]
+
+
+def test_llm_provider_ids_are_exactly_the_llm_serving_providers_in_order() -> None:
+    """§ orchestrator ruling: llm_provider_ids() excludes the parsing
+    provider (llama_cloud) and is registry-order, not sorted."""
+    assert llm_provider_ids() == ("openai", "anthropic", "google", "openai_compatible")
+    assert "llama_cloud" not in llm_provider_ids()
+
+
+def test_scopes_are_per_the_spec_table() -> None:
+    """§1: hosted providers are storable at both scopes; a host-bearing
+    provider is user-only (a host lives on one person's machine)."""
+    assert get_provider("openai").scopes == frozenset({"user", "project"})
+    assert get_provider("anthropic").scopes == frozenset({"user", "project"})
+    assert get_provider("google").scopes == frozenset({"user", "project"})
+    assert get_provider("llama_cloud").scopes == frozenset({"user", "project"})
+    assert get_provider("openai_compatible").scopes == frozenset({"user"})
+
+
+@pytest.mark.parametrize("spec", REGISTRY, ids=lambda s: s.id)
+def test_scopes_are_a_nonempty_subset_of_user_project(spec: ProviderSpec) -> None:
+    assert spec.scopes and spec.scopes <= {"user", "project"}
+
+
+def test_key_optional_is_exactly_the_host_bearing_rule() -> None:
+    """§1: keyless is legal only where a host is (a local Ollama)."""
+    for spec in REGISTRY:
+        assert spec.key_optional == spec.needs_host, spec.id
