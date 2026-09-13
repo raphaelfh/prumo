@@ -13,7 +13,6 @@ frontend/components/layout/SidebarHeader.tsx:1
 frontend/components/layout/SidebarNavItem.tsx:1
 frontend/components/layout/ThemeToggle.tsx:1
 frontend/components/navigation/NotificationCenter.tsx:2
-frontend/components/project/settings/ZoteroIntegrationSection.tsx:4
 frontend/components/runs/FieldAITrace.tsx:1
 frontend/components/runs/ReviewerAITrace.tsx:1
 frontend/components/runs/RunReviewerComparison.tsx:5
