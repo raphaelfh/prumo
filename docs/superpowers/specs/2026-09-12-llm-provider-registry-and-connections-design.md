@@ -10,6 +10,11 @@ owner: '@raphaelfh'
 > as C1b/C2 (`docs/superpowers/specs/2026-08-05-template-config-ux-redesign-design.md`
 > §5) into one provider registry, one connection concept, and a per-user
 > engine choice with the project engine as the default.
+>
+> Amended 2026-09-12 after slice 1 shipped: hosts are user-owned only,
+> the project default is a catalogue pair, and the engine picker moves
+> from the extraction config bar to a gear on both worklists (§2, §3,
+> §5). Slice 2 delivers the amended shape.
 
 ## Problem
 
@@ -38,8 +43,10 @@ already drifting, and its credential model has two unrelated halves:
 1. **One registry.** A single typed authority for providers that every
    layer derives from, with a test that fails on drift.
 2. **One connection concept.** A connection is a provider, a credential,
-   and (when the provider needs one) a host, owned at user scope or
-   project scope. Keys and custom hosts are the same thing.
+   and (when the provider needs one) a host. A hosted-provider key is
+   owned at user scope or project scope; a host is always user-owned,
+   because it lives on one person's machine or account. Keys and custom
+   hosts are the same thing.
 3. **Per-user engine choice.** Each member picks how their new runs run,
    from the engines they can actually run; the project engine is the
    default, and a manager may lock the project to it.
@@ -85,7 +92,7 @@ class ProviderSpec:
 | openai | llm | no | no | `OPENAI_API_KEY` | user, project |
 | anthropic | llm | no | no | `ANTHROPIC_API_KEY` (new, optional) | user, project |
 | google | llm | no | no | `GOOGLE_API_KEY` (new, optional) | user, project |
-| openai_compatible | llm | yes | yes | none | user, project |
+| openai_compatible | llm | yes | yes | none | user |
 | llama_cloud | parsing | no | no | `LLAMA_CLOUD_API_KEY` | user, project |
 
 Slice 1 ships without `scopes` and `key_optional` (no consumer yet;
@@ -134,7 +141,7 @@ One table replaces `user_api_keys` and `project_llm_endpoints`.
 | `project_id` | FK projects CASCADE, nullable |
 | `provider` | CHECK literal = registry ids |
 | `label` | text, 1–80 |
-| `base_url` | nullable; CHECK: set iff provider needs a host |
+| `base_url` | nullable; CHECK: set iff provider needs a host, and only at user scope |
 | `encrypted_api_key` | nullable Fernet ciphertext; empty only where the provider allows keyless |
 | `allowed_models` | JSONB list, only meaningful for host-bearing providers |
 | `capabilities` | JSONB (`output_mode`, `models_seen`) from the probe |
@@ -143,7 +150,9 @@ One table replaces `user_api_keys` and `project_llm_endpoints`.
 | `created_by` | FK profiles RESTRICT |
 
 Constraints: CHECK that exactly the owner column matching `scope` is
-set; unique `(scope, user_id, project_id, provider, label)`; a partial
+set; CHECK that a project-scope row's provider is hosted (`scopes` in
+the registry; the literal is asserted against it like the provider
+CHECK); unique `(scope, user_id, project_id, provider, label)`; a partial
 unique on `(user_id, provider)` for user scope on hosted providers (one
 key per provider per user — `is_default` and `key_name` are gone).
 Access posture: RLS enabled with a `deny_all` policy and every privilege
@@ -160,9 +169,9 @@ frontend's generated Supabase types lose the old table.
 `projects.settings.llm_engine` (`LlmEngineStored`) keeps `provider`,
 `model`, `mode`, attribution, and renames `endpoint_id` →
 `connection_id`. `alternates` is removed. It gains
-`user_choice_allowed: bool = True`. The default's `connection_id`, when
-set, **must be a project-scope connection** (a user-scope host would
-break for everyone else); the write rejects otherwise.
+`user_choice_allowed: bool = True`. The default never carries a
+`connection_id`: with no project-scope hosts, a project default is
+always a catalogue pair, and the write rejects one that is set.
 
 New table `user_project_engines`, PK `(user_id, project_id)`, both FKs
 CASCADE, columns `provider`, `model`, `connection_id` (nullable FK to
@@ -182,14 +191,13 @@ tolerance only; nothing writes them again).
 `resolve_project_engine` at all four call sites (kickoff gate, run
 freeze, worker, section service):
 
-1. Read the project engine. If it is retired (catalogue miss, or its
-   project connection is gone or unverified) raise the existing typed
-   409 — a manager must re-choose.
+1. Read the project engine. If it is retired (catalogue miss) raise the
+   existing typed 409 — a manager must re-choose.
 2. If `user_choice_allowed` and a `user_project_engines` row exists for
    `(user_id, project_id)`: validate it the same way (catalogue or the
    caller's own connection). Retired → the same typed 409, worded for
    the user ("pick a new model"). Valid → that engine, with
-   `deviation = (pair, connection_id) != default's`.
+   `deviation = pair != default's pair or connection_id is not None`.
 3. Otherwise the project engine. **The lock is enforced here, not in the
    UI**: a stored user row is ignored while locked, and the user-row PUT
    returns 403 while locked.
@@ -205,9 +213,9 @@ silent-pin bug fixed on 2026-08-19.
 
 `resolve_engine_credentials` becomes one path:
 
-- `connection_id` set → fetch through the **one ownership predicate, in
-  the WHERE clause**: `id = X AND ((scope = 'user' AND user_id = caller)
-  OR (scope = 'project' AND project_id = P))`. Missing, other owner, or
+- `connection_id` set (always a user-scope host) → fetch through the
+  **one ownership predicate, in the WHERE clause**: `id = X AND scope =
+  'user' AND user_id = caller`. Missing, other owner, or
   undecryptable → the existing typed unavailable 409, never a cloud
   fallback. The user-row and default writes validate through the same
   predicate, and resolution re-runs it, so a connection deleted or
@@ -231,12 +239,15 @@ Two connection routers replace three routers; every read carries
   `POST /me/connections/{id}/verify` — user scope, any signed-in user,
   provider must allow user scope.
 - Same five verbs under `/projects/{id}/connections` — project scope,
-  manager-gated, project-scoped WHERE guard.
+  manager-gated, project-scoped WHERE guard, hosted providers only (a
+  host-bearing provider is a 422).
 - Verify: the existing transport probe ladder for host-bearing
   connections (stores `models_seen`, pre-fills `allowed_models`); a
   cheap authenticated call for hosted providers.
 - `GET /providers` — the registry read: id, label, docs url, needs_host,
   key_optional, scopes, and `global_key_available` for this deployment.
+  Slice 2 adds `scopes` to the registry with this read and the CHECK
+  above as its consumers.
 - `GET /projects/{id}/llm-engine` returns `default` (the project
   engine, with lock and attribution), `effective` (the viewer's row or
   the default), `source: user | project | env_default`, the catalogue,
@@ -249,29 +260,36 @@ Two connection routers replace three routers; every read carries
 
 ## 5. Journey
 
-Three surfaces, one owner each, all reading the registry:
+Three surfaces, one owner each, all reading the registry. The rule that
+places them: *my credentials* live with me, *my next run* is decided
+where runs start, and *the project's* decisions live in project
+settings.
 
-- **Me → Integrations → AI connections.** My connections in one list.
-  "Add" is one form: provider select (user-scope providers), docs link,
-  key field, host field only when the provider needs one, verify.
-  Replaces the API keys section.
-- **Project → AI configuration → Model tab.** Every member sees *your
-  engine for this project* (the picker, writing their own row) and
-  *project default: X*. Rows are grouped by provider from the catalogue,
-  plus one group per host-bearing connection the viewer can run (their
-  own or the project's), models from `allowed_models`. Each row carries
-  a scope tag — *your key*, *project key*, *prumo* — or *needs a key*
-  with an inline sheet to add a user connection without leaving the
-  dialog. Managers get *set as project default* on catalogue rows and
-  project-connection rows (hidden on the manager's own user-scope hosts,
-  with a hint to add it as a project connection). While locked, the
-  picker is read-only for non-managers and says so.
-- **Project → AI configuration → Engine settings.** Mode default, the
-  lock toggle, and *Connections*: the project's shared keys and custom
-  hosts in one table with the same form. The endpoints dialog and the
-  alternates section are retired.
+- **Me → Settings → Integrations → AI connections.** Every connection I
+  own, hosted keys and local or custom hosts alike, in one list. "Add"
+  is one form: provider select (user-scope providers), docs link, key
+  field, host field only when the provider needs one, verify. Replaces
+  the API keys section and the project endpoints dialog.
+- **Worklist gear → "Your engine for new runs".** An icon button beside
+  the filter and export controls next to the search box, on both
+  article tables (data extraction and quality assessment). It opens the
+  picker, writing the viewer's own row: rows grouped by provider from
+  the catalogue, plus one group per host the viewer owns, models from
+  `allowed_models`. Each row carries a scope tag — *your key*, *project
+  key*, *prumo* — or *needs a key*, which links to Integrations rather
+  than embedding a form. Above the list: *project default: X*. While
+  locked, the picker is read-only for everyone but managers, with the
+  reason in one line. The gear's tooltip names `effective`. Managers see
+  nothing extra here: this surface is the same for every member.
+- **Project → Settings → AI engine card.** Next to Review details: the
+  project default (catalogue pairs only), mode, the lock toggle, and
+  *Shared keys*, the project's hosted-provider keys in one table with
+  the same form minus the host field. The AI configuration dialog keeps
+  PICOTS and the template instruction and loses its Model tab; the
+  engine chip leaves the extraction config bar, and the endpoints
+  dialog, engine settings dialog and alternates section are retired.
 
-The ⚙ chip and the run form render `effective`, never `default`.
+The run form renders `effective`, never `default`.
 
 ## 6. Errors
 
@@ -283,7 +301,7 @@ The ⚙ chip and the run form render `effective`, never `default`.
 | provider not in registry, host on a host-less provider, missing host | 422 from the schema; CHECK is the backstop |
 | private host outside local env | 422 from the SSRF guard, unchanged |
 | user-row PUT while locked | 403 |
-| default pointed at a user-scope connection | 422 |
+| default carrying a `connection_id`, or a project connection on a host-bearing provider | 422 |
 | probe failure | `failed`, not selectable; probe is a transport smoke test, never a quality gate |
 
 ## 7. Testing
@@ -301,11 +319,13 @@ The ⚙ chip and the run form render `effective`, never `default`.
    service.
 4. **Provenance compatibility.** Legacy snapshots with `endpoint_id` /
    `shared_endpoint` validate.
-5. **API.** Ported endpoint and key tests: scope rules, secret absent
-   from every response and 422 echo, lock 403, default-scope 422.
-6. **Frontend.** Vitest: the three scope tags, the inline add-connection
-   sheet, read-only picker under lock; the settings E2E flow rewritten
-   against connections.
+5. **API.** Ported endpoint and key tests: scope rules (host-bearing
+   provider rejected at project scope), secret absent from every response
+   and 422 echo, lock 403, default-with-connection 422.
+6. **Frontend.** Vitest: the three scope tags, the *needs a key* link,
+   read-only picker under lock, the gear mounted on both worklists with
+   `effective` in its tooltip, the AI configuration dialog reduced to
+   two tabs; the settings E2E flow rewritten against connections.
 7. **Gates.** knip (both modes), copy-key ratchet, vulture baseline and
    `alembic check` tightened in the same PR as each deletion;
    fresh-versus-fresh migration proof.
@@ -321,4 +341,7 @@ The ⚙ chip and the run form render `effective`, never `default`.
   llm_endpoint_service,api_key_service,run_engine_freeze}.py`,
   `backend/app/schemas/{llm_target,llm_engine,llm_endpoint}.py`,
   `frontend/components/extraction/{LlmEnginePane,LlmEngineSettingsDialog,
-  LlmEndpointsDialog}.tsx`, `frontend/components/user/ApiKeysSection.tsx`
+  LlmEndpointsDialog,LlmEngineChip,ExtractionInterface,
+  ArticleExtractionTable}.tsx`, `frontend/components/hitl/HITLArticleTable.tsx`,
+  `frontend/components/project/{AiConfigDialog,settings/ReviewDetailsSection}.tsx`,
+  `frontend/components/user/ApiKeysSection.tsx`
