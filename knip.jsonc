@@ -82,6 +82,17 @@
     "frontend/types/api/schema.d.ts",
     "frontend/integrations/supabase/types.ts"
   ],
+  // TEMPORARY (borderless density pass PR 1, plan
+  // docs/superpowers/plans/2026-09-13-borderless-density-pass-settings.md).
+  // Task 2a lands FieldHint and useIsCoarsePointer before their first
+  // production callers (SettingsRow and SettingsGroup, Task 2b), so
+  // --production reports FieldHint.tsx as an unused file and useIsCoarsePointer
+  // as an unused export. Task 2b deletes this block. ignoreIssues, not
+  // ignoreFiles: ignoreFiles prints a configuration hint in default mode.
+  "ignoreIssues": {
+    "frontend/components/patterns/FieldHint.tsx": ["files"],
+    "frontend/hooks/use-mobile.tsx": ["exports"]
+  },
   // Invoked via npx inside scripts/generate_api_types.sh — a shell caller
   // knip cannot see.
   "ignoreDependencies": ["openapi-typescript"],
