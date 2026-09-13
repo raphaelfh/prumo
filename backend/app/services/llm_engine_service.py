@@ -32,6 +32,7 @@ from app.core.error_handler import AppError
 from app.core.logging import get_logger
 from app.llm.catalog import CATALOG, canonical, find_entry, selectable_catalog
 from app.llm.registry import is_byok_only
+from app.models.llm_connection import UserProjectEngine
 from app.models.project import Project
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.llm_engine import (
@@ -41,6 +42,7 @@ from app.schemas.llm_engine import (
 )
 from app.schemas.llm_target import LlmTarget
 from app.services.api_key_service import APIKeyService
+from app.services.llm_connection_service import owned_user_connection
 from app.services.parser_settings_service import ProjectNotFoundError
 from app.services.profile_names import profile_names
 
@@ -49,7 +51,10 @@ __all__ = [
     "LlmEngineService",
     "ProjectNotFoundError",
     "ResolvedProjectEngine",
+    "get_user_engine",
     "resolve_project_engine",
+    "user_row_is_retired",
+    "viewer_is_manager",
 ]
 
 logger = get_logger(__name__)
@@ -86,6 +91,43 @@ def _normalized_mode(stored: LlmEngineStored, project_id: UUID) -> Literal["fast
         stored_mode=str(stored.mode),
     )
     return "fast"
+
+
+async def get_user_engine(
+    db: AsyncSession, *, user_id: UUID, project_id: UUID
+) -> UserProjectEngine | None:
+    """The viewer's own ``user_project_engines`` row, or ``None`` (§3.1)."""
+    return await db.get(UserProjectEngine, (user_id, project_id))
+
+
+async def user_row_is_retired(db: AsyncSession, row: UserProjectEngine) -> bool:
+    """Catalogue miss, or a host row whose connection is gone / unverified /
+    no longer allows the model (§3.2 step 2). ONE predicate for the write
+    gate (``user_engine_service.set_user_engine``) and for resolution."""
+    if row.provider == "openai_compatible":
+        if row.connection_id is None:
+            return True
+        conn = await owned_user_connection(db, row.connection_id, row.user_id)
+        return (
+            conn is None
+            or conn.validation_status != "ok"
+            or row.model not in (conn.allowed_models or [])
+        )
+    return find_entry(row.provider, row.model) is None
+
+
+async def viewer_is_manager(db: AsyncSession, project_id: UUID, viewer_id: UUID) -> bool:
+    """Whether the viewer manages this project — the same
+    ``public.is_project_manager`` helper the RLS policies and the API
+    role gates use, so one definition of "manager" serves all three."""
+    return bool(
+        (
+            await db.execute(
+                text("SELECT public.is_project_manager(:pid, :uid) AS ok"),
+                {"pid": str(project_id), "uid": str(viewer_id)},
+            )
+        ).scalar_one()
+    )
 
 
 async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> LlmTarget:
@@ -284,17 +326,4 @@ class LlmEngineService:
                 for entry in selectable_catalog()
             ],
             availability=availability,
-        )
-
-    async def _viewer_is_manager(self, project_id: UUID, viewer_id: UUID) -> bool:
-        """Whether the viewer manages this project — the same
-        ``public.is_project_manager`` helper the RLS policies and the API
-        role gates use, so one definition of "manager" serves all three."""
-        return bool(
-            (
-                await self.db.execute(
-                    text("SELECT public.is_project_manager(:pid, :uid) AS ok"),
-                    {"pid": str(project_id), "uid": str(viewer_id)},
-                )
-            ).scalar_one()
         )

@@ -15,9 +15,10 @@ derived keys). Key material never reaches a read model or an error.
 from __future__ import annotations
 
 import base64
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -52,6 +53,7 @@ __all__ = [
     "KeyScope",
     "LlmConnectionService",
     "ResolvedKey",
+    "availability_map",
     "owned_project_connection",
     "owned_user_connection",
     "provider_reads",
@@ -457,3 +459,38 @@ def provider_reads() -> list[ProviderRead]:
         )
         for spec in REGISTRY
     ]
+
+
+Availability = Literal["user", "project", "global"] | None
+
+
+async def availability_map(
+    session: AsyncSession, *, project_id: UUID, user_id: UUID, providers: Iterable[str]
+) -> dict[str, Availability]:
+    """Whose credential a row on each provider would run on, for THIS
+    caller — the ladder's dry run (§4). Host-bearing providers: ``"user"``
+    when the caller owns a connection for it, else ``None``."""
+    rows = (
+        await session.execute(
+            select(LlmConnection.scope, LlmConnection.provider, LlmConnection.base_url).where(
+                ((LlmConnection.scope == "user") & (LlmConnection.user_id == user_id))
+                | ((LlmConnection.scope == "project") & (LlmConnection.project_id == project_id)),
+                LlmConnection.encrypted_api_key.is_not(None) | LlmConnection.base_url.is_not(None),
+            )
+        )
+    ).all()
+    present = {(scope, provider) for scope, provider, _ in rows}
+    out: dict[str, Availability] = {}
+    for provider in providers:
+        spec = get_provider(provider)
+        if spec is None:
+            out[provider] = None
+        elif ("user", provider) in present:
+            out[provider] = "user"
+        elif not spec.needs_host and ("project", provider) in present:
+            out[provider] = "project"
+        elif not spec.needs_host and global_key_for(provider) is not None:
+            out[provider] = "global"
+        else:
+            out[provider] = None
+    return out
