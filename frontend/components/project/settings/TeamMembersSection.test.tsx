@@ -1,10 +1,11 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {render, screen, waitFor} from '@testing-library/react';
+import {render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {PgError} from '@/lib/error-utils';
 import {t} from '@/lib/copy';
 import type {ProjectMemberRow} from '@/services/projectSettingsService';
+import {MEMBER_ROLES} from '@/types/project';
 
 const {getMembersMock, removeMock, updateMock} = vi.hoisted(() => ({
   getMembersMock: vi.fn(),
@@ -122,6 +123,69 @@ describe('TeamMembersSection — min-one-manager affordances', () => {
     await userEvent.click(await screen.findByLabelText(t('project', 'teamAriaSaveChange')));
 
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith(GUARD_COPY));
+  });
+});
+
+describe('TeamMembersSection — flat layout (spec 2026-09-13 §4.3, §10)', () => {
+  const REVEAL = ['opacity-0', 'group-hover:opacity-100', 'group-focus-within:opacity-100', '[@media(hover:none)]:opacity-100'];
+  const twoManagers = () =>
+    getMembersMock.mockResolvedValue({
+      ok: true,
+      data: [
+        member({id: 'm1', user_id: 'u1'}),
+        member({id: 'm2', user_id: 'u2', user_full_name: 'Bob', user_email: 'bob@example.com'}),
+      ],
+    });
+
+  it('drops the selected-role description under the invite; the Roles group lists it once', async () => {
+    getMembersMock.mockResolvedValue({ok: true, data: [member({})]});
+    renderSection();
+    await screen.findByText('Alice');
+    const lines = screen.getAllByText(MEMBER_ROLES.reviewer.description);
+    expect(lines).toHaveLength(1);
+    const group = lines[0].closest('.border-t') as HTMLElement;
+    expect(within(group).getByRole('heading', {name: t('project', 'teamCardRolesTitle')})).toBeInTheDocument();
+  });
+
+  it('the invite email is labelled by the row, described by its hint, with no absolute Mail icon', async () => {
+    getMembersMock.mockResolvedValue({ok: true, data: [member({})]});
+    renderSection();
+    await screen.findByText('Alice');
+    const email = screen.getByRole('textbox', {name: t('project', 'teamCardAddTitle')});
+    expect(email).toHaveAccessibleDescription(t('project', 'teamUserMustBeRegistered'));
+    expect(email).not.toHaveClass('pl-8');
+    expect(email.parentElement?.querySelector(':scope > svg')).toBeNull();
+    expect(screen.getByRole('button', {name: t('project', 'teamAddButton')})).not.toHaveClass('h-9');
+  });
+
+  it('an empty member list is one muted line, not a callout', async () => {
+    getMembersMock.mockResolvedValue({ok: true, data: []});
+    renderSection();
+    const line = await screen.findByText(t('project', 'teamNoMembersYet'));
+    expect(line).toHaveClass('text-[13px]', 'text-muted-foreground');
+    expect(screen.queryByRole('alert')).toBeNull();
+    const group = line.closest('.border-t') as HTMLElement;
+    expect(within(group).getByRole('heading', {name: t('project', 'teamCardMembersTitle')})).toBeInTheDocument();
+  });
+
+  it('row actions carry the reveal classes on a group row', async () => {
+    twoManagers();
+    renderSection();
+    await screen.findByText('Alice');
+    const edit = screen.getAllByRole('button', {name: t('project', 'teamAriaEditRole')})[0];
+    const strip = edit.closest('[class~="opacity-0"]') as HTMLElement;
+    expect(strip).not.toBeNull();
+    expect(strip).toHaveClass(...REVEAL);
+    expect(strip.closest('li')).toHaveClass('group');
+  });
+
+  it('a row in the role-edit state shows its controls without hover', async () => {
+    twoManagers();
+    renderSection();
+    await screen.findByText('Alice');
+    await userEvent.click(screen.getAllByRole('button', {name: t('project', 'teamAriaEditRole')})[0]);
+    const save = await screen.findByRole('button', {name: t('project', 'teamAriaSaveChange')});
+    expect(save.closest('[class~="opacity-0"]')).toBeNull();
   });
 });
 

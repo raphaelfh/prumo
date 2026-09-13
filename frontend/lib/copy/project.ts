@@ -78,16 +78,12 @@ export const project = {
     picotsAddExclusionPlaceholder: 'Add exclusion criterion...',
 
     // TeamMembersSection
-    teamSectionTitle: 'Team management',
-    teamSectionDesc: 'Add collaborators and manage project access permissions.',
     teamCardAddTitle: 'Add member',
-    teamCardAddDesc: 'Invite an existing user to join this project.',
     teamEmailPlaceholder: 'email@example.com',
     teamAddButton: 'Add',
     teamAdding: 'Adding…',
     teamUserMustBeRegistered: 'The user must be registered on the platform before being added.',
     teamCardMembersTitle: 'Current members',
-    teamCardMembersDesc: 'All members with access to this project.',
     teamNoMembersYet: 'No members added yet. Use the form above to invite collaborators.',
     teamUserFallback: 'User',
     teamAvatarFallback: 'Avatar',
