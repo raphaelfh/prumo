@@ -19,7 +19,14 @@ from app.llm.registry import (
 
 
 def test_registry_ids_are_exactly_the_registered_providers() -> None:
-    assert provider_ids() == ("openai", "anthropic", "google", "openai_compatible", "llama_cloud")
+    assert provider_ids() == (
+        "openai",
+        "anthropic",
+        "google",
+        "ollama",
+        "openai_compatible",
+        "llama_cloud",
+    )
 
 
 def test_llm_providers_exclude_parsing_providers() -> None:
@@ -27,6 +34,7 @@ def test_llm_providers_exclude_parsing_providers() -> None:
         "openai",
         "anthropic",
         "google",
+        "ollama",
         "openai_compatible",
     ]
 
@@ -78,7 +86,7 @@ def test_global_key_for_unknown_provider_is_none() -> None:
 def test_llm_provider_ids_are_exactly_the_llm_serving_providers_in_order() -> None:
     """§ orchestrator ruling: llm_provider_ids() excludes the parsing
     provider (llama_cloud) and is registry-order, not sorted."""
-    assert llm_provider_ids() == ("openai", "anthropic", "google", "openai_compatible")
+    assert llm_provider_ids() == ("openai", "anthropic", "google", "ollama", "openai_compatible")
     assert "llama_cloud" not in llm_provider_ids()
 
 
@@ -88,6 +96,7 @@ def test_scopes_are_per_the_spec_table() -> None:
     assert get_provider("openai").scopes == frozenset({"user", "project"})
     assert get_provider("anthropic").scopes == frozenset({"user", "project"})
     assert get_provider("google").scopes == frozenset({"user", "project"})
+    assert get_provider("ollama").scopes == frozenset({"user", "project"})
     assert get_provider("llama_cloud").scopes == frozenset({"user", "project"})
     assert get_provider("openai_compatible").scopes == frozenset({"user"})
 

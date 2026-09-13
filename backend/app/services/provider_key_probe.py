@@ -77,10 +77,21 @@ async def _probe_llama_cloud(client: httpx.AsyncClient, api_key: str) -> Outcome
     return _outcome(r.status_code, unauthorized=(401, 403))
 
 
+async def _probe_ollama(client: httpx.AsyncClient, api_key: str) -> Outcome:
+    # /api/me, not /v1/models: the model listings answer 200 to any key.
+    r = await client.post(
+        "https://ollama.com/api/me",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=_TIMEOUT_S,
+    )
+    return _outcome(r.status_code, unauthorized=(401, 403))
+
+
 _PROBES: dict[str, Callable[[httpx.AsyncClient, str], Awaitable[Outcome]]] = {
     "openai": _probe_openai,
     "anthropic": _probe_anthropic,
     "google": _probe_google,
+    "ollama": _probe_ollama,
     "llama_cloud": _probe_llama_cloud,
 }
 
