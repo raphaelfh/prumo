@@ -36,11 +36,14 @@ from app.schemas.llm_connection import (
     LlmConnectionDeleteResult,
     LlmConnectionRead,
     LlmConnectionUpdateRequest,
+    LlmConnectionVerifyResult,
     ProjectConnectionCreateRequest,
     UserConnectionCreateRequest,
 )
 from app.schemas.llm_endpoint import LlmEndpointCapabilities
+from app.services.llm_endpoint_probe import probe_endpoint
 from app.services.profile_names import profile_names
+from app.services.provider_key_probe import probe_hosted_key
 
 __all__ = [
     "ConnectionNotFoundError",
@@ -334,6 +337,52 @@ class LlmConnectionService:
                 f"The stored key for connection {row.id} ({row.label!r}) cannot be decrypted. "
                 "Re-enter the key."
             ) from None
+
+    async def _verify(self, row: LlmConnection | None) -> LlmConnectionVerifyResult:
+        """Reads before the network call, writes after it, no lock held (the
+        LlmEndpointService.verify ordering)."""
+        if row is None:
+            raise ConnectionNotFoundError("Connection not found")
+        api_key = await self.decrypt_key(row)
+        if row.base_url is not None:
+            vetted = await validate_endpoint_url(row.base_url)  # re-vet the stored URL
+            probe = await probe_endpoint(
+                vetted=vetted, api_key=api_key, allowed_models=list(row.allowed_models)
+            )
+            status, output_mode, models_seen, error = (
+                probe.validation_status,
+                probe.output_mode,
+                probe.models_seen,
+                probe.error,
+            )
+            if not row.allowed_models and models_seen:
+                row.allowed_models = list(models_seen)
+        else:
+            if api_key is None:
+                raise ConnectionUnavailableError(
+                    f"Connection {row.id} ({row.label!r}) has no key to verify."
+                )
+            status, error = await probe_hosted_key(row.provider, api_key)
+            output_mode, models_seen = None, []
+        row.capabilities = LlmEndpointCapabilities(
+            output_mode=output_mode, models_seen=models_seen
+        ).model_dump(mode="json")
+        row.validation_status = status
+        row.last_validated_at = datetime.now(UTC)
+        await self.db.flush()
+        return LlmConnectionVerifyResult(
+            validation_status=status, output_mode=output_mode, models_seen=models_seen, error=error
+        )
+
+    async def verify_user(self, *, user_id: UUID, connection_id: UUID) -> LlmConnectionVerifyResult:
+        return await self._verify(await owned_user_connection(self.db, connection_id, user_id))
+
+    async def verify_project(
+        self, *, project_id: UUID, connection_id: UUID
+    ) -> LlmConnectionVerifyResult:
+        return await self._verify(
+            await owned_project_connection(self.db, connection_id, project_id)
+        )
 
 
 async def _scoped_key_row(

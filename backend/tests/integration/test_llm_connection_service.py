@@ -10,12 +10,14 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.services.llm_connection_service as connection_module
 from app.core.config import settings
 from app.schemas.llm_connection import (
     LlmConnectionUpdateRequest,
     ProjectConnectionCreateRequest,
     UserConnectionCreateRequest,
 )
+from app.schemas.llm_endpoint import LlmEndpointProbeResult
 from app.services.llm_connection_service import (
     ConnectionNotFoundError,
     KeyScope,
@@ -250,3 +252,63 @@ async def test_ladder_skips_host_rows_and_tolerates_several_shared_keys(
     )
     assert resolved is not None and resolved.scope is KeyScope.PROJECT_SHARED
     assert resolved.key in {"sk-first", "sk-second"}  # same-transaction created_at ties are legal
+
+
+@pytest.mark.asyncio
+async def test_verify_hosted_key_persists_the_probe_outcome(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cid = await _user_key(db_session)
+    seen: list[tuple[str, str]] = []
+
+    async def fake_probe(provider: str, api_key: str):
+        seen.append((provider, api_key))
+        return ("ok", None)
+
+    monkeypatch.setattr(connection_module, "probe_hosted_key", fake_probe)
+    result = await LlmConnectionService(db_session).verify_user(
+        user_id=SEED.primary_profile, connection_id=cid
+    )
+    assert result.validation_status == "ok" and result.output_mode is None
+    assert seen == [("openai", "sk-user")]  # decrypted for the wire, never stored
+    read = (await LlmConnectionService(db_session).list_user(SEED.primary_profile))[0]
+    assert read.validation_status == "ok" and read.last_validated_at is not None
+
+
+@pytest.mark.asyncio
+async def test_verify_host_runs_the_ladder_and_prefills_allowed_models(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = LlmConnectionService(db_session)
+    read = await svc.create_user(
+        user_id=SEED.primary_profile,
+        payload=UserConnectionCreateRequest(
+            provider="openai_compatible", label="ollama", base_url="https://8.8.8.8/v1"
+        ),
+    )
+
+    async def fake_ladder(*, vetted, api_key, allowed_models: list[str]):
+        del allowed_models
+        assert vetted.url == "https://8.8.8.8/v1" and api_key is None
+        return LlmEndpointProbeResult(
+            validation_status="ok", output_mode="tool", models_seen=["llama3", "qwen3"], error=None
+        )
+
+    monkeypatch.setattr(connection_module, "probe_endpoint", fake_ladder)
+    result = await svc.verify_user(user_id=SEED.primary_profile, connection_id=read.id)
+    assert (result.validation_status, result.output_mode, result.models_seen) == (
+        "ok",
+        "tool",
+        ["llama3", "qwen3"],
+    )
+    after = (await svc.list_user(SEED.primary_profile))[0]
+    assert after.allowed_models == ["llama3", "qwen3"] and after.capabilities.output_mode == "tool"
+
+
+@pytest.mark.asyncio
+async def test_verify_is_owner_scoped(db_session: AsyncSession) -> None:
+    cid = await _project_key(db_session)
+    with pytest.raises(ConnectionNotFoundError):
+        await LlmConnectionService(db_session).verify_project(
+            project_id=SEED.secondary_project, connection_id=cid
+        )
