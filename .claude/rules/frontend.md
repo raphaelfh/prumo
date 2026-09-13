@@ -55,9 +55,11 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   accessibility tree, so the control's accessible name silently loses the
   word it was collapsing — and an `aria-label` "fix" for that is worse: it
   REPLACES the composed name and erases any sibling chip or badge inside
-  the button. Verified live: the QA surface's AI-instruction trigger
-  (`TemplateInstructionControl` — the config bar's ONE trigger into
-  `AiConfigDialog`) must read "General AI instruction1 to customize".
+  the button. `TemplateInstructionControl` (✨) is this pattern's live
+  example: on QA it toggles an inline instruction editor on the tool row;
+  on extraction, the same control on the config bar reveals the template's
+  instruction in the grid inspector. Verified live: the QA surface's
+  AI-instruction trigger must read "General AI instruction1 to customize".
 - Visual language is authoritative in `frontend-ux` (it outranks the
   `frontend-design` plugin on core product UI — that plugin is for
   greenfield only). After a non-trivial UI change, verify with your
@@ -65,7 +67,7 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   (`/design-review <route>`) — render, screenshot, compare to the
   Plane/Linear target, fix, re-screenshot.
 - **Space belongs to content — keep to the edge budget** (`frontend-ux` §6).
-  Page gutter `px-4 py-3 lg:px-6` (never wider); one hairline per boundary,
+  Page gutter `p-2`, owned by the view (the Articles pattern); one hairline per boundary,
   drawn by the region that owns it; no card nested inside an already-bordered
   pane; no doubled padding. Compact rows (rail, menu, list) sit at `px-2 py-1`
   with `space-y-0.5` — tighter and they read as one glued block. Space

@@ -175,7 +175,7 @@ was there.
 
 | Boundary                              | Budget                          | Why                                                                                                                       |
 |---------------------------------------|---------------------------------|---------------------------------------------------------------------------------------------------------------------------|
-| Page gutter (viewport → workspace)    | `px-4 py-3`, `lg:px-6`          | 24px is as wide as a page band ever needs. `lg:px-10` spent 80px of a 1340px window painting nothing.                      |
+| Page gutter (viewport → workspace)    | `p-2`, owned by the view         | The Articles list's 8px inset. A tab never inherits a padded wrapper from `ProjectView`; each view sets its own single inset. |
 | Panel / card padding                  | `p-2`–`p-3` dense, `p-4` prose  | The component owns its own inset; the parent owns the gap between components.                                              |
 | Between siblings                      | `gap-3` (12px)                  | Below ~12px adjacent regions start to visually merge and the reader misreads where one ends.                               |
 | Compact row (rail, menu, list item)   | `px-2 py-1`, `space-y-0.5`      | 4px vertical / 8–12px horizontal is the compact tier's floor. Tighter and the rows stop being separable at a glance.       |
@@ -204,7 +204,7 @@ Three rules follow, and they are the ones that actually get broken:
    every time focus lands. Reference: `template-config/PaneResizer.tsx`.
 4. **Reclaimed outer space is spent inside, not banked.** Tightening a gutter is
    only a win if what it reveals is still readable: the same pass that cut this
-   surface's page gutter from 40px to 24px spent part of it widening the outline
+   surface's page gutter to the Articles `p-2` inset spent part of it widening the outline
    rail and loosening its rows from 1px gaps to 2px with 4/8px padding. Density
    is *more content legibly*, never *the same content, closer together*.
 
@@ -258,7 +258,7 @@ cancel lifecycle is a route, not a popup. A popup is right only when:
 |---|---|---|---|
 | `sm` | 400px | content, ≤85dvh | confirmations (the `AlertDialog` default), one field |
 | `md` | 560px | content, ≤85dvh | forms (the `Dialog` default) |
-| `lg` | 800px | fixed 85dvh | lists, pickers, imports — fixed so tabs and loading do not resize it |
+| `lg` | 800px | content, ≤85dvh | lists, pickers, imports — a loading body reserves `min-h-[50dvh]` so the frame does not jump |
 | Sheet `default` / `narrow` | 420px / 320px | full height | context / navigation rails and inspectors |
 
 - Compose `DialogHeader` → `DialogBody` → `DialogFooter`. The content has no

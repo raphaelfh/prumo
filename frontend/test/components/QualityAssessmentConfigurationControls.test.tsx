@@ -39,8 +39,13 @@ vi.mock('@/services/hitlConfigService', () => ({
 // The two borrowed controls are rendered as identifiable stubs: this file is
 // about the wiring, and their own behaviour is covered by their own suites.
 vi.mock('@/components/extraction/TemplateInstructionControl', () => ({
-  TemplateInstructionControl: ({templateId}: {templateId: string}) => (
-    <div data-testid={`instruction-${templateId}`} />
+  TemplateInstructionControl: ({templateId, expanded, onActivate}: {templateId: string; expanded?: boolean; onActivate: () => void}) => (
+    <button data-testid={`instruction-${templateId}`} aria-expanded={expanded} onClick={onActivate} />
+  ),
+}));
+vi.mock('@/components/extraction/TemplateInstructionPane', () => ({
+  TemplateInstructionPane: ({templateId, draft, onDraftChange}: {templateId: string; draft: string | null; onDraftChange: (d: string | null) => void}) => (
+    <input data-testid={`pane-${templateId}`} value={draft ?? ''} onChange={(e) => onDraftChange(e.target.value)} />
   ),
 }));
 vi.mock(
@@ -148,6 +153,31 @@ describe('QA Configuration per-tool controls', () => {
       'data-open',
       'false',
     );
+  });
+
+  it('expands one instruction editor inline and keeps its draft across a collapse', async () => {
+    const user = userEvent.setup();
+    mockTemplates(
+      [
+        {id: 'clone-probast', global_template_id: 'g-probast', is_active: true},
+        {id: 'clone-quadas', global_template_id: 'g-quadas', is_active: true},
+      ],
+      ['g-probast', 'g-quadas'],
+    );
+    render(<QualityAssessmentConfiguration projectId={PROJECT_ID} />);
+
+    expect(screen.queryByTestId('pane-clone-probast')).toBeNull();
+    await user.click(screen.getByTestId('instruction-clone-probast'));
+    expect(screen.getByTestId('instruction-clone-probast')).toHaveAttribute('aria-expanded', 'true');
+    await user.type(screen.getByTestId('pane-clone-probast'), 'draft');
+
+    // Opening another tool's editor closes this one — one expander at a time.
+    await user.click(screen.getByTestId('instruction-clone-quadas'));
+    expect(screen.queryByTestId('pane-clone-probast')).toBeNull();
+    expect(screen.getByTestId('pane-clone-quadas')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('instruction-clone-probast'));
+    expect(screen.getByTestId('pane-clone-probast')).toHaveValue('draft');
   });
 
   it('mounts no import/export affordance', () => {

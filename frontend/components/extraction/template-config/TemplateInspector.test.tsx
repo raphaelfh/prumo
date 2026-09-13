@@ -20,6 +20,14 @@ vi.mock('@/services/templateService', () => ({
 vi.mock('@/services/extractionFieldService', () => ({
   updateField: vi.fn(),
 }));
+// Same reason again: with nothing selected the inspector renders the template
+// pane, whose instruction editor reads through templateInstructionService.
+// No test here renders that state (TemplateInspectorTemplatePane.test.tsx
+// does), but the import alone builds the client.
+vi.mock('@/services/templateInstructionService', () => ({
+  getTemplateInstruction: vi.fn(),
+  updateTemplateInstruction: vi.fn(),
+}));
 
 import {toast} from 'sonner';
 
@@ -135,6 +143,7 @@ function renderInspector(
     sections: moveTargets,
     onMoveField: vi.fn(),
     moveDisabled: false,
+    instruction: {draft: null, onDraftChange: vi.fn()},
     ...over,
   };
   const view = render(<TemplateInspector {...props} />);
@@ -191,6 +200,7 @@ function renderSection(
     sections: moveTargets,
     onMoveField: vi.fn(),
     moveDisabled: false,
+    instruction: {draft: null, onDraftChange: vi.fn()},
     ...over,
   };
   const view = render(

@@ -348,7 +348,7 @@ reference. Match the chrome dimensions in any new viewer.
 `components/ui/overlay-frame.ts`. Centring is `inset-0 m-auto`, never
 `translate-*`: in Tailwind v4 `translate` is its own CSS property, and the
 animate plugin's keyframe `transform` would compose with it and make the frame
-jump. `sm`/`md` use `h-fit` + `max-h-[85dvh]`; `lg` a fixed `h-[85dvh]`. Width
+jump. `sm`, `md` and `lg` all use `h-fit` + `max-h-[85dvh]`; a loading body reserves its own min height. Width
 and height live only in the cva variants, which is why a className on the
 content is gated.
 

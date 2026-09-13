@@ -12,16 +12,6 @@ export const aiContext = {
     sectionTitle: 'Review question',
     sectionDesc:
         'What this review is asking. Sent to the AI with every extraction and quality assessment.',
-    editAction: 'Edit review question',
-    dialogTitle: 'Review question',
-    dialogDesc:
-        'Each part is optional. Anything left blank is omitted rather than sent as an empty field.',
-    // The tabbed variant, when the dialog also carries a template's
-    // general AI instruction.
-    configDialogTitle: 'AI configuration',
-    configDialogDesc: 'The context and instructions the AI receives on this project.',
-    picotsScopeHint:
-        'Project-wide — sent with every AI call from the next run. Blank parts are omitted.',
     save: 'Save',
     cancel: 'Cancel',
     saving: 'Saving…',
@@ -32,7 +22,6 @@ export const aiContext = {
     // The switch
     enabledLabel: 'Send to the AI',
     enabledHint: 'Turn off to withhold the review question from AI calls without deleting it.',
-    disabledNotice: 'Not being sent to the AI.',
 
     // Preview
     previewTitle: 'What the AI is sent',
@@ -40,8 +29,6 @@ export const aiContext = {
     previewHint: 'Rendered by the server — this is the exact text prefixed to every AI call.',
 
     // Empty / summary states
-    summaryEmpty: 'Not set. The AI is given no review question for this project.',
-    filledCountFormat: '{{filled}} of {{total}} parts filled',
     managerOnly: 'Only project managers can change the review question.',
 
     // Timing needs a hint the label alone cannot carry.

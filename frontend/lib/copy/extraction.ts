@@ -491,7 +491,6 @@ export const extraction = {
     matchHintAiInstruction: 'in AI instruction',
     matchHintOptions: 'in options',
     // Template config inspector (B-1 shell; field form editable in place)
-    inspectorEmptyTitle: 'Nothing selected',
     inspectorEmptyHint: 'Select a field or a section to see its details.',
     inspectorSectionLabel: 'Section',
     inspectorKeyLabel: 'Key',
@@ -540,8 +539,6 @@ export const extraction = {
     errors_saveInstruction: 'Could not save the general AI instruction',
     instructionScopeHint:
       'Saved to this template draft — reaches reviewers when the template is published.',
-    // Short form for the dialog's tab strip, which must fit a phone.
-    instructionTabLabel: 'Instruction',
     instructionCustomizeWarning:
       '{{n}} unfilled [customize:] slot(s) — the AI receives the placeholder text as written.',
     // QualityAssessmentInterface / dashboard

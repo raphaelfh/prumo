@@ -1,38 +1,13 @@
 /**
- * Review details section — the review's prose fields, plus a read-only summary
- * of the AI review question (PICOTS).
- *
- * PICOTS is NOT edited here any more. It moved to `PicotsPane` (opened via
- * `AiConfigDialog`), which writes through a manager-gated typed PUT. Two
- * reasons, both defects rather than tidiness:
- *
- *   - This section fed `ProjectSettings`' batched draft, and `saveProjectSettings`
- *     PATCHes every column in that draft on save. A client holding a stale
- *     snapshot could therefore write its copy of `picots_config_ai_review` back
- *     over a newer value — including the one migration 0063 had just flattened.
- *   - That save issues `.update()` with no `.select()`, so an RLS-filtered write
- *     matches zero rows and returns NO error. A reviewer editing PICOTS here got
- *     a success toast and lost the edit on reload.
- *
- * The dotted-path helpers that used to live here went with it. They were also
- * quietly lossy: the array handlers looked up `picots['timing.prediction_moment']`,
- * a key that never existed, so every criterion added to a Timing slot replaced
- * the list instead of appending to it.
+ * Review details section — the review's prose fields (title, condition,
+ * context, rationale, search strategy). The AI review question (PICOTS) is its
+ * own section, `ReviewQuestionSection`, written through a manager-gated typed
+ * PUT rather than this section's batched PostgREST draft.
  */
 
-import {useState} from 'react';
 import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
-import {Button} from '@/components/ui/button';
 import {SettingsSection, SettingsField, SettingsCard} from '@/components/settings';
-import {AiConfigDialog} from '../AiConfigDialog';
-import {useAiContext} from '@/hooks/project/useAiContext';
-import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
 import type {Project} from '@/types/project';
 import {t} from '@/lib/copy';
 
@@ -46,32 +21,12 @@ type ProjectShape = Pick<
     | 'review_type'
 >;
 
-/** Mirrors the backend's ``_SLOT_KEYS`` — the count is of the same six slots. */
-const SLOT_KEYS = [
-    'population',
-    'index_models',
-    'comparator_models',
-    'outcomes',
-    'timing',
-    'setting_and_intended_use',
-] as const;
-
 interface ReviewDetailsSectionProps {
-    projectId: string;
     project: ProjectShape;
     onChange: (updates: Partial<ProjectShape>) => void;
 }
 
-export function ReviewDetailsSection({ projectId, project, onChange }: ReviewDetailsSectionProps) {
-    const [picotsOpen, setPicotsOpen] = useState(false);
-    const {data: aiContext} = useAiContext(projectId);
-    const {isManager} = useProjectMemberRole(projectId);
-    const filled = SLOT_KEYS.filter(
-        (key) => (aiContext?.picots as Record<string, {description?: string}> | undefined)?.[key]
-            ?.description,
-    ).length;
-
-
+export function ReviewDetailsSection({ project, onChange }: ReviewDetailsSectionProps) {
   return (
       <SettingsSection
           title={t('project', 'reviewSectionTitle')}
@@ -158,56 +113,6 @@ export function ReviewDetailsSection({ projectId, project, onChange }: ReviewDet
           />
               </SettingsField>
           </SettingsCard>
-
-      <SettingsCard
-          title={t('aiContext', 'sectionTitle')}
-          description={t('aiContext', 'sectionDesc')}
-      >
-          <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                  {aiContext?.preview ? (
-                      <pre className="max-h-40 overflow-auto text-xs whitespace-pre-wrap text-muted-foreground">
-                          {aiContext.preview}
-                      </pre>
-                  ) : (
-                      <p className="text-[13px] text-muted-foreground">
-                          {t('aiContext', 'summaryEmpty')}
-                      </p>
-                  )}
-                  <p className="mt-2 text-xs text-muted-foreground">
-                      {t('aiContext', 'filledCountFormat')
-                          .replace('{{filled}}', String(filled))
-                          .replace('{{total}}', String(SLOT_KEYS.length))}
-                      {aiContext && aiContext.picots_enabled === false
-                          ? ` — ${t('aiContext', 'disabledNotice')}`
-                          : ''}
-                  </p>
-              </div>
-                  <Tooltip>
-                      <TooltipTrigger asChild>
-                          <span tabIndex={isManager ? -1 : 0}>
-                              <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={!isManager}
-                                  onClick={() => setPicotsOpen(true)}
-                              >
-                                  {t('aiContext', 'editAction')}
-                              </Button>
-                          </span>
-                      </TooltipTrigger>
-                      {!isManager && (
-                          <TooltipContent>{t('aiContext', 'managerOnly')}</TooltipContent>
-                      )}
-                  </Tooltip>
-          </div>
-      </SettingsCard>
-
-      <AiConfigDialog
-          projectId={projectId}
-          open={picotsOpen}
-          onOpenChange={setPicotsOpen}
-      />
       </SettingsSection>
   );
 }

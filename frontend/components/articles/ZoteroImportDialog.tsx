@@ -237,7 +237,7 @@ export function ZoteroImportDialog({
           {currentStep === 'select-collection' && (
             <div className="space-y-4">
               {loadingCollections ? (
-                <div className="flex items-center justify-center py-12">
+                <div className="flex min-h-[50dvh] items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : collections.length === 0 ? (
