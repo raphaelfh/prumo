@@ -401,6 +401,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const renderConfigurationBody = () => {
     return activeTemplate ? (
           <TemplateConfigEditor
+            // The key remounts the editor per template: the instruction draft,
+            // selection and undo history must never carry across a switch.
+            key={activeTemplate.id}
             projectId={projectId}
             templateId={activeTemplate.id}
             onActiveTemplateChanged={handleActiveTemplateChanged}
