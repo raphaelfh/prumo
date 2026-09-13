@@ -1118,8 +1118,7 @@ export function ArticlesList({
 
     return (
         <div className="flex h-full min-h-0 flex-col gap-2">
-            <div className="space-y-3 shrink-0">
-                <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 shrink-0">
                     <div className="flex flex-wrap items-center gap-2 w-full">
                         <ListToolbarSearch
                             ref={searchInputRef}
@@ -1204,33 +1203,32 @@ export function ArticlesList({
                             className="bg-foreground text-background hover:bg-foreground/90 hover:text-background"
                         />
                         </>
+                        <div className="flex items-center gap-2 shrink-0 ml-auto">
+                            {selectedArticles.size === 0 ? (
+                                <ListCount
+                                    visible={filteredArticles.length}
+                                    total={articles.length}
+                                    label={articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
+                                />
+                            ) : (
+                                <div className="flex items-center gap-2 animate-in fade-in duration-200">
+                                    <span className="text-[11px] font-medium text-foreground tabular-nums">
+                                        {t('articles', 'listSelectedCount').replace('{{n}}', String(selectedArticles.size))}
+                                    </span>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => setBulkDeleteDialogOpen(true)}
+                                        disabled={deleting}
+                                        className="h-6 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    >
+                                        <Trash2 className="mr-1 h-3 w-3"/>
+                                        {t('articles', 'listDelete')}
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0 ml-auto">
-                        {selectedArticles.size === 0 ? (
-                            <ListCount
-                                visible={filteredArticles.length}
-                                total={articles.length}
-                                label={articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
-                            />
-                        ) : (
-                            <div className="flex items-center gap-2 animate-in fade-in duration-200">
-                                <span className="text-[11px] font-medium text-foreground tabular-nums">
-                                    {t('articles', 'listSelectedCount').replace('{{n}}', String(selectedArticles.size))}
-                                </span>
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => setBulkDeleteDialogOpen(true)}
-                                    disabled={deleting}
-                                    className="h-6 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
-                                >
-                                    <Trash2 className="mr-1 h-3 w-3"/>
-                                    {t('articles', 'listDelete')}
-                                </Button>
-                            </div>
-                        )}
-                    </div>
-                </div>
                 <ActiveFilterChips
                     filters={activeFiltersList}
                     onClearField={clearFilterField}

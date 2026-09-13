@@ -865,7 +865,9 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
               </TableHead>
                           <TableHead
                               className={`relative ${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}>
-                              {t('extraction', 'tableActions')}
+                              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                                  {t('extraction', 'tableActions')}
+                              </span>
                               <ColumnResizeHandle label={t('extraction', 'tableActions')} {...getHandleProps('actions')} />
                           </TableHead>
             </TableRow>
@@ -891,7 +893,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                 }
                             }}
                             aria-label={t('extraction', 'tableOpenRowAria').replace('{{title}}', article.title)}
-                            className="border-b border-border/40 hover:bg-muted/40 transition-colors duration-75 group h-10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+                            className="border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
                       {/* stopPropagation: toggling the checkbox must not open the row */}
                       <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`} onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -900,7 +902,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                       aria-label={t('extraction', 'tableSelectArticleAria').replace('{{title}}', article.title)}
                     />
                   </TableCell>
-                      <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[12px]`} style={getColumnStyle('title')}>
+                      <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`} style={getColumnStyle('title')}>
                           <div className="line-clamp-1 leading-tight text-foreground font-medium">{article.title}</div>
                   </TableCell>
                       <TableCell
