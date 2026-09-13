@@ -610,6 +610,10 @@ export function TemplateConfigGridPanel({
   };
 
   return (
+    // Panel-scoped shortcuts delegated from focused descendants (grid cells,
+    // inspector fields). The card itself is never a click or focus target, so
+    // it needs no role — giving it one would invent a widget that isn't there.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       // @container/grid is declared HERE, not on the row below: the toolbar's
       // rail toggle has to query the same width the rail's own

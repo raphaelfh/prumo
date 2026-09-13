@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import globals from "globals";
+import jsxA11y from "eslint-plugin-jsx-a11y";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
@@ -27,6 +28,7 @@ export default tseslint.config(
       },
     },
     plugins: {
+      "jsx-a11y": jsxA11y,
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh,
     },
@@ -45,6 +47,13 @@ export default tseslint.config(
         caughtErrorsIgnorePattern: "^_"
       }],
       "prefer-const": "error",
+        // A role-less onClick target is both a keyboard-access bug and a
+        // cursor regression: the base-layer cursor rule in frontend/index.css
+        // gives it the text I-beam, and check_ui_primitives.py bans the
+        // cursor-pointer class that used to paper over it. Use a native
+        // <button type="button">, or a stretched overlay control.
+        "jsx-a11y/click-events-have-key-events": "error",
+        "jsx-a11y/no-static-element-interactions": "error",
         "no-console": ["warn", {allow: ["warn", "error", "time", "timeEnd", "group", "groupEnd"]}],
         // react-router-dom was removed in React Router v8 (#562 /
         // GHSA-qwww-vcr4-c8h2). Uninstalling it already breaks a stale import

@@ -95,6 +95,7 @@
     "@vitest/ui": "^4.1.2",
     "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^10.8.1",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.4",
     "globals": "^17.11.0",
@@ -111,6 +112,9 @@
     "vitest": "^4.1.2"
   },
   "overrides": {
-    "rimraf": "^5.0.5"
+    "rimraf": "^5.0.5",
+    "eslint-plugin-jsx-a11y": {
+      "eslint": "$eslint"
+    }
   }
 }

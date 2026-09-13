@@ -797,8 +797,13 @@ export function ArticlesList({
                                                  style={getColumnStyle('pdf')}>
                                           <div className="flex items-center gap-1 min-w-0">
                                           {articlesWithMainFile.has(article.id) ? (
-                                              <div
-                                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight cursor-pointer hover:bg-success/20 transition-colors"
+                                              <TooltipProvider>
+                                              <Tooltip>
+                                              <TooltipTrigger asChild>
+                                              <button
+                                                  type="button"
+                                                  aria-label={t('articles', 'listOpenPdf')}
+                                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight cursor-pointer hover:bg-success/20 transition-colors focus-visible:outline-2 focus-visible:outline-ring"
                                                   onClick={async (e) => {
                                                       e.stopPropagation();
                                                       const result = await fetchArticlePdfSignedUrl(article.id);
@@ -814,7 +819,11 @@ export function ArticlesList({
                                                   }}
                                               >
                                                   PDF
-                                              </div>
+                                              </button>
+                                              </TooltipTrigger>
+                                              <TooltipContent>{t('articles', 'listOpenPdf')}</TooltipContent>
+                                              </Tooltip>
+                                              </TooltipProvider>
                                           ) : (
                                               <Button
                                                   size="sm"

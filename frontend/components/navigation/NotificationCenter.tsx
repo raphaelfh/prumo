@@ -15,6 +15,7 @@ import {Badge} from '@/components/ui/badge';
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
@@ -310,11 +311,20 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
     <div
       className={cn(
         'group relative p-3 rounded-lg border transition-colors',
-        isClickable && 'cursor-pointer hover:bg-accent',
-        !isClickable && 'bg-background'
+        isClickable ? 'has-[[role=menuitem]:hover]:bg-accent' : 'bg-background'
       )}
-      onClick={() => isClickable && onClick(job)}
     >
+      {isClickable && (
+        // Stretched control instead of an onClick on the card: the card nests
+        // the remove button, and interactive elements must not nest. It is a
+        // menuitem, not a <button>, because Radix menus swallow Tab — arrow
+        // keys reach only menuitems.
+        <DropdownMenuItem
+          aria-label={getJobTitle(job)}
+          onSelect={() => onClick(job)}
+          className="absolute inset-0 cursor-pointer rounded-lg p-0 focus:bg-transparent data-[highlighted]:bg-transparent focus-visible:outline-2 focus-visible:outline-ring"
+        />
+      )}
       <div className="flex items-start gap-3">
           {/* Icon */}
         <div className="shrink-0 mt-0.5">
@@ -331,7 +341,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              className="relative z-10 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
               onClick={(e) => onRemove(job.id, e)}
             >
               <X className="h-3 w-3" />
