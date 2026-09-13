@@ -37,6 +37,25 @@ async def test_member_and_outsider_are_403(
 
 
 @pytest.mark.asyncio
+async def test_reviewer_is_403_on_every_write_verb(
+    client_as_manager: AsyncClient, db_session: AsyncSession
+) -> None:
+    """A manager-created row exists; the reviewer client (built INSIDE the
+    test, same reasoning as ``test_member_and_outsider_are_403``) is
+    refused on PUT/DELETE/verify. Reads/403s only — never a write past
+    this guard, so no handler rollback is exercised here."""
+    created = await client_as_manager.post(
+        _base(), json={"provider": "openai", "label": "shared", "api_key": "sk-shared"}
+    )
+    assert created.status_code == 201, created.text
+    row_id = created.json()["data"]["id"]
+    reviewer = engine_setup.client_as(str(SEED.reviewer_profile), db_session)
+    assert (await reviewer.put(f"{_base()}/{row_id}", json={"label": "x"})).status_code == 403
+    assert (await reviewer.post(f"{_base()}/{row_id}/verify")).status_code == 403
+    assert (await reviewer.delete(f"{_base()}/{row_id}")).status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_manager_crud_and_llama_cloud_is_offered(client_as_manager: AsyncClient) -> None:
     created = await client_as_manager.post(
         _base(), json={"provider": "llama_cloud", "label": "parsing", "api_key": "lc-shared"}
