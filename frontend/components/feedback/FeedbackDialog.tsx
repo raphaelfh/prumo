@@ -6,7 +6,7 @@ import { useEffect, useId, useState } from 'react';
 import { MessageSquare, Paperclip, X } from 'lucide-react';
 
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -114,8 +114,8 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(o) : resetAndClose())}>
-      <DialogContent className="sm:max-w-[525px]">
-        <form onSubmit={handleSubmit}>
+      <DialogContent size="md">
+        <form onSubmit={handleSubmit} className="contents">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
@@ -124,7 +124,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
             <DialogDescription>{t('navigation', 'feedbackDescription')}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4">
             <div className="space-y-2">
               <Label>{t('navigation', 'feedbackTypeLabel')}</Label>
               <RadioGroup value={type} onValueChange={(v) => setType(v as FeedbackType)}>
@@ -234,7 +234,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
                 {attachmentError ?? t('navigation', 'feedbackAttachNotice')}
               </p>
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button size="sm" type="button" variant="outline" onClick={resetAndClose} disabled={busy}>

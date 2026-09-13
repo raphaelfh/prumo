@@ -3,7 +3,7 @@
  */
 
 import {useEffect, useState} from 'react';
-import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,} from '@/components/ui/dialog';
+import {Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,} from '@/components/ui/dialog';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -221,8 +221,8 @@ export function ZoteroImportDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
-        <DialogHeader className="shrink-0">
+        <DialogContent size="lg">
+        <DialogHeader>
             <DialogTitle>{t('articles', 'zoteroTitle')}</DialogTitle>
           <DialogDescription>
               {currentStep === 'select-collection' && t('articles', 'zoteroSelectCollection')}
@@ -231,9 +231,7 @@ export function ZoteroImportDialog({
           </DialogDescription>
         </DialogHeader>
 
-            {/* Scrollable content area */}
-        <ScrollArea className="flex-1 -mx-6 px-6">
-          <div className="space-y-4 py-2">
+        <DialogBody className="space-y-4">
           {/* Step 1: Selecionar Collection */}
           {currentStep === 'select-collection' && (
             <div className="space-y-4">
@@ -475,14 +473,12 @@ export function ZoteroImportDialog({
               )}
             </div>
           )}
-          </div>
-        </ScrollArea>
+        </DialogBody>
 
-            {/* Footer with buttons */}
-        <div className="flex justify-between pt-4 border-t shrink-0">
+        <DialogFooter className="sm:justify-between">
           <div>
             {currentStep === 'configure-options' && (
-              <Button variant="outline" onClick={handleBack} disabled={importing}>
+              <Button variant="outline" size="sm" onClick={handleBack} disabled={importing}>
                 <ChevronLeft className="mr-2 h-4 w-4" />
                   {t('articles', 'zoteroBack')}
               </Button>
@@ -490,7 +486,7 @@ export function ZoteroImportDialog({
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleClose}>
+            <Button variant="outline" size="sm" onClick={handleClose}>
               {importing ? (
                 <>
                   <Minimize2 className="mr-2 h-4 w-4" />
@@ -502,14 +498,14 @@ export function ZoteroImportDialog({
             </Button>
 
             {currentStep === 'select-collection' && (
-              <Button onClick={handleNext} disabled={!canProceed}>
+              <Button size="sm" onClick={handleNext} disabled={!canProceed}>
                   {t('articles', 'zoteroNext')}
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Button>
             )}
 
             {currentStep === 'configure-options' && (
-              <Button onClick={handleStartImport} disabled={importing}>
+              <Button size="sm" onClick={handleStartImport} disabled={importing}>
                 {importing ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -524,7 +520,7 @@ export function ZoteroImportDialog({
               </Button>
             )}
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
 

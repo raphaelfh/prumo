@@ -27,6 +27,7 @@ import {Checkbox} from '@/components/ui/checkbox';
 import {IconButton} from '@/components/patterns/IconButton';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -136,10 +137,7 @@ export function LlmEngineSettingsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto"
-          data-testid="llm-engine-settings-dialog"
-        >
+        <DialogContent size="md" data-testid="llm-engine-settings-dialog">
           <DialogHeader>
             <DialogTitle>{t('llmEngine', 'settingsTitle')}</DialogTitle>
             <DialogDescription>
@@ -147,7 +145,7 @@ export function LlmEngineSettingsDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <>
+          <DialogBody className="space-y-4">
             <section className="space-y-2">
               <h3 className="text-[13px] font-medium text-foreground">
                 {t('llmEngine', 'modeSectionLabel')}
@@ -316,7 +314,7 @@ export function LlmEngineSettingsDialog({
                 {t('llmEngine', 'manageEndpoints')}
               </Button>
             </section>
-          </>
+          </DialogBody>
         </DialogContent>
       </Dialog>
 

@@ -16,6 +16,7 @@ import {useState} from 'react';
 import {Check, ChevronDown, ChevronRight, Copy} from 'lucide-react';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -252,8 +253,8 @@ export function GenerationDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85dvh] w-[min(36rem,calc(100vw-2rem))] flex-col gap-0 p-0">
-        <DialogHeader className="shrink-0 space-y-1 border-b px-5 py-4 text-left">
+      <DialogContent size="md">
+        <DialogHeader>
           <DialogTitle className="text-sm font-semibold">
             {t('extraction', 'provenanceToggle')}
           </DialogTitle>
@@ -264,7 +265,7 @@ export function GenerationDetailsDialog({
           )}
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        <DialogBody className="space-y-5">
           {/* Run parameters */}
           <section className="space-y-2">
             <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -387,7 +388,7 @@ export function GenerationDetailsDialog({
               ))}
             </section>
           )}
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

@@ -46,6 +46,7 @@ import {Checkbox} from '@/components/ui/checkbox';
 import {IconButton} from '@/components/patterns/IconButton';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -308,15 +309,15 @@ export function LlmEndpointsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-xl">
-        <>
-          <DialogHeader>
-            <DialogTitle>{t('llmEngine', 'endpointsTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('llmEngine', 'endpointsDesc')}
-            </DialogDescription>
-          </DialogHeader>
+      <DialogContent size="md">
+        <DialogHeader>
+          <DialogTitle>{t('llmEngine', 'endpointsTitle')}</DialogTitle>
+          <DialogDescription>
+            {t('llmEngine', 'endpointsDesc')}
+          </DialogDescription>
+        </DialogHeader>
 
+        <DialogBody className="space-y-3">
           {deleteError && (
             <p
               role="alert"
@@ -666,7 +667,7 @@ export function LlmEndpointsDialog({
               </form>
             </Form>
           )}
-        </>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

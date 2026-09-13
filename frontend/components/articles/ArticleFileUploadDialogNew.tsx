@@ -13,6 +13,7 @@
 import {useEffect, useState} from "react";
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -407,15 +408,15 @@ export function ArticleFileUploadDialogNew({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[95vw] sm:max-w-2xl md:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col p-0 sm:p-0 gap-0">
-        <DialogHeader className="px-4 sm:px-6 pt-6 pb-4">
+      <DialogContent size="lg">
+        <DialogHeader>
             <DialogTitle>{t('articles', 'addFilesToArticle')}</DialogTitle>
           <DialogDescription>
               {t('articles', 'uploadDragOrClickDesc')}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6">
+        <DialogBody>
           {!isUploading ? (
             <>
               {/* Notice: this article already has a MAIN file */}
@@ -636,9 +637,9 @@ export function ArticleFileUploadDialogNew({
               </CardContent>
             </Card>
           )}
-        </div>
+        </DialogBody>
 
-        <DialogFooter className="flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-0 px-4 sm:px-6 pt-4 pb-6 border-t">
+        <DialogFooter className="items-stretch sm:items-center sm:justify-between">
           {!isUploading ? (
             <>
               <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">

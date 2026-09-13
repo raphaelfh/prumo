@@ -2,7 +2,7 @@ import { HelpCircle } from 'lucide-react';
 import { IconButton } from '@/components/patterns/IconButton';
 import { KbdBadge } from '@/components/ui/kbd-badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { t } from '@/lib/copy';
 import { RUN_SHORTCUTS } from '@/lib/runs/shortcuts';
 import { useRunHeader } from './RunHeaderContext';
@@ -74,11 +74,13 @@ export function Help() {
 export function HelpDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm text-[13px]">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>{t('runs', 'helpTitle')}</DialogTitle>
         </DialogHeader>
-        <HelpContent />
+        <DialogBody className="space-y-2 text-[13px]">
+          <HelpContent />
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

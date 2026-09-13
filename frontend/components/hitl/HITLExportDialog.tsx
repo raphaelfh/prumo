@@ -20,6 +20,7 @@
 import {useEffect, useRef, useState} from "react";
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -378,7 +379,7 @@ export function HITLExportDialog({
 
     return (
         <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(o) : dismiss())}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent size="md">
                 <DialogHeader>
                     <DialogTitle>{t("extraction", "exportDialogTitle")}</DialogTitle>
                     <DialogDescription>
@@ -386,7 +387,7 @@ export function HITLExportDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-6 py-2">
+                <DialogBody className="grid gap-6">
                     {/* 1. Source of values */}
                     <div className="space-y-3">
                         <Label>{t("extraction", "exportSourceLabel")}</Label>
@@ -661,7 +662,7 @@ export function HITLExportDialog({
                             )}
                         </Alert>
                     )}
-                </div>
+                </DialogBody>
 
                 <DialogFooter>
                     <Button

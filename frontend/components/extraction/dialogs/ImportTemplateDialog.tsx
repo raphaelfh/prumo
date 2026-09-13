@@ -13,6 +13,7 @@
 import {useState} from 'react';
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -121,10 +122,7 @@ export function ImportTemplateDialog({
           (a two-row list vs. the whole catalogue), and letting the dialog
           size to its content made it jump on every tab switch. The shell
           stays put and the active pane scrolls inside it. */}
-      <DialogContent
-        className="flex h-[560px] max-h-[85vh] flex-col gap-3 overflow-hidden sm:max-w-[620px]"
-        data-testid="import-template-dialog"
-      >
+      <DialogContent size="lg" data-testid="import-template-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Import className="h-5 w-5" />
@@ -135,6 +133,7 @@ export function ImportTemplateDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <DialogBody className="flex flex-col overflow-hidden">
         <Tabs defaultValue="catalogue" className="flex min-h-0 w-full flex-1 flex-col">
           <TabsList className="shrink-0 self-start">
             <TabsTrigger value="catalogue" data-testid="import-template-tab-catalogue">
@@ -265,8 +264,9 @@ export function ImportTemplateDialog({
             <ProjectTemplatesList projectId={projectId} onSwitched={closeWith} />
           </TabsContent>
         </Tabs>
+        </DialogBody>
 
-        <DialogFooter className="shrink-0">
+        <DialogFooter>
           <Button
             size="sm"
             type="button"

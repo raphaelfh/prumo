@@ -8,6 +8,7 @@
 import {useState} from "react";
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -129,12 +130,12 @@ export function ArticlesExportDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent size="md">
                 <DialogHeader>
                     <DialogTitle>{t("articles", "exportTitle")}</DialogTitle>
                     <DialogDescription>{t("articles", "exportDesc")}</DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-6 py-2">
+                <DialogBody className="grid gap-6">
                     <div className="space-y-3">
                         <Label>{t("articles", "exportFormats")}</Label>
                         <div className="flex flex-wrap gap-4">
@@ -211,7 +212,7 @@ export function ArticlesExportDialog({
                             </p>
                         )}
                     </div>
-                </div>
+                </DialogBody>
                 <DialogFooter>
                     <Button
                       size="sm"
