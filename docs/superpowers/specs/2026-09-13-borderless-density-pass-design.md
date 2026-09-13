@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 last_reviewed: 2026-09-13
 owner: '@raphaelfh'
 ---
@@ -13,9 +13,9 @@ Sub-project 3 of 3 in the "less friction, fewer elements" train.
 
 This spec removes the frames, redundant text and bordered controls that remain on the settings pages and the article edit panel.
 
-Design decisions were made with the user in brainstorming on 2026-09-13 (sections 1–3 approved). The written document then went through a self-review and a four-lens adversarial review against the tree; the user settled the decisions that review reopened (marked *written review* in §3). Status is `draft` until the user approves this document.
+Design decisions were made with the user in brainstorming on 2026-09-13 (sections 1–3 approved). The written document then went through a self-review and a four-lens adversarial review against the tree; the user settled the decisions that review reopened (marked *written review* in §3) and approved this document on 2026-09-13.
 
-File references are to `claude/config-as-views` (PR #896) at `538aafb7`, which this work builds on.
+File references were verified on PR #896's head `538aafb7`; #896 merged to `dev` as `b95a5e10` on 2026-09-13, and the implementation builds on `dev`.
 
 ## 1. Problem
 
