@@ -16,7 +16,7 @@ describe('DialogContent frame', () => {
     [undefined, 'sm:max-w-[560px]', 'sm:max-h-[85dvh]'],
     ['sm', 'sm:max-w-[400px]', 'sm:max-h-[85dvh]'],
     ['md', 'sm:max-w-[560px]', 'sm:max-h-[85dvh]'],
-    ['lg', 'sm:max-w-[800px]', 'sm:h-[85dvh]'],
+    ['lg', 'sm:max-w-[800px]', 'sm:max-h-[85dvh]'],
   ] as const)('size=%s is %s wide and %s tall', (size, width, height) => {
     const dialog = open(
       <DialogContent size={size}>
@@ -24,7 +24,9 @@ describe('DialogContent frame', () => {
         <DialogDescription>D</DialogDescription>
       </DialogContent>,
     );
-    expect(classesOf(dialog)).toEqual(expect.arrayContaining([width, height]));
+    expect(classesOf(dialog)).toEqual(expect.arrayContaining([width, height, 'sm:h-fit']));
+    // No size is a fixed height: short content must not leave dead space.
+    expect(classesOf(dialog)).not.toContain('sm:h-[85dvh]');
   });
 
   it('is a bottom sheet below sm and honours reduced motion', () => {

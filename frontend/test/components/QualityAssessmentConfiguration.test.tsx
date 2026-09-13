@@ -31,12 +31,15 @@ vi.mock("@/services/hitlConfigService", () => ({
   setManagerReviewVisibility: vi.fn().mockResolvedValue(undefined),
 }));
 
-// The per-tool instruction + publish controls reach the supabase client at
-// IMPORT time, so they must be stubbed even though this file renders an
-// empty template list and never mounts them. Their wiring is covered in
-// QualityAssessmentConfigurationControls.test.tsx.
+// The per-tool instruction trigger, its inline editor pane and the publish
+// controls reach the supabase client at IMPORT time, so they must be stubbed
+// even though this file renders an empty template list and never mounts them.
+// Their wiring is covered in QualityAssessmentConfigurationControls.test.tsx.
 vi.mock("@/components/extraction/TemplateInstructionControl", () => ({
   TemplateInstructionControl: () => null,
+}));
+vi.mock("@/components/extraction/TemplateInstructionPane", () => ({
+  TemplateInstructionPane: () => null,
 }));
 vi.mock(
   "@/components/extraction/template-config/TemplateConfigPublishControls",

@@ -3,6 +3,7 @@
  * the viewer owns — hosted keys and custom hosts — in one list, with one
  * Add form: provider (user-scope providers only), docs link, key, host
  * (only when the provider needs one). Replaces the API keys section.
+ * Renders one SettingsGroup as its root (borderless density pass § 4.3).
  */
 import {useState} from 'react';
 import {ExternalLink, Loader2, Plus, RefreshCw, Trash2} from 'lucide-react';
@@ -23,9 +24,9 @@ import {IconButton} from '@/components/patterns/IconButton';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
-import {Label} from '@/components/ui/label';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Skeleton} from '@/components/ui/skeleton';
+import {SettingsActions, SettingsGroup, SettingsRow} from '@/components/settings';
 import {
   useCreateMyConnection,
   useDeleteMyConnection,
@@ -73,7 +74,7 @@ function ConnectionRow({row, provider}: {row: LlmConnectionRead; provider: Provi
       onError: (error) => errorToast('removeError', error),
     });
   return (
-    <li className="flex items-center gap-3 px-2 py-1.5 text-[13px]">
+    <li className="flex items-center gap-3 rounded-md px-2 py-1 text-[13px] hover:bg-muted/60">
       <span className="font-medium">{row.label}</span>
       <span className="text-muted-foreground">{provider?.label ?? row.provider}</span>
       {row.base_url && <Badge variant="outline">{t('llmConnections', 'hostTag')}</Badge>}
@@ -126,46 +127,52 @@ function AddForm({providers, onDone}: {providers: ProviderRead[]; onDone: () => 
       },
     );
   return (
-    <form className="space-y-3 rounded-md border border-border/40 p-3" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-      <div className="space-y-1.5">
-        <Label htmlFor="conn-provider" className="text-[13px] font-medium">{t('llmConnections', 'providerLabel')}</Label>
-        <Select value={provider} onValueChange={(next) => { setProvider(next); setBaseUrl(''); }}>
-          <SelectTrigger id="conn-provider" className="h-9 text-[13px]"><SelectValue placeholder={t('llmConnections', 'providerPlaceholder')} /></SelectTrigger>
-          <SelectContent>
-            {providers.map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.label} <span className="text-[12px] text-muted-foreground">({p.description})</span></SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {spec?.docs_url && (
-          <a href={spec.docs_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[12px] text-primary hover:underline">
-            {t('llmConnections', 'docsLink')}<ExternalLink className="h-3 w-3" strokeWidth={1.5} />
-          </a>
+    <form className="space-y-1" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+      <SettingsRow
+        label={t('llmConnections', 'providerLabel')}
+        htmlFor="conn-provider"
+        hint={spec?.global_key_available ? t('llmConnections', 'globalKeyNote') : undefined}
+      >
+        {({describedBy}) => (
+          <div className="space-y-1">
+            <Select value={provider} onValueChange={(next) => { setProvider(next); setBaseUrl(''); }}>
+              <SelectTrigger id="conn-provider" variant="quiet" aria-describedby={describedBy}>
+                <SelectValue placeholder={t('llmConnections', 'providerPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {providers.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.label} <span className="text-[12px] text-muted-foreground">({p.description})</span></SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {spec?.docs_url && (
+              <a href={spec.docs_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 text-[12px] text-primary hover:underline">
+                {t('llmConnections', 'docsLink')}<ExternalLink className="h-3 w-3" strokeWidth={1.5} />
+              </a>
+            )}
+          </div>
         )}
-        {spec?.global_key_available && <p className="text-[12px] text-muted-foreground">{t('llmConnections', 'globalKeyNote')}</p>}
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="conn-label" className="text-[13px] font-medium">{t('llmConnections', 'labelLabel')}</Label>
-        <Input id="conn-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('llmConnections', 'labelPlaceholder')} className="h-9 text-[13px]" maxLength={80} />
-      </div>
+      </SettingsRow>
+      <SettingsRow label={t('llmConnections', 'labelLabel')} htmlFor="conn-label">
+        <Input id="conn-label" variant="quiet" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('llmConnections', 'labelPlaceholder')} maxLength={80} />
+      </SettingsRow>
       {spec?.needs_host && (
-        <div className="space-y-1.5">
-          <Label htmlFor="conn-host" className="text-[13px] font-medium">{t('llmConnections', 'hostLabel')}</Label>
-          <Input id="conn-host" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://host/v1" className="h-9 text-[13px]" />
-          <p className="text-[12px] text-muted-foreground">{t('llmConnections', 'hostHint')}</p>
-        </div>
+        <SettingsRow label={t('llmConnections', 'hostLabel')} htmlFor="conn-host" hint={t('llmConnections', 'hostHint')}>
+          {({describedBy}) => (
+            <Input id="conn-host" variant="quiet" aria-describedby={describedBy} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://host/v1" />
+          )}
+        </SettingsRow>
       )}
-      <div className="space-y-1.5">
-        <Label htmlFor="conn-key" className="text-[13px] font-medium">{t('llmConnections', 'keyLabel')}</Label>
-        <Input id="conn-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-          placeholder={spec?.key_optional ? t('llmConnections', 'keyOptionalPlaceholder') : t('llmConnections', 'keyPlaceholder')} className="h-9 text-[13px]" />
-      </div>
-      <div className="flex items-center gap-2">
+      <SettingsRow label={t('llmConnections', 'keyLabel')} htmlFor="conn-key">
+        <Input id="conn-key" variant="quiet" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+          placeholder={spec?.key_optional ? t('llmConnections', 'keyOptionalPlaceholder') : t('llmConnections', 'keyPlaceholder')} />
+      </SettingsRow>
+      <SettingsActions>
         <Button type="submit" size="sm" disabled={create.isPending || label === '' || (!spec?.key_optional && apiKey === '') || (Boolean(spec?.needs_host) && baseUrl === '')}>
           {create.isPending ? t('llmConnections', 'saving') : t('llmConnections', 'saveButton')}
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>{t('llmConnections', 'cancelButton')}</Button>
-      </div>
+      </SettingsActions>
     </form>
   );
 }
@@ -180,15 +187,15 @@ export function AiConnectionsSection() {
   const retryBoth = () => { void connections.refetch(); void providers.refetch(); };
   const userProviders = (providers.data ?? []).filter((p) => p.scopes.includes('user'));
   const addButton = (
-    <Button size="sm" variant="outline" onClick={() => setAdding(true)} disabled={!providers.data || adding}>
+    <Button size="sm" variant="ghost" onClick={() => setAdding(true)} disabled={!providers.data || adding}>
       <Plus className="mr-1 h-4 w-4" strokeWidth={1.5} />{t('llmConnections', 'addButton')}
     </Button>
   );
   return (
-    <div className="space-y-3">
+    <SettingsGroup title={t('llmConnections', 'integrationsTitle')} hint={t('llmConnections', 'integrationsDescription')}>
       {connections.isPending && (
-        <ul className="space-y-0.5" aria-label={t('llmConnections', 'listLoading')}>
-          <li><Skeleton className="h-7 w-full" /></li><li><Skeleton className="h-7 w-full" /></li>
+        <ul className="space-y-1" aria-label={t('llmConnections', 'listLoading')}>
+          <li><Skeleton className="h-8 w-full" /></li><li><Skeleton className="h-8 w-full" /></li>
         </ul>
       )}
       {hasError && (
@@ -204,7 +211,7 @@ export function AiConnectionsSection() {
         </div>
       )}
       {!hasError && connections.data && connections.data.length > 0 && (
-        <ul className="divide-y divide-border/40">
+        <ul role="list">
           {connections.data.map((row) => (
             <ConnectionRow key={row.id} row={row} provider={providers.data?.find((p) => p.id === row.provider)} />
           ))}
@@ -215,6 +222,6 @@ export function AiConnectionsSection() {
       ) : !hasError && ((connections.data?.length ?? 0) > 0 || connections.isPending) ? (
         addButton
       ) : null}
-    </div>
+    </SettingsGroup>
   );
 }

@@ -22,6 +22,7 @@ import {ScrollArea} from '@/components/ui/scroll-area';
 import {Alert, AlertDescription} from '@/components/ui/alert';
 import {
     AlertCircle,
+    Check,
     CheckCircle2,
     ChevronLeft,
     ChevronRight,
@@ -236,7 +237,7 @@ export function ZoteroImportDialog({
           {currentStep === 'select-collection' && (
             <div className="space-y-4">
               {loadingCollections ? (
-                <div className="flex items-center justify-center py-12">
+                <div className="flex min-h-[50dvh] items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : collections.length === 0 ? (
@@ -249,24 +250,34 @@ export function ZoteroImportDialog({
               ) : (
                 <ScrollArea className="h-[400px] pr-4">
                   <div className="space-y-2">
-                    {collections.map((collection) => (
+                    {collections.map((collection) => {
+                      const isSelected = selectedCollection === collection.key;
+                      return (
                       <button
                         key={collection.key}
+                        type="button"
+                        aria-pressed={isSelected}
                         onClick={() => setSelectedCollection(collection.key)}
                         className={cn(
                           'w-full text-left p-4 rounded-lg border transition-colors',
                           'hover:bg-accent hover:border-accent-foreground/20',
-                          selectedCollection === collection.key
+                          'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
+                          isSelected
                             ? 'bg-accent border-accent-foreground/40'
                             : 'bg-background'
                         )}
                       >
                         <div className="flex items-start gap-3">
-                          <Checkbox
-                            checked={selectedCollection === collection.key}
-                            onCheckedChange={() => setSelectedCollection(collection.key)}
-                            className="mt-1"
-                          />
+                          {/* Visual check only — the row button is the one control. */}
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary',
+                              isSelected && 'bg-primary text-primary-foreground'
+                            )}
+                          >
+                            {isSelected && <Check className="h-4 w-4" />}
+                          </span>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -283,7 +294,8 @@ export function ZoteroImportDialog({
                           </div>
                         </div>
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               )}

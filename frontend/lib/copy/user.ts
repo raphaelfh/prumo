@@ -14,15 +14,10 @@ export const user = {
     tabIntegrationsDesc: 'External services and APIs',
 
     // Profile
-    profileTitle: 'Profile',
-    profileDescription: 'Manage your personal information',
-    profileCardTitle: 'Personal information',
-    profileCardDescription: 'Your account details and display name.',
     profilePicture: 'Profile picture',
     profileUploadComingSoon: 'Upload coming soon',
     profileEmailLabel: 'Email',
     profileEmailHint: 'Managed by the authentication system — cannot be changed.',
-    profileEmailAria: 'Email (read-only)',
     profileFullNameLabel: 'Full name',
     profileFullNameHint: 'Your full name as shown to others.',
     profileFullNamePlaceholder: 'Your full name',
@@ -36,16 +31,10 @@ export const user = {
     profileErrorSaving: 'Error saving profile',
 
     // Security
-    securityTitle: 'Security',
-    securityDescription: 'Manage your password and security settings',
-    securityCardTitle: 'Change password',
-    securityCardDescription: 'Set a new password for your account.',
     securityAlertDescription: 'Choose a strong password with at least 8 characters, including uppercase, lowercase letters and numbers.',
     securityNewPasswordLabel: 'New password',
-    securityNewPasswordHint: 'At least 8 characters, with uppercase, lowercase and numbers.',
     securityNewPasswordPlaceholder: 'Enter your new password',
     securityConfirmLabel: 'Confirm new password',
-    securityConfirmHint: 'Re-enter the new password.',
     securityConfirmPlaceholder: 'Confirm your new password',
     securityPasswordStrength: 'Password strength:',
     securityStrengthWeak: 'Weak',

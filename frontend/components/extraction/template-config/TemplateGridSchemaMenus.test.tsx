@@ -27,6 +27,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 // import when env is absent (CI). Mocking the service keeps the module
 // tree out of these grid tests.
 vi.mock('@/services/templateService', () => ({updateSection: vi.fn()}));
+vi.mock('@/components/extraction/TemplateInstructionPane', () => ({TemplateInstructionPane: () => null}));
 vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
   useTemplateEntityTypes: vi.fn(),
 }));
@@ -327,6 +328,8 @@ describe('TemplateConfigGridPanel — new callback threading (B-8 T5)', () => {
           sectionActions={sectionActions}
           onAddSection={vi.fn()}
           onAddGroup={onAddGroup}
+          instruction={{draft: null, onDraftChange: vi.fn()}}
+          templateFocusSeq={0}
         />
       </TooltipProvider>,
     );

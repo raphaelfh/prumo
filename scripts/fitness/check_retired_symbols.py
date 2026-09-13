@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check_retired_symbols.py — prumo fitness function (absolute, not a ratchet).
 
-Names the entry-group trees train removed, and fails if one comes back.
+Names concepts a spec or train retired, and fails if one comes back.
 
 Every other dead-code gate here answers "is this reachable?" — knip, vulture,
 the copy-key ratchet. None of them answers "should this concept exist at
@@ -42,7 +42,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Retired:
-    """One symbol the train removed, and why it must not return."""
+    """One retired symbol: the spec or PR that retired it (``slice_``), and why it must not return."""
 
     symbol: str
     slice_: str
@@ -53,80 +53,91 @@ RETIRED: tuple[Retired, ...] = (
     # B5 — structure is `parent_entity_type_id` + `cardinality` (0069).
     Retired(
         "ExtractionEntityRole",
-        "B5",
+        "entry-group trees B5",
         "structure is the parent link plus cardinality; the ENUM is dropped",
     ),
     Retired(
         "extraction_entity_role",
-        "B5",
+        "entry-group trees B5",
         "the Postgres ENUM 0069 dropped",
     ),
     Retired(
         "ck_extraction_entity_types_role_parent",
-        "B5",
+        "entry-group trees B5",
         "the CHECK that capped the tree at two levels",
     ),
     Retired(
         "check_model_section_parent_role",
-        "B5",
+        "entry-group trees B5",
         "the trigger that forced a child's parent to be THE container",
     ),
     Retired(
         "check_cardinality_one",
-        "B5",
+        "entry-group trees B5",
         "a SECURITY DEFINER function granted to `authenticated` with no caller",
     ),
     Retired(
         "get_by_role",
-        "B5",
+        "entry-group trees B5",
         "replaced by ExtractionEntityTypeRepository.get_root_group",
     ),
     Retired(
         "OneContainerError",
-        "B5",
+        "entry-group trees B5",
         "a template may hold several root groups, so there is no second container to refuse",
     ),
     Retired(
         "ContainerSwapUnsupportedError",
-        "B5",
+        "entry-group trees B5",
         "it reported the partial unique index 0069 dropped",
     ),
     # B6 — the model identification pipeline.
     Retired(
         "ModelExtractionService",
-        "B6",
+        "entry-group trees B6",
         "generalized into entry_group_extraction.extract_into_instances",
     ),
     Retired(
         "ModelExtractionRequest",
-        "B6",
+        "entry-group trees B6",
         "identification is a section extraction against the group",
     ),
     Retired(
         "ModelExtractionResult",
-        "B6",
+        "entry-group trees B6",
         "identification is a section extraction against the group",
     ),
     Retired(
         "useModelExtraction",
-        "B6",
+        "entry-group trees B6",
         "EntrySection identifies through useSectionExtraction, per group",
     ),
     Retired(
         "extract_models_task",
-        "B6",
+        "entry-group trees B6",
         "a dead Celery entry point with no enqueue site",
     ),
     Retired(
         "modelExtractionClient",
-        "B6",
+        "entry-group trees B6",
         "the API client helper the retired route needed",
     ),
     # B2 — model-only manual creation.
     Retired(
         "ModelHierarchyService",
-        "B2",
+        "entry-group trees B2",
         "replaced by EntryHierarchyService, which creates an entry of ANY group",
+    ),
+    # Borderless density pass (docs/superpowers/specs/2026-09-13-borderless-density-pass-design.md § 6).
+    Retired(
+        "SettingsCard",
+        "borderless density pass PR 1",
+        "settings are flat SettingsGroup/SettingsRow grids; a card frame is what the spec removed",
+    ),
+    Retired(
+        "SettingsField",
+        "borderless density pass PR 1",
+        "SettingsRow owns the label/value row, its hint and its aria-describedby",
     ),
 )
 
@@ -258,7 +269,7 @@ def main() -> int:
                 if pattern.search(line):
                     findings.append(
                         f"{rel}:{lineno}  {retired.symbol}  "
-                        f"(retired in trees {retired.slice_}: {retired.why})"
+                        f"(retired in {retired.slice_}: {retired.why})"
                     )
 
     duration_ms = int((time.time() - started) * 1000)
@@ -283,7 +294,7 @@ def main() -> int:
         for f in findings:
             print(f"  {f}")
         print(
-            "\nThese were removed by the entry-group trees train, and there is "
+            "\nEach was retired by the spec or train its label names, and there is "
             "no baseline to add to. If a spec change genuinely brings one back, "
             "edit RETIRED in this file in the same diff, with the reason."
         )

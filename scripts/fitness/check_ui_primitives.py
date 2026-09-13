@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check_ui_primitives.py — prumo fitness function (ratchet).
 
-Four interaction-primitive rules (docs/superpowers/specs/
+Interaction-primitive rules (docs/superpowers/specs/
 2026-09-12-interaction-primitives-design.md § 4.7):
 
 * ``icon-button`` — ``<Button size="icon"|"icon-xs">`` outside
@@ -17,6 +17,12 @@ Four interaction-primitive rules (docs/superpowers/specs/
 * ``overlay-size`` — a width, height or padding utility in the className of
   ``<DialogContent>``, ``<AlertDialogContent>`` or ``<SheetContent>``. The
   ``size`` prop owns the frame.
+* ``settings-frame`` — in the settings surfaces (``SETTINGS_FRAME_SCOPE``), an
+  import of ``ui/card`` or ``ui/alert`` (alias or relative, either quote), or
+  one string literal holding an all-sides ``border``/``border-dashed`` token
+  together with a ``rounded*`` token: the raw framed box. Settings are flat
+  groups and rows (docs/superpowers/specs/2026-09-13-borderless-density-pass-
+  design.md § 6).
 
 Tags are walked, not regexed, reusing check_button_scale's parser (a ``>`` in
 ``() =>`` must not end a tag early). Test files are not scanned.
@@ -78,13 +84,33 @@ OVERLAY_BANNED_PREFIXES = (
 CURSOR_BANNED = {"cursor-pointer", "cursor-default", "cursor-not-allowed"}
 RELATIONAL_PREFIXES = ("peer-", "group-")
 TOKEN = re.compile(r"[^\s\"'`{}(),;]+")
+SETTINGS_FRAME_SCOPE = (
+    "frontend/components/project/settings/",
+    "frontend/components/user/",
+    "frontend/components/settings/",
+    "frontend/components/project/PicotsPane.tsx",
+)
+FRAME_IMPORT = re.compile(
+    r"""\bfrom\s+(["'])(?:@/components/ui/|(?:\.{1,2}/)+(?:components/)?ui/)(?:card|alert)\1"""
+)
+STRING_LITERAL = re.compile(r""""([^"\n]*)"|'([^'\n]*)'|`([^`\n]*)`""")
+BORDER_ALL_SIDES = {"border", "border-dashed"}
 
 GUIDANCE = {
     "icon-button": "use <IconButton label=…> from components/patterns/IconButton.tsx",
     "tooltip-provider": "delete the provider; App.tsx owns the only one",
     "cursor-class": "delete the class; index.css @layer base owns the cursor",
     "overlay-size": "use the size prop (sm|md|lg, or narrow on SheetContent)",
+    "settings-frame": "no card, callout or bordered box on settings surfaces; use SettingsGroup/SettingsRow",
 }
+
+
+def is_framed_box(literal: str) -> bool:
+    """One class string with an all-sides border AND a radius: a raw frame."""
+    bases = [split_variants(tok)[1] for tok in literal.split()]
+    return any(b in BORDER_ALL_SIDES for b in bases) and any(
+        b == "rounded" or b.startswith("rounded-") for b in bases
+    )
 
 
 def scan_file(rel: str, text: str) -> dict[str, int]:
@@ -107,6 +133,14 @@ def scan_file(rel: str, text: str) -> dict[str, int]:
                 bases = (split_variants(tok)[1] for tok in class_text(tag).split())
                 if any(b.startswith(OVERLAY_BANNED_PREFIXES) for b in bases):
                     bump("overlay-size")
+
+    if rel.startswith(SETTINGS_FRAME_SCOPE):
+        for _ in FRAME_IMPORT.finditer(src):
+            bump("settings-frame")
+        for line in src.splitlines():
+            for m in STRING_LITERAL.finditer(line):
+                if is_framed_box(next(g for g in m.groups() if g is not None)):
+                    bump("settings-frame")
 
     for tok in TOKEN.findall(src):
         variants, base = split_variants(tok)

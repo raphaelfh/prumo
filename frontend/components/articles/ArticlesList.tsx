@@ -41,6 +41,7 @@ import {
     ListToolbarSearch,
     ResponsiveList,
     useResizableTableColumns,
+    ColumnResizeHandle,
 } from "@/components/shared/list";
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
@@ -341,7 +342,7 @@ export function ArticlesList({
         }
         return {...DEFAULT_COLUMN_WIDTHS};
     });
-    const {startResize} = useResizableTableColumns({
+    const {getHandleProps} = useResizableTableColumns({
         columnWidths,
         setColumnWidths,
         defaultColumnWidths: DEFAULT_COLUMN_WIDTHS,
@@ -748,14 +749,9 @@ export function ArticlesList({
                                               </span>
                                           </div>
                                       )}
-                                      <div
-                                          role="separator"
-                                          aria-label={t('articles', 'listResizeColumn')}
-                                          onMouseDown={(e) => {
-                                              e.preventDefault();
-                                              startResize(col.id, e.clientX);
-                                          }}
-                                          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
+                                      <ColumnResizeHandle
+                                          label={t('articles', 'listResizeColumn').replace('{{column}}', col.label)}
+                                          {...getHandleProps(col.id)}
                                       />
                                   </TableHead>
                               ))}
@@ -781,18 +777,20 @@ export function ArticlesList({
 
                                   {/* Title */}
                                   <TableCell
-                                      className={`${TABLE_CELL_CLASS} font-medium ${colVisibilityClass('sm')}`}
+                                      className={`${TABLE_CELL_CLASS} relative font-medium ${colVisibilityClass('sm')}`}
                                       style={getColumnStyle('title')}
                                   >
+                                      {/* Stretched over the cell by its ::after, so the whole cell stays
+                                          the click target (as the td's onClick was) and the keyboard can reach it. */}
                                       <button
                                           type="button"
                                           onClick={() => onArticleClick(article.id)}
-                                          className="block w-full min-w-0 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                                          className="block w-full min-w-0 rounded-sm text-left after:absolute after:inset-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                                       >
-                                          <div
+                                          <span
                                               className="line-clamp-1 text-[13px] leading-tight text-foreground font-medium group-hover:text-primary transition-colors">
                                               {article.title ?? t('articles', 'listUntitled')}
-                                          </div>
+                                          </span>
                                       </button>
                                   </TableCell>
 

@@ -109,10 +109,8 @@ export default function UserSettings() {
               })}
             </nav>
 
-            <main className="min-w-0 flex-1 overflow-y-auto px-4 py-3 lg:px-6">
-                <div className="w-full max-w-3xl lg:max-w-4xl">
-                    {renderTabContent()}
-                </div>
+            <main className="min-w-0 flex-1 overflow-y-auto p-2">
+                {renderTabContent()}
             </main>
       </div>
     </div>

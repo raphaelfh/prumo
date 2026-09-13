@@ -149,7 +149,7 @@ export function ImportTemplateDialog({
 
           <TabsContent value="catalogue" className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
             {loadingTemplates ? (
-              <div className="flex items-center justify-center p-8">
+              <div className="flex min-h-[50dvh] items-center justify-center p-8">
                 <Loader2 className="h-6 w-6 animate-spin mr-2" />
                   <span>{t('templateConfig', 'importLoadingTemplates')}</span>
               </div>

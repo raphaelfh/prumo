@@ -46,12 +46,12 @@ function renderList(articles: Article[]) {
         onOpenRisDialog: vi.fn(),
         onOpenAddArticle: vi.fn(),
         onArticlesChange: vi.fn(),
+        onArticleClick: vi.fn(),
     };
     render(
         <MemoryRouter>
             <ArticlesList
                 articles={articles}
-                onArticleClick={vi.fn()}
                 projectId="p1"
                 {...handlers}
             />
@@ -94,6 +94,39 @@ describe("ArticlesList toolbar", () => {
         await userEvent.click(exportButton);
 
         expect(await screen.findByTestId("export-dialog")).toBeInTheDocument();
+    });
+});
+
+describe("ArticlesList title cell", () => {
+    it("opens the article from the keyboard through a button named by its title", async () => {
+        const user = userEvent.setup();
+        const handlers = renderList([article("a1", "First")]);
+
+        const title = screen.getByRole("button", {name: "First"});
+        // The cell keeps its name (the E2E flow finds the row's cell by it), and
+        // the control holds only the title — no nested interactive element.
+        expect(title.closest("td")).toHaveAccessibleName("First");
+        expect(title.querySelector("button, input, a")).toBeNull();
+
+        title.focus();
+        await user.keyboard("{Enter}");
+
+        expect(handlers.onArticleClick).toHaveBeenCalledWith("a1");
+    });
+});
+
+describe("ArticlesList column resize", () => {
+    it("resizes a column from the keyboard through a separator named by its column", async () => {
+        const user = userEvent.setup();
+        renderList([article("a1", "First")]);
+
+        const handle = screen.getByRole("separator", {name: "Resize Title column"});
+        const before = Number(handle.getAttribute("aria-valuenow"));
+
+        handle.focus();
+        await user.keyboard("{ArrowRight}");
+
+        expect(handle).toHaveAttribute("aria-valuenow", String(before + 16));
     });
 });
 

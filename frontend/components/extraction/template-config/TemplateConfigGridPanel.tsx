@@ -27,17 +27,20 @@ import {
   type TextCellColumn,
 } from './TemplateGrid';
 import {TemplateConfigToolbar} from './TemplateConfigToolbar';
-import {TemplateInspector, type InspectorFocusGroup} from './TemplateInspector';
+import {TemplateInspector, type InspectorFocusGroup, type TemplateInstructionSlot} from './TemplateInspector';
 import {PaneResizer} from './PaneResizer';
 import {INSPECTOR_PANE, RAIL_PANE, usePaneWidths} from './paneLayout';
 import {revealSection} from './revealSectionRow';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
 import {MoveToSectionDialog} from './MoveToSectionDialog';
 import {applyRetentionToFilter} from './filterRetention';
+import {typeChangeUpdates} from './fieldTypeChange';
 import {GridDndContext} from './gridDrag';
 import {useMoveFieldTo} from './useMoveFieldTo';
 import type {StructuralHistory} from './useStructuralHistory';
+import {useInspectorHost} from './useInspectorHost';
 import {useStructuralUndo} from './useStructuralUndo';
+import {useTemplateFocus} from './useTemplateFocus';
 import {
   buildTemplateTree,
   collectSectionIds,
@@ -117,6 +120,12 @@ interface TemplateConfigGridPanelProps {
   /** True while the command bar's diff sheet is open (B-9b2a). Read-only
    * here — the editor owns the flag and the sibling command bar sets it. */
   diffSheetOpen?: boolean;
+  /** The template's AI instruction draft, owned by the editor — the
+   * inspector shows it when nothing is selected. */
+  instruction: TemplateInstructionSlot;
+  /** Bumped by the config bar's ✨ trigger: each new value clears the
+   * selection and opens the inspector on the template pane. */
+  templateFocusSeq: number;
 }
 
 export function TemplateConfigGridPanel({
@@ -133,6 +142,8 @@ export function TemplateConfigGridPanel({
   // open — derived, not an effect, so `sheetOpen` survives and the
   // inspector comes back when the diff sheet closes.
   diffSheetOpen = false,
+  instruction,
+  templateFocusSeq,
 }: TemplateConfigGridPanelProps) {
   // ONE request for the whole structure, TanStack-cached on the key every
   // config mutation invalidates (useTemplateConfigCaches) — so the grid
@@ -159,15 +170,10 @@ export function TemplateConfigGridPanel({
   const [rowIdRemaps, setRowIdRemaps] = useState<ReadonlyMap<string, string>>(
     new Map(),
   );
-  // Inspector visibility (Task 5): the docked pane defaults open; the
-  // narrow-container Sheet is opt-in (an overlay must never auto-cover
-  // the grid on mount). ⌘./the toolbar button toggle the ACTIVE host.
-  const [dockedOpen, setDockedOpen] = useState(true);
-  // The outline rail's twin of `dockedOpen`. Session state, like the
+  // The outline rail's twin of the docked inspector. Session state, like the
   // inspector's: a manager collapsing it is framing THIS editing pass,
   // not setting a preference.
   const [railOpen, setRailOpen] = useState(true);
-  const [sheetOpen, setSheetOpen] = useState(false);
   // ✨/Options deep-link: which inspector group to focus for which field;
   // seq re-triggers the focus on repeated clicks.
   const [focusGroup, setFocusGroup] = useState<
@@ -176,6 +182,11 @@ export function TemplateConfigGridPanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const isNarrow = useContainerNarrow(containerRef, INSPECTOR_NARROW_PX);
+  const inspector = useInspectorHost(isNarrow);
+  useTemplateFocus(templateFocusSeq, () => {
+    setSelection(null);
+    inspector.open();
+  });
   const {railWidth, setRailWidth, inspectorWidth, setInspectorWidth, gridSlack} =
     usePaneWidths(scrollerRef);
 
@@ -351,9 +362,8 @@ export function TemplateConfigGridPanel({
    * focused cell. Rung 3: clear the search query, else the selection.
    */
   const handleEscapeEscalate = () => {
-    if (isNarrow ? sheetOpen : dockedOpen) {
-      if (isNarrow) setSheetOpen(false);
-      else setDockedOpen(false);
+    if (inspector.pressed) {
+      inspector.close();
       focusGridCellSoon();
       return;
     }
@@ -518,25 +528,11 @@ export function TemplateConfigGridPanel({
     return true;
   };
 
-  /** Type menu pick (Task 5): dependent groups clear with the NEW type —
-   * the dialog's semantics (options/allow-other only survive select
-   * kinds, units only numbers). */
+  /** Type menu pick (Task 5): dependent groups clear with the NEW type
+   * (see `typeChangeUpdates`). */
   const handleChangeType = (field: GridField, fieldType: string) => {
     if (fieldType === field.fieldType) return;
-    const supportsOptions = fieldType === 'select' || fieldType === 'multiselect';
-    const updates: ExtractionFieldUpdate = {
-      field_type: fieldType as ExtractionFieldUpdate['field_type'],
-      ...(supportsOptions
-        ? {}
-        : {
-            allowed_values: null,
-            allow_other: false,
-            other_label: null,
-            other_placeholder: null,
-          }),
-      ...(fieldType === 'number' ? {} : {unit: null, allowed_units: null}),
-    };
-    saveFieldUpdates(field, updates);
+    saveFieldUpdates(field, typeChangeUpdates(fieldType));
   };
 
   /** ✨/Options cells (Task 5): select the field and open the inspector
@@ -548,13 +544,7 @@ export function TemplateConfigGridPanel({
       group,
       seq: (prev?.seq ?? 0) + 1,
     }));
-    if (isNarrow) setSheetOpen(true);
-    else setDockedOpen(true);
-  };
-
-  const toggleInspector = () => {
-    if (isNarrow) setSheetOpen((open) => !open);
-    else setDockedOpen((open) => !open);
+    inspector.open();
   };
 
   // Ghost-row commit (Task 4): the queue resolves the collision-suffixed
@@ -607,6 +597,7 @@ export function TemplateConfigGridPanel({
     onMoveField: moveFieldToSectionEnd,
     moveDisabled: movePending,
     focusGroup: inspectorFocusGroup,
+    instruction,
   };
 
   return (
@@ -623,7 +614,7 @@ export function TemplateConfigGridPanel({
         // shortcut belongs to the Configuration surface, not the page.
         if ((event.metaKey || event.ctrlKey) && event.key === '.') {
           event.preventDefault();
-          toggleInspector();
+          inspector.toggle();
         }
         // ⌘⇧M opens the Move-to-section dialog for the FOCUSED (else the
         // selected) field row; no-ops otherwise (B-6 T7). altKey excluded:
@@ -653,8 +644,8 @@ export function TemplateConfigGridPanel({
         onShowOptionsColumn={setShowOptionsColumn}
         railPressed={railOpen}
         onToggleRail={() => setRailOpen((open) => !open)}
-        inspectorPressed={isNarrow ? sheetOpen : dockedOpen}
-        onToggleInspector={toggleInspector}
+        inspectorPressed={inspector.pressed}
+        onToggleInspector={inspector.toggle}
       />
 
       {/* B-6 T3: the surface's first live region (precedent SaveSlot) —
@@ -751,7 +742,7 @@ export function TemplateConfigGridPanel({
             below the breakpoint — the FORM component is the same, so
             every capability stays editable on narrow containers. */}
         {isNarrow ? (
-          <Sheet open={sheetOpen && !diffSheetOpen} onOpenChange={setSheetOpen}>
+          <Sheet open={inspector.sheetOpen && !diffSheetOpen} onOpenChange={inspector.setSheetOpen}>
             <SheetContent side="right" size="narrow">
               <SheetHeader className="sr-only">
                 <SheetTitle>{t('extraction', 'inspectorSheetTitle')}</SheetTitle>
@@ -766,7 +757,7 @@ export function TemplateConfigGridPanel({
             </SheetContent>
           </Sheet>
         ) : (
-          dockedOpen && (
+          inspector.dockedOpen && (
             <>
             <PaneResizer
               pane="right"

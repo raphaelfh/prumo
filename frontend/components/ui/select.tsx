@@ -1,5 +1,6 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
+import {cva, type VariantProps} from "class-variance-authority";
 import {Check, ChevronDown, ChevronUp} from "lucide-react";
 
 import {cn} from "@/lib/utils";
@@ -9,18 +10,28 @@ const Select = SelectPrimitive.Root;
 
 const SelectValue = SelectPrimitive.Value;
 
+// Two full strings, not base + override: quiet must drop the default's
+// `focus:` ring and fill, and tailwind-merge cannot remove a `focus:` class
+// with a `focus-visible:` one. Radix returns focus to the trigger after every
+// mouse pick, so a `focus:` ring would look stuck. Deliberate divergence from
+// upstream shadcn (ui-styling skill). Guard: quiet-controls.test.tsx.
+const selectTriggerVariants = cva("", {
+  variants: {
+    variant: {
+      default:
+        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 [&>span]:line-clamp-1",
+      quiet:
+        "flex h-8 w-full items-center justify-between rounded-md border border-transparent bg-transparent px-2 py-2 text-[13px] shadow-none ring-offset-background placeholder:text-muted-foreground md:text-[13px] hover:bg-muted/60 disabled:hover:bg-transparent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:bg-background aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive aria-[invalid=true]:focus-visible:ring-2 disabled:opacity-50 [&>span]:line-clamp-1",
+    },
+  },
+  defaultVariants: {variant: "default"},
+});
+
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
-  <SelectPrimitive.Trigger
-    ref={ref}
-    className={cn(
-      "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 [&>span]:line-clamp-1",
-      className,
-    )}
-    {...props}
-  >
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & VariantProps<typeof selectTriggerVariants>
+>(({ className, children, variant, ...props }, ref) => (
+  <SelectPrimitive.Trigger ref={ref} className={cn(selectTriggerVariants({ variant }), className)} {...props}>
     {children}
     <SelectPrimitive.Icon asChild>
       <ChevronDown className="h-4 w-4 opacity-50" />

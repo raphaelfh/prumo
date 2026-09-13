@@ -20,7 +20,7 @@ it ends up that way**.
 | Layer            | What we use                                                            |
 | ---------------- | ---------------------------------------------------------------------- |
 | Bundler / router | Vite + React 19 + TypeScript strict, no Next.js / no RSC               |
-| Tailwind         | **v3.4.17**, classic `tailwind.config.ts` + `@tailwind base/...`       |
+| Tailwind         | **v4.3.3**, CSS-first: `@import "tailwindcss"` + `@theme inline` in `frontend/index.css` |
 | Components       | shadcn/ui (`style: default`, `baseColor: slate`, `cssVariables: true`) |
 | Primitives       | Radix UI under shadcn, plus direct Radix for custom compositions       |
 | Variants         | `class-variance-authority` 0.7.1 + `cn()` (`clsx` + `tailwind-merge`)  |
@@ -98,11 +98,23 @@ After adding:
 3. **Confirm the cva config** uses our variant names. We have extra status
    variants on `Badge` and we add `success`/`warning` to buttons in domain UIs —
    not in `ui/button.tsx`. Keep `ui/*` close to upstream shadcn so future
-   `shadcn add` diffs stay clean. **The one deliberate divergence** is
-   `ui/button.tsx`'s `size` scale: upstream's heights do not fit this
-   codebase's density (see `frontend-ux` § Buttons), so `sm`/`icon` are
-   retuned and `xs`/`icon-xs` added. Re-apply that scale after any
-   `shadcn add button`; `button.test.tsx` fails if you forget.
+   `shadcn add` diffs stay clean. **Three deliberate divergences**, each
+   pinned by a guard test that fails if a `shadcn add` overwrites it:
+   - `ui/button.tsx`'s `size` scale: upstream's heights do not fit this
+     codebase's density (see `frontend-ux` § Buttons), so `sm`/`icon` are
+     retuned and `xs`/`icon-xs` added. Guard: `button.test.tsx`.
+   - The `quiet` cva variant on `ui/input.tsx`, `ui/textarea.tsx` and
+     `ui/select.tsx`'s `SelectTrigger`, the borderless settings control
+     (spec `2026-09-13-borderless-density-pass-design.md` §4.2). It carries
+     `md:text-[13px]` (the Input base's `md:text-sm` would win from 768px),
+     rings on `focus-visible:` only (Radix returns focus to the trigger after
+     a mouse pick) and `aria-[invalid=true]:focus-visible:ring-2` (`aria-*`
+     utilities compile after `focus-visible`). `default` keeps upstream's
+     classes. Guard: `quiet-controls.test.tsx`.
+   - `ui/form.tsx`'s `FormControl` joins its description id, its message id
+     (on error) and an incoming `aria-describedby`; upstream spreads props
+     last, so Radix `Slot` let a passed id overwrite both. Guard:
+     `form.describedby.test.tsx`.
 4. **Wire copy** through `frontend/lib/copy/*` for any user-visible string.
 
 If the component already exists, **edit it directly** — do not re-run
@@ -209,10 +221,9 @@ in `frontend/lib/utils.ts` so `cn()` correctly dedupes it against the
 built-in `shadow-{size}` utilities (otherwise the shadcn `<Card>` base
 `shadow-xs` will silently win the cascade).
 
-Forward-looking note: **Tailwind v4** moves theme into `@theme { --color-…:
-oklch(…) }` in CSS and makes `tailwind.config.ts` optional. We are still on
-v3.4.17; do not migrate as a side effect of unrelated work. Migration notes
-sit in `references/tailwind-v4.md`.
+Tailwind is **v4.3.3**, CSS-first: `frontend/index.css` imports `tailwindcss`
+and declares the theme in `@theme inline`; there is no `tailwind.config.ts`.
+Version-specific notes sit in `references/tailwind-v4.md`.
 
 Full theming patterns (multi-theme via `data-theme`, radius scale,
 prefers-color-scheme bootstrap, charts): `references/theming.md`.
@@ -348,7 +359,7 @@ reference. Match the chrome dimensions in any new viewer.
 `components/ui/overlay-frame.ts`. Centring is `inset-0 m-auto`, never
 `translate-*`: in Tailwind v4 `translate` is its own CSS property, and the
 animate plugin's keyframe `transform` would compose with it and make the frame
-jump. `sm`/`md` use `h-fit` + `max-h-[85dvh]`; `lg` a fixed `h-[85dvh]`. Width
+jump. `sm`, `md` and `lg` all use `h-fit` + `max-h-[85dvh]`; a loading body reserves its own min height. Width
 and height live only in the cva variants, which is why a className on the
 content is gated.
 

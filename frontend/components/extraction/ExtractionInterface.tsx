@@ -401,6 +401,9 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const renderConfigurationBody = () => {
     return activeTemplate ? (
           <TemplateConfigEditor
+            // The key remounts the editor per template: the instruction draft,
+            // selection and undo history must never carry across a switch.
+            key={activeTemplate.id}
             projectId={projectId}
             templateId={activeTemplate.id}
             onActiveTemplateChanged={handleActiveTemplateChanged}
@@ -415,7 +418,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col p-2">
                 {templatesLoading ? (
                     <div className="space-y-4 px-0 py-2" aria-busy="true" aria-label={t('extraction', 'loadingTemplates')}>
                         <div className="flex items-center gap-2">

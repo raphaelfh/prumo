@@ -37,6 +37,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { ManagerReviewVisibilityToggle } from "@/components/runs/ManagerReviewVisibilityToggle";
 import { TemplateInstructionControl } from "@/components/extraction/TemplateInstructionControl";
+import { TemplateInstructionPane } from "@/components/extraction/TemplateInstructionPane";
 import { TemplateConfigPublishControls } from "@/components/extraction/template-config/TemplateConfigPublishControls";
 
 interface Props {
@@ -62,6 +63,13 @@ export function QualityAssessmentConfiguration({ projectId }: Props) {
   // Keyed by template id and owned HERE, not per row: N enabled tools could
   // each open a diff sheet, and two stacked modal sheets trap focus.
   const [diffSheetFor, setDiffSheetFor] = useState<string | null>(null);
+
+  // One instruction editor open at a time; drafts are keyed by template so a
+  // collapse (or opening another tool) never destroys typed text.
+  const [instructionOpenFor, setInstructionOpenFor] = useState<string | null>(
+    null,
+  );
+  const [drafts, setDrafts] = useState<Record<string, string | null>>({});
 
   // Per-kind manager review-visibility (blind toggle). Manager-only; for a
   // manager `canSeeOthers` mirrors the persisted
@@ -200,35 +208,62 @@ export function QualityAssessmentConfiguration({ projectId }: Props) {
                   </div>
                   </div>
                   {enabled && activeClone ? (
-                    // The instruction is what PROBAST+AI's applicability items
-                    // are judged against, and until now QA had no editor for it
-                    // anywhere — the ✨ control mounts inside the extraction
-                    // Configuration tab, whose template list filters to
-                    // `kind: 'extraction'`. Both controls are kind-agnostic
-                    // (`{projectId, templateId}` and no kind predicate behind
-                    // them), so they mount here unchanged.
-                    //
-                    // Export/Import are deliberately NOT mounted: they are the
-                    // only publish-family endpoints hard-gated to extraction
-                    // (`to_portable` 404s on a QA id, `parse_portable_document`
-                    // 422s).
-                    <div
-                      className="mt-2 flex flex-wrap items-center gap-2 pl-7"
-                      data-testid={`hitl-quality_assessment-config-controls-${global.id}`}
-                    >
-                      <TemplateInstructionControl
-                        projectId={projectId}
-                        templateId={activeClone.id}
-                      />
-                      <TemplateConfigPublishControls
-                        projectId={projectId}
-                        templateId={activeClone.id}
-                        diffSheetOpen={diffSheetFor === activeClone.id}
-                        onDiffSheetOpenChange={(open) =>
-                          setDiffSheetFor(open ? activeClone.id : null)
-                        }
-                      />
-                    </div>
+                    <>
+                      {/* The instruction is what PROBAST+AI's applicability
+                      items are judged against, and until now QA had no
+                      editor for it anywhere — the ✨ control mounts inside
+                      the extraction Configuration tab, whose template list
+                      filters to `kind: 'extraction'`. Both controls are
+                      kind-agnostic (`{projectId, templateId}` and no kind
+                      predicate behind them), so they mount here unchanged.
+
+                      Export/Import are deliberately NOT mounted: they are
+                      the only publish-family endpoints hard-gated to
+                      extraction (`to_portable` 404s on a QA id,
+                      `parse_portable_document` 422s). */}
+                      <div
+                        className="mt-2 flex flex-wrap items-center gap-2 pl-7"
+                        data-testid={`hitl-quality_assessment-config-controls-${global.id}`}
+                      >
+                        <TemplateInstructionControl
+                          projectId={projectId}
+                          templateId={activeClone.id}
+                          draft={drafts[activeClone.id] ?? null}
+                          expanded={instructionOpenFor === activeClone.id}
+                          onActivate={() =>
+                            setInstructionOpenFor((open) =>
+                              open === activeClone.id ? null : activeClone.id,
+                            )
+                          }
+                        />
+                        <TemplateConfigPublishControls
+                          projectId={projectId}
+                          templateId={activeClone.id}
+                          diffSheetOpen={diffSheetFor === activeClone.id}
+                          onDiffSheetOpenChange={(open) =>
+                            setDiffSheetFor(open ? activeClone.id : null)
+                          }
+                        />
+                      </div>
+                      {instructionOpenFor === activeClone.id ? (
+                        <div
+                          className="mt-2 pl-7"
+                          data-testid={`hitl-quality_assessment-instruction-${global.id}`}
+                        >
+                          <TemplateInstructionPane
+                            projectId={projectId}
+                            templateId={activeClone.id}
+                            draft={drafts[activeClone.id] ?? null}
+                            onDraftChange={(draft) =>
+                              setDrafts((prev) => ({
+                                ...prev,
+                                [activeClone.id]: draft,
+                              }))
+                            }
+                          />
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
                 </li>
               );

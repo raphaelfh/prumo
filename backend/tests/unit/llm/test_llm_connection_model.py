@@ -28,14 +28,14 @@ def _check(short: str) -> str:
 def test_provider_check_literal_equals_the_registry() -> None:
     assert _check("provider_check") == provider_check_literal()
     assert provider_check_literal() == (
-        "provider IN ('openai', 'anthropic', 'google', 'openai_compatible', 'llama_cloud')"
+        "provider IN ('openai', 'anthropic', 'google', 'ollama', 'openai_compatible', 'llama_cloud')"
     )
 
 
 def test_scopes_check_literal_lists_the_project_scope_providers() -> None:
     assert _check("scopes_check") == scopes_check_literal()
     assert scopes_check_literal() == (
-        "scope = 'user' OR provider IN ('openai', 'anthropic', 'google', 'llama_cloud')"
+        "scope = 'user' OR provider IN ('openai', 'anthropic', 'google', 'ollama', 'llama_cloud')"
     )
 
 

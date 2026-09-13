@@ -4,10 +4,7 @@
 export const consensus = {
     // Tab + section
     tabConsensus: 'Review consensus',
-    tabConsensusDesc: 'Reviewers, consensus rule, and arbitrator',
-    sectionTitle: 'Review consensus',
-    sectionDesc:
-        'Configure how many reviewers an article needs and how disagreements are resolved.',
+    tabConsensusDesc: 'Consensus rule and arbitrator',
     runsBannerTitle: 'These settings only affect articles started from now on',
     runsBannerBody:
         'Articles already in progress keep the settings they started with. Changes here apply the next time an article is opened for extraction or assessment.',
@@ -16,8 +13,8 @@ export const consensus = {
     projectDefaultTitle: 'Project default',
     projectDefaultDesc:
         'Used for any template that does not have its own override.',
-    projectDefaultUsingSystem:
-        'No project default set yet — using the system default (1 reviewer, unanimous).',
+    currentDefaultLabel: 'Current',
+    currentSystemDefault: 'System default (1 reviewer, unanimous)',
     saveProjectDefault: 'Save project default',
     resetProjectDefault: 'Reset to system default',
 
@@ -29,8 +26,6 @@ export const consensus = {
     templatesLoading: 'Loading templates…',
     templatesInheritsBadge: 'Inherits from project',
     templatesOverriddenBadge: 'Overridden',
-    templatesOverrideAction: 'Override',
-    templatesEditAction: 'Edit override',
     templatesRemoveOverride: 'Remove override',
 
     // Form fields
@@ -46,9 +41,6 @@ export const consensus = {
     arbitratorPlaceholder: 'Select an arbitrator…',
 
     // Manager review visibility (per-kind blind toggle)
-    managerVisibilityCardTitle: 'Manager review visibility',
-    managerVisibilityCardDesc:
-        'Control whether managers see other reviewers while extracting. Reviewers are always blind to each other.',
     managerVisibilityLabel: "Show other reviewers' responses to managers",
     managerVisibilityHint:
         'When off, managers review blind — they only see their own values until they turn this on. Reviewers are always blind to each other.',

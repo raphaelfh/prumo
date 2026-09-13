@@ -37,3 +37,9 @@ const DESKTOP_BREAKPOINT = 1024;
 export function useIsBelowDesktop() {
   return !useMediaQuery(`(min-width: ${DESKTOP_BREAKPOINT}px)`);
 }
+
+/** True on a coarse primary pointer (touch). Radix tooltips do not open on
+ *  tap, so FieldHint swaps its tooltip for a popover there. */
+export function useIsCoarsePointer() {
+  return useMediaQuery("(pointer: coarse)");
+}

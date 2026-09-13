@@ -1328,7 +1328,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0073_drop_legacy_credentials"
+    expected_head = "0074_ollama_provider"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -1619,3 +1619,33 @@ async def test_migration_0073_drops_the_legacy_tables_and_strips_alternates(
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
     await migration_session.commit()
+
+
+# --- 0074: ollama provider ------------------------------------------------
+async def _conn_check_ids(session: AsyncSession, name: str) -> set[str]:
+    import re
+
+    definition = (await session.execute(_CONN_CHECK_DEF, {"name": name})).scalar()
+    assert definition is not None, f"{name} must exist"
+    await session.rollback()
+    return set(re.findall(r"'([a-z_]+)'", definition))
+
+
+@pytest.mark.asyncio
+async def test_migration_0074_adds_ollama_to_both_checks_and_downgrade_removes_it(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """Driven through alembic: at head both CHECKs name ``ollama``; downgraded
+    to 0073 neither does (its DELETE ran before re-adding the narrower CHECK)."""
+    assert "ollama" in await _conn_check_ids(migration_session, "ck_llm_connections_provider_check")
+    assert "ollama" in await _conn_check_ids(migration_session, "ck_llm_connections_scopes_check")
+
+    _run_alembic("downgrade", "0073_drop_legacy_credentials", database_url=migration_db_url)
+    try:
+        provider_ids = await _conn_check_ids(migration_session, "ck_llm_connections_provider_check")
+        scope_ids = await _conn_check_ids(migration_session, "ck_llm_connections_scopes_check")
+        assert "ollama" not in provider_ids and "google" in provider_ids
+        assert "ollama" not in scope_ids and "google" in scope_ids
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert "ollama" in await _conn_check_ids(migration_session, "ck_llm_connections_provider_check")

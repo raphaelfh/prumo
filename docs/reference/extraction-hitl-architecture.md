@@ -353,8 +353,9 @@ module per prompt. Each module exposes:
 
 **Structured output** is enforced by the typed call layer
 (`backend/app/llm/extractor.py::extract_structured`, Pydantic AI
-`NativeOutput`). There are no `*_RESPONSE_SCHEMA` JSON-schema constants
-and no tolerant parsers: if the model returns structurally invalid output,
+`NativeOutput`; `ToolOutput` for Anthropic and for custom hosts that route
+to Ollama Cloud, which accepts a JSON schema without enforcing it). There
+are no `*_RESPONSE_SCHEMA` JSON-schema constants and no tolerant parsers: if the model returns structurally invalid output,
 the call layer reasks (up to `DEFAULT_USAGE_LIMITS.request_limit`) and
 then raises `AgentRunError`, which fails the run. Callers must catch that
 exception.

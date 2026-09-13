@@ -15,7 +15,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 // templateService -> apiClient -> the supabase client, which throws on
 // import when env is absent (CI). Mocking the service keeps the module
 // tree out of these grid tests.
-vi.mock('@/services/templateService', () => ({updateSection: vi.fn()}));
+vi.mock('@/services/templateService', () => ({updateSection: vi.fn()})); vi.mock('@/components/extraction/TemplateInstructionPane', () => ({TemplateInstructionPane: () => null}));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
   useTemplateEntityTypes: vi.fn(),
@@ -152,7 +152,7 @@ const panel = () => (
       onDeleteField={vi.fn()}
       history={stubStructuralHistory()}
       sectionActions={sectionActions}
-      onAddSection={vi.fn()} onAddGroup={vi.fn()}
+      onAddSection={vi.fn()} onAddGroup={vi.fn()} instruction={{draft: null, onDraftChange: vi.fn()}} templateFocusSeq={0}
     />
   </TooltipProvider>
 );
@@ -780,17 +780,17 @@ describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => 
     mockMutation();
     mockEntityTypes();
     render(panel());
-    expect(screen.getByText('inspectorEmptyTitle')).toBeInTheDocument();
+    expect(screen.getByText('instructionTitle')).toBeInTheDocument();
 
     // The shortcut listens on the panel, so focus must be inside it.
     await userEvent.click(
       screen.getByRole('textbox', {name: 'gridSearchPlaceholder'}),
     );
     await userEvent.keyboard('{Meta>}.{/Meta}');
-    expect(screen.queryByText('inspectorEmptyTitle')).toBeNull();
+    expect(screen.queryByText('instructionTitle')).toBeNull();
 
     await userEvent.keyboard('{Meta>}.{/Meta}');
-    expect(screen.getByText('inspectorEmptyTitle')).toBeInTheDocument();
+    expect(screen.getByText('instructionTitle')).toBeInTheDocument();
   });
 
   it('offers a pointer affordance for the same toggle', async () => {
@@ -799,9 +799,9 @@ describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => 
     render(panel());
     const toggle = screen.getByRole('button', {name: 'inspectorToggle'});
     await userEvent.click(toggle);
-    expect(screen.queryByText('inspectorEmptyTitle')).toBeNull();
+    expect(screen.queryByText('instructionTitle')).toBeNull();
     await userEvent.click(toggle);
-    expect(screen.getByText('inspectorEmptyTitle')).toBeInTheDocument();
+    expect(screen.getByText('instructionTitle')).toBeInTheDocument();
   });
 
   it('deep-linking from the ✨ cell selects the field and opens its inspector group', async () => {
@@ -827,7 +827,7 @@ describe('TemplateConfigGridPanel — inspector visibility (B-5 Task 5)', () => 
     render(panel());
 
     // No docked pane in narrow mode — and no auto-opened overlay either.
-    expect(screen.queryByText('inspectorEmptyTitle')).toBeNull();
+    expect(screen.queryByText('instructionTitle')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
 
     await userEvent.click(
@@ -938,7 +938,7 @@ describe('TemplateConfigGridPanel — 3-rung Esc ladder (B-5 Task 6)', () => {
     // The ladder dispatches from the GRID (the search input is exempt).
     await userEvent.click(screen.getByRole('button', {name: 'Study design'}));
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByText('inspectorEmptyTitle')).toBeNull();
+    expect(screen.queryByText('instructionTitle')).toBeNull();
     expect(screen.queryByLabelText('inspectorLabelLabel')).toBeNull();
     expect(search).toHaveValue('design');
 
@@ -959,7 +959,7 @@ describe('TemplateConfigGridPanel — 3-rung Esc ladder (B-5 Task 6)', () => {
     // Rung 3 semantics for the search input itself: the query clears…
     expect(search).toHaveValue('');
     // …the inspector stays open, and focus stays in the search box.
-    expect(screen.getByText('inspectorEmptyTitle')).toBeInTheDocument();
+    expect(screen.getByText('instructionTitle')).toBeInTheDocument();
     expect(document.activeElement).toBe(search);
   });
 

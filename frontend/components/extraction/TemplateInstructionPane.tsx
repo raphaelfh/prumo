@@ -16,27 +16,23 @@ interface TemplateInstructionPaneProps {
   projectId: string;
   templateId: string;
   /**
-   * The draft deliberately lives in the TRIGGER, not here: dialog content
-   * unmounts on close, so a draft owned by this pane would be silently
-   * destroyed by a stray Escape or overlay click. Dismissing the dialog
-   * keeps the text and the trigger says so; only Cancel discards.
+   * The draft deliberately lives in the HOST, not here: a host may unmount
+   * and remount this pane (a collapsed dialog tab, an inline expander), so a
+   * draft owned by this pane would be silently destroyed by that. The host
+   * decides when to discard it.
    */
   draft: string | null;
   onDraftChange: (draft: string | null) => void;
-  /** Called after a successful save and on Cancel — the host closes itself. */
-  onClose: () => void;
 }
 
-/** The template-level general AI instruction, as the "General AI
- * instruction" tab of `AiConfigDialog`. Behaviour is the config-bar
- * popover's (spec Phase A §4): 4000-char cap, reset-to-origin when the
- * template shipped a default, insert-suggested when it did not. */
+/** The template-level general AI instruction editor. Hosted inline by the
+ * extraction inspector and the QA configuration row; the host owns the
+ * draft so collapsing or re-selecting never destroys it. */
 export function TemplateInstructionPane({
   projectId,
   templateId,
   draft,
   onDraftChange,
-  onClose,
 }: TemplateInstructionPaneProps) {
   const { data, isLoading } = useTemplateInstruction(projectId, templateId);
   const update = useUpdateTemplateInstruction(projectId, templateId);
@@ -65,7 +61,6 @@ export function TemplateInstructionPane({
       onSuccess: () => {
         toast.success(t("extraction", "instructionSavedToast"));
         onDraftChange(null);
-        onClose();
       },
       onError: () => {
         toast.error(t("extraction", "errors_saveInstruction"));
@@ -74,16 +69,13 @@ export function TemplateInstructionPane({
   };
 
   return (
-    // Fills the host's fixed-height panel: the textarea takes every pixel the
-    // buttons row leaves, instead of sizing itself by rows and stranding the
-    // rest of the panel as dead space.
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <Textarea
         value={shown}
         onChange={(e) => onDraftChange(e.target.value)}
         placeholder={t("extraction", "instructionPlaceholder")}
         maxLength={4000}
-        className="min-h-0 flex-1 resize-none text-[13px]"
+        className="min-h-40 resize-y text-[13px]"
       />
       {slotCount > 0 && (
         // The bar's amber chip warns from outside; once you are IN the editor
@@ -117,6 +109,7 @@ export function TemplateInstructionPane({
           <Button
             type="button"
             variant="ghost"
+            size="sm"
             onClick={() => onDraftChange(data.default_instruction ?? "")}
           >
             {t("extraction", "instructionResetDefault")}
@@ -126,6 +119,7 @@ export function TemplateInstructionPane({
           <Button
             type="button"
             variant="ghost"
+            size="sm"
             onClick={() =>
               onDraftChange(t("extraction", "instructionSuggestedDefault"))
             }
@@ -133,18 +127,19 @@ export function TemplateInstructionPane({
             {t("extraction", "instructionInsertDefault")}
           </Button>
         )}
+        {unsaved && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onDraftChange(null)}
+          >
+            {t("extraction", "instructionCancel")}
+          </Button>
+        )}
         <Button
           type="button"
-          variant="outline"
-          onClick={() => {
-            onDraftChange(null);
-            onClose();
-          }}
-        >
-          {t("extraction", "instructionCancel")}
-        </Button>
-        <Button
-          type="button"
+          size="sm"
           onClick={save}
           disabled={update.isPending || !unsaved}
         >

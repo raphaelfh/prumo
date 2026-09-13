@@ -1,6 +1,6 @@
 ---
-status: in_progress
-last_reviewed: 2026-09-12
+status: shipped
+last_reviewed: 2026-09-13
 owner: '@raphaelfh'
 ---
 

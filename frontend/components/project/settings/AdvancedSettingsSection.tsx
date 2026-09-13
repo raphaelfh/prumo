@@ -1,11 +1,9 @@
 /**
- * Advanced settings section — keywords, eligibility, study types, danger zone,
- * and per-project PDF parsing quality toggle.
+ * Advanced settings — one flat group of rows (keywords, eligibility, study types, PDF parsing), then the Danger zone.
  */
 
 import {useState} from 'react';
 import {useNavigate} from 'react-router';
-import {Label} from '@/components/ui/label';
 import {Textarea} from '@/components/ui/textarea';
 import {Button} from '@/components/ui/button';
 import {
@@ -19,12 +17,12 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {AlertTriangle as _AlertTriangle, Trash2} from 'lucide-react';
+import {Trash2} from 'lucide-react';
 import {deleteProject} from '@/services/projectSettingsService';
 import {useMyConnections} from '@/hooks/user/useLlmConnections';
 import {useProjectConnections} from '@/hooks/project/useProjectConnections';
 import {toast} from 'sonner';
-import {SettingsSection, SettingsCard, TagInput} from '@/components/settings';
+import {SettingsGroup, SettingsPage, SettingsRow, TagInput} from '@/components/settings';
 import type {EligibilityCriteria, StudyDesign} from '@/types/project';
 import type {Json} from '@/integrations/supabase/types';
 import {t} from '@/lib/copy';
@@ -99,6 +97,12 @@ export function AdvancedSettingsSection({
     const exclusion = eligibility.exclusion || [];
     const studyTypes = studyDesign.types || [];
 
+  const addTo = (label: string) => t('common', 'addToLabel').replace('{{label}}', label);
+  const keywordsLabel = t('project', 'advancedCardKeywordsTitle');
+  const inclusionLabel = t('project', 'advancedInclusionLabel');
+  const exclusionLabel = t('project', 'advancedExclusionLabel');
+  const studyTypesLabel = t('project', 'advancedCardStudyTypesTitle');
+
   const handleDeleteProject = async () => {
     setIsDeleting(true);
     const result = await deleteProject(projectId);
@@ -118,205 +122,137 @@ export function AdvancedSettingsSection({
   };
 
   return (
-      <SettingsSection
-          title={t('project', 'advancedSectionTitle')}
-          description={t('project', 'advancedSectionDesc')}
-      >
-          <SettingsCard
-              title={t('project', 'advancedCardKeywordsTitle')}
-              description={t('project', 'advancedCardKeywordsDesc')}
-          >
-              <TagInput
-                  items={keywords}
-                  onAdd={(value) => onChange({review_keywords: [...keywords, value]})}
-                  onRemove={(index) =>
-                      onChange({review_keywords: keywords.filter((_, i) => i !== index)})
-                  }
-                  placeholder={t('project', 'advancedKeywordsPlaceholder')}
-                  variant="badge"
-              />
-          </SettingsCard>
-
-          <SettingsCard
-              title={t('project', 'advancedCardEligibilityTitle')}
-              description={t('project', 'advancedCardEligibilityDesc')}
-          >
-              <div className="space-y-4">
-                  <div>
-                      <Label
-                          className="text-[13px] font-medium mb-2 block">{t('project', 'advancedInclusionLabel')}</Label>
-                      <TagInput
-                          items={inclusion}
-                          onAdd={(value) =>
-                              onChange({
-                                  eligibility_criteria: {
-                                      ...eligibility,
-                                      inclusion: [...inclusion, value],
-                                  },
-                              })
-                          }
-                          onRemove={(index) =>
-                              onChange({
-                                  eligibility_criteria: {
-                                      ...eligibility,
-                                      inclusion: inclusion.filter((_, i) => i !== index),
-                                  },
-                              })
-                          }
-                          placeholder={t('project', 'advancedInclusionPlaceholder')}
-                          variant="list"
-                          listVariant="neutral"
+    <SettingsPage>
+      <SettingsGroup>
+        <SettingsRow label={keywordsLabel} htmlFor="advanced-keywords" hint={t('project', 'advancedCardKeywordsDesc')} align="start">
+          {({describedBy}) => (
+            <TagInput
+              id="advanced-keywords"
+              aria-describedby={describedBy}
+              addLabel={addTo(keywordsLabel)}
+              items={keywords}
+              onAdd={(value) => onChange({review_keywords: [...keywords, value]})}
+              onRemove={(index) => onChange({review_keywords: keywords.filter((_, i) => i !== index)})}
+              placeholder={t('project', 'advancedKeywordsPlaceholder')}
+              variant="badge"
             />
-          </div>
-                  <div>
-                      <Label
-                          className="text-[13px] font-medium mb-2 block">{t('project', 'advancedExclusionLabel')}</Label>
-                      <TagInput
-                          items={exclusion}
-                          onAdd={(value) =>
-                              onChange({
-                                  eligibility_criteria: {
-                                      ...eligibility,
-                                      exclusion: [...exclusion, value],
-                                  },
-                              })
-                          }
-                          onRemove={(index) =>
-                              onChange({
-                                  eligibility_criteria: {
-                                      ...eligibility,
-                                      exclusion: exclusion.filter((_, i) => i !== index),
-                                  },
-                              })
-                          }
-                          placeholder={t('project', 'advancedExclusionPlaceholder')}
-                          variant="list"
-                          listVariant="neutral"
-                      />
-                  </div>
-                  <div>
-                      <Label htmlFor="eligibility_notes" className="text-[13px] font-medium mb-2 block">
-                          {t('project', 'advancedAdditionalNotesLabel')}
-                      </Label>
-            <Textarea
-              id="eligibility_notes"
-              value={eligibility.notes ?? ''}
-              onChange={(e) =>
-                  onChange({
-                      eligibility_criteria: {...eligibility, notes: e.target.value},
-                  })
+          )}
+        </SettingsRow>
+
+        <SettingsRow label={inclusionLabel} htmlFor="advanced-inclusion" align="start">
+          <TagInput
+            id="advanced-inclusion"
+            addLabel={addTo(inclusionLabel)}
+            items={inclusion}
+            onAdd={(value) => onChange({eligibility_criteria: {...eligibility, inclusion: [...inclusion, value]}})}
+            onRemove={(index) =>
+              onChange({eligibility_criteria: {...eligibility, inclusion: inclusion.filter((_, i) => i !== index)}})
+            }
+            placeholder={t('project', 'advancedInclusionPlaceholder')}
+            variant="list"
+            listVariant="neutral"
+          />
+        </SettingsRow>
+
+        <SettingsRow label={exclusionLabel} htmlFor="advanced-exclusion" align="start">
+          <TagInput
+            id="advanced-exclusion"
+            addLabel={addTo(exclusionLabel)}
+            items={exclusion}
+            onAdd={(value) => onChange({eligibility_criteria: {...eligibility, exclusion: [...exclusion, value]}})}
+            onRemove={(index) =>
+              onChange({eligibility_criteria: {...eligibility, exclusion: exclusion.filter((_, i) => i !== index)}})
+            }
+            placeholder={t('project', 'advancedExclusionPlaceholder')}
+            variant="list"
+            listVariant="neutral"
+          />
+        </SettingsRow>
+
+        <SettingsRow label={t('project', 'advancedAdditionalNotesLabel')} htmlFor="eligibility_notes" align="start">
+          <Textarea
+            id="eligibility_notes"
+            variant="quiet"
+            value={eligibility.notes ?? ''}
+            onChange={(e) => onChange({eligibility_criteria: {...eligibility, notes: e.target.value}})}
+            placeholder={t('project', 'advancedEligibilityNotesPlaceholder')}
+            rows={3}
+            className="resize-none"
+          />
+        </SettingsRow>
+
+        <SettingsRow label={studyTypesLabel} htmlFor="advanced-study-types" hint={t('project', 'advancedCardStudyTypesDesc')} align="start">
+          {({describedBy}) => (
+            <TagInput
+              id="advanced-study-types"
+              aria-describedby={describedBy}
+              addLabel={addTo(studyTypesLabel)}
+              items={studyTypes}
+              onAdd={(value) => onChange({study_design: {...studyDesign, types: [...studyTypes, value]}})}
+              onRemove={(index) =>
+                onChange({study_design: {...studyDesign, types: studyTypes.filter((_, i) => i !== index)}})
               }
-              placeholder={t('project', 'advancedEligibilityNotesPlaceholder')}
-              rows={3}
-              className="resize-none text-[13px]"
+              placeholder={t('project', 'advancedStudyTypesPlaceholder')}
+              variant="badge"
             />
-          </div>
-              </div>
-          </SettingsCard>
+          )}
+        </SettingsRow>
 
-          <SettingsCard
-              title={t('project', 'advancedCardStudyTypesTitle')}
-              description={t('project', 'advancedCardStudyTypesDesc')}
-          >
-              <div className="space-y-4">
-                  <TagInput
-                      items={studyTypes}
-                      onAdd={(value) =>
-                          onChange({
-                              study_design: {
-                                  ...studyDesign,
-                                  types: [...studyTypes, value],
-                              },
-                          })
-                      }
-                      onRemove={(index) =>
-                          onChange({
-                              study_design: {
-                                  ...studyDesign,
-                                  types: studyTypes.filter((_, i) => i !== index),
-                              },
-                          })
-                      }
-                      placeholder={t('project', 'advancedStudyTypesPlaceholder')}
-                      variant="badge"
-                  />
-                  <div>
-                      <Label htmlFor="study_design_notes" className="text-[13px] font-medium mb-2 block">
-                          {t('project', 'advancedDesignNotesLabel')}
-                      </Label>
-            <Textarea
-              id="study_design_notes"
-              value={studyDesign.notes ?? ''}
-              onChange={(e) =>
-                  onChange({
-                      study_design: {...studyDesign, notes: e.target.value},
-                  })
-              }
-              placeholder={t('project', 'advancedDesignNotesPlaceholder')}
-              rows={3}
-              className="resize-none text-[13px]"
-            />
-          </div>
-              </div>
-          </SettingsCard>
+        <SettingsRow label={t('project', 'advancedDesignNotesLabel')} htmlFor="study_design_notes" align="start">
+          <Textarea
+            id="study_design_notes"
+            variant="quiet"
+            value={studyDesign.notes ?? ''}
+            onChange={(e) => onChange({study_design: {...studyDesign, notes: e.target.value}})}
+            placeholder={t('project', 'advancedDesignNotesPlaceholder')}
+            rows={3}
+            className="resize-none"
+          />
+        </SettingsRow>
 
-          <SettingsCard
-              title={t('parsing', 'highQualityLabel')}
-              description={t('project', 'advancedCardParsingDesc')}
-          >
-              <HighQualityParsingToggle
-                  projectId={projectId}
-                  currentType={currentParserType}
-                  hasLlamaCloudKey={hasLlamaCloudKey}
-                  disabled={!isManager}
-              />
-          </SettingsCard>
+        <HighQualityParsingToggle
+          projectId={projectId}
+          currentType={currentParserType}
+          hasLlamaCloudKey={hasLlamaCloudKey}
+          disabled={!isManager}
+        />
+      </SettingsGroup>
 
-          <SettingsCard
-              title={t('project', 'advancedCardDangerTitle')}
-              description={t('project', 'advancedCardDangerDesc')}
-              destructive
-          >
-              <div className="space-y-3">
-                  <h4 className="text-[13px] font-medium text-destructive">{t('project', 'advancedDeleteProjectHeading')}</h4>
-                  <p className="text-[12px] text-muted-foreground/70">
-                      {t('project', 'advancedDeleteProjectWarning')}
-                  </p>
-                  <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                          <Button variant="destructive" size="sm" className="text-[13px]">
-                              <Trash2 className="h-4 w-4 mr-2" strokeWidth={1.5}/>
-                              {t('project', 'advancedDeleteProjectButton')}
-                          </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                          <AlertDialogHeader>
-                              <AlertDialogTitle className="text-destructive">
-                                  {t('project', 'advancedConfirmDeleteTitle')}
-                              </AlertDialogTitle>
-                              <AlertDialogDescription className="space-y-2">
-                                  <p>
-                                      {t('project', 'advancedConfirmDeleteDescription')}{' '}
-                                      <strong>&quot;{project.name}&quot;</strong>.
-                                  </p>
-                                  <p>{t('project', 'advancedConfirmDeleteList')}</p>
-                                  <p className="font-medium text-destructive">{t('project', 'advancedConfirmDeleteFinal')}</p>
-                              </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                              <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
-                              <AlertDialogAction
-                                  onClick={handleDeleteProject}
-                                  disabled={isDeleting}
-                                  variant="destructive"
-                              >
-                                  {isDeleting ? t('project', 'advancedDeleting') : t('project', 'advancedConfirmDeleteButton')}
-                              </AlertDialogAction>
-                          </AlertDialogFooter>
-                      </AlertDialogContent>
-                  </AlertDialog>
-              </div>
-          </SettingsCard>
-      </SettingsSection>
+      <SettingsGroup title={t('project', 'advancedCardDangerTitle')} tone="danger">
+        <SettingsRow label={t('project', 'advancedDeleteProjectHeading')} hint={t('project', 'advancedDeleteProjectWarning')}>
+          {({describedBy}) => (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm" aria-describedby={describedBy} className="w-fit">
+                  <Trash2 className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                  {t('project', 'advancedDeleteProjectButton')}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-destructive">
+                    {t('project', 'advancedConfirmDeleteTitle')}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="space-y-2">
+                    <p>
+                      {t('project', 'advancedConfirmDeleteDescription')}{' '}
+                      <strong>&quot;{project.name}&quot;</strong>.
+                    </p>
+                    <p>{t('project', 'advancedConfirmDeleteList')}</p>
+                    <p className="font-medium text-destructive">{t('project', 'advancedConfirmDeleteFinal')}</p>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDeleteProject} disabled={isDeleting} variant="destructive">
+                    {isDeleting ? t('project', 'advancedDeleting') : t('project', 'advancedConfirmDeleteButton')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </SettingsRow>
+      </SettingsGroup>
+    </SettingsPage>
   );
 }

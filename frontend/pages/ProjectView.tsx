@@ -17,9 +17,6 @@ import type {Article} from "@/types/article";
 
 type ProjectArticle = Article;
 
-/** Tabs whose content owns the full pane — no page gutter, no max-width wrapper. */
-const FULL_BLEED_TABS = new Set(['articles', 'settings', 'overview', 'screening', 'prisma']);
-
 export default function ProjectView() {
   const { projectId } = useParams<{ projectId: string }>();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -261,19 +258,9 @@ export default function ProjectView() {
     }
   };
 
-    const isFullBleed = FULL_BLEED_TABS.has(activeTab);
-
   return (
       <div className="h-full bg-background flex flex-col">
-      {isFullBleed ? (
-          <div className="flex-1 overflow-y-auto">{renderContent()}</div>
-      ) : (
-          <div className="flex-1 min-h-0 flex flex-col px-4 py-3 lg:px-6">
-              <div className="w-full max-w-[1800px] mx-auto flex flex-1 min-h-0 flex-col">
-                  {renderContent()}
-              </div>
-          </div>
-      )}
+      <div className="flex-1 overflow-y-auto">{renderContent()}</div>
 
           <ZoteroImportDialog
               open={zoteroDialogOpen}
