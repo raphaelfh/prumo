@@ -81,7 +81,7 @@ on a new override (and it parses the tag, so `className={cn("h-8")}` and an
 
 | Variant | Use |
 |---|---|
-| `ghost` | **Every chrome and row action.** No border ever; `hover:bg-accent`, `active:bg-accent/80`. |
+| `ghost` | **Every chrome and row action.** No border ever; `hover:bg-accent`, `active:bg-accent/80`. `IconButton` (the icon-only case) uses a muted fill instead — `hover:bg-muted/60`, `active:bg-muted` — for a quieter hover on icon-dense bars. |
 | `outline` | Only the secondary action beside a primary in a dialog footer. |
 | `default` / `destructive` | The one primary action of a footer or an empty state — high contrast (Black in light mode, White in dark mode). |
 
@@ -234,7 +234,9 @@ census flagging anything under 24×24.
 - [ ] Selection and focus use different vocabularies — no element paints both
       an `outline-ring` and a selected state (§4.6).
 - [ ] Icon-only controls are `IconButton` with a real `label`; shortcuts only where bound.
-- [ ] No `TooltipProvider` outside `App.tsx`; no `cursor-*` class except `peer-`/`group-` relations, `col-resize`, `grabbing`.
+- [ ] No `TooltipProvider` outside `App.tsx`; no `cursor-pointer`, `cursor-default` or
+      `cursor-not-allowed` except in a `peer-*`/`group-*` relation — other cursor
+      utilities (`cursor-help`, `cursor-grab`, `col-resize`, `grabbing`) remain legitimate.
 - [ ] Configuration lives in a view; a popup is a confirm, a short form or a sheet (§ 8).
 - [ ] Overlays use a `size` and header/body/footer — no size or padding class on the content.
 

@@ -113,7 +113,11 @@ Enforces four interaction-primitive rules (spec: `docs/superpowers/specs/2026-09
 3. **cursor-class**: Bans `cursor-pointer`, `cursor-default`, `cursor-not-allowed` as bare tokens. The rule lives in `index.css` `@layer base` (not in components); `peer-*` and `group-*` relational variants are allowed because base CSS cannot express them.
 4. **overlay-size**: Bans width, height, and padding utilities in the `className` of `<DialogContent>`, `<AlertDialogContent>`, and `<SheetContent>`. The `size` prop owns the frame.
 
-Maintains a `.baseline` of `path:rule:count` for grandfathered violations: may shrink, never grow. The interaction-primitives rollout plan drives this gate to zero (no violations), then deletes it. Wall-clock budget: < 500 ms.
+Hard zero, no baseline file: the interaction-primitives rollout drove this gate
+to zero and the `.baseline` was deleted, not merely emptied — a missing
+baseline file means zero tolerance for any offender, and
+`test_baseline_file_is_gone` pins the file's absence so it cannot quietly come
+back. Wall-clock budget: < 500 ms.
 
 ### `check_react_query_keys.py`
 

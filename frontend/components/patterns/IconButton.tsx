@@ -53,7 +53,15 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
     if (tooltip === false) return button;
     return (
       <Tooltip>
-        <TooltipTrigger asChild>{disabled ? <span className="inline-flex">{button}</span> : button}</TooltipTrigger>
+        <TooltipTrigger asChild>
+          {disabled ? (
+            <span className="inline-flex" tabIndex={0}>
+              {button}
+            </span>
+          ) : (
+            button
+          )}
+        </TooltipTrigger>
         <TooltipContent side={side}>
           <span className="flex items-center gap-1.5">
             <span>{tooltip ?? label}</span>

@@ -184,7 +184,7 @@ export function ImportTemplateDialog({
                                 <RadioGroupItem value={template.id} id={template.id} className="relative z-10" />
                                 <div>
                                   <CardTitle className="text-[13px] text-foreground">
-                                    <Label htmlFor={template.id}>
+                                    <Label htmlFor={template.id} className="relative z-10">
                                       {template.name}
                                     </Label>
                                   </CardTitle>

@@ -16,10 +16,10 @@ const motion = 'ease-out data-[state=open]:animate-in data-[state=closed]:animat
 export const overlayBackdrop =
   'fixed inset-0 z-50 bg-black/60 duration-150 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 motion-reduce:animate-none';
 
-export const overlayHeader = 'flex shrink-0 flex-col gap-1 px-5 pt-5 pb-3 pr-12 text-left';
+export const overlayHeader = 'flex shrink-0 flex-col gap-1 px-5 pt-5 pb-3 pr-14 text-left';
 export const overlayTitle = 'text-[15px] font-medium leading-5 text-foreground';
 export const overlayDescription = 'text-[13px] text-muted-foreground';
-export const overlayBody = 'min-h-0 flex-1 overflow-y-auto px-5 py-2 first:pt-5 last:pb-5';
+export const overlayBody = 'min-h-0 flex-1 overflow-y-auto px-5 py-2 first-of-type:pt-5 last-of-type:pb-5';
 export const overlayFooter = 'flex shrink-0 flex-col-reverse gap-2 px-5 pt-3 pb-5 sm:flex-row sm:justify-end';
 export const overlayCloseButton = 'absolute right-3 top-3 text-muted-foreground hover:text-foreground';
 

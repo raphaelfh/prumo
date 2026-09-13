@@ -23,11 +23,12 @@ export interface ListDisplaySortPopoverProps {
     sortDirection: 'asc' | 'desc';
     onSortFieldChange: (value: string) => void;
     onSortDirectionChange: () => void;
-    orderLabel?: string;
+    orderLabel: string;
     /** Display section (optional). If omitted or empty, only sort is shown. */
     columns?: DisplayColumnOption[];
     visibleKeys?: Record<string, boolean>;
     onToggleColumn?: (key: string) => void;
+    /** Required whenever `columns` is passed — matches `tooltipLabel`/`ariaLabel`: no hardcoded English default. */
     displayPropertiesLabel?: string;
     /** Trigger / i18n */
     tooltipLabel: string;
@@ -40,11 +41,11 @@ export function ListDisplaySortPopover({
                                            sortDirection,
                                            onSortFieldChange,
                                            onSortDirectionChange,
-                                           orderLabel = 'Ordering',
+                                           orderLabel,
                                            columns,
                                            visibleKeys = {},
                                            onToggleColumn,
-                                           displayPropertiesLabel = 'Display properties',
+                                           displayPropertiesLabel,
                                            tooltipLabel,
                                            ariaLabel,
                                        }: ListDisplaySortPopoverProps) {

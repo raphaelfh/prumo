@@ -187,6 +187,29 @@ describe('ImportTemplateDialog (add a template)', () => {
     expect(screen.getByTestId('import-template-submit')).toBeEnabled();
   });
 
+  it('stacks the visible name label above the card overlay so a real browser click reaches it', async () => {
+    // The e2e flow (template-import.ui.e2e.ts) clicks the visible
+    // `<label>CHARMS</label>` when the submit is already enabled; without a
+    // higher stacking order than the absolutely-positioned card overlay,
+    // Playwright's actionability check finds the overlay intercepting the
+    // click. jsdom does no hit-testing, so assert the class directly.
+    const user = userEvent.setup();
+    renderDialog(
+      <ImportTemplateDialog
+        projectId="p"
+        open
+        onOpenChange={vi.fn()}
+        onActiveTemplateChanged={vi.fn()}
+      />,
+    );
+    const nameLabel = screen.getByText('CHARMS', {selector: 'label'});
+    expect(nameLabel.className.split(/\s+/)).toEqual(expect.arrayContaining(['relative', 'z-10']));
+
+    expect(screen.getByRole('radio', {name: 'CHARMS'})).not.toBeChecked();
+    await user.click(nameLabel);
+    expect(screen.getByRole('radio', {name: 'CHARMS'})).toBeChecked();
+  });
+
   it('refreshes the list for an import but NOT for a Switch', async () => {
     const user = userEvent.setup();
     const {invalidateSpy} = renderDialog(

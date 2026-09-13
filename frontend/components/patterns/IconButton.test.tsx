@@ -56,6 +56,21 @@ describe('IconButton', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent('The last manager cannot be removed');
   });
 
+  it('keeps the disabled wrapper reachable by keyboard so the tooltip still triggers on focus', async () => {
+    const user = userEvent.setup();
+    renderNow(
+      <>
+        <button type="button">before</button>
+        <IconButton label="Remove member" tooltip="The last manager cannot be removed" disabled icon={<Glyph />} />
+      </>,
+    );
+    const button = screen.getByRole('button', {name: 'Remove member'});
+    expect(button.parentElement).toHaveAttribute('tabIndex', '0');
+    await user.click(screen.getByText('before'));
+    await user.tab();
+    expect(button.parentElement).toHaveFocus();
+  });
+
   it('works as the asChild child of a Radix trigger', async () => {
     renderNow(
       <Popover>

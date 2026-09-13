@@ -53,6 +53,18 @@ describe('DialogContent frame', () => {
     expect(classesOf(screen.getByTestId('f'))).toEqual(expect.arrayContaining(['px-5', 'pb-5', 'sm:justify-end']));
   });
 
+  it('gives the body last-of-type:pb-5 when there is no footer, and still renders the close button', () => {
+    const dialog = open(
+      <DialogContent>
+        <DialogHeader data-testid="h"><DialogTitle>T</DialogTitle><DialogDescription>D</DialogDescription></DialogHeader>
+        <DialogBody data-testid="b">body</DialogBody>
+      </DialogContent>,
+    );
+    expect(classesOf(screen.getByTestId('b'))).toEqual(expect.arrayContaining(['last-of-type:pb-5']));
+    expect(screen.getByRole('button', {name: 'Close'})).toBeInTheDocument();
+    expect(dialog).toContainElement(screen.getByRole('button', {name: 'Close'}));
+  });
+
   it('has a named close button that can be turned off', () => {
     const {unmount} = render(
       <Dialog open>

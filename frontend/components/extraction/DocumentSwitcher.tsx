@@ -157,15 +157,15 @@ export function ParseStatusControl({ articleId, file }: ParseStatusControlProps)
 
   const tooltipContent = (
     <>
-      <p className="font-medium">{label}</p>
+      <span className="block font-medium">{label}</span>
       {status === 'parse_failed' && (
-        <p className="break-words text-background/70">
+        <span className="block break-words text-background/70">
           {file.extractionError
             ? `${t('pdf', 'docParseErrorLabel')}: ${file.extractionError}`
             : t('pdf', 'docParseErrorUnknown')}
-        </p>
+        </span>
       )}
-      <p className="text-background/70">{hint}</p>
+      <span className="block text-background/70">{hint}</span>
     </>
   );
 
