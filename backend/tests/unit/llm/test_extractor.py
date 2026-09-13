@@ -25,6 +25,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.llm.extractor import LlmUsage, _output_for, extract_structured
+from app.llm.provider import build_model
 
 
 class Demo(BaseModel):
@@ -143,6 +144,14 @@ def test_output_for_uses_tooloutput_for_anthropic():
     assert isinstance(_output_for(_FakeAnthropic(), _OutModel), ToolOutput)
 
 
+class _FakeOllama:
+    system = "ollama"
+
+
+def test_output_for_uses_tooloutput_for_ollama():
+    assert isinstance(_output_for(_FakeOllama(), _OutModel), ToolOutput)
+
+
 # ---------------------------------------------------------------------------
 # Provider-usage regression guard (prod incident 2026-08-10 .. 2026-08-30)
 # ---------------------------------------------------------------------------
@@ -227,3 +236,72 @@ async def test_provider_reported_usage_is_never_silently_zeroed():
     )
     assert usage.completion_tokens == 970
     assert usage.total_tokens == 21169
+
+
+async def test_ollama_cloud_extraction_uses_tool_calling_on_the_wire():
+    """Ollama Cloud ignores json_schema, so the request must carry a tool, not a
+    response_format — the schema is then validated from the tool arguments."""
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-ollama",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "gpt-oss:120b",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "final_result",
+                                        "arguments": '{"answer": "42"}',
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            },
+        )
+
+    model = build_model("openai_compatible", "gpt-oss:120b", base_url="https://ollama.com/v1")
+    model.client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    with override_allow_model_requests(True):
+        output, _ = await extract_structured(
+            output_model=Demo,
+            system_prompt="sys",
+            user_prompt="user",
+            model=model,
+            prompt_name="demo",
+            prompt_version="abcdefabcdef",
+        )
+
+    assert output.answer == "42"
+    assert len(sent) == 1
+    assert "response_format" not in sent[0]
+    assert [t["function"]["name"] for t in sent[0]["tools"]] == ["final_result"]
+
+
+def test_ollama_cloud_connection_gets_tooloutput():
+    # Ollama Cloud accepts a json_schema response_format but does not enforce
+    # it, so NativeOutput would yield silently unvalidated JSON.
+    model = build_model("openai_compatible", "gpt-oss:120b", base_url="https://ollama.com/v1")
+    assert isinstance(_output_for(model, _OutModel), ToolOutput)
+
+
+def test_self_hosted_connection_keeps_native_output():
+    model = build_model("openai_compatible", "llama3", base_url="http://localhost:11434/v1")
+    assert isinstance(_output_for(model, _OutModel), NativeOutput)
