@@ -3,32 +3,31 @@
  *
  * Backend resolves `template > project > system_default` at Run creation
  * time and freezes the result on `Run.hitl_config_snapshot`. So
- * everything the user changes here only affects *new* Runs; the banner
- * up top makes that explicit.
+ * everything the user changes here only affects *new* Runs; the intro
+ * line makes that explicit.
  */
 
 import { useState } from 'react';
-import { EyeOff, Info, Layers, RotateCcw, ShieldCheck, Users } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { SettingsCard, SettingsSection } from '@/components/settings';
+import { Switch } from '@/components/ui/switch';
+import { SettingsActions, SettingsGroup, SettingsPage, SettingsRow } from '@/components/settings';
 import { t } from '@/lib/copy';
 import {
   useClearProjectHitlConfig,
   useProjectHitlConfig,
   useUpsertProjectHitlConfig,
 } from '@/hooks/hitl/useHitlConfig';
+import { useManagerReviewVisibility } from '@/hooks/hitl/useManagerReviewVisibility';
 import { useProjectMembers } from '@/hooks/hitl/useProjectMembers';
 import { useProjectTemplates } from '@/hooks/hitl/useProjectTemplates';
 import { useProjectMemberRole } from '@/hooks/useProjectMemberRole';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useComparisonPermissions } from '@/hooks/shared/useComparisonPermissions';
 import type { HitlConfigPayload } from '@/services/hitlConfigService';
-
-import { ManagerReviewVisibilityToggle } from '@/components/runs/ManagerReviewVisibilityToggle';
 
 import { ConsensusConfigForm } from './ConsensusConfigForm';
 import { TemplateConsensusOverride } from './TemplateConsensusOverride';
@@ -46,6 +45,7 @@ export function ReviewConsensusSection({
   // instead of one reading the hook and one a raw project.settings cast.
   const { userId } = useCurrentUser();
   const visibilityPerms = useComparisonPermissions(projectId, userId ?? '', 'extraction');
+  const visibility = useManagerReviewVisibility(projectId, 'extraction', visibilityPerms.canSeeOthers);
   const projectConfig = useProjectHitlConfig(projectId);
   const upsertProject = useUpsertProjectHitlConfig(projectId);
   const clearProject = useClearProjectHitlConfig(projectId);
@@ -98,6 +98,13 @@ export function ReviewConsensusSection({
     ? projectConfig.data.scope_kind === 'project'
     : false;
 
+  // The fallback is named only once the config has loaded cleanly and says so.
+  const showSystemDefault =
+    !projectConfig.isLoading &&
+    !projectConfig.isError &&
+    projectConfig.data !== undefined &&
+    projectConfig.data.scope_kind !== 'project';
+
   const isArbitratorIncomplete =
     draft.consensus_rule === 'arbitrator' && !draft.arbitrator_id;
   const saveDisabled =
@@ -136,39 +143,26 @@ export function ReviewConsensusSection({
     extractionTemplates.isLoading || qaTemplates.isLoading;
 
   return (
-    <SettingsSection
-      title={t('consensus', 'sectionTitle')}
-      description={t('consensus', 'sectionDesc')}
-    >
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertTitle className="text-[13px]">
-          {t('consensus', 'runsBannerTitle')}
-        </AlertTitle>
-        <AlertDescription className="text-[12px] text-muted-foreground/80">
+    <SettingsPage
+      intro={
+        <>
+          <span className="text-foreground">{t('consensus', 'runsBannerTitle')}</span>{' '}
           {t('consensus', 'runsBannerBody')}
-        </AlertDescription>
-      </Alert>
-
-      <SettingsCard
-        title={t('consensus', 'projectDefaultTitle')}
-        description={t('consensus', 'projectDefaultDesc')}
-        icon={ShieldCheck}
-      >
+        </>
+      }
+    >
+      <SettingsGroup title={t('consensus', 'projectDefaultTitle')} hint={t('consensus', 'projectDefaultDesc')}>
         {projectConfig.isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-9 w-32" />
-            <Skeleton className="h-9 w-full max-w-md" />
-          </div>
+          <>
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </>
         ) : (
           <>
-            {!projectIsCustomized && (
-              <Alert variant="default" className="border-dashed">
-                <Users className="h-4 w-4" />
-                <AlertDescription className="text-[12px]">
-                  {t('consensus', 'projectDefaultUsingSystem')}
-                </AlertDescription>
-              </Alert>
+            {showSystemDefault && (
+              <SettingsRow label={t('consensus', 'currentDefaultLabel')}>
+                <p className="px-2 text-[13px] text-muted-foreground">{t('consensus', 'currentSystemDefault')}</p>
+              </SettingsRow>
             )}
             <ConsensusConfigForm
               value={draft}
@@ -179,56 +173,49 @@ export function ReviewConsensusSection({
                 !isManager || upsertProject.isPending || clearProject.isPending
               }
             />
-            <div className="flex items-center justify-between gap-2 pt-3 border-t border-border/40">
-              <div>
-                {projectIsCustomized && isManager && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleClearProject}
-                    disabled={clearProject.isPending || upsertProject.isPending}
-                    className="text-[12px] text-muted-foreground"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-                    {t('consensus', 'resetProjectDefault')}
-                  </Button>
-                )}
-              </div>
-              <Button
-                size="sm"
-                onClick={handleSaveProject}
-                disabled={saveDisabled}
-                className="text-[12px]"
-              >
+            <SettingsActions>
+              {projectIsCustomized && isManager && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearProject}
+                  disabled={clearProject.isPending || upsertProject.isPending}
+                >
+                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+                  {t('consensus', 'resetProjectDefault')}
+                </Button>
+              )}
+              <Button size="sm" onClick={handleSaveProject} disabled={saveDisabled}>
                 {upsertProject.isPending
                   ? t('consensus', 'saving')
                   : t('consensus', 'saveProjectDefault')}
               </Button>
-            </div>
+            </SettingsActions>
           </>
         )}
-      </SettingsCard>
+      </SettingsGroup>
 
-      <SettingsCard
-        title={t('consensus', 'managerVisibilityCardTitle')}
-        description={t('consensus', 'managerVisibilityCardDesc')}
-        icon={EyeOff}
-      >
-        {visibilityPerms.loading ? null : (
-          <ManagerReviewVisibilityToggle
-            projectId={projectId}
-            kind="extraction"
-            currentValue={visibilityPerms.canSeeOthers}
-            disabled={!visibilityPerms.canManageBlindMode}
-          />
-        )}
-      </SettingsCard>
+      {visibilityPerms.loading ? null : (
+        <SettingsGroup>
+          <SettingsRow
+            label={t('consensus', 'managerVisibilityLabel')}
+            htmlFor="manager-visibility-extraction"
+            hint={t('consensus', 'managerVisibilityHint')}
+          >
+            {({ describedBy }) => (
+              <Switch
+                id="manager-visibility-extraction"
+                checked={visibility.checked}
+                disabled={!visibilityPerms.canManageBlindMode || visibility.saving}
+                onCheckedChange={visibility.onToggle}
+                aria-describedby={describedBy}
+              />
+            )}
+          </SettingsRow>
+        </SettingsGroup>
+      )}
 
-      <SettingsCard
-        title={t('consensus', 'templatesTitle')}
-        description={t('consensus', 'templatesDesc')}
-        icon={Layers}
-      >
+      <SettingsGroup title={t('consensus', 'templatesTitle')} hint={t('consensus', 'templatesDesc')}>
         {templatesLoading ? (
           <div className="text-[12px] text-muted-foreground py-3">
             {t('consensus', 'templatesLoading')}
@@ -251,7 +238,7 @@ export function ReviewConsensusSection({
             ))}
           </div>
         )}
-      </SettingsCard>
-    </SettingsSection>
+      </SettingsGroup>
+    </SettingsPage>
   );
 }
