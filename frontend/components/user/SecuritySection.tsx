@@ -7,10 +7,10 @@ import {useForm, useWatch} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
 import {Button} from '@/components/ui/button';
-import {Alert, AlertDescription} from '@/components/ui/alert';
 import {Form, FormControl, FormField, FormItem, FormMessage} from '@/components/ui/form';
 import {Input} from '@/components/ui/input';
-import {SettingsSection, SettingsCard, SettingsField} from '@/components/settings';
+import {IconButton} from '@/components/patterns/IconButton';
+import {SettingsActions, SettingsGroup, SettingsPage, SettingsRow} from '@/components/settings';
 import {AlertCircle, CheckCircle2, Eye, EyeOff, Loader2, Lock} from 'lucide-react';
 import {toast} from 'sonner';
 import {updateUserPassword} from '@/services/authService';
@@ -88,164 +88,120 @@ export function SecuritySection() {
   };
 
   return (
-      <SettingsSection title={t('user', 'securityTitle')} description={t('user', 'securityDescription')}>
-          <SettingsCard title={t('user', 'securityCardTitle')} description={t('user', 'securityCardDescription')}>
-              <Alert className="border-border/40">
-                  <Lock className="h-4 w-4" strokeWidth={1.5}/>
-                  <AlertDescription className="text-[13px]">
-                      {t('user', 'securityAlertDescription')}
-          </AlertDescription>
-        </Alert>
-
-              <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                      <FormField
-                          control={form.control}
-                          name="newPassword"
-                          render={({field}) => (
-                              <FormItem>
-                                  <SettingsField
-                                      label={t('user', 'securityNewPasswordLabel')}
-                                      htmlFor="security-new-password"
-                                      hint={t('user', 'securityNewPasswordHint')}
-                                  >
-                                      <div className="relative">
-                                          <FormControl>
-                                              <Input
-                                                  id="security-new-password"
-                                                  {...field}
-                                                  type={showPasswords.new ? 'text' : 'password'}
-                                                  placeholder={t('user', 'securityNewPasswordPlaceholder')}
-                                                  className="h-9 text-[13px]"
-                                              />
-                                          </FormControl>
-                                          <Button
-                                              type="button"
-                                              variant="ghost"
-                                              size="sm"
-                                              className="absolute right-1 top-1 h-7"
-                                              aria-label={showPasswords.new ? t('user', 'securityAriaHidePassword') : t('user', 'securityAriaShowPassword')}
-                                              onClick={() => setShowPasswords({
-                                                  ...showPasswords,
-                                                  new: !showPasswords.new
-                                              })}
-                                          >
-                                              {showPasswords.new ? (
-                                                  <EyeOff className="h-4 w-4" strokeWidth={1.5}/>
-                                              ) : (
-                                                  <Eye className="h-4 w-4" strokeWidth={1.5}/>
-                                              )}
-                                          </Button>
-                                      </div>
-                                  </SettingsField>
-                                  {newPassword && (
-                                      <div className="space-y-1.5 pt-1">
-                                          <div className="flex items-center justify-between text-[12px]">
-                                              <span
-                                                  className="text-muted-foreground">{t('user', 'securityPasswordStrength')}</span>
-                                              <span className={cn('font-medium', passwordStrength.textClass)}>
-                          {passwordStrength.labelKey ? t('user', passwordStrength.labelKey) : ''}
-                        </span>
-                                          </div>
-                                          <div className="flex gap-1">
-                                              {[...Array(6)].map((_, i) => (
-                                                  <div
-                                                      key={i}
-                                                      className={cn(
-                                                          'h-1 flex-1 rounded-full transition-colors duration-150',
-                                                          i < passwordStrength.strength ? passwordStrength.colorClass : 'bg-muted'
-                                                      )}
-                                                  />
-                                              ))}
-                                          </div>
-                                      </div>
-                                  )}
-                                  <FormMessage/>
-                              </FormItem>
-                          )}
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        <SettingsPage intro={t('user', 'securityAlertDescription')}>
+          <SettingsGroup>
+            <FormField
+              control={form.control}
+              name="newPassword"
+              render={({field}) => (
+                <FormItem className="space-y-0">
+                  <SettingsRow label={t('user', 'securityNewPasswordLabel')} htmlFor="security-new-password" align="start">
+                    <div className="flex items-center gap-1">
+                      <FormControl>
+                        <Input
+                          id="security-new-password"
+                          variant="quiet"
+                          {...field}
+                          type={showPasswords.new ? 'text' : 'password'}
+                          placeholder={t('user', 'securityNewPasswordPlaceholder')}
+                        />
+                      </FormControl>
+                      <IconButton
+                        label={showPasswords.new ? t('user', 'securityAriaHidePassword') : t('user', 'securityAriaShowPassword')}
+                        icon={showPasswords.new ? <EyeOff className="h-4 w-4" strokeWidth={1.5}/> : <Eye className="h-4 w-4" strokeWidth={1.5}/>}
+                        onClick={() => setShowPasswords({...showPasswords, new: !showPasswords.new})}
                       />
-
-                      <FormField
-                          control={form.control}
-                          name="confirmPassword"
-                          render={({field}) => (
-                              <FormItem>
-                                  <SettingsField
-                                      label={t('user', 'securityConfirmLabel')}
-                                      htmlFor="security-confirm-password"
-                                      hint={t('user', 'securityConfirmHint')}
-                                  >
-                                      <div className="relative">
-                                          <FormControl>
-                                              <Input
-                                                  id="security-confirm-password"
-                                                  {...field}
-                                                  type={showPasswords.confirm ? 'text' : 'password'}
-                                                  placeholder={t('user', 'securityConfirmPlaceholder')}
-                                                  className="h-9 text-[13px]"
-                                              />
-                                          </FormControl>
-                                          <Button
-                                              type="button"
-                                              variant="ghost"
-                                              size="sm"
-                                              className="absolute right-1 top-1 h-7"
-                                              aria-label={showPasswords.confirm ? t('user', 'securityAriaHideConfirm') : t('user', 'securityAriaShowConfirm')}
-                                              onClick={() =>
-                                                  setShowPasswords({
-                                                      ...showPasswords,
-                                                      confirm: !showPasswords.confirm
-                                                  })
-                                              }
-                                          >
-                                              {showPasswords.confirm ? (
-                                                  <EyeOff className="h-4 w-4" strokeWidth={1.5}/>
-                                              ) : (
-                                                  <Eye className="h-4 w-4" strokeWidth={1.5}/>
-                                              )}
-                                          </Button>
-                                      </div>
-                                  </SettingsField>
-                                  {confirmPassword && (
-                                      <div className="flex items-center gap-1.5 text-[12px] pt-0.5">
-                                          {passwordsMatch ? (
-                                              <>
-                                                  <CheckCircle2 className="h-3 w-3 text-success" strokeWidth={1.5}/>
-                                                  <span
-                                                      className="text-success">{t('user', 'securityPasswordsMatch')}</span>
-                                              </>
-                                          ) : (
-                                              <>
-                                                  <AlertCircle className="h-3 w-3 text-destructive" strokeWidth={1.5}/>
-                                                  <span
-                                                      className="text-destructive">{t('user', 'securityPasswordsDoNotMatch')}</span>
-                                              </>
-                                          )}
-                                      </div>
-                                  )}
-                                  <FormMessage/>
-                              </FormItem>
-                          )}
-                      />
-
-                      <div className="flex justify-end pt-4 border-t border-border/40">
-                          <Button type="submit" disabled={loading}>
-                              {loading ? (
-                                  <>
-                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5}/>
-                                      {t('user', 'securityUpdating')}
-                                  </>
-                              ) : (
-                                  <>
-                                      <Lock className="mr-2 h-4 w-4" strokeWidth={1.5}/>
-                                      {t('user', 'securityChangePassword')}
-                                  </>
+                    </div>
+                    {newPassword && (
+                      <div className="space-y-1.5 px-2 pt-1">
+                        <div className="flex items-center justify-between text-[12px]">
+                          <span className="text-muted-foreground">{t('user', 'securityPasswordStrength')}</span>
+                          <span className={cn('font-medium', passwordStrength.textClass)}>
+                            {passwordStrength.labelKey ? t('user', passwordStrength.labelKey) : ''}
+                          </span>
+                        </div>
+                        <div className="flex gap-1">
+                          {[...Array(6)].map((_, i) => (
+                            <div
+                              key={i}
+                              className={cn(
+                                'h-1 flex-1 rounded-full transition-colors duration-150',
+                                i < passwordStrength.strength ? passwordStrength.colorClass : 'bg-muted',
                               )}
-                          </Button>
+                            />
+                          ))}
+                        </div>
                       </div>
-                  </form>
-              </Form>
-          </SettingsCard>
-      </SettingsSection>
+                    )}
+                    <FormMessage/>
+                  </SettingsRow>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="confirmPassword"
+              render={({field}) => (
+                <FormItem className="space-y-0">
+                  <SettingsRow label={t('user', 'securityConfirmLabel')} htmlFor="security-confirm-password" align="start">
+                    <div className="flex items-center gap-1">
+                      <FormControl>
+                        <Input
+                          id="security-confirm-password"
+                          variant="quiet"
+                          {...field}
+                          type={showPasswords.confirm ? 'text' : 'password'}
+                          placeholder={t('user', 'securityConfirmPlaceholder')}
+                        />
+                      </FormControl>
+                      <IconButton
+                        label={showPasswords.confirm ? t('user', 'securityAriaHideConfirm') : t('user', 'securityAriaShowConfirm')}
+                        icon={showPasswords.confirm ? <EyeOff className="h-4 w-4" strokeWidth={1.5}/> : <Eye className="h-4 w-4" strokeWidth={1.5}/>}
+                        onClick={() => setShowPasswords({...showPasswords, confirm: !showPasswords.confirm})}
+                      />
+                    </div>
+                    {confirmPassword && (
+                      <div className="flex items-center gap-1.5 px-2 pt-0.5 text-[12px]">
+                        {passwordsMatch ? (
+                          <>
+                            <CheckCircle2 className="h-3 w-3 text-success" strokeWidth={1.5}/>
+                            <span className="text-success">{t('user', 'securityPasswordsMatch')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="h-3 w-3 text-destructive" strokeWidth={1.5}/>
+                            <span className="text-destructive">{t('user', 'securityPasswordsDoNotMatch')}</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <FormMessage/>
+                  </SettingsRow>
+                </FormItem>
+              )}
+            />
+
+            <SettingsActions>
+              <Button type="submit" size="sm" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5}/>
+                    {t('user', 'securityUpdating')}
+                  </>
+                ) : (
+                  <>
+                    <Lock className="mr-2 h-4 w-4" strokeWidth={1.5}/>
+                    {t('user', 'securityChangePassword')}
+                  </>
+                )}
+              </Button>
+            </SettingsActions>
+          </SettingsGroup>
+        </SettingsPage>
+      </form>
+    </Form>
   );
 }

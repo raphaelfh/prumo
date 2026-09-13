@@ -127,4 +127,14 @@ describe('SecuritySection validation feedback', () => {
 
         await vi.waitFor(() => expect(updateMock).toHaveBeenCalledWith('Ab1cdefg'));
     });
+
+    it('states the rules once as the intro and keeps the reveal control in flow', () => {
+        render(<SecuritySection/>);
+        expect(screen.getByText(copy.securityAlertDescription).tagName).toBe('P');
+        expect(screen.queryByRole('alert')).toBeNull();
+        const reveal = screen.getByRole('button', {name: copy.securityAriaShowPassword});
+        expect(reveal).not.toHaveClass('absolute');
+        expect(reveal.parentElement).toHaveClass('flex', 'items-center', 'gap-1');
+        expect('securityNewPasswordHint' in copy).toBe(false);
+    });
 });

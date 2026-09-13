@@ -92,7 +92,7 @@
   // knip modes silent without it (never before 11b); Task 14 asserts it is
   // gone. Never widen it to another path or issue type.
   "ignoreIssues": {
-    "frontend/components/settings/{index.ts,SettingsPage.tsx,SettingsGroup.tsx,SettingsRow.tsx,SettingsActions.tsx}": ["exports"]
+    "frontend/components/settings/{index.ts,SettingsPage.tsx,SettingsGroup.tsx,SettingsRow.tsx,SettingsActions.tsx,SettingsCard.tsx,SettingsField.tsx}": ["exports"]
   },
   // Invoked via npx inside scripts/generate_api_types.sh — a shell caller
   // knip cannot see.
