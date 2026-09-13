@@ -84,14 +84,15 @@
   ],
   // TEMPORARY (borderless density pass PR 1, plan
   // docs/superpowers/plans/2026-09-13-borderless-density-pass-settings.md).
-  // Task 2a lands FieldHint and useIsCoarsePointer before their first
-  // production callers (SettingsRow and SettingsGroup, Task 2b), so
-  // --production reports FieldHint.tsx as an unused file and useIsCoarsePointer
-  // as an unused export. Task 2b deletes this block. ignoreIssues, not
-  // ignoreFiles: ignoreFiles prints a configuration hint in default mode.
+  // Task 2b lands SettingsPage/SettingsGroup/SettingsRow/SettingsActions before
+  // their first production callers (Tasks 4-13 migrate the sections), so
+  // --production reports each export in its file and its index.ts re-export.
+  // It also keeps the SettingsCard/SettingsField re-exports quiet once Task 11b
+  // removes their last callers. Remove it at the first task that leaves both
+  // knip modes silent without it (never before 11b); Task 14 asserts it is
+  // gone. Never widen it to another path or issue type.
   "ignoreIssues": {
-    "frontend/components/patterns/FieldHint.tsx": ["files"],
-    "frontend/hooks/use-mobile.tsx": ["exports"]
+    "frontend/components/settings/{index.ts,SettingsPage.tsx,SettingsGroup.tsx,SettingsRow.tsx,SettingsActions.tsx}": ["exports"]
   },
   // Invoked via npx inside scripts/generate_api_types.sh — a shell caller
   // knip cannot see.
