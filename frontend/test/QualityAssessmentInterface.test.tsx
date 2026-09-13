@@ -33,6 +33,48 @@ vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({ user: { id: 'user-1' } }),
 }));
 
+// The worklist toolbar mounts the engine gear (spec §5); its hooks are stubbed
+// so this test stays about the mount point, not the engine read.
+const ENGINE_READ = {
+  default: {
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    mode: 'fast',
+    source: 'project',
+    retired: false,
+    user_choice_allowed: true,
+  },
+  effective: {
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    mode: 'fast',
+    source: 'project',
+    retired: false,
+    connection_id: null,
+    connection_label: null,
+  },
+  source: 'project',
+  catalog: [
+    {
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      canonical: 'openai:gpt-4o-mini',
+      label: 'GPT-4o mini',
+      best_for: 'b',
+      context_window: 1000,
+      cost_tier: '$',
+    },
+  ],
+  availability: { openai: 'global' },
+};
+
+vi.mock('@/hooks/extraction/useLlmEngine', () => ({
+  useLlmEngine: () => ({ data: ENGINE_READ, isPending: false, isError: false, refetch: vi.fn() }),
+  useSetMyEngine: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/hooks/user/useLlmConnections', () => ({ useProviders: () => ({ data: [] }) }));
+
 vi.mock('@/integrations/api', () => ({
   apiClient: vi.fn(async (path: string) => {
     // B-3a: the worklist reads the ACTIVE snapshot from the typed endpoint;
@@ -166,5 +208,16 @@ describe('QualityAssessmentInterface', () => {
     expect(
       await screen.findByRole('dialog', { name: /Export to Excel/i }),
     ).toBeInTheDocument();
+  });
+
+  it('mounts the engine gear on the QA worklist with the effective engine in its tooltip', async () => {
+    const user = userEvent.setup();
+    renderInterface();
+
+    const gear = await screen.findByTestId('engine-gear');
+    await user.hover(gear);
+    expect(
+      (await screen.findAllByText(/Your engine for new runs: GPT-4o mini/)).length,
+    ).toBeGreaterThan(0);
   });
 });

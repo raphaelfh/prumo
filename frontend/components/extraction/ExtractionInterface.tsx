@@ -18,6 +18,7 @@ import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractio
 import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
 import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
+import {EngineGear} from './EngineGear';
 import {ConfigureTemplateCards} from './config/ConfigureTemplateCards';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {HITLExportDialog} from '@/components/hitl/HITLExportDialog';
@@ -308,6 +309,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             projectId={projectId}
             templateId={activeTemplate.id}
             toolbarActions={
+              <>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -326,6 +328,8 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                   <TooltipContent>{t('extraction', 'exportButton')}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+              <EngineGear projectId={projectId}/>
+              </>
             }
           />
         ) : isManager ? (

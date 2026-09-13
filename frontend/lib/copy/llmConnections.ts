@@ -42,4 +42,21 @@ export const llmConnections = {
     verifySuccess: 'Connection verified.',
     verifyFailed: 'Verification failed: {{reason}}',
     verifyError: 'Failed to verify the connection',
+
+    // --- Worklist gear picker ---
+    gearAria: 'Your engine for new runs',
+    gearLoading: 'Loading…',
+    gearTooltip: 'Your engine for new runs: {{engine}}',
+    projectDefaultLine: 'Project default: {{engine}}',
+    lockedReason: 'A project manager locked this project to its default engine.',
+    pickerLoadError: "Couldn't load the engines.",
+    pickerNoMatch: 'No engines match.',
+    tagYourKey: 'your key',
+    tagProjectKey: 'project key',
+    tagPrumo: 'prumo',
+    tagNeedsKey: 'needs a key',
+    needsKeyLink: 'Add a key under Integrations',
+    retiredNote: 'This engine is no longer available. Pick a new model.',
+    pickSuccess: 'Your engine for new runs is set.',
+    pickError: 'Failed to set your engine',
 } as const;

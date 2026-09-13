@@ -42,6 +42,7 @@ import {
   useActiveTemplateSelection,
 } from "@/components/hitl/HITLActiveTemplateBar";
 import { HITLArticleTable } from "@/components/hitl/HITLArticleTable";
+import {EngineGear} from '@/components/extraction/EngineGear';
 import { HITLExportDialog } from "@/components/hitl/HITLExportDialog";
 import { QualityAssessmentConfiguration } from "@/components/quality/QualityAssessmentConfiguration";
 import { useProjectTemplates } from "@/hooks/hitl/useProjectTemplates";
@@ -244,6 +245,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
             emptyTitle={t("qa", "noArticlesForListTitle")}
             emptyDescription={t("qa", "noArticlesForListDesc")}
             toolbarActions={
+              <>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -262,6 +264,8 @@ export function QualityAssessmentInterface({ projectId }: Props) {
                   <TooltipContent>{t("extraction", "exportButton")}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+              <EngineGear projectId={projectId} />
+              </>
             }
           />
         </div>
