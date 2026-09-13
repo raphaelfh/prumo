@@ -117,7 +117,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   if (activeTab === "configuration") {
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
-        <div className="min-h-0 flex-1 overflow-y-auto pb-4 p-4 lg:p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
           <QualityAssessmentConfiguration projectId={projectId} />
         </div>
       </div>
@@ -127,7 +127,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   if (activeTab === "dashboard") {
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
-        <div className="min-h-0 flex-1 overflow-y-auto pb-4 p-4 lg:p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             <Card className="border-border/40 shadow-elev-popover">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
@@ -181,7 +181,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   if (templatesLoading) {
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
-        <div className="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+        <div className="flex min-h-0 flex-1 flex-col p-2">
           <div className="space-y-3">
             <Skeleton className="h-10 w-full max-w-md" />
             <Skeleton className="h-72 w-full" />
@@ -194,7 +194,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   if (!activeTemplate) {
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
-        <div className="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+        <div className="flex min-h-0 flex-1 flex-col p-2">
           <div className="space-y-3">
             <HITLActiveTemplateBar
               kind="quality_assessment"
@@ -218,7 +218,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
-      <div className="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+      <div className="flex min-h-0 flex-1 flex-col p-2">
         <div className="shrink-0">
           <HITLActiveTemplateBar
             kind="quality_assessment"

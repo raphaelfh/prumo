@@ -175,7 +175,7 @@ was there.
 
 | Boundary                              | Budget                          | Why                                                                                                                       |
 |---------------------------------------|---------------------------------|---------------------------------------------------------------------------------------------------------------------------|
-| Page gutter (viewport → workspace)    | `px-4 py-3`, `lg:px-6`          | 24px is as wide as a page band ever needs. `lg:px-10` spent 80px of a 1340px window painting nothing.                      |
+| Page gutter (viewport → workspace)    | `p-2`, owned by the view         | The Articles list's 8px inset. A tab never inherits a padded wrapper from `ProjectView`; each view sets its own single inset. |
 | Panel / card padding                  | `p-2`–`p-3` dense, `p-4` prose  | The component owns its own inset; the parent owns the gap between components.                                              |
 | Between siblings                      | `gap-3` (12px)                  | Below ~12px adjacent regions start to visually merge and the reader misreads where one ends.                               |
 | Compact row (rail, menu, list item)   | `px-2 py-1`, `space-y-0.5`      | 4px vertical / 8–12px horizontal is the compact tier's floor. Tighter and the rows stop being separable at a glance.       |

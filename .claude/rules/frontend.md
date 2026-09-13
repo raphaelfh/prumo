@@ -65,7 +65,7 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   (`/design-review <route>`) — render, screenshot, compare to the
   Plane/Linear target, fix, re-screenshot.
 - **Space belongs to content — keep to the edge budget** (`frontend-ux` §6).
-  Page gutter `px-4 py-3 lg:px-6` (never wider); one hairline per boundary,
+  Page gutter `p-2`, owned by the view (the Articles pattern); one hairline per boundary,
   drawn by the region that owns it; no card nested inside an already-bordered
   pane; no doubled padding. Compact rows (rail, menu, list) sit at `px-2 py-1`
   with `space-y-0.5` — tighter and they read as one glued block. Space
