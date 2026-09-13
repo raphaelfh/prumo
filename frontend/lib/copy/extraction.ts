@@ -540,8 +540,6 @@ export const extraction = {
     errors_saveInstruction: 'Could not save the general AI instruction',
     instructionScopeHint:
       'Saved to this template draft — reaches reviewers when the template is published.',
-    // Short form for the dialog's tab strip, which must fit a phone.
-    instructionTabLabel: 'Instruction',
     instructionCustomizeWarning:
       '{{n}} unfilled [customize:] slot(s) — the AI receives the placeholder text as written.',
     // QualityAssessmentInterface / dashboard

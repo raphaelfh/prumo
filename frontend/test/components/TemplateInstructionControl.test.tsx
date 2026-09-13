@@ -1,6 +1,5 @@
-import {render, screen, waitFor} from '@testing-library/react';
+import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {MemoryRouter} from 'react-router';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -12,29 +11,29 @@ vi.mock('@/services/templateInstructionService', () => ({
 }));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
-// The dialog the trigger opens force-mounts its review-question tab too;
-// an errored read keeps that pane inert so these tests stay about the
-// instruction surface.
-vi.mock('@/hooks/project/useAiContext', () => ({
-  useAiContext: () => ({data: undefined, isLoading: false, isError: true}),
-  useSetAiContext: () => ({mutate: vi.fn(), isPending: false}),
-}));
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {TemplateInstructionControl} from '@/components/extraction/TemplateInstructionControl';
 
-function renderControl() {
+function renderControl({
+  draft = null,
+  expanded,
+  onActivate = vi.fn(),
+}: {draft?: string | null; expanded?: boolean; onActivate?: () => void} = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: false}, mutations: {retry: false}},
   });
   return render(
-    // MemoryRouter: the dialog's model tab deep-links to the key settings.
-    <MemoryRouter>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <TemplateInstructionControl projectId="p1" templateId="t1" />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <TemplateInstructionControl
+          projectId="p1"
+          templateId="t1"
+          draft={draft}
+          expanded={expanded}
+          onActivate={onActivate}
+        />
+      </TooltipProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -78,46 +77,6 @@ describe('TemplateInstructionControl', () => {
     expect(screen.queryByTestId('instruction-customize-chip')).toBeNull();
   });
 
-  it('expands, edits, and saves through the mutation', async () => {
-    getTemplateInstruction.mockResolvedValue({
-      project_template_id: 't1',
-      llm_template_instruction: 'Old text',
-      default_instruction: null,
-    });
-    // B-4 response shape: a draft edit — no version fields.
-    updateTemplateInstruction.mockResolvedValue({
-      project_template_id: 't1',
-      llm_template_instruction: 'New text',
-    });
-    renderControl();
-    await userEvent.click(
-      await screen.findByRole('button', {name: /instructionTitle/}),
-    );
-    const textarea = screen.getByRole('textbox');
-    await userEvent.clear(textarea);
-    await userEvent.type(textarea, 'New text');
-    await userEvent.click(screen.getByRole('button', {name: 'instructionSave'}));
-    await waitFor(() =>
-      expect(updateTemplateInstruction).toHaveBeenCalledWith('p1', 't1', 'New text'),
-    );
-  });
-
-  it('reset-to-default fills the textarea with the origin text', async () => {
-    getTemplateInstruction.mockResolvedValue({
-      project_template_id: 't1',
-      llm_template_instruction: 'Customized',
-      default_instruction: 'Origin default',
-    });
-    renderControl();
-    await userEvent.click(
-      await screen.findByRole('button', {name: /instructionTitle/}),
-    );
-    await userEvent.click(
-      screen.getByRole('button', {name: 'instructionResetDefault'}),
-    );
-    expect(screen.getByRole('textbox')).toHaveValue('Origin default');
-  });
-
   it('keeps the unresolved-slot warning readable without opening anything', async () => {
     getTemplateInstruction.mockResolvedValue({
       project_template_id: 't1',
@@ -135,21 +94,29 @@ describe('TemplateInstructionControl', () => {
     expect(screen.getByTestId('instruction-customize-chip')).toBeInTheDocument();
   });
 
-  it('preserves an unsaved draft when the dialog is dismissed', async () => {
-    getTemplateInstruction.mockResolvedValue({
-      project_template_id: 't1',
-      llm_template_instruction: 'Old text',
-      default_instruction: null,
-    });
+  it('activates its host instead of opening a dialog', async () => {
+    getTemplateInstruction.mockResolvedValue({project_template_id: 't1', llm_template_instruction: 'Set', default_instruction: null});
+    const onActivate = vi.fn();
+    renderControl({onActivate});
+    await userEvent.click(await screen.findByRole('button', {name: /instructionTitle/}));
+    expect(onActivate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('reports expansion only when the host tracks it', async () => {
+    getTemplateInstruction.mockResolvedValue({project_template_id: 't1', llm_template_instruction: 'Set', default_instruction: null});
+    const {unmount} = renderControl({expanded: true});
+    expect(await screen.findByRole('button', {name: /instructionTitle/})).toHaveAttribute('aria-expanded', 'true');
+    unmount();
     renderControl();
-    const trigger = await screen.findByRole('button', {name: /instructionTitle/});
-    await userEvent.click(trigger);
-    await userEvent.type(screen.getByRole('textbox'), ' plus mine');
-    // Dismissing the dialog must not silently destroy prose the manager
-    // typed — the draft outlives the surface that edits it.
-    await userEvent.keyboard('{Escape}');
-    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
-    await userEvent.click(screen.getByRole('button', {name: /instructionTitle/}));
-    expect(screen.getByRole('textbox')).toHaveValue('Old text plus mine');
+    expect(await screen.findByRole('button', {name: /instructionTitle/})).not.toHaveAttribute('aria-expanded');
+  });
+
+  it('marks an unsaved host draft in its accessible name', async () => {
+    getTemplateInstruction.mockResolvedValue({project_template_id: 't1', llm_template_instruction: 'Set', default_instruction: null});
+    renderControl({draft: 'Set, edited'});
+    expect(await screen.findByRole('button', {name: /instructionTitle/})).toHaveAccessibleName(
+      expect.stringContaining('instructionUnsavedDraft'),
+    );
   });
 });
