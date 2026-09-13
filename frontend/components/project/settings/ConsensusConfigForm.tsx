@@ -1,9 +1,10 @@
 /**
  * Reusable consensus form — works for both project- and template-scope.
  * The parent owns persistence; this component is purely controlled.
+ * Renders a fragment of SettingsRows; the caller owns the SettingsGroup.
  */
 
-import { Info } from 'lucide-react';
+import { useId } from 'react';
 
 import {
   Select,
@@ -12,8 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { SettingsField } from '@/components/settings';
+import { SettingsRow } from '@/components/settings';
 import { t } from '@/lib/copy';
 import type {
   ConsensusRule,
@@ -29,6 +29,7 @@ export interface ConsensusConfigFormProps {
   disabled?: boolean;
 }
 
+/** Returns rows, not a wrapper: render it directly inside a SettingsGroup body. */
 export function ConsensusConfigForm({
   value,
   onChange,
@@ -36,6 +37,10 @@ export function ConsensusConfigForm({
   membersLoading = false,
   disabled = false,
 }: ConsensusConfigFormProps) {
+  // Several forms mount at once (project default + expanded overrides).
+  const baseId = useId();
+  const ruleId = `${baseId}-rule`;
+  const arbitratorId = `${baseId}-arbitrator`;
   const arbitratorEligible = members.filter((m) => m.role === 'consensus' || m.role === 'manager');
 
   const handleRuleChange = (rule: ConsensusRule) => {
@@ -52,84 +57,73 @@ export function ConsensusConfigForm({
   };
 
   const showArbitratorPicker = value.consensus_rule === 'arbitrator';
+  const noEligible = arbitratorEligible.length === 0;
   const arbitratorMissing =
     showArbitratorPicker &&
     (!value.arbitrator_id ||
       !arbitratorEligible.some((m) => m.user_id === value.arbitrator_id));
 
   return (
-    <div className="space-y-4">
-      <SettingsField
-        label={t('consensus', 'ruleLabel')}
-        hint={t('consensus', 'ruleHint')}
-        htmlFor="consensus-rule"
-      >
-        <Select
-          value={value.consensus_rule}
-          onValueChange={(v) => handleRuleChange(v as ConsensusRule)}
-          disabled={disabled}
-        >
-          <SelectTrigger id="consensus-rule" className="w-full max-w-md">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="unanimous">
-              {t('consensus', 'ruleUnanimous')}
-            </SelectItem>
-            <SelectItem value="majority">
-              {t('consensus', 'ruleMajority')}
-            </SelectItem>
-            <SelectItem value="arbitrator">
-              {t('consensus', 'ruleArbitrator')}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </SettingsField>
+    <>
+      <SettingsRow label={t('consensus', 'ruleLabel')} htmlFor={ruleId} hint={t('consensus', 'ruleHint')}>
+        {({ describedBy }) => (
+          <Select
+            value={value.consensus_rule}
+            onValueChange={(v) => handleRuleChange(v as ConsensusRule)}
+            disabled={disabled}
+          >
+            <SelectTrigger id={ruleId} variant="quiet" aria-describedby={describedBy} className="w-full max-w-md">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unanimous">{t('consensus', 'ruleUnanimous')}</SelectItem>
+              <SelectItem value="majority">{t('consensus', 'ruleMajority')}</SelectItem>
+              <SelectItem value="arbitrator">{t('consensus', 'ruleArbitrator')}</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+      </SettingsRow>
 
       {showArbitratorPicker && (
-        <SettingsField
+        <SettingsRow
           label={t('consensus', 'arbitratorLabel')}
+          htmlFor={noEligible ? undefined : arbitratorId}
           hint={t('consensus', 'arbitratorHint')}
-          htmlFor="arbitrator-id"
           required
+          error={arbitratorMissing && !noEligible ? t('consensus', 'arbitratorRequired') : undefined}
         >
-          {arbitratorEligible.length === 0 ? (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription className="text-[12px]">
+          {({ describedBy }) =>
+            noEligible ? (
+              <p className="px-2 text-[13px] text-muted-foreground">
                 {t('consensus', 'arbitratorNoEligibleMembers')}
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <Select
-              value={value.arbitrator_id ?? ''}
-              onValueChange={handleArbitratorChange}
-              disabled={disabled || membersLoading}
-            >
-              <SelectTrigger id="arbitrator-id" className="w-full max-w-md">
-                <SelectValue
-                  placeholder={t('consensus', 'arbitratorPlaceholder')}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {arbitratorEligible.map((member) => (
-                  <SelectItem key={member.user_id} value={member.user_id}>
-                    {member.user_full_name ??
-                      member.user_email ??
-                      t('project', 'teamUserFallback')}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </SettingsField>
+              </p>
+            ) : (
+              <Select
+                value={value.arbitrator_id ?? ''}
+                onValueChange={handleArbitratorChange}
+                disabled={disabled || membersLoading}
+              >
+                <SelectTrigger
+                  id={arbitratorId}
+                  variant="quiet"
+                  aria-describedby={describedBy}
+                  aria-required="true"
+                  className="w-full max-w-md"
+                >
+                  <SelectValue placeholder={t('consensus', 'arbitratorPlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {arbitratorEligible.map((member) => (
+                    <SelectItem key={member.user_id} value={member.user_id}>
+                      {member.user_full_name ?? member.user_email ?? t('project', 'teamUserFallback')}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )
+          }
+        </SettingsRow>
       )}
-
-      {arbitratorMissing && arbitratorEligible.length > 0 && (
-        <p className="text-[12px] text-destructive">
-          {t('consensus', 'arbitratorRequired')}
-        </p>
-      )}
-    </div>
+    </>
   );
 }

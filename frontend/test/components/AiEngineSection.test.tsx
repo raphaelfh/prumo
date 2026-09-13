@@ -1,5 +1,5 @@
-/** §7.6: manager editable card, non-manager read-only, lock PUTs the default,
- * card load error, plus the Shared keys table, form and per-block states. */
+/** §7.6: manager editable rows, non-manager read-only, lock PUTs the default,
+ * card load error, plus the Shared keys list, form and per-group states. */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -86,20 +86,23 @@ describe('AiEngineSection', () => {
     expect(screen.queryByTestId('ai-engine-skeleton')).not.toBeInTheDocument();
   });
 
-  it('a manager sees the Shared keys table with serves tags', async () => {
+  it('a manager sees the Shared keys list with serves tags and a remove control per row', async () => {
     renderSection();
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('parsing key')).toBeInTheDocument();
-    expect(within(table).getByText(t('llmConnections', 'servesParsing'))).toBeInTheDocument();
+    const list = await screen.findByRole('list', {name: t('llmConnections', 'sharedTitle')});
+    const row = within(list).getByRole('listitem');
+    expect(within(row).getByText('parsing key')).toBeInTheDocument();
+    expect(within(row).getByText(t('llmConnections', 'servesParsing'))).toBeInTheDocument();
+    expect(within(row).getByRole('button', {name: t('llmConnections', 'sharedRemoveAria')})).toBeInTheDocument();
   });
 
-  it('a non-manager sees no shared-keys table and never fetches the list', async () => {
+  it('a non-manager sees no shared keys and never fetches the list', async () => {
     role.isManager = false;
     let projectListHits = 0;
-    server.use(http.get('*/api/v1/projects/p1/connections', () => { projectListHits += 1; return ok([]); }));
+    server.use(http.get('*/api/v1/projects/p1/connections', () => { projectListHits += 1; return ok([SHARED]); }));
     renderSection();
     expect(await screen.findByText('GPT-4o mini')).toBeInTheDocument();
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByText('parsing key')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: t('llmConnections', 'sharedRemoveAria')})).not.toBeInTheDocument();
     expect(projectListHits).toBe(0);
   });
 
@@ -134,5 +137,75 @@ describe('AiEngineSection', () => {
     await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'sharedRemoveAria')}));
     await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'removeConfirm')}));
     await waitFor(() => expect(screen.getByText(t('llmConnections', 'sharedEmpty'))).toBeInTheDocument());
+  });
+
+  it('a non-manager sees the Locked badge next to the default when members are locked', async () => {
+    role.isManager = false;
+    server.use(http.get('*/api/v1/projects/p1/llm-engine', () => ok({...READ, default: {...READ.default, user_choice_allowed: false}})));
+    renderSection();
+    expect(await screen.findByText(t('llmConnections', 'lockedBadge'))).toBeInTheDocument();
+    expect(screen.getByText('GPT-4o mini')).toBeInTheDocument();
+  });
+
+  it('rows carry their hints: default ← cardDescription, lock ← lockHint; no card title', async () => {
+    renderSection();
+    const lock = await screen.findByRole('switch', {name: t('llmConnections', 'lockLabel')});
+    expect(lock).toHaveAccessibleDescription(t('llmConnections', 'lockHint'));
+    expect(screen.getByRole('combobox', {name: t('llmConnections', 'defaultLabel')})).toHaveAccessibleDescription(
+      t('llmConnections', 'cardDescription'),
+    );
+    expect(screen.queryByRole('heading', {name: 'AI engine'})).not.toBeInTheDocument();
+  });
+
+  it('the engine skeleton renders inside its group', async () => {
+    server.use(http.get('*/api/v1/projects/p1/llm-engine', async () => { await delay(50); return ok(READ); }));
+    renderSection();
+    expect(screen.getByTestId('ai-engine-skeleton').closest('.border-t')).not.toBeNull();
+    await screen.findByRole('switch', {name: t('llmConnections', 'lockLabel')});
+  });
+
+  it('shared keys skeleton, error and empty states render inside the Shared keys group', async () => {
+    const sharedGroup = () =>
+      screen.getByRole('heading', {name: t('llmConnections', 'sharedTitle')}).closest('.border-t') as HTMLElement;
+
+    server.use(http.get('*/api/v1/projects/p1/connections', async () => { await delay(50); return ok([]); }));
+    const first = renderSection();
+    expect(sharedGroup().querySelector('.animate-pulse')).not.toBeNull();
+    const empty = await screen.findByText(t('llmConnections', 'sharedEmpty'));
+    expect(sharedGroup().contains(empty)).toBe(true);
+    const add = within(sharedGroup()).getByRole('button', {name: t('llmConnections', 'sharedAddButton')});
+    expect(add).not.toHaveClass('border');
+    first.unmount();
+
+    server.use(http.get('*/api/v1/projects/p1/connections', () => HttpResponse.json({ok: false, error: {code: 'X', message: 'boom'}}, {status: 500})));
+    renderSection();
+    const error = await screen.findByText(t('llmConnections', 'sharedLoadError'));
+    expect(sharedGroup().contains(error)).toBe(true);
+    expect(within(sharedGroup()).getByRole('button', {name: t('llmConnections', 'retry')})).toBeInTheDocument();
+  });
+
+  it('the add form is labelled rows with a primary Save and a ghost Cancel, in no bordered box', async () => {
+    renderSection();
+    await userEvent.click(await screen.findByRole('button', {name: t('llmConnections', 'sharedAddButton')}));
+    const fields = [
+      screen.getByRole('combobox', {name: t('llmConnections', 'providerLabel')}),
+      screen.getByLabelText(t('llmConnections', 'labelLabel')),
+      screen.getByLabelText(t('llmConnections', 'keyLabel')),
+    ];
+    for (const field of fields) {
+      // SETTINGS_ROW_GRID (Task 2b): each control sits in its own SettingsRow.
+      expect(field.closest('.grid')).toHaveClass('@[36rem]/settings:grid-cols-[11rem_minmax(0,1fr)]');
+      for (let el = field.parentElement; el && el !== document.body; el = el.parentElement) {
+        const classes = Array.from(el.classList);
+        expect(classes.includes('border') && classes.some((c) => c.startsWith('rounded'))).toBe(false);
+      }
+    }
+    // ui/button.tsx: variant "default" renders bg-primary; "ghost" renders hover:bg-accent.
+    const save = screen.getByRole('button', {name: t('llmConnections', 'saveButton')});
+    expect(save).toHaveClass('bg-primary');
+    expect(save).not.toHaveClass('hover:bg-accent');
+    const cancel = screen.getByRole('button', {name: t('llmConnections', 'cancelButton')});
+    expect(cancel).toHaveClass('hover:bg-accent');
+    expect(cancel).not.toHaveClass('bg-primary');
   });
 });

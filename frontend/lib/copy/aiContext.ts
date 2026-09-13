@@ -9,7 +9,6 @@
  */
 export const aiContext = {
     // Card / dialog chrome
-    sectionTitle: 'Review question',
     sectionDesc:
         'What this review is asking. Sent to the AI with every extraction and quality assessment.',
     save: 'Save',

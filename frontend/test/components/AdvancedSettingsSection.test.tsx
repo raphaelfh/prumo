@@ -44,7 +44,34 @@ describe('AdvancedSettingsSection — llama_cloud key from connections', () => {
     vi.mocked(fetchProjectConnections).mockClear();
     renderSection(false);
     await waitFor(() => expect(screen.getByRole('switch')).toBeDisabled()); // disabled={!isManager} still wins
-    await waitFor(() => expect(screen.getByText(t('parsing', 'highQualityHint'))).toBeInTheDocument());
+    const sw = screen.getByRole('switch');
+    const hintName = t('common', 'fieldHintAria').replace('{{label}}', t('parsing', 'highQualityLabel'));
+    expect(screen.getByRole('button', {name: hintName})).toBeInTheDocument();
+    const ids = (sw.getAttribute('aria-describedby') ?? '').split(' ');
+    expect(ids.map((id) => document.getElementById(id)?.textContent)).toContain(t('parsing', 'highQualityHint'));
     expect(fetchProjectConnections).not.toHaveBeenCalled();
+  });
+
+  it('keeps the needs-key sentence visible under the disabled switch', async () => {
+    vi.mocked(fetchMyConnections).mockResolvedValue({ok: true, data: []});
+    vi.mocked(fetchProjectConnections).mockResolvedValue({ok: true, data: []});
+    renderSection(true);
+    const sentence = await screen.findByText(t('parsing', 'highQualityNeedsKey'));
+    expect(sentence).toBeVisible();
+    expect(sentence).not.toHaveClass('sr-only');
+    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(screen.getByRole('switch').getAttribute('aria-describedby')).toContain(sentence.id);
+  });
+
+  it('renders one flat group of rows, then a destructive Danger zone', () => {
+    vi.mocked(fetchMyConnections).mockResolvedValue({ok: true, data: []});
+    renderSection(true);
+    const headings = screen.getAllByRole('heading', {level: 2});
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent(t('project', 'advancedCardDangerTitle'));
+    expect(headings[0]).toHaveClass('text-destructive');
+    expect(screen.getByLabelText(t('project', 'advancedAdditionalNotesLabel'))).toHaveAttribute('id', 'eligibility_notes');
+    expect(screen.getByRole('button', {name: t('project', 'advancedDeleteProjectButton')})).toBeInTheDocument();
+    expect(t('parsing', 'highQualityHint')).toMatch(/Applies to newly ingested PDFs\.$/);
   });
 });

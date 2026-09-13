@@ -105,4 +105,41 @@ describe('ProfileSection validation feedback', () => {
             ),
         );
     });
+
+    it('shows the email as plain text with no label association', async () => {
+        await renderLoaded();
+        const email = screen.getByText('ada@example.org');
+        expect(email.tagName).toBe('P');
+        expect(screen.queryByLabelText(copy.profileEmailLabel)).toBeNull();
+        expect('profileEmailAria' in copy).toBe(false);
+        const hint = screen.getByRole('button', {name: `About ${copy.profileEmailLabel}`});
+        expect(hint).toBeInTheDocument();
+    });
+
+    it('renders h-8 skeleton rows while the profile loads', async () => {
+        fetchMock.mockReturnValue(new Promise(() => {}));
+        render(<ProfileSection/>);
+        await vi.waitFor(() => expect(document.querySelectorAll('.animate-pulse').length).toBe(3));
+        document.querySelectorAll('.animate-pulse').forEach((el) => expect(el).toHaveClass('h-8'));
+        expect(screen.queryByPlaceholderText(copy.profileFullNamePlaceholder)).toBeNull();
+    });
+
+    it('describes the Full name input by its hint, and by the message after a failed submit', async () => {
+        await renderLoaded();
+        const describedIds = () =>
+            (nameInput().getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+        // SettingsRow's sr-only `-hint` span, merged in by FormControl (Task 1).
+        const hint = describedIds()
+            .map((id) => document.getElementById(id))
+            .find((el) => el?.textContent === copy.profileFullNameHint);
+        expect(hint).toBeTruthy();
+
+        await userEvent.clear(nameInput());
+        await submit();
+
+        const message = await screen.findByText(copy.profileNameRequired);
+        expect(message.id).not.toBe('');
+        expect(describedIds()).toContain(message.id);
+        expect(describedIds()).toContain(hint!.id);
+    });
 });

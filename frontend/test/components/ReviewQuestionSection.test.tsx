@@ -261,3 +261,92 @@ describe('ReviewQuestionSection footer', () => {
     expect(screen.queryByText('Nothing yet. Fill in at least one part above.')).toBeNull();
   });
 });
+
+describe('ReviewQuestionSection — flat layout (spec 2026-09-13 §4.3, §10)', () => {
+  const INTRO = 'What this review is asking. Sent to the AI with every extraction and quality assessment.';
+  const groupOf = (el: Element | null) => el?.closest('.border-t') as HTMLElement | null;
+
+  it('renders the intro line in place of the section heading', () => {
+    render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+    expect(screen.getByText(INTRO)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', {name: 'Review question'})).toBeNull();
+  });
+
+  it('has no separator between the groups or inside a slot', () => {
+    const {container} = render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+    expect(screen.queryByRole('separator')).toBeNull();
+    // ui/separator is decorative (role="none"), so the role query alone is vacuous;
+    // Radix Separator always stamps data-orientation.
+    expect(container.querySelector('[data-orientation]')).toBeNull();
+  });
+
+  it("the switch is a row whose hint reaches it; the timing slot's help is the row ⓘ", () => {
+    render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+    expect(screen.getByRole('switch', {name: 'Send to the AI'})).toHaveAccessibleDescription(
+      'Turn off to withhold the review question from AI calls without deleting it.',
+    );
+    expect(screen.getByRole('button', {name: 'About Timing'})).toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Help'})).toBeNull();
+    expect(screen.getByLabelText('Timing')).toHaveAccessibleDescription(
+      'Covers both the prediction moment (T0) and the prediction horizon.',
+    );
+  });
+
+  it('labels the criteria inputs and names their add controls from the row label', () => {
+    render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+    // TagInput's draft Input sets no type attribute (Task 3); the property defaults to text.
+    expect((screen.getByLabelText('Inclusion criteria') as HTMLInputElement).type).toBe('text');
+    expect(screen.getByRole('button', {name: 'Add to Inclusion criteria'})).toBeInTheDocument();
+    expect(screen.getByRole('button', {name: 'Add to Exclusion criteria'})).toBeInTheDocument();
+  });
+
+  it('the preview drops its border and keeps its muted fill', async () => {
+    const user = userEvent.setup();
+    render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+    await user.click(screen.getByRole('button', {name: /What the AI is sent/}));
+    const pre = document.querySelector('pre');
+    expect(pre).not.toHaveClass('border');
+    expect(pre).toHaveClass('bg-muted/40');
+  });
+
+  it('the sticky footer Cancel is ghost', async () => {
+    const user = userEvent.setup();
+    render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+    await user.type(screen.getByLabelText('Population'), '!');
+    const cancel = screen.getByRole('button', {name: 'Cancel'});
+    expect(cancel).not.toHaveClass('border');
+    expect(cancel).not.toHaveClass('border-input');
+  });
+
+  it('loading and error render inside the first group', () => {
+    vi.mocked(useAiContext).mockReturnValue({data: undefined, isLoading: true, isError: false} as unknown as ReturnType<typeof useAiContext>);
+    const {unmount} = render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+    expect(groupOf(document.querySelector('.animate-pulse'))).not.toBeNull();
+    unmount();
+
+    vi.mocked(useAiContext).mockReturnValue({data: undefined, isLoading: false, isError: true} as unknown as ReturnType<typeof useAiContext>);
+    render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+    expect(groupOf(screen.getByText('Could not load the review question'))).not.toBeNull();
+  });
+
+  it.each([
+    ['loading', {data: undefined, isLoading: true, isError: false}],
+    ['error', {data: undefined, isLoading: false, isError: true}],
+    ['empty', {data: readModel({preview: null}), isLoading: false, isError: false}],
+  ])('a non-manager sees the preview %s state inside the managerOnly group', (state, read) => {
+    vi.mocked(useProjectMemberRole).mockReturnValue({isManager: false} as unknown as ReturnType<typeof useProjectMemberRole>);
+    vi.mocked(useAiContext).mockReturnValue(read as unknown as ReturnType<typeof useAiContext>);
+    render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+
+    const group = groupOf(screen.getByText('Only project managers can change the review question.'));
+    expect(group).not.toBeNull();
+    const stateEl =
+      state === 'loading'
+        ? group!.querySelector('.animate-pulse')
+        : state === 'error'
+          ? screen.getByText('Could not load the review question')
+          : screen.getByText('Nothing yet. Fill in at least one part above.');
+    expect(stateEl).not.toBeNull();
+    expect(group!.contains(stateEl)).toBe(true);
+  });
+});

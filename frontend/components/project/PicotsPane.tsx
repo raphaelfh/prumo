@@ -29,9 +29,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import {Switch} from '@/components/ui/switch';
-import {Label} from '@/components/ui/label';
-import {Separator} from '@/components/ui/separator';
 import {Skeleton} from '@/components/ui/skeleton';
+import {SettingsGroup, SettingsRow} from '@/components/settings';
 import {t} from '@/lib/copy';
 import {useAiContext, useSetAiContext} from '@/hooks/project/useAiContext';
 import type {
@@ -122,63 +121,59 @@ function PicotsForm({initial, pending, onSave, onCancel, onDirtyChange}: PicotsF
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <Label htmlFor="picots-enabled" className="text-[13px] font-medium">
-            {t('aiContext', 'enabledLabel')}
-          </Label>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('aiContext', 'enabledHint')}
-          </p>
-        </div>
-        <Switch
-          id="picots-enabled"
-          checked={enabled}
-          onCheckedChange={(value) => commit(draft, value)}
-        />
-      </div>
-
-      {/* The prompt preview is the ground truth of this whole section — what
-          the model actually receives — so it sits at the TOP, where it is
-          discoverable, and collapsed, so it costs nothing until asked for.
-          Below six slots it was findable only by scrolling past everything. */}
-      <Collapsible>
-        <CollapsibleTrigger asChild>
-          <Button
-            variant="ghost"
-            className="group w-full justify-start gap-1.5 px-2 font-normal text-muted-foreground hover:text-foreground"
-          >
-            {/* Radix puts data-state on the TRIGGER, which is this button —
-                so the group is the button, not a wrapper. */}
-            <ChevronRight
-              className="shrink-0 transition-transform group-data-[state=open]:rotate-90"
-              strokeWidth={1.5}
-              aria-hidden
+    <>
+      <SettingsGroup>
+        <SettingsRow
+          label={t('aiContext', 'enabledLabel')}
+          htmlFor="picots-enabled"
+          hint={t('aiContext', 'enabledHint')}
+        >
+          {({describedBy}) => (
+            <Switch
+              id="picots-enabled"
+              checked={enabled}
+              onCheckedChange={(value) => commit(draft, value)}
+              aria-describedby={describedBy}
             />
-            {t('aiContext', 'previewTitle')}
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <p className="mt-1 px-2 text-xs text-muted-foreground">
-            {t('aiContext', 'previewHint')}
-          </p>
-          <pre className="mt-1.5 max-h-40 overflow-auto rounded-md border border-border/50 bg-muted/40 p-2.5 text-xs whitespace-pre-wrap">
-            {initial.preview ?? t('aiContext', 'previewEmpty')}
-          </pre>
-        </CollapsibleContent>
-      </Collapsible>
+          )}
+        </SettingsRow>
 
-      <Separator />
+        {/* The prompt preview is the ground truth of this whole section — what
+            the model actually receives — so it sits at the TOP, where it is
+            discoverable, and collapsed, so it costs nothing until asked for. */}
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              className="group w-full justify-start gap-1.5 px-2 font-normal text-muted-foreground hover:text-foreground"
+            >
+              {/* Radix puts data-state on the TRIGGER, which is this button —
+                  so the group is the button, not a wrapper. */}
+              <ChevronRight
+                className="shrink-0 transition-transform group-data-[state=open]:rotate-90"
+                strokeWidth={1.5}
+                aria-hidden
+              />
+              {t('aiContext', 'previewTitle')}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <p className="mt-1 px-2 text-xs text-muted-foreground">{t('aiContext', 'previewHint')}</p>
+            <pre className="mt-1.5 max-h-40 overflow-auto rounded-md bg-muted/40 p-2.5 text-xs whitespace-pre-wrap">
+              {initial.preview ?? t('aiContext', 'previewEmpty')}
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
+      </SettingsGroup>
 
-      <div className="space-y-4">
+      <SettingsGroup>
         {SLOT_KEYS.map((key) => (
           <PICOTSItemEditor
             key={key}
             label={initial.labels?.[key] ?? key}
             fieldKey={key}
             data={slots[key] ?? EMPTY_SLOT}
-            infoTooltip={key === 'timing' ? t('aiContext', 'timingHint') : ''}
+            hint={key === 'timing' ? t('aiContext', 'timingHint') : undefined}
             descriptionPlaceholder=""
             showCriteria={key === 'population'}
             onUpdate={updateField}
@@ -186,23 +181,23 @@ function PicotsForm({initial, pending, onSave, onCancel, onDirtyChange}: PicotsF
             onRemoveItem={removeItem}
           />
         ))}
-      </div>
 
-      {dirty && (
-        <div className="sticky bottom-0 flex justify-end gap-1.5 border-t border-border/40 bg-background py-2">
-          <Button variant="outline" size="sm" onClick={onCancel} disabled={pending}>
-            {t('aiContext', 'cancel')}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => onSave({picots: draft, picots_enabled: enabled})}
-            disabled={pending}
-          >
-            {pending ? t('aiContext', 'saving') : t('aiContext', 'save')}
-          </Button>
-        </div>
-      )}
-    </div>
+        {dirty && (
+          <div className="sticky bottom-0 flex justify-end gap-1.5 border-t border-border/40 bg-background py-2">
+            <Button variant="ghost" size="sm" onClick={onCancel} disabled={pending}>
+              {t('aiContext', 'cancel')}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => onSave({picots: draft, picots_enabled: enabled})}
+              disabled={pending}
+            >
+              {pending ? t('aiContext', 'saving') : t('aiContext', 'save')}
+            </Button>
+          </div>
+        )}
+      </SettingsGroup>
+    </>
   );
 }
 
@@ -237,19 +232,19 @@ export function PicotsPane({projectId, onDirtyChange}: PicotsPaneProps) {
   if (isError) {
     // Save stays unreachable: with no read there is no draft, and an empty
     // one would overwrite the stored review question with blanks.
-    return <p className="text-[13px] text-destructive">{t('aiContext', 'loadError')}</p>;
+    return (
+      <SettingsGroup>
+        <p className="text-[13px] text-destructive">{t('aiContext', 'loadError')}</p>
+      </SettingsGroup>
+    );
   }
   if (!data) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <Skeleton className="h-8 w-40 rounded-md" />
-          <Skeleton className="h-5 w-9 rounded-full" />
-        </div>
-        <Skeleton className="h-20 w-full rounded-md" />
-        <Skeleton className="h-20 w-full rounded-md" />
-        <Skeleton className="h-20 w-full rounded-md" />
-      </div>
+      <SettingsGroup>
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </SettingsGroup>
     );
   }
   return (
@@ -271,7 +266,7 @@ export function PicotsPreview({projectId}: {projectId: string}) {
     return <p className="text-[13px] text-destructive">{t('aiContext', 'loadError')}</p>;
   }
   if (!data) {
-    return <Skeleton className="h-20 w-full rounded-md" />;
+    return <Skeleton className="h-8 w-full" />;
   }
   return (
     <pre className="max-h-80 overflow-auto rounded-md bg-muted/40 p-2.5 text-xs whitespace-pre-wrap">

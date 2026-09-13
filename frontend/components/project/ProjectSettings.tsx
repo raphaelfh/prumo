@@ -170,7 +170,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
         </aside>
 
         <main className="flex-1 overflow-y-auto bg-background">
-            <div className="w-full max-w-[1920px] mx-auto px-6 py-6 lg:px-8 lg:py-8">
+            <div className="w-full p-2">
                 {activeSection === 'basic' && (
                     <BasicInfoSection project={project} onChange={updateProject}/>
                 )}

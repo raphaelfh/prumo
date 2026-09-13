@@ -95,19 +95,18 @@ const FormLabel = React.forwardRef<
 });
 FormLabel.displayName = "FormLabel";
 
+// Deliberate divergence from upstream shadcn (ui-styling skill): upstream
+// spreads props after its own aria-describedby, and Slot lets them win, so a
+// row's hint id overwrote the description and message ids. Joined here; with
+// no incoming id the output is upstream's. Guard: form.describedby.test.tsx.
 const FormControl = React.forwardRef<React.ElementRef<typeof Slot>, React.ComponentPropsWithoutRef<typeof Slot>>(
-  ({ ...props }, ref) => {
+  ({ "aria-describedby": incomingDescribedBy, ...props }, ref) => {
     const { error, formItemId, formDescriptionId, formMessageId } = useFormField();
+    const describedBy = [formDescriptionId, error ? formMessageId : undefined, incomingDescribedBy]
+      .filter(Boolean)
+      .join(" ");
 
-    return (
-      <Slot
-        ref={ref}
-        id={formItemId}
-        aria-describedby={!error ? `${formDescriptionId}` : `${formDescriptionId} ${formMessageId}`}
-        aria-invalid={!!error}
-        {...props}
-      />
-    );
+    return <Slot ref={ref} id={formItemId} aria-describedby={describedBy} aria-invalid={!!error} {...props} />;
   },
 );
 FormControl.displayName = "FormControl";
