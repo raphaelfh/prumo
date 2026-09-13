@@ -61,6 +61,36 @@ VIOLATIONS = [
         "frontend/components/a/X.tsx",
         '<SheetContent side="left" className="w-[320px]">x</SheetContent>',
     ),
+    (
+        "settings-frame",
+        "frontend/components/project/settings/X.tsx",
+        "import {Card} from '@/components/ui/card';",
+    ),
+    (
+        "settings-frame",
+        "frontend/components/user/X.tsx",
+        'import {Alert, AlertDescription} from "@/components/ui/alert";',
+    ),
+    (
+        "settings-frame",
+        "frontend/components/project/settings/X.tsx",
+        "import {Alert} from '../../ui/alert';",
+    ),
+    (
+        "settings-frame",
+        "frontend/components/settings/X.tsx",
+        'import {Card} from "../ui/card";',
+    ),
+    (
+        "settings-frame",
+        "frontend/components/project/PicotsPane.tsx",
+        '<pre className="rounded-md border border-border/50 p-2">x</pre>',
+    ),
+    (
+        "settings-frame",
+        "frontend/components/settings/x.ts",
+        "export const box = cn('flex border-dashed rounded-lg');",
+    ),
 ]
 
 ALLOWED = [
@@ -79,6 +109,25 @@ ALLOWED = [
     (
         "frontend/components/a/X.tsx",
         '<DialogContent size="lg" data-testid="d" className="flex flex-col">x</DialogContent>',
+    ),
+    ("frontend/components/quality/X.tsx", "import {Card} from '@/components/ui/card';"),
+    ("frontend/components/articles/X.tsx", 'import {Alert} from "../ui/alert";'),
+    ("frontend/components/quality/X.tsx", '<div className="rounded-md border p-3" />'),
+    (
+        "frontend/components/project/settings/X.tsx",
+        '<div className="border-t border-border/40 rounded-md pt-4" />',
+    ),
+    (
+        "frontend/components/user/X.tsx",
+        "import {AlertDialog} from '@/components/ui/alert-dialog';",
+    ),
+    (
+        "frontend/components/settings/X.tsx",
+        '// <div className="rounded-md border"> in a comment\nexport const a = 1;',
+    ),
+    (
+        "frontend/components/project/settings/X.test.tsx",
+        "import {Card} from '@/components/ui/card';",
     ),
 ]
 
