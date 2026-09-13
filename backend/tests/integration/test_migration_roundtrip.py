@@ -1575,3 +1575,64 @@ async def test_sweep_tolerates_a_concurrent_sweeper(
 
     # Both attempted, neither raised out of the sweep.
     assert len(admin.dropped) == 2
+
+
+# --- 0072: llm_connections + user_project_engines -------------------------
+_CONN_CHECK_DEF = text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = :name")
+
+
+@pytest.mark.asyncio
+async def test_llm_connections_checks_match_the_registry_at_head(
+    migration_session: AsyncSession,
+) -> None:
+    """The live CHECKs name exactly the registry's providers / project
+    scopes — the migration is hand-written literals, so this is the only
+    thing tying it to ``app.llm.registry``. Names carry the ``ck_`` prefix
+    the naming convention adds (models/base.py)."""
+    import re
+
+    from app.llm.registry import REGISTRY, provider_ids
+
+    provider_def = (
+        await migration_session.execute(
+            _CONN_CHECK_DEF, {"name": "ck_llm_connections_provider_check"}
+        )
+    ).scalar()
+    assert provider_def is not None, "ck_llm_connections_provider_check must exist at head"
+    assert set(re.findall(r"'([a-z_]+)'", provider_def)) == set(provider_ids())
+
+    scopes_def = (
+        await migration_session.execute(
+            _CONN_CHECK_DEF, {"name": "ck_llm_connections_scopes_check"}
+        )
+    ).scalar()
+    assert scopes_def is not None, "ck_llm_connections_scopes_check must exist at head"
+    expected = {spec.id for spec in REGISTRY if "project" in spec.scopes}
+    assert set(re.findall(r"'([a-z_]+)'", scopes_def)) - {"user"} == expected
+
+
+@pytest.mark.asyncio
+async def test_0072_tables_are_deny_all_and_revoked(migration_session: AsyncSession) -> None:
+    for table in ("llm_connections", "user_project_engines"):
+        policies = (
+            (
+                await migration_session.execute(
+                    text("SELECT polname FROM pg_policy WHERE polrelid = CAST(:t AS regclass)"),
+                    {"t": f"public.{table}"},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert policies == ["deny_all"], table
+        grants = (
+            await migration_session.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.role_table_grants "
+                    "WHERE table_schema = 'public' AND table_name = :t "
+                    "AND grantee IN ('authenticated', 'anon')"
+                ),
+                {"t": table},
+            )
+        ).scalar()
+        assert grants == 0, table
