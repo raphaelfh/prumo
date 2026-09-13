@@ -152,18 +152,6 @@ def test_output_for_uses_tooloutput_for_ollama():
     assert isinstance(_output_for(_FakeOllama(), _OutModel), ToolOutput)
 
 
-def test_ollama_cloud_connection_gets_tooloutput():
-    # Ollama Cloud accepts a json_schema response_format but does not enforce
-    # it, so NativeOutput would yield silently unvalidated JSON.
-    model = build_model("openai_compatible", "gpt-oss:120b", base_url="https://ollama.com/v1")
-    assert isinstance(_output_for(model, _OutModel), ToolOutput)
-
-
-def test_self_hosted_connection_keeps_native_output():
-    model = build_model("openai_compatible", "llama3", base_url="http://localhost:11434/v1")
-    assert isinstance(_output_for(model, _OutModel), NativeOutput)
-
-
 # ---------------------------------------------------------------------------
 # Provider-usage regression guard (prod incident 2026-08-10 .. 2026-08-30)
 # ---------------------------------------------------------------------------
@@ -305,3 +293,15 @@ async def test_ollama_cloud_extraction_uses_tool_calling_on_the_wire():
     assert len(sent) == 1
     assert "response_format" not in sent[0]
     assert [t["function"]["name"] for t in sent[0]["tools"]] == ["final_result"]
+
+
+def test_ollama_cloud_connection_gets_tooloutput():
+    # Ollama Cloud accepts a json_schema response_format but does not enforce
+    # it, so NativeOutput would yield silently unvalidated JSON.
+    model = build_model("openai_compatible", "gpt-oss:120b", base_url="https://ollama.com/v1")
+    assert isinstance(_output_for(model, _OutModel), ToolOutput)
+
+
+def test_self_hosted_connection_keeps_native_output():
+    model = build_model("openai_compatible", "llama3", base_url="http://localhost:11434/v1")
+    assert isinstance(_output_for(model, _OutModel), NativeOutput)
