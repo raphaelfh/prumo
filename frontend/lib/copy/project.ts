@@ -18,8 +18,6 @@ export const project = {
     addDialogMoreDetailsAfter: 'You can add more details in project settings after creation.',
 
     // Project settings page
-    settingsTitle: 'Project settings',
-    settingsTitleUnsaved: 'Project settings · Unsaved',
     settingsLoading: 'Loading settings…',
     settingsSaveChanges: 'Save changes',
     settingsSaving: 'Saving…',
@@ -30,17 +28,11 @@ export const project = {
     settingsDiscardCancel: 'Keep editing',
     settingsDiscardConfirm: 'Discard',
     tabBasic: 'Basic info',
-    tabBasicDesc: 'Project name and description',
     tabReview: 'Review details',
-    tabReviewDesc: 'Title, context, rationale and search strategy',
     tabReviewQuestion: 'Review question',
-    tabReviewQuestionDesc: 'What the AI is told this review asks',
     tabAiEngine: 'AI engine',
-    tabAiEngineDesc: 'Default model, mode and shared keys',
     tabTeam: 'Team',
-    tabTeamDesc: 'Members and permissions',
     tabAdvanced: 'Advanced',
-    tabAdvancedDesc: 'Additional settings',
 
     // BasicInfoSection
     basicProjectNameLabel: 'Project name',

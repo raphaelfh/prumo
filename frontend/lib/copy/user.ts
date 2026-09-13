@@ -3,7 +3,6 @@
  */
 export const user = {
     // Settings page
-    settingsTitle: 'Settings',
     settingsAriaSections: 'Settings sections',
     ariaGoBack: 'Go back',
     tabProfile: 'Profile',

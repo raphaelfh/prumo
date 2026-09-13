@@ -134,9 +134,6 @@ describe('ReviewConsensusSection', () => {
     expect(save).toBeEnabled();
   });
 
-  it('carries the corrected tab description', () => {
-    expect(consensus.tabConsensusDesc).toBe('Consensus rule and arbitrator');
-  });
 });
 
 const TEMPLATE = {id: 't1', name: 'CHARMS', framework: 'CHARMS'};
