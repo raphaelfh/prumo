@@ -20,7 +20,7 @@ owner: '@raphaelfh'
 
 - English only for code, comments, commits, docs and copy keys.
 - SQLAlchemy model change ⇒ Alembic migration in the SAME task, hand-written inside `backend/` (never through the Supabase MCP), revision id ≤ 32 chars, `down_revision` = previous head; and the head pin `expected_head` in `backend/tests/integration/test_migration_roundtrip.py` (today `"0071_registry_providers"` at `:1332`) moves in the same change. `alembic check` is a CI gate: models and migrations must agree.
-- No dead code ships. Frontend: `npx knip --no-tag-hints` AND `npx knip --production --no-tag-hints` at zero; UI copy: `python3 scripts/fitness/check_copy_keys.py` (shrink-only baseline `scripts/fitness/check_copy_keys.baseline`). Backend: vulture shrink-only ratchet (`backend/.vulture_baseline`, `python3 scripts/vulture_baseline.py`); ownership-predicate ratchet `python3 scripts/fitness/check_scope_guards.py` whose baseline `scripts/fitness/check_scope_guards.baseline` only shrinks (five rows for the dropped tables go in Task 13). Delete dead code in files you touch; never park a finding behind an ignore.
+- No dead code ships. Frontend: `npx knip --no-tag-hints` AND `npx knip --production --no-tag-hints` at zero; UI copy: `python3 scripts/fitness/check_copy_keys.py` (shrink-only baseline `scripts/fitness/check_copy_keys.baseline`). Backend: vulture shrink-only ratchet (`backend/.vulture_baseline`, `python3 scripts/vulture_baseline.py`); ownership-predicate ratchet `python3 scripts/fitness/check_scope_guards.py` whose baseline `scripts/fitness/check_scope_guards.baseline` only shrinks (the SIX rows for the dropped tables — rows 14–19 today: `ProjectLlmEndpoint{id,project_id}` ×2, `UserAPIKey{id,user_id}` ×4 — go in Task 23; spec §7.8 says "five" but enumerates 2 + 4 and the tree holds six, so six is the number every gate expectation below uses — a spec typo for the spec seat). Delete dead code in files you touch; never park a finding behind an ignore.
 - One ownership predicate, one implementation, in the WHERE clause: `owned_user_connection` (`LlmConnection.id == X AND scope == 'user' AND user_id == caller`) and `owned_project_connection` (`LlmConnection.id == X AND scope == 'project' AND project_id == project`) live once each in `app/services/llm_connection_service.py`; nothing else filters `LlmConnection` by id plus an owner column. Membership/role goes through `api/deps/security.py` (`require_project_scope`, `require_project_manager`) or `SELECT public.is_project_manager(...)` from a service — never raw `project_members` SQL.
 - No direct-PostgREST write or read of app data from the frontend: every call goes component → hook (TanStack Query, key factory) → service (`apiClient`, returning `ErrorResult<T>`) → backend. Both new tables are RLS `deny_all` with every privilege revoked from `authenticated` and `anon`.
 - Every endpoint returns the `ApiResponse` envelope with a typed Pydantic response model; DELETE returns 200 + a typed result, never 204; errors expose `error.message`. Secrets are `SecretStr` inward and never appear on a read model or a 422 echo (`has_api_key` only).
@@ -29,6 +29,7 @@ owner: '@raphaelfh'
 - Conventional commits; every commit message ends with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 - Commands: backend from `backend/` with `uv run` (`cd backend && uv run pytest <path> -q`; integration tests need the local Supabase stack — `make start` from the repo root; `uv run alembic upgrade head` before integration tests that touch schema). Frontend from the repo root: `npx vitest run <path>`, `npm run typecheck` (= `tsc -p tsconfig.app.json --noEmit`), `npm run lint`.
 - Task tags: `[backend]` tasks are implemented by `ship-implementer-backend`, `[frontend]` by `ship-implementer-frontend`. After every task the tree is green: `cd backend && uv run pytest -q`, `npm run test:run`, `npm run typecheck`.
+- **Import direction among the engine modules — module-level imports only, no function-local (lazy) imports anywhere.** Leaves first: `app/services/profile_names.py` (display names, no service imports) and `app/services/llm_connection_service.py` (imports `profile_names`, `provider_key_probe`, `llm_endpoint_probe`, models, schemas, registry — NEVER `llm_engine_service`, `user_engine_service` or `engine_credentials`). Above them: `engine_credentials` → `llm_connection_service`; `llm_engine_service` → `llm_connection_service`, `profile_names`; `user_engine_service` → `llm_engine_service`, `llm_connection_service`; `run_engine_freeze`, `section_extraction_service`, the workers and the routers → any of the above. `llm_engine_service` never imports `user_engine_service` or `engine_credentials`, which is why the READ side of the viewer's row (`get_user_engine`, `user_row_is_retired`) lives in `llm_engine_service` beside `resolve_engine` and `user_engine_service` holds only the WRITE side (`set_user_engine`, `clear_user_engine`). Every task's import list obeys this table; an implementer who needs an edge the table forbids has found a design error, not a reason for a lazy import.
 
 ---
 
@@ -84,7 +85,7 @@ owner: '@raphaelfh'
 
 - [ ] **Step 1: Write the failing registry tests**
 
-Append to `backend/tests/unit/llm/test_registry.py` (keep the existing tests; the two `byok_only` tests and the two `user_api_keys` tests retire in Task 13):
+Append to `backend/tests/unit/llm/test_registry.py` (keep the existing tests; the two `byok_only` tests retire in Task 22 with `is_byok_only`, the two `user_api_keys` tests in Task 23 with the model):
 
 ```python
 def test_scopes_are_per_the_spec_table() -> None:
@@ -203,7 +204,7 @@ class ProviderSpec:
     scopes: frozenset[str]
 ```
 
-Entries: `openai`, `anthropic`, `google`, `llama_cloud` get `key_optional=False, scopes=frozenset({"user", "project"})`; `openai_compatible` gets `key_optional=True, scopes=frozenset({"user"})`. Leave `storable_providers`, `is_byok_only`, `provider_ids` and the module docstring alone in this task (their consumers still exist; Task 13 retires them).
+Entries: `openai`, `anthropic`, `google`, `llama_cloud` get `key_optional=False, scopes=frozenset({"user", "project"})`; `openai_compatible` gets `key_optional=True, scopes=frozenset({"user"})`. Leave `storable_providers`, `is_byok_only`, `provider_ids` and the module docstring alone in this task (their consumers still exist; Task 22 retires `is_byok_only` and rewrites the docstring, Task 23 deletes `storable_providers` with its last consumers, `provider_ids` stays).
 
 - [ ] **Step 5: Move the catalogue to YAML**
 
@@ -330,7 +331,7 @@ def canonical(entry: CatalogEntry) -> str:
     return canonical_pair(entry.provider, entry.model)
 ```
 
-`selectable_catalog` has no production consumer until Task 12 (the engine read); vulture would flag it. Wire it now: in `backend/app/services/llm_engine_service.py:503` change `for entry in CATALOG` to `for entry in selectable_catalog()` and adjust the import on `:37` (`from app.llm.catalog import canonical, canonical_pair, find_entry, selectable_catalog`; `CATALOG` is still used at `:476` for `availability` — keep it). Check the file's docstring paragraph (`catalog.py:8-11` about `is_byok_only`) is gone — it was replaced above.
+`selectable_catalog` has no production consumer until Task 17 (the engine read); vulture would flag it. Wire it now: in `backend/app/services/llm_engine_service.py:503` change `for entry in CATALOG` to `for entry in selectable_catalog()` and adjust the import on `:37` (`from app.llm.catalog import canonical, canonical_pair, find_entry, selectable_catalog`; `CATALOG` is still used at `:476` for `availability` — keep it). Check the file's docstring paragraph (`catalog.py:8-11` about `is_byok_only`) is gone — it was replaced above.
 
 - [ ] **Step 6: Run the unit suites**
 
@@ -355,8 +356,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Create: `backend/app/models/llm_connection.py`
 - Modify: `backend/app/models/__init__.py:58-62` (import + `__all__` for `LlmConnection`, `UserProjectEngine`)
 - Create: `backend/alembic/versions/0072_llm_connections.py`
-- Modify: `backend/tests/integration/test_migration_roundtrip.py:1332` (head pin) and append the 0072 block
-- Test: `backend/tests/unit/llm/test_llm_connection_model.py` (new), `backend/tests/integration/test_llm_connection_rls.py` (new), `backend/tests/integration/test_migration_roundtrip.py`
+- Modify: `backend/tests/integration/test_migration_roundtrip.py:1332` (head pin only; Task 3 appends the 0072 assertions)
+- Test: `backend/tests/unit/llm/test_llm_connection_model.py` (new), `backend/tests/integration/test_migration_roundtrip.py` (head pin)
 
 **Interfaces:**
 
@@ -365,9 +366,9 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   - `LlmConnection` (table `public.llm_connections`): `id: UUID` (PK, no server default — the service supplies it), `scope: str`, `user_id: UUID | None`, `project_id: UUID | None`, `provider: str`, `label: str`, `base_url: str | None`, `encrypted_api_key: str | None`, `allowed_models: list[Any]`, `capabilities: dict[str, Any]`, `validation_status: str`, `last_validated_at: datetime | None`, `last_used_at: datetime | None`, `created_by: UUID`, `created_at`, `updated_at`.
   - `UserProjectEngine` (table `public.user_project_engines`): composite PK `(user_id, project_id)`, `provider: str`, `model: str`, `connection_id: UUID | None` (FK `llm_connections.id` ON DELETE SET NULL), `mode: str`, `updated_at: datetime`.
   - `provider_check_literal() -> str` = `"provider IN ('openai', 'anthropic', 'google', 'openai_compatible', 'llama_cloud')"`; `scopes_check_literal() -> str` = `"scope = 'user' OR provider IN ('openai', 'anthropic', 'google', 'llama_cloud')"`; `base_url_check_literal() -> str` = `"((base_url IS NOT NULL) = (provider IN ('openai_compatible'))) AND (base_url IS NULL OR scope = 'user')"`.
-  - Constraint names (literal in the DB): `llm_connections_provider_check`, `llm_connections_scopes_check`, `llm_connections_scope_check`, `llm_connections_owner_check`, `llm_connections_base_url_check`, `llm_connections_label_check`, `llm_connections_validation_status_check`, `user_project_engines_mode_check`; partial unique indexes `uq_llm_connections_user_identity` `(user_id, provider, label) WHERE scope = 'user'`, `uq_llm_connections_project_identity` `(project_id, provider, label) WHERE scope = 'project'`, `uq_llm_connections_user_hosted_provider` `(user_id, provider) WHERE scope = 'user' AND base_url IS NULL` (one key per hosted provider per user).
+  - CHECK names are SHORT tokens in BOTH the model and the migration — `provider_check`, `scopes_check`, `scope_check`, `owner_check`, `base_url_check`, `label_check`, `validation_status_check` on `llm_connections`, `mode_check` on `user_project_engines` — because the `ck` naming convention (`backend/app/models/base.py:141`, `"ck": "ck_%(table_name)s_%(constraint_name)s"`) wraps EXPLICIT names too, in `CheckConstraint(...)` and in `op.create_table(...)` alike (alembic copies `target_metadata.naming_convention` onto the migration's `MetaData`). The live names are therefore `ck_llm_connections_provider_check`, `ck_llm_connections_scopes_check`, …, `ck_user_project_engines_mode_check` — the migration 0047 / 0055 pattern; a pre-expanded `ck_…` literal double-wraps and md5-truncates silently (PR #576). Everything that queries `pg_constraint` uses the `ck_` names. Partial unique indexes `uq_llm_connections_user_identity` `(user_id, provider, label) WHERE scope = 'user'`, `uq_llm_connections_project_identity` `(project_id, provider, label) WHERE scope = 'project'`, `uq_llm_connections_user_hosted_provider` `(user_id, provider) WHERE scope = 'user' AND base_url IS NULL` (one key per hosted provider per user).
 
-This task is longer than the ~300-line brief cap because the model and its migration must ship together (Global Constraints); the model, the migration and the roundtrip assertions are one reviewable unit.
+This task is longer than the ~300-line brief cap because the model and its migration must ship together (Global Constraints) and neither can be abbreviated; the live-DB assertions and the RLS probe are split out into Task 3.
 
 Spec §2 says "unique `(scope, user_id, project_id, provider, label)`"; with one owner column always NULL, Postgres' default NULL-distinct semantics would make that constraint inert, so the same uniqueness is expressed as the two partial indexes above (one per scope). Same invariant, version-proof.
 
@@ -392,43 +393,43 @@ from app.models.llm_connection import (
 )
 
 
-def _check(name: str) -> str:
-    # The "ck" naming convention wraps the given name (ck_<table>_<name>);
-    # match by substring like tests/unit/llm/test_registry.py does.
-    checks = [
-        c for c in LlmConnection.__table__.constraints if name in (getattr(c, "name", None) or "")
-    ]
+def _check(short: str) -> str:
+    # The "ck" naming convention (models/base.py) expands the SHORT name the
+    # model declares to ck_<table>_<short> at attach time — the same name the
+    # migration's op.create_table emits and pg_constraint carries.
+    name = f"ck_llm_connections_{short}"
+    checks = [c for c in LlmConnection.__table__.constraints if getattr(c, "name", None) == name]
     assert len(checks) == 1, name
     return str(checks[0].sqltext)
 
 
 def test_provider_check_literal_equals_the_registry() -> None:
-    assert _check("llm_connections_provider_check") == provider_check_literal()
+    assert _check("provider_check") == provider_check_literal()
     assert provider_check_literal() == (
         "provider IN ('openai', 'anthropic', 'google', 'openai_compatible', 'llama_cloud')"
     )
 
 
 def test_scopes_check_literal_lists_the_project_scope_providers() -> None:
-    assert _check("llm_connections_scopes_check") == scopes_check_literal()
+    assert _check("scopes_check") == scopes_check_literal()
     assert scopes_check_literal() == (
         "scope = 'user' OR provider IN ('openai', 'anthropic', 'google', 'llama_cloud')"
     )
 
 
 def test_base_url_check_names_the_host_bearing_providers() -> None:
-    assert _check("llm_connections_base_url_check") == base_url_check_literal()
+    assert _check("base_url_check") == base_url_check_literal()
     assert "('openai_compatible')" in base_url_check_literal()
 
 
 def test_removing_a_provider_breaks_the_drift_guard(monkeypatch: pytest.MonkeyPatch) -> None:
     """Mutation test: the baked CHECK must diverge from a freshly computed
     literal once the registry loses a provider — the guard is not vacuous."""
-    baked = _check("llm_connections_provider_check")
+    baked = _check("provider_check")
     trimmed = tuple(spec for spec in REGISTRY if spec.id != "anthropic")
     monkeypatch.setattr(registry, "REGISTRY", trimmed)
     assert baked != provider_check_literal()
-    assert _check("llm_connections_scopes_check") != scopes_check_literal()
+    assert _check("scopes_check") != scopes_check_literal()
 
 
 def test_user_project_engines_pk_is_user_and_project() -> None:
@@ -543,22 +544,23 @@ class LlmConnection(BaseModel):
     )
 
     __table_args__ = (
-        # Given names mirror the retired user_api_keys model: the DB carries
-        # them literally (migration 0072); the "ck" convention's wrapped
-        # model-side name is inert — alembic check does not diff CHECKs.
-        CheckConstraint(provider_check_literal(), name="llm_connections_provider_check"),
-        CheckConstraint(scopes_check_literal(), name="llm_connections_scopes_check"),
-        CheckConstraint("scope IN ('user', 'project')", name="llm_connections_scope_check"),
+        # SHORT names: the "ck" convention in models/base.py expands each to
+        # ck_llm_connections_<short> — in the model AND in migration 0072,
+        # which declares the same short names (the 0047 pattern). A
+        # pre-expanded ck_ literal would double-wrap and md5-truncate.
+        CheckConstraint(provider_check_literal(), name="provider_check"),
+        CheckConstraint(scopes_check_literal(), name="scopes_check"),
+        CheckConstraint("scope IN ('user', 'project')", name="scope_check"),
         CheckConstraint(
             "(scope = 'user' AND user_id IS NOT NULL AND project_id IS NULL) "
             "OR (scope = 'project' AND project_id IS NOT NULL AND user_id IS NULL)",
-            name="llm_connections_owner_check",
+            name="owner_check",
         ),
-        CheckConstraint(base_url_check_literal(), name="llm_connections_base_url_check"),
-        CheckConstraint("char_length(label) BETWEEN 1 AND 80", name="llm_connections_label_check"),
+        CheckConstraint(base_url_check_literal(), name="base_url_check"),
+        CheckConstraint("char_length(label) BETWEEN 1 AND 80", name="label_check"),
         CheckConstraint(
             "validation_status IN ('unverified', 'ok', 'failed')",
-            name="llm_connections_validation_status_check",
+            name="validation_status_check",
         ),
         Index(
             "uq_llm_connections_user_identity",
@@ -623,7 +625,7 @@ class UserProjectEngine(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("mode IN ('fast', 'verified')", name="user_project_engines_mode_check"),
+        CheckConstraint("mode IN ('fast', 'verified')", name="mode_check"),  # → ck_user_project_engines_mode_check
         {"schema": "public"},
     )
 ```
@@ -669,6 +671,10 @@ depends_on = None
 # Literals, not registry imports: a migration must never change meaning
 # when app code moves on. tests/integration/test_migration_roundtrip.py
 # asserts the live CHECK equals the registry at head.
+#
+# CHECK names are SHORT: env.py hands Base.metadata's naming convention to
+# alembic, so op.create_table expands "provider_check" to
+# ck_llm_connections_provider_check — the same name the model declares.
 _PROVIDER_CHECK = "provider IN ('openai', 'anthropic', 'google', 'openai_compatible', 'llama_cloud')"
 _SCOPES_CHECK = "scope = 'user' OR provider IN ('openai', 'anthropic', 'google', 'llama_cloud')"
 _BASE_URL_CHECK = (
@@ -717,19 +723,19 @@ def upgrade() -> None:
         ),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint(_PROVIDER_CHECK, name="llm_connections_provider_check"),
-        sa.CheckConstraint(_SCOPES_CHECK, name="llm_connections_scopes_check"),
-        sa.CheckConstraint("scope IN ('user', 'project')", name="llm_connections_scope_check"),
+        sa.CheckConstraint(_PROVIDER_CHECK, name="provider_check"),
+        sa.CheckConstraint(_SCOPES_CHECK, name="scopes_check"),
+        sa.CheckConstraint("scope IN ('user', 'project')", name="scope_check"),
         sa.CheckConstraint(
             "(scope = 'user' AND user_id IS NOT NULL AND project_id IS NULL) "
             "OR (scope = 'project' AND project_id IS NOT NULL AND user_id IS NULL)",
-            name="llm_connections_owner_check",
+            name="owner_check",
         ),
-        sa.CheckConstraint(_BASE_URL_CHECK, name="llm_connections_base_url_check"),
-        sa.CheckConstraint("char_length(label) BETWEEN 1 AND 80", name="llm_connections_label_check"),
+        sa.CheckConstraint(_BASE_URL_CHECK, name="base_url_check"),
+        sa.CheckConstraint("char_length(label) BETWEEN 1 AND 80", name="label_check"),
         sa.CheckConstraint(
             "validation_status IN ('unverified', 'ok', 'failed')",
-            name="llm_connections_validation_status_check",
+            name="validation_status_check",
         ),
         schema="public",
     )
@@ -789,7 +795,7 @@ def upgrade() -> None:
         ),
         sa.Column("mode", sa.Text(), server_default="fast", nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("mode IN ('fast', 'verified')", name="user_project_engines_mode_check"),
+        sa.CheckConstraint("mode IN ('fast', 'verified')", name="mode_check"),
         schema="public",
     )
     _deny_all("user_project_engines")
@@ -805,12 +811,46 @@ def downgrade() -> None:
 
 Run: `cd backend && uv run alembic upgrade head && uv run alembic check`
 Expected: `INFO ... Running upgrade 0071_registry_providers -> 0072_llm_connections` then `No new upgrade operations detected.` If `alembic check` reports an index/constraint diff, align the MODEL to the migration (names above are the contract), never the other way.
+Run: `cd backend && uv run alembic upgrade 0071_registry_providers:0072_llm_connections --sql | grep -o "CONSTRAINT ck_[a-z_]*" | sort`
+Expected: exactly eight lines — `CONSTRAINT ck_llm_connections_base_url_check`, `…_label_check`, `…_owner_check`, `…_provider_check`, `…_scope_check`, `…_scopes_check`, `…_validation_status_check`, `CONSTRAINT ck_user_project_engines_mode_check`. A line such as `ck_llm_connections_llm_connections_provider_check` means a long name slipped into the migration — shorten it; a name without the `ck_` prefix means a raw `op.execute` was used — do not.
 
 Note: the local Supabase stack is shared by every session on this machine; `upgrade head` moves it for all of them. That is expected on `dev` work.
 
-- [ ] **Step 6: Move the head pin and add the roundtrip assertions**
+- [ ] **Step 6: Move the head pin**
 
-In `backend/tests/integration/test_migration_roundtrip.py:1332` set `expected_head = "0072_llm_connections"`. Append:
+In `backend/tests/integration/test_migration_roundtrip.py:1332` set `expected_head = "0072_llm_connections"` — the pin test fails at head otherwise; the 0072 assertions themselves are Task 3.
+
+- [ ] **Step 7: Run the suites**
+
+Run: `cd backend && uv run pytest tests/unit/llm/test_llm_connection_model.py tests/integration/test_migration_roundtrip.py -q && uv run ruff check app tests && uv run ruff format --check app tests`
+Expected: all PASS (the roundtrip suite creates its own scratch database; it takes ~1 minute), ruff clean.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add backend/app/models/llm_connection.py backend/app/models/__init__.py backend/alembic/versions/0072_llm_connections.py backend/tests/unit/llm/test_llm_connection_model.py backend/tests/integration/test_migration_roundtrip.py
+git commit -m "feat(db): llm_connections and user_project_engines tables (0072)
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 3: 0072 live assertions — CHECKs match the registry, deny-all posture, RLS probe `[backend]`
+
+**Files:**
+
+- Modify: `backend/tests/integration/test_migration_roundtrip.py` (append the 0072 block after `test_alembic_history_chain_is_continuous`)
+- Create: `backend/tests/integration/test_llm_connection_rls.py` (copied from `test_llm_endpoint_rls.py`)
+
+**Interfaces:**
+
+- Consumes: migration 0072 and the two models (Task 2), `migration_session` / `migration_db_url` fixtures (`test_migration_roundtrip.py`), the four probes of `backend/tests/integration/test_llm_endpoint_rls.py`.
+- Produces: `test_llm_connections_checks_match_the_registry_at_head` (the ONLY thing tying the hand-written 0072 literals to `app.llm.registry`; it reads `pg_constraint` by the `ck_llm_connections_<short>` names), `test_0072_tables_are_deny_all_and_revoked`, and the connection RLS probe file. No production code changes.
+
+- [ ] **Step 1: Write the failing roundtrip assertions**
+
+Append to `backend/tests/integration/test_migration_roundtrip.py` (the head pin already reads `0072_llm_connections` since Task 2):
 
 ```python
 # --- 0072: llm_connections + user_project_engines -------------------------
@@ -825,21 +865,22 @@ async def test_llm_connections_checks_match_the_registry_at_head(
 ) -> None:
     """The live CHECKs name exactly the registry's providers / project
     scopes — the migration is hand-written literals, so this is the only
-    thing tying it to ``app.llm.registry``."""
+    thing tying it to ``app.llm.registry``. Names carry the ``ck_`` prefix
+    the naming convention adds (models/base.py)."""
     import re
 
     from app.llm.registry import REGISTRY, provider_ids
 
     provider_def = (
-        await migration_session.execute(_CONN_CHECK_DEF, {"name": "llm_connections_provider_check"})
+        await migration_session.execute(_CONN_CHECK_DEF, {"name": "ck_llm_connections_provider_check"})
     ).scalar()
-    assert provider_def is not None, "llm_connections_provider_check must exist at head"
+    assert provider_def is not None, "ck_llm_connections_provider_check must exist at head"
     assert set(re.findall(r"'([a-z_]+)'", provider_def)) == set(provider_ids())
 
     scopes_def = (
-        await migration_session.execute(_CONN_CHECK_DEF, {"name": "llm_connections_scopes_check"})
+        await migration_session.execute(_CONN_CHECK_DEF, {"name": "ck_llm_connections_scopes_check"})
     ).scalar()
-    assert scopes_def is not None, "llm_connections_scopes_check must exist at head"
+    assert scopes_def is not None, "ck_llm_connections_scopes_check must exist at head"
     expected = {spec.id for spec in REGISTRY if "project" in spec.scopes}
     assert set(re.findall(r"'([a-z_]+)'", scopes_def)) - {"user"} == expected
 
@@ -867,7 +908,12 @@ async def test_0072_tables_are_deny_all_and_revoked(migration_session: AsyncSess
         assert grants == 0, table
 ```
 
-- [ ] **Step 7: Write the RLS probe test**
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `cd backend && uv run pytest tests/integration/test_migration_roundtrip.py -q -k "0072"`
+Expected: the two tests are collected — they PASS when Task 2's migration is correct (a `must exist at head` failure means a CHECK name is not the `ck_llm_connections_<short>` form; fix the migration in Task 2's file, not the test). This step exists so the assertions are seen running against the live scratch database before the probe file lands.
+
+- [ ] **Step 3: Write the RLS probe test**
 
 Copy `backend/tests/integration/test_llm_endpoint_rls.py` to `backend/tests/integration/test_llm_connection_rls.py`, set `_TABLE = "public.llm_connections"`, and replace `_INSERT_ENDPOINT` with:
 
@@ -879,25 +925,25 @@ _INSERT_CONNECTION = (
 )
 ```
 
-Keep the file's four probes (SELECT denied by grant, INSERT denied by grant, SELECT under re-granted privilege returns zero rows through `deny_all`, service-role insert visible to the owner role) with the new statement; rename the module docstring's table and migration number (0072). The endpoint probe file itself is deleted in Task 13.
+Keep the file's four probes (SELECT denied by grant, INSERT denied by grant, SELECT under re-granted privilege returns zero rows through `deny_all`, service-role insert visible to the owner role) with the new statement; rename the module docstring's table and migration number (0072). The endpoint probe file itself stays until Task 23 deletes it with the rest of the legacy stack (its table exists until 0073).
 
-- [ ] **Step 8: Run the suites**
+- [ ] **Step 4: Run the suites**
 
-Run: `cd backend && uv run pytest tests/unit/llm/test_llm_connection_model.py tests/integration/test_llm_connection_rls.py tests/integration/test_migration_roundtrip.py -q`
-Expected: all PASS (the roundtrip suite creates its own scratch database; it takes ~1 minute).
+Run: `cd backend && uv run pytest tests/integration/test_llm_connection_rls.py tests/integration/test_migration_roundtrip.py -q && uv run ruff check tests && uv run ruff format --check tests`
+Expected: all PASS (~1 minute for the roundtrip scratch database), ruff clean.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/models/llm_connection.py backend/app/models/__init__.py backend/alembic/versions/0072_llm_connections.py backend/tests/unit/llm/test_llm_connection_model.py backend/tests/integration/test_llm_connection_rls.py backend/tests/integration/test_migration_roundtrip.py
-git commit -m "feat(db): llm_connections and user_project_engines tables (0072)
+git add backend/tests/integration/test_llm_connection_rls.py backend/tests/integration/test_migration_roundtrip.py
+git commit -m "test(db): 0072 live CHECK / deny-all assertions and the llm_connections RLS probe
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 3: Connection request/read schemas `[backend]`
+### Task 4: Connection request/read schemas `[backend]`
 
 **Files:**
 
@@ -1122,7 +1168,66 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 4: Connection service and ownership guards `[backend]`
+### Task 5: `profile_names` — the display-name helper as a leaf module `[backend]`
+
+A preparatory move: `llm_engine_service._profile_names` is consumed by `llm_endpoint_service` today and by `llm_connection_service` from Task 6 on. `llm_connection_service` must never import `llm_engine_service` (plan header, import direction), so the helper moves to a module with no service imports first.
+
+**Files:**
+
+- Create: `backend/app/services/profile_names.py`
+- Modify: `backend/app/services/llm_engine_service.py:223-235` (delete `_profile_names`; import `profile_names`; call at `:471`), `backend/app/services/llm_endpoint_service.py:46` (import swap) and its three call sites (`:151`, `:220`, `:269`)
+
+**Interfaces:**
+
+- Consumes: `Profile` (`app.models.user`).
+- Produces (`app.services.profile_names`): `async def profile_names(db: AsyncSession, ids: set[UUID]) -> dict[UUID, str | None]` — the former `_profile_names`, unchanged in behaviour; a leaf (imports only the model). No test change: `test_llm_engine_service.py`'s updater-name case and `test_llm_endpoint_service.py`'s `created_by_name` cases cover both call sites.
+
+- [ ] **Step 1: Create the leaf module**
+
+```python
+# backend/app/services/profile_names.py
+"""Display names for a set of profiles — one query, ``None`` for a profile
+without ``full_name`` (the popover renders a fallback, never a raw id).
+A leaf: it imports only the model, so every service may import it."""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.user import Profile
+
+__all__ = ["profile_names"]
+
+
+async def profile_names(db: AsyncSession, ids: set[UUID]) -> dict[UUID, str | None]:
+    rows = await db.execute(select(Profile.id, Profile.full_name).where(Profile.id.in_(ids)))
+    return {profile_id: full_name for profile_id, full_name in rows.all()}
+```
+
+- [ ] **Step 2: Re-point the two consumers**
+
+In `backend/app/services/llm_engine_service.py` delete `_profile_names` (`:223-235`), add `from app.services.profile_names import profile_names` to the import block and change the call at `:471` to `profile_names(self.db, {stored.updated_by})`; drop the `Profile` import if nothing else in the module uses it. In `backend/app/services/llm_endpoint_service.py:46` replace `from app.services.llm_engine_service import _profile_names` with `from app.services.profile_names import profile_names` and rename the three calls (`:151`, `:220`, `:269`).
+
+- [ ] **Step 3: Run the suites**
+
+Run: `cd backend && uv run pytest tests/integration/test_llm_engine_service.py tests/integration/test_llm_endpoint_service.py -q && uv run ruff check app tests && uv run ruff format --check app tests && uv run vulture && grep -rn "_profile_names" backend/app backend/tests`
+Expected: PASS, behaviour unchanged; ruff clean; no vulture finding (`profile_names` has two consumers); the grep prints nothing.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add backend/app/services/profile_names.py backend/app/services/llm_engine_service.py backend/app/services/llm_endpoint_service.py
+git commit -m "refactor(services): profile display names in a leaf module
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 6: Connection service — ownership guards, create, list, decrypt `[backend]`
 
 **Files:**
 
@@ -1131,13 +1236,13 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Interfaces:**
 
-- Consumes: `LlmConnection` (Task 2), the Task 3 schemas, `get_provider`, `global_key_for` (registry), `derive_encryption_key` (`app.core.security`), `validate_endpoint_url` (`app.core.net_guard`), `_profile_names` (`app.services.llm_engine_service`).
-- Produces (`app.services.llm_connection_service`):
+- Consumes: `LlmConnection` (Task 2), the Task 4 schemas, `get_provider` (registry), `derive_encryption_key` (`app.core.security`), `validate_endpoint_url` (`app.core.net_guard`), `profile_names` (Task 5).
+- Produces (`app.services.llm_connection_service`) — a LEAF among the engine modules (see Global Constraints, import direction): it imports no `llm_engine_service` / `user_engine_service` / `engine_credentials` name, ever.
 
   - `class ConnectionUnavailableError(AppError)` — `code="LLM_ENDPOINT_UNAVAILABLE"`, 409 (the existing typed unavailable 409; `ExtractionErrorCode` is unchanged).
-  - `class ConnectionNotFoundError(Exception)` — router maps to 404.
   - `async def owned_user_connection(db, connection_id: UUID, user_id: UUID) -> LlmConnection | None`; `async def owned_project_connection(db, connection_id: UUID, project_id: UUID) -> LlmConnection | None` — THE two ownership predicates.
-  - `class LlmConnectionService(db)`: `list_user(user_id) -> list[LlmConnectionRead]`, `list_project(project_id)`, `create_user(*, user_id, payload: UserConnectionCreateRequest) -> LlmConnectionRead`, `create_project(*, project_id, created_by, payload: ProjectConnectionCreateRequest)`, `update_user(*, user_id, connection_id, payload: LlmConnectionUpdateRequest)`, `update_project(*, project_id, connection_id, payload)`, `delete_user(*, user_id, connection_id) -> LlmConnectionDeleteResult`, `delete_project(*, project_id, connection_id)`, `decrypt_key(row) -> str | None`. `ValueError` = duplicate label or a host rule the schema could not check (400 at the router); `EndpointUrlError` propagates (400).
+  - `class LlmConnectionService(db)`: `list_user(user_id) -> list[LlmConnectionRead]`, `list_project(project_id)`, `create_user(*, user_id, payload: UserConnectionCreateRequest) -> LlmConnectionRead`, `create_project(*, project_id, created_by, payload: ProjectConnectionCreateRequest)`, `decrypt_key(row) -> str | None`. `ValueError` = duplicate label (400 at the router); `EndpointUrlError` propagates (400). Update / delete (and `ConnectionNotFoundError`) are Task 7.
+
 - [ ] **Step 1: Write the failing service tests**
 
 ```python
@@ -1154,13 +1259,8 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.llm_connection import (
-    LlmConnectionUpdateRequest,
-    ProjectConnectionCreateRequest,
-    UserConnectionCreateRequest,
-)
+from app.schemas.llm_connection import ProjectConnectionCreateRequest, UserConnectionCreateRequest
 from app.services.llm_connection_service import (
-    ConnectionNotFoundError,
     LlmConnectionService,
     owned_project_connection,
     owned_user_connection,
@@ -1232,37 +1332,6 @@ async def test_host_connections_store_the_vetted_url_and_allow_keyless(db_sessio
     )
     assert read.base_url == "https://8.8.8.8/v1" and read.has_api_key is False
     assert read.validation_status == "unverified" and read.allowed_models == ["llama3"]
-
-
-@pytest.mark.asyncio
-async def test_update_and_delete_go_through_the_guard(db_session: AsyncSession) -> None:
-    cid = await _user_key(db_session)
-    svc = LlmConnectionService(db_session)
-    with pytest.raises(ConnectionNotFoundError):
-        await svc.update_user(
-            user_id=SEED.reviewer_profile, connection_id=cid, payload=LlmConnectionUpdateRequest(label="stolen")
-        )
-    with pytest.raises(ConnectionNotFoundError):
-        await svc.delete_user(user_id=SEED.reviewer_profile, connection_id=cid)
-    read = await svc.update_user(
-        user_id=SEED.primary_profile, connection_id=cid, payload=LlmConnectionUpdateRequest(label="renamed")
-    )
-    assert read.label == "renamed"
-    result = await svc.delete_user(user_id=SEED.primary_profile, connection_id=cid)
-    assert result.deleted is True and str(result.id) == cid
-    assert await svc.list_user(SEED.primary_profile) == []
-
-
-@pytest.mark.asyncio
-async def test_clearing_the_key_is_refused_on_a_hosted_provider(db_session: AsyncSession) -> None:
-    cid = await _user_key(db_session)
-    with pytest.raises(ValueError, match="key"):
-        await LlmConnectionService(db_session).update_user(
-            user_id=SEED.primary_profile, connection_id=cid,
-            payload=LlmConnectionUpdateRequest(label="k", api_key=SecretStr("")),
-        )
-
-
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -1275,7 +1344,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.llm_conne
 ```python
 # backend/app/services/llm_connection_service.py
 """Connections (§2, §3.3): CRUD for both scopes, the two ownership guards,
-per-row Fernet, and (Task 5) the ONE credential ladder.
+per-row Fernet, and (Task 8) the ONE credential ladder.
 
 Ownership predicates live HERE and nowhere else, in the WHERE clause:
 :func:`owned_user_connection` (id + scope 'user' + user_id) and
@@ -1304,17 +1373,14 @@ from app.core.security import derive_encryption_key
 from app.llm.registry import get_provider
 from app.models.llm_connection import LlmConnection
 from app.schemas.llm_connection import (
-    LlmConnectionDeleteResult,
     LlmConnectionRead,
-    LlmConnectionUpdateRequest,
     ProjectConnectionCreateRequest,
     UserConnectionCreateRequest,
 )
 from app.schemas.llm_endpoint import LlmEndpointCapabilities
-from app.services.llm_engine_service import _profile_names
+from app.services.profile_names import profile_names
 
 __all__ = [
-    "ConnectionNotFoundError",
     "ConnectionUnavailableError",
     "LlmConnectionService",
     "owned_project_connection",
@@ -1329,10 +1395,6 @@ class ConnectionUnavailableError(AppError):
 
     def __init__(self, message: str) -> None:
         super().__init__(code="LLM_ENDPOINT_UNAVAILABLE", message=message, status_code=409)
-
-
-class ConnectionNotFoundError(Exception):
-    """No connection for (owner, id). Routers translate to 404."""
 
 
 def _fernet_for(connection_id: UUID) -> Fernet:
@@ -1393,7 +1455,7 @@ class LlmConnectionService:
         self.db = db
 
     async def _reads(self, rows: list[LlmConnection]) -> list[LlmConnectionRead]:
-        names = await _profile_names(self.db, {r.created_by for r in rows}) if rows else {}
+        names = await profile_names(self.db, {r.created_by for r in rows}) if rows else {}
         return [_to_read(r, names.get(r.created_by)) for r in rows]
 
     async def list_user(self, user_id: UUID) -> list[LlmConnectionRead]:
@@ -1446,6 +1508,106 @@ class LlmConnectionService:
     async def create_project(self, *, project_id: UUID, created_by: UUID, payload: ProjectConnectionCreateRequest) -> LlmConnectionRead:
         return await self._create(scope="project", user_id=None, project_id=project_id, created_by=created_by, payload=payload)
 
+    async def decrypt_key(self, row: LlmConnection) -> str | None:
+        if row.encrypted_api_key is None:
+            return None
+        try:
+            return _fernet_for(row.id).decrypt(row.encrypted_api_key.encode()).decode()
+        except InvalidToken:
+            raise ConnectionUnavailableError(
+                f"The stored key for connection {row.id} ({row.label!r}) cannot be decrypted. Re-enter the key."
+            ) from None
+
+
+```
+
+The two `owned_*` functions are the only `id`-bound predicates on `LlmConnection` in the tree; every scoped fetch in this module calls one of them.
+
+- [ ] **Step 4: Run the suites and the gates**
+
+Run: `cd backend && uv run pytest tests/unit/test_llm_connection_schemas.py tests/integration/test_llm_connection_service.py -q && uv run ruff check app tests && uv run ruff format --check app tests`
+Expected: all PASS.
+Run: `python3 scripts/fitness/check_scope_guards.py`
+Expected: `0 new duplicate predicates` (exit 0). If it reports `LlmConnection{id,user_id}` or `{id,project_id}` twice, a second copy slipped in — route it through the guard.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/app/services/llm_connection_service.py backend/tests/integration/test_llm_connection_service.py
+git commit -m "feat(connections): connection service — ownership guards, create, list, decrypt
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 7: Connection service — update and delete through the guards `[backend]`
+
+**Files:**
+
+- Modify: `backend/app/services/llm_connection_service.py` (add `ConnectionNotFoundError`, `_update`, `update_user`, `update_project`, `_delete`, `delete_user`, `delete_project`; extend the schema import and `__all__`)
+- Test: `backend/tests/integration/test_llm_connection_service.py` (append)
+
+**Interfaces:**
+
+- Consumes: `owned_user_connection`, `owned_project_connection`, `_is_unique_violation`, `_encrypt`, `_reads` (Task 6), `LlmConnectionUpdateRequest`, `LlmConnectionDeleteResult` (Task 4), `get_provider`, `validate_endpoint_url`.
+- Produces (`app.services.llm_connection_service`):
+  - `class ConnectionNotFoundError(Exception)` — router maps to 404.
+  - `LlmConnectionService.update_user(*, user_id, connection_id, payload: LlmConnectionUpdateRequest) -> LlmConnectionRead`, `update_project(*, project_id, connection_id, payload)`, `delete_user(*, user_id, connection_id) -> LlmConnectionDeleteResult`, `delete_project(*, project_id, connection_id)`. Every one fetches through the matching `owned_*` guard: a foreign id is `ConnectionNotFoundError`. `ValueError` = duplicate label, a host rule the schema could not check, or clearing the key of a provider that requires one (400 at the router); `EndpointUrlError` propagates (400). A changed `base_url` / `allowed_models` resets `validation_status` to `unverified`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `backend/tests/integration/test_llm_connection_service.py` (add `LlmConnectionUpdateRequest` to the schema import and `ConnectionNotFoundError` to the service import):
+
+```python
+@pytest.mark.asyncio
+async def test_update_and_delete_go_through_the_guard(db_session: AsyncSession) -> None:
+    cid = await _user_key(db_session)
+    svc = LlmConnectionService(db_session)
+    with pytest.raises(ConnectionNotFoundError):
+        await svc.update_user(
+            user_id=SEED.reviewer_profile, connection_id=cid, payload=LlmConnectionUpdateRequest(label="stolen")
+        )
+    with pytest.raises(ConnectionNotFoundError):
+        await svc.delete_user(user_id=SEED.reviewer_profile, connection_id=cid)
+    read = await svc.update_user(
+        user_id=SEED.primary_profile, connection_id=cid, payload=LlmConnectionUpdateRequest(label="renamed")
+    )
+    assert read.label == "renamed"
+    result = await svc.delete_user(user_id=SEED.primary_profile, connection_id=cid)
+    assert result.deleted is True and str(result.id) == cid
+    assert await svc.list_user(SEED.primary_profile) == []
+
+
+@pytest.mark.asyncio
+async def test_clearing_the_key_is_refused_on_a_hosted_provider(db_session: AsyncSession) -> None:
+    cid = await _user_key(db_session)
+    with pytest.raises(ValueError, match="key"):
+        await LlmConnectionService(db_session).update_user(
+            user_id=SEED.primary_profile, connection_id=cid,
+            payload=LlmConnectionUpdateRequest(label="k", api_key=SecretStr("")),
+        )
+
+
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `cd backend && uv run pytest tests/integration/test_llm_connection_service.py -q`
+Expected: FAIL — `ImportError: cannot import name 'ConnectionNotFoundError'`.
+
+- [ ] **Step 3: Add update and delete to the service**
+
+In `backend/app/services/llm_connection_service.py` add `LlmConnectionDeleteResult`, `LlmConnectionUpdateRequest` to the `app.schemas.llm_connection` import and `"ConnectionNotFoundError"` to `__all__`; define, directly under `ConnectionUnavailableError`:
+
+```python
+class ConnectionNotFoundError(Exception):
+    """No connection for (owner, id). Routers translate to 404."""
+```
+
+and add to `LlmConnectionService`, above `decrypt_key`:
+
+```python
     async def _update(self, row: LlmConnection | None, payload: LlmConnectionUpdateRequest) -> LlmConnectionRead:
         if row is None:
             raise ConnectionNotFoundError("Connection not found")
@@ -1494,41 +1656,27 @@ class LlmConnectionService:
 
     async def delete_project(self, *, project_id: UUID, connection_id: UUID) -> LlmConnectionDeleteResult:
         return await self._delete(await owned_project_connection(self.db, connection_id, project_id))
-
-    async def decrypt_key(self, row: LlmConnection) -> str | None:
-        if row.encrypted_api_key is None:
-            return None
-        try:
-            return _fernet_for(row.id).decrypt(row.encrypted_api_key.encode()).decode()
-        except InvalidToken:
-            raise ConnectionUnavailableError(
-                f"The stored key for connection {row.id} ({row.label!r}) cannot be decrypted. Re-enter the key."
-            ) from None
-
-
 ```
-
-The two `owned_*` functions are the only `id`-bound predicates on `LlmConnection` in the tree; every scoped fetch in this module calls one of them.
 
 - [ ] **Step 4: Run the suites and the gates**
 
-Run: `cd backend && uv run pytest tests/unit/test_llm_connection_schemas.py tests/integration/test_llm_connection_service.py -q && uv run ruff check app tests && uv run ruff format --check app tests`
+Run: `cd backend && uv run pytest tests/integration/test_llm_connection_service.py -q && uv run ruff check app tests && uv run ruff format --check app tests`
 Expected: all PASS.
 Run: `python3 scripts/fitness/check_scope_guards.py`
-Expected: `0 new duplicate predicates` (exit 0). If it reports `LlmConnection{id,user_id}` or `{id,project_id}` twice, a second copy slipped in — route it through the guard.
+Expected: exit 0 — `_update` / `_delete` take the row the guard returned; neither filters `LlmConnection` by id itself.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/llm_connection_service.py backend/tests/integration/test_llm_connection_service.py
-git commit -m "feat(connections): connection service and ownership guards
+git commit -m "feat(connections): update and delete connections through the ownership guards
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 5: The credential ladder `resolve_provider_key`; parsing key re-homed `[backend]`
+### Task 8: The credential ladder `resolve_provider_key`; parsing key re-homed `[backend]`
 
 **Files:**
 
@@ -1541,9 +1689,9 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Interfaces:**
 
-- Consumes: `LlmConnectionService.decrypt_key`, `LlmConnection` (Task 4), `global_key_for` (registry).
+- Consumes: `LlmConnectionService.decrypt_key`, `LlmConnection` (Task 6), `global_key_for` (registry).
 - Produces (`app.services.llm_connection_service`):
-  - `class KeyScope(StrEnum)`: `USER_BYOK = "user_byok"`, `PROJECT_SHARED = "project_shared"`, `GLOBAL_SERVICE = "global_service"` (no `shared_endpoint` member: legacy provenance strings are never enum-parsed on read — Task 12 pins that).
+  - `class KeyScope(StrEnum)`: `USER_BYOK = "user_byok"`, `PROJECT_SHARED = "project_shared"`, `GLOBAL_SERVICE = "global_service"` (no `shared_endpoint` member: legacy provenance strings are never enum-parsed on read — Task 19's `test_legacy_shared_endpoint_key_scope_is_read_through_untouched` and `test_read_pinned_engine_tolerates_a_legacy_shared_endpoint_snapshot` pin that).
   - `class ResolvedKey(NamedTuple)`: `key: str`, `scope: KeyScope`.
   - `async def resolve_provider_key(session: AsyncSession, *, provider: str, project_id: UUID, user_id: UUID) -> ResolvedKey | None` — caller's user-scope key → project's shared key → `global_key_for(provider)`; `None` when nothing has a key.
   - Patch path for tests: `app.services.llm_connection_service.resolve_provider_key` (the worker imports the MODULE and calls the attribute, so a monkeypatch of the module attribute takes effect).
@@ -1590,6 +1738,36 @@ async def test_llama_cloud_key_resolves_for_parsing(db_session: AsyncSession, mo
     assert await resolve_provider_key(
         db_session, provider="llama_cloud", project_id=SEED.primary_project, user_id=SEED.reviewer_profile
     ) == ResolvedKey("lc-shared", KeyScope.PROJECT_SHARED)
+
+
+@pytest.mark.asyncio
+async def test_ladder_skips_host_rows_and_tolerates_several_shared_keys(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A keyed HOST is never handed out as a bare provider key, and two
+    shared keys for one provider (distinct labels — legal at project scope)
+    resolve to one of them, never ``MultipleResultsFound``."""
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    svc = LlmConnectionService(db_session)
+    await svc.create_user(
+        user_id=SEED.primary_profile,
+        payload=UserConnectionCreateRequest(
+            provider="openai_compatible", label="h", base_url="https://8.8.8.8/v1", api_key=SecretStr("host-key")
+        ),
+    )
+    assert await resolve_provider_key(
+        db_session, provider="openai_compatible", project_id=SEED.primary_project, user_id=SEED.primary_profile
+    ) is None
+    await _project_key(db_session, key="sk-first")
+    await svc.create_project(
+        project_id=SEED.primary_project, created_by=SEED.primary_profile,
+        payload=ProjectConnectionCreateRequest(provider="openai", label="second", api_key=SecretStr("sk-second")),
+    )
+    resolved = await resolve_provider_key(
+        db_session, provider="openai", project_id=SEED.primary_project, user_id=SEED.reviewer_profile
+    )
+    assert resolved is not None and resolved.scope is KeyScope.PROJECT_SHARED
+    assert resolved.key in {"sk-first", "sk-second"}  # same-transaction created_at ties are legal
 ```
 
 Delete `backend/tests/integration/test_api_key_llama_cloud.py` — its two cases are the last test above.
@@ -1623,12 +1801,22 @@ And at the end of the module:
 
 ```python
 async def _scoped_key_row(db: AsyncSession, *, provider: str, scope: str, owner_column, owner_id: UUID) -> LlmConnection | None:
+    """The keyed, host-less row for (scope, owner, provider) — a host's key
+    is never handed out as a bare provider key. Project scope is unique on
+    (project, provider, label), so several shared keys for one provider are
+    legal: take the oldest, never ``scalar_one`` (MultipleResultsFound → 500)."""
     return (
         await db.execute(
-            select(LlmConnection).where(
-                LlmConnection.scope == scope, owner_column == owner_id, LlmConnection.provider == provider,
+            select(LlmConnection)
+            .where(
+                LlmConnection.scope == scope,
+                owner_column == owner_id,
+                LlmConnection.provider == provider,
+                LlmConnection.base_url.is_(None),
                 LlmConnection.encrypted_api_key.is_not(None),
             )
+            .order_by(LlmConnection.created_at, LlmConnection.id)
+            .limit(1)
         )
     ).scalar_one_or_none()
 
@@ -1652,7 +1840,7 @@ async def resolve_provider_key(session: AsyncSession, *, provider: str, project_
     return ResolvedKey(global_key, KeyScope.GLOBAL_SERVICE) if global_key else None
 ```
 
-`_scoped_key_row` filters `(scope, owner, provider)` without `id`, so the scope-guard gate does not read it as an ownership predicate (a list-shaped query, not a guard).
+`_scoped_key_row` filters `(scope, owner, provider, base_url IS NULL, key present)` without `id`, so the scope-guard gate does not read it as an ownership predicate (a list-shaped query, not a guard).
 
 - [ ] **Step 4: Re-home the parse worker's llama_cloud lookup**
 
@@ -1693,7 +1881,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: Verify — hosted-key probe and the host probe ladder, both scopes `[backend]`
+### Task 9: Verify — hosted-key probe and the host probe ladder, both scopes `[backend]`
 
 **Files:**
 
@@ -1703,7 +1891,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Interfaces:**
 
-- Consumes: `probe_endpoint(*, vetted, api_key, allowed_models) -> LlmEndpointProbeResult` (`app.services.llm_endpoint_probe`, unchanged), `validate_endpoint_url`, `owned_user_connection` / `owned_project_connection`, `LlmConnectionVerifyResult` (Task 3).
+- Consumes: `probe_endpoint(*, vetted, api_key, allowed_models) -> LlmEndpointProbeResult` (`app.services.llm_endpoint_probe`, unchanged), `validate_endpoint_url`, `owned_user_connection` / `owned_project_connection`, `LlmConnectionVerifyResult` (Task 4).
 - Produces:
   - `app.services.provider_key_probe.probe_hosted_key(provider: str, api_key: str) -> tuple[Literal["ok", "failed"], str | None]` — one cheap authenticated call per hosted provider; `(“failed”, "<reason class>")` on 401/403 or an unknown status, `("ok", None)` on 200/429; a transport exception is `("failed", "unreachable")`, never raised. Key travels in headers, never in the URL.
   - `LlmConnectionService.verify_user(*, user_id, connection_id) -> LlmConnectionVerifyResult`, `verify_project(*, project_id, connection_id)`: host-bearing row → `probe_endpoint` (stores `output_mode` + `models_seen`, pre-fills `allowed_models` with `models_seen` when the stored list is empty); hosted row → `probe_hosted_key`. Persists `validation_status`, `capabilities`, `last_validated_at`. Missing row → `ConnectionNotFoundError`.
@@ -1971,18 +2159,19 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 7: User connections router — `/me/connections…` and `/me/providers` `[backend]`
+### Task 10: User connections router — `/me/connections…` and `/me/providers` `[backend]`
 
 **Files:**
 
 - Create: `backend/app/api/v1/endpoints/user_connections.py`
+- Modify: `backend/app/services/llm_connection_service.py` (append `provider_reads`; extend `__all__`)
 - Modify: `backend/app/api/v1/router.py:9-30` (import) and after the `user_api_keys` block at `:54-58` (mount with `prefix="/me"`, `tags=["me"]`)
 - Modify: `frontend/types/api/{openapi.json,schema.d.ts}` via `bash scripts/generate_api_types.sh`
-- Test: `backend/tests/unit/test_user_connections_unit.py` (new), `backend/tests/integration/test_user_connections_api.py` (new)
+- Test: `backend/tests/integration/test_user_connections_api.py` (new); the direct-coroutine unit tests are Task 12
 
 **Interfaces:**
 
-- Consumes: `LlmConnectionService` (Tasks 4, 6), `ConnectionNotFoundError`, the Task 3 schemas, `REGISTRY`, `global_key_for`, `get_current_user_sub` (`app.api.deps.security`), `EndpointUrlError` (`app.core.net_guard`), `limiter`.
+- Consumes: `LlmConnectionService` (Tasks 6, 7, 9), `ConnectionNotFoundError` (Task 7), the Task 4 schemas, `REGISTRY`, `global_key_for` (registry, inside the service), `get_current_user_sub` (`app.api.deps.security`), `EndpointUrlError` (`app.core.net_guard`), `limiter`.
 - Produces routes (all `ApiResponse[...]`, 401 without a session, any signed-in user):
   - `GET /api/v1/me/connections` → `ApiResponse[list[LlmConnectionRead]]`
   - `POST /api/v1/me/connections` (201) body `UserConnectionCreateRequest` → `ApiResponse[LlmConnectionRead]`; 400 on duplicate label / SSRF rejection; 422 from the schema.
@@ -1990,7 +2179,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   - `DELETE /api/v1/me/connections/{connection_id}` → 200 `ApiResponse[LlmConnectionDeleteResult]`.
   - `POST /api/v1/me/connections/{connection_id}/verify` → `ApiResponse[LlmConnectionVerifyResult]`.
   - `GET /api/v1/me/providers` → `ApiResponse[list[ProviderRead]]` (every registry provider, registry order).
-  - `list_providers_read() -> list[ProviderRead]` (module function; `global_key_available = global_key_for(id) is not None`).
+  - `llm_connection_service.provider_reads() -> list[ProviderRead]` — the registry → read-model mapping lives in the SERVICE (the API layer only wraps it; `global_key_available = global_key_for(id) is not None` is deployment state the service owns).
 
 - [ ] **Step 1: Write the failing integration tests**
 
@@ -2069,7 +2258,28 @@ async def test_providers_payload_has_exactly_the_spec_fields(
 Run: `cd backend && uv run pytest tests/integration/test_user_connections_api.py -q`
 Expected: FAIL — every request returns 404 (no route).
 
-- [ ] **Step 3: Write the router**
+- [ ] **Step 3: The registry read-model, then the router**
+
+Append to `backend/app/services/llm_connection_service.py` (add `REGISTRY`, `global_key_for` to the registry import, `ProviderRead` to the schema import, `"provider_reads"` to `__all__`):
+
+```python
+def provider_reads() -> list[ProviderRead]:
+    """§4 ``GET /me/providers``: every registry provider, registry order;
+    ``global_key_available`` is this deployment's state, not the row's."""
+    return [
+        ProviderRead(
+            id=spec.id,
+            label=spec.label,
+            description=spec.description,
+            docs_url=spec.docs_url,
+            needs_host=spec.needs_host,
+            key_optional=spec.key_optional,
+            scopes=sorted(spec.scopes),
+            global_key_available=global_key_for(spec.id) is not None,
+        )
+        for spec in REGISTRY
+    ]
+```
 
 ```python
 # backend/app/api/v1/endpoints/user_connections.py
@@ -2090,7 +2300,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.api.deps.security import get_current_user_sub
 from app.core.deps import DbSession
 from app.core.net_guard import EndpointUrlError
-from app.llm.registry import REGISTRY, global_key_for
 from app.schemas.common import ApiResponse
 from app.schemas.llm_connection import (
     LlmConnectionDeleteResult,
@@ -2100,26 +2309,14 @@ from app.schemas.llm_connection import (
     ProviderRead,
     UserConnectionCreateRequest,
 )
-from app.services.llm_connection_service import ConnectionNotFoundError, LlmConnectionService
+from app.services.llm_connection_service import (
+    ConnectionNotFoundError,
+    LlmConnectionService,
+    provider_reads,
+)
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
-
-
-def list_providers_read() -> list[ProviderRead]:
-    return [
-        ProviderRead(
-            id=spec.id,
-            label=spec.label,
-            description=spec.description,
-            docs_url=spec.docs_url,
-            needs_host=spec.needs_host,
-            key_optional=spec.key_optional,
-            scopes=sorted(spec.scopes),
-            global_key_available=global_key_for(spec.id) is not None,
-        )
-        for spec in REGISTRY
-    ]
 
 
 @router.get("/providers", response_model=ApiResponse[list[ProviderRead]])
@@ -2127,7 +2324,7 @@ def list_providers_read() -> list[ProviderRead]:
 async def list_providers(
     request: Request, _user: UUID = Depends(get_current_user_sub)
 ) -> ApiResponse[list[ProviderRead]]:
-    return ApiResponse.success(list_providers_read(), trace_id=getattr(request.state, "trace_id", None))
+    return ApiResponse.success(provider_reads(), trace_id=getattr(request.state, "trace_id", None))
 
 
 @router.get("/connections", response_model=ApiResponse[list[LlmConnectionRead]])
@@ -2210,83 +2407,17 @@ async def verify_my_connection(
 
 Mount in `backend/app/api/v1/router.py`: add `user_connections` to the import list and, directly after the `user_api_keys` block, `api_router.include_router(user_connections.router, prefix="/me", tags=["me"])`.
 
-- [ ] **Step 4: Write the unit tests (diff-cover blind spot)**
+- [ ] **Step 4: Run the suites, regenerate the contract**
 
-```python
-# backend/tests/unit/test_user_connections_unit.py
-"""Direct endpoint-coroutine tests with the service patched in the ENDPOINT
-MODULE'S namespace (the test_llm_engine_endpoints_unit pattern)."""
-
-from __future__ import annotations
-
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
-
-import pytest
-from fastapi import HTTPException
-
-from app.api.v1.endpoints.user_connections import (
-    delete_my_connection,
-    list_providers,
-    update_my_connection,
-)
-from app.schemas.llm_connection import LlmConnectionDeleteResult, LlmConnectionUpdateRequest
-from app.services.llm_connection_service import ConnectionNotFoundError
-
-_EP = "app.api.v1.endpoints.user_connections"
-_delete = getattr(delete_my_connection, "__wrapped__", delete_my_connection)
-_update = getattr(update_my_connection, "__wrapped__", update_my_connection)
-_providers = getattr(list_providers, "__wrapped__", list_providers)
-
-
-@pytest.mark.asyncio
-async def test_delete_maps_not_found_to_404() -> None:
-    service = MagicMock()
-    service.delete_user = AsyncMock(side_effect=ConnectionNotFoundError("nope"))
-    with patch(f"{_EP}.LlmConnectionService", return_value=service):
-        with pytest.raises(HTTPException) as exc:
-            await _delete(uuid4(), MagicMock(), AsyncMock(), uuid4())
-    assert exc.value.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_delete_commits_and_wraps_the_typed_result() -> None:
-    cid, db = uuid4(), AsyncMock()
-    service = MagicMock()
-    service.delete_user = AsyncMock(return_value=LlmConnectionDeleteResult(deleted=True, id=cid))
-    with patch(f"{_EP}.LlmConnectionService", return_value=service):
-        resp = await _delete(cid, MagicMock(), db, uuid4())
-    assert resp.ok is True and resp.data.id == cid
-    db.commit.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_update_maps_value_error_to_400() -> None:
-    service = MagicMock()
-    service.update_user = AsyncMock(side_effect=ValueError("already exists"))
-    with patch(f"{_EP}.LlmConnectionService", return_value=service):
-        with pytest.raises(HTTPException) as exc:
-            await _update(uuid4(), LlmConnectionUpdateRequest(label="x"), MagicMock(), AsyncMock(), uuid4())
-    assert exc.value.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_providers_read_is_the_registry() -> None:
-    resp = await _providers(MagicMock(), uuid4())
-    assert [p.id for p in resp.data] == ["openai", "anthropic", "google", "openai_compatible", "llama_cloud"]
-```
-
-- [ ] **Step 5: Run the suites, regenerate the contract**
-
-Run: `cd backend && uv run pytest tests/unit/test_user_connections_unit.py tests/integration/test_user_connections_api.py -q && uv run ruff check app tests && uv run ruff format --check app tests`
+Run: `cd backend && uv run pytest tests/integration/test_user_connections_api.py -q && uv run ruff check app tests && uv run ruff format --check app tests`
 Expected: all PASS.
 Run: `bash scripts/generate_api_types.sh && npm run typecheck`
 Expected: `Generated frontend/types/api/{openapi.json,schema.d.ts}`; tsc clean (additive routes only).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/api/v1/endpoints/user_connections.py backend/app/api/v1/router.py backend/tests/unit/test_user_connections_unit.py backend/tests/integration/test_user_connections_api.py frontend/types/api/openapi.json frontend/types/api/schema.d.ts
+git add backend/app/api/v1/endpoints/user_connections.py backend/app/services/llm_connection_service.py backend/app/api/v1/router.py backend/tests/integration/test_user_connections_api.py frontend/types/api/openapi.json frontend/types/api/schema.d.ts
 git commit -m "feat(api): /me/connections and /me/providers
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -2294,14 +2425,14 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 8: Project connections router — `/projects/{id}/connections…` `[backend]`
+### Task 11: Project connections router — `/projects/{id}/connections…` `[backend]`
 
 **Files:**
 
 - Create: `backend/app/api/v1/endpoints/project_connections.py`
 - Modify: `backend/app/api/v1/router.py` (import; mount with `prefix="/projects"`, `tags=["projects"]`, next to the `llm_endpoints` block at `:126-129`)
 - Modify: `frontend/types/api/{openapi.json,schema.d.ts}` (regenerate)
-- Test: `backend/tests/integration/test_project_connections_api.py` (new), `backend/tests/unit/test_project_connections_unit.py` (new)
+- Test: `backend/tests/integration/test_project_connections_api.py` (new); the direct-coroutine unit tests are Task 12
 
 **Interfaces:**
 
@@ -2510,21 +2641,17 @@ async def verify_project_connection(
 
 Mount: `api_router.include_router(project_connections.router, prefix="/projects", tags=["projects"])` right after the `llm_endpoints` block.
 
-- [ ] **Step 4: Unit tests**
+- [ ] **Step 4: Run the suites, regenerate the contract**
 
-`backend/tests/unit/test_project_connections_unit.py`: the same three coroutine tests as Task 7 Step 4 (`delete` → 404 on `ConnectionNotFoundError`, `delete` commits and wraps `LlmConnectionDeleteResult`, `update` maps `ValueError` → 400) against `delete_project_connection` / `update_project_connection`, calling them as `await _delete(project_id, connection_id, request, db, manager_id)` with `_EP = "app.api.v1.endpoints.project_connections"`.
-
-- [ ] **Step 5: Run the suites, regenerate the contract**
-
-Run: `cd backend && uv run pytest tests/unit/test_project_connections_unit.py tests/integration/test_project_connections_api.py tests/integration/test_user_connections_api.py -q && uv run ruff check app tests && uv run ruff format --check app tests`
+Run: `cd backend && uv run pytest tests/integration/test_project_connections_api.py tests/integration/test_user_connections_api.py -q && uv run ruff check app tests && uv run ruff format --check app tests`
 Expected: all PASS.
 Run: `bash scripts/generate_api_types.sh && npm run typecheck`
 Expected: regenerated; tsc clean.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/api/v1/endpoints/project_connections.py backend/app/api/v1/router.py backend/tests/unit/test_project_connections_unit.py backend/tests/integration/test_project_connections_api.py frontend/types/api/openapi.json frontend/types/api/schema.d.ts
+git add backend/app/api/v1/endpoints/project_connections.py backend/app/api/v1/router.py backend/tests/integration/test_project_connections_api.py frontend/types/api/openapi.json frontend/types/api/schema.d.ts
 git commit -m "feat(api): /projects/{id}/connections (manager-gated shared keys)
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -2532,11 +2659,163 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 9: Frontend connections data layer; parsing toggle reads connections `[frontend]`
+### Task 12: Direct-coroutine unit tests for both connection routers (diff-cover) `[backend]`
 
 **Files:**
 
-- Create: `frontend/services/llmConnectionsService.ts` (read side only — mutations arrive with their consumers in Tasks 10 and 17, so knip `--production` stays at zero after this task)
+- Create: `backend/tests/unit/test_user_connections_unit.py`, `backend/tests/unit/test_project_connections_unit.py`
+
+**Interfaces:**
+
+- Consumes: every handler of Tasks 10 and 11; `ConnectionNotFoundError`, `EndpointUrlError`, the Task 4 request schemas, `LlmConnectionDeleteResult`.
+- Produces: one direct-call test per handler and per error branch (404 / 400 / commit + envelope) — no production code. Handler bodies run through httpx's `ASGITransport` do not register under pytest-cov, so without these the CI `diff-cover --fail-under=80` gate refuses the branch on the routers alone (the `test_llm_engine_endpoints_unit` pattern; `@limiter.limit` wraps every handler, so the tests call the pristine coroutine via `__wrapped__`).
+
+- [ ] **Step 1: The user-router unit tests**
+
+```python
+# backend/tests/unit/test_user_connections_unit.py
+"""Direct endpoint-coroutine tests with the service patched in the ENDPOINT
+MODULE'S namespace (the test_llm_engine_endpoints_unit pattern)."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
+from fastapi import HTTPException
+
+from pydantic import SecretStr
+
+from app.api.v1.endpoints.user_connections import (
+    create_my_connection,
+    delete_my_connection,
+    list_my_connections,
+    list_providers,
+    update_my_connection,
+    verify_my_connection,
+)
+from app.core.net_guard import EndpointUrlError
+from app.schemas.llm_connection import (
+    LlmConnectionDeleteResult,
+    LlmConnectionUpdateRequest,
+    UserConnectionCreateRequest,
+)
+from app.services.llm_connection_service import ConnectionNotFoundError
+
+_EP = "app.api.v1.endpoints.user_connections"
+_create = getattr(create_my_connection, "__wrapped__", create_my_connection)
+_list = getattr(list_my_connections, "__wrapped__", list_my_connections)
+_delete = getattr(delete_my_connection, "__wrapped__", delete_my_connection)
+_update = getattr(update_my_connection, "__wrapped__", update_my_connection)
+_verify = getattr(verify_my_connection, "__wrapped__", verify_my_connection)
+_providers = getattr(list_providers, "__wrapped__", list_providers)
+
+
+@pytest.mark.asyncio
+async def test_delete_maps_not_found_to_404() -> None:
+    service = MagicMock()
+    service.delete_user = AsyncMock(side_effect=ConnectionNotFoundError("nope"))
+    with patch(f"{_EP}.LlmConnectionService", return_value=service):
+        with pytest.raises(HTTPException) as exc:
+            await _delete(uuid4(), MagicMock(), AsyncMock(), uuid4())
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_commits_and_wraps_the_typed_result() -> None:
+    cid, db = uuid4(), AsyncMock()
+    service = MagicMock()
+    service.delete_user = AsyncMock(return_value=LlmConnectionDeleteResult(deleted=True, id=cid))
+    with patch(f"{_EP}.LlmConnectionService", return_value=service):
+        resp = await _delete(cid, MagicMock(), db, uuid4())
+    assert resp.ok is True and resp.data.id == cid
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_maps_value_error_to_400() -> None:
+    service = MagicMock()
+    service.update_user = AsyncMock(side_effect=ValueError("already exists"))
+    with patch(f"{_EP}.LlmConnectionService", return_value=service):
+        with pytest.raises(HTTPException) as exc:
+            await _update(uuid4(), LlmConnectionUpdateRequest(label="x"), MagicMock(), AsyncMock(), uuid4())
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_commits_and_maps_a_url_rejection_to_400() -> None:
+    body = UserConnectionCreateRequest(provider="openai", label="x", api_key=SecretStr("k"))
+    db, service = AsyncMock(), MagicMock()
+    service.create_user = AsyncMock(return_value=MagicMock())
+    with patch(f"{_EP}.LlmConnectionService", return_value=service):
+        resp = await _create(body, MagicMock(), db, uuid4())
+    assert resp.ok is True
+    db.commit.assert_awaited_once()
+    service.create_user = AsyncMock(side_effect=EndpointUrlError("private address"))
+    with patch(f"{_EP}.LlmConnectionService", return_value=service):
+        with pytest.raises(HTTPException) as exc:
+            await _create(body, MagicMock(), AsyncMock(), uuid4())
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_list_wraps_the_service_rows() -> None:
+    service = MagicMock()
+    service.list_user = AsyncMock(return_value=[])
+    with patch(f"{_EP}.LlmConnectionService", return_value=service):
+        resp = await _list(MagicMock(), AsyncMock(), uuid4())
+    assert resp.ok is True and resp.data == []
+
+
+@pytest.mark.asyncio
+async def test_verify_maps_not_found_to_404_and_a_failed_revet_to_400() -> None:
+    service = MagicMock()
+    service.verify_user = AsyncMock(side_effect=ConnectionNotFoundError("nope"))
+    with patch(f"{_EP}.LlmConnectionService", return_value=service):
+        with pytest.raises(HTTPException) as exc:
+            await _verify(uuid4(), MagicMock(), AsyncMock(), uuid4())
+    assert exc.value.status_code == 404
+    service.verify_user = AsyncMock(side_effect=EndpointUrlError("dns"))
+    with patch(f"{_EP}.LlmConnectionService", return_value=service):
+        with pytest.raises(HTTPException) as exc:
+            await _verify(uuid4(), MagicMock(), AsyncMock(), uuid4())
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_providers_read_is_the_registry() -> None:
+    resp = await _providers(MagicMock(), uuid4())
+    assert [p.id for p in resp.data] == ["openai", "anthropic", "google", "openai_compatible", "llama_cloud"]
+```
+
+These direct-coroutine tests exist because handler lines run through httpx's `ASGITransport` do not register under pytest-cov (the CI `diff-cover --fail-under=80` gate would otherwise refuse the branch on the routers alone); every handler and every error branch above has one.
+
+- [ ] **Step 2: The project-router unit tests**
+
+`backend/tests/unit/test_project_connections_unit.py`: the same six coroutine tests as Step 1 minus the providers one (`delete` → 404 on `ConnectionNotFoundError`, `delete` commits and wraps `LlmConnectionDeleteResult`, `update` maps `ValueError` → 400, `create` commits and maps `EndpointUrlError` → 400, `list` wraps the rows, `verify` maps 404 / 400) against `delete_project_connection` / `update_project_connection` / `create_project_connection` / `list_project_connections` / `verify_project_connection`, calling them with the project id first — `await _delete(project_id, connection_id, request, db, manager_id)`, `await _create(project_id, ProjectConnectionCreateRequest(provider="openai", label="x", api_key=SecretStr("k")), request, db, manager_id)`, `await _list(project_id, request, db, manager_id)` — and the service methods renamed `*_project`; `_EP = "app.api.v1.endpoints.project_connections"`.
+
+- [ ] **Step 3: Run the suites**
+
+Run: `cd backend && uv run pytest tests/unit/test_user_connections_unit.py tests/unit/test_project_connections_unit.py -q && uv run ruff check tests && uv run ruff format --check tests`
+Expected: all PASS (these are green on first run — they pin behaviour Tasks 10 and 11 already ship; the failing-first discipline for the handlers was the integration suites).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add backend/tests/unit/test_user_connections_unit.py backend/tests/unit/test_project_connections_unit.py
+git commit -m "test(api): direct-coroutine unit tests for the connection routers
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 13: Frontend connections data layer; parsing toggle reads connections `[frontend]`
+
+**Files:**
+
+- Create: `frontend/services/llmConnectionsService.ts` (read side only — mutations arrive with their consumers in Tasks 14, 15 and 27, so knip `--production` stays at zero after this task)
 - Create: `frontend/lib/query-keys/me.ts`; Modify: `frontend/lib/query-keys/index.ts` (re-export `meKeys`), `frontend/lib/query-keys/project.ts:18-21` (add `connections`)
 - Create: `frontend/hooks/user/useLlmConnections.ts`, `frontend/hooks/project/useProjectConnections.ts`
 - Modify: `frontend/components/project/settings/AdvancedSettingsSection.tsx:24` (import), `:82-101` (the `hasLlamaCloudKey` effect), `:280` (unchanged prop)
@@ -2544,11 +2823,11 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Interfaces:**
 
-- Consumes: `components['schemas']['LlmConnectionRead']`, `components['schemas']['ProviderRead']` from `@/types/api/schema` (regenerated in Tasks 7–8); `apiClient`; `toResult`.
+- Consumes: `components['schemas']['LlmConnectionRead']` from `@/types/api/schema` (regenerated in Tasks 10–11); `apiClient`; `toResult`.
 - Produces:
-  - `frontend/services/llmConnectionsService.ts`: `export type LlmConnectionRead = components['schemas']['LlmConnectionRead']`, `export type ProviderRead = components['schemas']['ProviderRead']`; `fetchMyConnections(): Promise<ErrorResult<LlmConnectionRead[]>>` (GET `/api/v1/me/connections`), `fetchProviders(): Promise<ErrorResult<ProviderRead[]>>` (GET `/api/v1/me/providers`), `fetchProjectConnections(projectId: string): Promise<ErrorResult<LlmConnectionRead[]>>` (GET `/api/v1/projects/${projectId}/connections`).
-  - `meKeys = { all: ['me'], connections: () => ['me','connections'], providers: () => ['me','providers'] }`; `projectKeys.connections(projectId)` = `['projects','connections',projectId]`.
-  - `useMyConnections()`, `useProviders()` (`frontend/hooks/user/useLlmConnections.ts`); `useProjectConnections(projectId: string | null | undefined)` (`frontend/hooks/project/useProjectConnections.ts`; `enabled: Boolean(projectId)`) — TanStack queries, `staleTime` 5 min, a failed read is the query's error state.
+  - `frontend/services/llmConnectionsService.ts`: `export type LlmConnectionRead = components['schemas']['LlmConnectionRead']`; `fetchMyConnections(): Promise<ErrorResult<LlmConnectionRead[]>>` (GET `/api/v1/me/connections`), `fetchProjectConnections(projectId: string): Promise<ErrorResult<LlmConnectionRead[]>>` (GET `/api/v1/projects/${projectId}/connections`). The providers read (`fetchProviders`, `ProviderRead`, `useProviders`) arrives in Task 14 with its first production consumer — an export whose only consumer is a test fails `knip --production` at this task's commit.
+  - `meKeys = { all: ['me'], connections: () => ['me','connections'], providers: () => ['me','providers'] }` (a key-factory member is an object property, not an export: knip does not see `providers` until Task 14 consumes it); `projectKeys.connections(projectId)` = `['projects','connections',projectId]`.
+  - `useMyConnections()` (`frontend/hooks/user/useLlmConnections.ts`); `useProjectConnections(projectId: string | null | undefined)` (`frontend/hooks/project/useProjectConnections.ts`; `enabled: Boolean(projectId)`) — TanStack queries, `staleTime` 5 min, a failed read is the query's error state.
 
 - [ ] **Step 1: Write the failing service test**
 
@@ -2559,23 +2838,15 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 const {apiClientMock} = vi.hoisted(() => ({apiClientMock: vi.fn()}));
 vi.mock('@/integrations/api/client', () => ({apiClient: apiClientMock}));
 
-import {
-  fetchMyConnections,
-  fetchProjectConnections,
-  fetchProviders,
-} from '@/services/llmConnectionsService';
+import {fetchMyConnections, fetchProjectConnections} from '@/services/llmConnectionsService';
 
 beforeEach(() => vi.clearAllMocks());
 
 describe('llmConnectionsService reads', () => {
-  it('GETs the three routes and returns ErrorResult data', async () => {
+  it('GETs the two routes and returns ErrorResult data', async () => {
     apiClientMock.mockResolvedValueOnce([{id: 'c1'}]);
     expect(await fetchMyConnections()).toEqual({ok: true, data: [{id: 'c1'}]});
     expect(apiClientMock).toHaveBeenLastCalledWith('/api/v1/me/connections');
-
-    apiClientMock.mockResolvedValueOnce([{id: 'openai'}]);
-    expect((await fetchProviders()).ok).toBe(true);
-    expect(apiClientMock).toHaveBeenLastCalledWith('/api/v1/me/providers');
 
     apiClientMock.mockResolvedValueOnce([]);
     await fetchProjectConnections('p1');
@@ -2611,7 +2882,6 @@ import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {components} from '@/types/api/schema';
 
 export type LlmConnectionRead = components['schemas']['LlmConnectionRead'];
-export type ProviderRead = components['schemas']['ProviderRead'];
 
 const ME = '/api/v1/me/connections';
 export const projectConnectionsPath = (projectId: string): string =>
@@ -2619,10 +2889,6 @@ export const projectConnectionsPath = (projectId: string): string =>
 
 export function fetchMyConnections(): Promise<ErrorResult<LlmConnectionRead[]>> {
   return toResult(() => apiClient<LlmConnectionRead[]>(ME), 'llmConnectionsService.fetchMyConnections');
-}
-
-export function fetchProviders(): Promise<ErrorResult<ProviderRead[]>> {
-  return toResult(() => apiClient<ProviderRead[]>('/api/v1/me/providers'), 'llmConnectionsService.fetchProviders');
 }
 
 export function fetchProjectConnections(projectId: string): Promise<ErrorResult<LlmConnectionRead[]>> {
@@ -2633,7 +2899,7 @@ export function fetchProjectConnections(projectId: string): Promise<ErrorResult<
 }
 ```
 
-`projectConnectionsPath` is consumed by `fetchProjectConnections` in the same module (knip's `ignoreExportsUsedInFile`); Task 17's mutations reuse it — do not mark it `@internal`.
+`projectConnectionsPath` is consumed by `fetchProjectConnections` in the same module (knip's `ignoreExportsUsedInFile`); Task 27's mutations reuse it — do not mark it `@internal`.
 
 ```ts
 // frontend/lib/query-keys/me.ts
@@ -2649,16 +2915,11 @@ Add `export { meKeys } from './me';` to `frontend/lib/query-keys/index.ts` and, 
 
 ```ts
 // frontend/hooks/user/useLlmConnections.ts
-/** TanStack reads for the viewer's own connections and the registry (§4). */
+/** TanStack reads for the viewer's own connections and (Task 14) the registry (§4). */
 import {useQuery} from '@tanstack/react-query';
 
 import {meKeys} from '@/lib/query-keys';
-import {
-  fetchMyConnections,
-  fetchProviders,
-  type LlmConnectionRead,
-  type ProviderRead,
-} from '@/services/llmConnectionsService';
+import {fetchMyConnections, type LlmConnectionRead} from '@/services/llmConnectionsService';
 
 const STALE_MS = 5 * 60_000;
 
@@ -2668,18 +2929,6 @@ export function useMyConnections() {
     staleTime: STALE_MS,
     queryFn: async (): Promise<LlmConnectionRead[]> => {
       const result = await fetchMyConnections();
-      if (!result.ok) throw result.error;
-      return result.data;
-    },
-  });
-}
-
-export function useProviders() {
-  return useQuery({
-    queryKey: meKeys.providers(),
-    staleTime: STALE_MS,
-    queryFn: async (): Promise<ProviderRead[]> => {
-      const result = await fetchProviders();
       if (!result.ok) throw result.error;
       return result.data;
     },
@@ -2723,7 +2972,6 @@ import {describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/services/llmConnectionsService', () => ({
   fetchMyConnections: vi.fn(),
-  fetchProviders: vi.fn(),
   fetchProjectConnections: vi.fn(),
 }));
 
@@ -2769,7 +3017,6 @@ import {describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/services/llmConnectionsService', () => ({
   fetchMyConnections: vi.fn(),
-  fetchProviders: vi.fn(),
   fetchProjectConnections: vi.fn(),
 }));
 vi.mock('@/services/projectSettingsService', () => ({deleteProject: vi.fn()}));
@@ -2846,25 +3093,24 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 10: Integrations → AI connections; retire the API keys section `[frontend]`
+### Task 14: Integrations → AI connections (list + add); retire the API keys section `[frontend]`
 
 **Files:**
 
 - Create: `frontend/components/user/AiConnectionsSection.tsx`, `frontend/lib/copy/llmConnections.ts`
-- Modify: `frontend/lib/copy/index.ts:23-24,34,57` (register `llmConnections`), `frontend/services/llmConnectionsService.ts` (add the three user-scope mutations), `frontend/hooks/user/useLlmConnections.ts` (add the three mutation hooks), `frontend/lib/query-keys/project.ts` (add `llmEngines()`), `frontend/components/user/IntegrationsSection.tsx:6,13-18`
-- Delete: `frontend/components/user/ApiKeysSection.tsx`, `frontend/services/apiKeysService.ts`, `frontend/services/apiKeysService.test.ts`, `frontend/e2e/flows/settings-api-keys.e2e.ts`
+- Modify: `frontend/lib/copy/index.ts:23-24,34,57` (register `llmConnections`), `frontend/services/llmConnectionsService.ts` (add the providers read and the three user-scope mutations), `frontend/hooks/user/useLlmConnections.ts` (add `useProviders` and the three mutation hooks), `frontend/lib/query-keys/project.ts` (add `llmEngines()`), `frontend/components/user/IntegrationsSection.tsx:6,13-18`
+- Delete: `frontend/components/user/ApiKeysSection.tsx`, `frontend/services/apiKeysService.ts`, `frontend/services/apiKeysService.test.ts` (the old E2E flow `settings-api-keys.e2e.ts` is replaced in Task 15 — it drives the API, not the section, so it stays green until then)
 - Modify: `frontend/lib/copy/user.ts:71-73,77-119` (delete `integrationsApiKeys*` and every `apiKeys*` key), `scripts/fitness/check_copy_keys.baseline:121-123` (delete the three `user.ts:apiKeys*` rows)
-- Create: `frontend/e2e/flows/settings-connections.e2e.ts`
 - Test: `frontend/test/components/AiConnectionsSection.test.tsx` (new)
 
 **Interfaces:**
 
-- Consumes: `useMyConnections`, `useProviders` (Task 9), `components['schemas']['UserConnectionCreateRequest' | 'LlmConnectionVerifyResult' | 'LlmConnectionDeleteResult']`, `SettingsSection` (`@/components/settings`), shadcn `Select`, `Input`, `Label`, `Button`, `Badge`, `Skeleton`, `AlertDialog`, `Tooltip`, `sonner` toast.
+- Consumes: `useMyConnections`, `meKeys.providers()` (Task 13), `components['schemas']['ProviderRead' | 'UserConnectionCreateRequest']`, `SettingsSection` (`@/components/settings`), shadcn `Select`, `Input`, `Label`, `Button`, `Badge`, `Skeleton`, `sonner` toast.
 - Produces:
-  - Service: `createMyConnection(body: UserConnectionCreateRequest): Promise<ErrorResult<LlmConnectionRead>>` (POST `/api/v1/me/connections`), `deleteMyConnection(id: string): Promise<ErrorResult<LlmConnectionDeleteResult>>`, `verifyMyConnection(id: string): Promise<ErrorResult<LlmConnectionVerifyResult>>` (POST `…/{id}/verify`); exported types `UserConnectionCreateRequest`, `LlmConnectionVerifyResult`, `LlmConnectionDeleteResult`.
-  - Hooks: `useCreateMyConnection()`, `useDeleteMyConnection()`, `useVerifyMyConnection()` — `useMutation`s that on success invalidate `meKeys.connections()` and `projectKeys.llmEngines()` (a new key changes every project's `availability`).
+  - Service: `export type ProviderRead = components['schemas']['ProviderRead']`; `fetchProviders(): Promise<ErrorResult<ProviderRead[]>>` (GET `/api/v1/me/providers`); `createMyConnection(body: UserConnectionCreateRequest): Promise<ErrorResult<LlmConnectionRead>>` (POST `/api/v1/me/connections`); exported type `UserConnectionCreateRequest`. Delete / verify are Task 15.
+  - Hooks: `useProviders()` (query on `meKeys.providers()`, `staleTime` 5 min); `useInvalidateMine()` (module-private) and `useCreateMyConnection()` — a `useMutation` that on success invalidates `meKeys.connections()` and `projectKeys.llmEngines()` (a new key changes every project's `availability`).
   - `projectKeys.llmEngines = () => [...projectKeys.all, 'llm-engine'] as const` (prefix of `projectKeys.llmEngine(id)`).
-  - `AiConnectionsSection` (no props), mounted by `IntegrationsSection` in place of `ApiKeysSection`.
+  - `AiConnectionsSection` (no props), mounted by `IntegrationsSection` in place of `ApiKeysSection`: the list (label, provider, `host` tag, status badge) and the Add form; per-row verify / remove are Task 15.
   - Copy namespace `llmConnections` — this task adds exactly the keys the section references (listed in Step 3); later tasks append theirs.
   - States (§5.3): loading → `Skeleton` rows and the Add button `disabled` until `useProviders` resolves; empty → one line `listEmpty` with the Add button inline; error → `listLoadError` line with a `retry` button (`refetch`); the form stays usable.
 
@@ -2884,8 +3130,6 @@ vi.mock('@/services/llmConnectionsService', () => ({
   fetchProviders: vi.fn(),
   fetchProjectConnections: vi.fn(),
   createMyConnection: vi.fn(),
-  deleteMyConnection: vi.fn(),
-  verifyMyConnection: vi.fn(),
 }));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 
@@ -2944,16 +3188,6 @@ describe('AiConnectionsSection', () => {
     await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'saveButton')}));
     await waitFor(() => expect(svc.createMyConnection).toHaveBeenCalledWith({provider: 'openai', label: 'mine', api_key: 'sk-test', base_url: null, allowed_models: []}));
   });
-
-  it('remove confirms then deletes', async () => {
-    vi.mocked(svc.fetchMyConnections).mockResolvedValue({ok: true, data: [ROW]});
-    vi.mocked(svc.deleteMyConnection).mockResolvedValue({ok: true, data: {deleted: true, id: 'c1'}});
-    renderSection();
-    await waitFor(() => expect(screen.getByText('mine')).toBeInTheDocument());
-    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'removeAria')}));
-    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'removeConfirm')}));
-    await waitFor(() => expect(svc.deleteMyConnection).toHaveBeenCalledWith('c1'));
-  });
 });
 ```
 
@@ -2992,11 +3226,6 @@ export const llmConnections = {
     saveButton: 'Save connection',
     saving: 'Saving…',
     cancelButton: 'Cancel',
-    verifyAria: 'Verify connection',
-    removeAria: 'Remove connection',
-    removeTitle: 'Remove this connection?',
-    removeDescription: 'The stored key is destroyed. Any run pinned to this connection stops working.',
-    removeConfirm: 'Remove',
     statusUnverified: 'Unverified',
     statusOk: 'Verified',
     statusFailed: 'Failed',
@@ -3004,11 +3233,6 @@ export const llmConnections = {
     globalKeyNote: 'prumo provides a key for this provider; add your own to run on it instead.',
     createSuccess: 'Connection added.',
     createError: 'Failed to add the connection',
-    removeSuccess: 'Connection removed.',
-    removeError: 'Failed to remove the connection',
-    verifySuccess: 'Connection verified.',
-    verifyFailed: 'Verification failed: {{reason}}',
-    verifyError: 'Failed to verify the connection',
 } as const;
 ```
 
@@ -3019,26 +3243,33 @@ Register it in `frontend/lib/copy/index.ts`: `import {llmConnections} from './ll
 Append to `frontend/services/llmConnectionsService.ts`:
 
 ```ts
+export type ProviderRead = components['schemas']['ProviderRead'];
 export type UserConnectionCreateRequest = components['schemas']['UserConnectionCreateRequest'];
-export type LlmConnectionVerifyResult = components['schemas']['LlmConnectionVerifyResult'];
-export type LlmConnectionDeleteResult = components['schemas']['LlmConnectionDeleteResult'];
+
+export function fetchProviders(): Promise<ErrorResult<ProviderRead[]>> {
+  return toResult(() => apiClient<ProviderRead[]>('/api/v1/me/providers'), 'llmConnectionsService.fetchProviders');
+}
 
 export function createMyConnection(body: UserConnectionCreateRequest): Promise<ErrorResult<LlmConnectionRead>> {
   return toResult(() => apiClient<LlmConnectionRead>(ME, {method: 'POST', body}), 'llmConnectionsService.createMyConnection');
 }
-
-export function deleteMyConnection(id: string): Promise<ErrorResult<LlmConnectionDeleteResult>> {
-  return toResult(() => apiClient<LlmConnectionDeleteResult>(`${ME}/${id}`, {method: 'DELETE'}), 'llmConnectionsService.deleteMyConnection');
-}
-
-export function verifyMyConnection(id: string): Promise<ErrorResult<LlmConnectionVerifyResult>> {
-  return toResult(() => apiClient<LlmConnectionVerifyResult>(`${ME}/${id}/verify`, {method: 'POST'}), 'llmConnectionsService.verifyMyConnection');
-}
 ```
 
-Append to `frontend/hooks/user/useLlmConnections.ts` (import `useMutation`, `useQueryClient`, `projectKeys`, the three service functions and types):
+Append to `frontend/hooks/user/useLlmConnections.ts` (import `useMutation`, `useQueryClient`, `projectKeys`, `fetchProviders`, `createMyConnection`, `ProviderRead`, `UserConnectionCreateRequest`):
 
 ```ts
+export function useProviders() {
+  return useQuery({
+    queryKey: meKeys.providers(),
+    staleTime: STALE_MS,
+    queryFn: async (): Promise<ProviderRead[]> => {
+      const result = await fetchProviders();
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+  });
+}
+
 function useInvalidateMine() {
   const queryClient = useQueryClient();
   return () => {
@@ -3053,30 +3284,6 @@ export function useCreateMyConnection() {
   return useMutation<LlmConnectionRead, Error, UserConnectionCreateRequest>({
     mutationFn: async (body) => {
       const result = await createMyConnection(body);
-      if (!result.ok) throw result.error;
-      return result.data;
-    },
-    onSuccess: invalidate,
-  });
-}
-
-export function useDeleteMyConnection() {
-  const invalidate = useInvalidateMine();
-  return useMutation<LlmConnectionDeleteResult, Error, string>({
-    mutationFn: async (id) => {
-      const result = await deleteMyConnection(id);
-      if (!result.ok) throw result.error;
-      return result.data;
-    },
-    onSuccess: invalidate,
-  });
-}
-
-export function useVerifyMyConnection() {
-  const invalidate = useInvalidateMine();
-  return useMutation<LlmConnectionVerifyResult, Error, string>({
-    mutationFn: async (id) => {
-      const result = await verifyMyConnection(id);
       if (!result.ok) throw result.error;
       return result.data;
     },
@@ -3098,23 +3305,16 @@ In `frontend/lib/query-keys/project.ts` add `llmEngines: () => [...projectKeys.a
  * (only when the provider needs one). Replaces the API keys section.
  */
 import {useState} from 'react';
-import {ExternalLink, Loader2, Plus, RefreshCw, Trash2} from 'lucide-react';
+import {ExternalLink, Plus} from 'lucide-react';
 import {toast} from 'sonner';
 
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Skeleton} from '@/components/ui/skeleton';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
-import {
-  useCreateMyConnection, useDeleteMyConnection, useMyConnections, useProviders, useVerifyMyConnection,
-} from '@/hooks/user/useLlmConnections';
+import {useCreateMyConnection, useMyConnections, useProviders} from '@/hooks/user/useLlmConnections';
 import {t} from '@/lib/copy';
 import type {LlmConnectionRead, ProviderRead} from '@/services/llmConnectionsService';
 
@@ -3125,21 +3325,6 @@ const STATUS_COPY = {
 } as const;
 
 function ConnectionRow({row, provider}: {row: LlmConnectionRead; provider: ProviderRead | undefined}) {
-  const verify = useVerifyMyConnection();
-  const remove = useDeleteMyConnection();
-  const onVerify = () =>
-    verify.mutate(row.id, {
-      onSuccess: (r) =>
-        r.validation_status === 'ok'
-          ? toast.success(t('llmConnections', 'verifySuccess'))
-          : toast.error(t('llmConnections', 'verifyFailed').replace('{{reason}}', r.error ?? r.validation_status)),
-      onError: () => toast.error(t('llmConnections', 'verifyError')),
-    });
-  const onRemove = () =>
-    remove.mutate(row.id, {
-      onSuccess: () => toast.success(t('llmConnections', 'removeSuccess')),
-      onError: () => toast.error(t('llmConnections', 'removeError')),
-    });
   return (
     <li className="flex items-center gap-3 px-2 py-1.5 text-[13px]">
       <span className="font-medium">{row.label}</span>
@@ -3148,38 +3333,6 @@ function ConnectionRow({row, provider}: {row: LlmConnectionRead; provider: Provi
       <Badge variant={row.validation_status === 'ok' ? 'default' : 'secondary'}>
         {t('llmConnections', STATUS_COPY[row.validation_status])}
       </Badge>
-      <div className="ml-auto flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={t('llmConnections', 'verifyAria')} onClick={onVerify} disabled={verify.isPending}>
-              {verify.isPending ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} /> : <RefreshCw className="h-4 w-4" strokeWidth={1.5} />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('llmConnections', 'verifyAria')}</TooltipContent>
-        </Tooltip>
-        <AlertDialog>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label={t('llmConnections', 'removeAria')}>
-                  <Trash2 className="h-4 w-4" strokeWidth={1.5} />
-                </Button>
-              </AlertDialogTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{t('llmConnections', 'removeAria')}</TooltipContent>
-          </Tooltip>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('llmConnections', 'removeTitle')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('llmConnections', 'removeDescription')}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('llmConnections', 'cancelButton')}</AlertDialogCancel>
-              <AlertDialogAction onClick={onRemove}>{t('llmConnections', 'removeConfirm')}</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
     </li>
   );
 }
@@ -3285,7 +3438,221 @@ export function AiConnectionsSection() {
 
 In `IntegrationsSection.tsx` replace the `ApiKeysSection` import and mount with `AiConnectionsSection`, titled `t('llmConnections', 'integrationsTitle')` / `t('llmConnections', 'integrationsDescription')`. Delete `ApiKeysSection.tsx`, `apiKeysService.ts`, `apiKeysService.test.ts`; delete the `integrationsApiKeys*` and `apiKeys*` keys from `frontend/lib/copy/user.ts` and the three `frontend/lib/copy/user.ts:apiKeys*` rows from `scripts/fitness/check_copy_keys.baseline`.
 
-- [ ] **Step 6: Rewrite the settings E2E flow**
+- [ ] **Step 6: Run the suites and gates**
+
+Run: `npx vitest run frontend/test/components/AiConnectionsSection.test.tsx frontend/test/components/AdvancedSettingsSection.test.tsx && npm run typecheck && npm run lint && npx knip --no-tag-hints && npx knip --production --no-tag-hints && python3 scripts/fitness/check_copy_keys.py`
+Expected: all PASS; knip 0 in both modes; copy-key gate `0 unreferenced keys` (the baseline shrank by three). If the copy gate reports a new unreferenced `llmConnections.ts` key, the section must reference it — do not baseline it.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add frontend/components/user frontend/lib/copy frontend/services/llmConnectionsService.ts frontend/hooks/user/useLlmConnections.ts frontend/lib/query-keys/project.ts frontend/test/components/AiConnectionsSection.test.tsx scripts/fitness/check_copy_keys.baseline
+git rm frontend/components/user/ApiKeysSection.tsx frontend/services/apiKeysService.ts frontend/services/apiKeysService.test.ts
+git commit -m "feat(frontend): Integrations → AI connections (list + add) replaces the API keys section
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 15: AI connections — verify and remove per row; settings E2E rewrite `[frontend]`
+
+**Files:**
+
+- Modify: `frontend/services/llmConnectionsService.ts` (add `deleteMyConnection`, `verifyMyConnection`; export `LlmConnectionVerifyResult`, `LlmConnectionDeleteResult`), `frontend/hooks/user/useLlmConnections.ts` (add `useDeleteMyConnection`, `useVerifyMyConnection`), `frontend/components/user/AiConnectionsSection.tsx` (`ConnectionRow` gains the verify / remove actions), `frontend/lib/copy/llmConnections.ts` (append the row-action keys)
+- Create: `frontend/e2e/flows/settings-connections.e2e.ts`; Delete: `frontend/e2e/flows/settings-api-keys.e2e.ts`
+- Test: `frontend/test/components/AiConnectionsSection.test.tsx` (append), `frontend/test/hooks/useLlmConnections.test.tsx` (append the invalidation case)
+
+**Interfaces:**
+
+- Consumes: `useInvalidateMine`, `ConnectionRow`, `STATUS_COPY` (Task 14), `components['schemas']['LlmConnectionVerifyResult' | 'LlmConnectionDeleteResult']`, shadcn `AlertDialog`, `Tooltip`, `lucide-react` `Loader2`, `RefreshCw`, `Trash2`.
+- Produces:
+  - Service: `deleteMyConnection(id: string): Promise<ErrorResult<LlmConnectionDeleteResult>>` (DELETE `/api/v1/me/connections/{id}`), `verifyMyConnection(id: string): Promise<ErrorResult<LlmConnectionVerifyResult>>` (POST `…/{id}/verify`); exported types `LlmConnectionVerifyResult`, `LlmConnectionDeleteResult`.
+  - Hooks: `useDeleteMyConnection()`, `useVerifyMyConnection()` — `useMutation`s that on success run `useInvalidateMine` (`meKeys.connections()` + `projectKeys.llmEngines()`).
+  - `ConnectionRow`: a verify icon button (`verifyAria`, spinner while pending; toast `verifySuccess` / `verifyFailed` with `{{reason}}` / `verifyError`) and a remove icon button behind an `AlertDialog` (`removeTitle`, `removeDescription`, `removeConfirm`; toast `removeSuccess` / `removeError`).
+  - Copy keys added: `verifyAria`, `removeAria`, `removeTitle`, `removeDescription`, `removeConfirm`, `removeSuccess`, `removeError`, `verifySuccess`, `verifyFailed`, `verifyError`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `frontend/test/components/AiConnectionsSection.test.tsx` (extend the `vi.mock('@/services/llmConnectionsService', …)` factory with `deleteMyConnection: vi.fn()`, `verifyMyConnection: vi.fn()`), inside the `describe`:
+
+```tsx
+  it('remove confirms then deletes', async () => {
+    vi.mocked(svc.fetchMyConnections).mockResolvedValue({ok: true, data: [ROW]});
+    vi.mocked(svc.deleteMyConnection).mockResolvedValue({ok: true, data: {deleted: true, id: 'c1'}});
+    renderSection();
+    await waitFor(() => expect(screen.getByText('mine')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'removeAria')}));
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'removeConfirm')}));
+    await waitFor(() => expect(svc.deleteMyConnection).toHaveBeenCalledWith('c1'));
+  });
+
+  it('verify calls the service and reports a failed probe with its reason', async () => {
+    vi.mocked(svc.fetchMyConnections).mockResolvedValue({ok: true, data: [ROW]});
+    vi.mocked(svc.verifyMyConnection).mockResolvedValue({
+      ok: true, data: {validation_status: 'failed', output_mode: null, models_seen: [], error: 'unauthorized'},
+    });
+    renderSection();
+    await waitFor(() => expect(screen.getByText('mine')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'verifyAria')}));
+    await waitFor(() => expect(svc.verifyMyConnection).toHaveBeenCalledWith('c1'));
+    const {toast} = await import('sonner');
+    expect(toast.error).toHaveBeenCalledWith(t('llmConnections', 'verifyFailed').replace('{{reason}}', 'unauthorized'));
+  });
+```
+
+Append to `frontend/test/hooks/useLlmConnections.test.tsx` (add `act` to the `@testing-library/react` import, `createMyConnection: vi.fn()` to the service mock factory, and import `createMyConnection` / `useCreateMyConnection`) — the cross-key invalidation that keeps every project's engine read fresh:
+
+```tsx
+  it('a user-connection mutation invalidates the list and every engine read', async () => {
+    vi.mocked(createMyConnection).mockResolvedValue({ok: true, data: {id: 'c1'} as never});
+    const client = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
+    client.setQueryData(meKeys.connections(), []);
+    client.setQueryData(projectKeys.llmEngine('p1'), {source: 'project'});
+    const w = ({children}: {children: ReactNode}) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const {result} = renderHook(() => useCreateMyConnection(), {wrapper: w});
+    await act(async () => {
+      await result.current.mutateAsync({provider: 'openai', label: 'x', api_key: 'k', base_url: null, allowed_models: []});
+    });
+    expect(client.getQueryState(meKeys.connections())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(projectKeys.llmEngine('p1'))?.isInvalidated).toBe(true);
+  });
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `npx vitest run frontend/test/components/AiConnectionsSection.test.tsx frontend/test/hooks/useLlmConnections.test.tsx`
+Expected: the two section cases FAIL (no `removeAria` / `verifyAria` button); the hook case PASSES already (Task 14's `useInvalidateMine`) — it is the pin for the invalidation contract, kept here with its siblings.
+
+- [ ] **Step 3: Service, hooks, copy**
+
+Append to `frontend/services/llmConnectionsService.ts`:
+
+```ts
+export type LlmConnectionVerifyResult = components['schemas']['LlmConnectionVerifyResult'];
+export type LlmConnectionDeleteResult = components['schemas']['LlmConnectionDeleteResult'];
+
+export function deleteMyConnection(id: string): Promise<ErrorResult<LlmConnectionDeleteResult>> {
+  return toResult(() => apiClient<LlmConnectionDeleteResult>(`${ME}/${id}`, {method: 'DELETE'}), 'llmConnectionsService.deleteMyConnection');
+}
+
+export function verifyMyConnection(id: string): Promise<ErrorResult<LlmConnectionVerifyResult>> {
+  return toResult(() => apiClient<LlmConnectionVerifyResult>(`${ME}/${id}/verify`, {method: 'POST'}), 'llmConnectionsService.verifyMyConnection');
+}
+```
+
+Append to `frontend/hooks/user/useLlmConnections.ts` (import `deleteMyConnection`, `verifyMyConnection` and the two result types):
+
+```ts
+export function useDeleteMyConnection() {
+  const invalidate = useInvalidateMine();
+  return useMutation<LlmConnectionDeleteResult, Error, string>({
+    mutationFn: async (id) => {
+      const result = await deleteMyConnection(id);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useVerifyMyConnection() {
+  const invalidate = useInvalidateMine();
+  return useMutation<LlmConnectionVerifyResult, Error, string>({
+    mutationFn: async (id) => {
+      const result = await verifyMyConnection(id);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: invalidate,
+  });
+}
+```
+
+Append to `frontend/lib/copy/llmConnections.ts`, inside the Integrations block:
+
+```ts
+    verifyAria: 'Verify connection',
+    removeAria: 'Remove connection',
+    removeTitle: 'Remove this connection?',
+    removeDescription: 'The stored key is destroyed. Any run pinned to this connection stops working.',
+    removeConfirm: 'Remove',
+    removeSuccess: 'Connection removed.',
+    removeError: 'Failed to remove the connection',
+    verifySuccess: 'Connection verified.',
+    verifyFailed: 'Verification failed: {{reason}}',
+    verifyError: 'Failed to verify the connection',
+```
+
+- [ ] **Step 4: The row actions**
+
+In `frontend/components/user/AiConnectionsSection.tsx` extend the imports — `import {ExternalLink, Loader2, Plus, RefreshCw, Trash2} from 'lucide-react';`, the `AlertDialog*` family from `@/components/ui/alert-dialog`, `Tooltip, TooltipContent, TooltipTrigger` from `@/components/ui/tooltip`, and `useDeleteMyConnection, useVerifyMyConnection` from the hooks module — and replace `ConnectionRow` whole:
+
+```tsx
+function ConnectionRow({row, provider}: {row: LlmConnectionRead; provider: ProviderRead | undefined}) {
+  const verify = useVerifyMyConnection();
+  const remove = useDeleteMyConnection();
+  const onVerify = () =>
+    verify.mutate(row.id, {
+      onSuccess: (r) =>
+        r.validation_status === 'ok'
+          ? toast.success(t('llmConnections', 'verifySuccess'))
+          : toast.error(t('llmConnections', 'verifyFailed').replace('{{reason}}', r.error ?? r.validation_status)),
+      onError: () => toast.error(t('llmConnections', 'verifyError')),
+    });
+  const onRemove = () =>
+    remove.mutate(row.id, {
+      onSuccess: () => toast.success(t('llmConnections', 'removeSuccess')),
+      onError: () => toast.error(t('llmConnections', 'removeError')),
+    });
+  return (
+    <li className="flex items-center gap-3 px-2 py-1.5 text-[13px]">
+      <span className="font-medium">{row.label}</span>
+      <span className="text-muted-foreground">{provider?.label ?? row.provider}</span>
+      {row.base_url && <Badge variant="outline">{t('llmConnections', 'hostTag')}</Badge>}
+      <Badge variant={row.validation_status === 'ok' ? 'default' : 'secondary'}>
+        {t('llmConnections', STATUS_COPY[row.validation_status])}
+      </Badge>
+      <div className="ml-auto flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label={t('llmConnections', 'verifyAria')} onClick={onVerify} disabled={verify.isPending}>
+              {verify.isPending ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} /> : <RefreshCw className="h-4 w-4" strokeWidth={1.5} />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('llmConnections', 'verifyAria')}</TooltipContent>
+        </Tooltip>
+        <AlertDialog>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label={t('llmConnections', 'removeAria')}>
+                  <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                </Button>
+              </AlertDialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{t('llmConnections', 'removeAria')}</TooltipContent>
+          </Tooltip>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('llmConnections', 'removeTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('llmConnections', 'removeDescription')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('llmConnections', 'cancelButton')}</AlertDialogCancel>
+              <AlertDialogAction onClick={onRemove}>{t('llmConnections', 'removeConfirm')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </li>
+  );
+}
+```
+
+- [ ] **Step 5: Rewrite the settings E2E flow**
 
 Create `frontend/e2e/flows/settings-connections.e2e.ts` (delete `settings-api-keys.e2e.ts`):
 
@@ -3339,26 +3706,26 @@ test.describe('Settings and AI connection flows', () => {
 
 (`loginViaUi` throws without `E2E_USER_EMAIL`/`E2E_USER_PASSWORD`; the first test skips, the second relies on `resolveAuthToken` exactly as the old flow did.)
 
-- [ ] **Step 7: Run the suites and gates**
+- [ ] **Step 6: Run the suites and gates**
 
-Run: `npx vitest run frontend/test/components/AiConnectionsSection.test.tsx frontend/test/components/AdvancedSettingsSection.test.tsx && npm run typecheck && npm run lint && npx knip --no-tag-hints && npx knip --production --no-tag-hints && python3 scripts/fitness/check_copy_keys.py`
-Expected: all PASS; knip 0 in both modes; copy-key gate `0 unreferenced keys` (the baseline shrank by three). If the copy gate reports a new unreferenced `llmConnections.ts` key, the section must reference it — do not baseline it.
+Run: `npx vitest run frontend/test/components/AiConnectionsSection.test.tsx frontend/test/hooks/useLlmConnections.test.tsx && npm run typecheck && npm run lint && npx knip --no-tag-hints && npx knip --production --no-tag-hints && python3 scripts/fitness/check_copy_keys.py`
+Expected: all PASS; knip 0 in both modes; copy gate `0 unreferenced keys`.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/components/user frontend/lib/copy frontend/services/llmConnectionsService.ts frontend/hooks/user/useLlmConnections.ts frontend/lib/query-keys/project.ts frontend/test/components/AiConnectionsSection.test.tsx frontend/e2e/flows/settings-connections.e2e.ts scripts/fitness/check_copy_keys.baseline
-git rm frontend/components/user/ApiKeysSection.tsx frontend/services/apiKeysService.ts frontend/services/apiKeysService.test.ts frontend/e2e/flows/settings-api-keys.e2e.ts
-git commit -m "feat(frontend): Integrations → AI connections replaces the API keys section
+git add frontend/components/user/AiConnectionsSection.tsx frontend/lib/copy/llmConnections.ts frontend/services/llmConnectionsService.ts frontend/hooks/user/useLlmConnections.ts frontend/test/components/AiConnectionsSection.test.tsx frontend/test/hooks/useLlmConnections.test.tsx frontend/e2e/flows/settings-connections.e2e.ts
+git rm frontend/e2e/flows/settings-api-keys.e2e.ts
+git commit -m "feat(frontend): verify and remove AI connections; settings E2E flow rewritten
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 11: Retire the engine chip, the Model tab, the endpoints/engine dialogs and their data layer `[frontend]`
+### Task 16: Retire the engine chip, the Model tab, the endpoints/engine dialogs and their data layer `[frontend]`
 
-The spec's Delivery note groups these removals with the gear task; they are pulled forward as their own task so `npm run typecheck` stays green through Task 12's backend rename (the retiring components are the only consumers of the `endpoint_id` / `alternates` / `byok_only` wire fields that Task 12 removes and Task 14 regenerates).
+The spec's Delivery note groups these removals with the gear task; they are pulled forward as their own task so `npm run typecheck` stays green through Task 17's backend rename (the retiring components are the only consumers of the `endpoint_id` / `alternates` / `byok_only` wire fields that Task 17 removes and Task 20 regenerates).
 
 **Files:**
 
@@ -3369,7 +3736,7 @@ The spec's Delivery note groups these removals with the gear task; they are pull
 **Interfaces:**
 
 - Consumes: nothing new.
-- Produces: `AiConfigTab = 'picots' | 'instruction'` (`AiConfigDialog.tsx`); `AiConfigDialogProps` loses `withModel`; `tabbed = template != null`; `TemplateConfigEditorProps` loses `engineSlot`. `projectKeys.llmEngine(id)` and `projectKeys.llmEngines()` stay (Task 16 reads them; `llmEngines()` is consumed by Task 10's mutations, `llmEngine(id)` by nothing until Task 16 — a key factory member is an object property, not an export, so knip does not see it).
+- Produces: `AiConfigTab = 'picots' | 'instruction'` (`AiConfigDialog.tsx`); `AiConfigDialogProps` loses `withModel`; `tabbed = template != null`; `TemplateConfigEditorProps` loses `engineSlot`. `projectKeys.llmEngine(id)` and `projectKeys.llmEngines()` stay (Task 23 reads them; `llmEngines()` is consumed by Task 14's mutations, `llmEngine(id)` by nothing until Task 23 — a key factory member is an object property, not an export, so knip does not see it).
 
 - [ ] **Step 1: Narrow the dialog and its test first (failing test)**
 
@@ -3409,26 +3776,26 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 12: Engine setting shape — `connection_id`, `user_choice_allowed`, no `alternates`, no endpoint branch `[backend]`
+### Task 17: Engine setting shape — `connection_id`, `user_choice_allowed`, no `alternates`, no endpoint branch `[backend]`
 
 **Files:**
 
 - Modify: `backend/app/schemas/llm_engine.py` (whole file: delete `LlmEngineAlternate`, `LlmEngineAlternateRead`, `_drop_garbage_alternates`, every `alternates` field; rename `endpoint_id` → `connection_id`; add `user_choice_allowed`; drop `endpoint_label`)
 - Modify: `backend/app/services/llm_engine_service.py:37-53` (imports), `:99-129` (delete `_endpoint_row`, `_endpoint_unhealthy`), `:132-183` (`resolve_project_engine` loses the endpoint branch), `:186-203` (`ResolvedProjectEngine`), `:244-282` (`get_for_project`), `:284-408` (`set_for_project`), `:410-446` (delete `_validate_endpoint_choice`), `:448-517` (`get_engine_read`)
 - Modify: `backend/app/api/v1/endpoints/llm_engine.py:54-75` (PUT passes `user_choice_allowed`)
-- Modify: `backend/tests/integration/helpers/engine_setup.py:33-37` (imports), `:181-197` (`set_project_engine`), append `make_host_connection` (keep `make_endpoint` and its imports: `test_run_engine_freeze.py` still calls it until Task 13 deletes both)
+- Modify: `backend/tests/integration/helpers/engine_setup.py:33-37` (imports), `:181-197` (`set_project_engine`), append `make_host_connection` (keep `make_endpoint` and its imports: `test_run_engine_freeze.py` still calls it until Task 19 deletes both)
 - Test: `backend/tests/unit/test_llm_engine_schemas.py`, `backend/tests/unit/test_llm_engine_endpoints_unit.py:93-135,163-190`, `backend/tests/integration/test_llm_engine_service.py:121-140,208-395,466-730`, `backend/tests/integration/test_llm_engine_endpoint.py`, `backend/tests/integration/test_llm_engine_kickoff_gate.py:84-107`
-- Modify: `frontend/types/api/{openapi.json,schema.d.ts}` (regenerate; Task 11 removed every frontend consumer of the dropped fields)
+- Modify: `frontend/types/api/{openapi.json,schema.d.ts}` (regenerate; Task 16 removed every frontend consumer of the dropped fields)
 
 **Interfaces:**
 
-- Consumes: `LlmConnectionService`, `owned_user_connection` (Task 4), `find_entry`, `selectable_catalog` (Task 1).
+- Consumes: `LlmConnectionService`, `owned_user_connection` (Task 6), `find_entry`, `selectable_catalog` (Task 1).
 - Produces:
   - `LlmEngineStored(provider, model, mode="fast", updated_by=None, updated_at=None, previous_model=None, connection_id: UUID | None = None, user_choice_allowed: bool = True)` — the default never carries a `connection_id`; a legacy payload with `endpoint_id` validates (extra keys ignored) and reads `connection_id is None`.
-  - `LlmEngineUpdateRequest(provider, model, mode: Literal["fast","verified"]="fast", user_choice_allowed: bool = True, connection_id: UUID | None = None)` — a non-`None` `connection_id` is a `ValueError` in a `field_validator` (422, spec §6).
+  - `LlmEngineUpdateRequest(provider, model, mode: Literal["fast","verified"]="fast", user_choice_allowed: bool = True)` — no `connection_id` field at all: `extra="forbid"` turns a submitted one into the 422 spec §6 requires (a field that exists only to be refused is handling for a case the class already rejects).
   - `LlmEngineService.set_for_project(*, project_id, provider, model, mode, updated_by, user_choice_allowed: bool = True) -> LlmEngineStored`; `provider == "openai_compatible"` or a catalogue miss → `ValueError` (400).
   - `ResolvedProjectEngine(provider, model, mode, source: Literal["project","default"], retired, stored, user_choice_allowed: bool)`.
-  - `LlmEngineRead` keeps `provider, model, mode, source, retired, updated_by_name, updated_at, previous_model, catalog (byok_only still on entries until Task 15), availability: dict[str, bool]` and gains `user_choice_allowed: bool`; `alternates`, `endpoint_id`, `endpoint_label` are gone.
+  - `LlmEngineRead` keeps `provider, model, mode, source, retired, updated_by_name, updated_at, previous_model, catalog (byok_only still on entries until Task 22), availability: dict[str, bool]` and gains `user_choice_allowed: bool`; `alternates`, `endpoint_id`, `endpoint_label` are gone.
   - `engine_setup.set_project_engine(db, provider, model, mode="fast", user_choice_allowed=True)`; `engine_setup.make_host_connection(db, *, user_id=SEED.primary_profile, label="engine-suite-host", base_url="https://8.8.8.8/v1", api_key="sk-engine-suite", allowed_models=None, validation_status="ok", output_mode="tool") -> UUID` (creates through `LlmConnectionService.create_user`, arms the probe state on the row fetched by `owned_user_connection`).
 
 - [ ] **Step 1: Write the failing schema tests**
@@ -3451,18 +3818,14 @@ def test_stored_lock_roundtrips_through_its_json_dump() -> None:
     assert LlmEngineStored.model_validate(stored.model_dump(mode="json")).user_choice_allowed is False
 
 
-def test_update_request_refuses_a_connection_id() -> None:
-    """§6: the default is always a catalogue pair — a set pointer is a 422."""
-    with pytest.raises(ValidationError, match="connection_id"):
-        LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini", connection_id=uuid4())
-
-
 def test_update_request_lock_defaults_open() -> None:
     assert LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini").user_choice_allowed is True
 
 
-def test_update_request_refuses_alternates_and_endpoint_id() -> None:
-    for extra in ({"alternates": []}, {"endpoint_id": str(uuid4())}):
+def test_update_request_refuses_alternates_endpoint_id_and_connection_id() -> None:
+    """§6: the default is always a catalogue pair — a pointer of any name is
+    a 422, by ``extra="forbid"`` (no field exists to carry one)."""
+    for extra in ({"alternates": []}, {"endpoint_id": str(uuid4())}, {"connection_id": str(uuid4())}):
         with pytest.raises(ValidationError):
             LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini", **extra)
 ```
@@ -3507,8 +3870,9 @@ class LlmEngineStored(BaseModel):
 
 
 class LlmEngineUpdateRequest(BaseModel):
-    """PUT body for the project default (§4). ``extra="forbid"`` blocks
-    smuggled keys; ``connection_id`` is accepted only as ``None`` (§6)."""
+    """PUT body for the project default (§4): always a catalogue pair, so
+    there is no ``connection_id`` field — ``extra="forbid"`` makes a
+    submitted one (or ``alternates`` / ``endpoint_id``) the 422 §6 asks for."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -3516,14 +3880,6 @@ class LlmEngineUpdateRequest(BaseModel):
     model: str
     mode: Literal["fast", "verified"] = "fast"
     user_choice_allowed: bool = True
-    connection_id: UUID | None = None
-
-    @field_validator("connection_id")
-    @classmethod
-    def _default_is_a_catalogue_pair(cls, v: UUID | None) -> UUID | None:
-        if v is not None:
-            raise ValueError("connection_id: the project default is always a catalogue pair")
-        return v
 
 
 class LlmEngineCatalogEntryRead(BaseModel):
@@ -3538,7 +3894,7 @@ class LlmEngineCatalogEntryRead(BaseModel):
 
 
 class LlmEngineRead(BaseModel):
-    """The member-visible read (reshaped in Task 15 into default/effective)."""
+    """The member-visible read (reshaped in Task 22 into default/effective)."""
 
     provider: str
     model: str
@@ -3604,13 +3960,13 @@ Remove the now-unused `ValidationError`, `Field`, `logger`/`get_logger` imports 
         return stored
 ```
 
-Keep the row-lock comment block. `get_engine_read` drops `alternates`, `endpoint_id`, `endpoint_label`, `_viewer_is_manager` stays (Task 14 uses it) and the read gains `user_choice_allowed=resolved.user_choice_allowed`. Rewrite the module docstring's endpoint paragraph (`:15-20`) to: "The default is always a catalogue pair (§3.1); per-user engines and hosts live in `user_engine_service` / `llm_connection_service`."
+Keep the row-lock comment block. `get_engine_read` drops `alternates`, `endpoint_id`, `endpoint_label`, `_viewer_is_manager` stays (Task 20 uses it) and the read gains `user_choice_allowed=resolved.user_choice_allowed`. Rewrite the module docstring's endpoint paragraph (`:15-20`) to: "The default is always a catalogue pair (§3.1); per-user engines and hosts live in `user_engine_service` / `llm_connection_service`."
 
 `backend/app/api/v1/endpoints/llm_engine.py` PUT: pass `user_choice_allowed=body.user_choice_allowed` instead of `alternates=`/`endpoint_id=`; update the docstring.
 
 - [ ] **Step 5: Retarget the fixtures and tests**
 
-`engine_setup.py`: drop the `LlmEngineAlternate` import, add `from app.schemas.llm_connection import UserConnectionCreateRequest` and `from app.services.llm_connection_service import LlmConnectionService, owned_user_connection` (keep the `LlmEndpoint*` imports for `make_endpoint` until Task 13); `set_project_engine(db, provider, model, mode="fast", user_choice_allowed=True)` forwards `user_choice_allowed` and loses `alternates` / `endpoint_id`; add beside `make_endpoint`:
+`engine_setup.py`: drop the `LlmEngineAlternate` import, add `from app.schemas.llm_connection import UserConnectionCreateRequest` and `from app.services.llm_connection_service import LlmConnectionService, owned_user_connection` (keep the `LlmEndpoint*` imports for `make_endpoint` until Task 19); `set_project_engine(db, provider, model, mode="fast", user_choice_allowed=True)` forwards `user_choice_allowed` and loses `alternates` / `endpoint_id`; add beside `make_endpoint`:
 
 ```python
 async def make_host_connection(
@@ -3645,7 +4001,7 @@ async def make_host_connection(
     return read.id
 ```
 
-`pin_run` keeps its shape for now (`endpoint_id` → `connection_id` happens with `LlmTarget` in Task 13).
+`pin_run` keeps its shape for now (`endpoint_id` → `connection_id` happens with `LlmTarget` in Task 19).
 
 `test_llm_engine_service.py`: delete the seven alternates tests (`:208-395`) and every test from `test_set_endpoint_engine_requires_openai_compatible` (`:466`) to the end of the file; drop the `LlmEngineAlternate` import; in `test_get_engine_read_serves_catalog_and_caller_availability` delete the two `alternates` lines; add:
 
@@ -3676,12 +4032,12 @@ async def test_put_with_a_connection_id_is_422(client_as_manager: AsyncClient) -
     assert r.status_code == 422
 ```
 
-(`from uuid import uuid4`.) `test_llm_engine_kickoff_gate.py`: delete `test_kickoff_on_dangling_endpoint_engine_is_typed_409` (`:84-107`; Task 14 adds the user-row equivalent) and the now-unused `text` / `db_session` imports if any.
+(`from uuid import uuid4`.) `test_llm_engine_kickoff_gate.py`: delete `test_kickoff_on_dangling_endpoint_engine_is_typed_409` (`:84-107`; Task 21 adds the user-row equivalent) and the now-unused `text` / `db_session` imports if any.
 
 - [ ] **Step 6: Run the suites, regenerate**
 
 Run: `cd backend && uv run pytest tests/unit/test_llm_engine_schemas.py tests/unit/test_llm_engine_endpoints_unit.py tests/integration/test_llm_engine_service.py tests/integration/test_llm_engine_endpoint.py tests/integration/test_llm_engine_kickoff_gate.py tests/integration/test_llm_endpoint_service.py -q && uv run ruff check app tests && uv run ruff format --check app tests`
-Expected: all PASS (the endpoint-service suite still passes: its module is untouched until Task 16).
+Expected: all PASS (the endpoint-service suite still passes: its module is untouched until Task 23).
 Run: `bash scripts/generate_api_types.sh && npm run typecheck`
 Expected: regenerated; tsc clean.
 
@@ -3696,7 +4052,51 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 13: `LlmTarget.connection_id` + `deviation`; one credential path; dead worker entry deleted `[backend]`
+### Task 18: Delete the dead worker entry `extract_section_task` `[backend]`
+
+Ordered BEFORE the spine rename: `_with_byok_override` reads `credentials.endpoint_id`, so deleting it first means Task 19 renames nothing in the worker and retargets nothing for it.
+
+**Files:**
+
+- Modify: `backend/app/worker/tasks/extraction_tasks.py:12-28` (imports), `:36-67` (delete `_with_byok_override`), `:79-185` (delete `extract_section_task` with its `@celery_app.task` decorator)
+- Test: `backend/tests/unit/test_run_section_extraction_task.py:49-58` (`engine_seams`), `backend/tests/integration/test_worker_eager_mode.py:29,274-468`
+
+**Interfaces:**
+
+- Consumes: nothing new.
+- Produces: `extraction_tasks` keeps `run_section_extraction_task` and whatever other tasks the file defines — the only deletions are `extract_section_task` and `_with_byok_override`; the patch seam `extraction_tasks.resolve_engine_for_run` stays; `extraction_tasks.resolve_project_engine`, `KeyScope`, `EngineCredentials` and `dataclasses.replace` are no longer imported there.
+
+- [ ] **Step 1: Retarget the tests first**
+
+`backend/tests/unit/test_run_section_extraction_task.py`: in the `engine_seams` fixture (`:49-58`) delete the `monkeypatch.setattr(extraction_tasks, "resolve_project_engine", …)` call (keep `resolve_engine_for_run`). `backend/tests/integration/test_worker_eager_mode.py`: delete sections 4 and 4b (`:274-468`: `test_extract_section_task_signature_and_kwargs_alignment`, `_endpoint_credentials`, `_catalog_credentials`, `_run_section_task_with`, the two byok tests) and the `from app.services.api_key_service import KeyScope, ResolvedKey` import (`:29`); keep `_FakeAsyncSession` / `_session_factory_returning` (sections 1–3 use them).
+
+Run: `cd backend && uv run pytest tests/unit/test_run_section_extraction_task.py tests/integration/test_worker_eager_mode.py -q`
+Expected: PASS (the seam fixture now patches only what the surviving task uses; nothing references the dead task any more).
+
+- [ ] **Step 2: Delete the entry**
+
+In `backend/app/worker/tasks/extraction_tasks.py` delete `extract_section_task` (`:79-185`, decorator included) and `_with_byok_override` (`:36-67`); delete the imports only they used — `replace` from `dataclasses`, `from app.services.api_key_service import KeyScope`, `from app.services.engine_credentials import EngineCredentials`, `from app.services.llm_engine_service import resolve_project_engine` — and rewrite the seam comment at `:25-28` to name `extraction_tasks.resolve_engine_for_run` only.
+
+Run: `cd backend && uv run ruff check app tests && uv run ruff format --check app tests && uv run vulture`
+Expected: clean; no new vulture finding (nothing is baselined — the code is gone).
+
+- [ ] **Step 3: Run the suites**
+
+Run: `cd backend && uv run pytest tests/unit/test_run_section_extraction_task.py tests/integration/test_worker_eager_mode.py tests/integration/test_run_engine_freeze.py -q && grep -rn "extract_section_task\|_with_byok_override" backend/app backend/tests`
+Expected: all PASS; the grep prints nothing.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add backend/app/worker/tasks/extraction_tasks.py backend/tests/unit/test_run_section_extraction_task.py backend/tests/integration/test_worker_eager_mode.py
+git commit -m "refactor(worker): delete the dead extract_section_task entry and its BYOK override
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 19: `LlmTarget.connection_id` + `deviation`; one credential path `[backend]`
 
 **Files:**
 
@@ -3705,20 +4105,18 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `backend/app/services/run_engine_freeze.py:27-28` (TYPE_CHECKING import), `:121-135` (`build_proposal_engine`)
 - Modify: `backend/app/services/section_extraction_service.py:152-153` (docstring), `:229` (log field)
 - Modify: `backend/app/services/verified_mode.py:34`, `backend/app/services/extraction_errors.py:53,66-71`, `backend/app/services/extraction_proposal_service.py:31` (comment)
-- Modify: `backend/app/worker/tasks/extraction_tasks.py:12-28` (imports), `:36-67` (delete `_with_byok_override`), `:81-185` (delete `extract_section_task`)
 - Modify: `backend/tests/integration/helpers/engine_setup.py` (`pin_run(connection_id=)`; delete `make_endpoint` and its `LlmEndpoint*` imports)
-- Test: `backend/tests/unit/test_engine_credentials.py` (rewrite), `backend/tests/integration/test_run_engine_freeze.py`, `backend/tests/unit/test_run_section_extraction_task.py:49-58,158,200,238,292,333,372,435,515`, `backend/tests/integration/test_worker_eager_mode.py:29,274-468`, `backend/tests/unit/test_extraction_errors.py:38`, `backend/tests/integration/test_extraction_proposal_service.py:485`, `backend/tests/integration/test_suggestion_read.py:2052`, `backend/tests/integration/test_review_context_end_to_end.py:106`
+- Test: `backend/tests/unit/test_engine_credentials.py` (rewrite), `backend/tests/integration/test_run_engine_freeze.py`, `backend/tests/unit/test_run_section_extraction_task.py:158,200,238,292,333,372,435,515` (the `APIKeyService` patches), `backend/tests/unit/test_extraction_errors.py:38`, `backend/tests/integration/test_extraction_proposal_service.py:485`, `backend/tests/integration/test_suggestion_read.py:2052`, `backend/tests/integration/test_review_context_end_to_end.py:106`
 
 **Interfaces:**
 
-- Consumes: `owned_user_connection`, `LlmConnectionService.decrypt_key`, `resolve_provider_key`, `KeyScope`, `ResolvedKey`, `ConnectionUnavailableError` (Tasks 4–5), `make_host_connection` (Task 12).
+- Consumes: `owned_user_connection`, `LlmConnectionService.decrypt_key`, `resolve_provider_key`, `KeyScope`, `ResolvedKey`, `ConnectionUnavailableError` (Tasks 6–8), `make_host_connection` (Task 17); the worker module as Task 18 left it (one task, `resolve_engine_for_run` the only engine seam).
 - Produces:
   - `LlmTarget(provider, model, mode_requested="fast", mode_executed="fast", connection_id: str | None = None, deviation: bool = False)`; a legacy snapshot with `endpoint_id` validates (`connection_id` reads `None`).
   - `EngineCredentials(api_key, key_scope: KeyScope | None, base_url, connection_id: str | None)`.
   - `resolve_engine_credentials(db, *, user_id: UUID | str, project_id: UUID, engine: LlmTarget) -> EngineCredentials` — `connection_id` set → `owned_user_connection`, missing/foreign/corrupt id/undecryptable → `ConnectionUnavailableError` (409), `key_scope = USER_BYOK`, `base_url` from the row; else `resolve_provider_key(...)` for `engine.provider`.
   - `rekey_for_adopted_engine(...)` unchanged except the identity pair is `(provider, connection_id)`.
   - `build_proposal_engine` records `"connection_id"` (never `endpoint_id`) and `"deviation"`.
-  - `extraction_tasks` exports only `run_section_extraction_task` and `batch_extract_sections_task` (whatever the file's other tasks are — the only deletions are `extract_section_task` and `_with_byok_override`); the patch seam `extraction_tasks.resolve_engine_for_run` stays; `extraction_tasks.resolve_project_engine` is gone.
   - `engine_setup.pin_run(db, run, provider, model, mode="fast", connection_id: str | None = None)`.
 
 - [ ] **Step 1: Write the failing credential tests (rewrite the file)**
@@ -4044,21 +4442,20 @@ async def rekey_for_adopted_engine(
     return await resolve_engine_credentials(db, user_id=user_id, project_id=project_id, engine=engine)
 ```
 
-- [ ] **Step 4: Rename at the other sites; delete the dead worker entry**
+- [ ] **Step 4: Rename at the other sites**
 
 - `run_engine_freeze.py:28`: `from app.services.llm_connection_service import KeyScope`; `build_proposal_engine` returns `"connection_id": engine.connection_id, "deviation": engine.deviation` in place of `"endpoint_id"` and its docstring paragraph names `connection_id`.
 - `section_extraction_service.py:153` docstring → `connection_id`; `:229` → `connection_id=self._engine.connection_id`.
 - `verified_mode.py:34` → `from app.services.llm_connection_service import KeyScope`.
 - `extraction_errors.py:53` → `from app.services.llm_connection_service import ConnectionUnavailableError`; the `isinstance` branch at `:66-71` uses it (the comment: "a pinned connection gone / foreign / undecryptable"); the `ExtractionErrorCode.LLM_ENDPOINT_UNAVAILABLE` value is unchanged.
 - `extraction_proposal_service.py:31` comment: `provider/model/connection_id/key_scope/mode_requested`.
-- `extraction_tasks.py`: delete `extract_section_task` (`:81-185`) and `_with_byok_override` (`:36-67`); delete the imports that only they used (`replace` from `dataclasses`, `KeyScope`, `EngineCredentials`, `resolve_project_engine`) and rewrite the seam comment at `:25-28` to name `extraction_tasks.resolve_engine_for_run` only. Run `cd backend && uv run ruff check app` to catch any other now-unused import.
 - `engine_setup.py`: `pin_run(..., connection_id: str | None = None)` passes `connection_id=connection_id` to `LlmTarget`; delete `make_endpoint` and the `LlmEndpointCreateRequest` / `LlmEndpointService` imports.
 
 - [ ] **Step 5: Retarget the integration and task tests**
 
 `test_run_engine_freeze.py`:
 
-- `:44` → `from app.services.llm_connection_service import KeyScope, ResolvedKey`; every `endpoint_id=None` / `"endpoint_id": None` (`:77,277,317,389,422,464,955`) → `connection_id`.
+- `:44` → `from app.services.llm_connection_service import KeyScope, ResolvedKey`; every `endpoint_id=None` / `"endpoint_id": None` (`:77,277,317,389,422,464,955`) → `connection_id`; and every `engine_setup.pinned_engine_of(run) == {...}` dict literal (`:277`, `:317`, `:389`, `:422`, `:464`, `:955`) gains `"deviation": False` after `"connection_id": None` — `LlmTarget.model_dump()` now carries the field, and these whole-dict equalities are exactly what proves a pinned snapshot is stored and read back whole (the §7.2 stability mechanism; Task 21 adds the user-row case where `deviation` is `True`).
 - `test_pinned_endpoint_engine_survives_the_freeze_roundtrip` / `test_old_pinned_snapshot_without_the_endpoint_key_reads_none` (`:211-251`): rename to `..._connection_...`, use `connection_id=_ENDPOINT_ID` (rename the constant `_CONNECTION_ID`) and assert `pinned.connection_id`.
 - `_stub_key_service` (`:575-594`) becomes:
 
@@ -4078,16 +4475,47 @@ def _stub_key_service(monkeypatch: pytest.MonkeyPatch, resolved: ResolvedKey | N
 - `_keyed_service(..., connection_id: str | None = None)` builds `EngineCredentials(..., connection_id=connection_id)`.
 - The two B9 tests (`:767-902`): replace `engine_setup.make_endpoint(db_session, label=..., base_url=..., api_key=..., allowed_models=[...])` with `engine_setup.make_host_connection(db_session, label=..., base_url=..., api_key=..., allowed_models=[...])`; every `endpoint_id=` → `connection_id=`; the provenance assertion `KeyScope.SHARED_ENDPOINT.value` → `KeyScope.USER_BYOK.value` (a user host runs on its owner's key); rename the tests `test_adoption_across_two_hosts_carries_the_pinned_hosts_key_and_url` and `test_catalog_to_host_adoption_populates_the_base_url`, and the section comment "B9 — the rekey identity is (provider, connection_id)".
 
-`test_run_section_extraction_task.py`: in `engine_seams` (`:49-58`) delete the `resolve_project_engine` monkeypatch (keep `resolve_engine_for_run`); replace each `patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key)` (`:158,200,238,292,333,372,435,515`) with `patch("app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None))` and delete the `fake_api_key = MagicMock(); fake_api_key.get_key_for_provider = AsyncMock(return_value=None)` pairs above them.
+Append to `test_run_engine_freeze.py` (add `build_proposal_engine`, `read_pinned_engine` to the `run_engine_freeze` import and `from app.repositories import ExtractionRunRepository` if the file lacks them) — the §7.4 / §3.3 read-tolerance pins for the retired key scope:
 
-`test_worker_eager_mode.py`: delete section 4 and 4b (`:274-468`: `test_extract_section_task_signature_and_kwargs_alignment`, `_endpoint_credentials`, `_catalog_credentials`, `_run_section_task_with`, the two byok tests) and the `KeyScope, ResolvedKey` import (`:29`); keep `_FakeAsyncSession` / `_session_factory_returning` (sections 1–3 use them).
+```python
+def test_legacy_shared_endpoint_key_scope_is_read_through_untouched() -> None:
+    """§7.4: the retired ``shared_endpoint`` provenance value is never
+    enum-parsed on read — it passes through ``build_proposal_engine`` as the
+    string it was stored as, and ``KeyScope`` has no member for it."""
+    snapshot = {"key_scope": "shared_endpoint", "mode_requested": "fast", "mode_executed": "fast"}
+    engine = LlmTarget.model_validate(
+        {"provider": "openai_compatible", "model": "m", "endpoint_id": "x", "key_scope": "shared_endpoint"}
+    )
+    assert engine.connection_id is None
+    proposal = build_proposal_engine(snapshot, engine)
+    assert proposal is not None and proposal["key_scope"] == "shared_endpoint"
+    assert proposal["connection_id"] is None and "endpoint_id" not in proposal
+    assert "shared_endpoint" not in {member.value for member in KeyScope}
+
+
+@pytest.mark.asyncio
+async def test_read_pinned_engine_tolerates_a_legacy_shared_endpoint_snapshot(
+    db_session: AsyncSession,
+) -> None:
+    """A pre-slice-2 pin carrying ``endpoint_id`` and ``key_scope:
+    shared_endpoint`` still reads (extra keys ignored, pointer gone)."""
+    run = await engine_setup.run_in_extract(db_session)
+    await ExtractionRunRepository(db_session).freeze_engine(
+        run.id,
+        {"provider": "openai_compatible", "model": "m", "endpoint_id": "x", "key_scope": "shared_endpoint"},
+    )
+    pinned = await read_pinned_engine(db_session, run.id)
+    assert pinned is not None and (pinned.connection_id, pinned.deviation) == (None, False)
+```
+
+`test_run_section_extraction_task.py`: replace each `patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key)` (`:158,200,238,292,333,372,435,515`) with `patch("app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None))` and delete the `fake_api_key = MagicMock(); fake_api_key.get_key_for_provider = AsyncMock(return_value=None)` pairs above them (the `engine_seams` fixture already names only `resolve_engine_for_run` since Task 18).
 
 `test_extraction_errors.py:38` → `from app.services.llm_connection_service import ConnectionUnavailableError` (rename the test's local variable; the asserted code stays `LLM_ENDPOINT_UNAVAILABLE`). `test_extraction_proposal_service.py:485`, `test_suggestion_read.py:2052`: `"endpoint_id": None` → `"connection_id": None`. `test_review_context_end_to_end.py:106`: `endpoint_id=None` → `connection_id=None`.
 
 - [ ] **Step 6: Run the suites and the gates**
 
 Run: `cd backend && uv run pytest tests/unit/test_engine_credentials.py tests/unit/test_run_section_extraction_task.py tests/unit/test_extraction_errors.py tests/integration/test_run_engine_freeze.py tests/integration/test_worker_eager_mode.py tests/integration/test_extraction_proposal_service.py tests/integration/test_review_context_end_to_end.py -q && uv run ruff check app tests && uv run ruff format --check app tests && uv run vulture`
-Expected: all PASS; no new vulture finding (`_with_byok_override` and the dead task are gone, not baselined).
+Expected: all PASS; no new vulture finding.
 Run: `python3 scripts/fitness/check_scope_guards.py && python3 scripts/fitness/check_layered_arch.py`
 Expected: exit 0 each.
 
@@ -4095,54 +4523,49 @@ Expected: exit 0 each.
 
 ```bash
 git add backend/app backend/tests
-git commit -m "refactor(engine): connection_id + deviation on the pinned spine; one credential path; dead worker entry deleted
+git commit -m "refactor(engine): connection_id + deviation on the pinned spine; one credential path
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 14: Per-user engine rows and `resolve_engine(db, project_id, user_id)` at every call site `[backend]`
+### Task 20: Per-user engine rows — `availability_map`, the write gate, the row's read side `[backend]`
 
 **Files:**
 
 - Create: `backend/app/services/user_engine_service.py`
 - Modify: `backend/app/services/llm_connection_service.py` (append `availability_map`)
-- Modify: `backend/app/services/llm_engine_service.py:55-61` (`__all__`), `:132-183` (`resolve_project_engine` → `resolve_engine`), `:519-530` (`_viewer_is_manager` → module-level `viewer_is_manager`)
-- Modify: `backend/app/api/v1/endpoints/section_extraction.py:218`, `backend/app/services/section_extraction_service.py:1734-1736`, `backend/app/services/run_engine_freeze.py:25,74-95`, `backend/app/worker/tasks/extraction_tasks.py` (the `resolve_engine_for_run(...)` call inside `run_section_extraction_task`, today `:253-258`)
-- Test: `backend/tests/integration/test_user_engine_service.py` (new), `backend/tests/integration/test_llm_engine_service.py:22,396-460`, `backend/tests/unit/test_run_from_request.py:41`, `backend/tests/unit/test_run_section_extraction_task.py:524-560`, `backend/tests/integration/test_run_engine_freeze.py:1274-1306`, `backend/tests/integration/test_llm_engine_kickoff_gate.py` (append)
+- Modify: `backend/app/services/llm_engine_service.py:37-53` (imports: `UserProjectEngine`, `owned_user_connection`), `:55-61` (`__all__`), above `:132` (`get_user_engine`, `user_row_is_retired` added above `resolve_project_engine`, which Task 21 replaces), `:519-530` (`_viewer_is_manager` → module-level `viewer_is_manager`)
+- Test: `backend/tests/integration/test_user_engine_service.py` (new)
 
 **Interfaces:**
 
-- Consumes: `UserProjectEngine` (Task 2), `owned_user_connection`, `LlmConnection` (Task 4), `find_entry`, `_stored_engine`, `_normalized_mode`, `EngineRetiredError`, `LlmTarget` (Task 13), `SEED`, `engine_setup.make_host_connection`.
+- Consumes: `UserProjectEngine` (Task 2), `owned_user_connection`, `LlmConnection` (Task 6), `find_entry`, `_stored_engine`, `_normalized_mode`, `EngineRetiredError`, `LlmTarget` (Task 19), `SEED`, `engine_setup.make_host_connection`.
 - Produces:
   - `llm_connection_service.availability_map(session, *, project_id: UUID, user_id: UUID, providers: Iterable[str]) -> dict[str, Literal["user","project","global"] | None]` — the ladder's dry run per provider (no decrypt, no `last_used_at` write); for a host-bearing provider `"user"` when the caller owns at least one connection for it, else `None`.
   - `user_engine_service.EngineLockedError(AppError)` — `code="LLM_ENGINE_LOCKED"`, 403; `user_engine_service.EngineNeedsKeyError(AppError)` — `code="LLM_ENGINE_NEEDS_KEY"`, 422.
-  - `get_user_engine(db, *, user_id, project_id) -> UserProjectEngine | None`; `user_row_is_retired(db, row) -> bool` (catalogue miss, or — with a `connection_id` — the caller's connection gone / not `ok` / model not allowed; a nulled pointer on `openai_compatible` is retired); `set_user_engine(db, *, user_id, project_id, provider, model, mode: Literal["fast","verified"], connection_id: UUID | None, is_manager: bool) -> UserProjectEngine` (lock → `EngineLockedError` unless manager; `connection_id` requires `provider == "openai_compatible"`, the caller's own verified connection and an allowed model, else `ValueError`; a catalogue miss is `ValueError`; `availability_map(...)[provider] is None` → `EngineNeedsKeyError`); `clear_user_engine(db, *, user_id, project_id) -> bool`.
-  - `llm_engine_service.resolve_engine(db, project_id: UUID, user_id: UUID) -> LlmTarget` (§3.2 order; `deviation` computed against the default at that moment); `resolve_project_engine` is deleted. `viewer_is_manager(db, project_id, viewer_id) -> bool` becomes a module function.
-  - `run_engine_freeze.resolve_engine_for_run(db, *, run_id, project_id, repin, user_id: UUID) -> LlmTarget` — the fallback is `resolve_engine(db, project_id, user_id)`.
+  - `llm_engine_service.get_user_engine(db, *, user_id, project_id) -> UserProjectEngine | None`; `llm_engine_service.user_row_is_retired(db, row) -> bool` (catalogue miss, or — with a `connection_id` — the caller's connection gone / not `ok` / model not allowed; a nulled pointer on `openai_compatible` is retired) — the READ side lives beside `resolve_engine` (import direction: `llm_engine_service` never imports `user_engine_service`); `user_engine_service.set_user_engine(db, *, user_id, project_id, provider, model, mode: Literal["fast","verified"], connection_id: UUID | None, is_manager: bool) -> UserProjectEngine` (lock → `EngineLockedError` unless manager; `connection_id` requires `provider == "openai_compatible"`, the caller's own verified connection and an allowed model, else `ValueError`; a catalogue miss is `ValueError`; `availability_map(...)[provider] is None` → `EngineNeedsKeyError`); `clear_user_engine(db, *, user_id, project_id) -> bool`.
+  - `llm_engine_service.viewer_is_manager(db, project_id, viewer_id) -> bool` becomes a module function (same `SELECT public.is_project_manager(:pid, :uid) AS ok`; it stays in the service because `check_layered_arch` forbids services → `api.deps`). `resolve_project_engine` is untouched until Task 21.
 
 - [ ] **Step 1: Write the failing service tests**
 
 ```python
 # backend/tests/integration/test_user_engine_service.py
-"""§3.2 resolution order, the lock, deviation, ownership (§7.2, §7.3)."""
+"""The viewer's row: the write gate (lock, credential, ownership) and the
+§4 availability map (§7.2, §7.3). Resolution order is Task 21's file half."""
 
 from __future__ import annotations
-
-from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.services.llm_connection_service import LlmConnectionService, availability_map
-from app.services.llm_engine_service import EngineRetiredError, resolve_engine
 from app.services.user_engine_service import (
     EngineLockedError,
     EngineNeedsKeyError,
     clear_user_engine,
-    get_user_engine,
     set_user_engine,
 )
 from tests.integration.conftest import SEED
@@ -4159,84 +4582,10 @@ async def _set(db: AsyncSession, user_id, provider="anthropic", model="claude-ha
 
 
 @pytest.mark.asyncio
-async def test_no_row_resolves_the_project_default_without_deviation(db_session: AsyncSession) -> None:
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
-    target = await resolve_engine(db_session, _P, SEED.reviewer_profile)
-    assert (target.provider, target.model, target.deviation) == ("openai", "gpt-5.6-terra", False)
-
-
-@pytest.mark.asyncio
-async def test_user_row_wins_and_is_a_deviation(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
-    await _set(db_session, SEED.reviewer_profile)
-    target = await resolve_engine(db_session, _P, SEED.reviewer_profile)
-    assert (target.provider, target.model, target.deviation) == ("anthropic", "claude-haiku-4-5", True)
-    # Same pair as the default = no deviation.
-    await _set(db_session, SEED.reviewer_profile, "openai", "gpt-5.6-terra")
-    assert (await resolve_engine(db_session, _P, SEED.reviewer_profile)).deviation is False
-
-
-@pytest.mark.asyncio
-async def test_lock_ignores_a_member_row_but_never_a_manager_row(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
-    await _set(db_session, SEED.reviewer_profile)
-    await _set(db_session, SEED.primary_profile, is_manager=True)
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra", user_choice_allowed=False)
-    assert (await resolve_engine(db_session, _P, SEED.reviewer_profile)).provider == "openai"
-    assert (await resolve_engine(db_session, _P, SEED.primary_profile)).provider == "anthropic"
-    with pytest.raises(EngineLockedError):
-        await _set(db_session, SEED.reviewer_profile)
-    await _set(db_session, SEED.primary_profile, is_manager=True)  # managers are never bound
-
-
-@pytest.mark.asyncio
 async def test_row_without_a_credential_is_refused_422(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
     with pytest.raises(EngineNeedsKeyError):
         await _set(db_session, SEED.reviewer_profile)
-
-
-@pytest.mark.asyncio
-async def test_retired_project_default_blocks_before_the_user_row(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
-    await _set(db_session, SEED.reviewer_profile)
-    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
-    monkeypatch.setattr(
-        "app.services.llm_engine_service.find_entry",
-        lambda p, m: None if (p, m) == ("openai", "gpt-5.6-terra") else __import__("app.llm.catalog", fromlist=["find_entry"]).find_entry(p, m),
-    )
-    with pytest.raises(EngineRetiredError, match="manager"):
-        await resolve_engine(db_session, _P, SEED.reviewer_profile)
-
-
-@pytest.mark.asyncio
-async def test_host_row_retires_when_the_connection_is_deleted(db_session: AsyncSession) -> None:
-    cid = await engine_setup.make_host_connection(db_session, user_id=SEED.reviewer_profile, label="mine")
-    await _set(db_session, SEED.reviewer_profile, "openai_compatible", "endpoint-model-x", connection_id=cid)
-    target = await resolve_engine(db_session, _P, SEED.reviewer_profile)
-    assert (target.connection_id, target.deviation) == (str(cid), True)
-    await LlmConnectionService(db_session).delete_user(user_id=SEED.reviewer_profile, connection_id=cid)
-    row = await get_user_engine(db_session, user_id=SEED.reviewer_profile, project_id=_P)
-    assert row is not None and row.connection_id is None  # ON DELETE SET NULL
-    with pytest.raises(EngineRetiredError, match="[Pp]ick a new model"):
-        await resolve_engine(db_session, _P, SEED.reviewer_profile)
-    assert await clear_user_engine(db_session, user_id=SEED.reviewer_profile, project_id=_P) is True
-    assert (await resolve_engine(db_session, _P, SEED.reviewer_profile)).connection_id is None
-
-
-@pytest.mark.asyncio
-async def test_another_users_connection_is_refused_and_a_bypass_write_is_a_409(db_session: AsyncSession) -> None:
-    """§7.3 ownership: never a key for a foreign connection id."""
-    cid = await engine_setup.make_host_connection(db_session, user_id=SEED.primary_profile, label="managers")
-    with pytest.raises(ValueError, match="connection"):
-        await _set(db_session, SEED.reviewer_profile, "openai_compatible", "endpoint-model-x", connection_id=cid)
-    row = await _set(db_session, SEED.primary_profile, "openai_compatible", "endpoint-model-x", connection_id=cid, is_manager=True)
-    row.user_id = SEED.reviewer_profile  # bypass: re-home the row onto another user
-    await db_session.flush()
-    with pytest.raises(EngineRetiredError):
-        await resolve_engine(db_session, _P, SEED.reviewer_profile)
 
 
 @pytest.mark.asyncio
@@ -4253,12 +4602,32 @@ async def test_availability_map_is_per_caller(db_session: AsyncSession, monkeypa
     assert (await availability_map(db_session, project_id=_P, user_id=SEED.reviewer_profile, providers=providers))["openai"] == "project"
     await engine_setup.make_host_connection(db_session, user_id=SEED.reviewer_profile, label="h")
     assert (await availability_map(db_session, project_id=_P, user_id=SEED.reviewer_profile, providers=providers))["openai_compatible"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_another_users_connection_is_refused_at_write(db_session: AsyncSession) -> None:
+    """§7.3 ownership, the write gate: a foreign connection id never becomes a row."""
+    cid = await engine_setup.make_host_connection(db_session, user_id=SEED.primary_profile, label="managers")
+    with pytest.raises(ValueError, match="connection"):
+        await _set(db_session, SEED.reviewer_profile, "openai_compatible", "endpoint-model-x", connection_id=cid)
+
+
+@pytest.mark.asyncio
+async def test_lock_refuses_a_member_write_but_never_a_managers(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra", user_choice_allowed=False)
+    with pytest.raises(EngineLockedError):
+        await _set(db_session, SEED.reviewer_profile)
+    row = await _set(db_session, SEED.primary_profile, is_manager=True)  # managers are never bound
+    assert (row.provider, row.model) == ("anthropic", "claude-haiku-4-5")
+    assert await clear_user_engine(db_session, user_id=SEED.primary_profile, project_id=_P) is True
+    assert await clear_user_engine(db_session, user_id=SEED.primary_profile, project_id=_P) is False
 ```
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `cd backend && uv run pytest tests/integration/test_user_engine_service.py -q`
-Expected: FAIL — `ImportError: cannot import name 'availability_map'` / no module `app.services.user_engine_service`.
+Expected: FAIL — `ImportError: cannot import name 'availability_map'`.
 
 - [ ] **Step 3: `availability_map`**
 
@@ -4307,11 +4676,14 @@ async def availability_map(
 """The viewer's own engine for new runs in one project (§3.1, §3.2, §4).
 
 No row = follow the project default. Writes validate exactly what
-resolution re-checks (catalogue pair, or the caller's own verified host
-through ``owned_user_connection``), so a pick can never lead to a
-guaranteed 409 at kickoff; the lock is enforced HERE and in
-``resolve_engine``, never in the UI. Imports ``llm_engine_service`` at
-module level; that module imports this one lazily (circular import).
+resolution re-checks — ``user_row_is_retired`` (catalogue pair, or the
+caller's own verified host through ``owned_user_connection``) — so a pick
+can never lead to a guaranteed 409 at kickoff; the lock is enforced HERE
+and in ``resolve_engine``, never in the UI. The READ side of the row
+(``get_user_engine``, ``user_row_is_retired``) lives in
+``llm_engine_service`` beside ``resolve_engine``; this module imports it
+at module level and nothing imports this module back (plan header, import
+direction).
 """
 
 from __future__ import annotations
@@ -4322,18 +4694,19 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
-from app.llm.catalog import find_entry
 from app.models.llm_connection import UserProjectEngine
-from app.services.llm_connection_service import availability_map, owned_user_connection
-from app.services.llm_engine_service import LlmEngineService
+from app.services.llm_connection_service import availability_map
+from app.services.llm_engine_service import (
+    LlmEngineService,
+    get_user_engine,
+    user_row_is_retired,
+)
 
 __all__ = [
     "EngineLockedError",
     "EngineNeedsKeyError",
     "clear_user_engine",
-    "get_user_engine",
     "set_user_engine",
-    "user_row_is_retired",
 ]
 
 
@@ -4356,22 +4729,6 @@ class EngineNeedsKeyError(AppError):
             ),
             status_code=422,
         )
-
-
-async def get_user_engine(db: AsyncSession, *, user_id: UUID, project_id: UUID) -> UserProjectEngine | None:
-    return await db.get(UserProjectEngine, (user_id, project_id))
-
-
-async def user_row_is_retired(db: AsyncSession, row: UserProjectEngine) -> bool:
-    """Catalogue miss, or a host row whose connection is gone / unverified /
-    no longer allows the model (§3.2 step 2). ONE predicate for the write
-    gate and for resolution."""
-    if row.provider == "openai_compatible":
-        if row.connection_id is None:
-            return True
-        conn = await owned_user_connection(db, row.connection_id, row.user_id)
-        return conn is None or conn.validation_status != "ok" or row.model not in (conn.allowed_models or [])
-    return find_entry(row.provider, row.model) is None
 
 
 async def set_user_engine(
@@ -4414,11 +4771,176 @@ async def clear_user_engine(db: AsyncSession, *, user_id: UUID, project_id: UUID
     return True
 ```
 
-- [ ] **Step 5: `resolve_engine` and the call sites**
+- [ ] **Step 5: The row's read side, in `llm_engine_service`**
 
-In `backend/app/services/llm_engine_service.py` replace `resolve_project_engine` (and its `__all__` entry) with:
+In `backend/app/services/llm_engine_service.py` add the module-level imports `from app.models.llm_connection import UserProjectEngine` and `from app.services.llm_connection_service import owned_user_connection` (Task 22 extends the latter with `availability_map`), add `"get_user_engine"`, `"user_row_is_retired"`, `"viewer_is_manager"` to `__all__`, move `LlmEngineService._viewer_is_manager` to a module function `viewer_is_manager(db, project_id, viewer_id) -> bool` (same SQL; update its one caller), and add, directly above `resolve_project_engine` (which Task 21 replaces) — the row's READ side sits here because `user_engine_service` imports this module and this module must never import it back:
 
 ```python
+async def get_user_engine(db: AsyncSession, *, user_id: UUID, project_id: UUID) -> UserProjectEngine | None:
+    """The viewer's own ``user_project_engines`` row, or ``None`` (§3.1)."""
+    return await db.get(UserProjectEngine, (user_id, project_id))
+
+
+async def user_row_is_retired(db: AsyncSession, row: UserProjectEngine) -> bool:
+    """Catalogue miss, or a host row whose connection is gone / unverified /
+    no longer allows the model (§3.2 step 2). ONE predicate for the write
+    gate (``user_engine_service.set_user_engine``) and for resolution."""
+    if row.provider == "openai_compatible":
+        if row.connection_id is None:
+            return True
+        conn = await owned_user_connection(db, row.connection_id, row.user_id)
+        return conn is None or conn.validation_status != "ok" or row.model not in (conn.allowed_models or [])
+    return find_entry(row.provider, row.model) is None
+
+```
+
+- [ ] **Step 6: Run the suites and gates**
+
+Run: `cd backend && uv run pytest tests/integration/test_user_engine_service.py tests/integration/test_llm_engine_service.py tests/integration/test_llm_connection_service.py -q && uv run ruff check app tests && uv run ruff format --check app tests`; then from the repo root `python3 scripts/fitness/check_scope_guards.py && python3 scripts/fitness/check_layered_arch.py`
+Expected: all PASS; scope gate exit 0 (`user_row_is_retired` reaches the row through `owned_user_connection`, never its own WHERE). Import-direction proof: `grep -n "^from app.services\|^import app.services\|^    from app.services" backend/app/services/llm_engine_service.py backend/app/services/llm_connection_service.py backend/app/services/user_engine_service.py` — `llm_connection_service` names only `profile_names`, `provider_key_probe`, `llm_endpoint_probe`; `llm_engine_service` names only `llm_connection_service`, `profile_names`, `parser_settings_service`; `user_engine_service` names `llm_connection_service` and `llm_engine_service`; no indented (function-local) `from app.services` line anywhere.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add backend/app/services/user_engine_service.py backend/app/services/llm_connection_service.py backend/app/services/llm_engine_service.py backend/tests/integration/test_user_engine_service.py
+git commit -m "feat(engine): per-user engine rows — write gate, availability map, read side
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 21: `resolve_engine(db, project_id, user_id)` at every call site — lock, deviation, retired rows `[backend]`
+
+**Files:**
+
+- Modify: `backend/app/services/llm_engine_service.py:132-183` (`resolve_project_engine` → `resolve_engine`; `__all__`)
+- Modify: `backend/app/api/v1/endpoints/section_extraction.py:218`, `backend/app/services/section_extraction_service.py:1734-1736`, `backend/app/services/run_engine_freeze.py:25,74-95`, `backend/app/worker/tasks/extraction_tasks.py` (the `resolve_engine_for_run(...)` call inside `run_section_extraction_task`, today `:253-258`)
+- Test: `backend/tests/integration/test_user_engine_service.py` (append), `backend/tests/integration/test_llm_engine_service.py:22,396-460`, `backend/tests/unit/test_run_from_request.py:41`, `backend/tests/unit/test_run_section_extraction_task.py:524-560`, `backend/tests/integration/test_run_engine_freeze.py:1274-1306`, `backend/tests/integration/test_llm_engine_kickoff_gate.py` (append)
+
+**Interfaces:**
+
+- Consumes: `get_user_engine`, `user_row_is_retired`, `viewer_is_manager`, `set_user_engine`, `clear_user_engine`, `EngineLockedError` (Task 20), `_stored_engine`, `_normalized_mode`, `EngineRetiredError`, `find_entry`, `LlmTarget` (Task 19), `freeze_run_engine`, `resolve_engine_for_run`, `ExtractionRunRepository`, `engine_setup.make_host_connection`, `engine_setup.run_in_extract`.
+- Produces:
+  - `llm_engine_service.resolve_engine(db, project_id: UUID, user_id: UUID) -> LlmTarget` (§3.2 order: default retired → `EngineRetiredError` worded for a manager; a user row honoured only when `user_choice_allowed` or the caller is a manager; a retired user row → `EngineRetiredError` worded for the user; `deviation` computed against the default at that moment and carried into the pin, never recomputed on the retry path); `resolve_project_engine` is deleted.
+  - `run_engine_freeze.resolve_engine_for_run(db, *, run_id, project_id, repin, user_id: UUID) -> LlmTarget` — the fallback is `resolve_engine(db, project_id, user_id)`; every caller passes the kicker's id.
+
+- [ ] **Step 1: Write the failing resolution tests**
+
+Append to `backend/tests/integration/test_user_engine_service.py` (extend the imports: add `from app.repositories import ExtractionRunRepository`, `from app.services.llm_engine_service import EngineRetiredError, get_user_engine, resolve_engine`, `from app.services.run_engine_freeze import freeze_run_engine, resolve_engine_for_run`; the module docstring gains "and the §3.2 resolution order"):
+
+```python
+@pytest.mark.asyncio
+async def test_no_row_resolves_the_project_default_without_deviation(db_session: AsyncSession) -> None:
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
+    target = await resolve_engine(db_session, _P, SEED.reviewer_profile)
+    assert (target.provider, target.model, target.deviation) == ("openai", "gpt-5.6-terra", False)
+
+
+@pytest.mark.asyncio
+async def test_user_row_wins_and_is_a_deviation(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
+    await _set(db_session, SEED.reviewer_profile)
+    target = await resolve_engine(db_session, _P, SEED.reviewer_profile)
+    assert (target.provider, target.model, target.deviation) == ("anthropic", "claude-haiku-4-5", True)
+    # Same pair as the default = no deviation.
+    await _set(db_session, SEED.reviewer_profile, "openai", "gpt-5.6-terra")
+    assert (await resolve_engine(db_session, _P, SEED.reviewer_profile)).deviation is False
+
+
+@pytest.mark.asyncio
+async def test_deviation_is_pinned_once_and_survives_a_later_default_change(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§7.2 'set and stable across a later default change' (§3.2: computed
+    at pin time, never recomputed). Live resolution flips it back to False
+    once the default catches up with the user's pair; the run's pin — the
+    retry path, ``repin=False`` — must keep True."""
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
+    await _set(db_session, SEED.reviewer_profile)  # anthropic / claude-haiku-4-5
+    run = await engine_setup.run_in_extract(db_session)
+    pinned = await freeze_run_engine(
+        ExtractionRunRepository(db_session),
+        run.id,
+        await resolve_engine(db_session, _P, SEED.reviewer_profile),
+        repin=True,
+    )
+    assert pinned.deviation is True
+    await engine_setup.set_project_engine(db_session, "anthropic", "claude-haiku-4-5")
+    assert (await resolve_engine(db_session, _P, SEED.reviewer_profile)).deviation is False  # live: recomputed
+    retry = await resolve_engine_for_run(
+        db_session, run_id=run.id, project_id=_P, repin=False, user_id=SEED.reviewer_profile
+    )
+    assert (retry.provider, retry.model, retry.deviation) == ("anthropic", "claude-haiku-4-5", True)
+
+
+@pytest.mark.asyncio
+async def test_lock_ignores_a_member_row_but_never_a_manager_row(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
+    await _set(db_session, SEED.reviewer_profile)
+    await _set(db_session, SEED.primary_profile, is_manager=True)
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra", user_choice_allowed=False)
+    assert (await resolve_engine(db_session, _P, SEED.reviewer_profile)).provider == "openai"
+    assert (await resolve_engine(db_session, _P, SEED.primary_profile)).provider == "anthropic"
+    with pytest.raises(EngineLockedError):
+        await _set(db_session, SEED.reviewer_profile)
+    await _set(db_session, SEED.primary_profile, is_manager=True)  # managers are never bound
+
+
+@pytest.mark.asyncio
+async def test_retired_project_default_blocks_before_the_user_row(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
+    await _set(db_session, SEED.reviewer_profile)
+    await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra")
+    monkeypatch.setattr(
+        "app.services.llm_engine_service.find_entry",
+        lambda p, m: None if (p, m) == ("openai", "gpt-5.6-terra") else __import__("app.llm.catalog", fromlist=["find_entry"]).find_entry(p, m),
+    )
+    with pytest.raises(EngineRetiredError, match="manager"):
+        await resolve_engine(db_session, _P, SEED.reviewer_profile)
+
+
+@pytest.mark.asyncio
+async def test_host_row_retires_when_the_connection_is_deleted(db_session: AsyncSession) -> None:
+    cid = await engine_setup.make_host_connection(db_session, user_id=SEED.reviewer_profile, label="mine")
+    await _set(db_session, SEED.reviewer_profile, "openai_compatible", "endpoint-model-x", connection_id=cid)
+    target = await resolve_engine(db_session, _P, SEED.reviewer_profile)
+    assert (target.connection_id, target.deviation) == (str(cid), True)
+    await LlmConnectionService(db_session).delete_user(user_id=SEED.reviewer_profile, connection_id=cid)
+    row = await get_user_engine(db_session, user_id=SEED.reviewer_profile, project_id=_P)
+    assert row is not None and row.connection_id is None  # ON DELETE SET NULL
+    with pytest.raises(EngineRetiredError, match="[Pp]ick a new model"):
+        await resolve_engine(db_session, _P, SEED.reviewer_profile)
+    assert await clear_user_engine(db_session, user_id=SEED.reviewer_profile, project_id=_P) is True
+    assert (await resolve_engine(db_session, _P, SEED.reviewer_profile)).connection_id is None
+
+
+@pytest.mark.asyncio
+async def test_a_bypass_write_onto_another_users_connection_is_a_409(db_session: AsyncSession) -> None:
+    """§7.3 ownership, resolution: a row re-homed onto a user who does not own
+    its connection resolves to the typed 409, never a key."""
+    cid = await engine_setup.make_host_connection(db_session, user_id=SEED.primary_profile, label="managers")
+    row = await _set(db_session, SEED.primary_profile, "openai_compatible", "endpoint-model-x", connection_id=cid, is_manager=True)
+    row.user_id = SEED.reviewer_profile  # bypass: re-home the row onto another user
+    await db_session.flush()
+    with pytest.raises(EngineRetiredError):
+        await resolve_engine(db_session, _P, SEED.reviewer_profile)
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `cd backend && uv run pytest tests/integration/test_user_engine_service.py -q`
+Expected: FAIL — `ImportError: cannot import name 'resolve_engine'`.
+
+- [ ] **Step 3: `resolve_engine` and the call sites**
+
+In `backend/app/services/llm_engine_service.py` add `"resolve_engine"` to `__all__` (drop `"resolve_project_engine"`) and replace `resolve_project_engine` (`:132-183`) with:
+
+```python
+
 async def resolve_engine(db: AsyncSession, project_id: UUID, user_id: UUID) -> LlmTarget:
     """The engine ``user_id``'s next run in ``project_id`` runs on (§3.2).
 
@@ -4430,8 +4952,6 @@ async def resolve_engine(db: AsyncSession, project_id: UUID, user_id: UUID) -> L
        ``deviation`` computed against the default NOW and never recomputed.
     3. Otherwise the default. The lock is enforced here, not in the UI.
     """
-    from app.services.user_engine_service import get_user_engine, user_row_is_retired
-
     project = await db.get(Project, project_id)
     stored = _stored_engine(project.settings if project is not None else None)
     if stored is None:
@@ -4465,9 +4985,9 @@ async def resolve_engine(db: AsyncSession, project_id: UUID, user_id: UUID) -> L
     )
 ```
 
-Move `LlmEngineService._viewer_is_manager` to a module function `viewer_is_manager(db, project_id, viewer_id) -> bool` (same SQL) and update its one caller. Then: `section_extraction.py:218` → `engine = await resolve_engine(db, payload.project_id, current_user_sub)` (import swap); `section_extraction_service.py:1736` → `engine = await resolve_engine(self.db, payload.project_id, UUID(self.user_id))`; `run_engine_freeze.py:25` imports `resolve_engine`, `resolve_engine_for_run(db, *, run_id, project_id, repin, user_id: UUID)` ends with `return await resolve_engine(db, project_id, user_id)`; `extraction_tasks.py` passes `user_id=UUID(user_id)` to `resolve_engine_for_run` (docstring: "the kicker's id decides whose engine and whose key").
+Call sites: `section_extraction.py:218` → `engine = await resolve_engine(db, payload.project_id, current_user_sub)` (import swap); `section_extraction_service.py:1736` → `engine = await resolve_engine(self.db, payload.project_id, UUID(self.user_id))`; `run_engine_freeze.py:25` imports `resolve_engine`, `resolve_engine_for_run(db, *, run_id, project_id, repin, user_id: UUID)` ends with `return await resolve_engine(db, project_id, user_id)`; `extraction_tasks.py` passes `user_id=UUID(user_id)` to `resolve_engine_for_run` (docstring: "the kicker's id decides whose engine and whose key").
 
-- [ ] **Step 6: Retarget the tests**
+- [ ] **Step 4: Retarget the tests**
 
 - `test_llm_engine_service.py:22` import `resolve_engine`; every `resolve_project_engine(db_session, SEED.primary_project)` in `:396-460` → `resolve_engine(db_session, SEED.primary_project, SEED.reviewer_profile)`.
 - `test_run_from_request.py:41` → `"app.services.section_extraction_service.resolve_engine"`.
@@ -4494,23 +5014,23 @@ async def test_kickoff_on_a_user_row_whose_connection_is_gone_is_typed_409(
     assert r.json()["error"]["code"] == "LLM_ENGINE_RETIRED"
 ```
 
-- [ ] **Step 7: Run the suites and gates**
+- [ ] **Step 5: Run the suites and gates**
 
-Run: `cd backend && uv run pytest tests/integration/test_user_engine_service.py tests/integration/test_llm_engine_service.py tests/integration/test_llm_engine_kickoff_gate.py tests/integration/test_run_engine_freeze.py tests/unit/test_run_from_request.py tests/unit/test_run_section_extraction_task.py -q && uv run ruff check app tests && uv run ruff format --check app tests`; then from the repo root `python3 scripts/fitness/check_scope_guards.py && python3 scripts/fitness/check_layered_arch.py`
-Expected: all PASS; scope gate exit 0 (`user_row_is_retired` reaches the row through `owned_user_connection`, never its own WHERE).
+Run: `cd backend && uv run pytest tests/integration/test_user_engine_service.py tests/integration/test_llm_engine_service.py tests/integration/test_llm_engine_kickoff_gate.py tests/integration/test_run_engine_freeze.py tests/unit/test_run_from_request.py tests/unit/test_run_section_extraction_task.py -q && uv run ruff check app tests && uv run ruff format --check app tests && grep -rn "resolve_project_engine" backend/app backend/tests`; then from the repo root `python3 scripts/fitness/check_scope_guards.py && python3 scripts/fitness/check_layered_arch.py`
+Expected: all PASS; the grep prints nothing; both gates exit 0.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add backend/app backend/tests
-git commit -m "feat(engine): per-user engine rows; resolve_engine(project, user) with lock and deviation
+git commit -m "feat(engine): resolve_engine(project, user) at every call site — lock, deviation, retired rows
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 15: The §4 engine read (`default` / `effective` / `availability`) and `PUT`/`DELETE /llm-engine/me` `[backend]`
+### Task 22: The §4 engine read (`default` / `effective` / `availability`) and `PUT`/`DELETE /llm-engine/me` `[backend]`
 
 **Files:**
 
@@ -4522,7 +5042,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Interfaces:**
 
-- Consumes: `availability_map`, `get_user_engine`, `user_row_is_retired`, `set_user_engine`, `clear_user_engine`, `EngineLockedError`, `EngineNeedsKeyError`, `viewer_is_manager` (Task 14), `selectable_catalog`, `llm_provider_ids`, `owned_user_connection`.
+- Consumes: `availability_map`, `owned_user_connection` (`llm_connection_service`), `get_user_engine`, `user_row_is_retired`, `viewer_is_manager` (`llm_engine_service`, Task 20), `set_user_engine`, `clear_user_engine`, `EngineLockedError`, `EngineNeedsKeyError` (`user_engine_service`, Task 20), `selectable_catalog`, `llm_provider_ids`, `profile_names` (Task 6).
 - Produces (`app.schemas.llm_engine`):
   - `LlmEngineDefaultRead(provider, model, mode: Literal["fast","verified"], source: Literal["project","env_default"], retired: bool, user_choice_allowed: bool, updated_by_name: str | None = None, updated_at: datetime | None = None, previous_model: str | None = None)`
   - `LlmEngineEffectiveRead(provider, model, mode, source: Literal["user","project","env_default"], retired: bool, connection_id: UUID | None = None, connection_label: str | None = None)`
@@ -4666,13 +5186,11 @@ class UserEngineClearResult(BaseModel):
 
 ```python
     async def get_engine_read(self, project_id: UUID, viewer_id: UUID) -> LlmEngineRead:
-        from app.services.user_engine_service import get_user_engine, user_row_is_retired
-
         resolved = await self.get_for_project(project_id)
         stored = resolved.stored
         updated_by_name: str | None = None
         if stored is not None and stored.updated_by is not None:
-            updated_by_name = (await _profile_names(self.db, {stored.updated_by})).get(stored.updated_by)
+            updated_by_name = (await profile_names(self.db, {stored.updated_by})).get(stored.updated_by)
         default_source: Literal["project", "env_default"] = "project" if stored is not None else "env_default"
         default = LlmEngineDefaultRead(
             provider=resolved.provider, model=resolved.model, mode=resolved.mode, source=default_source,
@@ -4716,7 +5234,7 @@ class UserEngineClearResult(BaseModel):
         )
 ```
 
-Imports: `from app.llm.registry import llm_provider_ids`, `from app.services.llm_connection_service import availability_map, owned_user_connection`; drop `APIKeyService`, `is_byok_only`, `CATALOG`, `canonical_pair`. Delete `is_byok_only` from `backend/app/llm/registry.py` and rewrite its module docstring: "... the DB CHECK literals on `llm_connections.provider` and the `scopes` CHECK (asserted equal by `tests/unit/llm/test_llm_connection_model.py` and `test_migration_roundtrip.py`) ... `global_key_for` feeds the `global` tier of the engine read's `availability`." Reword `backend/app/core/config.py:124-128` to "when it is empty the provider needs a user or project key in this deployment (the engine read's `availability`)".
+Imports (module level — `llm_engine_service` → `llm_connection_service` is the sanctioned direction): `from app.llm.registry import llm_provider_ids`; extend the Task 20 line to `from app.services.llm_connection_service import availability_map, owned_user_connection`; drop `APIKeyService`, `is_byok_only`, `CATALOG`, `canonical_pair`. `get_user_engine` / `user_row_is_retired` are module functions of this file since Task 20 — no import needed. Delete `is_byok_only` from `backend/app/llm/registry.py` and rewrite its module docstring: "... the DB CHECK literals on `llm_connections.provider` and the `scopes` CHECK (asserted equal by `tests/unit/llm/test_llm_connection_model.py` and `test_migration_roundtrip.py`) ... `global_key_for` feeds the `global` tier of the engine read's `availability`." Reword `backend/app/core/config.py:124-128` to "when it is empty the provider needs a user or project key in this deployment (the engine read's `availability`)".
 
 Append to `backend/app/api/v1/endpoints/llm_engine.py`:
 
@@ -4760,18 +5278,18 @@ async def clear_my_llm_engine(
     )
 ```
 
-(imports: `UserEngineUpdateRequest`, `UserEngineClearResult`, `viewer_is_manager`, `set_user_engine`, `clear_user_engine`.)
+(imports: `UserEngineUpdateRequest`, `UserEngineClearResult` from `app.schemas.llm_engine`; `viewer_is_manager` from `app.services.llm_engine_service`; `set_user_engine`, `clear_user_engine` from `app.services.user_engine_service`.)
 
 - [ ] **Step 5: Unit and service tests**
 
-`test_llm_engine_endpoints_unit.py`: `_read()` builds the new shape (`default=LlmEngineDefaultRead(...)`, `effective=LlmEngineEffectiveRead(...)`, `source="env_default"`, `catalog=[]`, `availability={"openai": "global", "anthropic": None}`); add two coroutine tests for `set_my_llm_engine` (patch `f"{_EP}.set_user_engine"`, `f"{_EP}.viewer_is_manager"` → `AsyncMock(return_value=False)` and `LlmEngineService`; a `ValueError` maps to 400; the happy path commits and returns the read) and one for `clear_my_llm_engine` (patch `f"{_EP}.clear_user_engine"` → `AsyncMock(return_value=True)`; `resp.data.cleared is True`, commit awaited). `test_llm_engine_service.py:121-152`: `read.source == "env_default"`, `read.effective.model == settings.LLM_DEFAULT_MODEL`, `set(read.availability) == set(llm_provider_ids())`, `read.availability["anthropic"] is None`; the updater-name test reads `read.default.updated_by_name`. `test_registry.py`: delete `test_byok_only_is_computed_from_the_deployment`, `test_host_bearing_provider_is_never_byok_only` and the `is_byok_only` import.
+`test_llm_engine_endpoints_unit.py`: `_read()` builds the new shape (`default=LlmEngineDefaultRead(...)`, `effective=LlmEngineEffectiveRead(...)`, `source="env_default"`, `catalog=[]`, `availability={"openai": "global", "anthropic": None}`); add three coroutine tests for `set_my_llm_engine` (patch `f"{_EP}.set_user_engine"`, `f"{_EP}.viewer_is_manager"` → `AsyncMock(return_value=False)` and `LlmEngineService`; a `ValueError` maps to 400; a `ProjectNotFoundError` maps to 404; the happy path commits and returns the read) and one for `clear_my_llm_engine` (patch `f"{_EP}.clear_user_engine"` → `AsyncMock(return_value=True)`; `resp.data.cleared is True`, commit awaited). `test_llm_engine_service.py:121-152`: `read.source == "env_default"`, `read.effective.model == settings.LLM_DEFAULT_MODEL`, `set(read.availability) == set(llm_provider_ids())`, `read.availability["anthropic"] is None`; the updater-name test reads `read.default.updated_by_name`. `test_registry.py`: delete `test_byok_only_is_computed_from_the_deployment`, `test_host_bearing_provider_is_never_byok_only` and the `is_byok_only` import.
 
 - [ ] **Step 6: Run, regenerate**
 
 Run: `cd backend && uv run pytest tests/integration/test_llm_engine_endpoint.py tests/unit/test_llm_engine_endpoints_unit.py tests/integration/test_llm_engine_service.py tests/unit/llm/test_registry.py -q && uv run ruff check app tests && uv run ruff format --check app tests && uv run vulture`
 Expected: all PASS; vulture: no new finding (`is_byok_only` deleted, not baselined).
 Run: `bash scripts/generate_api_types.sh && npm run typecheck`
-Expected: regenerated; tsc clean (no frontend consumer of `LlmEngineRead` exists since Task 11).
+Expected: regenerated; tsc clean (no frontend consumer of `LlmEngineRead` exists since Task 16).
 
 - [ ] **Step 7: Commit**
 
@@ -4784,25 +5302,26 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 16: Delete the legacy credential stack; migration 0073 drops the old tables and strips `alternates` `[backend]`
+### Task 23: Delete the legacy credential stack; migration 0073 drops the old tables and strips `alternates` `[backend]`
 
 **Files:**
 
 - Delete: `backend/app/api/v1/endpoints/user_api_keys.py`, `backend/app/api/v1/endpoints/llm_endpoints.py`, `backend/app/services/api_key_service.py`, `backend/app/services/llm_endpoint_service.py`, `backend/app/repositories/user_api_key_repository.py`, `backend/app/models/user_api_key.py`, `backend/app/models/project_llm_endpoint.py`, `backend/app/schemas/user_api_key.py`
 - Delete tests: `backend/tests/unit/test_api_key_service.py`, `test_user_api_key_schemas.py`, `test_user_api_key_repository.py`, `test_user_api_keys_endpoint.py`, `test_llm_endpoints_unit.py`, `test_llm_endpoint_schemas.py` (its two `capabilities` tests move to `backend/tests/unit/test_llm_connection_schemas.py`), `backend/tests/integration/test_llm_endpoint_service.py`, `test_llm_endpoints_api.py`, `test_llm_endpoint_rls.py`
+- Delete: `scripts/test-api-keys.sh` (a manual curl script against the dropped `/api/v1/user-api-keys*` routes; Task 15's `settings-connections.e2e.ts` is the lifecycle probe now)
 - Modify: `backend/app/api/v1/router.py` (imports + the two `include_router` blocks), `backend/app/models/__init__.py:58,62,117-118,162-163`, `backend/app/repositories/__init__.py:33,60`, `backend/app/schemas/__init__.py:41-46,106-109`, `backend/app/models/user.py:49-54` (delete the `api_keys` relationship), `backend/app/schemas/llm_endpoint.py` (keep only `LlmEndpointCapabilities` and `LlmEndpointProbeResult`; docstring: "probe shapes shared by the host probe and the connection read"), `backend/tests/unit/test_typed_envelope_schemas.py:19-23` and its three `*APIKey*`/`Providers` test classes, `backend/app/llm/registry.py:105-107` (comment), `scripts/fitness/check_scope_guards.baseline:14-19`
 - Create: `backend/alembic/versions/0073_drop_legacy_credentials.py`
-- Modify: `backend/tests/integration/test_migration_roundtrip.py:1332` (head pin → `"0073_drop_legacy_credentials"`), `:1335-1368` (the `user_api_keys_provider_check` test is deleted — Task 2's `llm_connections` test is its successor), `:1370-1430` (the whole 0071 block is deleted), append the 0073 block
+- Modify: `backend/tests/integration/test_migration_roundtrip.py` — by CONTENT, not line number (Task 2 already shifted the file): set `expected_head = "0073_drop_legacy_credentials"` on the line Task 2 set to `"0072_llm_connections"`; delete everything from the line `_PROVIDER_CHECK_DEF = text(` through the `await migration_session.rollback()` that closes `test_migration_0071_deletes_orphaned_providers_and_narrows_the_check` (that is: the `_PROVIDER_CHECK_DEF` constant, `test_provider_check_constraint_matches_the_registry_at_head` — Task 2's `test_llm_connections_checks_match_the_registry_at_head` is its successor — the `# --- 0071:` comment block, the three `_R71_*` constants and the 0071 test), leaving `test_alembic_history_chain_is_continuous` and the `# --- 0072:` block Task 2 appended intact; delete `from sqlalchemy.exc import IntegrityError` (`:30` today) — its only use was the `pytest.raises(IntegrityError, ...)` inside the deleted 0071 test, and ruff `F401` applies to `tests/**`; append the 0073 block
 - Modify: `frontend/integrations/supabase/types.ts` (regenerate: `supabase gen types typescript --local > frontend/integrations/supabase/types.ts` with the local stack at head), `frontend/types/api/{openapi.json,schema.d.ts}` (regenerate)
 
 **Interfaces:**
 
-- Consumes: everything above is already unreferenced by production code after Tasks 5–15 (`grep -rn "api_key_service\|llm_endpoint_service\|user_api_key\|project_llm_endpoint\|APIKeyService\|LlmEndpointService" backend/app` must list only the files being deleted, `schemas/llm_endpoint.py`, and comments — run it first; anything else is a Task 5–15 miss to fix here).
-- Produces: head revision `0073_drop_legacy_credentials`; `projects.settings->'llm_engine'` never carries `alternates`; the scope-guard baseline is five rows shorter; `registry.provider_ids` keeps its baseline row with a comment naming `app/models/llm_connection.py`.
+- Consumes: everything above is already unreferenced by production code after Tasks 8–22 (`grep -rn "api_key_service\|llm_endpoint_service\|user_api_key\|project_llm_endpoint\|APIKeyService\|LlmEndpointService\|user-api-keys" backend/app scripts` must list only the files being deleted, `schemas/llm_endpoint.py`, and comments — run it first; anything else is a Task 8–22 miss to fix here).
+- Produces: head revision `0073_drop_legacy_credentials`; `projects.settings->'llm_engine'` never carries `alternates`; the scope-guard baseline is six rows shorter (rows 14–19); `registry.provider_ids` keeps its baseline row with a comment naming `app/models/llm_connection.py`.
 
 - [ ] **Step 1: Write the failing roundtrip tests**
 
-Append to `backend/tests/integration/test_migration_roundtrip.py` (after deleting the `_PROVIDER_CHECK_DEF` test and the 0071 block):
+Append to `backend/tests/integration/test_migration_roundtrip.py` (after the content-anchored deletions in the Files list — `_PROVIDER_CHECK_DEF` + its test, the 0071 block, the `IntegrityError` import):
 
 ```python
 # --- 0073: drop user_api_keys / project_llm_endpoints, strip alternates -----
@@ -5036,14 +5555,15 @@ Expected: `/api/v1/user-api-keys*` and `/api/v1/projects/{project_id}/llm-endpoi
 
 - [ ] **Step 6: Run the whole backend suite and the gates**
 
-Run: `cd backend && uv run pytest -q`
-Expected: all pass (read the summary line; the shared-stack `test_run_read_manager_blind` artefact noted in the ledger is not from this branch). Then from the repo root: `python3 scripts/fitness/check_scope_guards.py && python3 scripts/fitness/check_layered_arch.py && python3 scripts/fitness/check_rls_coverage.py && (cd backend && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec)`
+Run: `cd backend && uv run pytest -q && uv run ruff check app tests && uv run ruff format --check app tests`
+Expected: all pass (read the summary line; the shared-stack `test_run_read_manager_blind` artefact noted in the ledger is not from this branch); ruff clean — an `F401 IntegrityError imported but unused` here means the import survived the roundtrip-file edit. Then from the repo root: `python3 scripts/fitness/check_scope_guards.py && python3 scripts/fitness/check_layered_arch.py && python3 scripts/fitness/check_rls_coverage.py && (cd backend && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec)`
 Expected: exit 0 each; the vulture ratchet reports no new finding and — if it lists baseline rows now clean — tighten with `--update` in the same commit.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add -A backend scripts/fitness/check_scope_guards.baseline frontend/integrations/supabase/types.ts frontend/types/api
+git rm scripts/test-api-keys.sh
 git commit -m "refactor(credentials): drop user_api_keys/project_llm_endpoints and their stack (0073); strip alternates
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
@@ -5051,23 +5571,23 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 17: Worklist gear — "Your engine for new runs" `[frontend]`
+### Task 24: Worklist gear — "Your engine for new runs" (catalogue picker on both worklists) `[frontend]`
 
 **Files:**
 
-- Create: `frontend/services/llmEngineService.ts` (read + the viewer's own writes; the manager's default write arrives in Task 18 with its consumer), `frontend/hooks/extraction/useLlmEngine.ts`, `frontend/components/extraction/EngineGear.tsx`
+- Create: `frontend/services/llmEngineService.ts` (read + `setMyEngine`; `clearMyEngine` arrives in Task 25, the manager's default write in Task 26 — each with its consumer), `frontend/hooks/extraction/useLlmEngine.ts`, `frontend/components/extraction/EngineGear.tsx`
 - Modify: `frontend/lib/copy/llmConnections.ts` (append the picker keys), `frontend/components/extraction/ExtractionInterface.tsx:311-330` (`toolbarActions`), `frontend/components/quality/QualityAssessmentInterface.tsx:246-265` (`toolbarActions`)
 - Test: `frontend/test/services/llmEngineService.test.ts`, `frontend/test/hooks/useLlmEngine.test.tsx`, `frontend/test/components/EngineGear.test.tsx`, `frontend/test/components/ExtractionInterface.gear.test.tsx` (all new), `frontend/test/QualityAssessmentInterface.test.tsx` (append one case)
 
 **Interfaces:**
 
-- Consumes: `components['schemas']['LlmEngineRead' | 'LlmEngineCatalogEntryRead' | 'UserEngineUpdateRequest' | 'UserEngineClearResult']` (regenerated in Task 15), `useMyConnections`, `useProviders` (Task 9), `useProjectMemberRole`, `projectKeys.llmEngine(id)`, shadcn `Popover`, `Command*`, `ToggleGroup`, `Tooltip`, `Skeleton`, `Badge`, react-router `Link`.
+- Consumes: `components['schemas']['LlmEngineRead' | 'LlmEngineCatalogEntryRead' | 'UserEngineUpdateRequest']` (regenerated in Task 22), `useProviders` (Task 14), `useProjectMemberRole`, `projectKeys.llmEngine(id)`, shadcn `Popover`, `Command*`, `Tooltip`, `Skeleton`, `Badge`, react-router `Link`.
 - Produces:
-  - `llmEngineService.ts`: `export type LlmEngineRead`, `LlmEngineCatalogEntry`, `UserEngineUpdateRequest`; `fetchLlmEngine(projectId): Promise<ErrorResult<LlmEngineRead>>` (GET `/api/v1/projects/${projectId}/llm-engine`), `setMyEngine(projectId, body: UserEngineUpdateRequest): Promise<ErrorResult<LlmEngineRead>>` (PUT `…/llm-engine/me`), `clearMyEngine(projectId): Promise<ErrorResult<{cleared: boolean}>>` (DELETE `…/llm-engine/me`). No wire normalization: the routes are greenfield.
-  - `useLlmEngine(projectId)` (query on `projectKeys.llmEngine(projectId)`, `staleTime` 5 min), `useSetMyEngine(projectId)`, `useClearMyEngine(projectId)` (mutations; `onSuccess` writes the returned read onto `projectKeys.llmEngine(projectId)` via `setQueryData` when the result is a read, and invalidates it).
-  - `EngineGear({projectId})` — an icon button (`aria-label` = `llmConnections.gearAria`, tooltip = `gearTooltip` with `{{engine}}` = the effective catalogue label or `provider:model`, or `gearLoading` while pending) opening a `Popover` with the picker. `data-testid="engine-gear"`.
-  - States (§5.3): loading → tooltip `gearLoading`, popover shows two `Skeleton` groups; error → popover shows `pickerLoadError` + `retry` (refetch), gear stays mounted; no host connection → no host group, a `Link` to `/settings?tab=integrations` labelled `noHostsLink`; member under lock → every row `aria-disabled`, one line `lockedReason`; manager → editable regardless of the lock; non-member never reaches the worklist (ProjectView's not-found branch). Managers see nothing extra.
-  - Copy keys added (all referenced by the gear): `gearAria`, `gearLoading`, `gearTooltip`, `projectDefaultLine`, `lockedReason`, `pickerLoadError`, `pickerNoMatch`, `tagYourKey`, `tagProjectKey`, `tagPrumo`, `tagNeedsKey`, `needsKeyLink`, `noHostsLink`, `hostGroupNote`, `modeLabel`, `modeFast`, `modeVerified`, `followDefault`, `retiredNote`, `pickSuccess`, `pickError`.
+  - `llmEngineService.ts`: `export type LlmEngineRead`, `LlmEngineCatalogEntry`, `UserEngineUpdateRequest`; `enginePath(projectId)`; `fetchLlmEngine(projectId): Promise<ErrorResult<LlmEngineRead>>` (GET `/api/v1/projects/${projectId}/llm-engine`), `setMyEngine(projectId, body: UserEngineUpdateRequest): Promise<ErrorResult<LlmEngineRead>>` (PUT `…/llm-engine/me`). No wire normalization: the routes are greenfield.
+  - `useLlmEngine(projectId)` (query on `projectKeys.llmEngine(projectId)`, `staleTime` 5 min), `useSetMyEngine(projectId)` (mutation; `onSuccess` writes the returned read onto `projectKeys.llmEngine(projectId)` via `setQueryData`, then invalidates it).
+  - `EngineGear({projectId})` — an icon button (`aria-label` = `llmConnections.gearAria`, tooltip = `gearTooltip` with `{{engine}}` = the effective catalogue label or `provider:model`, or `gearLoading` while pending) opening a `Popover` with the catalogue picker: rows grouped by provider, each tagged from `availability`, a row with none `aria-disabled` with `tagNeedsKey`; `data-testid="engine-gear"`. Mounted on BOTH worklists' `toolbarActions`. Host groups, the mode toggle and "follow the project default" are Task 25.
+  - States (§5.3): loading → tooltip `gearLoading`, popover shows two `Skeleton` groups; error → popover shows `pickerLoadError` + `retry` (refetch), gear stays mounted; a provider with no credential → `needsKeyLink` to `/settings?tab=integrations`; member under lock → every row `aria-disabled`, one line `lockedReason`; manager → editable regardless of the lock; non-member never reaches the worklist (ProjectView's not-found branch). Managers see nothing extra.
+  - Copy keys added (all referenced by the gear): `gearAria`, `gearLoading`, `gearTooltip`, `projectDefaultLine`, `lockedReason`, `pickerLoadError`, `pickerNoMatch`, `tagYourKey`, `tagProjectKey`, `tagPrumo`, `tagNeedsKey`, `needsKeyLink`, `retiredNote`, `pickSuccess`, `pickError`.
 
 - [ ] **Step 1: Write the failing service and hook tests**
 
@@ -5078,7 +5598,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 const {apiClientMock} = vi.hoisted(() => ({apiClientMock: vi.fn()}));
 vi.mock('@/integrations/api/client', () => ({apiClient: apiClientMock}));
 
-import {clearMyEngine, fetchLlmEngine, setMyEngine} from '@/services/llmEngineService';
+import {fetchLlmEngine, setMyEngine} from '@/services/llmEngineService';
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -5095,9 +5615,6 @@ describe('llmEngineService', () => {
       body: {provider: 'openai', model: 'gpt-4o-mini', mode: 'fast', connection_id: null},
     });
 
-    apiClientMock.mockResolvedValueOnce({cleared: true});
-    expect(await clearMyEngine('p1')).toEqual({ok: true, data: {cleared: true}});
-    expect(apiClientMock).toHaveBeenLastCalledWith('/api/v1/projects/p1/llm-engine/me', {method: 'DELETE'});
   });
 
   it('never throws across the boundary', async () => {
@@ -5176,7 +5693,6 @@ import type {components} from '@/types/api/schema';
 export type LlmEngineRead = components['schemas']['LlmEngineRead'];
 export type LlmEngineCatalogEntry = components['schemas']['LlmEngineCatalogEntryRead'];
 export type UserEngineUpdateRequest = components['schemas']['UserEngineUpdateRequest'];
-type UserEngineClearResult = components['schemas']['UserEngineClearResult'];
 
 export const enginePath = (projectId: string): string => `/api/v1/projects/${projectId}/llm-engine`;
 
@@ -5190,13 +5706,6 @@ export function setMyEngine(projectId: string, body: UserEngineUpdateRequest): P
     'llmEngineService.setMyEngine',
   );
 }
-
-export function clearMyEngine(projectId: string): Promise<ErrorResult<UserEngineClearResult>> {
-  return toResult(
-    () => apiClient<UserEngineClearResult>(`${enginePath(projectId)}/me`, {method: 'DELETE'}),
-    'llmEngineService.clearMyEngine',
-  );
-}
 ```
 
 ```ts
@@ -5206,7 +5715,6 @@ import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 
 import {projectKeys} from '@/lib/query-keys';
 import {
-  clearMyEngine,
   fetchLlmEngine,
   setMyEngine,
   type LlmEngineRead,
@@ -5243,18 +5751,6 @@ export function useSetMyEngine(projectId: string) {
     },
   });
 }
-
-export function useClearMyEngine(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation<{cleared: boolean}, Error, void>({
-    mutationFn: async () => {
-      const result = await clearMyEngine(projectId);
-      if (!result.ok) throw result.error;
-      return result.data;
-    },
-    onSuccess: () => void queryClient.invalidateQueries({queryKey: projectKeys.llmEngine(projectId)}),
-  });
-}
 ```
 
 - [ ] **Step 4: Write the failing gear test**
@@ -5268,12 +5764,12 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {t} from '@/lib/copy';
 
 const hooks = vi.hoisted(() => ({
-  engine: vi.fn(), setMine: vi.fn(), clearMine: vi.fn(), role: vi.fn(), mine: vi.fn(), providers: vi.fn(),
+  engine: vi.fn(), setMine: vi.fn(), role: vi.fn(), providers: vi.fn(),
 }));
 vi.mock('@/hooks/extraction/useLlmEngine', () => ({
-  useLlmEngine: hooks.engine, useSetMyEngine: hooks.setMine, useClearMyEngine: hooks.clearMine,
+  useLlmEngine: hooks.engine, useSetMyEngine: hooks.setMine,
 }));
-vi.mock('@/hooks/user/useLlmConnections', () => ({useMyConnections: hooks.mine, useProviders: hooks.providers}));
+vi.mock('@/hooks/user/useLlmConnections', () => ({useProviders: hooks.providers}));
 vi.mock('@/hooks/useProjectMemberRole', () => ({useProjectMemberRole: hooks.role}));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}));
 
@@ -5287,9 +5783,8 @@ const READ = {
   effective: {provider: 'openai', model: 'gpt-4o-mini', mode: 'fast', source: 'project', retired: false, connection_id: null, connection_label: null},
   source: 'project',
   catalog: [entry('openai', 'gpt-4o-mini', 'GPT-4o mini'), entry('anthropic', 'claude-haiku-4-5', 'Claude Haiku'), entry('google', 'gemini-3.8-flash', 'Gemini Flash')],
-  availability: {openai: 'global', anthropic: 'user', google: null, openai_compatible: 'user'},
+  availability: {openai: 'global', anthropic: 'project', google: null, openai_compatible: 'user'},
 } as never;
-const HOST = {id: 'c1', provider: 'openai_compatible', label: 'Lab Ollama', base_url: 'https://8.8.8.8/v1', allowed_models: ['llama3'], validation_status: 'ok', has_api_key: false} as never;
 const setMutate = vi.fn();
 
 function renderGear() {
@@ -5300,9 +5795,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   hooks.engine.mockReturnValue({data: READ, isPending: false, isError: false, refetch: vi.fn()});
   hooks.setMine.mockReturnValue({mutate: setMutate, isPending: false});
-  hooks.clearMine.mockReturnValue({mutate: vi.fn(), isPending: false});
   hooks.role.mockReturnValue({isManager: false, role: 'reviewer', loading: false});
-  hooks.mine.mockReturnValue({data: [HOST]});
   hooks.providers.mockReturnValue({data: [{id: 'openai', label: 'OpenAI'}, {id: 'anthropic', label: 'Anthropic'}, {id: 'google', label: 'Google'}, {id: 'openai_compatible', label: 'Custom host'}]});
 });
 
@@ -5316,29 +5809,22 @@ describe('EngineGear', () => {
     expect(screen.getByText(t('llmConnections', 'projectDefaultLine').replace('{{engine}}', 'GPT-4o mini'))).toBeInTheDocument();
   });
 
-  it('renders the three scope tags and the needs-a-key row unselectable with a link out', async () => {
+  it('renders the scope tags and the needs-a-key row unselectable with a link out', async () => {
     renderGear();
     await userEvent.click(screen.getByTestId('engine-gear'));
-    expect(screen.getByText(t('llmConnections', 'tagPrumo'))).toBeInTheDocument();
-    expect(screen.getAllByText(t('llmConnections', 'tagYourKey')).length).toBeGreaterThan(0);
+    expect(screen.getByText(t('llmConnections', 'tagPrumo'))).toBeInTheDocument(); // openai: global
+    expect(screen.getByText(t('llmConnections', 'tagProjectKey'))).toBeInTheDocument(); // anthropic: project
     const gemini = screen.getByText('Gemini Flash').closest('[role="option"]')!;
     expect(gemini).toHaveAttribute('aria-disabled', 'true');
     expect(within(gemini).getByText(t('llmConnections', 'tagNeedsKey'))).toBeInTheDocument();
     expect(screen.getByRole('link', {name: t('llmConnections', 'needsKeyLink')})).toHaveAttribute('href', '/settings?tab=integrations');
   });
 
-  it('a pick writes the viewer row; the host group lists allowed models', async () => {
+  it('a catalogue pick writes the viewer row with the effective mode', async () => {
     renderGear();
     await userEvent.click(screen.getByTestId('engine-gear'));
-    await userEvent.click(screen.getByText('llama3'));
-    expect(setMutate).toHaveBeenCalledWith({provider: 'openai_compatible', model: 'llama3', mode: 'fast', connection_id: 'c1'}, expect.anything());
-  });
-
-  it('the mode toggle writes the effective pair with the new mode', async () => {
-    renderGear();
-    await userEvent.click(screen.getByTestId('engine-gear'));
-    await userEvent.click(screen.getByRole('radio', {name: t('llmConnections', 'modeVerified')}));
-    expect(setMutate).toHaveBeenCalledWith({provider: 'openai', model: 'gpt-4o-mini', mode: 'verified', connection_id: null}, expect.anything());
+    await userEvent.click(screen.getByText('Claude Haiku'));
+    expect(setMutate).toHaveBeenCalledWith({provider: 'anthropic', model: 'claude-haiku-4-5', mode: 'fast', connection_id: null}, expect.anything());
   });
 
   it('is read-only with the reason for a locked member, editable for a manager', async () => {
@@ -5385,12 +5871,6 @@ Append to `frontend/lib/copy/llmConnections.ts`:
     tagPrumo: 'prumo',
     tagNeedsKey: 'needs a key',
     needsKeyLink: 'Add a key under Integrations',
-    noHostsLink: 'Connect your own host under Integrations',
-    hostGroupNote: 'Your host — runs on your connection',
-    modeLabel: 'Mode',
-    modeFast: 'Fast',
-    modeVerified: 'Verified',
-    followDefault: 'Follow the project default',
     retiredNote: 'This engine is no longer available. Pick a new model.',
     pickSuccess: 'Your engine for new runs is set.',
     pickError: 'Failed to set your engine',
@@ -5403,9 +5883,9 @@ Append to `frontend/lib/copy/llmConnections.ts`:
 /**
  * Worklist gear → "Your engine for new runs" (spec §5). Writes the VIEWER's
  * own row (`PUT /llm-engine/me`); the project default lives in Project
- * Settings. Rows are grouped by provider from the catalogue plus one group
- * per host the viewer owns; each row carries a scope tag from
- * `availability` — a row with none is not selectable and links to
+ * Settings. Rows are grouped by provider from the catalogue (plus, Task
+ * 17b, one group per host the viewer owns); each row carries a scope tag
+ * from `availability` — a row with none is not selectable and links to
  * Integrations, so a pick can never lead to a guaranteed 409 at kickoff.
  * The lock binds members, not managers; it is enforced server-side, this
  * surface only mirrors it. One row per (user, project): the extraction and
@@ -5421,10 +5901,9 @@ import {Button} from '@/components/ui/button';
 import {Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList} from '@/components/ui/command';
 import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
 import {Skeleton} from '@/components/ui/skeleton';
-import {ToggleGroup, ToggleGroupItem} from '@/components/ui/toggle-group';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
-import {useClearMyEngine, useLlmEngine, useSetMyEngine} from '@/hooks/extraction/useLlmEngine';
-import {useMyConnections, useProviders} from '@/hooks/user/useLlmConnections';
+import {useLlmEngine, useSetMyEngine} from '@/hooks/extraction/useLlmEngine';
+import {useProviders} from '@/hooks/user/useLlmConnections';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {t} from '@/lib/copy';
 import type {LlmEngineCatalogEntry, LlmEngineRead} from '@/services/llmEngineService';
@@ -5463,14 +5942,11 @@ export function EngineGear({projectId}: {projectId: string}) {
   const [open, setOpen] = useState(false);
   const engine = useLlmEngine(projectId);
   const setMine = useSetMyEngine(projectId);
-  const clearMine = useClearMyEngine(projectId);
   const {isManager} = useProjectMemberRole(projectId);
-  const mine = useMyConnections();
   const providers = useProviders();
   const read = engine.data;
   const locked = Boolean(read && !read.default.user_choice_allowed && !isManager);
   const providerLabel = (id: string) => providers.data?.find((p) => p.id === id)?.label ?? id;
-  const hosts = (mine.data ?? []).filter((c) => c.base_url !== null && c.validation_status === 'ok');
   const tooltip = engine.isPending || !read ? t('llmConnections', 'gearLoading') : t('llmConnections', 'gearTooltip').replace('{{engine}}', engineLabel(read));
 
   const pick = (body: {provider: string; model: string; connection_id: string | null}) => {
@@ -5481,13 +5957,6 @@ export function EngineGear({projectId}: {projectId: string}) {
         onSuccess: () => toast.success(t('llmConnections', 'pickSuccess')),
         onError: () => toast.error(t('llmConnections', 'pickError')),
       },
-    );
-  };
-  const setMode = (mode: string) => {
-    if (!read || (mode !== 'fast' && mode !== 'verified')) return;
-    setMine.mutate(
-      {provider: read.effective.provider, model: read.effective.model, mode, connection_id: read.effective.connection_id ?? null},
-      {onError: () => toast.error(t('llmConnections', 'pickError'))},
     );
   };
   const isCurrent = (provider: string, model: string, connectionId: string | null) =>
@@ -5522,13 +5991,6 @@ export function EngineGear({projectId}: {projectId: string}) {
                 <p>{t('llmConnections', 'projectDefaultLine').replace('{{engine}}', defaultLabel(read))}</p>
                 {locked && <p>{t('llmConnections', 'lockedReason')}</p>}
                 {read.effective.retired && <p className="text-destructive">{t('llmConnections', 'retiredNote')}</p>}
-                <div className="flex items-center gap-2">
-                  <span>{t('llmConnections', 'modeLabel')}</span>
-                  <ToggleGroup type="single" size="sm" value={read.effective.mode} onValueChange={setMode} disabled={locked} aria-label={t('llmConnections', 'modeLabel')}>
-                    <ToggleGroupItem value="fast">{t('llmConnections', 'modeFast')}</ToggleGroupItem>
-                    <ToggleGroupItem value="verified">{t('llmConnections', 'modeVerified')}</ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
               </div>
               <CommandInput placeholder={t('llmConnections', 'gearAria')} />
               <CommandList>
@@ -5551,27 +6013,11 @@ export function EngineGear({projectId}: {projectId: string}) {
                     })}
                   </CommandGroup>
                 ))}
-                {hosts.map((host) => (
-                  <CommandGroup key={host.id} heading={host.label}>
-                    {host.allowed_models.map((model) => (
-                      <CommandItem key={`${host.id}:${model}`} value={`${host.label} ${model}`} disabled={locked} aria-disabled={locked} data-current={isCurrent('openai_compatible', model, host.id)} onSelect={() => pick({provider: 'openai_compatible', model, connection_id: host.id})}>
-                        <span className="flex-1">{model}</span>
-                        <Badge variant="outline">{t('llmConnections', 'tagYourKey')}</Badge>
-                      </CommandItem>
-                    ))}
-                    <p className="px-2 py-1 text-[11px] text-muted-foreground">{t('llmConnections', 'hostGroupNote')}</p>
-                  </CommandGroup>
-                ))}
               </CommandList>
               <div className="flex items-center justify-between border-t border-border/40 px-3 py-2 text-[12px]">
                 {Object.values(read.availability).some((a) => a === null) ? (
                   <Link to={INTEGRATIONS_ROUTE} className="text-primary hover:underline">{t('llmConnections', 'needsKeyLink')}</Link>
-                ) : hosts.length === 0 ? (
-                  <Link to={INTEGRATIONS_ROUTE} className="text-primary hover:underline">{t('llmConnections', 'noHostsLink')}</Link>
                 ) : <span />}
-                {read.source === 'user' && !locked && (
-                  <Button size="sm" variant="ghost" onClick={() => clearMine.mutate()}>{t('llmConnections', 'followDefault')}</Button>
-                )}
               </div>
             </Command>
           )}
@@ -5586,7 +6032,7 @@ export function EngineGear({projectId}: {projectId: string}) {
 
 `ExtractionInterface.tsx` (`toolbarActions` at `:311-330`): wrap the existing export `TooltipProvider` block and `<EngineGear projectId={projectId} />` in a fragment `<>…</>` (gear after the export button; import `EngineGear` from `./EngineGear`). `QualityAssessmentInterface.tsx` (`toolbarActions` at `:246-265`): same fragment, same order. No other layout change; the tables already render `toolbarActions` in their loading/empty/populated branches.
 
-Tests: append to `frontend/test/QualityAssessmentInterface.test.tsx` the hook mocks `vi.mock('@/hooks/extraction/useLlmEngine', …)` (returning the `READ` fixture from the gear test — copy the literal), `vi.mock('@/hooks/user/useLlmConnections', …)` (`useMyConnections: () => ({data: []})`, `useProviders: () => ({data: []})`) and one case:
+Tests: append to `frontend/test/QualityAssessmentInterface.test.tsx` the hook mocks `vi.mock('@/hooks/extraction/useLlmEngine', …)` (`useLlmEngine` returning the `READ` fixture from the gear test — copy the literal; `useSetMyEngine: () => ({mutate: vi.fn(), isPending: false})`), `vi.mock('@/hooks/user/useLlmConnections', …)` (`useProviders: () => ({data: []})`) and one case:
 
 ```tsx
   it('mounts the engine gear on the QA worklist with the effective engine in its tooltip', async () => {
@@ -5608,38 +6054,244 @@ Expected: all PASS; knip 0 in both modes; copy gate 0 unreferenced.
 
 ```bash
 git add frontend/services/llmEngineService.ts frontend/hooks/extraction/useLlmEngine.ts frontend/components/extraction/EngineGear.tsx frontend/components/extraction/ExtractionInterface.tsx frontend/components/quality/QualityAssessmentInterface.tsx frontend/lib/copy/llmConnections.ts frontend/test
-git commit -m "feat(frontend): worklist gear — your engine for new runs
+git commit -m "feat(frontend): worklist gear — your engine for new runs (catalogue picker)
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 18: Project Settings → AI engine card + Shared keys `[frontend]`
+### Task 25: Worklist gear — host groups, mode toggle, "follow the project default" `[frontend]`
+
+**Files:**
+
+- Modify: `frontend/services/llmEngineService.ts` (add `clearMyEngine`), `frontend/hooks/extraction/useLlmEngine.ts` (add `useClearMyEngine`), `frontend/components/extraction/EngineGear.tsx` (host groups from `useMyConnections`, the mode `ToggleGroup`, the `noHostsLink` / `followDefault` footer), `frontend/lib/copy/llmConnections.ts` (append six keys)
+- Test: `frontend/test/services/llmEngineService.test.ts`, `frontend/test/hooks/useLlmEngine.test.tsx`, `frontend/test/components/EngineGear.test.tsx` (append)
+
+**Interfaces:**
+
+- Consumes: `EngineGear`, `enginePath`, `useSetMyEngine`, `isCurrent`, `pick` (Task 24), `useMyConnections` (Task 13), `components['schemas']['UserEngineClearResult']`, shadcn `ToggleGroup`.
+- Produces:
+  - `llmEngineService.clearMyEngine(projectId): Promise<ErrorResult<{cleared: boolean}>>` (DELETE `…/llm-engine/me`); `useClearMyEngine(projectId)` (mutation; `onSuccess` invalidates `projectKeys.llmEngine(projectId)`).
+  - `EngineGear`: one `CommandGroup` per verified host the viewer owns (`useMyConnections`, `base_url !== null && validation_status === 'ok'`), each `allowed_models` entry a row tagged `tagYourKey` that writes `{provider: 'openai_compatible', model, connection_id: host.id}`; a `ToggleGroup` (`modeFast` / `modeVerified`) that re-writes the effective pair with the new mode; the footer's `noHostsLink` when the viewer owns no host (and nothing needs a key) and the `followDefault` button (`clearMyEngine`) when `source === 'user'` and not locked.
+  - Copy keys added: `noHostsLink`, `hostGroupNote`, `modeLabel`, `modeFast`, `modeVerified`, `followDefault`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to the `it('reads the project engine and writes the viewer row', …)` case in `frontend/test/services/llmEngineService.test.ts` (import `clearMyEngine`):
+
+```ts
+    apiClientMock.mockResolvedValueOnce({cleared: true});
+    expect(await clearMyEngine('p1')).toEqual({ok: true, data: {cleared: true}});
+    expect(apiClientMock).toHaveBeenLastCalledWith('/api/v1/projects/p1/llm-engine/me', {method: 'DELETE'});
+```
+
+Append to `frontend/test/hooks/useLlmEngine.test.tsx` (add `clearMyEngine: vi.fn()` to the service mock, import `clearMyEngine` and `useClearMyEngine`):
+
+```tsx
+  it('clearing the row invalidates the engine read', async () => {
+    vi.mocked(clearMyEngine).mockResolvedValue({ok: true, data: {cleared: true}});
+    const {wrapper, queryClient} = harness();
+    queryClient.setQueryData(projectKeys.llmEngine('p1'), {source: 'user'});
+    const {result} = renderHook(() => useClearMyEngine('p1'), {wrapper});
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+    expect(queryClient.getQueryState(projectKeys.llmEngine('p1'))?.isInvalidated).toBe(true);
+  });
+```
+
+In `frontend/test/components/EngineGear.test.tsx`: extend the hoisted hooks with `clearMine: vi.fn(), mine: vi.fn()`, the `useLlmEngine` mock factory with `useClearMyEngine: hooks.clearMine`, the `useLlmConnections` mock factory with `useMyConnections: hooks.mine`; add the fixture and the `beforeEach` lines
+
+```tsx
+const HOST = {id: 'c1', provider: 'openai_compatible', label: 'Lab Ollama', base_url: 'https://8.8.8.8/v1', allowed_models: ['llama3'], validation_status: 'ok', has_api_key: false} as never;
+```
+
+```tsx
+  hooks.clearMine.mockReturnValue({mutate: vi.fn(), isPending: false});
+  hooks.mine.mockReturnValue({data: [HOST]});
+```
+
+extend the scope-tags case with the third tag — `expect(screen.getAllByText(t('llmConnections', 'tagYourKey')).length).toBeGreaterThan(0); // the host group` — and append inside the `describe`:
+
+```tsx
+  it('a pick writes the viewer row; the host group lists allowed models', async () => {
+    renderGear();
+    await userEvent.click(screen.getByTestId('engine-gear'));
+    await userEvent.click(screen.getByText('llama3'));
+    expect(setMutate).toHaveBeenCalledWith({provider: 'openai_compatible', model: 'llama3', mode: 'fast', connection_id: 'c1'}, expect.anything());
+  });
+
+  it('the mode toggle writes the effective pair with the new mode', async () => {
+    renderGear();
+    await userEvent.click(screen.getByTestId('engine-gear'));
+    await userEvent.click(screen.getByRole('radio', {name: t('llmConnections', 'modeVerified')}));
+    expect(setMutate).toHaveBeenCalledWith({provider: 'openai', model: 'gpt-4o-mini', mode: 'verified', connection_id: null}, expect.anything());
+  });
+
+  it('offers "follow the project default" only on a user row, and it clears', async () => {
+    const clear = vi.fn();
+    hooks.clearMine.mockReturnValue({mutate: clear, isPending: false});
+    hooks.engine.mockReturnValue({data: {...READ, source: 'user', effective: {...READ.effective, source: 'user'}}, isPending: false, isError: false, refetch: vi.fn()});
+    renderGear();
+    await userEvent.click(screen.getByTestId('engine-gear'));
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'followDefault')}));
+    expect(clear).toHaveBeenCalled();
+  });
+
+  it('links to Integrations when the viewer owns no host and nothing needs a key', async () => {
+    hooks.mine.mockReturnValue({data: []});
+    hooks.engine.mockReturnValue({data: {...READ, availability: {openai: 'global', anthropic: 'project', google: 'global', openai_compatible: null}}, isPending: false, isError: false, refetch: vi.fn()});
+    renderGear();
+    await userEvent.click(screen.getByTestId('engine-gear'));
+    expect(screen.getByRole('link', {name: t('llmConnections', 'noHostsLink')})).toHaveAttribute('href', '/settings?tab=integrations');
+  });
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `npx vitest run frontend/test/services/llmEngineService.test.ts frontend/test/hooks/useLlmEngine.test.tsx frontend/test/components/EngineGear.test.tsx`
+Expected: FAIL — `clearMyEngine` / `useClearMyEngine` are not exported; no `llama3` row, no `radio`, no `followDefault` button.
+
+- [ ] **Step 3: Service, hook, copy**
+
+Append to `frontend/services/llmEngineService.ts` (add `type UserEngineClearResult = components['schemas']['UserEngineClearResult'];` next to the other type aliases):
+
+```ts
+export function clearMyEngine(projectId: string): Promise<ErrorResult<UserEngineClearResult>> {
+  return toResult(
+    () => apiClient<UserEngineClearResult>(`${enginePath(projectId)}/me`, {method: 'DELETE'}),
+    'llmEngineService.clearMyEngine',
+  );
+}
+```
+
+Append to `frontend/hooks/extraction/useLlmEngine.ts` (import `clearMyEngine`):
+
+```ts
+export function useClearMyEngine(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<{cleared: boolean}, Error, void>({
+    mutationFn: async () => {
+      const result = await clearMyEngine(projectId);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: () => void queryClient.invalidateQueries({queryKey: projectKeys.llmEngine(projectId)}),
+  });
+}
+```
+
+Append to the picker block of `frontend/lib/copy/llmConnections.ts`:
+
+```ts
+    noHostsLink: 'Connect your own host under Integrations',
+    hostGroupNote: 'Your host — runs on your connection',
+    modeLabel: 'Mode',
+    modeFast: 'Fast',
+    modeVerified: 'Verified',
+    followDefault: 'Follow the project default',
+```
+
+- [ ] **Step 4: The gear**
+
+In `frontend/components/extraction/EngineGear.tsx`:
+
+- **Imports.** `import {ToggleGroup, ToggleGroupItem} from '@/components/ui/toggle-group';`; `import {useClearMyEngine, useLlmEngine, useSetMyEngine} from '@/hooks/extraction/useLlmEngine';`; `import {useMyConnections, useProviders} from '@/hooks/user/useLlmConnections';`. Update the header comment: "plus one group per host the viewer owns".
+- **State.** After `const setMine = useSetMyEngine(projectId);` add `const clearMine = useClearMyEngine(projectId);`; after `const {isManager} = …` add `const mine = useMyConnections();`; after `providerLabel` add `const hosts = (mine.data ?? []).filter((c) => c.base_url !== null && c.validation_status === 'ok');`.
+- **`setMode`.** Before `const isCurrent = …` add:
+
+```tsx
+  const setMode = (mode: string) => {
+    if (!read || (mode !== 'fast' && mode !== 'verified')) return;
+    setMine.mutate(
+      {provider: read.effective.provider, model: read.effective.model, mode, connection_id: read.effective.connection_id ?? null},
+      {onError: () => toast.error(t('llmConnections', 'pickError'))},
+    );
+  };
+```
+
+- **The mode row.** Inside the header `<div className="space-y-1 border-b …">`, after the `retiredNote` line, add the mode row:
+
+```tsx
+                <div className="flex items-center gap-2">
+                  <span>{t('llmConnections', 'modeLabel')}</span>
+                  <ToggleGroup type="single" size="sm" value={read.effective.mode} onValueChange={setMode} disabled={locked} aria-label={t('llmConnections', 'modeLabel')}>
+                    <ToggleGroupItem value="fast">{t('llmConnections', 'modeFast')}</ToggleGroupItem>
+                    <ToggleGroupItem value="verified">{t('llmConnections', 'modeVerified')}</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+```
+
+- **The host groups.** Inside `<CommandList>`, after the catalogue `groupByProvider(...).map(...)` block, add the host groups:
+
+```tsx
+                {hosts.map((host) => (
+                  <CommandGroup key={host.id} heading={host.label}>
+                    {host.allowed_models.map((model) => (
+                      <CommandItem key={`${host.id}:${model}`} value={`${host.label} ${model}`} disabled={locked} aria-disabled={locked} data-current={isCurrent('openai_compatible', model, host.id)} onSelect={() => pick({provider: 'openai_compatible', model, connection_id: host.id})}>
+                        <span className="flex-1">{model}</span>
+                        <Badge variant="outline">{t('llmConnections', 'tagYourKey')}</Badge>
+                      </CommandItem>
+                    ))}
+                    <p className="px-2 py-1 text-[11px] text-muted-foreground">{t('llmConnections', 'hostGroupNote')}</p>
+                  </CommandGroup>
+                ))}
+```
+
+- **The footer.** Replace the footer's `{Object.values(read.availability).some((a) => a === null) ? (…) : <span />}` with:
+
+```tsx
+                {Object.values(read.availability).some((a) => a === null) ? (
+                  <Link to={INTEGRATIONS_ROUTE} className="text-primary hover:underline">{t('llmConnections', 'needsKeyLink')}</Link>
+                ) : hosts.length === 0 ? (
+                  <Link to={INTEGRATIONS_ROUTE} className="text-primary hover:underline">{t('llmConnections', 'noHostsLink')}</Link>
+                ) : <span />}
+                {read.source === 'user' && !locked && (
+                  <Button size="sm" variant="ghost" onClick={() => clearMine.mutate()}>{t('llmConnections', 'followDefault')}</Button>
+                )}
+```
+
+- [ ] **Step 5: Run the suites and gates**
+
+Run: `npx vitest run frontend/test/services/llmEngineService.test.ts frontend/test/hooks/useLlmEngine.test.tsx frontend/test/components/EngineGear.test.tsx frontend/test/components/ExtractionInterface.gear.test.tsx frontend/test/QualityAssessmentInterface.test.tsx && npm run typecheck && npm run lint && npx knip --no-tag-hints && npx knip --production --no-tag-hints && python3 scripts/fitness/check_copy_keys.py`
+Expected: all PASS; knip 0 in both modes; copy gate 0 unreferenced. The two interface tests still pass with the extended mocks (they mock the hooks module whole; add `useClearMyEngine: () => ({mutate: vi.fn(), isPending: false})` and `useMyConnections: () => ({data: []})` to their factories if vitest reports a missing export).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add frontend/services/llmEngineService.ts frontend/hooks/extraction/useLlmEngine.ts frontend/components/extraction/EngineGear.tsx frontend/lib/copy/llmConnections.ts frontend/test
+git commit -m "feat(frontend): worklist gear — host groups, mode toggle, follow the project default
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 26: Project Settings → AI engine card (default, mode, lock) `[frontend]`
 
 **Files:**
 
 - Create: `frontend/components/project/settings/AiEngineSection.tsx`, `frontend/test/components/AiEngineSection.test.tsx`
-- Modify: `frontend/services/llmEngineService.ts` (add `setLlmEngine`; export `LlmEngineUpdateRequest`), `frontend/hooks/extraction/useLlmEngine.ts` (add `useSetLlmEngine`), `frontend/services/llmConnectionsService.ts` (add `createProjectConnection`, `deleteProjectConnection`; export `ProjectConnectionCreateRequest`), `frontend/hooks/project/useProjectConnections.ts` (add `useCreateProjectConnection`, `useDeleteProjectConnection`), `frontend/lib/copy/llmConnections.ts` (append the card keys), `frontend/components/project/ProjectSettings.tsx:15-18,119-121` (mount next to `ReviewDetailsSection` on the review tab)
+- Modify: `frontend/services/llmEngineService.ts` (add `setLlmEngine`; export `LlmEngineUpdateRequest`), `frontend/hooks/extraction/useLlmEngine.ts` (add `useSetLlmEngine`), `frontend/lib/copy/llmConnections.ts` (append the card keys), `frontend/components/project/ProjectSettings.tsx:15-18,119-121` (mount next to `ReviewDetailsSection` on the review tab)
 
 **Interfaces:**
 
-- Consumes: `useLlmEngine`, `useProviders`, `useProjectConnections`, `useProjectMemberRole`, `SettingsCard` (`@/components/settings`), shadcn `Switch`, `Select`, `Input`, `Label`, `Button`, `Badge`, `Skeleton`, `AlertDialog`; MSW `server` (`frontend/test/mocks/server.ts`) in the test.
+- Consumes: `useLlmEngine`, `enginePath` (Task 24), `useProviders` (Task 14), `useProjectMemberRole`, `SettingsCard` (`@/components/settings`), shadcn `Switch`, `Select`, `Label`, `Button`, `Badge`, `Skeleton`; MSW `server` (`frontend/test/mocks/server.ts`) in the test; copy keys `modeLabel` / `modeFast` / `modeVerified` (Task 25).
 - Produces:
   - `llmEngineService.setLlmEngine(projectId, body: LlmEngineUpdateRequest): Promise<ErrorResult<LlmEngineRead>>` (PUT `/api/v1/projects/${projectId}/llm-engine`); `useSetLlmEngine(projectId)` (mutation; `setQueryData` + invalidate `projectKeys.llmEngine(projectId)`).
-  - `llmConnectionsService.createProjectConnection(projectId, body: ProjectConnectionCreateRequest)` (POST `projectConnectionsPath(projectId)`), `deleteProjectConnection(projectId, id)` (DELETE `${projectConnectionsPath(projectId)}/${id}`); `useCreateProjectConnection(projectId)`, `useDeleteProjectConnection(projectId)` (invalidate `projectKeys.connections(projectId)` and `projectKeys.llmEngine(projectId)` — a shared key changes every member's `availability`).
-  - `AiEngineSection({projectId})`: the card (project default select over the catalogue grouped by provider, mode toggle, lock `Switch`) and the *Shared keys* table (provider select limited to `scopes ∋ project`, each row and option tagged `serves` — `servesLlm` / `servesParsing` — key field, label field, Add, Remove with confirm). Manager: editable; non-manager: read-only card (default, mode, lock shown as text), no shared-keys table (`useProjectConnections(isManager ? projectId : null)`).
-  - States (§5.3): card loading → `Skeleton`; table loading → skeleton rows; shared keys empty → `sharedEmpty` line with the Add action; each block renders its own `cardLoadError` / `sharedLoadError` line with `retry`, independently.
-  - Copy keys added: `cardTitle`, `cardDescription`, `cardLoadError`, `defaultLabel`, `lockLabel`, `lockHint`, `lockedBadge`, `defaultSaveSuccess`, `defaultSaveError`, `sharedTitle`, `sharedDescription`, `sharedEmpty`, `sharedLoadError`, `sharedAddButton`, `sharedRemoveAria`, `sharedRemoveTitle`, `sharedRemoveDescription`, `sharedCreateSuccess`, `sharedCreateError`, `sharedRemoveSuccess`, `sharedRemoveError`, `servesLlm`, `servesParsing`.
+  - `AiEngineSection({projectId})`: the card — project default `Select` over the catalogue, mode `Select` (`aria-label` = `modeLabel`), lock `Switch` (`aria-label` = `lockLabel`). Manager: editable; non-manager: read-only text (default with a `lockedBadge` when locked, mode). The Shared keys card is Task 27.
+  - States (§5.3): card loading → `Skeleton`; error → `cardLoadError` line with `retry`.
+  - Copy keys added: `cardTitle`, `cardDescription`, `cardLoadError`, `defaultLabel`, `lockLabel`, `lockHint`, `lockedBadge`, `defaultSaveSuccess`, `defaultSaveError`.
 
 - [ ] **Step 1: Write the failing section test (MSW, real client)**
 
 ```tsx
 // frontend/test/components/AiEngineSection.test.tsx
-/** §7.6: manager editable card + Shared keys; non-manager read-only, no table;
- * empty shared keys; independent load errors; add posts / remove deletes. */
+/** §7.6: manager editable card, non-manager read-only, lock PUTs the default,
+ * card load error. The Shared keys cases are Task 27's half of this file. */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {render, screen, waitFor, within} from '@testing-library/react';
+import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {http, HttpResponse} from 'msw';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
@@ -5671,8 +6323,6 @@ const PROVIDERS = [
   {id: 'llama_cloud', label: 'LlamaCloud', description: 'parsing', docs_url: 'https://y', needs_host: false, key_optional: false, scopes: ['project', 'user'], global_key_available: false},
   {id: 'openai_compatible', label: 'Custom host', description: 'h', docs_url: null, needs_host: true, key_optional: true, scopes: ['user'], global_key_available: false},
 ];
-const SHARED = {id: 's1', scope: 'project', provider: 'llama_cloud', label: 'parsing key', base_url: null, has_api_key: true, allowed_models: [], capabilities: {output_mode: null, models_seen: []}, validation_status: 'unverified', last_validated_at: null, last_used_at: null, created_by_name: 'Alice', created_at: '2026-09-13T00:00:00Z'};
-
 function renderSection() {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
   return render(<QueryClientProvider client={client}><TooltipProvider><AiEngineSection projectId="p1" /></TooltipProvider></QueryClientProvider>);
@@ -5683,61 +6333,29 @@ beforeEach(() => {
   server.use(
     http.get('*/api/v1/projects/p1/llm-engine', () => ok(READ)),
     http.get('*/api/v1/me/providers', () => ok(PROVIDERS)),
-    http.get('*/api/v1/projects/p1/connections', () => ok([SHARED])),
   );
 });
 
 describe('AiEngineSection', () => {
-  it('a manager sees the editable default, mode, lock and the Shared keys table with serves tags', async () => {
+  it('a manager sees the editable default, mode and lock', async () => {
     renderSection();
     expect(await screen.findByRole('switch', {name: t('llmConnections', 'lockLabel')})).not.toBeDisabled();
-    const table = screen.getByRole('table');
-    expect(within(table).getByText('parsing key')).toBeInTheDocument();
-    expect(within(table).getByText(t('llmConnections', 'servesParsing'))).toBeInTheDocument();
+    expect(screen.getByRole('combobox', {name: t('llmConnections', 'modeLabel')})).toBeInTheDocument();
   });
 
-  it('a non-manager sees a read-only card and no shared-keys table', async () => {
+  it('a non-manager sees a read-only card', async () => {
     role.isManager = false;
-    let projectListHits = 0;
-    server.use(http.get('*/api/v1/projects/p1/connections', () => { projectListHits += 1; return ok([]); }));
     renderSection();
     expect(await screen.findByText('GPT-4o mini')).toBeInTheDocument();
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    expect(projectListHits).toBe(0);
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
-  it('renders the empty shared-keys state', async () => {
-    server.use(http.get('*/api/v1/projects/p1/connections', () => ok([])));
+  it('renders the card load error with a retry', async () => {
+    server.use(http.get('*/api/v1/projects/p1/llm-engine', () => HttpResponse.json({ok: false, error: {code: 'X', message: 'boom'}}, {status: 500})));
     renderSection();
-    expect(await screen.findByText(t('llmConnections', 'sharedEmpty'))).toBeInTheDocument();
-  });
-
-  it('each block renders its own load error without blanking the other', async () => {
-    server.use(http.get('*/api/v1/projects/p1/connections', () => HttpResponse.json({ok: false, error: {code: 'X', message: 'boom'}}, {status: 500})));
-    renderSection();
-    expect(await screen.findByText(t('llmConnections', 'sharedLoadError'))).toBeInTheDocument();
-    expect(await screen.findByRole('switch', {name: t('llmConnections', 'lockLabel')})).toBeInTheDocument();
-  });
-
-  it('adding a shared key posts and the table refreshes; removing deletes', async () => {
-    const posted: unknown[] = [];
-    let rows: unknown[] = [];
-    server.use(
-      http.get('*/api/v1/projects/p1/connections', () => ok(rows)),
-      http.post('*/api/v1/projects/p1/connections', async ({request}) => { posted.push(await request.json()); rows = [SHARED]; return ok(SHARED); }),
-      http.delete('*/api/v1/projects/p1/connections/s1', () => { rows = []; return ok({deleted: true, id: 's1'}); }),
-    );
-    renderSection();
-    await userEvent.click(await screen.findByRole('button', {name: t('llmConnections', 'sharedAddButton')}));
-    await userEvent.type(screen.getByLabelText(t('llmConnections', 'labelLabel')), 'parsing key');
-    await userEvent.type(screen.getByLabelText(t('llmConnections', 'keyLabel')), 'lc-1');
-    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'saveButton')}));
-    await waitFor(() => expect(posted).toEqual([{provider: 'openai', label: 'parsing key', api_key: 'lc-1', base_url: null, allowed_models: []}]));
-    expect(await screen.findByText('parsing key')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'sharedRemoveAria')}));
-    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'removeConfirm')}));
-    await waitFor(() => expect(screen.getByText(t('llmConnections', 'sharedEmpty'))).toBeInTheDocument());
+    expect(await screen.findByText(t('llmConnections', 'cardLoadError'))).toBeInTheDocument();
+    expect(screen.getByRole('button', {name: t('llmConnections', 'retry')})).toBeInTheDocument();
   });
 
   it('toggling the lock PUTs the default with user_choice_allowed=false', async () => {
@@ -5767,7 +6385,7 @@ export function setLlmEngine(projectId: string, body: LlmEngineUpdateRequest): P
 }
 ```
 
-`useLlmEngine.ts`: `useSetLlmEngine(projectId)` — identical to `useSetMyEngine` with `setLlmEngine` and `LlmEngineUpdateRequest`. `llmConnectionsService.ts`: `export type ProjectConnectionCreateRequest = components['schemas']['ProjectConnectionCreateRequest'];` plus `createProjectConnection(projectId, body)` (POST `projectConnectionsPath(projectId)`) and `deleteProjectConnection(projectId, id)` (DELETE) shaped like `createMyConnection` / `deleteMyConnection`. `useProjectConnections.ts`: `useCreateProjectConnection(projectId)` / `useDeleteProjectConnection(projectId)` shaped like Task 10's mutations, invalidating `projectKeys.connections(projectId)` and `projectKeys.llmEngine(projectId)`.
+`useLlmEngine.ts`: `useSetLlmEngine(projectId)` — identical to `useSetMyEngine` with `setLlmEngine` and `LlmEngineUpdateRequest`.
 
 Append to `frontend/lib/copy/llmConnections.ts`:
 
@@ -5782,20 +6400,6 @@ Append to `frontend/lib/copy/llmConnections.ts`:
     lockedBadge: 'Locked',
     defaultSaveSuccess: 'Project default updated.',
     defaultSaveError: 'Failed to update the project default',
-    sharedTitle: 'Shared keys',
-    sharedDescription: 'Keys every member of this project runs on when they have none of their own. LlamaCloud here enables high-quality parsing for everyone.',
-    sharedEmpty: 'No shared keys yet',
-    sharedLoadError: "Couldn't load the shared keys.",
-    sharedAddButton: 'Add shared key',
-    sharedRemoveAria: 'Remove shared key',
-    sharedRemoveTitle: 'Remove this shared key?',
-    sharedRemoveDescription: 'Members without a key of their own lose this provider until another key is added.',
-    sharedCreateSuccess: 'Shared key added.',
-    sharedCreateError: 'Failed to add the shared key',
-    sharedRemoveSuccess: 'Shared key removed.',
-    sharedRemoveError: 'Failed to remove the shared key',
-    servesLlm: 'LLM',
-    servesParsing: 'parsing',
 ```
 
 - [ ] **Step 4: The section**
@@ -5803,37 +6407,26 @@ Append to `frontend/lib/copy/llmConnections.ts`:
 ```tsx
 // frontend/components/project/settings/AiEngineSection.tsx
 /**
- * Project → Settings → review tab → AI engine card + Shared keys (spec §5).
- * The card writes the project DEFAULT (a catalogue pair), its mode and the
- * lock; the table is the project's hosted-provider keys — every provider
- * with "project" in its scopes, llama_cloud included, each tagged by what it
- * serves. Both reads load independently and fail independently.
+ * Project → Settings → review tab → AI engine card (spec §5); Task 27 adds
+ * the Shared keys card beside it. The card writes the project DEFAULT (a
+ * catalogue pair), its mode and the lock. Each card's read loads and fails
+ * independently of the other's.
  */
-import {useState} from 'react';
-import {Plus, Trash2} from 'lucide-react';
 import {toast} from 'sonner';
 
-import {AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger} from '@/components/ui/alert-dialog';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
-import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Skeleton} from '@/components/ui/skeleton';
 import {Switch} from '@/components/ui/switch';
-import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from '@/components/ui/table';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {SettingsCard} from '@/components/settings';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
-import {useCreateProjectConnection, useDeleteProjectConnection, useProjectConnections} from '@/hooks/project/useProjectConnections';
 import {useProviders} from '@/hooks/user/useLlmConnections';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {t} from '@/lib/copy';
 import type {LlmEngineRead} from '@/services/llmEngineService';
 import type {ProviderRead} from '@/services/llmConnectionsService';
-
-const SERVES_COPY = {llm: 'servesLlm', parsing: 'servesParsing'} as const;
-const servesOf = (provider: ProviderRead | undefined) => (provider?.id === 'llama_cloud' ? 'parsing' : 'llm');
 
 function EngineCard({projectId, read, isManager, providers}: {projectId: string; read: LlmEngineRead; isManager: boolean; providers: ProviderRead[]}) {
   const save = useSetLlmEngine(projectId);
@@ -5886,6 +6479,238 @@ function EngineCard({projectId, read, isManager, providers}: {projectId: string;
   );
 }
 
+export function AiEngineSection({projectId}: {projectId: string}) {
+  const {isManager} = useProjectMemberRole(projectId);
+  const engine = useLlmEngine(projectId);
+  const providers = useProviders();
+  const providerRows = providers.data ?? [];
+  return (
+    <>
+      <SettingsCard title={t('llmConnections', 'cardTitle')} description={t('llmConnections', 'cardDescription')}>
+        {engine.isPending && <Skeleton className="h-20 w-full" />}
+        {engine.isError && (
+          <p className="flex items-center gap-2 text-[13px] text-destructive">{t('llmConnections', 'cardLoadError')}<Button size="sm" variant="ghost" onClick={() => void engine.refetch()}>{t('llmConnections', 'retry')}</Button></p>
+        )}
+        {engine.data && <EngineCard projectId={projectId} read={engine.data} isManager={isManager} providers={providerRows} />}
+      </SettingsCard>
+    </>
+  );
+}
+```
+
+The fragment is deliberate: Task 27 adds the second `SettingsCard` inside it. Mount: in `ProjectSettings.tsx` import `AiEngineSection` and render `<AiEngineSection projectId={projectId} />` directly under `ReviewDetailsSection` inside the `activeTab === 'review'` branch (wrap both in a fragment).
+
+- [ ] **Step 5: Run the suites and gates**
+
+Run: `npx vitest run frontend/test/components/AiEngineSection.test.tsx frontend/test/hooks/useLlmEngine.test.tsx && npm run typecheck && npm run lint && npx knip --no-tag-hints && npx knip --production --no-tag-hints && python3 scripts/fitness/check_copy_keys.py`
+Expected: all PASS; knip 0 in both modes; copy gate 0 unreferenced.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add frontend/components/project frontend/services/llmEngineService.ts frontend/hooks/extraction/useLlmEngine.ts frontend/lib/copy/llmConnections.ts frontend/test/components/AiEngineSection.test.tsx
+git commit -m "feat(frontend): project AI engine card — default, mode, lock
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 27: Project Settings → Shared keys card `[frontend]`
+
+**Files:**
+
+- Modify: `frontend/services/llmConnectionsService.ts` (add `createProjectConnection`, `deleteProjectConnection`; export `ProjectConnectionCreateRequest`), `frontend/hooks/project/useProjectConnections.ts` (add `useCreateProjectConnection`, `useDeleteProjectConnection`), `frontend/components/project/settings/AiEngineSection.tsx` (add `SharedKeys` and the second card), `frontend/lib/copy/llmConnections.ts` (append the shared-keys keys)
+- Test: `frontend/test/components/AiEngineSection.test.tsx` (append), `frontend/test/hooks/useLlmConnections.test.tsx` (append the invalidation case)
+
+**Interfaces:**
+
+- Consumes: `AiEngineSection`, `providerRows` (Task 26), `useProjectConnections`, `projectConnectionsPath` (Task 13), `components['schemas']['ProjectConnectionCreateRequest']`, shadcn `Table*`, `AlertDialog*`, `Tooltip`, `Input`, `lucide-react` `Plus`, `Trash2`; copy keys `labelLabel`, `providerLabel`, `providerPlaceholder`, `labelPlaceholder`, `keyLabel`, `keyPlaceholder`, `saveButton`, `saving`, `cancelButton`, `removeConfirm` (Tasks 14, 10b).
+- Produces:
+  - `llmConnectionsService.createProjectConnection(projectId, body: ProjectConnectionCreateRequest): Promise<ErrorResult<LlmConnectionRead>>` (POST `projectConnectionsPath(projectId)`), `deleteProjectConnection(projectId, id): Promise<ErrorResult<LlmConnectionDeleteResult>>` (DELETE `${projectConnectionsPath(projectId)}/${id}`); `useCreateProjectConnection(projectId)`, `useDeleteProjectConnection(projectId)` (invalidate `projectKeys.connections(projectId)` and `projectKeys.llmEngine(projectId)` — a shared key changes every member's `availability`).
+  - `SharedKeys({projectId, providers})` inside a second `SettingsCard` rendered for managers only (`useProjectConnections(projectId)` runs only there — a non-manager never fetches the list): a table (label, provider + `serves` tag, remove behind an `AlertDialog`) and an Add form (provider `Select` limited to `scopes ∋ project`, each option tagged `serves`, label, key).
+  - States (§5.3): loading → skeleton rows; empty → `sharedEmpty` with the Add action; error → `sharedLoadError` + `retry`, independent of the engine card's state.
+  - Copy keys added: `sharedTitle`, `sharedDescription`, `sharedEmpty`, `sharedLoadError`, `sharedAddButton`, `sharedRemoveAria`, `sharedRemoveTitle`, `sharedRemoveDescription`, `sharedCreateSuccess`, `sharedCreateError`, `sharedRemoveSuccess`, `sharedRemoveError`, `servesLlm`, `servesParsing`.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `frontend/test/components/AiEngineSection.test.tsx`: import `within` from `@testing-library/react`; add the fixture and the handler
+
+```tsx
+const SHARED = {id: 's1', scope: 'project', provider: 'llama_cloud', label: 'parsing key', base_url: null, has_api_key: true, allowed_models: [], capabilities: {output_mode: null, models_seen: []}, validation_status: 'unverified', last_validated_at: null, last_used_at: null, created_by_name: 'Alice', created_at: '2026-09-13T00:00:00Z'};
+```
+
+```tsx
+    http.get('*/api/v1/projects/p1/connections', () => ok([SHARED])),
+```
+
+(inside the `beforeEach` `server.use(...)`), and append inside the `describe`:
+
+```tsx
+  it('a manager sees the Shared keys table with serves tags', async () => {
+    renderSection();
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('parsing key')).toBeInTheDocument();
+    expect(within(table).getByText(t('llmConnections', 'servesParsing'))).toBeInTheDocument();
+  });
+
+  it('a non-manager sees no shared-keys table and never fetches the list', async () => {
+    role.isManager = false;
+    let projectListHits = 0;
+    server.use(http.get('*/api/v1/projects/p1/connections', () => { projectListHits += 1; return ok([]); }));
+    renderSection();
+    expect(await screen.findByText('GPT-4o mini')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(projectListHits).toBe(0);
+  });
+
+  it('renders the empty shared-keys state', async () => {
+    server.use(http.get('*/api/v1/projects/p1/connections', () => ok([])));
+    renderSection();
+    expect(await screen.findByText(t('llmConnections', 'sharedEmpty'))).toBeInTheDocument();
+  });
+
+  it('each block renders its own load error without blanking the other', async () => {
+    server.use(http.get('*/api/v1/projects/p1/connections', () => HttpResponse.json({ok: false, error: {code: 'X', message: 'boom'}}, {status: 500})));
+    renderSection();
+    expect(await screen.findByText(t('llmConnections', 'sharedLoadError'))).toBeInTheDocument();
+    expect(await screen.findByRole('switch', {name: t('llmConnections', 'lockLabel')})).toBeInTheDocument();
+  });
+
+  it('adding a shared key posts and the table refreshes; removing deletes', async () => {
+    const posted: unknown[] = [];
+    let rows: unknown[] = [];
+    server.use(
+      http.get('*/api/v1/projects/p1/connections', () => ok(rows)),
+      http.post('*/api/v1/projects/p1/connections', async ({request}) => { posted.push(await request.json()); rows = [SHARED]; return ok(SHARED); }),
+      http.delete('*/api/v1/projects/p1/connections/s1', () => { rows = []; return ok({deleted: true, id: 's1'}); }),
+    );
+    renderSection();
+    await userEvent.click(await screen.findByRole('button', {name: t('llmConnections', 'sharedAddButton')}));
+    await userEvent.type(screen.getByLabelText(t('llmConnections', 'labelLabel')), 'parsing key');
+    await userEvent.type(screen.getByLabelText(t('llmConnections', 'keyLabel')), 'lc-1');
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'saveButton')}));
+    await waitFor(() => expect(posted).toEqual([{provider: 'openai', label: 'parsing key', api_key: 'lc-1', base_url: null, allowed_models: []}]));
+    expect(await screen.findByText('parsing key')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'sharedRemoveAria')}));
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'removeConfirm')}));
+    await waitFor(() => expect(screen.getByText(t('llmConnections', 'sharedEmpty'))).toBeInTheDocument());
+  });
+```
+
+Append to `frontend/test/hooks/useLlmConnections.test.tsx` (add `createProjectConnection: vi.fn()` to the service mock; import it and `useCreateProjectConnection`):
+
+```tsx
+  it('a shared-key mutation invalidates the project list and the project engine read', async () => {
+    vi.mocked(createProjectConnection).mockResolvedValue({ok: true, data: {id: 's1'} as never});
+    const client = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
+    client.setQueryData(projectKeys.connections('p1'), []);
+    client.setQueryData(projectKeys.llmEngine('p1'), {source: 'project'});
+    const w = ({children}: {children: ReactNode}) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const {result} = renderHook(() => useCreateProjectConnection('p1'), {wrapper: w});
+    await act(async () => {
+      await result.current.mutateAsync({provider: 'openai', label: 'x', api_key: 'k', base_url: null, allowed_models: []});
+    });
+    expect(client.getQueryState(projectKeys.connections('p1'))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(projectKeys.llmEngine('p1'))?.isInvalidated).toBe(true);
+  });
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `npx vitest run frontend/test/components/AiEngineSection.test.tsx frontend/test/hooks/useLlmConnections.test.tsx`
+Expected: FAIL — no `table`, no `sharedAddButton`; `useCreateProjectConnection` is not exported.
+
+- [ ] **Step 3: Service, hooks, copy**
+
+`llmConnectionsService.ts`: `export type ProjectConnectionCreateRequest = components['schemas']['ProjectConnectionCreateRequest'];` plus
+
+```ts
+export function createProjectConnection(projectId: string, body: ProjectConnectionCreateRequest): Promise<ErrorResult<LlmConnectionRead>> {
+  return toResult(
+    () => apiClient<LlmConnectionRead>(projectConnectionsPath(projectId), {method: 'POST', body}),
+    'llmConnectionsService.createProjectConnection',
+  );
+}
+
+export function deleteProjectConnection(projectId: string, id: string): Promise<ErrorResult<LlmConnectionDeleteResult>> {
+  return toResult(
+    () => apiClient<LlmConnectionDeleteResult>(`${projectConnectionsPath(projectId)}/${id}`, {method: 'DELETE'}),
+    'llmConnectionsService.deleteProjectConnection',
+  );
+}
+```
+
+`useProjectConnections.ts` (import `useMutation`, `useQueryClient`, the two functions and `ProjectConnectionCreateRequest`, `LlmConnectionDeleteResult`):
+
+```ts
+function useInvalidateProject(projectId: string) {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({queryKey: projectKeys.connections(projectId)});
+    // A shared key changes every member's `availability` on this project's engine read.
+    void queryClient.invalidateQueries({queryKey: projectKeys.llmEngine(projectId)});
+  };
+}
+
+export function useCreateProjectConnection(projectId: string) {
+  const invalidate = useInvalidateProject(projectId);
+  return useMutation<LlmConnectionRead, Error, ProjectConnectionCreateRequest>({
+    mutationFn: async (body) => {
+      const result = await createProjectConnection(projectId, body);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteProjectConnection(projectId: string) {
+  const invalidate = useInvalidateProject(projectId);
+  return useMutation<LlmConnectionDeleteResult, Error, string>({
+    mutationFn: async (id) => {
+      const result = await deleteProjectConnection(projectId, id);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: invalidate,
+  });
+}
+```
+
+Append to the card block of `frontend/lib/copy/llmConnections.ts`:
+
+```ts
+    sharedTitle: 'Shared keys',
+    sharedDescription: 'Keys every member of this project runs on when they have none of their own. LlamaCloud here enables high-quality parsing for everyone.',
+    sharedEmpty: 'No shared keys yet',
+    sharedLoadError: "Couldn't load the shared keys.",
+    sharedAddButton: 'Add shared key',
+    sharedRemoveAria: 'Remove shared key',
+    sharedRemoveTitle: 'Remove this shared key?',
+    sharedRemoveDescription: 'Members without a key of their own lose this provider until another key is added.',
+    sharedCreateSuccess: 'Shared key added.',
+    sharedCreateError: 'Failed to add the shared key',
+    sharedRemoveSuccess: 'Shared key removed.',
+    sharedRemoveError: 'Failed to remove the shared key',
+    servesLlm: 'LLM',
+    servesParsing: 'parsing',
+```
+
+- [ ] **Step 4: The Shared keys card**
+
+In `frontend/components/project/settings/AiEngineSection.tsx` extend the imports — `import {useState} from 'react';`, `import {Plus, Trash2} from 'lucide-react';`, the `AlertDialog*` family from `@/components/ui/alert-dialog`, `Input` from `@/components/ui/input`, `Table, TableBody, TableCell, TableHead, TableHeader, TableRow` from `@/components/ui/table`, `Tooltip, TooltipContent, TooltipTrigger` from `@/components/ui/tooltip`, `useCreateProjectConnection, useDeleteProjectConnection, useProjectConnections` from `@/hooks/project/useProjectConnections` — add, below the imports:
+
+```tsx
+const SERVES_COPY = {llm: 'servesLlm', parsing: 'servesParsing'} as const;
+const servesOf = (provider: ProviderRead | undefined) => (provider?.id === 'llama_cloud' ? 'parsing' : 'llm');
+```
+
+add, above `AiEngineSection`:
+
+```tsx
 function SharedKeys({projectId, providers}: {projectId: string; providers: ProviderRead[]}) {
   const connections = useProjectConnections(projectId);
   const create = useCreateProjectConnection(projectId);
@@ -5976,54 +6801,41 @@ function SharedKeys({projectId, providers}: {projectId: string; providers: Provi
     </div>
   );
 }
+```
 
-export function AiEngineSection({projectId}: {projectId: string}) {
-  const {isManager} = useProjectMemberRole(projectId);
-  const engine = useLlmEngine(projectId);
-  const providers = useProviders();
-  const providerRows = providers.data ?? [];
-  return (
-    <>
-      <SettingsCard title={t('llmConnections', 'cardTitle')} description={t('llmConnections', 'cardDescription')}>
-        {engine.isPending && <Skeleton className="h-20 w-full" />}
-        {engine.isError && (
-          <p className="flex items-center gap-2 text-[13px] text-destructive">{t('llmConnections', 'cardLoadError')}<Button size="sm" variant="ghost" onClick={() => void engine.refetch()}>{t('llmConnections', 'retry')}</Button></p>
-        )}
-        {engine.data && <EngineCard projectId={projectId} read={engine.data} isManager={isManager} providers={providerRows} />}
-      </SettingsCard>
+and, inside `AiEngineSection`'s fragment after the engine `SettingsCard`:
+
+```tsx
       {isManager && (
         <SettingsCard title={t('llmConnections', 'sharedTitle')} description={t('llmConnections', 'sharedDescription')}>
           <SharedKeys projectId={projectId} providers={providerRows} />
         </SettingsCard>
       )}
-    </>
-  );
-}
 ```
 
-`servesOf` reads `serves` off the registry: `/me/providers` does not carry `serves` (§4 field list), so the card derives it from the id — `llama_cloud` is the only parsing provider (registry §1). Mount: in `ProjectSettings.tsx` import `AiEngineSection` and render `<AiEngineSection projectId={projectId} />` directly under `ReviewDetailsSection` inside the `activeTab === 'review'` branch (wrap both in a fragment). The shadcn `table` primitives are `@/components/ui/table`.
+Update the header comment: "+ Shared keys — the project's hosted-provider keys, every provider with "project" in its scopes, llama_cloud included, each tagged by what it serves." `servesOf` derives `serves` from the provider id because `/me/providers` does not carry `serves` (spec §4 field list, asserted "exactly" by §7.5) — `llama_cloud` is the only parsing provider (registry §1); the panel flagged this as a second place naming a provider rule, and the fix is a one-line spec amendment (`serves` on `ProviderRead`), not a plan change — see "Panel advisories not applied". The shadcn `table` primitives are `@/components/ui/table`.
 
 - [ ] **Step 5: Run the suites and gates**
 
-Run: `npx vitest run frontend/test/components/AiEngineSection.test.tsx frontend/test/hooks/useLlmConnections.test.tsx frontend/test/hooks/useLlmEngine.test.tsx && npm run typecheck && npm run lint && npx knip --no-tag-hints && npx knip --production --no-tag-hints && python3 scripts/fitness/check_copy_keys.py`
-Expected: all PASS; knip 0 in both modes; copy gate 0 unreferenced. Then `/design-review /projects/<a local project id>/settings` (review tab) per `.claude/rules/frontend.md` — screenshot, compare with the sibling cards' density, fix, re-screenshot.
+Run: `npx vitest run frontend/test/components/AiEngineSection.test.tsx frontend/test/hooks/useLlmConnections.test.tsx && npm run typecheck && npm run lint && npx knip --no-tag-hints && npx knip --production --no-tag-hints && python3 scripts/fitness/check_copy_keys.py`
+Expected: all PASS; knip 0 in both modes; copy gate 0 unreferenced. Then `/design-review /projects/<a local project id>/settings` (review tab) per `.claude/rules/frontend.md` — screenshot both cards, compare with the sibling cards' density, fix, re-screenshot.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add frontend/components/project frontend/services frontend/hooks frontend/lib/copy/llmConnections.ts frontend/test/components/AiEngineSection.test.tsx
-git commit -m "feat(frontend): project AI engine card with lock and shared keys
+git add frontend/components/project/settings/AiEngineSection.tsx frontend/services/llmConnectionsService.ts frontend/hooks/project/useProjectConnections.ts frontend/lib/copy/llmConnections.ts frontend/test/components/AiEngineSection.test.tsx frontend/test/hooks/useLlmConnections.test.tsx
+git commit -m "feat(frontend): project Shared keys card
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 19: Final cleanup — gates, baselines, docs `[backend]`
+### Task 28: Final cleanup — gates, baselines, docs `[backend]`
 
 **Files:**
 
-- Modify: `.claude/rules/backend.md:47-53` (the Row-in-parent guard list gains `llm_connection_service.owned_user_connection` and `owned_project_connection`), `docs/ROADMAP.md:24`, `backend/.vulture_baseline` (tighten if the ratchet reports clean rows), `scripts/fitness/check_copy_keys.baseline` (must have shrunk by four rows in total: three `user.ts:apiKeys*` in Task 10, `llmEngine.ts:alternatesAddLabel` in Task 11), `backend/tests/integration/test_migration_roundtrip.py` (head pin already `0073_drop_legacy_credentials`)
+- Modify: `.claude/rules/backend.md:47-53` (the Row-in-parent guard list gains `llm_connection_service.owned_user_connection` and `owned_project_connection`), `docs/ROADMAP.md:24`, `backend/.vulture_baseline` (tighten if the ratchet reports clean rows), `scripts/fitness/check_copy_keys.baseline` (must have shrunk by four rows in total: three `user.ts:apiKeys*` in Task 14, `llmEngine.ts:alternatesAddLabel` in Task 16), `backend/tests/integration/test_migration_roundtrip.py` (head pin already `0073_drop_legacy_credentials`)
 - Verify only: `frontend/types/api/{openapi.json,schema.d.ts}`, `frontend/integrations/supabase/types.ts`
 
 **Interfaces:**
@@ -6043,7 +6855,7 @@ Expected: only `backend/alembic/versions/0073_drop_legacy_credentials.py` (the d
 - [ ] **Step 3: The full deterministic gate**
 
 Run: `make db-fresh && make test-backend` from the repo root (local Supabase up), then `make quality-scan`.
-Expected: backend suite green (summary line); `scripts/verify_all.sh` reports every gate OK — `alembic check`, vulture ratchet, `check_scope_guards` (baseline five rows shorter), `check_copy_keys`, knip (both modes), typecheck, vitest, Playwright, `check_layered_arch`, `check_rls_coverage`, `api-contract` (no diff after `bash scripts/generate_api_types.sh`). If the vulture gate lists baseline rows now clean, run, from `backend/`, `uv run vulture > vulture.out || true` then `uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --input vulture.out --update` (the invocation documented at `scripts/vulture_baseline.py:20-28`), delete `vulture.out`, and commit the tightened baseline.
+Expected: backend suite green (summary line); `scripts/verify_all.sh` reports every gate OK — `alembic check`, vulture ratchet, `check_scope_guards` (baseline six rows shorter), `check_copy_keys`, knip (both modes), typecheck, vitest, Playwright, `check_layered_arch`, `check_rls_coverage`, `api-contract` (no diff after `bash scripts/generate_api_types.sh`). Then the CI diff-coverage gate, reproduced exactly: `cd backend && uv run pytest tests/ --cov=app --cov-report=xml -q && uv run diff-cover coverage.xml --compare-branch=origin/dev --fail-under=80` (needs `uv sync --extra dev`; ~2.5 min). Expected: ≥ 80% on changed lines. Below it, the uncovered lines are handler bodies (ASGITransport requests do not register under pytest-cov): add the missing direct-coroutine case to the matching `tests/unit/test_*_unit.py` (Tasks 10, 8, 15) — never lower the threshold. If the vulture gate lists baseline rows now clean, run, from `backend/`, `uv run vulture > vulture.out || true` then `uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --input vulture.out --update` (the invocation documented at `scripts/vulture_baseline.py:20-28`), delete `vulture.out`, and commit the tightened baseline.
 
 - [ ] **Step 4: Run the settings E2E flow locally**
 
@@ -6059,54 +6871,62 @@ git commit -m "docs: register the connection ownership guards; link slice 2
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
-Open ONE PR to `dev` titled `feat(llm): connections and per-user engine (slice 2)`; the body lists: the two new tables and the two dropped ones (0072/0073), the two new routers and the two deleted ones, `/llm-engine/me`, the three surfaces, the gate deltas (scope-guard baseline −5, copy baseline −4, vulture unchanged or tightened), and "prod: the Railway deploy runs `alembic upgrade head` — 0073 is destructive by design (spec §Non-goals: no active users)". Run `/code-review` before marking ready. Merge-train rule: arm auto-merge only when no other PR into `dev` is armed. Then `/ship-spec --to prod` continues with the promotion.
+Open ONE PR to `dev` titled `feat(llm): connections and per-user engine (slice 2)`; the body lists: the two new tables and the two dropped ones (0072/0073), the two new routers and the two deleted ones, `/llm-engine/me`, the three surfaces, the gate deltas (scope-guard baseline −6, copy baseline −4, vulture unchanged or tightened), and "prod: the Railway deploy runs `alembic upgrade head` — 0073 is destructive by design (spec §Non-goals: no active users)". Run `/code-review` before marking ready. Merge-train rule: arm auto-merge only when no other PR into `dev` is armed. Then `/ship-spec --to prod` continues with the promotion.
 
 ---
 
 ## Self-review
 
-- **Spec coverage.** See the table below; every slice-2 section maps to a task. §1 residue (§1.2) is spread over Tasks 1, 15 and 16 as each stand-in loses its last consumer; §2's single migration is delivered as 0072 (create) + 0073 (drop + strip) so every task is green — the end state is byte-for-byte §2's list. `llmEngine.ts` is deleted whole (Task 11) rather than trimmed: the tree has no reference to any of its keys outside the retiring components (`grep -rn "llmEngine\." frontend` returns only `AiConfigDialog.tsx`, whose Model tab retires), so "what the run form's `effective` rendering and the typed 409s still reference" is the empty set — the run form reads provenance data-driven and the 409 copy lives in the backend messages.
-- **Placeholders.** None: every code step carries its code; "copy the shape of" instructions were replaced by full listings (Task 8); the two test-file copies (Task 2 Step 7 RLS probe) name the exact source file and the exact substitutions.
-- **Type consistency.** `owned_user_connection(db, connection_id, user_id)` / `owned_project_connection(db, connection_id, project_id)` (Task 4) are called with that order in Tasks 6, 12–15; `resolve_provider_key(session, *, provider, project_id, user_id)` (Task 5) in Tasks 5, 13; `resolve_engine(db, project_id, user_id)` (Task 14) in Tasks 14–15; `resolve_engine_for_run(db, *, run_id, project_id, repin, user_id)` in Tasks 13–14; `make_host_connection(db, *, user_id, label, base_url, api_key, allowed_models, validation_status, output_mode)` (Task 12) in Tasks 13–14; `LlmEngineRead.{default,effective,source,catalog,availability}` (Task 15) matches the frontend fixtures in Tasks 17–18; `UserEngineUpdateRequest {provider, model, mode, connection_id}` (Task 15) matches `setMyEngine` bodies in Task 17; `KeyScope` is imported from `app.services.llm_connection_service` everywhere after Task 5.
-- **Green after every task.** Additive backend first (1–8), additive frontend (9–10), frontend removals before the backend rename regenerates types (11 → 12), spine + credentials (13), resolution (14), read shape (15), legacy deletion (16), new frontend surfaces (17–18), gates (19). Each task's last step runs the touched suites, `ruff`, and — where a route or schema changed — `bash scripts/generate_api_types.sh && npm run typecheck`.
+- **Spec coverage.** See the table below; every slice-2 section maps to a task. §1 residue (§1.2) is spread over Tasks 1, 22 and 23 as each stand-in loses its last consumer; §2's single migration is delivered as 0072 (create) + 0073 (drop + strip) so every task is green — the end state is byte-for-byte §2's list. `llmEngine.ts` is deleted whole (Task 16) rather than trimmed: the tree has no reference to any of its keys outside the retiring components (`grep -rn "llmEngine\." frontend` returns only `AiConfigDialog.tsx`, whose Model tab retires), so "what the run form's `effective` rendering and the typed 409s still reference" is the empty set — the run form reads provenance data-driven and the 409 copy lives in the backend messages.
+- **Placeholders.** None: every code step carries its code; "copy the shape of" instructions were replaced by full listings (Task 11); the two test-file copies (Task 3 Step 3 RLS probe) name the exact source file and the exact substitutions.
+- **Type consistency.** `owned_user_connection(db, connection_id, user_id)` / `owned_project_connection(db, connection_id, project_id)` (Task 6) are called with that order in Tasks 7, 9, 17, 19–22; `resolve_provider_key(session, *, provider, project_id, user_id)` (Task 8) in Tasks 8, 19; `get_user_engine(db, *, user_id, project_id)` / `user_row_is_retired(db, row)` (Task 20) in Tasks 20–22; `resolve_engine(db, project_id, user_id)` (Task 21) in Tasks 21–22; `resolve_engine_for_run(db, *, run_id, project_id, repin, user_id)` (Task 21) in Tasks 20 (its test) and 21; `make_host_connection(db, *, user_id, label, base_url, api_key, allowed_models, validation_status, output_mode)` (Task 17) in Tasks 19–21; `profile_names(db, ids)` (Task 5) in Tasks 6, 22; `provider_reads()` (Task 10) in Tasks 10, 12; `LlmEngineRead.{default,effective,source,catalog,availability}` (Task 22) matches the frontend fixtures in Tasks 24–27; `UserEngineUpdateRequest {provider, model, mode, connection_id}` (Task 22) matches `setMyEngine` bodies in Tasks 24–25; `LlmEngineUpdateRequest {provider, model, mode, user_choice_allowed}` (Task 17, no `connection_id` field) matches the `setLlmEngine` body in Task 26; `KeyScope` is imported from `app.services.llm_connection_service` everywhere after Task 8.
+- **Import direction.** Stated once in Global Constraints and obeyed by every import list: Task 5 makes `profile_names` a leaf, Task 6 keeps `llm_connection_service` a leaf, Task 19 has `engine_credentials` → `llm_connection_service`, Task 20 puts the row's read side in `llm_engine_service` so Task 20's `user_engine_service` → `llm_engine_service` has no back-edge, Task 22 adds `llm_engine_service` → `llm_connection_service`; Task 21's gate greps for any function-local `from app.services` import.
+- **Green after every task.** Additive backend first (1–12), additive frontend (13–15), frontend removals before the backend rename regenerates types (16 → 17), dead worker entry before the spine rename (18 → 19), user rows then resolution (20 → 21), read shape (22), legacy deletion (23), new frontend surfaces (24–27), gates (28). Each task's last step runs the touched suites, `ruff`, and — where a route or schema changed — `bash scripts/generate_api_types.sh && npm run typecheck`. Briefs over the ~300-line cap and why: Task 2 (model + migration must land together, and neither listing can be abbreviated), Task 14 (the section's minimum production consumer set — `knip --production` fails a data-layer-only task), Task 19 (the spine rename and every consumer of the renamed field must land together — a partial rename is red; half the brief is its unit-test file), Task 24 (a gear that is not mounted and writes nothing is a knip finding, so the component, one writer and the mount are one task).
 
 ## Spec coverage
 
 | spec § | task |
 |---|---|
-| §1 `scopes`, `key_optional` on `ProviderSpec` | 1 (consumers: 3, 7, 2) |
+| §1 `scopes`, `key_optional` on `ProviderSpec` | 1 (consumers: 4, 10, 2) |
 | §1.1 catalogue as YAML, `deprecated`, pyyaml | 1 |
-| §1.2 `storable_providers` retired | 16 (last consumers deleted) |
-| §1.2 `is_byok_only` + `byok_only` field + tests retired | 15 |
-| §1.2 `provider_ids` baseline row + comment | 16 |
-| §1.2 registry docstring; `test_registry` CHECK tests retargeted | 15 (docstring), 2 (the `llm_connections` drift + mutation tests), 16 (the `user_api_keys` tests go with the model) |
-| §1.2 `KeyScope.SHARED_ENDPOINT` read tolerance | 5 (enum), 13 (legacy-snapshot test) |
-| §1.2 repository/router unit tests deleted; 0071 live-DB assertions retired | 16 |
-| §2 `llm_connections` table, constraints, deny-all posture | 2 |
+| §1.2 `storable_providers` retired | 23 (last consumers deleted) |
+| §1.2 `is_byok_only` + `byok_only` field + tests retired | 22 |
+| §1.2 `provider_ids` baseline row + comment | 23 |
+| §1.2 registry docstring; `test_registry` CHECK tests retargeted | 22 (docstring), 2 (the `llm_connections` drift + mutation tests), 23 (the `user_api_keys` tests go with the model) |
+| §1.2 `KeyScope.SHARED_ENDPOINT` read tolerance | 8 (enum), 19 (the two `shared_endpoint` read-tolerance tests) |
+| §1.2 repository/router unit tests deleted; 0071 live-DB assertions retired | 23 |
+| §2 `llm_connections` table, constraints, deny-all posture | 2 (model + migration), 3 (live assertions, RLS probe) |
 | §2 `user_project_engines` | 2 |
-| §2 drop inventory (tables, function, policies, grants, models, repository) | 16 |
-| §2 llama_cloud parsing key re-homed (worker, docstring, frontend toggle) | 5 (backend), 9 (frontend) |
-| §2 `alternates` stripped by migration; writers stop | 16 (migration), 12 (backend writer), 11 (frontend writer) |
-| §3.1 stored shapes: `connection_id`, `user_choice_allowed`, no `alternates`; `LlmTarget.deviation` | 12, 13 |
-| §3.2 `resolve_engine` at every call site; `resolve_engine_for_run(user_id)`; dead worker entry deleted; test-side seams | 14 (call sites), 13 (dead entry + seams) |
-| §3.3 connection service, guards, `resolve_provider_key`, `resolve_engine_credentials` one path, `rekey_for_adopted_engine` | 3, 4, 5, 13 |
-| §4 `/me/connections…`, `/me/providers` | 7 |
-| §4 `/projects/{id}/connections…` | 8 |
-| §4 verify (probe ladder / cheap authenticated call) | 6 |
-| §4 engine read (`default`, `effective`, `source`, `availability`), `PUT` default + lock, `PUT`/`DELETE …/llm-engine/me` | 15 (routes), 12 (lock on the PUT) |
-| §4 old routes deleted; OpenAPI regenerated | 16 (and every route-touching task) |
-| §5 Integrations → AI connections | 10 |
-| §5 worklist gear + picker (both tables, all three branches) | 17 |
-| §5 AI engine card + Shared keys (`serves` tag, llama_cloud) | 18 |
-| §5 AI configuration dialog loses its Model tab; chip/dialogs retired | 11 |
-| §5.1 removal sites (components, tests, `AiConfigTab`, backend tests) | 11 (frontend), 16 (backend) |
-| §5.2 copy namespace; retiring keys removed | 10, 17, 18 (new keys); 10, 11 (removals) |
-| §5.3 surface states | 10, 17, 18 |
-| §6 error outcomes (409s, 422s, 403, probe `failed`) | 13 (unavailable 409), 14 (retired 409, 403, 422), 3 (schema 422s), 12 (default `connection_id` 422), 6 (probe) |
-| §7.2 resolution order tests | 14 |
-| §7.3 ownership tests; scope-guard baseline shrink | 4, 14 (tests), 16 (baseline) |
-| §7.4 provenance compatibility | 13 |
-| §7.5 API tests: scope rules, secret absent, lock 403, default 422, `/me/providers` payload, `availability` map, parsing key path, migration strips `alternates` | 7, 8, 12, 15, 5, 16 |
-| §7.6 frontend tests: scope tags, needs-a-key row, mode toggle, lock, gear on both worklists, two-tab dialog, E2E rewrite, `AiEngineSection` cases | 17, 11, 10, 18 |
+| §2 drop inventory (tables, function, policies, grants, models, repository) | 23 |
+| §2 llama_cloud parsing key re-homed (worker, docstring, frontend toggle) | 8 (backend), 13 (frontend) |
+| §2 `alternates` stripped by migration; writers stop | 23 (migration), 17 (backend writer), 16 (frontend writer) |
+| §3.1 stored shapes: `connection_id`, `user_choice_allowed`, no `alternates`; `LlmTarget.deviation` | 17, 19 |
+| §3.2 `resolve_engine` at every call site; `resolve_engine_for_run(user_id)`; dead worker entry deleted; test-side seams | 21 (call sites), 18 (dead entry + seams) |
+| §3.3 connection service, guards, `resolve_provider_key`, `resolve_engine_credentials` one path, `rekey_for_adopted_engine` | 4, 6, 7, 8, 19 |
+| §4 `/me/connections…`, `/me/providers` | 10 (+ 12 unit tests) |
+| §4 `/projects/{id}/connections…` | 11 (+ 12 unit tests) |
+| §4 verify (probe ladder / cheap authenticated call) | 9 |
+| §4 engine read (`default`, `effective`, `source`, `availability`), `PUT` default + lock, `PUT`/`DELETE …/llm-engine/me` | 22 (routes), 17 (lock on the PUT), 20 (`availability_map`) |
+| §4 old routes deleted; OpenAPI regenerated | 23 (and every route-touching task) |
+| §5 Integrations → AI connections | 14 (list + add), 15 (verify / remove) |
+| §5 worklist gear + picker (both tables, all three branches) | 24 (catalogue picker, both worklists), 25 (host groups, mode, follow default) |
+| §5 AI engine card + Shared keys (`serves` tag, llama_cloud) | 26 (card), 27 (shared keys) |
+| §5 AI configuration dialog loses its Model tab; chip/dialogs retired | 16 |
+| §5.1 removal sites (components, tests, `AiConfigTab`, backend tests) | 16 (frontend), 23 (backend) |
+| §5.2 copy namespace; retiring keys removed | 14, 15, 24, 25, 26, 27 (new keys); 14, 16 (removals) |
+| §5.3 surface states | 14, 15, 24, 25, 26, 27 |
+| §6 error outcomes (409s, 422s, 403, probe `failed`) | 19 (unavailable 409), 20 (403, 422 at the write), 21 (retired 409), 4 (schema 422s), 17 (default `connection_id` 422 by `extra="forbid"`), 9 (probe) |
+| §7.2 resolution order tests; deviation set and stable across a later default change | 21 (`test_deviation_is_pinned_once_and_survives_a_later_default_change`), 19 (`"deviation": False` in every pinned-dict equality) |
+| §7.3 ownership tests; scope-guard baseline shrink | 6, 7, 20, 21 (tests), 23 (baseline −6) |
+| §7.4 provenance compatibility (`endpoint_id` / `shared_endpoint` read tolerance) | 19 |
+| §7.5 API tests: scope rules, secret absent, lock 403, default 422, `/me/providers` payload, `availability` map, parsing key path, migration strips `alternates` | 10, 11, 17, 22, 8, 23 |
+| §7.6 frontend tests: scope tags, needs-a-key row, mode toggle, lock, gear on both worklists, two-tab dialog, E2E rewrite, `AiEngineSection` cases | 24, 25, 16, 15, 26, 27 |
 | §7.7 catalogue file tests | 1 |
-| §7.8 gates: knip, copy ratchet, vulture, `alembic check`, scope-guard baseline, head pin, `provider_ids` row, docstring | 2, 16, 19 (and each deletion task) |
+| §7.8 gates: knip, copy ratchet, vulture, `alembic check`, scope-guard baseline, head pin, `provider_ids` row, docstring | 2, 3, 23, 28 (and each deletion task) |
+
+## Panel advisories not applied
+
+- Advisory 2 (constitution §I, a repository layer under `LlmConnectionService` / `user_engine_service`): not applied — the ownership predicates must live in ONE place in the WHERE clause (`.claude/rules/backend.md`, `check_scope_guards`), and a repository would be a second home for exactly those queries; the existing `LlmEngineService` selects the same way, and the deleted `user_api_key_repository` is the pattern the spec retires.
+- Advisory 8, part 1 (a `security.is_project_manager` sibling instead of `viewer_is_manager` in the service): not applied — `scripts/fitness/check_layered_arch.py` forbids `services → api` imports, so a service cannot call `app.api.deps.security`; part 2 (the lazy-import cycle) is applied by moving the row's read side into `llm_engine_service` (Task 20).
+- Advisory 9 (`serves` on `ProviderRead` instead of `servesOf` by id in the frontend): not applied — spec §4's `/me/providers` field list omits `serves` and §7.5 asserts "exactly" that set; adding the field is a one-line spec amendment for the spec seat, after which Task 27's `servesOf` becomes `provider.serves` and the `/me/providers` test's field set gains one entry.
+- Advisory 13 (the §4 / §5 `serves` inconsistency itself): not applied here for the same reason — it is a spec defect, recorded in Task 27 Step 4, not a plan choice.
