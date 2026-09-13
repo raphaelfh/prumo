@@ -17,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {HeaderIconButton} from '@/components/layout/HeaderIconButton';
+import {IconButton} from '@/components/patterns/IconButton';
 import {relativeTime} from '@/lib/relative-time';
 import {isProjectManager, type ProjectListItem} from '@/types/project';
 import {cn} from '@/lib/utils';
@@ -83,12 +83,11 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({project, userId, onArchiv
         <div className="relative z-10 shrink-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <HeaderIconButton
-                aria-label={t('pages', 'dashboardRowActionsAria')}
+              <IconButton
+                label={t('pages', 'dashboardRowActionsAria')}
                 className="opacity-0 transition-opacity duration-75 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-reduce:transition-none"
-              >
-                <MoreHorizontal strokeWidth={1.5} aria-hidden="true" />
-              </HeaderIconButton>
+                icon={<MoreHorizontal strokeWidth={1.5} aria-hidden="true" />}
+              />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               {project.is_active ? (

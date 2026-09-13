@@ -9,7 +9,7 @@
 import {useState} from 'react';
 import {Progress} from '@/components/ui/progress';
 import {Card, CardContent, CardHeader} from '@/components/ui/card';
-import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Loader2, Maximize2, Minimize2, Sparkles, X} from 'lucide-react';
 import type {FullAIExtractionProgress} from '@/hooks/extraction/useFullAIExtraction';
 import {BatchAllModelsSectionsProgress} from './BatchAllModelsSectionsProgress';
@@ -55,25 +55,19 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
               </span>
             </div>
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
+              <IconButton
                 size="icon-xs"
-                className="p-0"
                 onClick={handleRestore}
-                title={t('extraction', 'fullAIProgressRestore')}
-              >
-                <Maximize2 className="h-3 w-3" />
-              </Button>
+                label={t('extraction', 'fullAIProgressRestore')}
+                icon={<Maximize2 />}
+              />
               {onClose && (
-                <Button
-                  variant="ghost"
+                <IconButton
                   size="icon-xs"
-                  className="p-0"
                   onClick={handleClose}
-                  title={t('extraction', 'fullAIProgressClose')}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
+                  label={t('extraction', 'fullAIProgressClose')}
+                  icon={<X />}
+                />
               )}
             </div>
           </div>
@@ -94,26 +88,18 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
           </div>
           <div className="flex items-center gap-1">
             {onMinimize && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="p-0"
+              <IconButton
                 onClick={handleMinimize}
-                title={t('extraction', 'fullAIProgressMinimize')}
-              >
-                <Minimize2 className="h-3.5 w-3.5" />
-              </Button>
+                label={t('extraction', 'fullAIProgressMinimize')}
+                icon={<Minimize2 />}
+              />
             )}
             {onClose && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="p-0"
+              <IconButton
                 onClick={handleClose}
-                title={t('extraction', 'fullAIProgressClose')}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+                label={t('extraction', 'fullAIProgressClose')}
+                icon={<X />}
+              />
             )}
           </div>
         </div>

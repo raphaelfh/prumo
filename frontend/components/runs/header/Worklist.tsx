@@ -14,9 +14,7 @@
  */
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { HeaderIconButton } from '@/components/layout/HeaderIconButton';
-import { KbdBadge } from '@/components/ui/kbd-badge';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconButton } from '@/components/patterns/IconButton';
 import { t } from '@/lib/copy';
 import { ARTICLE_NEXT_KEY, ARTICLE_PREV_KEY } from '@/lib/runs/shortcuts';
 
@@ -59,22 +57,14 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
     // page's scroll area (the documented phantom-scroll trap — see
     // TemplateGridFieldRow.tsx for the same fix on a checkbox input).
     <nav className="relative flex shrink-0 items-center gap-0.5" aria-label={positionLabel}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <HeaderIconButton
-            aria-label={t('runs', 'articlePrevious')}
-            aria-disabled={!hasPrev || undefined}
-            className={!hasPrev ? 'pointer-events-none opacity-50' : undefined}
-            onClick={() => hasPrev && onNavigate(articles[idx - 1].id)}
-          >
-            <ChevronLeft strokeWidth={1.5} aria-hidden="true" />
-          </HeaderIconButton>
-        </TooltipTrigger>
-        <TooltipContent className="flex items-center gap-1.5">
-          {t('runs', 'articlePrevious')}
-          <KbdBadge keys={[ARTICLE_PREV_KEY]} />
-        </TooltipContent>
-      </Tooltip>
+      <IconButton
+        label={t('runs', 'articlePrevious')}
+        shortcut={[ARTICLE_PREV_KEY]}
+        aria-disabled={!hasPrev || undefined}
+        className={!hasPrev ? 'pointer-events-none opacity-50' : undefined}
+        onClick={() => hasPrev && onNavigate(articles[idx - 1].id)}
+        icon={<ChevronLeft strokeWidth={1.5} aria-hidden="true" />}
+      />
 
       {/* Inert on purpose — the position is announced by the <nav> label
           and (on change) by the live region below, not read twice. */}
@@ -97,22 +87,14 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
         {positionLabel}
       </span>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <HeaderIconButton
-            aria-label={t('runs', 'articleNext')}
-            aria-disabled={!hasNext || undefined}
-            className={!hasNext ? 'pointer-events-none opacity-50' : undefined}
-            onClick={() => hasNext && onNavigate(articles[idx + 1].id)}
-          >
-            <ChevronRight strokeWidth={1.5} aria-hidden="true" />
-          </HeaderIconButton>
-        </TooltipTrigger>
-        <TooltipContent className="flex items-center gap-1.5">
-          {t('runs', 'articleNext')}
-          <KbdBadge keys={[ARTICLE_NEXT_KEY]} />
-        </TooltipContent>
-      </Tooltip>
+      <IconButton
+        label={t('runs', 'articleNext')}
+        shortcut={[ARTICLE_NEXT_KEY]}
+        aria-disabled={!hasNext || undefined}
+        className={!hasNext ? 'pointer-events-none opacity-50' : undefined}
+        onClick={() => hasNext && onNavigate(articles[idx + 1].id)}
+        icon={<ChevronRight strokeWidth={1.5} aria-hidden="true" />}
+      />
     </nav>
   );
 }

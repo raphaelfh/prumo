@@ -54,7 +54,6 @@ export function ListRowCard({
     const wrapperClass = cn(
         'flex items-center gap-3 py-2 px-2 border-b border-border/40',
         'hover:bg-muted/50 transition-[background-color] duration-75',
-        onClick && 'cursor-pointer',
         className
     );
 

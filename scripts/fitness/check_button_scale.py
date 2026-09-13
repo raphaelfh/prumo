@@ -114,32 +114,66 @@ def tag_end(src: str, start: int) -> int:
     return -1
 
 
-def class_text(tag_src: str) -> str:
-    """Every class-name string literal an opening tag's className can carry.
+def iter_tags(src: str, name: str):
+    """Yield the opening-tag source (between tag name and closing >) for each occurrence.
 
-    Handles `className="…"`, `className='…'`, and `className={…}` — pulling
-    every literal out of the braced expression so `cn("h-8", cond && "h-6")`
-    and template literals are both covered.
+    Skips cases where the tag name is followed by an identifier character
+    (e.g. <ButtonGroup instead of <Button) and malformed tags without a closing >.
     """
-    idx = tag_src.find("className")
-    if idx == -1:
-        return ""
-    i = idx + len("className")
-    while i < len(tag_src) and tag_src[i] in " \t\n":
-        i += 1
-    if i >= len(tag_src) or tag_src[i] != "=":
-        return ""
-    i += 1
-    while i < len(tag_src) and tag_src[i] in " \t\n":
-        i += 1
-    if i >= len(tag_src):
-        return ""
+    pos = 0
+    while True:
+        idx = src.find(name, pos)
+        if idx == -1:
+            return
+        after = idx + len(name)
+        pos = after
+        if after < len(src) and src[after] in IDENT_CHARS:
+            continue
+        end = tag_end(src, after)
+        if end != -1:
+            yield src[after:end]
 
+
+def _attr_value_start(tag_src: str, attr: str) -> int:
+    """Index of the first char of `attr`'s value in an opening tag, or -1.
+
+    Skips names that merely contain `attr` (`iconSize`, `data-size`) and
+    occurrences not followed by `=`.
+    """
+    n = len(tag_src)
+    pos = 0
+    while True:
+        idx = tag_src.find(attr, pos)
+        if idx == -1:
+            return -1
+        pos = idx + len(attr)
+        if idx > 0 and (tag_src[idx - 1].isalnum() or tag_src[idx - 1] in "_-"):
+            continue
+        i = pos
+        while i < n and tag_src[i] in " \t\n":
+            i += 1
+        if i >= n or tag_src[i] != "=":
+            continue
+        i += 1
+        while i < n and tag_src[i] in " \t\n":
+            i += 1
+        return i if i < n else -1
+
+
+def attr_text(tag_src: str, attr: str) -> str:
+    """Every string literal a JSX attribute's value can carry.
+
+    Handles `attr="…"`, `attr='…'`, and `attr={…}` — pulling every literal out
+    of the braced expression so `cn("h-8", cond && "h-6")` and template
+    literals are both covered.
+    """
+    i = _attr_value_start(tag_src, attr)
+    if i == -1:
+        return ""
     if tag_src[i] in "\"'":
         quote = tag_src[i]
         end = tag_src.find(quote, i + 1)
         return tag_src[i + 1 : end] if end != -1 else ""
-
     if tag_src[i] != "{":
         return ""
     depth = 0
@@ -163,7 +197,6 @@ def class_text(tag_src: str) -> str:
                 break
         i += 1
     expr = tag_src[start : i + 1]
-
     parts: list[str] = []
     j = 0
     while j < len(expr):
@@ -179,6 +212,11 @@ def class_text(tag_src: str) -> str:
             parts.append("".join(buf))
         j += 1
     return " ".join(parts)
+
+
+def class_text(tag_src: str) -> str:
+    """Every class-name string literal an opening tag's className can carry."""
+    return attr_text(tag_src, "className")
 
 
 def split_variants(token: str) -> tuple[list[str], str]:
@@ -216,21 +254,11 @@ def is_button_height(token: str) -> bool:
 def scan_file(text: str) -> int:
     src = strip_comments(text)
     count = 0
-    pos = 0
-    while True:
-        idx = src.find(TAG, pos)
-        if idx == -1:
-            return count
-        after = idx + len(TAG)
-        pos = after
-        if after < len(src) and src[after] in IDENT_CHARS:
-            continue  # <ButtonGroup, <Button.Root — a different component
-        end = tag_end(src, after)
-        if end == -1:
-            continue
-        classes = class_text(src[after:end])
+    for tag in iter_tags(src, TAG):
+        classes = class_text(tag)
         if any(is_button_height(tok) for tok in classes.split()):
             count += 1
+    return count
 
 
 def offenders(repo_root: Path) -> dict[str, int]:

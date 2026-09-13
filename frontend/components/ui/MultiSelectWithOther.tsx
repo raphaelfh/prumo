@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/patterns/IconButton';
 import { cn } from '@/lib/utils';
 import { isMultiOtherValue } from '@/lib/validations/selectOther';
 import {t} from '@/lib/copy';
@@ -150,7 +152,7 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
                   <div key={idx} className="flex items-center gap-2">
                       <Input value={txt} placeholder={otherPlaceholder ?? t('ui', 'multiSelectTypeHere')}
                              onChange={(e) => updateOther(idx, e.target.value)} disabled={disabled}/>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => removeOther(idx)} disabled={disabled}>×</Button>
+                    <IconButton label={t('ui', 'multiSelectRemoveOther')} onClick={() => removeOther(idx)} disabled={disabled} icon={<X />} />
                   </div>
                 ))}
               </div>

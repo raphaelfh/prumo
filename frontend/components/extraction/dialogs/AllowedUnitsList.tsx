@@ -16,8 +16,9 @@
 import {useState} from 'react';
 import {Input} from '@/components/ui/input';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Badge} from '@/components/ui/badge';
-import {ChevronDown, GripVertical, Plus, Star, X} from 'lucide-react';
+import {ArrowDown, ArrowUp, ChevronDown, GripVertical, Plus, Star, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import {Popover, PopoverContent, PopoverTrigger,} from '@/components/ui/popover';
@@ -174,7 +175,6 @@ export function AllowedUnitsList({
                       <CommandItem
                         key={unit}
                         onSelect={() => handleSelectSuggestion(unit)}
-                        className="cursor-pointer"
                         disabled={values.includes(unit)}
                       >
                         <span className="font-mono text-sm">{unit}</span>
@@ -192,15 +192,13 @@ export function AllowedUnitsList({
           </PopoverContent>
         </Popover>
         
-        <Button
-          type="button"
+        <IconButton
           onClick={() => handleAdd()}
           disabled={disabled || !inputValue.trim()}
-          size="icon"
           variant="outline"
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
+          label={t('extraction', 'unitAdd')}
+          icon={<Plus />}
+        />
       </div>
 
         {/* Unit list */}
@@ -248,37 +246,28 @@ export function AllowedUnitsList({
 
                   {/* Reorder buttons */}
                 <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button
-                    type="button"
-                    variant="ghost"
+                  <IconButton
                     size="icon-xs"
                     onClick={() => handleMoveUp(index)}
                     disabled={disabled || index === 0}
-                    title={t('extraction', 'unitMoveUp')}
-                  >
-                    ↑
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
+                    label={t('extraction', 'unitMoveUp')}
+                    icon={<ArrowUp />}
+                  />
+                  <IconButton
                     size="icon-xs"
                     onClick={() => handleMoveDown(index)}
                     disabled={disabled || index === values.length - 1}
-                    title={t('extraction', 'unitMoveDown')}
-                  >
-                    ↓
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
+                    label={t('extraction', 'unitMoveDown')}
+                    icon={<ArrowDown />}
+                  />
+                  <IconButton
                     size="icon-xs"
                     className="text-destructive hover:text-destructive"
                     onClick={() => handleRemove(index)}
                     disabled={disabled}
-                    title={t('extraction', 'unitRemove')}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+                    label={t('extraction', 'unitRemove')}
+                    icon={<X />}
+                  />
                 </div>
               </div>
             ))}

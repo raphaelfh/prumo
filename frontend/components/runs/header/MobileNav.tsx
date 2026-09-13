@@ -1,5 +1,5 @@
 import { Menu } from 'lucide-react';
-import { HeaderIconButton } from '@/components/layout/HeaderIconButton';
+import { IconButton } from '@/components/patterns/IconButton';
 import { t } from '@/lib/copy';
 
 /**
@@ -13,12 +13,11 @@ import { t } from '@/lib/copy';
 export function MobileNav({ onOpen }: { onOpen?: () => void }) {
   if (!onOpen) return null;
   return (
-    <HeaderIconButton
+    <IconButton
+      label={t('navigation', 'ariaOpenMenu')}
       onClick={onOpen}
-      aria-label={t('navigation', 'ariaOpenMenu')}
       className="lg:hidden"
-    >
-      <Menu strokeWidth={1.5} aria-hidden="true" />
-    </HeaderIconButton>
+      icon={<Menu strokeWidth={1.5} aria-hidden="true" />}
+    />
   );
 }

@@ -129,7 +129,7 @@ export function FilterCategoricalField({
                             filteredOptions.map((opt) => (
                                 <label
                                     key={opt.value}
-                                    className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-0.5 text-[13px] hover:bg-muted/60"
+                                    className="flex items-center gap-2 rounded-sm px-1 py-0.5 text-[13px] hover:bg-muted/60"
                                 >
                                     <Checkbox
                                         checked={value.includes(opt.value)}

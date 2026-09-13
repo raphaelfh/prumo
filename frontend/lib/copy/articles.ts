@@ -284,6 +284,7 @@ export const articles = {
     listSelectArticle: 'Select {{title}}',
     listAuthorsLabel: 'Authors:',
     listDoiOpenHint: 'Open on doi.org',
+    listRowActions: 'Article actions',
     // ArticlesExportDialog
     exportTitle: 'Export articles',
     exportDesc: 'Export article metadata and optional files as CSV, RIS, or RDF.',

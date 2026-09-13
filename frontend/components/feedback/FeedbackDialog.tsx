@@ -6,7 +6,7 @@ import { useEffect, useId, useState } from 'react';
 import { MessageSquare, Paperclip, X } from 'lucide-react';
 
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -114,8 +114,8 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(o) : resetAndClose())}>
-      <DialogContent className="sm:max-w-[525px]">
-        <form onSubmit={handleSubmit}>
+      <DialogContent size="md">
+        <form onSubmit={handleSubmit} className="contents">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
@@ -124,25 +124,25 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
             <DialogDescription>{t('navigation', 'feedbackDescription')}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4">
             <div className="space-y-2">
               <Label>{t('navigation', 'feedbackTypeLabel')}</Label>
               <RadioGroup value={type} onValueChange={(v) => setType(v as FeedbackType)}>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="bug" id="bug" />
-                  <Label htmlFor="bug" className="font-normal cursor-pointer">🐛 {t('navigation', 'feedbackTypeBug')}</Label>
+                  <Label htmlFor="bug" className="font-normal">🐛 {t('navigation', 'feedbackTypeBug')}</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="suggestion" id="suggestion" />
-                  <Label htmlFor="suggestion" className="font-normal cursor-pointer">💡 {t('navigation', 'feedbackTypeSuggestion')}</Label>
+                  <Label htmlFor="suggestion" className="font-normal">💡 {t('navigation', 'feedbackTypeSuggestion')}</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="question" id="question" />
-                  <Label htmlFor="question" className="font-normal cursor-pointer">❓ {t('navigation', 'feedbackTypeQuestion')}</Label>
+                  <Label htmlFor="question" className="font-normal">❓ {t('navigation', 'feedbackTypeQuestion')}</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="other" id="other" />
-                  <Label htmlFor="other" className="font-normal cursor-pointer">💬 {t('navigation', 'feedbackTypeOther')}</Label>
+                  <Label htmlFor="other" className="font-normal">💬 {t('navigation', 'feedbackTypeOther')}</Label>
                 </div>
               </RadioGroup>
             </div>
@@ -201,7 +201,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
                 <Button asChild variant="outline" size="sm">
                   {/* `relative`: the sr-only input inside is absolutely positioned —
                       without a positioned ancestor it adds phantom page scroll. */}
-                  <label htmlFor={fileInputId} className="relative shrink-0 cursor-pointer">
+                  <label htmlFor={fileInputId} className="relative shrink-0">
                     <Paperclip strokeWidth={1.5} aria-hidden="true" />
                     {t('navigation', 'feedbackAttachChoose')}
                     <input
@@ -234,7 +234,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
                 {attachmentError ?? t('navigation', 'feedbackAttachNotice')}
               </p>
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button size="sm" type="button" variant="outline" onClick={resetAndClose} disabled={busy}>

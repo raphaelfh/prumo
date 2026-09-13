@@ -1,5 +1,5 @@
 import {useRef, useState} from 'react';
-import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Input} from '@/components/ui/input';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
@@ -61,34 +61,25 @@ export function ArticleKeywordsField({
                     <span
                         className="truncate text-[13px] font-medium text-foreground">{headerLabel(value.length)}</span>
                 </div>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
+                <IconButton
+                    label={t('articles', 'keywordsAddFocusAria')}
                     onClick={focusDraft}
                     disabled={disabled}
-                    aria-label={t('articles', 'keywordsAddFocusAria')}
-                >
-                    <Plus className="h-4 w-4" strokeWidth={1.5}/>
-                </Button>
+                    icon={<Plus strokeWidth={1.5}/>}
+                />
             </div>
             <ul className="divide-y divide-border/40" role="list">
                 {value.map((kw, index) => (
                     <li key={`${index}-${kw}`} className="flex items-center gap-2 px-3 py-2" role="listitem">
                         <Tag className="h-4 w-4 shrink-0 text-primary" strokeWidth={1.5} aria-hidden/>
                         <span className="min-w-0 flex-1 text-[13px] text-foreground">{kw}</span>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                        <IconButton
+                            label={t('articles', 'keywordsRemoveAria')}
+                            className="hover:text-destructive"
                             onClick={() => removeAt(index)}
                             disabled={disabled}
-                            aria-label={t('articles', 'keywordsRemoveAria')}
-                        >
-                            <MinusCircle className="h-4 w-4" strokeWidth={1.5}/>
-                        </Button>
+                            icon={<MinusCircle strokeWidth={1.5}/>}
+                        />
                     </li>
                 ))}
                 <li className="flex items-center gap-2 px-3 py-2" role="listitem">
@@ -110,20 +101,16 @@ export function ArticleKeywordsField({
                         className="h-9 flex-1 min-w-0 border-primary/35 text-[13px] focus-visible:border-primary/60"
                         aria-label={t('articles', 'keywordsDraftInputAria')}
                     />
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                    <IconButton
+                        label={t('articles', 'keywordsClearDraftAria')}
+                        className="hover:text-destructive"
                         onClick={() => {
                             setDraft('');
                             inputRef.current?.focus();
                         }}
                         disabled={disabled}
-                        aria-label={t('articles', 'keywordsClearDraftAria')}
-                    >
-                        <MinusCircle className="h-4 w-4" strokeWidth={1.5}/>
-                    </Button>
+                        icon={<MinusCircle strokeWidth={1.5}/>}
+                    />
                 </li>
             </ul>
         </div>

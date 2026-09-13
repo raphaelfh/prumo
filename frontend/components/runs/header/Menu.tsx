@@ -1,6 +1,6 @@
 import { Children, type ReactNode } from 'react';
 import { MoreHorizontal } from 'lucide-react';
-import { HeaderIconButton } from '@/components/layout/HeaderIconButton';
+import { IconButton } from '@/components/patterns/IconButton';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,9 +25,7 @@ export function Menu({ children }: MenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <HeaderIconButton aria-label={t('runs', 'more')}>
-          <MoreHorizontal strokeWidth={1.5} aria-hidden="true" />
-        </HeaderIconButton>
+        <IconButton label={t('runs', 'more')} icon={<MoreHorizontal strokeWidth={1.5} aria-hidden="true" />} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {children}

@@ -1,10 +1,10 @@
 import {useState} from 'react';
 import {ChevronLeft, ChevronRight} from 'lucide-react';
 import {Input} from '@/components/ui/input';
+import {IconButton} from '@/components/patterns/IconButton';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import {useViewerStore} from '../core/context';
-import {ToolbarIconButton} from './ToolbarIconButton';
 
 export function NavigationControls({className}: {className?: string}) {
   const currentPage = useViewerStore((s) => s.currentPage);
@@ -28,14 +28,14 @@ export function NavigationControls({className}: {className?: string}) {
 
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
-      <ToolbarIconButton
+      <IconButton
         label={t('pdf', 'viewerPrevPage')}
+        side="bottom"
         disabled={currentPage <= 1}
         onClick={() => goToPage(currentPage - 1)}
         data-viewer-step=""
-      >
-        <ChevronLeft strokeWidth={1.5} />
-      </ToolbarIconButton>
+        icon={<ChevronLeft strokeWidth={1.5} />}
+      />
       <Input
         value={local}
         onChange={(e) => setLocal(e.target.value)}
@@ -51,14 +51,14 @@ export function NavigationControls({className}: {className?: string}) {
       <span className="whitespace-nowrap px-1 text-[13px] tabular-nums text-muted-foreground">
         / {numPages || '—'}
       </span>
-      <ToolbarIconButton
+      <IconButton
         label={t('pdf', 'viewerNextPage')}
+        side="bottom"
         disabled={currentPage >= numPages}
         onClick={() => goToPage(currentPage + 1)}
         data-viewer-step=""
-      >
-        <ChevronRight strokeWidth={1.5} />
-      </ToolbarIconButton>
+        icon={<ChevronRight strokeWidth={1.5} />}
+      />
     </div>
   );
 }
