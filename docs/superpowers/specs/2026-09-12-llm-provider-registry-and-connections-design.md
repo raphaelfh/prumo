@@ -67,8 +67,11 @@ Two slices, one plan, two PRs to `dev`:
 
 - **Slice 1 — registry.** Pure refactor, no behaviour change beyond
   dropping gemini/grok. Sections 1 and 7.1.
-- **Slice 2 — connections + per-user engine.** Sections 2–6, the rest
-  of 7.
+- **Slice 2 — connections + per-user engine.** Sections 1.1 and 2–6,
+  the rest of 7. One PR carrying backend and frontend together: the old
+  routes and tables are deleted, so a backend-only PR would break the
+  deployed frontend. Shipped to production in the same `/ship-spec
+  --to-prod` run.
 
 ## 1. Provider registry (slice 1)
 
@@ -128,6 +131,39 @@ Slice 1 migration: delete the legacy gemini/grok rows from
 built with pydantic-ai's `GoogleModel`) and align its CHECK with the
 registry. Slice 1 also adds the optional `ANTHROPIC_API_KEY` and
 `GOOGLE_API_KEY` settings.
+
+### 1.1 Catalogue as data (slice 2)
+
+The catalogue leaves Python. `backend/app/llm/models/<provider>.yaml`,
+one file per LLM provider in the registry, holds that provider's
+selectable models:
+
+```yaml
+# backend/app/llm/models/google.yaml
+- model: gemini-3.8-flash
+  label: Gemini 3.8 Flash
+  best_for: Long documents at low cost
+  context_window: 1000000
+  cost_tier: "$"
+- model: gemini-3.1-pro-preview
+  label: Gemini 3.1 Pro (preview)
+  best_for: Hardest extractions
+  context_window: 1000000
+  cost_tier: "$$$"
+  deprecated: true      # hidden from the picker; pinned runs still resolve
+```
+
+`catalog.py` keeps `CatalogEntry`, `CATALOG`, `find_entry` and
+`canonical_pair`; it builds `CATALOG` at import by loading every file
+through a Pydantic row model (`extra="forbid"`, `deprecated: bool =
+False`), ordered by provider as the registry lists them and by file
+order within a provider. A deprecated row is still found by
+`find_entry`, so existing pins and the retirement check keep working,
+but the picker omits it. Updating models is a data change: edit the
+file, no Python. `pyyaml` becomes a declared dependency (it is already
+locked transitively). Tests: every file name is a registry LLM provider
+and every LLM provider has a file; a malformed row fails import; a
+deprecated row resolves but is absent from the `/llm-engine` catalogue.
 
 ## 2. `llm_connections` (slice 2)
 
@@ -254,7 +290,9 @@ Two connection routers replace three routers; every read carries
   and `availability: provider → user | project | global | null` (whose
   credential a row would run on). `PUT .../llm-engine` (manager) writes
   the default and the lock. New `PUT/DELETE /projects/{id}/llm-engine/me`
-  writes or clears the viewer's own row (403 while locked).
+  writes or clears the viewer's own row (403 while locked for a
+  non-manager; 422 when `availability` for the row's provider is null
+  for the caller — the UI's *needs a key* rule, enforced server-side).
 - Old routes (`user_api_keys`, `llm_endpoints`) are deleted; OpenAPI
   types regenerated.
 
@@ -276,11 +314,17 @@ settings.
   picker, writing the viewer's own row: rows grouped by provider from
   the catalogue, plus one group per host the viewer owns, models from
   `allowed_models`. Each row carries a scope tag — *your key*, *project
-  key*, *prumo* — or *needs a key*, which links to Integrations rather
-  than embedding a form. Above the list: *project default: X*. While
-  locked, the picker is read-only for everyone but managers, with the
-  reason in one line. The gear's tooltip names `effective`. Managers see
-  nothing extra here: this surface is the same for every member.
+  key*, *prumo* — or *needs a key*, in which case the row is not
+  selectable and links to Integrations rather than embedding a form:
+  nothing is stored until a credential exists, so a pick can never lead
+  to a guaranteed 409 at kickoff. Under the picker, a mode toggle
+  (fast / verified) stored on the user row. Above the list: *project
+  default: X*. The lock binds members, not managers: while locked, the
+  picker is read-only for non-managers with the reason in one line, and
+  a manager may still pick their own engine. One row per (user,
+  project): the gear on the extraction and the QA worklist edit the same
+  choice. The gear's tooltip names `effective`. Managers see nothing
+  extra here: this surface is the same for every member.
 - **Project → Settings → AI engine card.** Next to Review details: the
   project default (catalogue pairs only), mode, the lock toggle, and
   *Shared keys*, the project's hosted-provider keys in one table with
@@ -300,7 +344,8 @@ The run form renders `effective`, never `default`.
 | user row retired (catalogue miss or own connection gone) | typed 409 "pick a new model", never blocks the manager |
 | provider not in registry, host on a host-less provider, missing host | 422 from the schema; CHECK is the backstop |
 | private host outside local env | 422 from the SSRF guard, unchanged |
-| user-row PUT while locked | 403 |
+| user-row PUT while locked, by a non-manager | 403 |
+| user-row PUT for a provider the caller has no credential for | 422 |
 | default carrying a `connection_id`, or a project connection on a host-bearing provider | 422 |
 | probe failure | `failed`, not selectable; probe is a transport smoke test, never a quality gate |
 
@@ -322,11 +367,15 @@ The run form renders `effective`, never `default`.
 5. **API.** Ported endpoint and key tests: scope rules (host-bearing
    provider rejected at project scope), secret absent from every response
    and 422 echo, lock 403, default-with-connection 422.
-6. **Frontend.** Vitest: the three scope tags, the *needs a key* link,
-   read-only picker under lock, the gear mounted on both worklists with
+6. **Frontend.** Vitest: the three scope tags, the *needs a key* row
+   (unselectable, links out), the mode toggle, read-only picker under
+   lock for a member and editable for a manager, the gear mounted on both worklists with
    `effective` in its tooltip, the AI configuration dialog reduced to
    two tabs; the settings E2E flow rewritten against connections.
-7. **Gates.** knip (both modes), copy-key ratchet, vulture baseline and
+7. **Catalogue files.** See §1.1: file-set equals registry LLM
+   providers; malformed row fails import; deprecated row resolves but is
+   not offered.
+8. **Gates.** knip (both modes), copy-key ratchet, vulture baseline and
    `alembic check` tightened in the same PR as each deletion;
    fresh-versus-fresh migration proof.
 
