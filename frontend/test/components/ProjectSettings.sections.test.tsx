@@ -35,6 +35,13 @@ vi.mock('@/components/project/settings/ReviewConsensusSection', () => ({
 vi.mock('@/components/project/settings/AdvancedSettingsSection', () => ({
   AdvancedSettingsSection: () => <div data-testid="section-advanced" />,
 }));
+vi.mock('@/components/project/settings/ReviewQuestionSection', () => ({
+  ReviewQuestionSection: ({onDirtyChange}: {onDirtyChange: (d: boolean) => void}) => (
+    <button type="button" data-testid="section-review-question" onClick={() => onDirtyChange(true)}>
+      dirty
+    </button>
+  ),
+}));
 
 import {ProjectSettings} from '@/components/project/ProjectSettings';
 
@@ -79,5 +86,33 @@ describe('ProjectSettings sections', () => {
     renderAt('?tab=settings&section=review');
     expect(screen.getByTestId('section-review')).toBeInTheDocument();
     expect(screen.queryByTestId('section-ai-engine')).toBeNull();
+  });
+});
+
+describe('ProjectSettings unsaved review question', () => {
+  it('asks before leaving a dirty review question, and Cancel stays', async () => {
+    renderAt('?tab=settings&section=review-question');
+    await userEvent.click(screen.getByTestId('section-review-question'));
+    await userEvent.click(screen.getByRole('button', {name: 'tabTeam'}));
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', {name: 'settingsDiscardCancel'}));
+    expect(screen.getByTestId('section-review-question')).toBeInTheDocument();
+  });
+
+  it('Discard switches to the section that was clicked', async () => {
+    renderAt('?tab=settings&section=review-question');
+    await userEvent.click(screen.getByTestId('section-review-question'));
+    await userEvent.click(screen.getByRole('button', {name: 'tabTeam'}));
+    await userEvent.click(screen.getByRole('button', {name: 'settingsDiscardConfirm'}));
+
+    expect(screen.getByTestId('section-team')).toBeInTheDocument();
+  });
+
+  it('switches without asking while the review question is clean', async () => {
+    renderAt('?tab=settings&section=review-question');
+    await userEvent.click(screen.getByRole('button', {name: 'tabTeam'}));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByTestId('section-team')).toBeInTheDocument();
   });
 });

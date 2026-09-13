@@ -161,7 +161,9 @@ function AiConfigTabs({
         <p className="mx-4 mb-2 mt-3 shrink-0 text-xs text-muted-foreground">
           {t('aiContext', 'picotsScopeHint')}
         </p>
-        <PicotsPane projectId={projectId} onClose={onClose} />
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+          <PicotsPane projectId={projectId} />
+        </div>
       </TabsContent>
 
       {template && (
@@ -220,8 +222,8 @@ export function AiConfigDialog({
             onClose={close}
           />
         ) : (
-          <div className={`${PANE_CLASS} pt-3`}>
-            <PicotsPane projectId={projectId} onClose={close} />
+          <div className={`${PANE_CLASS} overflow-y-auto px-5 pt-3 pb-5`}>
+            <PicotsPane projectId={projectId} />
           </div>
         )}
       </DialogContent>

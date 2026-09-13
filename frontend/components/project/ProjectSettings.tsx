@@ -3,9 +3,20 @@
  * Data and persistence delegated to useProjectSettings.
  */
 
+import {useState} from 'react';
 import {useSearchParams} from 'react-router';
 import {Bot, FileText, Info, MessageSquareText, Save, Settings as SettingsIcon, ShieldCheck, Users} from 'lucide-react';
 import {Button} from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {cn} from '@/lib/utils';
 import {PageHeader} from '@/components/patterns/PageHeader';
 import {useProjectSettings} from '@/hooks/useProjectSettings';
@@ -13,6 +24,7 @@ import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 
 import {BasicInfoSection} from './settings/BasicInfoSection';
 import {ReviewDetailsSection} from './settings/ReviewDetailsSection';
+import {ReviewQuestionSection} from './settings/ReviewQuestionSection';
 import {AiEngineSection} from './settings/AiEngineSection';
 import {TeamMembersSection} from './settings/TeamMembersSection';
 import {AdvancedSettingsSection} from './settings/AdvancedSettingsSection';
@@ -85,6 +97,16 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
         );
     const {project, loading, hasUnsavedChanges, updateProject, saveProject} = useProjectSettings(projectId);
     const {isManager} = useProjectMemberRole(projectId);
+    const [reviewQuestionDirty, setReviewQuestionDirty] = useState(false);
+    const [pendingSection, setPendingSection] = useState<SectionId | null>(null);
+    const requestSection = (id: SectionId) => {
+        if (id === activeSection) return;
+        if (activeSection === 'review-question' && reviewQuestionDirty) {
+            setPendingSection(id);
+            return;
+        }
+        selectSection(id);
+    };
 
   if (loading && !project) {
     return (
@@ -127,7 +149,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                 <button
                   key={section.id}
                   type="button"
-                  onClick={() => selectSection(section.id)}
+                  onClick={() => requestSection(section.id)}
                   className={cn(
                       'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-[13px] font-medium transition-colors duration-75',
                       'hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
@@ -148,7 +170,10 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                     <BasicInfoSection project={project} onChange={updateProject}/>
                 )}
                 {activeSection === 'review' && (
-                    <ReviewDetailsSection projectId={projectId} project={project} onChange={updateProject}/>
+                    <ReviewDetailsSection project={project} onChange={updateProject}/>
+                )}
+                {activeSection === 'review-question' && (
+                    <ReviewQuestionSection projectId={projectId} onDirtyChange={setReviewQuestionDirty}/>
                 )}
                 {activeSection === 'ai-engine' && <AiEngineSection projectId={projectId}/>}
                 {activeSection === 'team' && <TeamMembersSection projectId={projectId}/>}
@@ -166,6 +191,29 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
           </div>
         </main>
       </div>
+
+      <AlertDialog open={pendingSection !== null} onOpenChange={(open) => !open && setPendingSection(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('project', 'settingsDiscardTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('project', 'settingsDiscardBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('project', 'settingsDiscardCancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                const next = pendingSection;
+                setPendingSection(null);
+                setReviewQuestionDirty(false);
+                if (next) selectSection(next);
+              }}
+            >
+              {t('project', 'settingsDiscardConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

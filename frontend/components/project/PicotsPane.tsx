@@ -13,9 +13,9 @@
  * predictive-model review), and they are the exact strings the prompt emits. A
  * second copy in the frontend could drift from what the model is told.
  *
- * This is a PANE, not a dialog: `AiConfigDialog` mounts it — alone from the
- * project settings summary, or as the "Review question" tab next to the
- * template's general AI instruction on the config surfaces.
+ * It is mounted inline by ReviewQuestionSection (Project → Configuration →
+ * Review question). The form owns its draft; the host only hears whether it
+ * is dirty.
  */
 
 import {useState} from 'react';
@@ -57,6 +57,7 @@ interface PicotsFormProps {
   pending: boolean;
   onSave: (body: {picots: PicotsSlots; picots_enabled: boolean}) => void;
   onCancel: () => void;
+  onDirtyChange: (dirty: boolean) => void;
 }
 
 /**
@@ -64,21 +65,27 @@ interface PicotsFormProps {
  *
  * State is initialized FROM PROPS on mount rather than synced in an effect:
  * seeding via `useEffect` triggers a cascading render and is the pattern
- * `react-hooks/set-state-in-effect` rejects. Radix unmounts dialog content when
- * closed, so this also resets on close — a cancelled edit cannot leak into the
- * next one without any explicit teardown.
+ * `react-hooks/set-state-in-effect` rejects. The host re-seeds the form by
+ * bumping a `key` (see `PicotsPane`), never by an effect here.
  */
-function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
+function PicotsForm({initial, pending, onSave, onCancel, onDirtyChange}: PicotsFormProps) {
   const [draft, setDraft] = useState<PicotsSlots>(() => initial.picots);
   const [enabled, setEnabled] = useState(() => initial.picots_enabled ?? true);
+  const baseline = JSON.stringify([initial.picots, initial.picots_enabled ?? true]);
+  const dirty = JSON.stringify([draft, enabled]) !== baseline;
+
+  const commit = (nextDraft: PicotsSlots, nextEnabled: boolean) => {
+    setDraft(nextDraft);
+    setEnabled(nextEnabled);
+    onDirtyChange(JSON.stringify([nextDraft, nextEnabled]) !== baseline);
+  };
 
   const slots = draft as unknown as Record<string, PicotsSlot>;
 
   const writeSlot = (key: string, next: PicotsSlot) =>
-    setDraft(
-      (prev) =>
-        ({...(prev as unknown as Record<string, PicotsSlot>), [key]: next}) as
-          unknown as PicotsSlots,
+    commit(
+      {...(slots as Record<string, PicotsSlot>), [key]: next} as unknown as PicotsSlots,
+      enabled,
     );
 
   const updateField = (key: string, subField: string, value: unknown) =>
@@ -114,12 +121,7 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
   };
 
   return (
-    // Fills the host's fixed panel: the slots scroll in the middle region
-    // while the Save/Cancel footer keeps a fixed row on the panel's bottom
-    // edge — a six-slot form must never hide its only save button behind a
-    // full scroll.
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 pb-5">
+    <div className="space-y-3">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Label htmlFor="picots-enabled" className="text-[13px] font-medium">
@@ -132,12 +134,12 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
         <Switch
           id="picots-enabled"
           checked={enabled}
-          onCheckedChange={setEnabled}
+          onCheckedChange={(value) => commit(draft, value)}
         />
       </div>
 
-      {/* The prompt preview is the ground truth of this whole tab — what the
-          model actually receives — so it sits at the TOP, where it is
+      {/* The prompt preview is the ground truth of this whole section — what
+          the model actually receives — so it sits at the TOP, where it is
           discoverable, and collapsed, so it costs nothing until asked for.
           Below six slots it was findable only by scrolling past everything. */}
       <Collapsible>
@@ -185,38 +187,47 @@ function PicotsForm({initial, pending, onSave, onCancel}: PicotsFormProps) {
         ))}
       </div>
 
-      </div>
-
-      <div className="flex shrink-0 justify-end gap-1.5 border-t border-border/40 px-5 py-2">
-        <Button variant="outline" onClick={onCancel} disabled={pending}>
-          {t('aiContext', 'cancel')}
-        </Button>
-        <Button
-          onClick={() => onSave({picots: draft, picots_enabled: enabled})}
-          disabled={pending}
-        >
-          {pending ? t('aiContext', 'saving') : t('aiContext', 'save')}
-        </Button>
-      </div>
+      {dirty && (
+        <div className="sticky bottom-0 flex justify-end gap-1.5 border-t border-border/40 bg-background py-2">
+          <Button variant="outline" size="sm" onClick={onCancel} disabled={pending}>
+            {t('aiContext', 'cancel')}
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => onSave({picots: draft, picots_enabled: enabled})}
+            disabled={pending}
+          >
+            {pending ? t('aiContext', 'saving') : t('aiContext', 'save')}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
 interface PicotsPaneProps {
   projectId: string;
-  /** Called after a successful save and on Cancel — the host closes itself. */
-  onClose: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function PicotsPane({projectId, onClose}: PicotsPaneProps) {
+export function PicotsPane({projectId, onDirtyChange}: PicotsPaneProps) {
   const {data, isError} = useAiContext(projectId);
   const mutation = useSetAiContext(projectId);
+  // Bumped on Cancel and after a save: the form is keyed by it, so it
+  // re-seeds from the latest read without an effect.
+  const [formSeq, setFormSeq] = useState(0);
+  const reportDirty = (dirty: boolean) => onDirtyChange?.(dirty);
+
+  const reset = () => {
+    setFormSeq((n) => n + 1);
+    reportDirty(false);
+  };
 
   const save = (body: {picots: PicotsSlots; picots_enabled: boolean}) => {
     mutation.mutate(body, {
       onSuccess: () => {
         toast.success(t('aiContext', 'saveSuccess'));
-        onClose();
+        reset();
       },
       onError: () => toast.error(t('aiContext', 'saveError')),
     });
@@ -225,25 +236,29 @@ export function PicotsPane({projectId, onClose}: PicotsPaneProps) {
   if (isError) {
     // Save stays unreachable: with no read there is no draft, and an empty
     // one would overwrite the stored review question with blanks.
-    return (
-      <p className="px-5 text-[13px] text-destructive">
-        {t('aiContext', 'loadError')}
-      </p>
-    );
+    return <p className="text-[13px] text-destructive">{t('aiContext', 'loadError')}</p>;
   }
   if (!data) {
-    return (
-      <p className="px-5 text-[13px] text-muted-foreground">
-        {t('aiContext', 'saving')}
-      </p>
-    );
+    return <p className="text-[13px] text-muted-foreground">{t('aiContext', 'saving')}</p>;
   }
   return (
     <PicotsForm
+      key={formSeq}
       initial={data}
       pending={mutation.isPending}
       onSave={save}
-      onCancel={onClose}
+      onCancel={reset}
+      onDirtyChange={reportDirty}
     />
+  );
+}
+
+/** What a non-manager sees: the server-rendered prompt text, verbatim. */
+export function PicotsPreview({projectId}: {projectId: string}) {
+  const {data} = useAiContext(projectId);
+  return (
+    <pre className="max-h-80 overflow-auto rounded-md bg-muted/40 p-2.5 text-xs whitespace-pre-wrap">
+      {data?.preview ?? t('aiContext', 'previewEmpty')}
+    </pre>
   );
 }
