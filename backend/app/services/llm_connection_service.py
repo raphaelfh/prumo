@@ -1,0 +1,239 @@
+"""Connections (§2, §3.3): create, list, the two ownership guards and
+per-row Fernet.
+
+Ownership predicates live HERE and nowhere else, in the WHERE clause:
+:func:`owned_user_connection` (id + scope 'user' + user_id) and
+:func:`owned_project_connection` (id + scope 'project' + project_id). A
+cross-owner id is a miss, indistinguishable from a deleted row.
+
+Key handling: ``encrypted_api_key`` is a Fernet ciphertext under
+``derive_encryption_key(f"connection:{id}")`` — the ``connection:``
+prefix domain-separates the row namespace (constitution §IV, per-row
+derived keys). Key material never reaches a read model or an error.
+"""
+
+from __future__ import annotations
+
+import base64
+from uuid import UUID, uuid4
+
+from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.error_handler import AppError
+from app.core.net_guard import validate_endpoint_url
+from app.core.security import derive_encryption_key
+from app.models.llm_connection import LlmConnection
+from app.schemas.llm_connection import (
+    LlmConnectionRead,
+    ProjectConnectionCreateRequest,
+    UserConnectionCreateRequest,
+)
+from app.schemas.llm_endpoint import LlmEndpointCapabilities
+from app.services.profile_names import profile_names
+
+__all__ = [
+    "ConnectionUnavailableError",
+    "LlmConnectionService",
+    "owned_project_connection",
+    "owned_user_connection",
+]
+
+_HOSTED_PROVIDER_INDEX = "uq_llm_connections_user_hosted_provider"
+_IDENTITY_INDEX_PREFIX = "uq_llm_connections_"
+
+
+class ConnectionUnavailableError(AppError):
+    """A pinned connection cannot serve (gone, other owner, undecryptable).
+
+    Same code and status as the endpoint-era error: the worker and the
+    frontend classify it unchanged.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(code="LLM_ENDPOINT_UNAVAILABLE", message=message, status_code=409)
+
+
+def _fernet_for(connection_id: UUID) -> Fernet:
+    return Fernet(base64.urlsafe_b64encode(derive_encryption_key(f"connection:{connection_id}")))
+
+
+def _encrypt(connection_id: UUID, secret: str) -> str:
+    return _fernet_for(connection_id).encrypt(secret.encode()).decode()
+
+
+async def owned_user_connection(
+    db: AsyncSession, connection_id: UUID, user_id: UUID
+) -> LlmConnection | None:
+    """THE user-scope ownership predicate."""
+    return (
+        await db.execute(
+            select(LlmConnection).where(
+                LlmConnection.id == connection_id,
+                LlmConnection.scope == "user",
+                LlmConnection.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def owned_project_connection(
+    db: AsyncSession, connection_id: UUID, project_id: UUID
+) -> LlmConnection | None:
+    """THE project-scope ownership predicate."""
+    return (
+        await db.execute(
+            select(LlmConnection).where(
+                LlmConnection.id == connection_id,
+                LlmConnection.scope == "project",
+                LlmConnection.project_id == project_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+
+def _to_read(row: LlmConnection, created_by_name: str | None) -> LlmConnectionRead:
+    return LlmConnectionRead.model_validate(
+        {
+            "id": row.id,
+            "scope": row.scope,
+            "provider": row.provider,
+            "label": row.label,
+            "base_url": row.base_url,
+            "has_api_key": row.encrypted_api_key is not None,
+            "allowed_models": row.allowed_models,
+            "capabilities": LlmEndpointCapabilities.model_validate(row.capabilities or {}),
+            "validation_status": row.validation_status,
+            "last_validated_at": row.last_validated_at,
+            "last_used_at": row.last_used_at,
+            "created_by_name": created_by_name,
+            "created_at": row.created_at,
+        }
+    )
+
+
+def _violated_index(exc: IntegrityError) -> str | None:
+    """The name of the violated uniqueness index, when it is one of ours.
+
+    The hosted-provider index is label-independent, so the two collisions
+    need different messages — branch on the NAME, never on the message text.
+    """
+    text = str(getattr(exc, "orig", None) or exc)
+    if _HOSTED_PROVIDER_INDEX in text:
+        return _HOSTED_PROVIDER_INDEX
+    return _IDENTITY_INDEX_PREFIX if _IDENTITY_INDEX_PREFIX in text else None
+
+
+class LlmConnectionService:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def _reads(self, rows: list[LlmConnection]) -> list[LlmConnectionRead]:
+        names = await profile_names(self.db, {r.created_by for r in rows}) if rows else {}
+        return [_to_read(r, names.get(r.created_by)) for r in rows]
+
+    async def list_user(self, user_id: UUID) -> list[LlmConnectionRead]:
+        rows = (
+            (
+                await self.db.execute(
+                    select(LlmConnection)
+                    .where(LlmConnection.scope == "user", LlmConnection.user_id == user_id)
+                    .order_by(LlmConnection.created_at, LlmConnection.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return await self._reads(list(rows))
+
+    async def list_project(self, project_id: UUID) -> list[LlmConnectionRead]:
+        rows = (
+            (
+                await self.db.execute(
+                    select(LlmConnection)
+                    .where(
+                        LlmConnection.scope == "project",
+                        LlmConnection.project_id == project_id,
+                    )
+                    .order_by(LlmConnection.created_at, LlmConnection.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return await self._reads(list(rows))
+
+    async def _create(
+        self,
+        *,
+        scope: str,
+        user_id: UUID | None,
+        project_id: UUID | None,
+        created_by: UUID,
+        payload: UserConnectionCreateRequest | ProjectConnectionCreateRequest,
+    ) -> LlmConnectionRead:
+        base_url = (await validate_endpoint_url(payload.base_url)).url if payload.base_url else None
+        connection_id = uuid4()  # BEFORE encrypt: it feeds the per-row key
+        row = LlmConnection(
+            id=connection_id,
+            scope=scope,
+            user_id=user_id,
+            project_id=project_id,
+            provider=payload.provider,
+            label=payload.label,
+            base_url=base_url,
+            encrypted_api_key=(
+                _encrypt(connection_id, payload.api_key.get_secret_value())
+                if payload.api_key
+                else None
+            ),
+            allowed_models=list(payload.allowed_models),
+            capabilities={},
+            validation_status="unverified",
+            created_by=created_by,
+        )
+        self.db.add(row)
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            index = _violated_index(exc)
+            if index is None:
+                raise
+            if index == _HOSTED_PROVIDER_INDEX:
+                raise ValueError(f"You already have a key for {payload.provider}") from None
+            raise ValueError(
+                f"A {payload.provider} connection labeled {payload.label!r} "
+                "already exists at this scope"
+            ) from None
+        return (await self._reads([row]))[0]
+
+    async def create_user(
+        self, *, user_id: UUID, payload: UserConnectionCreateRequest
+    ) -> LlmConnectionRead:
+        return await self._create(
+            scope="user", user_id=user_id, project_id=None, created_by=user_id, payload=payload
+        )
+
+    async def create_project(
+        self, *, project_id: UUID, created_by: UUID, payload: ProjectConnectionCreateRequest
+    ) -> LlmConnectionRead:
+        return await self._create(
+            scope="project",
+            user_id=None,
+            project_id=project_id,
+            created_by=created_by,
+            payload=payload,
+        )
+
+    async def decrypt_key(self, row: LlmConnection) -> str | None:
+        if row.encrypted_api_key is None:
+            return None
+        try:
+            return _fernet_for(row.id).decrypt(row.encrypted_api_key.encode()).decode()
+        except InvalidToken:
+            raise ConnectionUnavailableError(
+                f"The stored key for connection {row.id} ({row.label!r}) cannot be decrypted. "
+                "Re-enter the key."
+            ) from None
