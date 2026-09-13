@@ -7,7 +7,7 @@
 
 import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
-import {SettingsSection, SettingsField, SettingsCard} from '@/components/settings';
+import {SettingsGroup, SettingsPage, SettingsRow} from '@/components/settings';
 import type {Project} from '@/types/project';
 import {t} from '@/lib/copy';
 
@@ -26,93 +26,103 @@ interface ReviewDetailsSectionProps {
     onChange: (updates: Partial<ProjectShape>) => void;
 }
 
-export function ReviewDetailsSection({ project, onChange }: ReviewDetailsSectionProps) {
-  return (
-      <SettingsSection
-          title={t('project', 'reviewSectionTitle')}
-          description={t('project', 'reviewSectionDesc')}
-      >
-          <SettingsCard
-              title={t('project', 'reviewCardGeneralTitle')}
-              description={t('project', 'reviewCardGeneralDesc')}
-          >
-              <div className="space-y-4">
-                  <SettingsField
-                      label={t('project', 'reviewTitleLabel')}
-                      htmlFor="review_title"
-                      hint={t('project', 'reviewTitleHint')}
-                  >
-            <Input
-              id="review_title"
-              value={project.review_title ?? ''}
-              onChange={(e) => onChange({ review_title: e.target.value })}
-              placeholder={t('project', 'reviewTitlePlaceholder')}
-              className="text-[13px] h-9"
-            />
-                  </SettingsField>
-                  <SettingsField
-                      label={t('project', 'reviewConditionStudiedLabel')}
-                      htmlFor="condition_studied"
-                      hint={t('project', 'reviewConditionStudiedHint')}
-                  >
-            <Input
-              id="condition_studied"
-              value={project.condition_studied ?? ''}
-              onChange={(e) => onChange({ condition_studied: e.target.value })}
-              placeholder={t('project', 'reviewConditionStudiedPlaceholder')}
-              className="text-[13px] h-9"
-            />
-                  </SettingsField>
-                  <SettingsField
-                      label={t('project', 'reviewContextLabel')}
-                      htmlFor="review_context"
-                      hint={t('project', 'reviewContextHint')}
-                  >
-            <Textarea
-              id="review_context"
-              value={project.review_context ?? ''}
-              onChange={(e) => onChange({ review_context: e.target.value })}
-              placeholder={t('project', 'reviewContextPlaceholder')}
-              rows={3}
-              className="resize-none text-[13px]"
-            />
-                  </SettingsField>
-                  <SettingsField
-                      label={t('project', 'reviewRationaleLabel')}
-                      htmlFor="review_rationale"
-                      hint={t('project', 'reviewRationaleHint')}
-                  >
-            <Textarea
-              id="review_rationale"
-              value={project.review_rationale ?? ''}
-              onChange={(e) => onChange({ review_rationale: e.target.value })}
-              placeholder={t('project', 'reviewRationalePlaceholder')}
-              rows={5}
-              className="resize-none text-[13px]"
-            />
-                  </SettingsField>
-              </div>
-          </SettingsCard>
+export function ReviewDetailsSection({project, onChange}: ReviewDetailsSectionProps) {
+    return (
+        <SettingsPage>
+            <SettingsGroup title={t('project', 'reviewCardGeneralTitle')}>
+                <SettingsRow
+                    label={t('project', 'reviewTitleLabel')}
+                    htmlFor="review_title"
+                    hint={t('project', 'reviewTitleHint')}
+                >
+                    {({describedBy}) => (
+                        <Input
+                            id="review_title"
+                            variant="quiet"
+                            value={project.review_title ?? ''}
+                            onChange={(e) => onChange({review_title: e.target.value})}
+                            placeholder={t('project', 'reviewTitlePlaceholder')}
+                            aria-describedby={describedBy}
+                        />
+                    )}
+                </SettingsRow>
+                <SettingsRow
+                    label={t('project', 'reviewConditionStudiedLabel')}
+                    htmlFor="condition_studied"
+                    hint={t('project', 'reviewConditionStudiedHint')}
+                >
+                    {({describedBy}) => (
+                        <Input
+                            id="condition_studied"
+                            variant="quiet"
+                            value={project.condition_studied ?? ''}
+                            onChange={(e) => onChange({condition_studied: e.target.value})}
+                            placeholder={t('project', 'reviewConditionStudiedPlaceholder')}
+                            aria-describedby={describedBy}
+                        />
+                    )}
+                </SettingsRow>
+                <SettingsRow
+                    label={t('project', 'reviewContextLabel')}
+                    htmlFor="review_context"
+                    hint={t('project', 'reviewContextHint')}
+                    align="start"
+                >
+                    {({describedBy}) => (
+                        <Textarea
+                            id="review_context"
+                            variant="quiet"
+                            value={project.review_context ?? ''}
+                            onChange={(e) => onChange({review_context: e.target.value})}
+                            placeholder={t('project', 'reviewContextPlaceholder')}
+                            rows={3}
+                            aria-describedby={describedBy}
+                            className="resize-none"
+                        />
+                    )}
+                </SettingsRow>
+                <SettingsRow
+                    label={t('project', 'reviewRationaleLabel')}
+                    htmlFor="review_rationale"
+                    hint={t('project', 'reviewRationaleHint')}
+                    align="start"
+                >
+                    {({describedBy}) => (
+                        <Textarea
+                            id="review_rationale"
+                            variant="quiet"
+                            value={project.review_rationale ?? ''}
+                            onChange={(e) => onChange({review_rationale: e.target.value})}
+                            placeholder={t('project', 'reviewRationalePlaceholder')}
+                            rows={5}
+                            aria-describedby={describedBy}
+                            className="resize-none"
+                        />
+                    )}
+                </SettingsRow>
+            </SettingsGroup>
 
-          <SettingsCard
-              title={t('project', 'reviewCardSearchTitle')}
-              description={t('project', 'reviewCardSearchDesc')}
-          >
-              <SettingsField
-                  label={t('project', 'reviewStrategyLabel')}
-                  htmlFor="search_strategy"
-                  hint={t('project', 'reviewStrategyHint')}
-              >
-          <Textarea
-            id="search_strategy"
-            value={project.search_strategy ?? ''}
-            onChange={(e) => onChange({ search_strategy: e.target.value })}
-            placeholder={t('project', 'reviewStrategyPlaceholder')}
-            rows={8}
-            className="font-mono text-[13px] resize-none"
-          />
-              </SettingsField>
-          </SettingsCard>
-      </SettingsSection>
-  );
+            <SettingsGroup title={t('project', 'reviewCardSearchTitle')}>
+                <SettingsRow
+                    label={t('project', 'reviewStrategyLabel')}
+                    htmlFor="search_strategy"
+                    hint={t('project', 'reviewStrategyHint')}
+                    align="start"
+                >
+                    {({describedBy}) => (
+                        <Textarea
+                            id="search_strategy"
+                            variant="quiet"
+                            value={project.search_strategy ?? ''}
+                            onChange={(e) => onChange({search_strategy: e.target.value})}
+                            placeholder={t('project', 'reviewStrategyPlaceholder')}
+                            rows={8}
+                            aria-describedby={describedBy}
+                            className="font-mono resize-none"
+                        />
+                    )}
+                </SettingsRow>
+            </SettingsGroup>
+        </SettingsPage>
+    );
 }

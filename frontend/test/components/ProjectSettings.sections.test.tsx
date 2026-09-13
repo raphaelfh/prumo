@@ -97,6 +97,15 @@ describe('ProjectSettings sections', () => {
     expect(screen.getByTestId('section-review')).toBeInTheDocument();
     expect(screen.queryByTestId('section-ai-engine')).toBeNull();
   });
+
+  it('owns a p-2 gutter and no centred 1920px wrapper (the section owns the width)', () => {
+    renderAt('?tab=settings&section=basic');
+    const inner = screen.getByRole('main').firstElementChild;
+    expect(inner).toHaveClass('p-2');
+    for (const old of ['max-w-[1920px]', 'mx-auto', 'px-6', 'py-6', 'lg:px-8', 'lg:py-8']) {
+      expect(inner).not.toHaveClass(old);
+    }
+  });
 });
 
 describe('ProjectSettings unsaved review question', () => {
