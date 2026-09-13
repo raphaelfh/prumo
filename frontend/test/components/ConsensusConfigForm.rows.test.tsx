@@ -32,6 +32,8 @@ describe('ConsensusConfigForm — settings rows', () => {
     expect(describedTexts(rule)).toEqual([consensus.ruleHint]);
     expect(describedTexts(arbitrator)).toEqual([consensus.arbitratorHint, consensus.arbitratorRequired]);
     expect(screen.getByText(consensus.arbitratorRequired)).toHaveClass('text-destructive');
+    expect(arbitrator).toHaveAttribute('aria-required', 'true');
+    expect(rule).not.toHaveAttribute('aria-required');
   });
 
   it('keeps control ids unique, each named by its own label, when two forms mount at once', () => {

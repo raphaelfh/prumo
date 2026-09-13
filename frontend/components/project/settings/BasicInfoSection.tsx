@@ -76,6 +76,7 @@ export function BasicInfoSection({project, onChange}: BasicInfoSectionProps) {
                                 id="review_type"
                                 variant="quiet"
                                 aria-describedby={describedBy}
+                                aria-required="true"
                                 className="max-w-md"
                             >
                                 <SelectValue/>

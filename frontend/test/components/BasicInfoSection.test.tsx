@@ -29,6 +29,7 @@ describe('BasicInfoSection', () => {
     const {rerender} = renderBasic('predictive_model');
     const trigger = screen.getByRole('combobox', {name: /Review type/});
     expect(trigger).toHaveAccessibleDescription(REVIEW_TYPES.predictive_model.description);
+    expect(trigger).toHaveAttribute('aria-required', 'true');
     expect(screen.getByRole('button', {name: aboutLabel(t('project', 'basicReviewTypeLabel'))})).toBeInTheDocument();
 
     rerender(

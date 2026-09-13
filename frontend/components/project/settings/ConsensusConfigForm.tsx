@@ -103,7 +103,13 @@ export function ConsensusConfigForm({
                 onValueChange={handleArbitratorChange}
                 disabled={disabled || membersLoading}
               >
-                <SelectTrigger id={arbitratorId} variant="quiet" aria-describedby={describedBy} className="w-full max-w-md">
+                <SelectTrigger
+                  id={arbitratorId}
+                  variant="quiet"
+                  aria-describedby={describedBy}
+                  aria-required="true"
+                  className="w-full max-w-md"
+                >
                   <SelectValue placeholder={t('consensus', 'arbitratorPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
