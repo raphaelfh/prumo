@@ -115,6 +115,7 @@
   --shadow-elev-card: var(--shadow-card);
   --shadow-elev-popover: var(--shadow-popover);
   --shadow-elev-header: var(--shadow-header);
+  --shadow-elev-overlay: var(--shadow-overlay);
 
   --text-header-title: 13px;
   --text-header-title--line-height: 1.2;
@@ -209,6 +210,7 @@
     --header-blur: 12px;
     --header-surface-alpha: 0.82;
     --shadow-header: 0 4px 16px rgb(0 0 0 / 0.06);
+    --shadow-overlay: 0 1px 2px rgb(0 0 0 / 0.04), 0 16px 48px rgb(0 0 0 / 0.12);
     --z-header: 40;
 
     /* Primary hover — slightly lighter than --primary in light mode
@@ -283,6 +285,7 @@
     --shadow-popover: 0 8px 30px rgb(0 0 0 / 0.35);
     --header-surface-alpha: 0.80;
     --shadow-header: 0 4px 16px rgb(0 0 0 / 0.45);
+    --shadow-overlay: none;
 
     /* Primary hover — slightly darker than --primary in dark mode
        (since --primary is near-white). */
