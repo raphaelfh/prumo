@@ -289,6 +289,7 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
   const contentOpacity = showCollapsedDims ? 0 : 1;
 
   const handle = (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a focusable separator with a value is an ARIA widget (keyboard-operable via onKeyDown); jsx-a11y models every separator as static
     <div
       role="separator"
       aria-orientation="vertical"
