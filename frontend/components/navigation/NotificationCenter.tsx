@@ -317,8 +317,15 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
         isClickable && 'hover:bg-accent',
         !isClickable && 'bg-background'
       )}
-      onClick={() => isClickable && onClick(job)}
     >
+      {isClickable && (
+        <button
+          type="button"
+          aria-label={getJobTitle(job)}
+          onClick={() => onClick(job)}
+          className="absolute inset-0 rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      )}
       <div className="flex items-start gap-3">
           {/* Icon */}
         <div className="shrink-0 mt-0.5">
@@ -331,11 +338,11 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
             <p className="text-sm font-medium leading-tight">
               {getJobTitle(job)}
             </p>
-            
+
             <IconButton
               label={t('navigation', 'notificationDismiss')}
               size="icon-xs"
-              className="opacity-0 group-hover:opacity-100 transition-opacity"
+              className="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={(e) => onRemove(job.id, e)}
               icon={<X />}
             />

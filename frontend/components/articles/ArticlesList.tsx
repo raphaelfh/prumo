@@ -783,12 +783,17 @@ export function ArticlesList({
                                   <TableCell
                                       className={`${TABLE_CELL_CLASS} font-medium ${colVisibilityClass('sm')}`}
                                       style={getColumnStyle('title')}
-                                      onClick={() => onArticleClick(article.id)}
                                   >
-                                      <div
-                                          className="line-clamp-1 text-[13px] leading-tight text-foreground font-medium group-hover:text-primary transition-colors">
-                                          {article.title ?? t('articles', 'listUntitled')}
-                                      </div>
+                                      <button
+                                          type="button"
+                                          onClick={() => onArticleClick(article.id)}
+                                          className="block w-full min-w-0 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                                      >
+                                          <div
+                                              className="line-clamp-1 text-[13px] leading-tight text-foreground font-medium group-hover:text-primary transition-colors">
+                                              {article.title ?? t('articles', 'listUntitled')}
+                                          </div>
+                                      </button>
                                   </TableCell>
 
                                   {/* PDF */}
@@ -797,8 +802,9 @@ export function ArticlesList({
                                                  style={getColumnStyle('pdf')}>
                                           <div className="flex items-center gap-1 min-w-0">
                                           {articlesWithMainFile.has(article.id) ? (
-                                              <div
-                                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight hover:bg-success/20 transition-colors"
+                                              <button
+                                                  type="button"
+                                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight hover:bg-success/20 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                                                   onClick={async (e) => {
                                                       e.stopPropagation();
                                                       const result = await fetchArticlePdfSignedUrl(article.id);
@@ -814,7 +820,7 @@ export function ArticlesList({
                                                   }}
                                               >
                                                   PDF
-                                              </div>
+                                              </button>
                                           ) : (
                                               <Button
                                                   size="sm"

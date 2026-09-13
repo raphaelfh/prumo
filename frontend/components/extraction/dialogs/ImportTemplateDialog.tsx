@@ -171,18 +171,18 @@ export function ImportTemplateDialog({
                       return (
                         <Card
                           key={template.id}
-                          onClick={() => setSelectedTemplateId(template.id)}
                           className={cn(
-                            'group border border-border/60 bg-card transition-colors duration-75',
+                            'group relative border border-border/60 bg-card transition-colors duration-75',
                             'hover:bg-muted/50',
                             'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
                             isSelected && 'border-primary/60 bg-muted/30 ring-1 ring-primary/30',
                           )}
                         >
+                          <label htmlFor={template.id} aria-hidden="true" className="absolute inset-0 rounded-[inherit]" />
                           <CardHeader className="p-3 pb-2">
                             <div className="flex items-start justify-between">
                               <div className="flex items-center gap-3">
-                                <RadioGroupItem value={template.id} id={template.id} />
+                                <RadioGroupItem value={template.id} id={template.id} className="relative z-10" />
                                 <div>
                                   <CardTitle className="text-[13px] text-foreground">
                                     <Label htmlFor={template.id}>

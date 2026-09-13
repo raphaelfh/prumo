@@ -399,3 +399,11 @@ section wins.
 9. **Shortcuts shown only where bound.** List filter buttons get an `F` chip
    (`useListKeyboardShortcuts` binds it on all three list screens). The PDF
    search button keeps its hint text: no ⌘F binding exists in the viewer.
+10. **Click targets without a role get real semantics.** The arrow-cursor
+   rule matches roles, labels and `summary`; an element with only `onClick`
+   falls through to the text I-beam. Task 10's review found four: the
+   articles list title cell and PDF chip, the notification item, and the
+   import-template card. Each becomes a native `<button>` or a stretched
+   overlay control (`absolute inset-0`) above its content, so it gains the
+   arrow and keyboard access without nesting interactive elements. This
+   replaces § 9.4's "no element gains a role" for real click targets only.
