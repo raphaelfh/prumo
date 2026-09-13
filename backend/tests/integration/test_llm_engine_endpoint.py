@@ -63,7 +63,7 @@ async def test_member_get_returns_resolved_view(client_as_reviewer: AsyncClient)
     assert all("byok_only" not in e for e in data["catalog"])
     # Availability: a scope tag per registry LLM provider — never key material.
     availability = data["availability"]
-    assert set(availability) == {"openai", "anthropic", "google", "openai_compatible"}
+    assert set(availability) == {"openai", "anthropic", "google", "ollama", "openai_compatible"}
     # The reviewer has no anthropic credential on any rung of the ladder.
     assert availability["anthropic"] is None
 

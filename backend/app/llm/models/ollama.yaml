@@ -1,0 +1,56 @@
+# backend/app/llm/models/ollama.yaml — Ollama Cloud models the picker offers.
+#
+# Every value comes from Ollama's public, keyless endpoints (2026-09-13):
+#   ids:            curl -s https://ollama.com/v1/models
+#   context_window: curl -s -X POST https://ollama.com/api/show -d '{"model":"<id>"}'
+#                   → model_info.<arch>.context_length (every row lists "tools")
+#   prices:         https://ollama.com/pricing (per-token, per model)
+# Tiers by list price against the roster above, input-weighted (extraction
+# is input-heavy): nemotron/gpt-oss sit below luna ($0.20 in); glm-5.3
+# ($1.40/$4.40) sits with haiku, kimi-k3 ($3/$15) with terra ($2/$12).
+#
+# Free-plan keys only reach starter models. Verified with a free key:
+# nemotron-3-super, nemotron-3-ultra, gpt-oss:120b, gpt-oss:20b extract;
+# glm-5.3 and kimi-k3 return 402 (a permanent run failure) without credits.
+#
+# Untagged ids are aliases Ollama may re-point to new weights. Digests at
+# curation (curl -s https://ollama.com/api/tags): nemotron-3-super
+# da11955bb451, nemotron-3-ultra 4eecabff7a75, gpt-oss:120b d98fe6ba01e6,
+# gpt-oss:20b 05afbac4bad6, glm-5.3 632dfda18c6d, kimi-k3 d189309738f0.
+# Ollama retires cloud models often (410 on /api/show): mark a retired row
+# deprecated rather than deleting it, so existing pins still resolve.
+- model: nemotron-3-super
+  label: Nemotron 3 Super
+  best_for: Cheapest verified Ollama Cloud option for routine extraction
+  context_window: 262144
+  cost_tier: "$"
+
+- model: nemotron-3-ultra
+  label: Nemotron 3 Ultra
+  best_for: Stronger reasoning on the Ollama free plan for dense articles
+  context_window: 262144
+  cost_tier: "$"
+
+- model: gpt-oss:120b
+  label: gpt-oss 120B
+  best_for: OpenAI open-weight reasoning model, included in the free plan
+  context_window: 131072
+  cost_tier: "$"
+
+- model: gpt-oss:20b
+  label: gpt-oss 20B
+  best_for: Smallest, fastest open-weight option for short articles
+  context_window: 131072
+  cost_tier: "$"
+
+- model: glm-5.3
+  label: GLM 5.3
+  best_for: "Frontier open-weight reasoning with a 1M window; needs Ollama credits"
+  context_window: 1048576
+  cost_tier: "$$"
+
+- model: kimi-k3
+  label: Kimi K3
+  best_for: "Deepest open-weight reasoning with a 1M window; needs Ollama credits"
+  context_window: 1048576
+  cost_tier: "$$"

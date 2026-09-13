@@ -154,6 +154,7 @@ async def test_providers_read_is_the_registry() -> None:
         "openai",
         "anthropic",
         "google",
+        "ollama",
         "openai_compatible",
         "llama_cloud",
     ]
