@@ -4,10 +4,13 @@
  * Manager-only control. When ON, newly ingested PDFs are parsed by the cloud
  * LlamaParse backend; otherwise the self-hosted parser is used. Requires a
  * stored `llama_cloud` BYOK key, mirroring how other integrations are activated.
+ *
+ * Renders a SettingsRow; place it inside a SettingsGroup.
  */
 import { useId, useState } from 'react';
 import { toast } from 'sonner';
 
+import { SettingsRow } from '@/components/settings';
 import { Switch } from '@/components/ui/switch';
 import { t } from '@/lib/copy';
 import { setParserType } from '@/services/parserSettingsService';
@@ -50,22 +53,31 @@ export function HighQualityParsingToggle({
   };
 
   const id = useId();
+  const needsKeyId = `${id}-needs-key`;
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="space-y-0.5">
-        <label htmlFor={id} className="text-sm font-medium">
-          {t('parsing', 'highQualityLabel')}
-        </label>
-        <p className="text-xs text-muted-foreground">
-          {hasLlamaCloudKey ? t('parsing', 'highQualityHint') : t('parsing', 'highQualityNeedsKey')}
-        </p>
-      </div>
-      <Switch
-        id={id}
-        checked={checked}
-        disabled={disabled || saving || !hasLlamaCloudKey}
-        onCheckedChange={onToggle}
-      />
-    </div>
+    <SettingsRow
+      label={t('parsing', 'highQualityLabel')}
+      htmlFor={id}
+      hint={t('parsing', 'highQualityHint')}
+      align={hasLlamaCloudKey ? 'center' : 'start'}
+    >
+      {({ describedBy }) => (
+        <div className="space-y-1">
+          <Switch
+            id={id}
+            checked={checked}
+            disabled={disabled || saving || !hasLlamaCloudKey}
+            onCheckedChange={onToggle}
+            aria-describedby={[describedBy, hasLlamaCloudKey ? undefined : needsKeyId].filter(Boolean).join(' ') || undefined}
+          />
+          {!hasLlamaCloudKey && (
+            // A disabled reason stays visible text, never behind the hint.
+            <p id={needsKeyId} className="text-[13px] text-muted-foreground">
+              {t('parsing', 'highQualityNeedsKey')}
+            </p>
+          )}
+        </div>
+      )}
+    </SettingsRow>
   );
 }

@@ -111,13 +111,9 @@ export const project = {
     teamLastManagerGuard: 'A project must keep at least one manager',
 
     // AdvancedSettingsSection
-    advancedSectionTitle: 'Advanced settings',
-    advancedSectionDesc: 'Set eligibility criteria, keywords and additional settings.',
     advancedCardKeywordsTitle: 'Review keywords',
     advancedCardKeywordsDesc: 'Key terms that describe the scope of the review.',
     advancedKeywordsPlaceholder: 'Enter a keyword...',
-    advancedCardEligibilityTitle: 'Eligibility criteria',
-    advancedCardEligibilityDesc: 'Define inclusion and exclusion criteria for studies.',
     advancedInclusionLabel: 'Inclusion criteria',
     advancedExclusionLabel: 'Exclusion criteria',
     advancedInclusionPlaceholder: 'e.g. Studies with adults over 18',
@@ -129,9 +125,7 @@ export const project = {
     advancedStudyTypesPlaceholder: 'e.g. Randomized controlled trial, Cohort',
     advancedDesignNotesLabel: 'Design notes',
     advancedDesignNotesPlaceholder: 'Notes on accepted study types...',
-    advancedCardParsingDesc: 'Choose the PDF parsing backend for newly ingested documents in this project.',
     advancedCardDangerTitle: 'Danger zone',
-    advancedCardDangerDesc: 'Irreversible actions that may permanently affect the project.',
     advancedDeleteProjectHeading: 'Delete project',
     advancedDeleteProjectWarning: 'This will permanently delete the project and all associated data (articles and extractions). It cannot be undone.',
     advancedDeleteProjectButton: 'Delete project',
