@@ -1,0 +1,24 @@
+# backend/app/llm/models/openai.yaml — GPT models the picker offers.
+- model: gpt-5.6-luna
+  label: GPT-5.6 Luna
+  best_for: Fast, low-cost default for routine extraction
+  context_window: 1050000
+  cost_tier: "$"
+
+- model: gpt-5.6-terra
+  label: GPT-5.6 Terra
+  best_for: Balanced reasoning and cost on dense or ambiguous articles
+  context_window: 1050000
+  cost_tier: "$$"
+
+- model: gpt-5.6-sol
+  label: GPT-5.6 Sol
+  best_for: Frontier reasoning for the hardest extractions
+  context_window: 1050000
+  cost_tier: "$$$"
+
+- model: gpt-4o-mini
+  label: GPT-4o mini
+  best_for: Previous-generation budget option kept for existing projects
+  context_window: 128000
+  cost_tier: "$"

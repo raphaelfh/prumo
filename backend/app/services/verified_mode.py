@@ -31,8 +31,8 @@ from app.schemas.run_prompt_context import RunPromptContext
 from app.services.run_engine_freeze import build_run_provenance
 
 if TYPE_CHECKING:
-    from app.services.api_key_service import KeyScope
     from app.services.extraction_prompt_input import PromptInputInfo
+    from app.services.llm_connection_service import KeyScope
 
 
 @dataclass(frozen=True)

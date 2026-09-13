@@ -5,7 +5,7 @@ method with the correct kwargs for a given SectionExtractionRequest, and
 that the result is returned unchanged.  No DB or LLM calls — each branch
 method is AsyncMock-patched on the service instance.
 
-Every branch forwards the engine resolved by ``resolve_project_engine``
+Every branch forwards the engine resolved by ``resolve_engine``
 (C1b: the project's stored choice, or the env default when unset). The
 resolver is patched at the ``ses`` module seam — it is imported at module
 level precisely so this test can pin that the RESOLVED target (not a
@@ -38,7 +38,7 @@ _RESOLVED = LlmTarget(provider="openai", model="resolved-model-x")
 def resolve_seam():
     """Patch the module-level resolver seam for every test in this file."""
     with patch(
-        "app.services.section_extraction_service.resolve_project_engine",
+        "app.services.section_extraction_service.resolve_engine",
         AsyncMock(return_value=_RESOLVED),
     ) as mock:
         yield mock

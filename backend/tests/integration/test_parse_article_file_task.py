@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.parsing.base import ParsedBlock
 from app.models.article import ArticleFile, ArticleTextBlock
-from app.services.api_key_service import KeyScope, ResolvedKey
+from app.services.llm_connection_service import KeyScope, ResolvedKey
 from tests.integration.conftest import SEED
 
 # ---------------------------------------------------------------------------
@@ -244,10 +244,7 @@ async def _run_with_captured_selection(
         patch("app.core.factories.create_document_parser", parser_factory),
         patch("app.core.factories.create_storage_adapter") as storage_factory,
         patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
-        patch(
-            "app.services.api_key_service.APIKeyService.get_key_for_provider",
-            key_lookup,
-        ),
+        patch("app.services.llm_connection_service.resolve_provider_key", key_lookup),
     ):
         storage_factory.return_value.download = AsyncMock(return_value=b"%PDF-1.4 fake")
         await _run_parse(
@@ -271,7 +268,12 @@ async def test_auto_default_with_key_selects_llamaparse(db_session_real: AsyncSe
         factory, key_lookup = await _run_with_captured_selection(
             db_session_real, file_id=file_id, llama_key="lc-key"
         )
-        key_lookup.assert_awaited_once_with("llama_cloud")
+        assert key_lookup.await_count == 1
+        assert key_lookup.await_args.kwargs == {
+            "provider": "llama_cloud",
+            "project_id": SEED.primary_project,
+            "user_id": SEED.primary_profile,
+        }
         call = factory.call_args
         assert call.args[0].PARSER_BACKEND == "llamaparse"
         assert call.kwargs["llama_cloud_key"] == "lc-key"
@@ -290,7 +292,12 @@ async def test_auto_default_without_key_selects_pymupdf(db_session_real: AsyncSe
         factory, key_lookup = await _run_with_captured_selection(
             db_session_real, file_id=file_id, llama_key=None
         )
-        key_lookup.assert_awaited_once_with("llama_cloud")
+        assert key_lookup.await_count == 1
+        assert key_lookup.await_args.kwargs == {
+            "provider": "llama_cloud",
+            "project_id": SEED.primary_project,
+            "user_id": SEED.primary_profile,
+        }
         assert factory.call_args.args[0].PARSER_BACKEND == "pymupdf"
         assert factory.call_args.kwargs["llama_cloud_key"] is None
     finally:

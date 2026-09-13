@@ -12,12 +12,8 @@ site here, validated at the read boundaries. A structurally invalid payload
 env default runs; a well-formed pair the catalogue no longer lists is
 *retired* — surfaced on the read model and refused at run kickoff.
 
-Endpoint-backed engines (C2 B8): a stored ``endpoint_id`` swaps the
-catalogue for the project's ``project_llm_endpoints`` row as the validity
-authority — endpoint exists (project-scoped), stored model allowed,
-``validation_status == "ok"``. ``LlmEndpointService`` imports from this
-module, so anything this module needs FROM it is imported lazily inside
-the function — never at module level (circular import).
+The default is always a catalogue pair (§3.1); per-user engines and hosts
+live in ``user_engine_service`` / ``llm_connection_service``.
 """
 
 from __future__ import annotations
@@ -34,30 +30,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.error_handler import AppError
 from app.core.logging import get_logger
-from app.llm.catalog import CATALOG, canonical, canonical_pair, find_entry
-from app.llm.registry import is_byok_only
+from app.llm.catalog import canonical, find_entry, selectable_catalog
+from app.llm.registry import llm_provider_ids
+from app.models.llm_connection import UserProjectEngine
 from app.models.project import Project
-from app.models.project_llm_endpoint import ProjectLlmEndpoint
-from app.models.user import Profile
 from app.repositories.project_repository import ProjectRepository
-from app.schemas.llm_endpoint import LlmEndpointCapabilities
 from app.schemas.llm_engine import (
-    LlmEngineAlternate,
-    LlmEngineAlternateRead,
     LlmEngineCatalogEntryRead,
+    LlmEngineDefaultRead,
+    LlmEngineEffectiveRead,
     LlmEngineRead,
     LlmEngineStored,
 )
 from app.schemas.llm_target import LlmTarget
-from app.services.api_key_service import APIKeyService
+from app.services.llm_connection_service import availability_map, owned_user_connection
 from app.services.parser_settings_service import ProjectNotFoundError
+from app.services.profile_names import profile_names
 
 __all__ = [
     "EngineRetiredError",
     "LlmEngineService",
     "ProjectNotFoundError",
     "ResolvedProjectEngine",
-    "resolve_project_engine",
+    "get_user_engine",
+    "resolve_engine",
+    "user_row_is_retired",
+    "viewer_is_manager",
 ]
 
 logger = get_logger(__name__)
@@ -96,90 +94,95 @@ def _normalized_mode(stored: LlmEngineStored, project_id: UUID) -> Literal["fast
     return "fast"
 
 
-async def _endpoint_row(
-    db: AsyncSession, project_id: UUID, endpoint_id: UUID
-) -> ProjectLlmEndpoint | None:
-    """The project's endpoint row, or ``None`` — always project-scoped.
+async def get_user_engine(
+    db: AsyncSession, *, user_id: UUID, project_id: UUID
+) -> UserProjectEngine | None:
+    """The viewer's own ``user_project_engines`` row, or ``None`` (§3.1)."""
+    return await db.get(UserProjectEngine, (user_id, project_id))
 
-    A cross-project id is a miss, indistinguishable from a deleted row
-    (BOLA gate, same posture as ``LlmEndpointService.get``).
-    """
-    return (
-        await db.execute(
-            select(ProjectLlmEndpoint).where(
-                ProjectLlmEndpoint.id == endpoint_id,
-                ProjectLlmEndpoint.project_id == project_id,
-            )
+
+async def user_row_is_retired(db: AsyncSession, row: UserProjectEngine) -> bool:
+    """Catalogue miss, or a host row whose connection is gone / unverified /
+    no longer allows the model (§3.2 step 2). ONE predicate for the write
+    gate (``user_engine_service.set_user_engine``) and for resolution."""
+    if row.provider == "openai_compatible":
+        if row.connection_id is None:
+            return True
+        conn = await owned_user_connection(db, row.connection_id, row.user_id)
+        return (
+            conn is None
+            or conn.validation_status != "ok"
+            or row.model not in (conn.allowed_models or [])
         )
-    ).scalar_one_or_none()
+    return find_entry(row.provider, row.model) is None
 
 
-def _endpoint_unhealthy(stored: LlmEngineStored, endpoint: ProjectLlmEndpoint | None) -> bool:
-    """Whether a stored endpoint engine can no longer serve.
-
-    ONE predicate for both read boundaries (retired flag and kickoff
-    refusal): row gone (deleted, or a cross-project pointer), stored model
-    no longer in ``allowed_models``, or the last probe outcome is not
-    ``"ok"`` (never ``find_entry`` — endpoint engines are off-catalogue).
-    """
-    return (
-        endpoint is None
-        or endpoint.validation_status != "ok"
-        or stored.model not in (endpoint.allowed_models or [])
+async def viewer_is_manager(db: AsyncSession, project_id: UUID, viewer_id: UUID) -> bool:
+    """Whether the viewer manages this project — the same
+    ``public.is_project_manager`` helper the RLS policies and the API
+    role gates use, so one definition of "manager" serves all three."""
+    return bool(
+        (
+            await db.execute(
+                text("SELECT public.is_project_manager(:pid, :uid) AS ok"),
+                {"pid": str(project_id), "uid": str(viewer_id)},
+            )
+        ).scalar_one()
     )
 
 
-async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> LlmTarget:
-    """The engine an extraction kicked off in ``project_id`` runs on.
+async def resolve_engine(db: AsyncSession, project_id: UUID, user_id: UUID) -> LlmTarget:
+    """The engine ``user_id``'s next run in ``project_id`` runs on (§3.2).
+
+    1. The project default; retired (catalogue miss) → ``EngineRetiredError``
+       (a manager must re-choose).
+    2. If the caller may choose (``user_choice_allowed``, or a manager) and a
+       ``user_project_engines`` row exists: validate it the same way; retired
+       → ``EngineRetiredError`` worded for the user; valid → that engine with
+       ``deviation`` computed against the default NOW and never recomputed.
+    3. Otherwise the default. The lock is enforced here, not in the UI.
 
     Read boundary #2 (with :meth:`LlmEngineService.get_for_project`): the
     stored payload is ``model_validate``d here, never re-parsed downstream.
     Unset — or structurally unparseable (see :func:`_stored_engine`) — falls
-    back to the env default pair. A well-formed pair the catalogue no longer
-    lists raises :class:`EngineRetiredError`.
-
-    An endpoint engine (stored ``endpoint_id``) skips the catalogue: the
-    endpoint row is the validity authority, and an unhealthy one — deleted
-    concurrently included — raises the typed
-    ``EndpointUnavailableError`` (409, decision 13), never a 500.
-
-    The returned target carries the mode fields too — the freeze pins the
-    whole spine (as a request-echo; execution truth is per-section).
+    back to the env default pair.
     """
     project = await db.get(Project, project_id)
     stored = _stored_engine(project.settings if project is not None else None)
     if stored is None:
-        return LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
-    if stored.endpoint_id is not None:
-        # Lazy import — LlmEndpointService imports from this module.
-        from app.services.llm_endpoint_service import EndpointUnavailableError
-
-        endpoint = await _endpoint_row(db, project_id, stored.endpoint_id)
-        if _endpoint_unhealthy(stored, endpoint):
-            raise EndpointUnavailableError(
-                f"The project's engine runs on custom endpoint {stored.endpoint_id}, "
-                "which is no longer available for this model. Ask a project manager "
-                "to re-verify the endpoint or choose another engine."
+        default = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
+        allowed = True
+    else:
+        if find_entry(stored.provider, stored.model) is None:
+            raise EngineRetiredError(
+                f"The project's stored engine {stored.provider}:{stored.model} is no longer "
+                "available. Ask a project manager to choose a new model."
             )
         mode = _normalized_mode(stored, project_id)
-        return LlmTarget(
-            provider="openai_compatible",
+        default = LlmTarget(
+            provider=stored.provider,
             model=stored.model,
             mode_requested=mode,
             mode_executed=mode,
-            endpoint_id=str(stored.endpoint_id),
         )
-    if find_entry(stored.provider, stored.model) is None:
+        allowed = stored.user_choice_allowed
+    row = await get_user_engine(db, user_id=user_id, project_id=project_id)
+    if row is None or not (allowed or await viewer_is_manager(db, project_id, user_id)):
+        return default
+    if await user_row_is_retired(db, row):
         raise EngineRetiredError(
-            f"The project's stored engine {stored.provider}:{stored.model} is no longer "
-            "available. Ask a project manager to choose a new model."
+            f"Your engine for this project ({row.provider}:{row.model}) is no longer available. "
+            "Pick a new model."
         )
-    mode = _normalized_mode(stored, project_id)
+    row_mode = row.mode if row.mode in ("fast", "verified") else "fast"
     return LlmTarget(
-        provider=stored.provider,
-        model=stored.model,
-        mode_requested=mode,
-        mode_executed=mode,
+        provider=row.provider,
+        model=row.model,
+        mode_requested=row_mode,
+        mode_executed=row_mode,
+        connection_id=str(row.connection_id) if row.connection_id is not None else None,
+        deviation=(row.provider, row.model) != (default.provider, default.model)
+        or row.connection_id is not None,
     )
 
 
@@ -187,10 +190,8 @@ async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> LlmTarge
 class ResolvedProjectEngine:
     """A project's effective engine: stored choice or the env default.
 
-    ``endpoint_id``/``endpoint_label`` are set only for endpoint-backed
-    engines; the label is ``None`` when the pointed-at row is gone
-    (``retired`` is True then — the popover still needs the pointer to
-    offer the re-choose flow).
+    ``user_choice_allowed`` is the manager lock carried by the stored
+    default; the env-default branch is always open.
     """
 
     provider: str
@@ -199,8 +200,7 @@ class ResolvedProjectEngine:
     source: Literal["project", "default"]
     retired: bool
     stored: LlmEngineStored | None
-    endpoint_id: UUID | None = None
-    endpoint_label: str | None = None
+    user_choice_allowed: bool = True
 
 
 def _stored_engine(project_settings: dict[str, Any] | None) -> LlmEngineStored | None:
@@ -220,20 +220,6 @@ def _stored_engine(project_settings: dict[str, Any] | None) -> LlmEngineStored |
         return None
 
 
-async def _profile_names(db: AsyncSession, ids: set[UUID]) -> dict[UUID, str | None]:
-    """Display names for the given profiles, one query for all of them.
-
-    A profile with no ``full_name`` maps to ``None`` rather than to its
-    uuid: the popover renders a fallback, never a raw id dressed as a name.
-    (The B-9f ``_publisher_names`` shape.)
-    """
-    rows = await db.execute(select(Profile.id, Profile.full_name).where(Profile.id.in_(ids)))
-    names: dict[UUID, str | None] = {}
-    for profile_id, full_name in rows.all():
-        names[profile_id] = full_name
-    return names
-
-
 class LlmEngineService:
     """Read/write the per-project engine choice."""
 
@@ -242,11 +228,7 @@ class LlmEngineService:
         self._projects = ProjectRepository(db)
 
     async def get_for_project(self, project_id: UUID) -> ResolvedProjectEngine:
-        """The project's resolved engine view (stored value or env default).
-
-        Endpoint engines derive ``retired`` from the endpoint row, never
-        ``find_entry`` (their models are off-catalogue by construction).
-        """
+        """The project's resolved engine view (stored value or env default)."""
         project = await self._projects.get_by_id(project_id)
         if project is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")
@@ -259,18 +241,7 @@ class LlmEngineService:
                 source="default",
                 retired=False,
                 stored=None,
-            )
-        if stored.endpoint_id is not None:
-            endpoint = await _endpoint_row(self.db, project_id, stored.endpoint_id)
-            return ResolvedProjectEngine(
-                provider=stored.provider,
-                model=stored.model,
-                mode=_normalized_mode(stored, project_id),
-                source="project",
-                retired=_endpoint_unhealthy(stored, endpoint),
-                stored=stored,
-                endpoint_id=stored.endpoint_id,
-                endpoint_label=endpoint.label if endpoint is not None else None,
+                user_choice_allowed=True,
             )
         return ResolvedProjectEngine(
             provider=stored.provider,
@@ -279,6 +250,7 @@ class LlmEngineService:
             source="project",
             retired=find_entry(stored.provider, stored.model) is None,
             stored=stored,
+            user_choice_allowed=stored.user_choice_allowed,
         )
 
     async def set_for_project(
@@ -289,62 +261,22 @@ class LlmEngineService:
         model: str,
         mode: Literal["fast", "verified"],
         updated_by: UUID,
-        alternates: list[LlmEngineAlternate] | None = None,
-        endpoint_id: UUID | None = None,
+        user_choice_allowed: bool = True,
     ) -> LlmEngineStored:
-        """Persist a validated engine choice with attribution.
-
-        ``updated_by`` comes from the auth dependency and ``previous_model``
-        from the stored value — never client-supplied.
-
-        ``endpoint_id`` selects an endpoint-backed engine (C2 B8): it
-        requires ``provider == "openai_compatible"`` and swaps the
-        catalogue check for the endpoint's own gates — exists IN THIS
-        PROJECT (a cross-project id reads as unknown, indistinguishable
-        from missing — BOLA), ``model ∈ allowed_models``, verified
-        (``validation_status == "ok"``), and — decision 10 — a Verified
-        engine refuses a prompted-only endpoint (the verify pass needs
-        structured output). Without it, ``openai_compatible`` is refused
-        and the catalogue validates the pair as before. The endpoint
-        checks run AFTER the project row lock below: the delete guard in
-        ``LlmEndpointService.delete`` takes the same lock, so an engine
-        write and an endpoint delete serialize instead of racing pointer
-        against row.
-
-        ``alternates`` is tri-state: ``None`` keeps the previously stored
-        list (minus the new primary — a kept list must never contain it),
-        ``[]`` clears it, a list replaces it. NEW entries must be in the
-        server catalogue (alternates are catalogue-only in C2 — endpoint
-        models included); entries already stored are kept even when the
-        catalogue retired them — the A4 frontend echoes the FULL stored
-        list on every mutation, so a stored-then-retired pair must not
-        brick every PUT (the read flags it amber; a removal echo simply
-        omits it). Duplicates collapse to the first occurrence and the
-        primary pair is silently filtered out.
-        """
-        if endpoint_id is not None and provider != "openai_compatible":
-            raise ValueError(
-                "An endpoint-backed engine requires provider 'openai_compatible' "
-                f"— got {provider!r}"
-            )
-        if endpoint_id is None:
-            if provider == "openai_compatible":
-                raise ValueError(
-                    "Provider 'openai_compatible' requires an endpoint_id — it names "
-                    "no catalogue entry"
-                )
-            if find_entry(provider, model) is None:
-                raise ValueError(f"Unknown engine {provider}:{model} — not in the server catalogue")
+        """Persist the project default (a catalogue pair) and the lock, with
+        attribution. ``updated_by`` comes from the auth dependency and
+        ``previous_model`` from the stored value — never client-supplied."""
+        if provider == "openai_compatible":
+            raise ValueError("The project default is a catalogue pair; a host is a per-user engine")
+        if find_entry(provider, model) is None:
+            raise ValueError(f"Unknown engine {provider}:{model} — not in the server catalogue")
         # Row-locked read for the read-modify-reassign below (mirrors
         # ``freeze_engine``'s reasoning in ``extraction_run_repository``):
         # ``settings`` is a whole-column JSONB write shared with
         # ``ParserSettingsService``, so two unlocked writers interleaving
         # (read A, read B, write A, write B) would silently drop one
         # sub-key. ``populate_existing`` refreshes any stale identity-map
-        # copy — the lock is useless if a pre-lock read is served. The
-        # alternates curation sits AFTER the lock on purpose: telling a NEW
-        # entry from an already-stored one needs the same locked read that
-        # feeds previous_model.
+        # copy — the lock is useless if a pre-lock read is served.
         project = (
             await self.db.execute(
                 select(Project)
@@ -355,39 +287,7 @@ class LlmEngineService:
         ).scalar_one_or_none()
         if project is None:
             raise ProjectNotFoundError(f"Project {project_id} not found")
-        if endpoint_id is not None:
-            await self._validate_endpoint_choice(
-                project_id=project_id, endpoint_id=endpoint_id, model=model, mode=mode
-            )
         previous = _stored_engine(project.settings)
-        previous_alternates = list(previous.alternates) if previous is not None else []
-        previous_pairs = {(a.provider, a.model) for a in previous_alternates}
-        if alternates is None:
-            # None = keep: the previously stored list from the same
-            # row-locked read that feeds previous_model.
-            candidates = previous_alternates
-        else:
-            # A replacement list: only entries the project does not already
-            # store have to be in the catalogue today (see the docstring).
-            for alternate in alternates:
-                if (alternate.provider, alternate.model) not in previous_pairs and (
-                    find_entry(alternate.provider, alternate.model) is None
-                ):
-                    raise ValueError(
-                        f"Unknown alternate engine {alternate.provider}:{alternate.model} "
-                        "— not in the server catalogue"
-                    )
-            candidates = alternates
-        # One curation pass for both paths: first occurrence wins, and the
-        # NEW primary never stays listed (promoting an alternate drops it).
-        curated: list[LlmEngineAlternate] = []
-        seen: set[tuple[str, str]] = set()
-        for alternate in candidates:
-            pair = (alternate.provider, alternate.model)
-            if pair == (provider, model) or pair in seen:
-                continue
-            seen.add(pair)
-            curated.append(alternate)
         stored = LlmEngineStored(
             provider=provider,
             model=model,
@@ -395,8 +295,7 @@ class LlmEngineService:
             updated_by=updated_by,
             updated_at=datetime.now(UTC),
             previous_model=previous.model if previous is not None else None,
-            alternates=curated,
-            endpoint_id=endpoint_id,
+            user_choice_allowed=user_choice_allowed,
         )
         # projects.settings is plain JSONB (NOT MutableDict): build a new dict
         # and REASSIGN, or the change is not tracked and never persists. Only
@@ -407,88 +306,65 @@ class LlmEngineService:
         await self.db.flush()
         return stored
 
-    async def _validate_endpoint_choice(
-        self,
-        *,
-        project_id: UUID,
-        endpoint_id: UUID,
-        model: str,
-        mode: Literal["fast", "verified"],
-    ) -> None:
-        """The write-time endpoint gates (see ``set_for_project``).
-
-        Every refusal is a ``ValueError`` — the endpoint maps it to 400,
-        matching the catalogue path's unknown-engine handling.
-        """
-        # Lazy import — LlmEndpointService imports from this module.
-        from app.services.llm_endpoint_service import EndpointNotFoundError, LlmEndpointService
-
-        try:
-            endpoint = await LlmEndpointService(self.db).get(project_id, endpoint_id)
-        except EndpointNotFoundError:
-            # Cross-project and missing are the SAME message (BOLA).
-            raise ValueError(f"Unknown endpoint {endpoint_id}") from None
-        if model not in (endpoint.allowed_models or []):
-            raise ValueError(
-                f"Model {model!r} is not in the allowed models of endpoint {endpoint.label!r}"
-            )
-        if endpoint.validation_status != "ok":
-            raise ValueError(
-                f"Endpoint {endpoint.label!r} is not verified — run Verify before "
-                "selecting it as the project engine"
-            )
-        if mode == "verified":
-            capabilities = LlmEndpointCapabilities.model_validate(endpoint.capabilities or {})
-            if capabilities.output_mode == "prompted":
-                raise ValueError(
-                    f"Verified mode needs structured output, but endpoint "
-                    f"{endpoint.label!r} only supports prompted output"
-                )
-
     async def get_engine_read(self, project_id: UUID, viewer_id: UUID) -> LlmEngineRead:
-        """The whole member-visible read model for the ⚙ popover.
+        """The whole member-visible read model for the ⚙ popover (§4).
 
-        Resolved engine + attribution name (batched profile select) + the
-        server-curated roster + the CALLER's per-provider availability —
-        booleans only (``has_key_for_provider`` is an existence probe: no
-        decrypt, no ``update_last_used`` write). Never another user's keys.
-        Plus the manager-curated ``alternates`` with a per-entry ``retired``
-        flag (empty when the engine is unset — the env default carries no
-        alternates). Alternates are runtime-inert in C2: only this read
-        surfaces them; :func:`resolve_project_engine` ignores them.
-        Endpoint engines add the two scalars ``endpoint_id`` /
-        ``endpoint_label`` (decision 12 — never an embedded matrix). The
-        LABEL is manager-only: this route is member-visible, and a label
-        names internal infrastructure while the endpoint surface itself
-        stays manager-gated. The id (an opaque uuid) still rides along —
-        the popover needs it to render the endpoint-backed state.
+        ``default`` is the project's choice with its lock and attribution;
+        ``effective`` is what the VIEWER's next run runs on — their own
+        ``user_project_engines`` row when the lock allows it (or they
+        manage the project), else the default. ``availability`` is the
+        credential ladder's dry run for THIS caller: a scope tag per
+        registry LLM provider, never key material.
         """
         resolved = await self.get_for_project(project_id)
         stored = resolved.stored
-
         updated_by_name: str | None = None
         if stored is not None and stored.updated_by is not None:
-            names = await _profile_names(self.db, {stored.updated_by})
-            updated_by_name = names.get(stored.updated_by)
-
-        keys = APIKeyService(self.db, viewer_id)
-        availability: dict[str, bool] = {}
-        for provider in sorted({entry.provider for entry in CATALOG}):
-            availability[provider] = await keys.has_key_for_provider(provider)
-
-        endpoint_label = resolved.endpoint_label
-        if endpoint_label is not None and not await self._viewer_is_manager(project_id, viewer_id):
-            endpoint_label = None
-
-        return LlmEngineRead(
+            updated_by_name = (await profile_names(self.db, {stored.updated_by})).get(
+                stored.updated_by
+            )
+        default_source: Literal["project", "env_default"] = (
+            "project" if stored is not None else "env_default"
+        )
+        default = LlmEngineDefaultRead(
             provider=resolved.provider,
             model=resolved.model,
             mode=resolved.mode,
-            source=resolved.source,
+            source=default_source,
             retired=resolved.retired,
+            user_choice_allowed=resolved.user_choice_allowed,
             updated_by_name=updated_by_name,
             updated_at=stored.updated_at if stored is not None else None,
             previous_model=stored.previous_model if stored is not None else None,
+        )
+        effective = LlmEngineEffectiveRead(
+            provider=default.provider,
+            model=default.model,
+            mode=default.mode,
+            source=default_source,
+            retired=default.retired,
+        )
+        row = await get_user_engine(self.db, user_id=viewer_id, project_id=project_id)
+        if row is not None and (
+            resolved.user_choice_allowed or await viewer_is_manager(self.db, project_id, viewer_id)
+        ):
+            label: str | None = None
+            if row.connection_id is not None:
+                conn = await owned_user_connection(self.db, row.connection_id, viewer_id)
+                label = conn.label if conn is not None else None
+            effective = LlmEngineEffectiveRead(
+                provider=row.provider,
+                model=row.model,
+                mode=row.mode if row.mode in ("fast", "verified") else "fast",  # type: ignore[arg-type]
+                source="user",
+                retired=await user_row_is_retired(self.db, row),
+                connection_id=row.connection_id,
+                connection_label=label,
+            )
+        return LlmEngineRead(
+            default=default,
+            effective=effective,
+            source=effective.source,
             catalog=[
                 LlmEngineCatalogEntryRead(
                     provider=entry.provider,
@@ -498,33 +374,10 @@ class LlmEngineService:
                     best_for=entry.best_for,
                     context_window=entry.context_window,
                     cost_tier=entry.cost_tier,
-                    byok_only=is_byok_only(entry.provider),
                 )
-                for entry in CATALOG
+                for entry in selectable_catalog()
             ],
-            availability=availability,
-            alternates=[
-                LlmEngineAlternateRead(
-                    provider=a.provider,
-                    model=a.model,
-                    canonical=canonical_pair(a.provider, a.model),
-                    retired=find_entry(a.provider, a.model) is None,
-                )
-                for a in (stored.alternates if stored is not None else [])
-            ],
-            endpoint_id=resolved.endpoint_id,
-            endpoint_label=endpoint_label,
-        )
-
-    async def _viewer_is_manager(self, project_id: UUID, viewer_id: UUID) -> bool:
-        """Whether the viewer manages this project — the same
-        ``public.is_project_manager`` helper the RLS policies and the API
-        role gates use, so one definition of "manager" serves all three."""
-        return bool(
-            (
-                await self.db.execute(
-                    text("SELECT public.is_project_manager(:pid, :uid) AS ok"),
-                    {"pid": str(project_id), "uid": str(viewer_id)},
-                )
-            ).scalar_one()
+            availability=await availability_map(
+                self.db, project_id=project_id, user_id=viewer_id, providers=llm_provider_ids()
+            ),
         )

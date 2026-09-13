@@ -56,7 +56,6 @@ frontend/lib/copy/common.ts:pdfLoadError
 frontend/lib/copy/common.ts:pdfLoadErrorDesc
 frontend/lib/copy/common.ts:pdfNotLinked
 frontend/lib/copy/common.ts:pdfNotLinkedDesc
-frontend/lib/copy/common.ts:removeAria
 frontend/lib/copy/common.ts:unknownError
 frontend/lib/copy/common.ts:userRoleAria
 frontend/lib/copy/consensus.ts:templatesEditAction
@@ -64,7 +63,6 @@ frontend/lib/copy/consensus.ts:templatesOverrideAction
 frontend/lib/copy/layout.ts:themeToggleDark
 frontend/lib/copy/layout.ts:themeToggleLight
 frontend/lib/copy/layout.ts:themeToggleSystem
-frontend/lib/copy/llmEngine.ts:alternatesAddLabel
 frontend/lib/copy/navigation.ts:ariaBack
 frontend/lib/copy/navigation.ts:ariaCollapseSidebar
 frontend/lib/copy/navigation.ts:ariaExpandSidebar
@@ -118,7 +116,4 @@ frontend/lib/copy/shared.ts:youHaveNoInstancesOf
 frontend/lib/copy/templateConfig.ts:deleteGroupCascadeWarning
 frontend/lib/copy/templateConfig.ts:errors_draftLockHeld
 frontend/lib/copy/templateConfig.ts:errors_draftLockHeldBy
-frontend/lib/copy/user.ts:apiKeysDeactivated
-frontend/lib/copy/user.ts:apiKeysErrorDeactivating
-frontend/lib/copy/user.ts:apiKeysSessionExpired
 frontend/lib/copy/user.ts:ariaGoBack

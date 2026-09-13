@@ -81,7 +81,7 @@ Optional Zotero:
 - `zotero.e2e.ts`: invalid payload handling + optional credentials/connection flow.
 - `extraction.e2e.ts`: extraction fullscreen route + model/section API runs.
 - `unified-evaluation.e2e.ts`: schema/run/review/consensus/evidence plus edge cases.
-- `settings-api-keys.e2e.ts`: providers + API key CRUD.
+- `settings-connections.e2e.ts`: Integrations tab + AI connection lifecycle (providers, create, verify, delete).
 - `cross-cutting.e2e.ts`: envelope, auth, status code semantics, and rate-limit.
 
 ## Troubleshooting

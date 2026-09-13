@@ -16,11 +16,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.llm_engine import (
-    LlmEngineRead,
-    LlmEngineStored,
-    LlmEngineUpdateRequest,
-)
+from app.schemas.llm_engine import LlmEngineStored, LlmEngineUpdateRequest
 
 # ---------------------------------------------------------------------------
 # LlmEngineStored — the persisted spine
@@ -108,43 +104,6 @@ def test_request_mode_defaults_to_fast() -> None:
     assert body.mode == "fast"
 
 
-# ---------------------------------------------------------------------------
-# Alternates (C2 A1) — stored spine, PUT body, read model
-# ---------------------------------------------------------------------------
-
-
-def test_stored_alternates_default_empty_for_old_payloads() -> None:
-    """Payloads persisted before alternates existed keep validating (every
-    non-identity field defaults) and read back an empty list."""
-    stored = LlmEngineStored.model_validate({"provider": "openai", "model": "gpt-5.6-luna"})
-    assert stored.alternates == []
-
-
-def test_stored_alternates_garbage_entry_degrades_entry_not_payload() -> None:
-    """A garbage entry (non-dict, or a dict missing the pair) degrades that
-    ENTRY, never the payload — the primary pair keeps the manager's choice."""
-    stored = LlmEngineStored.model_validate(
-        {
-            "provider": "openai",
-            "model": "gpt-5.6-luna",
-            "alternates": [
-                {"provider": "anthropic", "model": "claude-sonnet-5"},
-                "garbage",
-                42,
-            ],
-        }
-    )
-    assert [(a.provider, a.model) for a in stored.alternates] == [("anthropic", "claude-sonnet-5")]
-
-
-def test_update_request_alternates_default_none_keeps() -> None:
-    # None (field absent) = keep the stored list; [] would clear it.
-    req = LlmEngineUpdateRequest.model_validate(
-        {"provider": "openai", "model": "gpt-5.6-luna", "mode": "fast"}
-    )
-    assert req.alternates is None
-
-
 def test_update_request_still_forbids_extras() -> None:
     with pytest.raises(ValidationError):
         LlmEngineUpdateRequest.model_validate(
@@ -152,143 +111,41 @@ def test_update_request_still_forbids_extras() -> None:
         )
 
 
-def test_stored_alternate_with_extra_key_is_dropped_entry_not_payload() -> None:
-    """``extra="forbid"`` on the entry shape: a hand-written STORED entry
-    smuggling keys (temperature/seed) is dropped by the tolerant per-entry
-    validator — with the ``llm_engine_alternate_entry_dropped`` warning —
-    while the payload and the well-formed siblings survive."""
-    stored = LlmEngineStored.model_validate(
-        {
-            "provider": "openai",
-            "model": "gpt-5.6-luna",
-            "alternates": [
-                {"provider": "openai", "model": "gpt-5.6-luna", "temperature": 2},
-                {"provider": "anthropic", "model": "claude-sonnet-5"},
-            ],
-        }
-    )
-    assert [(a.provider, a.model) for a in stored.alternates] == [("anthropic", "claude-sonnet-5")]
-
-
-def test_stored_alternate_oversized_field_is_dropped() -> None:
-    """A field beyond the 200-char bound degrades that ENTRY, never the payload."""
-    stored = LlmEngineStored.model_validate(
-        {
-            "provider": "openai",
-            "model": "gpt-5.6-luna",
-            "alternates": [{"provider": "openai", "model": "x" * 201}],
-        }
-    )
-    assert stored.alternates == []
-
-
-def test_request_alternate_with_extra_key_is_refused() -> None:
-    """Request-side, the same smuggled key is a hard 422 — no tolerance on
-    the write gate."""
-    with pytest.raises(ValidationError) as exc:
-        LlmEngineUpdateRequest.model_validate(
-            {
-                "provider": "openai",
-                "model": "gpt-5.6-luna",
-                "mode": "fast",
-                "alternates": [{"provider": "openai", "model": "gpt-4o-mini", "temperature": 2}],
-            }
-        )
-    assert any(e["type"] == "extra_forbidden" for e in exc.value.errors())
-
-
-def test_read_alternates_default_empty() -> None:
-    """``LlmEngineRead`` validates without the field — alternates default []."""
-    read = LlmEngineRead.model_validate(
-        {
-            "provider": "openai",
-            "model": "gpt-5.6-luna",
-            "mode": "fast",
-            "source": "default",
-            "retired": False,
-            "catalog": [],
-            "availability": {},
-        }
-    )
-    assert read.alternates == []
-
-
 # ---------------------------------------------------------------------------
-# Endpoint-backed engines (C2 B8) — stored pointer, PUT body, read scalars
+# Slice 2 — connection_id + the manager lock
 # ---------------------------------------------------------------------------
 
 
-def test_stored_endpoint_id_defaults_none_for_old_payloads() -> None:
-    """Payloads persisted before endpoint engines existed keep validating
-    (every non-identity field defaults) and read back ``endpoint_id`` None."""
-    stored = LlmEngineStored.model_validate({"provider": "openai", "model": "gpt-5.6-luna"})
-    assert stored.endpoint_id is None
-
-
-def test_stored_endpoint_id_roundtrips_through_its_json_dump() -> None:
-    """The pointer survives the write-site dump (uuid → str) and the
-    read-boundary validate (str → uuid)."""
-    endpoint_id = uuid4()
-    stored = LlmEngineStored(
-        provider="openai_compatible", model="local-model", endpoint_id=endpoint_id
+def test_stored_legacy_endpoint_id_payload_validates_and_reads_no_connection() -> None:
+    """Read tolerance (§3.1): a pre-slice-2 payload carrying ``endpoint_id``
+    still validates; the pointer is gone (the table is dropped), so the
+    engine reads as a catalogue pair — retired if it named a host."""
+    stored = LlmEngineStored.model_validate(
+        {"provider": "openai_compatible", "model": "llama3", "endpoint_id": str(uuid4())}
     )
-    dumped = stored.model_dump(mode="json")
-    assert dumped["endpoint_id"] == str(endpoint_id)
-    assert LlmEngineStored.model_validate(dumped).endpoint_id == endpoint_id
+    assert stored.connection_id is None and stored.user_choice_allowed is True
 
 
-def test_update_request_endpoint_id_defaults_none() -> None:
-    """A catalogue-engine PUT (no field) means no endpoint pointer."""
-    req = LlmEngineUpdateRequest.model_validate({"provider": "openai", "model": "gpt-5.6-luna"})
-    assert req.endpoint_id is None
-
-
-def test_update_request_accepts_an_endpoint_id() -> None:
-    endpoint_id = uuid4()
-    req = LlmEngineUpdateRequest.model_validate(
-        {
-            "provider": "openai_compatible",
-            "model": "local-model",
-            "endpoint_id": str(endpoint_id),
-        }
+def test_stored_lock_roundtrips_through_its_json_dump() -> None:
+    stored = LlmEngineStored(provider="openai", model="gpt-4o-mini", user_choice_allowed=False)
+    assert (
+        LlmEngineStored.model_validate(stored.model_dump(mode="json")).user_choice_allowed is False
     )
-    assert req.endpoint_id == endpoint_id
 
 
-def test_read_endpoint_scalars_default_none() -> None:
-    """``LlmEngineRead`` gains ONLY the two scalars (decision 12): both
-    default None for catalogue engines, and there is NO embedded endpoints
-    matrix on the read."""
-    read = LlmEngineRead.model_validate(
-        {
-            "provider": "openai",
-            "model": "gpt-5.6-luna",
-            "mode": "fast",
-            "source": "default",
-            "retired": False,
-            "catalog": [],
-            "availability": {},
-        }
+def test_update_request_lock_defaults_open() -> None:
+    assert (
+        LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini").user_choice_allowed is True
     )
-    assert read.endpoint_id is None
-    assert read.endpoint_label is None
-    assert "endpoints" not in LlmEngineRead.model_fields
 
 
-def test_read_carries_the_endpoint_scalars() -> None:
-    endpoint_id = uuid4()
-    read = LlmEngineRead.model_validate(
-        {
-            "provider": "openai_compatible",
-            "model": "local-model",
-            "mode": "fast",
-            "source": "project",
-            "retired": False,
-            "catalog": [],
-            "availability": {},
-            "endpoint_id": str(endpoint_id),
-            "endpoint_label": "Lab Ollama",
-        }
-    )
-    assert read.endpoint_id == endpoint_id
-    assert read.endpoint_label == "Lab Ollama"
+def test_update_request_refuses_alternates_endpoint_id_and_connection_id() -> None:
+    """§6: the default is always a catalogue pair — a pointer of any name is
+    a 422, by ``extra="forbid"`` (no field exists to carry one)."""
+    for extra in (
+        {"alternates": []},
+        {"endpoint_id": str(uuid4())},
+        {"connection_id": str(uuid4())},
+    ):
+        with pytest.raises(ValidationError):
+            LlmEngineUpdateRequest(provider="openai", model="gpt-4o-mini", **extra)

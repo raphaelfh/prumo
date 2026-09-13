@@ -18,15 +18,15 @@ from app.api.v1.endpoints import (
     feedback,
     hitl_configs,
     hitl_sessions,
-    llm_endpoints,
     llm_engine,
     manager_review_visibility,
     parser_settings,
     project_archive,
+    project_connections,
     project_templates,
     section_extraction,
     template_structure,
-    user_api_keys,
+    user_connections,
     zotero_import,
 )
 
@@ -52,9 +52,9 @@ api_router.include_router(
 )
 
 api_router.include_router(
-    user_api_keys.router,
-    prefix="/user-api-keys",
-    tags=["User API Keys"],
+    user_connections.router,
+    prefix="/me",
+    tags=["me"],
 )
 
 api_router.include_router(
@@ -124,7 +124,7 @@ api_router.include_router(
 )
 
 api_router.include_router(
-    llm_endpoints.router,
+    project_connections.router,
     prefix="/projects",
     tags=["projects"],
 )

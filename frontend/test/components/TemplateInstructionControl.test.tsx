@@ -19,20 +19,6 @@ vi.mock('@/hooks/project/useAiContext', () => ({
   useAiContext: () => ({data: undefined, isLoading: false, isError: true}),
   useSetAiContext: () => ({mutate: vi.fn(), isPending: false}),
 }));
-// Same reason for the model tab: an errored read keeps that pane inert so
-// these tests stay about the instruction surface.
-vi.mock('@/hooks/extraction/useLlmEngine', () => ({
-  useLlmEngine: () => ({data: undefined, isError: true, isPending: false}),
-  useSetLlmEngine: () => ({mutate: vi.fn(), isPending: false}),
-}));
-vi.mock('@/hooks/extraction/useLlmEndpoints', () => ({
-  useLlmEndpoints: () => ({data: [], isError: false, isPending: false}),
-  useCreateLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
-  useUpdateLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
-  useDeleteLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
-  useVerifyLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
-}));
-
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {TemplateInstructionControl} from '@/components/extraction/TemplateInstructionControl';
 

@@ -31,14 +31,14 @@ class TestClassifyExtractionError:
         # The provider message is already actionable — pass it through.
         assert message == "No OpenAI API key available: pass a BYOK key."
 
-    def test_endpoint_unavailable_maps_to_llm_endpoint_unavailable(self) -> None:
-        """Decision 13: an endpoint engine whose row vanished (or whose key no
-        longer decrypts) mid-flight classifies to the typed code — never the
-        generic EXTRACTION_FAILED (the ENGINE_RETIRED pattern)."""
-        from app.services.llm_endpoint_service import EndpointUnavailableError
+    def test_connection_unavailable_maps_to_llm_endpoint_unavailable(self) -> None:
+        """A pinned host connection gone / foreign / undecryptable mid-flight
+        classifies to the typed code — never the generic EXTRACTION_FAILED
+        (the ENGINE_RETIRED pattern)."""
+        from app.services.llm_connection_service import ConnectionUnavailableError
 
         code, message = classify_extraction_error(
-            EndpointUnavailableError("The project's engine uses a custom endpoint that is gone.")
+            ConnectionUnavailableError("The project's engine uses a custom endpoint that is gone.")
         )
         assert code is ExtractionErrorCode.LLM_ENDPOINT_UNAVAILABLE
         assert message == "The project's engine uses a custom endpoint that is gone."
