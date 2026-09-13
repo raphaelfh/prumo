@@ -56,6 +56,34 @@ class TestClassifyExtractionError:
         assert code is ExtractionErrorCode.MISSING_ENTITY_KEY
         assert message == str(exc)
 
+    def test_upstream_410_maps_to_engine_retired(self) -> None:
+        """A provider that retired a model still offered to the user answers
+        410 Gone (Ollama Cloud: "was retired at ..."). Same outcome as a
+        catalogue miss — pick a new model — never the generic failure with
+        the raw ``status_code: 410, ...`` repr."""
+        from pydantic_ai.exceptions import ModelHTTPError
+
+        from app.llm.errors import is_transient_llm_error
+
+        exc = ModelHTTPError(
+            status_code=410,
+            model_name="deepseek-v3.2",
+            body={"error": "model 'deepseek-v3.2' was retired at 2026-07-15"},
+        )
+        assert not is_transient_llm_error(exc)  # precondition: fails fast, no retry
+        code, message = classify_extraction_error(exc)
+        assert code is ExtractionErrorCode.ENGINE_RETIRED
+        assert message == "The model deepseek-v3.2 was retired by its provider. Pick a new model."
+
+    def test_other_upstream_http_error_stays_generic(self) -> None:
+        """Only 410 means retired; a 404 (unknown id, wrong host) is not."""
+        from pydantic_ai.exceptions import ModelHTTPError
+
+        exc = ModelHTTPError(status_code=404, model_name="typo-model", body=None)
+        code, message = classify_extraction_error(exc)
+        assert code is ExtractionErrorCode.EXTRACTION_FAILED
+        assert message == str(exc)
+
     def test_unknown_error_maps_to_generic(self) -> None:
         code, message = classify_extraction_error(RuntimeError("llm exploded"))
         assert code is ExtractionErrorCode.EXTRACTION_FAILED
