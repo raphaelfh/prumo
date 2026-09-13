@@ -71,7 +71,10 @@ Two slices, one plan, two PRs to `dev`:
   the rest of 7. One PR carrying backend and frontend together: the old
   routes and tables are deleted, so a backend-only PR would break the
   deployed frontend. Shipped to production in the same `/ship-spec
-  --to-prod` run.
+  --to-prod` run. The plan splits the larger sections into implementer
+  briefs: §4 into two tasks (one per router), §5 into three (one per
+  surface), and §2 + §3.1 into a migration task and an `endpoint_id` →
+  `connection_id` rename task.
 
 ## 1. Provider registry (slice 1)
 
@@ -98,9 +101,13 @@ class ProviderSpec:
 | openai_compatible | llm | yes | yes | none | user |
 | llama_cloud | parsing | no | no | `LLAMA_CLOUD_API_KEY` | user, project |
 
-Slice 1 ships without `scopes` and `key_optional` (no consumer yet;
-`key_optional` is implied by `needs_host`); slice 2 adds `scopes` with its
-consumers.
+Slice 1 shipped without `scopes` and `key_optional` (no consumer yet;
+`key_optional` is implied by `needs_host`), and with a `description`
+field the tree already renders (`ProviderSpec.description` in
+`backend/app/llm/registry.py`). Slice 2 adds **both** `scopes` and
+`key_optional` to `ProviderSpec`, with their consumers: the `/providers`
+read (§4), the project-scope CHECK on `llm_connections` (§2) and the
+connection schema validator. `description` stays.
 
 Rules the registry encodes, not comments elsewhere:
 
@@ -165,6 +172,47 @@ locked transitively). Tests: every file name is a registry LLM provider
 and every LLM provider has a file; a malformed row fails import; a
 deprecated row resolves but is absent from the `/llm-engine` catalogue.
 
+### 1.2 Slice-1 residue retired in slice 2
+
+Slice 1 left stand-ins that only made sense while `user_api_keys`
+existed. Slice 2 retires each one in the same PR:
+
+- `registry.storable_providers()` (`backend/app/llm/registry.py`) is
+  replaced by `scopes`: "storable at user scope" is `"user" in
+  spec.scopes`, "storable at project scope" is `"project" in
+  spec.scopes`. Its consumers (`backend/app/schemas/user_api_key.py`,
+  `backend/app/services/api_key_service.py`, and the unit tests
+  `backend/tests/unit/test_api_key_service.py`,
+  `backend/tests/unit/test_user_api_key_schemas.py`,
+  `backend/tests/unit/llm/test_registry.py::test_storable_providers_are_the_hosted_ones`)
+  are deleted or ported to `scopes`.
+- `registry.is_byok_only()` and the `byok_only` field on the catalogue
+  read model (`backend/app/schemas/llm_engine.py`, written by
+  `backend/app/services/llm_engine_service.py`) are removed: §4's
+  `availability` map supersedes them. The tests
+  `backend/tests/unit/llm/test_registry.py::test_byok_only_is_computed_from_the_deployment`,
+  `::test_host_bearing_provider_is_never_byok_only` and
+  `backend/tests/integration/test_llm_engine_endpoint.py::test_byok_only_reflects_the_deployment_global_key`
+  go with them, as do the doc references in `backend/app/llm/catalog.py`
+  and `backend/app/core/config.py`. `global_key_for()` stays: it is what
+  `availability` reads for the `global` tier.
+- `registry.provider_ids()` is baselined in `backend/.vulture_baseline`
+  with a comment naming `app/models/user_api_key.py` as its only
+  (vulture-invisible) consumer. That model is deleted; the row is
+  re-evaluated: kept only if `app/models/llm_connection.py` becomes its
+  consumer under the same exclusion, otherwise removed with the function
+  (see §7.8).
+- The `registry.py` module docstring names `user_api_keys.provider` as
+  the home of the CHECK literal; it is rewritten for
+  `llm_connections.provider` and the `scopes` CHECK.
+- `KeyScope.SHARED_ENDPOINT` (`backend/app/services/api_key_service.py`)
+  and its writer in `backend/app/services/engine_credentials.py`: read
+  tolerance only (§3.3); nothing writes it again.
+- The slice-1 migration `0071_registry_providers` narrowed the
+  `user_api_keys` CHECK; its live-DB assertions in
+  `backend/tests/integration/test_migration_roundtrip.py` retire with the
+  table (§7.8).
+
 ## 2. `llm_connections` (slice 2)
 
 One table replaces `user_api_keys` and `project_llm_endpoints`.
@@ -198,6 +246,40 @@ revoked from `authenticated` and `anon`, exactly as
 `alternates` key from every `projects.settings.llm_engine`. The
 frontend's generated Supabase types lose the old table.
 
+What the migration drops, in full (a `DROP TABLE` takes the table's
+own objects with it; the trigger *function* is a separate object and
+must be dropped explicitly):
+
+- `public.user_api_keys` (`backend/alembic/versions/baseline_v1.sql`):
+  the table with its PK, `user_api_keys_user_id_fkey`, the two CHECKs
+  (`user_api_keys_provider_check`, narrowed by `0071_registry_providers`,
+  and `user_api_keys_validation_status_check`), the indexes
+  `idx_user_api_keys_provider` and `idx_user_api_keys_user_id`, the
+  triggers `trg_ensure_single_default_api_key` and
+  `trg_user_api_keys_updated_at`, the four owner RLS policies
+  `user_api_keys_{select,insert,update,delete}`, and the `GRANT ALL`
+  to `authenticated` and `service_role`.
+- `DROP FUNCTION public.ensure_single_default_api_key()` explicitly:
+  the trigger falls with the table, the function does not, and its own
+  grants to `authenticated` / `service_role` fall with the function.
+  `update_updated_at_column()` is shared by other tables and stays.
+- `public.project_llm_endpoints`
+  (`backend/alembic/versions/0055_project_llm_endpoints.py`): the table
+  with its CHECKs, `ix_public_project_llm_endpoints_project_id`, the
+  `deny_all` policy and the REVOKE-from-`authenticated`/`anon` posture,
+  which `llm_connections` re-creates for itself.
+- The models `backend/app/models/{user_api_key,project_llm_endpoint}.py`
+  and the repository `backend/app/repositories/user_api_key_repository.py`
+  go in the same PR, so `alembic check` stays green.
+- Seed: `backend/app/seed.py` and `backend/app/seed_probast_ai*.py`
+  write no rows to either table, so there is no seed to retire.
+- `alternates`: a data update strips the key from every
+  `projects.settings -> 'llm_engine'` that carries it; the writers
+  (`backend/app/services/llm_engine_service.py`,
+  `frontend/lib/llmEngineUpdateBody.ts`) stop producing it in the same PR
+  (§3.1). The migration is self-guarding SQL: it is a no-op on a row
+  without the key.
+
 ## 3. Engine choice and resolution
 
 ### 3.1 Stored shapes
@@ -224,8 +306,29 @@ tolerance only; nothing writes them again).
 ### 3.2 Resolution
 
 `resolve_engine(db, project_id, user_id) -> LlmTarget` replaces
-`resolve_project_engine` at all four call sites (kickoff gate, run
-freeze, worker, section service):
+`resolve_project_engine` (`backend/app/services/llm_engine_service.py`)
+at every call site in the tree:
+
+- the kickoff gate, `backend/app/api/v1/endpoints/section_extraction.py`
+  (the fail-fast resolve before the queue check);
+- the section service, `backend/app/services/section_extraction_service.py`
+  (`run_from_request`'s "candidate is the project's resolved engine"
+  fallback);
+- `resolve_engine_for_run` in `backend/app/services/run_engine_freeze.py`,
+  whose project-resolve fallback is the **live worker path**
+  (`run_section_extraction_task` in
+  `backend/app/worker/tasks/extraction_tasks.py` calls it with `repin`).
+  `resolve_engine_for_run` gains a keyword `user_id` and threads it to
+  `resolve_engine`; the worker passes the `user_id` it already receives as a
+  task argument. `freeze_run_engine` is unchanged in signature (it pins the
+  candidate it is handed), but the candidate it pins now carries
+  `deviation` (§3.1).
+- The dead worker entry in `backend/app/worker/tasks/extraction_tasks.py`
+  (`extract_section_task`, marked `DEAD ENTRY POINT`, the only other
+  `resolve_project_engine` caller) is **deleted** in slice 2: the file is
+  touched, and no dead code ships.
+
+The order:
 
 1. Read the project engine. If it is retired (catalogue miss) raise the
    existing typed 409 — a manager must re-choose.
@@ -258,7 +361,10 @@ silent-pin bug fixed on 2026-08-19.
   fallback. The user-row and default writes validate through the same
   predicate, and resolution re-runs it, so a connection deleted or
   re-scoped after the pin is a 409 at run time (TOCTOU closed at the
-  read). The service is registered with `check_scope_guards`.
+  read). There is nothing to register: `scripts/fitness/check_scope_guards.py`
+  scans `backend/app` unconditionally against a shrink-only baseline, so
+  the new service writes its ownership predicate once, in the WHERE
+  clause, and adds no baseline entry.
 - Otherwise, in order: the caller's user-scope connection for the
   provider, the project's project-scope connection for the provider, the
   registry's global setting. First hit wins.
@@ -282,10 +388,20 @@ Two connection routers replace three routers; every read carries
 - Verify: the existing transport probe ladder for host-bearing
   connections (stores `models_seen`, pre-fills `allowed_models`); a
   cheap authenticated call for hosted providers.
-- `GET /providers` — the registry read: id, label, docs url, needs_host,
-  key_optional, scopes, and `global_key_available` for this deployment.
-  Slice 2 adds `scopes` to the registry with this read and the CHECK
-  above as its consumers.
+- `GET /me/providers` — the registry read, living in the user-scope
+  connections router (`backend/app/api/v1/endpoints/user_connections.py`,
+  mounted at prefix `/me`, the same prefix as `/me/connections`). It
+  replaces `GET /user-api-keys/providers`
+  (`backend/app/api/v1/endpoints/user_api_keys.py`), and the frontend
+  service moves its path accordingly. Fields per provider: `id`, `label`,
+  `description`, `docs_url`, `needs_host`, `key_optional`, `scopes`, and
+  `global_key_available` for this deployment (`global_key_for(id)` is
+  not None). Slice 2 adds `scopes` and `key_optional` to the registry
+  with this read and the CHECK above as their consumers.
+- The catalogue entries `/llm-engine` returns lose `byok_only`
+  (`LlmEngineCatalogEntryRead` in `backend/app/schemas/llm_engine.py`, computed
+  today by `registry.is_byok_only`): `availability` below carries the
+  same fact per provider, and the picker reads that instead.
 - `GET /projects/{id}/llm-engine` returns `default` (the project
   engine, with lock and attribution), `effective` (the viewer's row or
   the default), `source: user | project | env_default`, the catalogue,
@@ -310,9 +426,12 @@ settings.
   is one form: provider select (user-scope providers), docs link, key
   field, host field only when the provider needs one, verify. Replaces
   the API keys section and the project endpoints dialog.
-- **Worklist gear → "Your engine for new runs".** An icon button beside
-  the filter and export controls next to the search box, on both
-  article tables (data extraction and quality assessment). It opens the
+- **Worklist gear → "Your engine for new runs".** An icon button in the
+  `toolbarActions` group both article tables already expose — the
+  trailing toolbar group beside the list count, where the filter and
+  export controls sit (`frontend/components/extraction/ArticleExtractionTable.tsx`
+  and `frontend/components/hitl/HITLArticleTable.tsx`, same prop name and
+  placement on both). No new slot is added. It opens the
   picker, writing the viewer's own row: rows grouped by provider from
   the catalogue, plus one group per host the viewer owns, models from
   `allowed_models`. Each row carries a scope tag — *your key*, *project
@@ -336,6 +455,83 @@ settings.
   dialog, engine settings dialog and alternates section are retired.
 
 The run form renders `effective`, never `default`.
+
+### 5.1 Removal sites
+
+Everything the three surfaces replace, by file, so nothing is left
+mounted:
+
+- `LlmEngineChip` has two mounts in
+  `frontend/components/extraction/ExtractionInterface.tsx`: the
+  no-template branch (`{!activeTemplate && <LlmEngineChip …/>}`) and the
+  `engineSlot` of `TemplateConfigEditor` in the config bar. Both go, then
+  `LlmEngineChip.tsx` itself, and `TemplateConfigEditor`'s `engineSlot`
+  prop if nothing else fills it.
+- `LlmEnginePane` is mounted once, in the Model tab of
+  `frontend/components/project/AiConfigDialog.tsx`. The tab, the pane
+  and `LlmEngineSettingsDialog.tsx` / `LlmEndpointsDialog.tsx` go with
+  it. The exported `AiConfigTab` type narrows from `'model' | 'picots' |
+  'instruction'` to `'picots' | 'instruction'`; `initialTab` already
+  defaults to `'picots'`, so no caller changes. The copy key
+  `llmEngine.modelTabLabel` is deleted.
+- `frontend/components/user/ApiKeysSection.tsx` (mounted by
+  `IntegrationsSection.tsx`) is replaced by the AI connections list;
+  `frontend/services/apiKeysService.ts` becomes the connections service.
+- The settings E2E `frontend/e2e/flows/settings-api-keys.e2e.ts` is
+  rewritten against connections (§7.6).
+
+### 5.2 Copy
+
+The new surfaces' copy lives in one new namespace,
+`frontend/lib/copy/llmConnections.ts` (registered in
+`frontend/lib/copy/index.ts`): the connections list and form, the gear
+picker (scope tags, *needs a key*, lock reason, mode toggle), and the AI
+engine card. The retiring keys are removed in the same PR so the
+copy-key ratchet (`scripts/fitness/check_copy_keys.py`) shrinks rather
+than fails: the `apiKeys*` / `integrationsApiKeys*` keys in
+`frontend/lib/copy/user.ts`, and the `alternates*`, `endpoint*`,
+`manageEndpoints` and `modelTabLabel` keys in
+`frontend/lib/copy/llmEngine.ts`. What `llmEngine.ts` keeps is what the
+run form's `effective` rendering and the typed 409s still reference.
+
+### 5.3 Surface states
+
+Each surface names every non-error state, following the convention the
+retiring endpoints dialog used (`endpointsLoading`, `endpointsEmpty`,
+`endpointsLoadError`). Errors are §6; "unauthorized" below means the
+viewer's role, not a 401 (the app shell handles an expired session).
+
+**Integrations → AI connections** (`GET /me/connections`,
+`GET /me/providers`):
+
+| state | rendering |
+|---|---|
+| loading | skeleton rows in the list; the Add button disabled until `/me/providers` resolves |
+| empty | one-line empty state with the Add action inline ("No AI connections yet") |
+| error | inline load-error line with a retry; the form stays usable |
+| not-found | n/a (the list is the viewer's own; a deleted row disappears on refetch) |
+| unauthorized | n/a (any signed-in user; the provider select offers only `scopes ∋ user`) |
+
+**Worklist gear picker** (`GET /projects/{id}/llm-engine`):
+
+| state | rendering |
+|---|---|
+| loading | gear rendered, tooltip "Loading…", popover shows skeleton groups |
+| empty | catalogue never empty; a viewer with no host connection sees no host group and a link to Integrations |
+| error | popover shows the load-error line with a retry; gear stays mounted |
+| not-found | project 404 → the worklist's own not-found handles it; the gear is not rendered |
+| unauthorized | non-member: gear hidden; member under lock: picker read-only with the one-line reason (§5); manager: editable |
+
+**Project Settings → AI engine card + Shared keys**
+(`GET /projects/{id}/llm-engine`, `GET /projects/{id}/connections`):
+
+| state | rendering |
+|---|---|
+| loading | card skeleton; the shared-keys table shows skeleton rows |
+| empty | shared keys: one-line empty state with the Add action ("No shared keys yet"); default: always set (env default) |
+| error | inline load-error with a retry per block (card and table load independently) |
+| not-found | project 404 → settings page not-found, card not rendered |
+| unauthorized | non-manager: card read-only (default, mode, lock shown; no controls), shared-keys table hidden — the API is manager-gated either way |
 
 ## 6. Errors
 
@@ -362,13 +558,35 @@ The run form renders `effective`, never `default`.
    each with the other two present; lock ignores a stored user row;
    deviation flag set and stable across a later default change.
 3. **Ownership.** A user row pinned to another user's connection id
-   resolves to the 409, never a key; `check_scope_guards` covers the
-   service.
+   resolves to the 409, never a key; `scripts/fitness/check_scope_guards.py`
+   (which scans all of `backend/app`) reports no new duplicate predicate
+   for the connection service, and its baseline shrinks (§7.8).
 4. **Provenance compatibility.** Legacy snapshots with `endpoint_id` /
    `shared_endpoint` validate.
 5. **API.** Ported endpoint and key tests: scope rules (host-bearing
    provider rejected at project scope), secret absent from every response
-   and 422 echo, lock 403, default-with-connection 422.
+   and 422 echo, lock 403, default-with-connection 422. Plus:
+   - `GET /me/providers` payload: every registry provider is present
+     with exactly the §4 fields (`id`, `label`, `description`,
+     `docs_url`, `needs_host`, `key_optional`, `scopes`,
+     `global_key_available`); `global_key_available` flips with the
+     deployment setting (monkeypatch, as
+     `test_llm_engine_endpoint.py` does for `byok_only` today);
+     `openai_compatible` reports `scopes == ["user"]` and
+     `key_optional is True`.
+   - `availability` map on `GET /projects/{id}/llm-engine`: for one
+     provider, `user` with a user-scope connection present (even when a
+     project key and a global key also exist), `project` with only a
+     project key, `global` with only the setting, `null` with none;
+     another viewer of the same project without the user key sees
+     `project`, so the map is per caller. No `byok_only` field remains
+     in the catalogue entries.
+   - Migration strips `alternates`: the roundtrip suite
+     (`backend/tests/integration/test_migration_roundtrip.py`) seeds a
+     project whose `settings.llm_engine` carries `alternates` and one
+     without, upgrades, and asserts the key is gone from the first and
+     the second row is byte-identical; downgrade does not resurrect it
+     (data loss accepted, §Non-goals).
 6. **Frontend.** Vitest: the three scope tags, the *needs a key* row
    (unselectable, links out), the mode toggle, read-only picker under
    lock for a member and editable for a manager, the gear mounted on both worklists with
@@ -379,7 +597,31 @@ The run form renders `effective`, never `default`.
    not offered.
 8. **Gates.** knip (both modes), copy-key ratchet, vulture baseline and
    `alembic check` tightened in the same PR as each deletion;
-   fresh-versus-fresh migration proof.
+   fresh-versus-fresh migration proof. Concretely:
+   - `scripts/fitness/check_scope_guards.baseline` shrinks by the five
+     grandfathered rows for the dropped tables: the
+     `ProjectLlmEndpoint{id,project_id}` rows for
+     `llm_endpoint_service.py::get` and
+     `llm_engine_service.py::_endpoint_row`, and the four
+     `UserAPIKey{id,user_id}` rows for
+     `user_api_key_repository.py::{deactivate,get_by_id_and_user,hard_delete,update_key_name}`.
+     The gate only reports `findings - baseline`, so a stale row is
+     silent, which is exactly why the shrink is a PR obligation and not
+     something CI catches.
+   - `backend/tests/integration/test_migration_roundtrip.py`: bump
+     `expected_head` from `"0071_registry_providers"` to the slice-2
+     revision, and retire the 0071 block's live-DB assertions on
+     `user_api_keys_provider_check` (the table no longer exists at head);
+     the registry-equals-CHECK assertion moves to
+     `llm_connections_provider_check` and gains one for the `scopes`
+     CHECK.
+   - `backend/.vulture_baseline`: the `app/llm/registry.py:function:provider_ids`
+     row is re-evaluated per §1.2 (kept with a rewritten justification
+     naming `app/models/llm_connection.py`, or removed with the
+     function).
+   - The `backend/app/llm/registry.py` module docstring is rewritten for
+     `llm_connections` (§1.2); the copy-key ratchet sees only removals
+     (§5.2).
 
 ## References
 
