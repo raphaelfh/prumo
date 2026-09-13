@@ -256,7 +256,6 @@ Scoped paths: `frontend/components/project/settings/`, `frontend/components/user
 
 ## 9. Follow-ups
 
-- The `useTemplateFocus` extraction for `TemplateConfigGridPanel.tsx` (a separate task chip from sub-project 2).
 - The prose measure on QA Configuration's long tool descriptions (measured 1574px wide at 1920 in sub-project 2), if the user wants a readable column there too.
 - QA Configuration's manager-visibility toggle as a flat row, reusing `useManagerReviewVisibility`, if that screen gets a density pass.
 - Team's `confirm()` on member removal as an `AlertDialog` (frontend-ux §8); out of scope here as a behaviour change.
