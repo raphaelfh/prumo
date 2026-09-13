@@ -1,28 +1,19 @@
 /**
- * Integrations section: AI connections and Zotero.
+ * Settings → Integrations: one settings page whose body is the AI connections
+ * group and the Zotero group (spec 2026-09-13 borderless density pass § 4.3).
+ * Each child returns its own SettingsGroup as its root, so the body holds
+ * groups only and draws one hairline between them.
  */
 
-import {SettingsSection} from '@/components/settings';
+import {SettingsPage} from '@/components/settings';
 import {AiConnectionsSection} from '@/components/user/AiConnectionsSection';
 import {ZoteroIntegrationSection} from '@/components/project/settings/ZoteroIntegrationSection';
-import {t} from '@/lib/copy';
 
 export function IntegrationsSection() {
   return (
-      <div className="space-y-8">
-          <SettingsSection
-              title={t('llmConnections', 'integrationsTitle')}
-              description={t('llmConnections', 'integrationsDescription')}
-          >
-              <AiConnectionsSection/>
-          </SettingsSection>
-          <SettingsSection
-              title={t('user', 'integrationsZoteroTitle')}
-              description={t('user', 'integrationsZoteroDescription')}
-          >
-              <ZoteroIntegrationSection/>
-          </SettingsSection>
-    </div>
+    <SettingsPage>
+      <AiConnectionsSection/>
+      <ZoteroIntegrationSection/>
+    </SettingsPage>
   );
 }
-

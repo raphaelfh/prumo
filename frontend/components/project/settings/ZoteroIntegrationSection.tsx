@@ -3,6 +3,7 @@
  */
 
 import {useState} from 'react';
+import {SettingsGroup} from '@/components/settings';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
@@ -75,15 +76,17 @@ export function ZoteroIntegrationSection() {
 
   if (loading && !integration) {
     return (
-        <div className="flex items-center gap-2 py-4 text-[13px] text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin shrink-0" strokeWidth={1.5}/>
-            {t('project', 'zoteroLoading')}
-        </div>
+        <SettingsGroup title={t('user', 'integrationsZoteroTitle')} hint={t('user', 'integrationsZoteroDescription')}>
+            <div className="flex items-center gap-2 py-4 text-[13px] text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" strokeWidth={1.5}/>
+                {t('project', 'zoteroLoading')}
+            </div>
+        </SettingsGroup>
     );
   }
 
   return (
-      <div className="space-y-4">
+      <SettingsGroup title={t('user', 'integrationsZoteroTitle')} hint={t('user', 'integrationsZoteroDescription')}>
           {isConfigured && integration ? (
               <>
                   <div className="rounded-md border border-border/40 p-3 space-y-2">
@@ -258,7 +261,7 @@ export function ZoteroIntegrationSection() {
                   </div>
               </>
           )}
-      </div>
+      </SettingsGroup>
   );
 }
 
