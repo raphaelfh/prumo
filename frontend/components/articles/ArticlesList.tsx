@@ -781,14 +781,18 @@ export function ArticlesList({
 
                                   {/* Title */}
                                   <TableCell
-                                      className={`${TABLE_CELL_CLASS} font-medium cursor-pointer ${colVisibilityClass('sm')}`}
+                                      className={`${TABLE_CELL_CLASS} relative font-medium ${colVisibilityClass('sm')}`}
                                       style={getColumnStyle('title')}
-                                      onClick={() => onArticleClick(article.id)}
                                   >
-                                      <div
-                                          className="line-clamp-1 text-[13px] leading-tight text-foreground font-medium group-hover:text-primary transition-colors">
-                                          {article.title ?? t('articles', 'listUntitled')}
-                                      </div>
+                                      {/* A real button, stretched over the cell by its ::after, so the
+                                          whole cell stays the click target and the keyboard can reach it. */}
+                                      <button
+                                          type="button"
+                                          onClick={() => onArticleClick(article.id)}
+                                          className="block w-full cursor-pointer rounded-sm text-left text-[13px] leading-tight text-foreground font-medium group-hover:text-primary transition-colors after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-ring"
+                                      >
+                                          <span className="line-clamp-1">{article.title ?? t('articles', 'listUntitled')}</span>
+                                      </button>
                                   </TableCell>
 
                                   {/* PDF */}
