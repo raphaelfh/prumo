@@ -70,7 +70,7 @@ export function PICOTSItemEditor({
           {withInclusion && (
             <div className="space-y-1">
               <div className="flex items-baseline gap-2 px-2">
-                <Label htmlFor={`${fieldKey}_inclusion`} className="text-xs font-medium text-muted-foreground">
+                <Label htmlFor={`${fieldKey}_inclusion`} className="text-[13px] font-medium text-muted-foreground">
                   {inclusionLabel}
                 </Label>
                 <span className="text-[11px] text-muted-foreground">{t('project', 'picotsCriteriaOptional')}</span>
@@ -91,7 +91,7 @@ export function PICOTSItemEditor({
           {withExclusion && (
             <div className="space-y-1">
               <div className="flex items-baseline gap-2 px-2">
-                <Label htmlFor={`${fieldKey}_exclusion`} className="text-xs font-medium text-muted-foreground">
+                <Label htmlFor={`${fieldKey}_exclusion`} className="text-[13px] font-medium text-muted-foreground">
                   {exclusionLabel}
                 </Label>
                 <span className="text-[11px] text-muted-foreground">{t('project', 'picotsCriteriaOptional')}</span>
