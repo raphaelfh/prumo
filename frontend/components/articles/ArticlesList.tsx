@@ -802,6 +802,8 @@ export function ArticlesList({
                                                  style={getColumnStyle('pdf')}>
                                           <div className="flex items-center gap-1 min-w-0">
                                           {articlesWithMainFile.has(article.id) ? (
+                                              <Tooltip>
+                                              <TooltipTrigger asChild>
                                               <button
                                                   type="button"
                                                   className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight hover:bg-success/20 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
@@ -821,6 +823,9 @@ export function ArticlesList({
                                               >
                                                   PDF
                                               </button>
+                                              </TooltipTrigger>
+                                              <TooltipContent>{t('articles', 'listOpenPdf')}</TooltipContent>
+                                              </Tooltip>
                                           ) : (
                                               <Button
                                                   size="sm"

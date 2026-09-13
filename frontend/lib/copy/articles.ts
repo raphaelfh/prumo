@@ -245,6 +245,7 @@ export const articles = {
     listPdfNotFound: 'PDF file not found',
     listErrorAccessingPdf: 'Error accessing PDF file',
     listAddPdf: 'Add PDF',
+    listOpenPdf: 'Open PDF',
     listUntitled: 'Untitled',
     listOfArticles: 'of',
     listArticle: 'article',
