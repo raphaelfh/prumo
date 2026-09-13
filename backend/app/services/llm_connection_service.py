@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
+from app.core.integrity import violates_constraint
 from app.core.net_guard import validate_endpoint_url
 from app.core.security import derive_encryption_key
 from app.models.llm_connection import LlmConnection
@@ -42,7 +43,10 @@ __all__ = [
 ]
 
 _HOSTED_PROVIDER_INDEX = "uq_llm_connections_user_hosted_provider"
-_IDENTITY_INDEX_PREFIX = "uq_llm_connections_"
+_IDENTITY_INDEXES = (
+    "uq_llm_connections_user_identity",
+    "uq_llm_connections_project_identity",
+)
 
 
 class ConnectionUnavailableError(AppError):
@@ -112,18 +116,6 @@ def _to_read(row: LlmConnection, created_by_name: str | None) -> LlmConnectionRe
             "created_at": row.created_at,
         }
     )
-
-
-def _violated_index(exc: IntegrityError) -> str | None:
-    """The name of the violated uniqueness index, when it is one of ours.
-
-    The hosted-provider index is label-independent, so the two collisions
-    need different messages — branch on the NAME, never on the message text.
-    """
-    text = str(getattr(exc, "orig", None) or exc)
-    if _HOSTED_PROVIDER_INDEX in text:
-        return _HOSTED_PROVIDER_INDEX
-    return _IDENTITY_INDEX_PREFIX if _IDENTITY_INDEX_PREFIX in text else None
 
 
 class LlmConnectionService:
@@ -198,15 +190,17 @@ class LlmConnectionService:
         try:
             await self.db.flush()
         except IntegrityError as exc:
-            index = _violated_index(exc)
-            if index is None:
-                raise
-            if index == _HOSTED_PROVIDER_INDEX:
+            # The hosted-provider index is label-independent, so the two
+            # collisions need different messages — branch on the violated
+            # constraint NAME, never on the message text.
+            if violates_constraint(exc, _HOSTED_PROVIDER_INDEX):
                 raise ValueError(f"You already have a key for {payload.provider}") from None
-            raise ValueError(
-                f"A {payload.provider} connection labeled {payload.label!r} "
-                "already exists at this scope"
-            ) from None
+            if violates_constraint(exc, *_IDENTITY_INDEXES):
+                raise ValueError(
+                    f"A {payload.provider} connection labeled {payload.label!r} "
+                    "already exists at this scope"
+                ) from None
+            raise
         return (await self._reads([row]))[0]
 
     async def create_user(
