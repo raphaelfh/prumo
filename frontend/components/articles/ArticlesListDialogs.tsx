@@ -53,7 +53,7 @@ export function ArticlesListDialogs({
                         <AlertDialogAction
                             onClick={onConfirmDelete}
                             disabled={deleting}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            variant="destructive"
                         >
                             {deleting ? t('articles', 'listDeleting') : t('articles', 'listDelete')}
                         </AlertDialogAction>
@@ -75,7 +75,7 @@ export function ArticlesListDialogs({
                         <AlertDialogAction
                             onClick={onConfirmBulkDelete}
                             disabled={deleting}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            variant="destructive"
                         >
                             {deleting
                                 ? t('articles', 'listDeleting')

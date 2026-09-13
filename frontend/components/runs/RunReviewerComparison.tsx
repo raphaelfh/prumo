@@ -30,7 +30,6 @@ import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ConsensusOverrideEditor } from '@/components/runs/ConsensusOverrideEditor';
@@ -335,9 +334,6 @@ export function RunReviewerComparison({
   }
 
   return (
-    // TooltipProvider (renders no DOM — pure context) so the per-field trace's
-    // tooltip works in the read-only branch too; harmless when no trace mounts.
-    <TooltipProvider delayDuration={300}>
     <div className="overflow-x-auto" data-testid="run-reviewer-comparison">
       <table className="w-full border-collapse text-sm">
         <thead>
@@ -399,7 +395,6 @@ export function RunReviewerComparison({
         </tbody>
       </table>
     </div>
-    </TooltipProvider>
   );
 }
 
@@ -468,7 +463,6 @@ function ResolveTable({
   ];
 
   return (
-    <TooltipProvider delayDuration={300}>
       <div className="space-y-3" data-testid="run-reviewer-comparison">
         <div className="flex flex-wrap items-center gap-1.5" data-testid="consensus-filters">
           {chips.map((c) => (
@@ -548,7 +542,6 @@ function ResolveTable({
           </div>
         )}
       </div>
-    </TooltipProvider>
   );
 }
 

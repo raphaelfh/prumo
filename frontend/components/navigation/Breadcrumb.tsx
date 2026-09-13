@@ -21,7 +21,7 @@
 import React from 'react';
 import {ChevronRight, Info} from 'lucide-react';
 import {useLocation} from 'react-router';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {TruncatedText} from '@/components/runs/header/TruncatedText';
 import {useShellLocation} from '@/hooks/useShellLocation';
 import {useProjectsQuery} from '@/hooks/useProjectsQuery';
@@ -86,7 +86,6 @@ export const AppBreadcrumb: React.FC = () => {
             text={tabIdToLabel[activeSection] ?? ''}
           />
           {descriptionKey !== undefined && (
-            <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -101,7 +100,6 @@ export const AppBreadcrumb: React.FC = () => {
                   <p>{t('navigation', descriptionKey)}</p>
                 </TooltipContent>
               </Tooltip>
-            </TooltipProvider>
           )}
         </>
       )}

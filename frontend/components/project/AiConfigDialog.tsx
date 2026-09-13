@@ -59,7 +59,7 @@ const CUSTOMIZE_SLOT = /\[customize:[^\]]*\]/g;
  * panel's real bottom edge (sticky-inside-a-padded-scrollport floats a
  * padding-width gap above it). */
 const PANE_CLASS =
-  'mt-0 flex h-[min(60dvh,28rem)] min-h-0 flex-col overflow-hidden data-[state=inactive]:hidden';
+  'mt-0 flex flex-1 min-h-0 flex-col overflow-hidden data-[state=inactive]:hidden';
 
 interface TemplateSlot {
   id: string;
@@ -137,7 +137,7 @@ function AiConfigTabs({
     <Tabs
       value={tab}
       onValueChange={(next) => setTab(next as AiConfigTab)}
-      className="flex min-h-0 flex-col"
+      className="flex min-h-0 flex-1 flex-col"
     >
       {/* `overflow-x-auto` is the backstop, not the plan: TAB_CLASS tightens
           the triggers enough to fit a 390px phone, and the scroll only ever
@@ -194,7 +194,7 @@ function AiConfigTabs({
           forceMount
           value="instruction"
           data-testid="ai-config-instruction-panel"
-          className={`${PANE_CLASS} px-4 pb-4`}
+          className={`${PANE_CLASS} px-5 pb-5`}
         >
           <p className="mb-2 mt-3 shrink-0 text-xs text-muted-foreground">
             {t('extraction', 'instructionScopeHint')}
@@ -225,10 +225,8 @@ export function AiConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex w-[calc(100vw-2rem)] max-w-2xl flex-col gap-0 rounded-lg p-0">
-        {/* `text-left` overrides shadcn's centred narrow default: a centred
-            title under a left-aligned tab row reads as two designs. */}
-        <DialogHeader className="shrink-0 space-y-0.5 border-b border-border/40 px-4 py-3 pr-10 text-left sm:text-left">
+      <DialogContent size="lg">
+        <DialogHeader>
           <DialogTitle className="text-[15px]">
             {tabbed
               ? t('aiContext', 'configDialogTitle')

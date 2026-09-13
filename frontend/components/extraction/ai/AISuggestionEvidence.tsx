@@ -22,6 +22,7 @@
 
 import {Check, ChevronDown, ChevronUp, Copy, FileText, MapPin} from 'lucide-react';
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useState} from 'react';
 import {cn} from '@/lib/utils';
@@ -73,7 +74,6 @@ interface CitationRowProps {
 
 function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: CitationRowProps) {
   const {copied, copy} = useCopyToClipboard();
-  const [showTooltip, setShowTooltip] = useState(false);
 
   const label = citation.attributionLabel;
   const isEntailed = label === 'entailed';
@@ -135,32 +135,19 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
 
         <div className="flex items-center gap-1 shrink-0">
           {showCopyButton && (
-            <Tooltip open={showTooltip && !copied} delayDuration={300}>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="p-0 shrink-0 hover:bg-muted"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    copy(citation.text);
-                    setShowTooltip(false);
-                  }}
-                  onMouseEnter={() => setShowTooltip(true)}
-                  onMouseLeave={() => setShowTooltip(false)}
-                  aria-label={copied ? t('extraction', 'copyCopied') : t('extraction', 'copySnippet')}
-                >
-                  {copied ? (
-                    <Check className="h-4 w-4 text-success" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" onPointerDownOutside={() => setShowTooltip(false)}>
-                <p>{t('extraction', 'copySnippet')}</p>
-              </TooltipContent>
-            </Tooltip>
+            <IconButton
+              className="shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                copy(citation.text);
+              }}
+              label={copied ? t('extraction', 'copyCopied') : t('extraction', 'copySnippet')}
+              icon={copied ? (
+                <Check className="text-success" />
+              ) : (
+                <Copy />
+              )}
+            />
           )}
         </div>
       </div>

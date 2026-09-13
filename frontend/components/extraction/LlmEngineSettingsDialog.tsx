@@ -24,20 +24,16 @@ import {toast} from 'sonner';
 
 import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
+import {IconButton} from '@/components/patterns/IconButton';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import {ToggleGroup, ToggleGroupItem} from '@/components/ui/toggle-group';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {LlmEndpointsDialog} from '@/components/extraction/LlmEndpointsDialog';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
 import {t} from '@/lib/copy';
@@ -141,10 +137,7 @@ export function LlmEngineSettingsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto"
-          data-testid="llm-engine-settings-dialog"
-        >
+        <DialogContent size="md" data-testid="llm-engine-settings-dialog">
           <DialogHeader>
             <DialogTitle>{t('llmEngine', 'settingsTitle')}</DialogTitle>
             <DialogDescription>
@@ -152,7 +145,7 @@ export function LlmEngineSettingsDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <TooltipProvider>
+          <DialogBody className="space-y-4">
             <section className="space-y-2">
               <h3 className="text-[13px] font-medium text-foreground">
                 {t('llmEngine', 'modeSectionLabel')}
@@ -247,23 +240,14 @@ export function LlmEngineSettingsDialog({
                           )}
                         </div>
                         {engine.hasAlternates && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                className="shrink-0 text-muted-foreground hover:text-foreground"
-                                aria-label={t('llmEngine', 'alternatesRemoveAria')}
-                                disabled={setEngine.isPending}
-                                onClick={() => removeAlternate(alt)}
-                              >
-                                <X className="h-3 w-3" strokeWidth={1.5} />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t('llmEngine', 'alternatesRemoveAria')}
-                            </TooltipContent>
-                          </Tooltip>
+                          <IconButton
+                            size="icon-xs"
+                            className="shrink-0"
+                            label={t('llmEngine', 'alternatesRemoveAria')}
+                            disabled={setEngine.isPending}
+                            onClick={() => removeAlternate(alt)}
+                            icon={<X strokeWidth={1.5} />}
+                          />
                         )}
                       </li>
                     );
@@ -285,7 +269,7 @@ export function LlmEngineSettingsDialog({
                             'flex items-center gap-2 rounded-md px-1.5 py-1 text-xs',
                             current
                               ? 'text-muted-foreground'
-                              : 'cursor-pointer hover:bg-muted/50',
+                              : 'hover:bg-muted/50',
                           )}
                         >
                           <Checkbox
@@ -330,7 +314,7 @@ export function LlmEngineSettingsDialog({
                 {t('llmEngine', 'manageEndpoints')}
               </Button>
             </section>
-          </TooltipProvider>
+          </DialogBody>
         </DialogContent>
       </Dialog>
 

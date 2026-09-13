@@ -20,6 +20,7 @@
 import {useEffect, useRef, useState} from "react";
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -378,7 +379,7 @@ export function HITLExportDialog({
 
     return (
         <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(o) : dismiss())}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent size="md">
                 <DialogHeader>
                     <DialogTitle>{t("extraction", "exportDialogTitle")}</DialogTitle>
                     <DialogDescription>
@@ -386,7 +387,7 @@ export function HITLExportDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-6 py-2">
+                <DialogBody className="grid gap-6">
                     {/* 1. Source of values */}
                     <div className="space-y-3">
                         <Label>{t("extraction", "exportSourceLabel")}</Label>
@@ -399,7 +400,7 @@ export function HITLExportDialog({
                                 <RadioGroupItem value="consensus" id="mode-consensus"/>
                                 <Label
                                     htmlFor="mode-consensus"
-                                    className="text-sm font-normal cursor-pointer"
+                                    className="text-sm font-normal"
                                 >
                                     {t("extraction", "exportSourceConsensus")}
                                 </Label>
@@ -408,7 +409,7 @@ export function HITLExportDialog({
                                 <RadioGroupItem value="single_user" id="mode-single"/>
                                 <Label
                                     htmlFor="mode-single"
-                                    className="text-sm font-normal cursor-pointer"
+                                    className="text-sm font-normal"
                                 >
                                     {t("extraction", "exportSourceSingleUser")}
                                 </Label>
@@ -429,7 +430,7 @@ export function HITLExportDialog({
                                 />
                                 <Label
                                     htmlFor="mode-all"
-                                    className="text-sm font-normal cursor-pointer"
+                                    className="text-sm font-normal"
                                 >
                                     {t("extraction", "exportSourceAllUsers")}
                                 </Label>
@@ -510,7 +511,7 @@ export function HITLExportDialog({
                                                 />
                                                 <Label
                                                     htmlFor={`export-template-${tpl.id}`}
-                                                    className="text-sm font-normal cursor-pointer"
+                                                    className="text-sm font-normal"
                                                 >
                                                     {tpl.name}
                                                 </Label>
@@ -534,7 +535,7 @@ export function HITLExportDialog({
                                             />
                                             <Label
                                                 htmlFor={`export-template-${tpl.id}`}
-                                                className="text-sm font-normal cursor-pointer"
+                                                className="text-sm font-normal"
                                             >
                                                 {tpl.name}
                                             </Label>
@@ -566,7 +567,7 @@ export function HITLExportDialog({
                                     <div className="space-y-0.5">
                                         <Label
                                             htmlFor={`shape-${option.value}`}
-                                            className="text-sm font-normal cursor-pointer"
+                                            className="text-sm font-normal"
                                         >
                                             {option.label}
                                         </Label>
@@ -592,7 +593,7 @@ export function HITLExportDialog({
                             <div className="space-y-0.5">
                                 <Label
                                     htmlFor="include-ai-metadata"
-                                    className="text-sm font-normal cursor-pointer"
+                                    className="text-sm font-normal"
                                 >
                                     {t("extraction", "exportIncludeAiMetadata")}
                                 </Label>
@@ -614,7 +615,7 @@ export function HITLExportDialog({
                                 <div className="space-y-0.5">
                                     <Label
                                         htmlFor="anonymize-reviewers"
-                                        className="text-sm font-normal cursor-pointer"
+                                        className="text-sm font-normal"
                                     >
                                         {t("extraction", "exportAnonymizeReviewers")}
                                     </Label>
@@ -661,7 +662,7 @@ export function HITLExportDialog({
                             )}
                         </Alert>
                     )}
-                </div>
+                </DialogBody>
 
                 <DialogFooter>
                     <Button

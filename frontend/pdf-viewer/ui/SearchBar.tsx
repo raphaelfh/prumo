@@ -1,7 +1,8 @@
 import {useEffect, useRef} from 'react';
 import {ChevronUp, ChevronDown, X, Search} from 'lucide-react';
-import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Input} from '@/components/ui/input';
+import {t} from '@/lib/copy';
 import {useViewerStore, useViewerStoreApi} from '../core/context';
 import {searchDocument} from '../services/searchService';
 
@@ -129,26 +130,18 @@ export function SearchBar({open, onClose}: SearchBarProps) {
       >
         {positionLabel}
       </span>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
+      <IconButton
+        label={t('pdf', 'viewerSearchPrevMatch')}
         disabled={matchCount === 0}
         onClick={goPrev}
-        aria-label="Previous match"
-      >
-        <ChevronUp className="h-4 w-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
+        icon={<ChevronUp />}
+      />
+      <IconButton
+        label={t('pdf', 'viewerSearchNextMatch')}
         disabled={matchCount === 0}
         onClick={goNext}
-        aria-label="Next match"
-      >
-        <ChevronDown className="h-4 w-4" />
-      </Button>
+        icon={<ChevronDown />}
+      />
       <label className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
         <input
           type="checkbox"
@@ -165,15 +158,12 @@ export function SearchBar({open, onClose}: SearchBarProps) {
         />
         \b
       </label>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 ml-auto"
+      <IconButton
+        label={t('pdf', 'viewerSearchClose')}
+        className="ml-auto"
         onClick={onClose}
-        aria-label="Close search"
-      >
-        <X className="h-4 w-4" />
-      </Button>
+        icon={<X />}
+      />
     </div>
   );
 }

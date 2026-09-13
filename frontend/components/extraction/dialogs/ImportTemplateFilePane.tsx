@@ -66,7 +66,7 @@ export function ImportTemplateFilePane({projectId, onImported}: ImportTemplateFi
           htmlFor={inputId}
           // `relative`: the sr-only input inside is absolutely positioned — without
           // a positioned ancestor it adds phantom page scroll.
-          className="relative inline-flex h-8 cursor-pointer items-center rounded-md border border-border/60 px-3 text-xs font-medium hover:bg-muted/50"
+          className="relative inline-flex h-8 items-center rounded-md border border-border/60 px-3 text-xs font-medium hover:bg-muted/50"
         >
           {t('templateConfig', 'importFileChoose')}
           <input

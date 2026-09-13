@@ -1,4 +1,5 @@
 import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {X} from 'lucide-react';
 import type {ActiveFilterChip} from './activeFilters';
 
@@ -7,7 +8,7 @@ export interface ActiveFilterChipsProps {
     onClearField: (column: string) => void;
     onClearAll: () => void;
     clearAllLabel?: string;
-    removeFilterAriaLabel?: (label: string) => string;
+    removeFilterAriaLabel: (label: string) => string;
 }
 
 export function ActiveFilterChips({
@@ -30,15 +31,12 @@ export function ActiveFilterChips({
                         <span className="truncate max-w-[120px]">
                             {label}: {value}
                         </span>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-4 w-4 p-0 shrink-0 hover:bg-muted rounded"
+                        <IconButton
+                            label={removeFilterAriaLabel(label)}
+                            size="icon-xs"
                             onClick={() => onClearField(column)}
-                            aria-label={removeFilterAriaLabel?.(label) ?? `Remove filter ${label}`}
-                        >
-                            <X className="h-2.5 w-2.5"/>
-                        </Button>
+                            icon={<X />}
+                        />
                     </span>
                 ))}
                 <Button

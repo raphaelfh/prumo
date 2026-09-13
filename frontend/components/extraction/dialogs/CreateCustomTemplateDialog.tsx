@@ -10,6 +10,7 @@ import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -109,7 +110,7 @@ export function CreateCustomTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent size="md">
         <DialogHeader>
             <DialogTitle>{t('extraction', 'createTitle')}</DialogTitle>
           <DialogDescription>
@@ -118,7 +119,8 @@ export function CreateCustomTemplateDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="contents">
+            <DialogBody className="space-y-4">
               {/* Name */}
             <FormField
               control={form.control}
@@ -197,6 +199,7 @@ export function CreateCustomTemplateDialog({
                 </FormItem>
               )}
             />
+            </DialogBody>
 
             <DialogFooter>
               <Button

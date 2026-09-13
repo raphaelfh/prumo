@@ -6,6 +6,7 @@
 import {useState} from 'react';
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -134,7 +135,7 @@ export function RISImportDialog({
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent size="md">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <FileText className="h-5 w-5"/>
@@ -145,7 +146,7 @@ export function RISImportDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-4">
+                <DialogBody className="space-y-4">
                     <div className="flex items-center gap-2">
                         <input
                             type="file"
@@ -191,7 +192,7 @@ export function RISImportDialog({
                             </ScrollArea>
                         </div>
                     )}
-                </div>
+                </DialogBody>
 
                 <DialogFooter>
                     <Button size="sm" variant="outline" onClick={() => handleOpenChange(false)} disabled={importing}>

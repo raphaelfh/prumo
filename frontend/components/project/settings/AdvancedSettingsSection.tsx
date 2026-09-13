@@ -317,7 +317,7 @@ export function AdvancedSettingsSection({
                               <AlertDialogAction
                                   onClick={handleDeleteProject}
                                   disabled={isDeleting}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  variant="destructive"
                               >
                                   {isDeleting ? t('project', 'advancedDeleting') : t('project', 'advancedConfirmDeleteButton')}
                               </AlertDialogAction>

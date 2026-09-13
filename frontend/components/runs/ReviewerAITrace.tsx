@@ -15,7 +15,7 @@
  */
 import {Sparkles} from 'lucide-react';
 import {Badge} from '@/components/ui/badge';
-import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem} from '@/types/ai-extraction';
@@ -69,42 +69,29 @@ export function ReviewerAITrace(props: ReviewerAITraceProps) {
 
   const title = t('consensus', 'traceTitle').replace('{{name}}', reviewerLabel);
   return (
-    // Tooltip OUTSIDE the popover trigger (FieldInput pattern): nesting
-    // Tooltip inside PopoverTrigger asChild drops the trigger props.
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="inline-flex">
-          <AISuggestionReviewPopover
-            instanceId={decision.instance_id}
-            fieldId={decision.field_id}
-            getHistory={getHistory}
-            selectedProposalId={decision.proposal_record_id}
-            articleId={articleId}
-            fieldType={field.field_type}
-            allowedValues={field.allowed_values}
-            title={title}
-            adoption={{
-              reviewerLabel,
-              decisionValue: decision.value,
-              decisionKind: decision.decision,
-            }}
-            adoptionByProposalId={adoptionByProposalId}
-            trigger={
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-5 w-5 text-ai hover:bg-ai/10 hover:text-ai"
-                aria-label={title}
-              >
-                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-              </Button>
-            }
-          />
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{title}</p>
-      </TooltipContent>
-    </Tooltip>
+    <AISuggestionReviewPopover
+      instanceId={decision.instance_id}
+      fieldId={decision.field_id}
+      getHistory={getHistory}
+      selectedProposalId={decision.proposal_record_id}
+      articleId={articleId}
+      fieldType={field.field_type}
+      allowedValues={field.allowed_values}
+      title={title}
+      adoption={{
+        reviewerLabel,
+        decisionValue: decision.value,
+        decisionKind: decision.decision,
+      }}
+      adoptionByProposalId={adoptionByProposalId}
+      trigger={
+        <IconButton
+          label={title}
+          size="icon-xs"
+          className="text-ai hover:bg-ai/10 hover:text-ai"
+          icon={<Sparkles />}
+        />
+      }
+    />
   );
 }
