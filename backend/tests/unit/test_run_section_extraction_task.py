@@ -50,11 +50,6 @@ def engine_seams(monkeypatch: pytest.MonkeyPatch) -> LlmTarget:
     """Patch the task-module engine seams — ``_FakeSession`` has no ``execute``
     or ``get``, so the real resolver cannot run here."""
     target = LlmTarget(provider="openai", model="task-resolved-model")
-    monkeypatch.setattr(
-        extraction_tasks,
-        "resolve_project_engine",
-        AsyncMock(return_value=target),
-    )
     monkeypatch.setattr(extraction_tasks, "resolve_engine_for_run", AsyncMock(return_value=target))
     return target
 
