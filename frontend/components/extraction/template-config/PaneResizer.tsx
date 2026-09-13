@@ -75,6 +75,7 @@ export function PaneResizer({
   const nudge = (dx: number) => apply(width + (pane === 'left' ? dx : -dx));
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a focusable separator with a value is an ARIA widget (keyboard-operable below); jsx-a11y models every separator as static
     <div
       role="separator"
       aria-orientation="vertical"

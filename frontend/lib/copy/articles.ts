@@ -281,7 +281,7 @@ export const articles = {
     listRemoveFilter: 'Remove filter {{label}}',
     listFilterBy: 'Filter by {{label}}',
     listSelectAll: 'Select all',
-    listResizeColumn: 'Resize column',
+    listResizeColumn: 'Resize {{column}} column',
     listSelectArticle: 'Select {{title}}',
     listAuthorsLabel: 'Authors:',
     listDoiOpenHint: 'Open on doi.org',
