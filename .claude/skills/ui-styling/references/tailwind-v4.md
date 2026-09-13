@@ -95,24 +95,16 @@ focus styling. See `a11y.md`.
 over from v3. v4's stock `--radius-xs` is a fixed 2px, so renaming
 `rounded-sm` → `rounded-xs` **halves the radius at 21 call sites**.
 `npx @tailwindcss/upgrade` applies that rename automatically because it cannot
-see the override. If you ever run the codemod, revert that part and check the
-CSS baseline.
+see the override. If you ever run the codemod, revert that part and re-check the
+rendered screens with `/design-review`.
 
 ## Verifying a styling change
 
-`scripts/css_baseline.mjs` compiles `index.css` and snapshots every
-`selector -> declarations` pair.
-
-```bash
-node scripts/css_baseline.mjs --check   # diff against scripts/css_baseline.txt
-node scripts/css_baseline.mjs           # re-record after an intended change
-```
-
-It normalises the things v3 and v4 spell differently but mean identically
-(cascade-layer wrapper, combinator spacing, `min-width` vs range queries), so
-the diff shows semantic change. This is the only mechanism in the repo that
-catches a silently dropped utility — vitest asserts class strings in jsdom
-(no stylesheet), and the E2E suite makes zero visual assertions.
+The compiled-CSS baseline script that used to snapshot every `selector ->
+declarations` pair was removed in the dead-code sweep (#685). Nothing in the
+repo now catches a silently dropped utility: vitest asserts class strings in
+jsdom (no stylesheet) and the E2E suite makes zero visual assertions. Render
+the screen and look (`/design-review`), in both themes.
 
 ## Still HSL, not OKLCH
 

@@ -73,7 +73,7 @@ Skipping any step is lying, not reviewing.
 - Committing because the change "looks small".
 - Trusting an agent's report instead of reading its tool outputs.
 
-Full protocol: `../debugging/verification-before-completion/SKILL.md` (the canonical gate; `references/verification-before-completion.md` now redirects there).
+Full command table and per-area patterns: `references/verification-before-completion.md`.
 
 ---
 

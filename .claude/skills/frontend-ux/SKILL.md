@@ -161,7 +161,7 @@ Principles:
   to the card-list layout via `useIsNarrow` (`frontend/hooks/use-mobile.tsx`).
 
 The breakpoint scale is the Tailwind default with `2xl` overridden to **1400px**
-(`tailwind.config.ts`). Wiring mechanics — breakpoint prefixes, container queries,
+(`frontend/index.css`). Wiring mechanics — breakpoint prefixes, container queries,
 the `useIsMobile`/`useIsNarrow` hooks, the priority-track header — live in
 `ui-styling` (§ *Responsive mechanics*).
 

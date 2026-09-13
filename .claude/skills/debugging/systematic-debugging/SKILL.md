@@ -93,7 +93,7 @@ This overrides the single-hypothesis step of the generic method. List **3–5 hy
 
 The test only counts at a **correct seam**: one that reproduces the bug as it happens at the call site. If the only reachable seam is too shallow (one caller when the bug needs two, a unit test that cannot replay the chain), a test there is false confidence. Say so in the PR: a missing seam is an architecture finding for `/improve-codebase-architecture`.
 
-Verify via `verification-before-completion/SKILL.md` — it carries prumo's command table.
+Verify via `../../code-review/references/verification-before-completion.md` — it carries prumo's command table.
 
 ### Phase 4.5 — when 3+ fixes failed
 
@@ -121,7 +121,7 @@ Symptom: a reviewer occasionally sees a 409 from `POST /api/v1/runs/{id}/advance
 
 - `root-cause-tracing/SKILL.md` — how to walk back from a deep error to the trigger.
 - `defense-in-depth/SKILL.md` — apply after Phase 3 so the bug class is impossible, not just this instance.
-- `verification-before-completion/SKILL.md` — before claiming Phase 4 is done.
+- `../../code-review/references/verification-before-completion.md` — before claiming Phase 4 is done.
 
 ## What good looks like
 

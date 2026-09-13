@@ -18,7 +18,7 @@ The project's history is full of "we ripped this out for good reasons" moments (
 Do **not** use for:
 - Renames (the symbol still exists, just under a new name → use the relevant domain skill).
 - Anything that requires writing replacement logic (use `backend-development` / `ui-styling` instead).
-- A deprecation dance with a transition period (prumo explicitly rejects this pattern — see CLAUDE.md `.claude/CLAUDE.md`).
+- A deprecation dance with a transition period (prumo explicitly rejects this pattern — see the root `CLAUDE.md`).
 
 ## The 4-step contract
 
