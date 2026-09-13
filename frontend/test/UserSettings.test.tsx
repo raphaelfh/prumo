@@ -98,4 +98,14 @@ describe('UserSettings', () => {
     expect(rail.className).not.toContain('dark:bg-[#0c0c0c]');
     expect(rail.className).not.toMatch(/(?:^|\s)border-r(?:\s|$)/);
   });
+
+  it('owns a p-2 gutter and leaves the content width to SettingsPage', () => {
+    renderSettings();
+
+    const main = screen.getByRole('main');
+    expect(main).toHaveClass('p-2');
+    expect(main.className).not.toMatch(/(?:^|\s)(?:px-4|py-3|lg:px-6)(?:\s|$)/);
+    expect(main.querySelector('.max-w-3xl')).toBeNull();
+    expect(main.firstElementChild).toHaveTextContent('profile section');
+  });
 });

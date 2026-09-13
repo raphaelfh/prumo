@@ -11,7 +11,7 @@ import {Form, FormControl, FormField, FormItem, FormMessage} from '@/components/
 import {Input} from '@/components/ui/input';
 import {Skeleton} from '@/components/ui/skeleton';
 import {Avatar, AvatarFallback, AvatarImage} from '@/components/ui/avatar';
-import {SettingsSection, SettingsCard, SettingsField} from '@/components/settings';
+import {SettingsActions, SettingsGroup, SettingsPage, SettingsRow} from '@/components/settings';
 import {CheckCircle2, Loader2, User} from 'lucide-react';
 import {fetchProfile, saveProfile} from '@/services/profileService';
 import {toast} from 'sonner';
@@ -84,104 +84,90 @@ export function ProfileSection() {
 
   if (loading) {
     return (
-        <SettingsSection title={t('user', 'profileTitle')} description={t('user', 'profileDescription')}>
-            <SettingsCard title={t('user', 'profileCardTitle')} description={t('user', 'profileCardDescription')}>
-                <div className="space-y-4">
-                    <div className="flex items-center gap-4">
-                        <Skeleton className="h-16 w-16 rounded-full"/>
-                        <div className="space-y-1">
-                            <Skeleton className="h-[13px] w-24"/>
-                            <Skeleton className="h-3 w-32"/>
-                        </div>
-                    </div>
-                    <Skeleton className="h-9 w-full"/>
-                    <Skeleton className="h-9 w-full"/>
-                    <div className="flex justify-end pt-4 border-t border-border/40">
-                        <Skeleton className="h-9 w-28"/>
-                    </div>
-          </div>
-            </SettingsCard>
-        </SettingsSection>
+      <SettingsPage>
+        <SettingsGroup>
+          <SettingsRow label={t('user', 'profilePicture')}>
+            <Skeleton className="h-8 w-8 rounded-full"/>
+          </SettingsRow>
+          <SettingsRow label={t('user', 'profileEmailLabel')}>
+            <Skeleton className="h-8 w-full"/>
+          </SettingsRow>
+          <SettingsRow label={t('user', 'profileFullNameLabel')}>
+            <Skeleton className="h-8 w-full"/>
+          </SettingsRow>
+        </SettingsGroup>
+      </SettingsPage>
     );
   }
 
   return (
-      <SettingsSection title={t('user', 'profileTitle')} description={t('user', 'profileDescription')}>
-          <SettingsCard title={t('user', 'profileCardTitle')} description={t('user', 'profileCardDescription')}>
-              <div className="space-y-4">
-                  <div className="flex items-center gap-4">
-            <Avatar className="h-16 w-16">
-                <AvatarImage src={avatarUrl} alt={fullName}/>
-                <AvatarFallback className="text-base bg-primary/10 text-primary">
-                    {fullName ? getInitials(fullName) : <User className="h-6 w-6"/>}
-                </AvatarFallback>
-            </Avatar>
-            <div>
-                <p className="text-[13px] font-medium">{t('user', 'profilePicture')}</p>
-                <p className="text-[12px] text-muted-foreground">{t('user', 'profileUploadComingSoon')}</p>
-            </div>
-                  </div>
-
-                  <SettingsField
-                      label={t('user', 'profileEmailLabel')}
-                      htmlFor="profile-email"
-                      hint={t('user', 'profileEmailHint')}
-                  >
-                      <Input
-                          id="profile-email"
-                          type="email"
-                          value={email}
-                          disabled
-                          className="h-9 text-[13px] bg-muted text-muted-foreground"
-                          aria-label={t('user', 'profileEmailAria')}
-                      />
-                  </SettingsField>
-
-                  <Form {...form}>
-                      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                          <FormField
-                              control={form.control}
-                              name="full_name"
-                              render={({field}) => (
-                                  <FormItem>
-                                      <SettingsField
-                                          label={t('user', 'profileFullNameLabel')}
-                                          htmlFor="profile-fullname"
-                                          hint={t('user', 'profileFullNameHint')}
-                                      >
-                                          <FormControl>
-                                              <Input
-                                                  id="profile-fullname"
-                                                  {...field}
-                                                  placeholder={t('user', 'profileFullNamePlaceholder')}
-                                                  className="h-9 text-[13px]"
-                                              />
-                                          </FormControl>
-                                      </SettingsField>
-                                      <FormMessage/>
-                                  </FormItem>
-                              )}
-                          />
-
-                          <div className="flex justify-end pt-4 border-t border-border/40">
-                              <Button type="submit" disabled={saving}>
-                                  {saving ? (
-                                      <>
-                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5}/>
-                                          {t('user', 'profileSaving')}
-                                      </>
-                                  ) : (
-                                      <>
-                                          <CheckCircle2 className="mr-2 h-4 w-4" strokeWidth={1.5}/>
-                                          {t('user', 'profileSaveChanges')}
-                                      </>
-                                  )}
-                              </Button>
-                          </div>
-                      </form>
-          </Form>
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        <SettingsPage>
+          <SettingsGroup>
+            <SettingsRow label={t('user', 'profilePicture')}>
+              <div className="flex items-center gap-2 px-2">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={avatarUrl} alt={fullName}/>
+                  <AvatarFallback className="bg-primary/10 text-[13px] text-primary">
+                    {fullName ? getInitials(fullName) : <User className="h-4 w-4"/>}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-[13px] text-muted-foreground">{t('user', 'profileUploadComingSoon')}</span>
               </div>
-          </SettingsCard>
-      </SettingsSection>
+            </SettingsRow>
+
+            {/* No control: the address is managed by auth, so it is text, not a disabled input. */}
+            <SettingsRow label={t('user', 'profileEmailLabel')} hint={t('user', 'profileEmailHint')}>
+              <p className="px-2 text-[13px]">{email}</p>
+            </SettingsRow>
+
+            <FormField
+              control={form.control}
+              name="full_name"
+              render={({field}) => (
+                <FormItem className="space-y-0">
+                  <SettingsRow
+                    label={t('user', 'profileFullNameLabel')}
+                    htmlFor="profile-fullname"
+                    hint={t('user', 'profileFullNameHint')}
+                  >
+                    {({describedBy}) => (
+                      <>
+                        <FormControl aria-describedby={describedBy}>
+                          <Input
+                            id="profile-fullname"
+                            variant="quiet"
+                            {...field}
+                            placeholder={t('user', 'profileFullNamePlaceholder')}
+                          />
+                        </FormControl>
+                        <FormMessage/>
+                      </>
+                    )}
+                  </SettingsRow>
+                </FormItem>
+              )}
+            />
+
+            <SettingsActions>
+              <Button type="submit" size="sm" disabled={saving}>
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5}/>
+                    {t('user', 'profileSaving')}
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-2 h-4 w-4" strokeWidth={1.5}/>
+                    {t('user', 'profileSaveChanges')}
+                  </>
+                )}
+              </Button>
+            </SettingsActions>
+          </SettingsGroup>
+        </SettingsPage>
+      </form>
+    </Form>
   );
 }

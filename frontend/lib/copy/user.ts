@@ -14,15 +14,10 @@ export const user = {
     tabIntegrationsDesc: 'External services and APIs',
 
     // Profile
-    profileTitle: 'Profile',
-    profileDescription: 'Manage your personal information',
-    profileCardTitle: 'Personal information',
-    profileCardDescription: 'Your account details and display name.',
     profilePicture: 'Profile picture',
     profileUploadComingSoon: 'Upload coming soon',
     profileEmailLabel: 'Email',
     profileEmailHint: 'Managed by the authentication system — cannot be changed.',
-    profileEmailAria: 'Email (read-only)',
     profileFullNameLabel: 'Full name',
     profileFullNameHint: 'Your full name as shown to others.',
     profileFullNamePlaceholder: 'Your full name',
