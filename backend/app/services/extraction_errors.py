@@ -10,6 +10,8 @@ without parsing the exception repr.
 
 from __future__ import annotations
 
+from pydantic_ai.exceptions import ModelHTTPError
+
 from app.schemas.extraction import ExtractionErrorCode
 
 # Default human message when a generic failure carries no usable text of its own.
@@ -62,6 +64,15 @@ def classify_extraction_error(exc: BaseException) -> tuple[ExtractionErrorCode, 
         # Roster change mid-flight (enqueue-time validation passed). The
         # message already says a manager must choose a new model.
         return ExtractionErrorCode.ENGINE_RETIRED, str(exc).strip() or _GENERIC_MESSAGE
+
+    if isinstance(exc, ModelHTTPError) and exc.status_code == 410:
+        # The upstream half of the retired signal: the provider retired a
+        # model our catalogue or the connection still offers (410 Gone).
+        # Same remedy as a catalogue miss — pick a new model.
+        return (
+            ExtractionErrorCode.ENGINE_RETIRED,
+            f"The model {exc.model_name} was retired by its provider. Pick a new model.",
+        )
 
     if isinstance(exc, ConnectionUnavailableError):
         # The ENGINE_RETIRED pattern for host-connection engines: a pinned
