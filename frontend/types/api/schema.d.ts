@@ -3517,7 +3517,8 @@ export interface components {
          *     - ``PDF_NOT_FOUND``    — the article has no stored PDF (``FileNotFoundError``).
          *     - ``MISSING_API_KEY``  — no usable LLM key, BYOK or global (``MissingLLMKeyError``).
          *     - ``ENGINE_RETIRED``   — the project's stored engine left the catalogue
-         *       mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).
+         *       mid-flight (``EngineRetiredError``; enqueue-time validation is a 409),
+         *       or its provider retired the model upstream (``ModelHTTPError`` 410).
          *     - ``LLM_ENDPOINT_UNAVAILABLE`` — the engine's custom endpoint cannot
          *       serve: row deleted, unverified, model dropped
          *       (``resolve_engine``), or its key no longer decrypts
