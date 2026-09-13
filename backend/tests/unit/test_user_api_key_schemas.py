@@ -9,7 +9,7 @@ populate_by_name round-trips, defaults, and the remaining response DTOs.
 import pytest
 from pydantic import ValidationError
 
-from app.models.user_api_key import SUPPORTED_PROVIDERS
+from app.llm.registry import storable_providers
 from app.schemas.user_api_key import (
     APIKeyResponse,
     CreateAPIKeyRequest,
@@ -22,6 +22,8 @@ from app.schemas.user_api_key import (
     UpdateAPIKeyRequest,
     UpdateAPIKeyResult,
 )
+
+_STORABLE_PROVIDERS = [s.id for s in storable_providers()]
 
 
 class TestCreateAPIKeyRequest:
@@ -36,7 +38,7 @@ class TestCreateAPIKeyRequest:
 
     def test_dump_by_alias_is_camel_case(self) -> None:
         req = CreateAPIKeyRequest.model_validate(
-            {"provider": "gemini", "apiKey": "0123456789", "keyName": "prod"}
+            {"provider": "anthropic", "apiKey": "0123456789", "keyName": "prod"}
         )
         wire = req.model_dump(by_alias=True)
         assert wire["apiKey"] == "0123456789"
@@ -46,7 +48,7 @@ class TestCreateAPIKeyRequest:
         assert wire["metadata"] is None
 
     def test_defaults(self) -> None:
-        req = CreateAPIKeyRequest.model_validate({"provider": "grok", "apiKey": "0123456789"})
+        req = CreateAPIKeyRequest.model_validate({"provider": "openai", "apiKey": "0123456789"})
         assert req.is_default is True
         assert req.validate_key is True
         assert req.key_name is None
@@ -81,18 +83,18 @@ class TestCreateAPIKeyRequest:
         with pytest.raises(ValidationError):
             CreateAPIKeyRequest.model_validate({"apiKey": "0123456789"})
 
-    @pytest.mark.parametrize("provider", list(SUPPORTED_PROVIDERS))
+    @pytest.mark.parametrize("provider", _STORABLE_PROVIDERS)
     def test_supported_providers_accepted(self, provider: str) -> None:
         req = CreateAPIKeyRequest.model_validate({"provider": provider, "apiKey": "0123456789"})
         assert req.provider == provider
 
     def test_unsupported_provider_is_rejected_by_schema(self) -> None:
-        """The schema validates provider against SUPPORTED_PROVIDERS.
+        """The schema validates provider against the registry's storable providers.
 
         A ``field_validator`` enforces the allow-list at the boundary so an
         unsupported value fails with a clean 422 ``ValidationError`` instead
-        of leaking out as a DB/500 at INSERT time. ``SUPPORTED_PROVIDERS``
-        (shared with the DB CHECK constraint) is the single source of truth.
+        of leaking out as a DB/500 at INSERT time. ``registry.storable_providers``
+        is the single source of truth.
         """
         with pytest.raises(ValidationError) as exc_info:
             CreateAPIKeyRequest.model_validate(
@@ -160,7 +162,7 @@ class TestAPIKeyResponse:
         resp = APIKeyResponse.model_validate(
             {
                 "id": "k2",
-                "provider": "grok",
+                "provider": "openai",
                 "keyName": None,
                 "isActive": False,
                 "isDefault": True,
@@ -288,3 +290,20 @@ class TestKeyValidationResult:
     def test_message_required(self) -> None:
         with pytest.raises(ValidationError):
             KeyValidationResult.model_validate({"status": "valid"})
+
+
+def test_gemini_and_grok_are_rejected_at_the_schema() -> None:
+    for provider in ("gemini", "grok"):
+        with pytest.raises(ValidationError, match="not supported"):
+            CreateAPIKeyRequest.model_validate({"provider": provider, "apiKey": "0123456789"})
+
+
+def test_openai_compatible_is_rejected_at_the_schema() -> None:
+    """``openai_compatible`` is a real registry provider (the DB CHECK
+    allows it) but is host-bearing: this slice has no connection to carry
+    a host, so it must be rejected at the API boundary too, the same way
+    an unknown provider is — slice 2's connections add it back."""
+    with pytest.raises(ValidationError, match="not supported"):
+        CreateAPIKeyRequest.model_validate(
+            {"provider": "openai_compatible", "apiKey": "0123456789"}
+        )

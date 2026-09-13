@@ -20,6 +20,7 @@ export const llmEngine = {
     emptyResults: 'No models match.',
     providerOpenai: 'OpenAI',
     providerAnthropic: 'Anthropic',
+    providerGoogle: 'Google',
     byokGroupNote: 'each user runs on their own key',
     lockedAddKeyCta: 'Add your key',
     lockedAddKeyItem: 'Add your key…',

@@ -27,6 +27,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -1328,8 +1329,109 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0070_annotation_updated_at"
+    expected_head = "0071_registry_providers"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
+
+
+_PROVIDER_CHECK_DEF = text(
+    "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+    "WHERE conname = 'user_api_keys_provider_check'"
+)
+
+
+@pytest.mark.asyncio
+async def test_provider_check_constraint_matches_the_registry_at_head(
+    migration_session: AsyncSession,
+) -> None:
+    """The drift guard reaches the live database, not just the SQLAlchemy
+    model. ``tests/unit/llm/test_registry.py`` pins the CHECK literal baked
+    into ``UserAPIKey.__table__`` against the registry, but that only
+    proves the Python-side model and the registry agree — the migration
+    that actually shipped the CHECK to Postgres could still diverge (a
+    forgotten provider, a hand-edited migration). This reads the
+    constraint definition Postgres actually enforces at head and asserts
+    it names exactly the registry's provider ids, no more, no fewer.
+    """
+    from app.llm.registry import provider_ids
+
+    definition = (await migration_session.execute(_PROVIDER_CHECK_DEF)).scalar()
+    assert definition is not None, "user_api_keys_provider_check must exist at head"
+
+    # Postgres may store "provider IN ('a', 'b')" verbatim, or reformat it
+    # as "provider = ANY (ARRAY['a'::text, 'b'::text])" — parse quoted
+    # literals out of either shape rather than matching the SQL text.
+    found_ids = set(re.findall(r"'([^']*)'", definition))
+    assert found_ids == set(provider_ids()), (
+        f"live CHECK constraint providers {found_ids} != registry {set(provider_ids())} "
+        f"(raw definition: {definition!r})"
+    )
+
+
+# --- 0071: narrow user_api_keys.provider to the registry's providers ---
+# Self-contained fixture ids (0071-prefixed): the scratch DB is shared across
+# this file's tests via a session-scoped fixture and pytest-randomly can
+# reorder test execution, so this cannot rely on another test's fixture rows
+# having been inserted first.
+_R71_PROFILE = "00710000-0000-4000-8000-00000000000a"
+_R71_GEMINI_KEY = "00710000-0000-4000-8000-000000000001"
+_R71_GROK_KEY = "00710000-0000-4000-8000-000000000002"
+
+
+@pytest.mark.asyncio
+async def test_migration_0071_deletes_orphaned_providers_and_narrows_the_check(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """``0071_registry_providers`` deletes stranded gemini/grok rows and
+    narrows the ``provider`` CHECK to the registry's providers.
+
+    Driven through alembic rather than by re-issuing the statement, so it
+    is the migration's own SQL under test: seed a gemini row while
+    downgraded to the parent, then upgrade and watch it go; the narrowed
+    CHECK must then reject a fresh grok insert.
+    """
+    _run_alembic("downgrade", "0070_annotation_updated_at", database_url=migration_db_url)
+    try:
+        await migration_session.execute(
+            text(
+                "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
+                f"('{_R71_PROFILE}', 'registry-0071@integration-test.prumo.local', "
+                "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')"
+            )
+        )
+        await migration_session.execute(
+            text(
+                "INSERT INTO public.profiles (id, email, full_name) VALUES "
+                f"('{_R71_PROFILE}', 'registry-0071@integration-test.prumo.local', "
+                "'Registry 0071')"
+            )
+        )
+        await migration_session.execute(
+            text(
+                "INSERT INTO public.user_api_keys "
+                "(id, user_id, provider, encrypted_api_key, is_active, is_default) VALUES "
+                f"('{_R71_GEMINI_KEY}', '{_R71_PROFILE}', 'gemini', 'enc-gemini', true, false)"
+            )
+        )
+        await migration_session.commit()
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+
+    await migration_session.commit()
+    assert (
+        await migration_session.execute(
+            text(f"SELECT count(*) FROM public.user_api_keys WHERE id = '{_R71_GEMINI_KEY}'")
+        )
+    ).scalar() == 0, "the orphaned gemini row must be deleted by the upgrade"
+
+    with pytest.raises(IntegrityError, match="user_api_keys_provider_check"):
+        await migration_session.execute(
+            text(
+                "INSERT INTO public.user_api_keys "
+                "(id, user_id, provider, encrypted_api_key, is_active, is_default) VALUES "
+                f"('{_R71_GROK_KEY}', '{_R71_PROFILE}', 'grok', 'enc-grok', true, false)"
+            )
+        )
+    await migration_session.rollback()
 
 
 @pytest.mark.asyncio

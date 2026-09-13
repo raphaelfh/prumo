@@ -121,15 +121,24 @@ class Settings(BaseSettings):
             query_items["ssl"] = query_items.pop("sslmode")
         return urlunparse(parsed._replace(query=urlencode(query_items)))
 
-    # =================== OPENAI ===================
-    # Optional: global fallback when user does not have BYOK configured
+    # =================== GLOBAL PROVIDER KEYS ===================
+    # Optional operator keys. Each hosted provider in app.llm.registry names
+    # ONE of these; when it is empty the provider is BYOK-only in this
+    # deployment (registry.is_byok_only). Never a host-bearing provider —
+    # a host is a per-connection fact.
+    # Read dynamically by app.llm.registry.global_key_for via
+    # getattr(settings, spec.global_key_setting) — no static `settings.X`
+    # reference exists, so the vulture dead-code scan cannot see the read.
     OPENAI_API_KEY: str | None = None
+    ANTHROPIC_API_KEY: str | None = None
+    GOOGLE_API_KEY: str | None = None
 
     # =================== LLM (provider-agnostic) ===================
     # Single authoritative model/provider for AI extraction. The former
     # OPENAI_DEFAULT_MODEL was defined but never read at runtime; it is
-    # collapsed here. Claude is selectable by setting LLM_PROVIDER="anthropic"
-    # plus an "anthropic" BYOK key (no global Anthropic key is configured).
+    # collapsed here. Providers and their optional operator keys are declared
+    # in app.llm.registry (OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY);
+    # a provider whose key is empty is BYOK-only in that deployment.
     # The default must stay in app.llm.catalog.CATALOG — a default that falls
     # off the roster reads as "retired" and blocks every run that never chose
     # an engine. No Railway env override exists for it: prod follows this code

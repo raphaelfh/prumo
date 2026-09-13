@@ -6,8 +6,9 @@ Mocks ``APIKeyService`` end-to-end so we can verify that:
 * the handler rejects the inconsistent
   ``is_default=True`` + ``is_active=False`` combination with a 400
   rather than silently producing a ghost-default key (issue #31).
-* the GET /providers response covers every SUPPORTED_PROVIDERS entry
-  so the list and the validation set cannot silently diverge.
+* the GET /providers response covers every non-host-bearing registry
+  provider (and excludes host-bearing ones) so the list and the
+  validation set cannot silently diverge.
 """
 
 from collections.abc import AsyncGenerator
@@ -21,8 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
 from app.core.security import TokenPayload, get_current_user
+from app.llm.registry import REGISTRY
 from app.main import app
-from app.models.user_api_key import SUPPORTED_PROVIDERS
 
 
 @pytest_asyncio.fixture
@@ -136,14 +137,13 @@ async def test_patch_returns_404_when_key_name_target_missing(
 
 
 @pytest.mark.asyncio
-async def test_list_providers_covers_all_supported_providers(
+async def test_list_providers_covers_all_non_host_bearing_providers(
     client_with_uuid_user: tuple[AsyncClient, str],
 ) -> None:
-    """Drift guard: every SUPPORTED_PROVIDERS entry must appear in GET /providers.
-
-    If a provider is added to SUPPORTED_PROVIDERS (model validation) but its
-    metadata is missing from the list_providers endpoint, the FE "Add API key"
-    dropdown will silently omit it.
+    """Drift guard: every non-host-bearing registry provider must appear in
+    GET /providers. Host-bearing providers (``openai_compatible``) are
+    deliberately excluded (F2) — this slice has no connection to carry a
+    host — so they are not expected here.
     """
     ac, _ = client_with_uuid_user
     res = await ac.get("/api/v1/user-api-keys/providers")
@@ -152,9 +152,14 @@ async def test_list_providers_covers_all_supported_providers(
     data = res.json()
     listed_ids = {p["id"] for p in data["data"]["providers"]}
 
-    for provider_id in SUPPORTED_PROVIDERS:
-        assert provider_id in listed_ids, (
-            f"Provider '{provider_id}' is in SUPPORTED_PROVIDERS but missing from "
-            "GET /api/v1/user-api-keys/providers — add its metadata to _PROVIDER_METADATA "
-            "in user_api_keys.py"
-        )
+    for spec in REGISTRY:
+        if spec.needs_host:
+            assert spec.id not in listed_ids, (
+                f"Host-bearing provider '{spec.id}' must NOT appear in "
+                "GET /api/v1/user-api-keys/providers this slice"
+            )
+        else:
+            assert spec.id in listed_ids, (
+                f"Provider '{spec.id}' is in the registry but missing from "
+                "GET /api/v1/user-api-keys/providers — add its metadata"
+            )
