@@ -38,7 +38,6 @@ from app.llm.catalog import CATALOG, canonical, canonical_pair, find_entry, sele
 from app.llm.registry import is_byok_only
 from app.models.project import Project
 from app.models.project_llm_endpoint import ProjectLlmEndpoint
-from app.models.user import Profile
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.llm_endpoint import LlmEndpointCapabilities
 from app.schemas.llm_engine import (
@@ -51,6 +50,7 @@ from app.schemas.llm_engine import (
 from app.schemas.llm_target import LlmTarget
 from app.services.api_key_service import APIKeyService
 from app.services.parser_settings_service import ProjectNotFoundError
+from app.services.profile_names import profile_names
 
 __all__ = [
     "EngineRetiredError",
@@ -218,20 +218,6 @@ def _stored_engine(project_settings: dict[str, Any] | None) -> LlmEngineStored |
         return LlmEngineStored.model_validate(raw)
     except ValidationError:
         return None
-
-
-async def _profile_names(db: AsyncSession, ids: set[UUID]) -> dict[UUID, str | None]:
-    """Display names for the given profiles, one query for all of them.
-
-    A profile with no ``full_name`` maps to ``None`` rather than to its
-    uuid: the popover renders a fallback, never a raw id dressed as a name.
-    (The B-9f ``_publisher_names`` shape.)
-    """
-    rows = await db.execute(select(Profile.id, Profile.full_name).where(Profile.id.in_(ids)))
-    names: dict[UUID, str | None] = {}
-    for profile_id, full_name in rows.all():
-        names[profile_id] = full_name
-    return names
 
 
 class LlmEngineService:
@@ -468,7 +454,7 @@ class LlmEngineService:
 
         updated_by_name: str | None = None
         if stored is not None and stored.updated_by is not None:
-            names = await _profile_names(self.db, {stored.updated_by})
+            names = await profile_names(self.db, {stored.updated_by})
             updated_by_name = names.get(stored.updated_by)
 
         keys = APIKeyService(self.db, viewer_id)

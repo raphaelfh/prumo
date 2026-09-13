@@ -43,8 +43,8 @@ from app.schemas.llm_endpoint import (
     LlmEndpointUpdateRequest,
 )
 from app.services.llm_endpoint_probe import probe_endpoint
-from app.services.llm_engine_service import _profile_names
 from app.services.parser_settings_service import ProjectNotFoundError
+from app.services.profile_names import profile_names
 
 __all__ = [
     "EndpointNotFoundError",
@@ -148,7 +148,7 @@ class LlmEndpointService:
         )
         names: dict[UUID, str | None] = {}
         if rows:
-            names = await _profile_names(self.db, {row.created_by for row in rows})
+            names = await profile_names(self.db, {row.created_by for row in rows})
         return [_to_read(row, names.get(row.created_by)) for row in rows]
 
     async def get(self, project_id: UUID, endpoint_id: UUID) -> ProjectLlmEndpoint:
@@ -217,7 +217,7 @@ class LlmEndpointService:
             raise ValueError(
                 f"An endpoint labeled {payload.label!r} already exists in this project"
             ) from None
-        names = await _profile_names(self.db, {created_by})
+        names = await profile_names(self.db, {created_by})
         return _to_read(row, names.get(created_by))
 
     async def _label_taken(self, project_id: UUID, label: str) -> bool:
@@ -266,7 +266,7 @@ class LlmEndpointService:
             row.capabilities = {}
             row.last_validated_at = None
         await self.db.flush()
-        names = await _profile_names(self.db, {row.created_by})
+        names = await profile_names(self.db, {row.created_by})
         return _to_read(row, names.get(row.created_by))
 
     async def delete(
