@@ -95,8 +95,29 @@ export function useResizableTableColumns({
         };
     }, [resizingColumn]);
 
+    /** Keyboard writes: no mouseup follows a keypress, so persist immediately. */
+    const setWidth = (columnId: string, width: number) => {
+        const next = {...columnWidths, [columnId]: Math.min(maxWidth, Math.max(minWidth, Math.round(width)))};
+        setColumnWidths(next);
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(next));
+        } catch (_) {
+            // ignore persistence errors
+        }
+    };
+
+    /** Props for `ColumnResizeHandle` — the drag and keyboard paths share one clamp. */
+    const getHandleProps = (columnId: string) => ({
+        width: columnWidths[columnId] ?? defaultColumnWidths[columnId] ?? minWidth,
+        min: minWidth,
+        max: maxWidth,
+        onResizeStart: (clientX: number) => startResize(columnId, clientX),
+        onWidth: (width: number) => setWidth(columnId, width),
+    });
+
     return {
         resizingColumn,
         startResize,
+        getHandleProps,
     };
 }

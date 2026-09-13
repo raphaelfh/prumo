@@ -63,6 +63,7 @@ import {
     ResponsiveList,
     StatusRing,
     useResizableTableColumns,
+    ColumnResizeHandle,
 } from '@/components/shared/list';
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {useQueryClient} from '@tanstack/react-query';
@@ -211,7 +212,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
             return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS};
         }
     });
-    const {startResize} = useResizableTableColumns({
+    const {getHandleProps} = useResizableTableColumns({
         columnWidths,
         setColumnWidths,
         defaultColumnWidths: EXTRACTION_DEFAULT_COLUMN_WIDTHS,
@@ -807,29 +808,13 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                       onSort={() => handleSort('title')}
                                   />
                               </div>
-                              <div
-                                  role="separator"
-                                  aria-label={t('extraction', 'tableColumnTitle')}
-                                  onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      startResize('title', e.clientX);
-                                  }}
-                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
-                              />
+                              <ColumnResizeHandle label={t('extraction', 'tableColumnTitle')} {...getHandleProps('title')} />
               </TableHead>
                           <TableHead
                               className={`relative hidden md:table-cell ${TABLE_CELL_CLASS}`} style={getColumnStyle('authors')}>
                               <span
                                   className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('extraction', 'tableColumnAuthors')}</span>
-                              <div
-                                  role="separator"
-                                  aria-label={t('extraction', 'tableColumnAuthors')}
-                                  onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      startResize('authors', e.clientX);
-                                  }}
-                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
-                              />
+                              <ColumnResizeHandle label={t('extraction', 'tableColumnAuthors')} {...getHandleProps('authors')} />
               </TableHead>
                           <TableHead
                               className={`relative hidden md:table-cell ${TABLE_CELL_CLASS}`} style={getColumnStyle('year')}>
@@ -838,15 +823,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                   direction={sortField === 'publication_year' ? sortDirection : null}
                                   onSort={() => handleSort('publication_year')}
                               />
-                              <div
-                                  role="separator"
-                                  aria-label={t('extraction', 'tableColumnYear')}
-                                  onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      startResize('year', e.clientX);
-                                  }}
-                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
-                              />
+                              <ColumnResizeHandle label={t('extraction', 'tableColumnYear')} {...getHandleProps('year')} />
               </TableHead>
                           <TableHead
                               className={`relative ${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
@@ -884,28 +861,12 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                           </TooltipContent>
                                       </Tooltip>
                               </div>
-                              <div
-                                  role="separator"
-                                  aria-label={t('extraction', 'tableColumnStatus')}
-                                  onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      startResize('status', e.clientX);
-                                  }}
-                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
-                              />
+                              <ColumnResizeHandle label={t('extraction', 'tableColumnStatus')} {...getHandleProps('status')} />
               </TableHead>
                           <TableHead
                               className={`relative ${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}>
                               {t('extraction', 'tableActions')}
-                              <div
-                                  role="separator"
-                                  aria-label={t('extraction', 'tableActions')}
-                                  onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      startResize('actions', e.clientX);
-                                  }}
-                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
-                              />
+                              <ColumnResizeHandle label={t('extraction', 'tableActions')} {...getHandleProps('actions')} />
                           </TableHead>
             </TableRow>
           </TableHeader>

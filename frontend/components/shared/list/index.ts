@@ -23,6 +23,7 @@ export {ActiveFilterChips, } from './ActiveFilterChips';
 export {SortIconHeader} from './SortIconHeader';
 export {StatusRing, } from './StatusRing';
 export {useResizableTableColumns} from './useResizableTableColumns';
+export {ColumnResizeHandle} from './ColumnResizeHandle';
 export {
     ListDisplaySortPopover,
     
