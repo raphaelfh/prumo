@@ -26,9 +26,12 @@ from app.core.error_handler import AppError
 from app.core.integrity import violates_constraint
 from app.core.net_guard import validate_endpoint_url
 from app.core.security import derive_encryption_key
+from app.llm.registry import get_provider
 from app.models.llm_connection import LlmConnection
 from app.schemas.llm_connection import (
+    LlmConnectionDeleteResult,
     LlmConnectionRead,
+    LlmConnectionUpdateRequest,
     ProjectConnectionCreateRequest,
     UserConnectionCreateRequest,
 )
@@ -36,6 +39,7 @@ from app.schemas.llm_endpoint import LlmEndpointCapabilities
 from app.services.profile_names import profile_names
 
 __all__ = [
+    "ConnectionNotFoundError",
     "ConnectionUnavailableError",
     "LlmConnectionService",
     "owned_project_connection",
@@ -58,6 +62,10 @@ class ConnectionUnavailableError(AppError):
 
     def __init__(self, message: str) -> None:
         super().__init__(code="LLM_ENDPOINT_UNAVAILABLE", message=message, status_code=409)
+
+
+class ConnectionNotFoundError(Exception):
+    """No connection for (owner, id). Routers translate to 404."""
 
 
 def _fernet_for(connection_id: UUID) -> Fernet:
@@ -219,6 +227,81 @@ class LlmConnectionService:
             project_id=project_id,
             created_by=created_by,
             payload=payload,
+        )
+
+    async def _update(
+        self, row: LlmConnection | None, payload: LlmConnectionUpdateRequest
+    ) -> LlmConnectionRead:
+        if row is None:
+            raise ConnectionNotFoundError("Connection not found")
+        spec = get_provider(row.provider)
+        assert spec is not None  # CHECK-backed
+        if spec.needs_host:
+            if not payload.base_url:
+                raise ValueError(f"{row.provider} requires a base_url")
+            vetted = (await validate_endpoint_url(payload.base_url)).url
+        else:
+            if payload.base_url is not None:
+                raise ValueError(f"{row.provider} is a hosted provider; no base_url allowed")
+            vetted = None
+        invalidated = vetted != row.base_url or list(payload.allowed_models) != list(
+            row.allowed_models
+        )
+        row.label, row.base_url, row.allowed_models = (
+            payload.label,
+            vetted,
+            list(payload.allowed_models),
+        )
+        if payload.api_key is not None:
+            secret = payload.api_key.get_secret_value()
+            if secret == "" and not spec.key_optional:
+                raise ValueError(f"{row.provider} requires a key; it cannot be cleared")
+            row.encrypted_api_key = None if secret == "" else _encrypt(row.id, secret)
+        if invalidated:
+            row.validation_status, row.capabilities, row.last_validated_at = (
+                "unverified",
+                {},
+                None,
+            )
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            if not violates_constraint(exc, *_IDENTITY_INDEXES):
+                raise
+            raise ValueError(
+                f"A connection labeled {payload.label!r} already exists at this scope"
+            ) from None
+        return (await self._reads([row]))[0]
+
+    async def update_user(
+        self, *, user_id: UUID, connection_id: UUID, payload: LlmConnectionUpdateRequest
+    ) -> LlmConnectionRead:
+        return await self._update(
+            await owned_user_connection(self.db, connection_id, user_id), payload
+        )
+
+    async def update_project(
+        self, *, project_id: UUID, connection_id: UUID, payload: LlmConnectionUpdateRequest
+    ) -> LlmConnectionRead:
+        return await self._update(
+            await owned_project_connection(self.db, connection_id, project_id), payload
+        )
+
+    async def _delete(self, row: LlmConnection | None) -> LlmConnectionDeleteResult:
+        if row is None:
+            raise ConnectionNotFoundError("Connection not found")
+        await self.db.delete(row)
+        await self.db.flush()
+        return LlmConnectionDeleteResult(deleted=True, id=row.id)
+
+    async def delete_user(self, *, user_id: UUID, connection_id: UUID) -> LlmConnectionDeleteResult:
+        return await self._delete(await owned_user_connection(self.db, connection_id, user_id))
+
+    async def delete_project(
+        self, *, project_id: UUID, connection_id: UUID
+    ) -> LlmConnectionDeleteResult:
+        return await self._delete(
+            await owned_project_connection(self.db, connection_id, project_id)
         )
 
     async def decrypt_key(self, row: LlmConnection) -> str | None:

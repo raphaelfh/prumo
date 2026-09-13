@@ -10,8 +10,13 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.llm_connection import ProjectConnectionCreateRequest, UserConnectionCreateRequest
+from app.schemas.llm_connection import (
+    LlmConnectionUpdateRequest,
+    ProjectConnectionCreateRequest,
+    UserConnectionCreateRequest,
+)
 from app.services.llm_connection_service import (
+    ConnectionNotFoundError,
     LlmConnectionService,
     owned_project_connection,
     owned_user_connection,
@@ -105,3 +110,37 @@ async def test_host_connections_store_the_vetted_url_and_allow_keyless(
     )
     assert read.base_url == "https://8.8.8.8/v1" and read.has_api_key is False
     assert read.validation_status == "unverified" and read.allowed_models == ["llama3"]
+
+
+@pytest.mark.asyncio
+async def test_update_and_delete_go_through_the_guard(db_session: AsyncSession) -> None:
+    cid = await _user_key(db_session)
+    svc = LlmConnectionService(db_session)
+    with pytest.raises(ConnectionNotFoundError):
+        await svc.update_user(
+            user_id=SEED.reviewer_profile,
+            connection_id=cid,
+            payload=LlmConnectionUpdateRequest(label="stolen"),
+        )
+    with pytest.raises(ConnectionNotFoundError):
+        await svc.delete_user(user_id=SEED.reviewer_profile, connection_id=cid)
+    read = await svc.update_user(
+        user_id=SEED.primary_profile,
+        connection_id=cid,
+        payload=LlmConnectionUpdateRequest(label="renamed"),
+    )
+    assert read.label == "renamed"
+    result = await svc.delete_user(user_id=SEED.primary_profile, connection_id=cid)
+    assert result.deleted is True and result.id == cid
+    assert await svc.list_user(SEED.primary_profile) == []
+
+
+@pytest.mark.asyncio
+async def test_clearing_the_key_is_refused_on_a_hosted_provider(db_session: AsyncSession) -> None:
+    cid = await _user_key(db_session)
+    with pytest.raises(ValueError, match="key"):
+        await LlmConnectionService(db_session).update_user(
+            user_id=SEED.primary_profile,
+            connection_id=cid,
+            payload=LlmConnectionUpdateRequest(label="k", api_key=SecretStr("")),
+        )
