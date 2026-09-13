@@ -43,7 +43,7 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({open, onOpenChange,
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="w-[280px] max-w-[85vw] p-0">
+      <SheetContent side="left" size="narrow">
         <div className="flex flex-col h-full">
           <SheetHeader className="px-3 py-3 pr-12 border-b border-border/40 shrink-0">
             <div className="flex items-center gap-2.5">

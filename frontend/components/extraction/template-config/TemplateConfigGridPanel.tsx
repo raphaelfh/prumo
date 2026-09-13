@@ -752,7 +752,7 @@ export function TemplateConfigGridPanel({
             every capability stays editable on narrow containers. */}
         {isNarrow ? (
           <Sheet open={sheetOpen && !diffSheetOpen} onOpenChange={setSheetOpen}>
-            <SheetContent side="right" className="w-[320px] p-0 sm:max-w-[320px]">
+            <SheetContent side="right" size="narrow">
               <SheetHeader className="sr-only">
                 <SheetTitle>{t('extraction', 'inspectorSheetTitle')}</SheetTitle>
                 <SheetDescription>
