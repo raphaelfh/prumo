@@ -68,7 +68,6 @@ export const llmConnections = {
     followDefault: 'Follow the project default',
 
     // --- Project Settings → AI engine card + Shared keys ---
-    cardTitle: 'AI engine',
     cardDescription: 'The project default for new runs. Members may pick their own engine unless locked.',
     cardLoadError: "Couldn't load the AI engine.",
     defaultLabel: 'Project default',
