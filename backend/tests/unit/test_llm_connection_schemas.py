@@ -11,6 +11,7 @@ from app.schemas.llm_connection import (
     ProjectConnectionCreateRequest,
     UserConnectionCreateRequest,
 )
+from app.schemas.llm_endpoint import LlmEndpointCapabilities
 
 
 def test_unknown_provider_is_rejected() -> None:
@@ -67,3 +68,26 @@ def test_secret_never_appears_in_repr_or_dump() -> None:
 def test_update_clear_key_is_the_empty_string() -> None:
     req = LlmConnectionUpdateRequest(label="x", api_key=SecretStr(""))
     assert req.api_key is not None and req.api_key.get_secret_value() == ""
+
+
+# ---------------------------------------------------------------------------
+# LlmEndpointCapabilities — defaults + unknown-mode tolerance (moved here when
+# test_llm_endpoint_schemas.py went with the legacy endpoint stack, task 23)
+# ---------------------------------------------------------------------------
+
+
+def test_capabilities_defaults() -> None:
+    caps = LlmEndpointCapabilities()
+    assert caps.output_mode is None
+    assert caps.models_seen == []
+
+
+def test_capabilities_normalizes_an_unknown_output_mode() -> None:
+    """A stored value this build does not know degrades to ``None`` instead
+    of throwing: these capabilities are re-read from JSONB on every LIST, so
+    a ValidationError there would 500 the whole manager surface (the
+    ``LlmEngineStored.mode`` posture)."""
+    assert LlmEndpointCapabilities.model_validate({"output_mode": "telepathy"}).output_mode is None
+    assert LlmEndpointCapabilities.model_validate({"output_mode": 7}).output_mode is None
+    # The known vocabulary still round-trips untouched.
+    assert LlmEndpointCapabilities.model_validate({"output_mode": "tool"}).output_mode == "tool"

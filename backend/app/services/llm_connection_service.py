@@ -344,7 +344,7 @@ class LlmConnectionService:
 
     async def _verify(self, row: LlmConnection | None) -> LlmConnectionVerifyResult:
         """Reads before the network call, writes after it, no lock held (the
-        LlmEndpointService.verify ordering)."""
+        ordering the retired endpoint-verify path established)."""
         if row is None:
             raise ConnectionNotFoundError("Connection not found")
         api_key = await self.decrypt_key(row)

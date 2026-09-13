@@ -56,11 +56,9 @@ from app.models.feedback import FeedbackAttachment, FeedbackReport  # noqa: F401
 from app.models.integration import ZoteroIntegration
 from app.models.llm_connection import LlmConnection, UserProjectEngine
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
-from app.models.project_llm_endpoint import ENDPOINT_VALIDATION_STATUSES, ProjectLlmEndpoint
 
 # Modelos sem dependencias (ou with dependencias minimas)
 from app.models.user import Profile
-from app.models.user_api_key import SUPPORTED_PROVIDERS, UserAPIKey
 
 
 # Forca o registro de todas as tabelas in the metadata
@@ -116,8 +114,6 @@ __all__ = [
     "ProjectMemberRole",
     "ReviewType",
     "LlmConnection",
-    "ProjectLlmEndpoint",
-    "ENDPOINT_VALIDATION_STATUSES",
     # Article
     "Article",
     "ArticleFile",
@@ -161,7 +157,5 @@ __all__ = [
     # Integration
     "ZoteroIntegration",
     # User API Keys
-    "UserAPIKey",
     "UserProjectEngine",
-    "SUPPORTED_PROVIDERS",
 ]

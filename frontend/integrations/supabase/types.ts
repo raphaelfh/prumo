@@ -185,6 +185,7 @@ export type Database = {
           label: string | null
           page_number: number | null
           position: Json | null
+          updated_at: string
           user_id: string | null
         }
         Insert: {
@@ -196,6 +197,7 @@ export type Database = {
           label?: string | null
           page_number?: number | null
           position?: Json | null
+          updated_at?: string
           user_id?: string | null
         }
         Update: {
@@ -207,6 +209,7 @@ export type Database = {
           label?: string | null
           page_number?: number | null
           position?: Json | null
+          updated_at?: string
           user_id?: string | null
         }
         Relationships: [
@@ -308,6 +311,7 @@ export type Database = {
           id: string
           page_number: number | null
           position: Json | null
+          updated_at: string
           user_id: string | null
         }
         Insert: {
@@ -319,6 +323,7 @@ export type Database = {
           id?: string
           page_number?: number | null
           position?: Json | null
+          updated_at?: string
           user_id?: string | null
         }
         Update: {
@@ -330,6 +335,7 @@ export type Database = {
           id?: string
           page_number?: number | null
           position?: Json | null
+          updated_at?: string
           user_id?: string | null
         }
         Relationships: [
@@ -983,6 +989,7 @@ export type Database = {
           allow_other: boolean
           allowed_units: Json | null
           allowed_values: Json | null
+          allows_no_information: boolean
           allows_not_applicable: boolean
           allows_not_evaluated: boolean
           created_at: string
@@ -990,6 +997,7 @@ export type Database = {
           entity_type_id: string
           field_type: Database["public"]["Enums"]["extraction_field_type"]
           id: string
+          is_entity_key: boolean
           is_required: boolean
           label: string
           llm_description: string | null
@@ -1005,6 +1013,7 @@ export type Database = {
           allow_other?: boolean
           allowed_units?: Json | null
           allowed_values?: Json | null
+          allows_no_information?: boolean
           allows_not_applicable?: boolean
           allows_not_evaluated?: boolean
           created_at?: string
@@ -1012,6 +1021,7 @@ export type Database = {
           entity_type_id: string
           field_type: Database["public"]["Enums"]["extraction_field_type"]
           id?: string
+          is_entity_key?: boolean
           is_required?: boolean
           label: string
           llm_description?: string | null
@@ -1027,6 +1037,7 @@ export type Database = {
           allow_other?: boolean
           allowed_units?: Json | null
           allowed_values?: Json | null
+          allows_no_information?: boolean
           allows_not_applicable?: boolean
           allows_not_evaluated?: boolean
           created_at?: string
@@ -1034,6 +1045,7 @@ export type Database = {
           entity_type_id?: string
           field_type?: Database["public"]["Enums"]["extraction_field_type"]
           id?: string
+          is_entity_key?: boolean
           is_required?: boolean
           label?: string
           llm_description?: string | null
@@ -1195,6 +1207,7 @@ export type Database = {
           id: string
           instance_id: string
           proposed_value: Json
+          provenance: Json | null
           rationale: string | null
           run_id: string
           source: Database["public"]["Enums"]["extraction_proposal_source"]
@@ -1208,6 +1221,7 @@ export type Database = {
           id?: string
           instance_id: string
           proposed_value: Json
+          provenance?: Json | null
           rationale?: string | null
           run_id: string
           source: Database["public"]["Enums"]["extraction_proposal_source"]
@@ -1221,6 +1235,7 @@ export type Database = {
           id?: string
           instance_id?: string
           proposed_value?: Json
+          provenance?: Json | null
           rationale?: string | null
           run_id?: string
           source?: Database["public"]["Enums"]["extraction_proposal_source"]
@@ -1626,6 +1641,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          note: string | null
           project_template_id: string
           published_at: string
           published_by: string
@@ -1637,6 +1653,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          note?: string | null
           project_template_id: string
           published_at?: string
           published_by: string
@@ -1648,6 +1665,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          note?: string | null
           project_template_id?: string
           published_at?: string
           published_by?: string
@@ -1680,6 +1698,7 @@ export type Database = {
           id: string
           is_global: boolean
           kind: Database["public"]["Enums"]["template_kind"]
+          llm_template_instruction: string | null
           name: string
           schema: Json
           updated_at: string
@@ -1692,6 +1711,7 @@ export type Database = {
           id?: string
           is_global?: boolean
           kind?: Database["public"]["Enums"]["template_kind"]
+          llm_template_instruction?: string | null
           name: string
           schema?: Json
           updated_at?: string
@@ -1704,6 +1724,7 @@ export type Database = {
           id?: string
           is_global?: boolean
           kind?: Database["public"]["Enums"]["template_kind"]
+          llm_template_instruction?: string | null
           name?: string
           schema?: Json
           updated_at?: string
@@ -1845,6 +1866,85 @@ export type Database = {
           },
         ]
       }
+      llm_connections: {
+        Row: {
+          allowed_models: Json
+          base_url: string | null
+          capabilities: Json
+          created_at: string
+          created_by: string
+          encrypted_api_key: string | null
+          id: string
+          label: string
+          last_used_at: string | null
+          last_validated_at: string | null
+          project_id: string | null
+          provider: string
+          scope: string
+          updated_at: string
+          user_id: string | null
+          validation_status: string
+        }
+        Insert: {
+          allowed_models?: Json
+          base_url?: string | null
+          capabilities?: Json
+          created_at?: string
+          created_by: string
+          encrypted_api_key?: string | null
+          id: string
+          label: string
+          last_used_at?: string | null
+          last_validated_at?: string | null
+          project_id?: string | null
+          provider: string
+          scope: string
+          updated_at?: string
+          user_id?: string | null
+          validation_status?: string
+        }
+        Update: {
+          allowed_models?: Json
+          base_url?: string | null
+          capabilities?: Json
+          created_at?: string
+          created_by?: string
+          encrypted_api_key?: string | null
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          last_validated_at?: string | null
+          project_id?: string | null
+          provider?: string
+          scope?: string
+          updated_at?: string
+          user_id?: string | null
+          validation_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_connections_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "llm_connections_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "llm_connections_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -1874,6 +1974,8 @@ export type Database = {
       }
       project_extraction_templates: {
         Row: {
+          config_draft_by: string | null
+          config_draft_since: string | null
           created_at: string
           created_by: string
           description: string | null
@@ -1882,6 +1984,7 @@ export type Database = {
           id: string
           is_active: boolean
           kind: Database["public"]["Enums"]["template_kind"]
+          llm_template_instruction: string | null
           name: string
           project_id: string
           schema: Json
@@ -1889,6 +1992,8 @@ export type Database = {
           version: string
         }
         Insert: {
+          config_draft_by?: string | null
+          config_draft_since?: string | null
           created_at?: string
           created_by: string
           description?: string | null
@@ -1897,6 +2002,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           kind?: Database["public"]["Enums"]["template_kind"]
+          llm_template_instruction?: string | null
           name: string
           project_id: string
           schema?: Json
@@ -1904,6 +2010,8 @@ export type Database = {
           version?: string
         }
         Update: {
+          config_draft_by?: string | null
+          config_draft_since?: string | null
           created_at?: string
           created_by?: string
           description?: string | null
@@ -1912,6 +2020,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           kind?: Database["public"]["Enums"]["template_kind"]
+          llm_template_instruction?: string | null
           name?: string
           project_id?: string
           schema?: Json
@@ -1919,6 +2028,13 @@ export type Database = {
           version?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "project_extraction_templates_config_draft_by_fkey"
+            columns: ["config_draft_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "project_extraction_templates_created_by_fkey"
             columns: ["created_by"]
@@ -2080,55 +2196,51 @@ export type Database = {
           },
         ]
       }
-      user_api_keys: {
+      user_project_engines: {
         Row: {
-          created_at: string
-          encrypted_api_key: string
-          id: string
-          is_active: boolean
-          is_default: boolean
-          key_name: string | null
-          last_used_at: string | null
-          last_validated_at: string | null
-          metadata: Json | null
+          connection_id: string | null
+          mode: string
+          model: string
+          project_id: string
           provider: string
           updated_at: string
           user_id: string
-          validation_status: string | null
         }
         Insert: {
-          created_at?: string
-          encrypted_api_key: string
-          id?: string
-          is_active?: boolean
-          is_default?: boolean
-          key_name?: string | null
-          last_used_at?: string | null
-          last_validated_at?: string | null
-          metadata?: Json | null
+          connection_id?: string | null
+          mode?: string
+          model: string
+          project_id: string
           provider: string
           updated_at?: string
           user_id: string
-          validation_status?: string | null
         }
         Update: {
-          created_at?: string
-          encrypted_api_key?: string
-          id?: string
-          is_active?: boolean
-          is_default?: boolean
-          key_name?: string | null
-          last_used_at?: string | null
-          last_validated_at?: string | null
-          metadata?: Json | null
+          connection_id?: string | null
+          mode?: string
+          model?: string
+          project_id?: string
           provider?: string
           updated_at?: string
           user_id?: string
-          validation_status?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "user_api_keys_user_id_fkey"
+            foreignKeyName: "user_project_engines_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "llm_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_project_engines_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_project_engines_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -2192,6 +2304,10 @@ export type Database = {
           percentage: number
           total_fields: number
         }[]
+      }
+      can_read_entity_type: {
+        Args: { p_entity_type_id: string; p_user_id: string }
+        Returns: boolean
       }
       create_project_with_member: {
         Args: {
@@ -2292,12 +2408,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2321,11 +2437,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2346,11 +2462,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2371,11 +2487,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2388,11 +2504,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

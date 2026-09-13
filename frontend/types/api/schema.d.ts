@@ -741,81 +741,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{project_id}/llm-endpoints": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Llm Endpoints
-         * @description Every endpoint of the project — the manager management surface.
-         */
-        get: operations["list_llm_endpoints_api_v1_projects__project_id__llm_endpoints_get"];
-        put?: never;
-        /**
-         * Create Llm Endpoint
-         * @description Register an endpoint (URL vetted, key encrypted service-side).
-         */
-        post: operations["create_llm_endpoint_api_v1_projects__project_id__llm_endpoints_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Update Llm Endpoint
-         * @description Full-replace update; ``api_key`` tri-state is applied service-side.
-         */
-        put: operations["update_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__put"];
-        post?: never;
-        /**
-         * Delete Llm Endpoint
-         * @description Delete the endpoint — 200 + typed result (decision 15, never 204).
-         *
-         *     ``EndpointUnavailableError`` (the project engine still points here)
-         *     propagates to the AppError handler's 409 envelope.
-         */
-        delete: operations["delete_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}/verify": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Verify Llm Endpoint
-         * @description Run the capabilities probe and persist its outcome (commit after the
-         *     service call — the llm-engine PUT pattern).
-         *
-         *     ``EndpointUnavailableError`` (stored key no longer decrypts) propagates
-         *     to the AppError handler's 409 envelope.
-         */
-        post: operations["verify_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__verify_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/projects/{project_id}/llm-engine": {
         parameters: {
             query?: never;
@@ -1730,94 +1655,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/user-api-keys": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Listar API keys
-         * @description List todas as API keys do user (sem expor as keys).
-         */
-        get: operations["list_api_keys_api_v1_user_api_keys_get"];
-        put?: never;
-        /**
-         * Criar API key
-         * @description Adiciona nova API key for um provedor.
-         */
-        post: operations["create_api_key_api_v1_user_api_keys_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/user-api-keys/providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Listar provedores suportados
-         * @description List os provedores de IA suportados.
-         */
-        get: operations["list_providers_api_v1_user_api_keys_providers_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/user-api-keys/{key_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remover API key
-         * @description Remove permanentemente uma API key.
-         */
-        delete: operations["delete_api_key_api_v1_user_api_keys__key_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Atualizar API key
-         * @description Update propriedades de uma API key.
-         */
-        patch: operations["update_api_key_api_v1_user_api_keys__key_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/user-api-keys/{key_id}/validate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Revalidar API key
-         * @description Revalida uma API key existente.
-         */
-        post: operations["validate_api_key_api_v1_user_api_keys__key_id__validate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/zotero/{action}": {
         parameters: {
             query?: never;
@@ -1966,30 +1803,6 @@ export interface components {
             /** Suggestions */
             suggestions: components["schemas"]["AISuggestionItem"][];
         };
-        /**
-         * APIKeyResponse
-         * @description Resposta with data de uma API key (sem a key em si).
-         */
-        APIKeyResponse: {
-            /** Createdat */
-            createdAt: string;
-            /** Id */
-            id: string;
-            /** Isactive */
-            isActive: boolean;
-            /** Isdefault */
-            isDefault: boolean;
-            /** Keyname */
-            keyName: string | null;
-            /** Lastusedat */
-            lastUsedAt: string | null;
-            /** Lastvalidatedat */
-            lastValidatedAt: string | null;
-            /** Provider */
-            provider: string;
-            /** Validationstatus */
-            validationStatus: string | null;
-        };
         /** AdvanceStageRequest */
         AdvanceStageRequest: {
             /** Target Stage */
@@ -2112,40 +1925,6 @@ export interface components {
         ApiResponse_ConsensusResultResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ConsensusResultResponse"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[CreateAPIKeyResponse] */
-        ApiResponse_CreateAPIKeyResponse_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["CreateAPIKeyResponse"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[DeleteAPIKeyResult] */
-        ApiResponse_DeleteAPIKeyResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["DeleteAPIKeyResult"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2312,57 +2091,6 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[KeyValidationResult] */
-        ApiResponse_KeyValidationResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["KeyValidationResult"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[ListAPIKeysData] */
-        ApiResponse_ListAPIKeysData_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["ListAPIKeysData"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[ListProvidersData] */
-        ApiResponse_ListProvidersData_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["ListProvidersData"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
         /** ApiResponse[LlmConnectionDeleteResult] */
         ApiResponse_LlmConnectionDeleteResult_: {
             /** @description Dados da resposta */
@@ -2401,57 +2129,6 @@ export interface components {
         ApiResponse_LlmConnectionVerifyResult_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["LlmConnectionVerifyResult"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[LlmEndpointDeleteResult] */
-        ApiResponse_LlmEndpointDeleteResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["LlmEndpointDeleteResult"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[LlmEndpointProbeResult] */
-        ApiResponse_LlmEndpointProbeResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["LlmEndpointProbeResult"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[LlmEndpointRead] */
-        ApiResponse_LlmEndpointRead_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["LlmEndpointRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2978,23 +2655,6 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[UpdateAPIKeyResult] */
-        ApiResponse_UpdateAPIKeyResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["UpdateAPIKeyResult"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
         /** ApiResponse[UpdateTemplateActiveResponse] */
         ApiResponse_UpdateTemplateActiveResponse_: {
             /** @description Dados da resposta */
@@ -3113,26 +2773,6 @@ export interface components {
              * @description Dados da resposta
              */
             data?: components["schemas"]["LlmConnectionRead"][] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[list[LlmEndpointRead]] */
-        ApiResponse_list_LlmEndpointRead__: {
-            /**
-             * Data
-             * @description Dados da resposta
-             */
-            data?: components["schemas"]["LlmEndpointRead"][] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3454,62 +3094,6 @@ export interface components {
             consensus: components["schemas"]["ConsensusDecisionResponse"];
             published: components["schemas"]["PublishedStateResponse"];
         };
-        /**
-         * CreateAPIKeyRequest
-         * @description Request for criar nova API key.
-         */
-        CreateAPIKeyRequest: {
-            /**
-             * Apikey
-             * @description API key do provedor
-             */
-            apiKey: string;
-            /**
-             * Isdefault
-             * @description Se deve ser a key default for o provedor
-             * @default true
-             */
-            isDefault: boolean;
-            /**
-             * Keyname
-             * @description Nome optional for identificar a key
-             */
-            keyName?: string | null;
-            /**
-             * Metadata
-             * @description Metadata extras (modelo preferido, etc.)
-             */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
-            /**
-             * Provider
-             * @description Provedor da API. Valores: ('openai', 'anthropic', 'google', 'llama_cloud')
-             */
-            provider: string;
-            /**
-             * Validatekey
-             * @description Se deve validar a key antes de salvar
-             * @default true
-             */
-            validateKey: boolean;
-        };
-        /**
-         * CreateAPIKeyResponse
-         * @description Resposta apos criar API key.
-         */
-        CreateAPIKeyResponse: {
-            /** Id */
-            id: string;
-            /** Isdefault */
-            isDefault: boolean;
-            /** Provider */
-            provider: string;
-            /** Validationmessage */
-            validationMessage: string | null;
-            /** Validationstatus */
-            validationStatus: string;
-        };
         /** CreateConsensusRequest */
         CreateConsensusRequest: {
             /**
@@ -3597,16 +3181,6 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
-        };
-        /**
-         * DeleteAPIKeyResult
-         * @description Payload de ``DELETE /user-api-keys/{id}``.
-         */
-        DeleteAPIKeyResult: {
-            /** Deleted */
-            deleted: boolean;
-            /** Id */
-            id: string;
         };
         /**
          * DiffStatus
@@ -4310,27 +3884,6 @@ export interface components {
             templateId: string;
         };
         /**
-         * KeyValidationResult
-         * @description Payload de ``POST /user-api-keys/{id}/validate``.
-         */
-        KeyValidationResult: {
-            /** Message */
-            message: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "valid" | "invalid" | "pending";
-        };
-        /**
-         * ListAPIKeysData
-         * @description Payload de ``GET /user-api-keys``.
-         */
-        ListAPIKeysData: {
-            /** Keys */
-            keys: components["schemas"]["APIKeyResponse"][];
-        };
-        /**
          * ListCollectionsResponse
          * @description Response de listar collections.
          */
@@ -4339,14 +3892,6 @@ export interface components {
             collections: {
                 [key: string]: unknown;
             }[];
-        };
-        /**
-         * ListProvidersData
-         * @description Payload de ``GET /user-api-keys/providers``.
-         */
-        ListProvidersData: {
-            /** Providers */
-            providers: components["schemas"]["ProviderInfo"][];
         };
         /** LlmConnectionDeleteResult */
         LlmConnectionDeleteResult: {
@@ -4448,116 +3993,6 @@ export interface components {
             models_seen: string[];
             /** Output Mode */
             output_mode?: ("tool" | "native" | "prompted") | null;
-        };
-        /**
-         * LlmEndpointCreateRequest
-         * @description POST body for a new endpoint.
-         *
-         *     ``api_key`` is either omitted/``None`` (a keyless endpoint, e.g.
-         *     local Ollama) or a non-empty secret — an empty string is a mistake,
-         *     not keyless, and is rejected.
-         */
-        LlmEndpointCreateRequest: {
-            /**
-             * Allowed Models
-             * @default []
-             */
-            allowed_models: string[];
-            /** Api Key */
-            api_key?: string | null;
-            /** Base Url */
-            base_url: string;
-            /** Label */
-            label: string;
-        };
-        /**
-         * LlmEndpointDeleteResult
-         * @description DELETE returns 200 + this envelope payload (house pattern —
-         *     ``DeleteAPIKeyResult``; a 204 would violate the envelope gate).
-         */
-        LlmEndpointDeleteResult: {
-            /** Deleted */
-            deleted: boolean;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-        };
-        /**
-         * LlmEndpointProbeResult
-         * @description Outcome of a verify probe, as returned to the manager.
-         *
-         *     ``error`` is sanitized — a reason class only (timeout, refused,
-         *     TLS, HTTP status), never raw upstream bodies or connection detail.
-         */
-        LlmEndpointProbeResult: {
-            /** Error */
-            error: string | null;
-            /** Models Seen */
-            models_seen: string[];
-            /** Output Mode */
-            output_mode: ("tool" | "native" | "prompted") | null;
-            /**
-             * Validation Status
-             * @enum {string}
-             */
-            validation_status: "ok" | "failed";
-        };
-        /**
-         * LlmEndpointRead
-         * @description One endpoint as the manager-only surface renders it.
-         *
-         *     NEVER carries key material — ``has_api_key`` is the only trace that
-         *     a key exists. ``base_url`` is visible because this read serves the
-         *     manager management surface only.
-         */
-        LlmEndpointRead: {
-            /** Allowed Models */
-            allowed_models: string[];
-            /** Base Url */
-            base_url: string;
-            capabilities: components["schemas"]["LlmEndpointCapabilities"];
-            /** Created By Name */
-            created_by_name: string | null;
-            /** Has Api Key */
-            has_api_key: boolean;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Label */
-            label: string;
-            /** Last Validated At */
-            last_validated_at: string | null;
-            /**
-             * Validation Status
-             * @enum {string}
-             */
-            validation_status: "unverified" | "ok" | "failed";
-        };
-        /**
-         * LlmEndpointUpdateRequest
-         * @description PUT is full-replace for ``label``/``base_url``/``allowed_models``.
-         *
-         *     ``api_key`` is tri-state: ``None`` = keep the stored key; ``""`` =
-         *     clear it (endpoint becomes keyless); a non-empty string = set a new
-         *     key. The tri-state semantics are applied by the service — this shape
-         *     only distinguishes the three states without ever echoing the secret.
-         */
-        LlmEndpointUpdateRequest: {
-            /**
-             * Allowed Models
-             * @default []
-             */
-            allowed_models: string[];
-            /** Api Key */
-            api_key?: string | null;
-            /** Base Url */
-            base_url: string;
-            /** Label */
-            label: string;
         };
         /**
          * LlmEngineCatalogEntryRead
@@ -5058,20 +4493,6 @@ export interface components {
             source: string;
             /** Source User Id */
             source_user_id: string | null;
-        };
-        /**
-         * ProviderInfo
-         * @description One supported BYOK provider (public catalogue).
-         */
-        ProviderInfo: {
-            /** Description */
-            description: string;
-            /** Docsurl */
-            docsUrl: string;
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
         };
         /**
          * ProviderRead
@@ -6760,37 +6181,6 @@ export interface components {
             /** User Name */
             user_name?: string | null;
         };
-        /**
-         * UpdateAPIKeyRequest
-         * @description Request for atualizar API key.
-         */
-        UpdateAPIKeyRequest: {
-            /**
-             * Isactive
-             * @description Se a key esta ativa
-             */
-            isActive?: boolean | null;
-            /**
-             * Isdefault
-             * @description Se deve ser a key default
-             */
-            isDefault?: boolean | null;
-            /**
-             * Keyname
-             * @description Nome for identificar a key
-             */
-            keyName?: string | null;
-        };
-        /**
-         * UpdateAPIKeyResult
-         * @description Payload de ``PATCH /user-api-keys/{id}``.
-         */
-        UpdateAPIKeyResult: {
-            /** Id */
-            id: string;
-            /** Updated */
-            updated: boolean;
-        };
         /** UpdateTemplateActiveRequest */
         UpdateTemplateActiveRequest: {
             /** Is Active */
@@ -8283,172 +7673,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_HitlConfigRead_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_llm_endpoints_api_v1_projects__project_id__llm_endpoints_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_list_LlmEndpointRead__"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_llm_endpoint_api_v1_projects__project_id__llm_endpoints_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LlmEndpointCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_LlmEndpointRead_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                endpoint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LlmEndpointUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_LlmEndpointRead_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                endpoint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_LlmEndpointDeleteResult_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    verify_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__verify_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                endpoint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_LlmEndpointProbeResult_"];
                 };
             };
             /** @description Validation Error */
@@ -9971,187 +9195,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_RunViewResponse_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_api_keys_api_v1_user_api_keys_get: {
-        parameters: {
-            query?: {
-                active_only?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_ListAPIKeysData_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_api_key_api_v1_user_api_keys_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateAPIKeyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_CreateAPIKeyResponse_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_providers_api_v1_user_api_keys_providers_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_ListProvidersData_"];
-                };
-            };
-        };
-    };
-    delete_api_key_api_v1_user_api_keys__key_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                key_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_DeleteAPIKeyResult_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_api_key_api_v1_user_api_keys__key_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                key_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateAPIKeyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_UpdateAPIKeyResult_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    validate_api_key_api_v1_user_api_keys__key_id__validate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                key_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_KeyValidationResult_"];
                 };
             };
             /** @description Validation Error */

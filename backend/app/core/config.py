@@ -162,7 +162,7 @@ class Settings(BaseSettings):
     # key is configured, else the free PyMuPDF parser. This scalar is only the
     # factory's last-resort fallback when no per-call backend is given.
     PARSER_BACKEND: str = "pymupdf"
-    # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
+    # Optional global LlamaCloud key; per-user BYOK (llm_connections) takes
     # precedence over this global fallback.
     LLAMA_CLOUD_API_KEY: str | None = None
     # Cap the blocking LlamaParse parse() call. The SDK's own default is
