@@ -34,11 +34,13 @@ import {revealSection} from './revealSectionRow';
 import {TemplateOutlineRail} from './TemplateOutlineRail';
 import {MoveToSectionDialog} from './MoveToSectionDialog';
 import {applyRetentionToFilter} from './filterRetention';
+import {typeChangeUpdates} from './fieldTypeChange';
 import {GridDndContext} from './gridDrag';
 import {useMoveFieldTo} from './useMoveFieldTo';
 import type {StructuralHistory} from './useStructuralHistory';
 import {useInspectorHost} from './useInspectorHost';
 import {useStructuralUndo} from './useStructuralUndo';
+import {useTemplateFocus} from './useTemplateFocus';
 import {
   buildTemplateTree,
   collectSectionIds,
@@ -118,8 +120,12 @@ interface TemplateConfigGridPanelProps {
   /** True while the command bar's diff sheet is open (B-9b2a). Read-only
    * here — the editor owns the flag and the sibling command bar sets it. */
   diffSheetOpen?: boolean;
-  instruction: TemplateInstructionSlot; // editor-owned draft, shown when nothing is selected
-  templateFocusSeq: number; // bumped by the config bar's ✨ trigger: clear selection, open inspector
+  /** The template's AI instruction draft, owned by the editor — the
+   * inspector shows it when nothing is selected. */
+  instruction: TemplateInstructionSlot;
+  /** Bumped by the config bar's ✨ trigger: each new value clears the
+   * selection and opens the inspector on the template pane. */
+  templateFocusSeq: number;
 }
 
 export function TemplateConfigGridPanel({
@@ -136,7 +142,8 @@ export function TemplateConfigGridPanel({
   // open — derived, not an effect, so `sheetOpen` survives and the
   // inspector comes back when the diff sheet closes.
   diffSheetOpen = false,
-  instruction, templateFocusSeq,
+  instruction,
+  templateFocusSeq,
 }: TemplateConfigGridPanelProps) {
   // ONE request for the whole structure, TanStack-cached on the key every
   // config mutation invalidates (useTemplateConfigCaches) — so the grid
@@ -176,12 +183,10 @@ export function TemplateConfigGridPanel({
   const scrollerRef = useRef<HTMLDivElement>(null);
   const isNarrow = useContainerNarrow(containerRef, INSPECTOR_NARROW_PX);
   const inspector = useInspectorHost(isNarrow);
-  const [handledTemplateFocus, setHandledTemplateFocus] = useState(templateFocusSeq);
-  if (templateFocusSeq !== handledTemplateFocus) { // compared in render (focusGroup.seq pattern), never an effect
-    setHandledTemplateFocus(templateFocusSeq);
+  useTemplateFocus(templateFocusSeq, () => {
     setSelection(null);
     inspector.open();
-  }
+  });
   const {railWidth, setRailWidth, inspectorWidth, setInspectorWidth, gridSlack} =
     usePaneWidths(scrollerRef);
 
@@ -523,25 +528,11 @@ export function TemplateConfigGridPanel({
     return true;
   };
 
-  /** Type menu pick (Task 5): dependent groups clear with the NEW type —
-   * the dialog's semantics (options/allow-other only survive select
-   * kinds, units only numbers). */
+  /** Type menu pick (Task 5): dependent groups clear with the NEW type
+   * (see `typeChangeUpdates`). */
   const handleChangeType = (field: GridField, fieldType: string) => {
     if (fieldType === field.fieldType) return;
-    const supportsOptions = fieldType === 'select' || fieldType === 'multiselect';
-    const updates: ExtractionFieldUpdate = {
-      field_type: fieldType as ExtractionFieldUpdate['field_type'],
-      ...(supportsOptions
-        ? {}
-        : {
-            allowed_values: null,
-            allow_other: false,
-            other_label: null,
-            other_placeholder: null,
-          }),
-      ...(fieldType === 'number' ? {} : {unit: null, allowed_units: null}),
-    };
-    saveFieldUpdates(field, updates);
+    saveFieldUpdates(field, typeChangeUpdates(fieldType));
   };
 
   /** ✨/Options cells (Task 5): select the field and open the inspector
