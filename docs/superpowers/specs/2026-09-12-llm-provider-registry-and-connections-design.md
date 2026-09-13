@@ -291,7 +291,9 @@ must be dropped explicitly):
 - Seed: `backend/app/seed.py` and `backend/app/seed_probast_ai*.py`
   write no rows to either table, so there is no seed to retire.
 - The llama_cloud parsing key path re-homes on the connections service
-  in the same PR. Today it is `APIKeyService.get_key_for_provider`
+  (`backend/app/services/llm_connection_service.py`, its resolver
+  `resolve_provider_key`, §3.3) in the same PR. Today it is
+  `APIKeyService.get_key_for_provider`
   (`backend/app/services/api_key_service.py:215`), read for
   `"llama_cloud"` by the parse worker
   (`backend/app/worker/tasks/parsing_tasks.py:72`, inside `_run_parse`,
@@ -303,7 +305,9 @@ must be dropped explicitly):
   the kicker's user-scope connection, then the project's project-scope
   connection, then `LLAMA_CLOUD_API_KEY` via `global_key_for` — so a
   **project-scope llama_cloud key satisfies parsing** for every member
-  of that project. The frontend read moves with it:
+  of that project. A manager creates that key in the AI engine card's
+  *Shared keys* table (§5), which offers every `"project" in scopes`
+  provider, llama_cloud included. The frontend read moves with it:
   `frontend/components/project/settings/AdvancedSettingsSection.tsx`
   (`:24`, `:86-101`) computes `hasLlamaCloudKey` from
   `loadKeysAndProviders()` today and passes it to
@@ -406,7 +410,38 @@ silent-pin bug fixed on 2026-08-19.
 
 ### 3.3 Credentials
 
-`resolve_engine_credentials` becomes one path:
+The connections service is one module,
+`backend/app/services/llm_connection_service.py`. It owns the
+connection CRUD both §4 routers call (create, list, update, delete,
+verify — with the scope-appropriate ownership predicate in the WHERE
+clause) and **one** credential resolver:
+
+```python
+async def resolve_provider_key(
+    session: AsyncSession, *, provider: str, project_id: UUID, user_id: UUID
+) -> ResolvedKey | None
+```
+
+It walks, in order: the caller's user-scope connection for `provider` →
+the project's project-scope connection for `provider` →
+`global_key_for(provider)`. First hit wins; `None` when nothing has a
+key. `ResolvedKey` is today's `(key, scope)` NamedTuple and `KeyScope`
+the enum beside it (`backend/app/services/api_key_service.py:37-59`);
+both re-home in `llm_connection_service.py`, since `api_key_service.py`
+wraps the deleted repository and retires with it. The parse worker
+(`backend/app/worker/tasks/parsing_tasks.py:72`, inside `_run_parse`,
+which imports the service locally at `:55`) calls
+`resolve_provider_key(session, provider="llama_cloud", project_id=...,
+user_id=...)` in place of `APIKeyService.get_key_for_provider`; the two
+parsing tests in §7.5 monkeypatch the module attribute
+`app.services.llm_connection_service.resolve_provider_key`.
+
+`resolve_engine_credentials` (`backend/app/services/engine_credentials.py`,
+signature unchanged: `(db, *, user_id, project_id, engine) ->
+EngineCredentials`) keeps the engine-shaped contract but stops owning a
+ladder of its own: its key step **is** a call to `resolve_provider_key`
+with the engine's provider, so there is one ladder in the tree, not an
+engine copy and a parsing copy. It becomes one path:
 
 - `connection_id` set (always a user-scope host) → fetch through the
   **one ownership predicate, in the WHERE clause**: `id = X AND scope =
@@ -419,9 +454,10 @@ silent-pin bug fixed on 2026-08-19.
   scans `backend/app` unconditionally against a shrink-only baseline, so
   the new service writes its ownership predicate once, in the WHERE
   clause, and adds no baseline entry.
-- Otherwise, in order: the caller's user-scope connection for the
-  provider, the project's project-scope connection for the provider, the
-  registry's global setting. First hit wins.
+- Otherwise `resolve_provider_key` for the engine's provider: the
+  caller's user-scope connection, the project's project-scope
+  connection, the registry's global setting. First hit wins; `None`
+  becomes `EngineCredentials(api_key=None, key_scope=None, ...)` as today.
 
 `KeyScope` becomes `user_byok`, `project_shared`, `global_service`;
 readers keep accepting `shared_endpoint`. `rekey_for_adopted_engine`
@@ -475,7 +511,8 @@ routes below. Every read carries `has_api_key` and never key material
   non-manager; 422 when `availability` for the row's provider is null
   for the caller — the UI's *needs a key* rule, enforced server-side).
 - The parse worker's llama_cloud lookup (§2) uses the connections
-  service, not a route: no parsing endpoint changes.
+  service (`llm_connection_service.resolve_provider_key`, §3.3), not a
+  route: no parsing endpoint changes.
 - Old routes (`user_api_keys`, `llm_endpoints`) are deleted; OpenAPI
   types regenerated.
 
@@ -528,7 +565,13 @@ settings.
   `:120`) on the review tab. The card shows the project default
   (catalogue pairs only), mode, the lock toggle, and *Shared keys*, the
   project's hosted-provider keys in one table with the same form minus
-  the host field. The AI configuration dialog keeps
+  the host field. The table and its add form offer every provider with
+  `"project" in scopes` — `openai`, `anthropic`, `google` and
+  `llama_cloud` (§1) — each row and select option showing `serves` as a
+  tag (*llm* / *parsing*), so the project-scope llama_cloud key that
+  §2 says satisfies parsing for every member is created here and
+  nowhere else. Adding and removing rows call the project-connections
+  service (`/projects/{id}/connections`, §4). The AI configuration dialog keeps
   PICOTS and the template instruction and loses its Model tab; the
   engine chip leaves the extraction config bar, and the endpoints
   dialog, engine settings dialog and alternates section are retired.
@@ -678,10 +721,16 @@ viewer's role, not a 401 (the app shell handles an expired session).
      neither and no `LLAMA_CLOUD_API_KEY`, PyMuPDF. The existing
      `backend/tests/integration/test_parse_article_file_task.py` (which
      monkeypatches `APIKeyService.get_key_for_provider` at `:248`)
-     retargets to the connections-service symbol, and
+     retargets its patch to
+     `app.services.llm_connection_service.resolve_provider_key`
+     (returning `ResolvedKey(key, KeyScope.USER_BYOK)` or `None`), and
      `backend/tests/integration/test_api_key_llama_cloud.py` (save then
      `get_key_for_provider`, `:23-27`) is ported to the connections
-     service. Vitest:
+     service: create a user-scope `llama_cloud` connection through
+     `llm_connection_service`, then assert `resolve_provider_key(...)
+     == ResolvedKey("lc-secret", KeyScope.USER_BYOK)`; a second case
+     with only a project-scope row resolves `KeyScope.PROJECT_SHARED`
+     for a member. Vitest:
      `frontend/test/components/HighQualityParsingToggle.test.tsx` keeps
      its `hasLlamaCloudKey` contract; a new `AdvancedSettingsSection`
      case asserts the boolean is true from a project-scope row when the
@@ -697,6 +746,19 @@ viewer's role, not a 401 (the app shell handles an expired session).
    lock for a member and editable for a manager, the gear mounted on both worklists with
    `effective` in its tooltip, the AI configuration dialog reduced to
    two tabs; the settings E2E flow rewritten against connections.
+   `frontend/components/project/settings/AiEngineSection.tsx` (§5) gets
+   its own vitest file, handlers on the MSW server
+   (`frontend/test/mocks/server.ts`):
+   - a manager sees the editable project default, the mode and lock
+     toggles, and the *Shared keys* table;
+   - a non-manager sees a read-only card and no shared-keys table;
+   - the empty shared-keys state renders when
+     `GET /projects/{id}/connections` returns no rows;
+   - each block (engine card, shared keys) renders its own load-error
+     state when its read fails, without blanking the other;
+   - adding a shared key posts to, and removing one deletes from, the
+     project-connections service (MSW handlers assert the calls and the
+     table refreshes).
 7. **Catalogue files.** See §1.1: file-set equals registry LLM
    providers; malformed row fails import; deprecated row resolves but is
    not offered.
