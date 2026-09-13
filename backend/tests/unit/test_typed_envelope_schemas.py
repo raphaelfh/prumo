@@ -7,19 +7,13 @@ what the frontend receives — the exact drift class the models exist to
 prevent.
 """
 
-import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 from app.schemas.extraction import (
     BatchSectionResult,
     SectionExtractionResponseData,
     SectionOutcome,
     SingleSectionResult,
-)
-from app.schemas.user_api_key import (
-    CreateAPIKeyResponse,
-    KeyValidationResult,
-    ListProvidersData,
 )
 from app.schemas.zotero import (
     DownloadAttachmentResponse,
@@ -28,64 +22,6 @@ from app.schemas.zotero import (
 )
 
 SECTION_UNION = TypeAdapter(SectionExtractionResponseData)
-
-
-class TestCreateAPIKeyWire:
-    def test_validates_snake_service_dict_and_dumps_camel(self) -> None:
-        """The service returns snake_case; the wire must be camelCase.
-
-        ApiKeysSection.tsx reads ``validationStatus`` — before the typed
-        model the raw snake dict left that field undefined and the
-        invalid-key toast never fired.
-        """
-        service_dict = {
-            "id": "0b6c8d1e-0000-0000-0000-000000000001",
-            "provider": "openai",
-            "validation_status": "invalid",
-            "validation_message": "Invalid or expired API key",
-            "is_default": True,
-        }
-        wire = CreateAPIKeyResponse.model_validate(service_dict).model_dump(by_alias=True)
-        assert wire == {
-            "id": "0b6c8d1e-0000-0000-0000-000000000001",
-            "provider": "openai",
-            "validationStatus": "invalid",
-            "validationMessage": "Invalid or expired API key",
-            "isDefault": True,
-        }
-
-
-class TestKeyValidationWire:
-    def test_accepts_service_shape(self) -> None:
-        wire = KeyValidationResult.model_validate(
-            {"status": "pending", "message": "Provider validation is not implemented"}
-        ).model_dump()
-        assert wire == {
-            "status": "pending",
-            "message": "Provider validation is not implemented",
-        }
-
-    def test_rejects_unknown_status(self) -> None:
-        with pytest.raises(ValidationError):
-            KeyValidationResult.model_validate({"status": "maybe", "message": "?"})
-
-
-class TestProvidersWire:
-    def test_validates_camel_literal_dicts(self) -> None:
-        data = ListProvidersData.model_validate(
-            {
-                "providers": [
-                    {
-                        "id": "openai",
-                        "name": "OpenAI",
-                        "description": "GPT-4, GPT-4o, etc.",
-                        "docsUrl": "https://platform.openai.com/api-keys",
-                    }
-                ]
-            }
-        )
-        wire = data.model_dump(by_alias=True)
-        assert wire["providers"][0]["docsUrl"].startswith("https://")
 
 
 class TestSectionExtractionUnion:

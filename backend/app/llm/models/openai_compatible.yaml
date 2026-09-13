@@ -1,0 +1,3 @@
+# backend/app/llm/models/openai_compatible.yaml
+# host models come from each connection's allowed_models
+[]

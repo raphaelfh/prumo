@@ -2049,7 +2049,7 @@ async def _set_proposal_provenance(db: AsyncSession, run_id: UUID, engine: dict)
 _PROPOSAL_ENGINE = {
     "provider": "anthropic",
     "model": "claude-5-opus",
-    "endpoint_id": None,
+    "connection_id": None,
     "key_scope": "user_byok",
     "mode_requested": "verified",
     "mode_executed": "fast",

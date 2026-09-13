@@ -5,8 +5,9 @@ Owns the ``parsing`` sub-dict inside ``projects.settings``:
 ManagerReviewVisibilityService (plain JSONB, reassign-to-track).
 
 Default is ``"auto"``: the worker uses the cloud LlamaParse parser when a
-``llama_cloud`` key is configured, falling back to the self-hosted Docling
-parser otherwise. The legacy value ``"standard"`` (the old self-hosted
+``llama_cloud`` connection at user or project scope (or the global setting)
+resolves a key (``llm_connection_service.resolve_provider_key``), falling
+back to the self-hosted Docling parser otherwise. The legacy value ``"standard"`` (the old self-hosted
 opt-out) is still accepted on write and normalises to ``"docling"`` on read.
 """
 

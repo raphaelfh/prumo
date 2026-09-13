@@ -36,6 +36,7 @@ import {
   useActiveTemplateSelection,
 } from "@/components/hitl/HITLActiveTemplateBar";
 import { HITLArticleTable } from "@/components/hitl/HITLArticleTable";
+import {EngineGear} from '@/components/extraction/EngineGear';
 import { HITLExportDialog } from "@/components/hitl/HITLExportDialog";
 import { QualityAssessmentConfiguration } from "@/components/quality/QualityAssessmentConfiguration";
 import { useProjectTemplates } from "@/hooks/hitl/useProjectTemplates";
@@ -238,13 +239,16 @@ export function QualityAssessmentInterface({ projectId }: Props) {
             emptyTitle={t("qa", "noArticlesForListTitle")}
             emptyDescription={t("qa", "noArticlesForListDesc")}
             toolbarActions={
-              <IconButton
-                label={t("extraction", "exportButton")}
-                onClick={() => setShowExportDialog(true)}
-                disabled={worklist.length === 0}
-                data-testid="qa-export-button"
-                icon={<FileUp strokeWidth={1.5} />}
-              />
+              <>
+                <IconButton
+                  label={t("extraction", "exportButton")}
+                  onClick={() => setShowExportDialog(true)}
+                  disabled={worklist.length === 0}
+                  data-testid="qa-export-button"
+                  icon={<FileUp strokeWidth={1.5} />}
+                />
+                <EngineGear projectId={projectId} />
+              </>
             }
           />
         </div>

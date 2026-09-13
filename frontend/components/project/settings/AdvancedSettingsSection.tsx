@@ -3,7 +3,7 @@
  * and per-project PDF parsing quality toggle.
  */
 
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import {useNavigate} from 'react-router';
 import {Label} from '@/components/ui/label';
 import {Textarea} from '@/components/ui/textarea';
@@ -21,7 +21,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import {AlertTriangle as _AlertTriangle, Trash2} from 'lucide-react';
 import {deleteProject} from '@/services/projectSettingsService';
-import {loadKeysAndProviders} from '@/services/apiKeysService';
+import {useMyConnections} from '@/hooks/user/useLlmConnections';
+import {useProjectConnections} from '@/hooks/project/useProjectConnections';
 import {toast} from 'sonner';
 import {SettingsSection, SettingsCard, TagInput} from '@/components/settings';
 import type {EligibilityCriteria, StudyDesign} from '@/types/project';
@@ -83,23 +84,13 @@ export function AdvancedSettingsSection({
       ?.parsing?.type === 'llamaparse'
       ? 'llamaparse'
       : 'standard';
-  const [hasLlamaCloudKey, setHasLlamaCloudKey] = useState(false);
-
-  useEffect(() => {
-    // Load stored API keys to compute hasLlamaCloudKey for the parsing toggle.
-    // Mirrors ApiKeysSection's pattern: call loadKeysAndProviders() directly (no token arg).
-    queueMicrotask(() => {
-      loadKeysAndProviders()
-        .then((result) => {
-          if (!result.ok) return;
-          const hasKey = result.data.keys.some(
-            (k) => k.provider === 'llama_cloud' && k.isActive,
-          );
-          setHasLlamaCloudKey(hasKey);
-        })
-        .catch(() => { /* leave false */ });
-    });
-  }, [projectId]);
+  // §2: a llama_cloud connection satisfies parsing — the viewer's own, or
+  // (manager only: the API gates the list) the project's shared one.
+  const myConnections = useMyConnections();
+  const projectConnections = useProjectConnections(isManager ? projectId : null);
+  const hasLlamaCloud = (rows: {provider: string; has_api_key: boolean}[] | undefined) =>
+    Boolean(rows?.some((c) => c.provider === 'llama_cloud' && c.has_api_key));
+  const hasLlamaCloudKey = hasLlamaCloud(myConnections.data) || hasLlamaCloud(projectConnections.data);
 
     const eligibility = ensureEligibility(project.eligibility_criteria);
     const studyDesign = ensureStudyDesign(project.study_design);

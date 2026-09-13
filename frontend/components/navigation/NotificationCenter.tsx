@@ -15,6 +15,7 @@ import {Badge} from '@/components/ui/badge';
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
@@ -314,16 +315,19 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
     <div
       className={cn(
         'group relative p-3 rounded-lg border transition-colors',
-        isClickable && 'hover:bg-accent',
-        !isClickable && 'bg-background'
+        isClickable ? 'hover:bg-accent' : 'bg-background'
       )}
     >
       {isClickable && (
-        <button
-          type="button"
+        // Stretched control instead of an onClick on the card: the card nests
+        // the dismiss button, and interactive elements must not nest. It is a
+        // menuitem, not a <button>, because Radix menus swallow Tab
+        // (@radix-ui/react-menu preventDefaults it) — arrow keys reach only
+        // menuitems, so a <button> here is mouse-only.
+        <DropdownMenuItem
           aria-label={getJobTitle(job)}
-          onClick={() => onClick(job)}
-          className="absolute inset-0 rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          onSelect={() => onClick(job)}
+          className="absolute inset-0 rounded-lg p-0 focus:bg-transparent data-[highlighted]:bg-transparent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         />
       )}
       <div className="flex items-start gap-3">

@@ -1,0 +1,20 @@
+# backend/app/llm/models/anthropic.yaml — Claude models the picker offers.
+- model: claude-sonnet-5
+  label: Claude Sonnet 5
+  best_for: High-quality reasoning and grounded evidence
+  context_window: 1000000
+  cost_tier: "$$"
+
+- model: claude-haiku-4-5
+  label: Claude Haiku 4.5
+  best_for: Fast Claude option for high-volume extraction
+  context_window: 200000
+  # $1/$5 per MTok sits with terra ($2/$12), not with luna ($0.20/$1.20):
+  # tiers are honest across providers, not within one.
+  cost_tier: "$$"
+
+- model: claude-opus-5
+  label: Claude Opus 5
+  best_for: Deepest Claude reasoning for complex or degraded articles
+  context_window: 1000000
+  cost_tier: "$$$"

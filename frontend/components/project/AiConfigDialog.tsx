@@ -39,9 +39,8 @@ import {useAiContext} from '@/hooks/project/useAiContext';
 import {useTemplateInstruction} from '@/hooks/extraction/useTemplateInstruction';
 import {PicotsPane} from './PicotsPane';
 import {TemplateInstructionPane} from '@/components/extraction/TemplateInstructionPane';
-import {LlmEnginePane} from '@/components/extraction/LlmEnginePane';
 
-export type AiConfigTab = 'model' | 'picots' | 'instruction';
+export type AiConfigTab = 'picots' | 'instruction';
 
 const SLOT_TOTAL = 6;
 
@@ -76,9 +75,6 @@ interface AiConfigDialogProps {
   /** Which tab a trigger opens onto. The state resets with the content on
    * close, so each open lands on the trigger's own tab. */
   initialTab?: AiConfigTab;
-  /** The model tab — mounted on the extraction surfaces, where an engine is
-   * what the project actually runs on. */
-  withModel?: boolean;
   /** Without a template there is no instruction to edit (the project
    * settings summary opens the dialog this way). */
   template?: TemplateSlot;
@@ -103,7 +99,6 @@ function TabBadge({children, tone}: {children: string; tone?: 'warning'}) {
 interface AiConfigTabsProps {
   projectId: string;
   initialTab: AiConfigTab;
-  withModel: boolean;
   template?: TemplateSlot;
   onClose: () => void;
 }
@@ -113,7 +108,6 @@ interface AiConfigTabsProps {
 function AiConfigTabs({
   projectId,
   initialTab,
-  withModel,
   template,
   onClose,
 }: AiConfigTabsProps) {
@@ -144,11 +138,6 @@ function AiConfigTabs({
           engages on a narrower one — where a reachable tab beats a clipped
           one. `shrink-0` keeps the labels from squashing first. */}
       <TabsList className="mx-4 mt-3 shrink-0 justify-start overflow-x-auto">
-        {withModel && (
-          <TabsTrigger value="model" className={TAB_CLASS}>
-            {t('llmEngine', 'modelTabLabel')}
-          </TabsTrigger>
-        )}
         <TabsTrigger value="picots" className={TAB_CLASS}>
           {t('aiContext', 'dialogTitle')}
           <TabBadge>{`${filled}/${SLOT_TOTAL}`}</TabBadge>
@@ -162,20 +151,6 @@ function AiConfigTabs({
           </TabsTrigger>
         )}
       </TabsList>
-
-      {withModel && (
-        <TabsContent
-          forceMount
-          value="model"
-          data-testid="ai-config-model-panel"
-          className={PANE_CLASS}
-        >
-          <p className="mx-4 mb-2 mt-3 shrink-0 text-xs text-muted-foreground">
-            {t('llmEngine', 'modelScopeHint')}
-          </p>
-          <LlmEnginePane projectId={projectId} />
-        </TabsContent>
-      )}
 
       <TabsContent
         forceMount
@@ -217,11 +192,10 @@ export function AiConfigDialog({
   open,
   onOpenChange,
   initialTab = 'picots',
-  withModel = false,
   template,
 }: AiConfigDialogProps) {
   const close = () => onOpenChange(false);
-  const tabbed = withModel || template != null;
+  const tabbed = template != null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -242,7 +216,6 @@ export function AiConfigDialog({
           <AiConfigTabs
             projectId={projectId}
             initialTab={initialTab}
-            withModel={withModel}
             template={template}
             onClose={close}
           />

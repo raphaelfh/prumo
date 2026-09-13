@@ -464,7 +464,7 @@ class ExtractionErrorCode(str, Enum):
       mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).
     - ``LLM_ENDPOINT_UNAVAILABLE`` — the engine's custom endpoint cannot
       serve: row deleted, unverified, model dropped
-      (``resolve_project_engine``), or its key no longer decrypts
+      (``resolve_engine``), or its key no longer decrypts
       (``EndpointUnavailableError``; enqueue-time validation is a 409).
     - ``MISSING_ENTITY_KEY`` — a repeating section declares no
       ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
