@@ -76,7 +76,6 @@ export const project = {
     picotsCriteriaOptional: 'Optional',
     picotsAddInclusionPlaceholder: 'Add inclusion criterion...',
     picotsAddExclusionPlaceholder: 'Add exclusion criterion...',
-    picotsHelpAria: 'Help',
 
     // TeamMembersSection
     teamSectionTitle: 'Team management',

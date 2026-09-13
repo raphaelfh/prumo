@@ -1,9 +1,10 @@
 /**
  * Project → Configuration → Review question. The review question used to be
  * a dialog opened from a card in Review details; it is configuration, so it
- * is a section of the configuration view (spec 2026-09-13 §4.2).
+ * is a section of the configuration view (spec 2026-09-13 §4.2). Flat groups
+ * under one intro line (spec 2026-09-13 borderless density pass §4.3).
  */
-import {SettingsSection} from '@/components/settings';
+import {SettingsGroup, SettingsPage} from '@/components/settings';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {t} from '@/lib/copy';
 
@@ -17,15 +18,15 @@ interface ReviewQuestionSectionProps {
 export function ReviewQuestionSection({projectId, onDirtyChange}: ReviewQuestionSectionProps) {
   const {isManager} = useProjectMemberRole(projectId);
   return (
-    <SettingsSection title={t('aiContext', 'sectionTitle')} description={t('aiContext', 'sectionDesc')}>
+    <SettingsPage intro={t('aiContext', 'sectionDesc')}>
       {isManager ? (
         <PicotsPane projectId={projectId} onDirtyChange={onDirtyChange} />
       ) : (
-        <div className="space-y-2">
+        <SettingsGroup>
           <p className="text-[13px] text-muted-foreground">{t('aiContext', 'managerOnly')}</p>
           <PicotsPreview projectId={projectId} />
-        </div>
+        </SettingsGroup>
       )}
-    </SettingsSection>
+    </SettingsPage>
   );
 }
