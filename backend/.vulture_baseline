@@ -18,6 +18,7 @@
 # then regenerate with scripts/vulture_baseline.py --update.
 app/core/config.py:variable:ANTHROPIC_API_KEY
 app/core/config.py:variable:GOOGLE_API_KEY
+app/core/config.py:variable:OLLAMA_API_KEY
 app/core/config.py:variable:OPENAI_API_KEY
 app/core/middleware.py:method:dispatch
 app/infrastructure/parsing/docling_parser.py:attribute:accelerator_options

@@ -143,6 +143,14 @@ def test_output_for_uses_tooloutput_for_anthropic():
     assert isinstance(_output_for(_FakeAnthropic(), _OutModel), ToolOutput)
 
 
+class _FakeOllama:
+    system = "ollama"
+
+
+def test_output_for_uses_tooloutput_for_ollama():
+    assert isinstance(_output_for(_FakeOllama(), _OutModel), ToolOutput)
+
+
 # ---------------------------------------------------------------------------
 # Provider-usage regression guard (prod incident 2026-08-10 .. 2026-08-30)
 # ---------------------------------------------------------------------------

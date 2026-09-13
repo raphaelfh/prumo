@@ -1,6 +1,7 @@
 """BYOK key resolution → pydantic-ai model instances."""
 
 import pytest
+from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from app.core.config import settings
@@ -116,3 +117,38 @@ def test_google_without_key_raises_missing_key(monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
     with pytest.raises(MissingLLMKeyError, match="GOOGLE_API_KEY"):
         build_model("google", "gemini-3.8-flash", api_key=None)
+
+
+def test_ollama_branch_builds_ollama_cloud_model():
+    model = build_model("ollama", "gpt-oss:120b", api_key="ollama-user-key")
+    assert isinstance(model, OllamaModel)
+    assert model.system == "ollama"
+    assert str(model.client.base_url) == "https://ollama.com/v1/"
+    assert model.client.api_key == "ollama-user-key"
+
+
+def test_ollama_cloud_model_refuses_native_json_schema_output():
+    # Ollama Cloud accepts response_format json_schema but never enforces it;
+    # OllamaModel must detect the ollama.com host and turn the capability off.
+    model = build_model("ollama", "nemotron-3-super", api_key="ollama-user-key")
+    assert model.profile.supports_json_schema_output is False
+
+
+def test_ollama_falls_back_to_global_key(monkeypatch):
+    monkeypatch.setattr(settings, "OLLAMA_API_KEY", "ollama-global")
+    model = build_model("ollama", "gpt-oss:120b", api_key=None)
+    assert model.client.api_key == "ollama-global"
+
+
+def test_ollama_without_key_raises_missing_key(monkeypatch):
+    monkeypatch.setattr(settings, "OLLAMA_API_KEY", None)
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+    with pytest.raises(MissingLLMKeyError, match="OLLAMA_API_KEY"):
+        build_model("ollama", "gpt-oss:120b", api_key=None)
+
+
+def test_ollama_branch_ignores_base_url():
+    model = build_model(
+        "ollama", "gpt-oss:120b", api_key="ollama-user-key", base_url="https://llm.lab.example/v1"
+    )
+    assert str(model.client.base_url) == "https://ollama.com/v1/"
