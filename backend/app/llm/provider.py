@@ -3,8 +3,12 @@
 Four LLM providers today (``app.llm.registry``): ``openai``,
 ``anthropic`` and ``google`` (a caller's key, else the operator's global key), and
 ``openai_compatible`` (needs a ``base_url``; key optional — keyless
-hosts get the literal placeholder ``"no-key-required"``). Hosted
-providers ignore ``base_url``. A parsing provider is not buildable."""
+hosts get the literal placeholder ``"no-key-required"``). A host that routes
+to Ollama Cloud gets an ``OllamaModel`` instead (see
+:func:`_routes_to_ollama_cloud`). Hosted providers ignore ``base_url``. A
+parsing provider is not buildable."""
+
+from urllib.parse import urlparse
 
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -15,6 +19,22 @@ from app.llm.registry import get_provider, global_key_for
 
 class MissingLLMKeyError(ValueError):
     """No usable API key: neither the caller's nor the global fallback is set."""
+
+
+def _routes_to_ollama_cloud(base_url: str, model_name: str) -> bool:
+    """A host on ``ollama.com``, or a ``-cloud`` model a local daemon forwards.
+
+    Ollama Cloud accepts a json_schema ``response_format`` but does not enforce
+    it (pydantic-ai#4917, ollama/ollama#12362). ``OllamaModel`` turns that
+    capability off, so its ``system`` ("ollama") steers ``_output_for`` to
+    tool-calling. Mirrors pydantic-ai's private ``_routes_to_ollama_cloud``.
+    """
+    hostname = urlparse(base_url).hostname or ""
+    return (
+        hostname == "ollama.com"
+        or hostname.endswith(".ollama.com")
+        or model_name.endswith("-cloud")
+    )
 
 
 def build_model(
@@ -30,9 +50,17 @@ def build_model(
     if spec.needs_host:
         if not base_url:
             raise ValueError(f"{provider} requires a base_url.")
+        host_key = api_key or "no-key-required"
+        if _routes_to_ollama_cloud(base_url, model_name):
+            # Lazy import: only needed on the Ollama Cloud path.
+            from pydantic_ai.models.ollama import OllamaModel
+            from pydantic_ai.providers.ollama import OllamaProvider
+
+            return OllamaModel(
+                model_name, provider=OllamaProvider(base_url=base_url, api_key=host_key)
+            )
         return OpenAIChatModel(
-            model_name,
-            provider=OpenAIProvider(api_key=api_key or "no-key-required", base_url=base_url),
+            model_name, provider=OpenAIProvider(api_key=host_key, base_url=base_url)
         )
 
     key = api_key or global_key_for(provider)

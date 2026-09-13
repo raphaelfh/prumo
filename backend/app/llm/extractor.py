@@ -61,11 +61,12 @@ def _output_for(
     model: Model, output_model: type[OutputT]
 ) -> NativeOutput[OutputT] | ToolOutput[OutputT]:
     """OpenAI supports JSON-schema response_format (NativeOutput); Anthropic
-    has no response_format, so structured output must use tool-calling
-    (ToolOutput). ``model.system`` is the provider name carried by every
-    pydantic-ai model ("openai"/"anthropic"/"function"...) — robust to
+    has no response_format, and Ollama Cloud accepts one without enforcing it
+    (``build_model`` only yields an "ollama" model for Cloud routes), so both
+    use tool-calling (ToolOutput). ``model.system`` is the provider name carried
+    by every pydantic-ai model ("openai"/"anthropic"/"function"...) — robust to
     subclasses/wrappers, and it leaves OpenAI and test models on NativeOutput."""
-    if getattr(model, "system", "") == "anthropic":
+    if getattr(model, "system", "") in ("anthropic", "ollama"):
         return ToolOutput(output_model)
     return NativeOutput(output_model)
 

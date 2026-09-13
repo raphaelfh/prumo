@@ -1,10 +1,51 @@
 """BYOK key resolution → pydantic-ai model instances."""
 
 import pytest
+from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from app.core.config import settings
 from app.llm.provider import MissingLLMKeyError, build_model
+
+
+# Ollama Cloud accepts a json_schema response_format but does not enforce it
+# (pydantic-ai#4917, ollama/ollama#12362); OllamaModel turns that capability off.
+@pytest.mark.parametrize(
+    ("model_name", "base_url"),
+    [
+        ("gpt-oss:120b", "https://ollama.com/v1"),
+        ("gpt-oss:120b", "https://api.ollama.com/v1"),
+        ("gpt-oss:120b-cloud", "http://localhost:11434/v1"),
+    ],
+)
+def test_openai_compatible_routed_to_ollama_cloud_builds_ollama_model(model_name, base_url):
+    model = build_model("openai_compatible", model_name, api_key="sk-ollama", base_url=base_url)
+    assert isinstance(model, OllamaModel)
+    assert model.system == "ollama"
+    assert model.profile.supports_json_schema_output is False
+    assert str(model.client.base_url) == base_url + "/"
+    assert model.client.api_key == "sk-ollama"
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:11434/v1",
+        "https://notollama.com/v1",
+        "https://ollama.com.evil.example/v1",
+    ],
+)
+def test_openai_compatible_not_routed_to_ollama_cloud_stays_openai(base_url):
+    model = build_model("openai_compatible", "llama3", base_url=base_url)
+    assert type(model) is OpenAIChatModel
+    assert model.system == "openai"
+
+
+def test_ollama_cloud_keyless_gets_placeholder_key():
+    model = build_model(
+        "openai_compatible", "gpt-oss:120b-cloud", base_url="http://localhost:11434/v1"
+    )
+    assert model.client.api_key == "no-key-required"
 
 
 def test_openai_branch_builds_openai_model():
