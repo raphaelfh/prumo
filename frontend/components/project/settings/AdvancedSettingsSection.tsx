@@ -133,6 +133,7 @@ export function AdvancedSettingsSection({
                       onChange({review_keywords: keywords.filter((_, i) => i !== index)})
                   }
                   placeholder={t('project', 'advancedKeywordsPlaceholder')}
+                  addLabel={t('common', 'addToLabel').replace('{{label}}', t('project', 'advancedCardKeywordsTitle'))}
                   variant="badge"
               />
           </SettingsCard>
@@ -164,6 +165,7 @@ export function AdvancedSettingsSection({
                               })
                           }
                           placeholder={t('project', 'advancedInclusionPlaceholder')}
+                          addLabel={t('common', 'addToLabel').replace('{{label}}', t('project', 'advancedInclusionLabel'))}
                           variant="list"
                           listVariant="neutral"
             />
@@ -190,6 +192,7 @@ export function AdvancedSettingsSection({
                               })
                           }
                           placeholder={t('project', 'advancedExclusionPlaceholder')}
+                          addLabel={t('common', 'addToLabel').replace('{{label}}', t('project', 'advancedExclusionLabel'))}
                           variant="list"
                           listVariant="neutral"
                       />
@@ -238,6 +241,7 @@ export function AdvancedSettingsSection({
                           })
                       }
                       placeholder={t('project', 'advancedStudyTypesPlaceholder')}
+                      addLabel={t('common', 'addToLabel').replace('{{label}}', t('project', 'advancedCardStudyTypesTitle'))}
                       variant="badge"
                   />
                   <div>

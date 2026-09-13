@@ -90,6 +90,7 @@ export function PICOTSItemEditor({
                 onAdd={(value) => onAddItem(fieldKey, 'inclusion', value)}
                 onRemove={(index) => onRemoveItem(fieldKey, 'inclusion', index)}
                 placeholder={t('project', 'picotsAddInclusionPlaceholder')}
+                addLabel={t('common', 'addToLabel').replace('{{label}}', t('project', 'picotsInclusionCriteriaLabel'))}
                 variant="list"
                 listVariant="green"
             />
@@ -107,6 +108,7 @@ export function PICOTSItemEditor({
                 onAdd={(value) => onAddItem(fieldKey, 'exclusion', value)}
                 onRemove={(index) => onRemoveItem(fieldKey, 'exclusion', index)}
                 placeholder={t('project', 'picotsAddExclusionPlaceholder')}
+                addLabel={t('common', 'addToLabel').replace('{{label}}', t('project', 'picotsExclusionCriteriaLabel'))}
                 variant="list"
                 listVariant="red"
             />

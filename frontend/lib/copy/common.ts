@@ -86,6 +86,8 @@ export const common = {
     remove: 'Remove',
     /** FieldHint's accessible name; `{{label}}` is replaced by the caller. */
     fieldHintAria: 'About {{label}}',
+    /** Names TagInput's add control; `{{label}}` is the row label. */
+    addToLabel: 'Add to {{label}}',
     loadingEllipsis: 'Loading…',
     unknownError: 'Unknown error',
     loadingPdf: 'Loading PDF…',
