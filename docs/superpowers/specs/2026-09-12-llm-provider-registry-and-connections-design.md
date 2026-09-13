@@ -229,14 +229,16 @@ freeze, worker, section service):
 
 1. Read the project engine. If it is retired (catalogue miss) raise the
    existing typed 409 — a manager must re-choose.
-2. If `user_choice_allowed` and a `user_project_engines` row exists for
+2. If the caller may choose (`user_choice_allowed`, or the caller is a
+   manager of the project) and a `user_project_engines` row exists for
    `(user_id, project_id)`: validate it the same way (catalogue or the
    caller's own connection). Retired → the same typed 409, worded for
    the user ("pick a new model"). Valid → that engine, with
    `deviation = pair != default's pair or connection_id is not None`.
 3. Otherwise the project engine. **The lock is enforced here, not in the
-   UI**: a stored user row is ignored while locked, and the user-row PUT
-   returns 403 while locked.
+   UI**: a member's stored row is ignored while locked, and the
+   user-row PUT returns 403 to a member while locked. Managers are never
+   bound by the lock.
 
 `deviation` is computed at pin time against the default at that moment
 and never recomputed. Kickoffs re-pin on attempt zero as today, so a run
