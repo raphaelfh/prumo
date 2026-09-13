@@ -19,13 +19,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Skeleton} from '@/components/ui/skeleton';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {
   useCreateMyConnection,
   useDeleteMyConnection,
@@ -81,25 +81,19 @@ function ConnectionRow({row, provider}: {row: LlmConnectionRead; provider: Provi
         {t('llmConnections', STATUS_COPY[row.validation_status])}
       </Badge>
       <div className="ml-auto flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={t('llmConnections', 'verifyAria')} onClick={onVerify} disabled={verify.isPending}>
-              {verify.isPending ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} /> : <RefreshCw className="h-4 w-4" strokeWidth={1.5} />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('llmConnections', 'verifyAria')}</TooltipContent>
-        </Tooltip>
+        <IconButton
+          label={t('llmConnections', 'verifyAria')}
+          onClick={onVerify}
+          disabled={verify.isPending}
+          icon={verify.isPending ? <Loader2 className="animate-spin" strokeWidth={1.5} /> : <RefreshCw strokeWidth={1.5} />}
+        />
         <AlertDialog>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label={t('llmConnections', 'removeAria')}>
-                  <Trash2 className="h-4 w-4" strokeWidth={1.5} />
-                </Button>
-              </AlertDialogTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{t('llmConnections', 'removeAria')}</TooltipContent>
-          </Tooltip>
+          <AlertDialogTrigger asChild>
+            <IconButton
+              label={t('llmConnections', 'removeAria')}
+              icon={<Trash2 strokeWidth={1.5} />}
+            />
+          </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>{t('llmConnections', 'removeTitle')}</AlertDialogTitle>

@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
@@ -29,7 +30,6 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/c
 import {Skeleton} from '@/components/ui/skeleton';
 import {Switch} from '@/components/ui/switch';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from '@/components/ui/table';
-import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useLlmEngine, useSetLlmEngine} from '@/hooks/extraction/useLlmEngine';
 import {
   useCreateProjectConnection,
@@ -223,16 +223,12 @@ function SharedKeys({projectId, providers}: {projectId: string; providers: Provi
                   </TableCell>
                   <TableCell className="text-right">
                     <AlertDialog>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={t('llmConnections', 'sharedRemoveAria')}>
-                              <Trash2 className="h-4 w-4" strokeWidth={1.5} />
-                            </Button>
-                          </AlertDialogTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent>{t('llmConnections', 'sharedRemoveAria')}</TooltipContent>
-                      </Tooltip>
+                      <AlertDialogTrigger asChild>
+                        <IconButton
+                          label={t('llmConnections', 'sharedRemoveAria')}
+                          icon={<Trash2 strokeWidth={1.5} />}
+                        />
+                      </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>{t('llmConnections', 'sharedRemoveTitle')}</AlertDialogTitle>
