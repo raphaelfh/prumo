@@ -403,7 +403,7 @@ export function ApiKeysSection() {
                                               <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
                                               <AlertDialogAction
                                                   onClick={() => handleDelete(key.id)}
-                                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                  variant="destructive"
                                               >
                                                   {t('user', 'apiKeysTitleRemove')}
                                               </AlertDialogAction>

@@ -539,11 +539,11 @@ export function ZoteroImportDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={handleConfirmCancel}>
-            <XCircle className="mr-2 h-4 w-4" />
+            <XCircle />
               {t('articles', 'zoteroCancelImport')}
           </AlertDialogCancel>
           <AlertDialogAction onClick={handleConfirmMinimize}>
-            <Minimize2 className="mr-2 h-4 w-4" />
+            <Minimize2 />
               {t('articles', 'zoteroContinueInBackground')}
           </AlertDialogAction>
         </AlertDialogFooter>

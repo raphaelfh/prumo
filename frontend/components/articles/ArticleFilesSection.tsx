@@ -207,7 +207,7 @@ export function ArticleFilesSection({
                         <AlertDialogAction
                             onClick={onConfirmDelete}
                             disabled={deleting}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            variant="destructive"
                         >
                             {deleting ? t('articles', 'removing') : t('articles', 'remove')}
                         </AlertDialogAction>

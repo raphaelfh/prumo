@@ -331,7 +331,7 @@ export function EntrySelector(props: EntrySelectorProps): ReactElement {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>{t('extraction', 'entrySelectCancel')}</AlertDialogCancel>
-                <AlertDialogAction onClick={confirmDelete}>
+                <AlertDialogAction onClick={confirmDelete} variant="destructive">
                   {t('extraction', 'entrySelectDelete')}
                 </AlertDialogAction>
               </AlertDialogFooter>

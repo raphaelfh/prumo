@@ -450,7 +450,7 @@ export function LlmEndpointsDialog({
                             </AlertDialogCancel>
                             <AlertDialogAction
                               onClick={() => handleDelete(endpoint.id)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              variant="destructive"
                             >
                               {t('llmEngine', 'endpointDeleteConfirm')}
                             </AlertDialogAction>

@@ -23,9 +23,9 @@ import {toast} from 'sonner';
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogBody,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -188,72 +188,73 @@ export function TemplateDiscardDialog({
         if (!next) onClose();
       }}
     >
-      <AlertDialogContent>
+      <AlertDialogContent size="md">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 shrink-0 text-warning" aria-hidden />
             {title}
           </AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div className="space-y-3 pt-2 text-sm">
-              {phase === 'confirm' && (
-                <>
-                  <p className="text-foreground">{confirmBody}</p>
-                  <p>{t('templateConfig', 'discardConfirmScope')}</p>
-                  {instructionPresent && (
-                    <p>{t('templateConfig', 'discardConfirmInstruction')}</p>
-                  )}
-                  {genericNotice}
-                </>
-              )}
-
-              {phase === 'ack' && (
-                <>
-                  <p className="text-foreground">
-                    {t('templateConfig', 'discardAckBody')}
-                  </p>
-                  <ul className="list-inside list-disc space-y-1 rounded-md bg-muted p-3">
-                    {orphans.map((orphan) => (
-                      <li key={orphan.nodeId ?? orphan.label}>{orphan.label}</li>
-                    ))}
-                  </ul>
-                  {genericNotice}
-                </>
-              )}
-
-              {phase === 'refused' && refusalKey != null && (
-                <p className="text-foreground">{t('templateConfig', refusalKey)}</p>
-              )}
-
-              {phase === 'result' && (
-                <>
-                  <p className="text-foreground">
-                    {t('templateConfig', 'discardResultStillDraft')}
-                  </p>
-                  <ul className="space-y-2 rounded-md bg-muted p-3">
-                    {kept.map((node) => (
-                      <li key={node.node_id} className="flex items-start gap-2">
-                        <Badge variant="outline" className="shrink-0 text-xs">
-                          {t('templateConfig', KEPT_KIND[node.node_kind])}
-                        </Badge>
-                        <span>
-                          <span className="font-medium text-foreground">
-                            {node.label}
-                          </span>
-                          {' — '}
-                          {t(
-                            'templateConfig',
-                            KEPT_REASON[node.reason] ?? 'discardKeptReasonOther',
-                          )}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          </AlertDialogDescription>
         </AlertDialogHeader>
+
+        <AlertDialogBody>
+          <div className="space-y-3 text-sm">
+            {phase === 'confirm' && (
+              <>
+                <p className="text-foreground">{confirmBody}</p>
+                <p>{t('templateConfig', 'discardConfirmScope')}</p>
+                {instructionPresent && (
+                  <p>{t('templateConfig', 'discardConfirmInstruction')}</p>
+                )}
+                {genericNotice}
+              </>
+            )}
+
+            {phase === 'ack' && (
+              <>
+                <p className="text-foreground">
+                  {t('templateConfig', 'discardAckBody')}
+                </p>
+                <ul className="list-inside list-disc space-y-1 rounded-md bg-muted p-3">
+                  {orphans.map((orphan) => (
+                    <li key={orphan.nodeId ?? orphan.label}>{orphan.label}</li>
+                  ))}
+                </ul>
+                {genericNotice}
+              </>
+            )}
+
+            {phase === 'refused' && refusalKey != null && (
+              <p className="text-foreground">{t('templateConfig', refusalKey)}</p>
+            )}
+
+            {phase === 'result' && (
+              <>
+                <p className="text-foreground">
+                  {t('templateConfig', 'discardResultStillDraft')}
+                </p>
+                <ul className="space-y-2 rounded-md bg-muted p-3">
+                  {kept.map((node) => (
+                    <li key={node.node_id} className="flex items-start gap-2">
+                      <Badge variant="outline" className="shrink-0 text-xs">
+                        {t('templateConfig', KEPT_KIND[node.node_kind])}
+                      </Badge>
+                      <span>
+                        <span className="font-medium text-foreground">
+                          {node.label}
+                        </span>
+                        {' — '}
+                        {t(
+                          'templateConfig',
+                          KEPT_REASON[node.reason] ?? 'discardKeptReasonOther',
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </AlertDialogBody>
 
         <AlertDialogFooter>
           <AlertDialogCancel disabled={submitting}>
@@ -271,7 +272,7 @@ export function TemplateDiscardDialog({
                 submit(phase === 'ack');
               }}
               disabled={submitting}
-              className="bg-destructive hover:bg-destructive/90"
+              variant="destructive"
             >
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {phase === 'ack'
