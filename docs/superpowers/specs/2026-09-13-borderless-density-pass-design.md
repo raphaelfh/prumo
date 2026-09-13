@@ -24,7 +24,7 @@ Survey of `dev` plus PR #896 at 1280 and 390 px, done in one browser session, wi
 | Surface | Noise |
 |---|---|
 | Every settings page | **Three heading layers, each with its own description.** (1) The `PageHeader` strip: "Project settings · Members and permissions" on project settings (title plus the active section's description); the tab's description alone on user settings, where the breadcrumb names the page. (2) The section heading and its description (`SettingsSection`, an `<h2>`). (3) A title and description on every group card (`SettingsCard`). Nearly every field also has a hint line (`SettingsField`). |
-| Project → Configuration | **Nested frames.** A bordered box inside a `SettingsCard` (`BasicInfoSection.tsx:100`, `AiEngineSection.tsx:263`), a callout box and a dashed empty-state box on Review consensus (`ReviewConsensusSection.tsx:143,166`), a bordered box per template override (`TemplateConsensusOverride.tsx:115`), and a card per group everywhere. The page gutter is `max-w-[1920px] mx-auto px-6 py-6 lg:px-8 lg:py-8` (`ProjectSettings.tsx:173`), and content is unbounded (a 1352px-wide column at 1920). |
+| Project → Configuration | **Nested frames.** A bordered box inside a `SettingsCard` (`BasicInfoSection.tsx:100`, `AiEngineSection.tsx:263`), a callout box and a dashed "not customized yet" notice on Review consensus (`ReviewConsensusSection.tsx:143,166`), a bordered box per template override (`TemplateConsensusOverride.tsx:115`), and a card per group everywhere. The page gutter is `max-w-[1920px] mx-auto px-6 py-6 lg:px-8 lg:py-8` (`ProjectSettings.tsx:173`), and content is unbounded (a 1352px-wide column at 1920). |
 | Team | "Add member", "Current members" and "Roles and permissions" are three cards. Under the invite form, one hint line repeats the selected role's description from the Roles card. The empty member list is a callout box. |
 | Security | A lock callout box states the password rules, and the new-password hint states them a second time. |
 | Settings → Integrations | **Zotero** (`project/settings/ZoteroIntegrationSection.tsx`, rendered by `user/IntegrationsSection.tsx`). Label and value run together (`:97-104`: "User ID130...353", "Library typeuser"). A bordered status box and a bordered credentials box sit in one section. **Buttons.** Test connection, Disconnect and Add connection are `variant="outline"` in row positions, where frontend-ux says ghost. |
@@ -35,7 +35,7 @@ Survey of `dev` plus PR #896 at 1280 and 390 px, done in one browser session, wi
 
 `SettingsField` is used in `project/settings/{BasicInfoSection,ReviewDetailsSection,ConsensusConfigForm}.tsx` and `user/{ProfileSection,SecuritySection}.tsx`.
 
-`SettingsSection` is used by the settings sections above, `user/IntegrationsSection.tsx`, `project/settings/ReviewQuestionSection.tsx`, and all five `articles/sections/*.tsx` headings.
+`SettingsSection` is used by `project/settings/{BasicInfoSection,ReviewDetailsSection,ReviewQuestionSection,TeamMembersSection,ReviewConsensusSection,AdvancedSettingsSection}.tsx`, `user/{ProfileSection,SecuritySection,IntegrationsSection}.tsx`, and all five `articles/sections/*.tsx` headings.
 
 `@/components/ui/alert` callouts are used in `project/settings/{ReviewConsensusSection,ConsensusConfigForm,TeamMembersSection}.tsx` and `user/SecuritySection.tsx`.
 
@@ -70,7 +70,7 @@ Non-goals:
 | Content width | A readable column, `max-w-3xl` (48rem, 768px), left-aligned inside the view's `p-2` inset — on project settings and user settings alike | Approved; `.claude/rules/frontend.md` makes `p-2` the view-owned gutter. |
 | Manager review visibility (*written review*) | A switch row with a hint, driven by a hook extracted from `ManagerReviewVisibilityToggle`; the component keeps its markup for QA Configuration | Honours the approved row without restyling an out-of-scope screen. |
 | Keywords (*written review*) | The whole bordered keywords block is flattened, not only its label aligned | Otherwise the panel keeps one bordered frame, against goal 1. |
-| Advanced grouping (*written review*) | One flat group of rows (with the previously omitted parsing switch), then Danger zone | Fewest headings and hairlines, as approved. |
+| Advanced grouping (*written review*) | One flat group of rows (the parsing switch, today its own card, becomes a row), then Danger zone | Fewest headings and hairlines, as approved. |
 | Delivery | Two PRs from one plan: PR 1 primitives, controls, project and user settings, Integrations and the settings gate; PR 2 the article panel, `SettingsSection` retirement and the article paths of the gate | Smaller reviews and one armed PR at a time on the merge train. |
 
 ## 4. Design
@@ -139,7 +139,7 @@ All in `frontend/components/settings/` unless noted.
 
 `Switch` needs no variant: it has no border.
 
-The ui-styling skill records both changes as deliberate divergences from upstream shadcn, next to the button size scale, and its stale "Tailwind v3.4.17" line is corrected to the installed v4.
+The ui-styling skill records both changes as deliberate divergences from upstream shadcn, next to the button size scale, and its two stale "v3.4.17" lines (`SKILL.md:23` and `:214`) are corrected to the installed v4.
 
 ### 4.3 Surface mapping
 
@@ -259,3 +259,51 @@ Scoped paths: `frontend/components/project/settings/`, `frontend/components/user
 - The prose measure on QA Configuration's long tool descriptions (measured 1574px wide at 1920 in sub-project 2), if the user wants a readable column there too.
 - QA Configuration's manager-visibility toggle as a flat row, reusing `useManagerReviewVisibility`, if that screen gets a density pass.
 - Team's `confirm()` on member removal as an `AlertDialog` (frontend-ux §8); out of scope here as a behaviour change.
+- A Team loading branch: `members` starts empty, so the empty line shows while members load (today's behaviour, kept).
+
+## 10. Implementation reconciliation (PR 1)
+
+Rulings made when `/ship-spec` framed PR 1 against `dev` + this spec (`58b8df28`). They fill gaps; none changes a §3 decision.
+
+**Caller overrides.** The §4.2 strip also covers the `h-8` overrides on AI engine's Mode select and Team's inline role editor, and the `pl-8`/`pr-20` paddings that exist only for absolutely positioned adornments. Team's absolute `Mail` icon in the invite email input is deleted (the placeholder names the field); Zotero's Show/Hide is a sibling, per §4.3.
+
+**States.** Every section-level loading, empty and error state renders inside its group as `h-8` skeleton rows or one muted line, with any Retry as a ghost `sm` button, and keeps its behaviour:
+
+- Zotero's loading spinner line;
+- AI connections' skeleton list, load error with Retry, and the Add button disabled until providers load;
+- Shared keys' skeletons, load error with Retry, and empty line with the add button;
+- Review consensus's project-default skeleton, per-template badge skeleton and expanded-body skeleton;
+- the Review question's non-manager preview loading, error and empty states.
+
+The Project settings page-level spinner and its `!project` null, Profile's load-failure toast, and consensus's members-loading behaviour are unchanged.
+
+**Locations.**
+
+- The coarse-pointer hook is `useIsCoarsePointer`, exported from `hooks/use-mobile.tsx` and reusing its private `useMediaQuery`.
+- `useManagerReviewVisibility` lives at `hooks/hitl/useManagerReviewVisibility.ts`.
+- `FieldHint` passes its text as the `IconButton` tooltip, not as `IconButton`'s existing `hint` prop.
+
+**Shared callers.** With no incoming `aria-describedby`, `FormControl` output is unchanged. `components/ui/form.validation.test.tsx` and the `AddProjectDialog`, `CreateCustomTemplateDialog` and `AddSectionDialog` tests pass unchanged.
+
+**Retired-symbols wording.** `check_retired_symbols.py` stops naming the entry-group trees train in its module docstring, class docstring, finding text ("retired in trees …") and failure text; they name the entry's own `slice_` label, which holds the retiring spec or PR.
+
+**Acceptance tests per PR 1 requirement** (in addition to §7):
+
+| Requirement | Test |
+|---|---|
+| `settings-frame` rule | canary pytest in `backend/tests/unit/scripts/test_check_ui_primitives_canary.py`: flags a card import, an alert import (both quote styles, alias and relative) and a `border rounded` class string in a scoped path; ignores the same outside scope and a bare `border-t` |
+| Retired `SettingsCard`/`SettingsField` | new `backend/tests/unit/scripts/test_check_retired_symbols.py`: flags a fixture `SettingsCard` import, names the entry's `slice_` in the finding, and passes the clean tree |
+| `SettingsPage`, `SettingsActions` | class contract: `max-w-3xl`, intro `<p>`, `@container/settings` body; actions grid with an empty label cell |
+| Gutters | `ProjectSettings.sections.test.tsx` and `UserSettings.test.tsx` assert `p-2` and the absence of the old gutter classes |
+| Basic info | no PICOTS notice; the review-type row hint is the selected type's description |
+| Review details | two group titles; each row labelled, with its hint reachable through `aria-describedby` |
+| Review question | no `separator` role; the timing slot's ⓘ is named from `fieldHintAria`; Cancel is ghost |
+| AI engine | shared keys as a `list`; non-manager Locked badge; skeleton/error/empty inside the group |
+| Team | no role-description line under the invite; empty state is a muted line; row actions carry the reveal classes |
+| Review consensus | new `ReviewConsensusSection.test.tsx`: intro paragraph; Current row only for a loaded, non-project scope; `arbitratorRequired` as the row error; overrides as a flush list of buttons |
+| Advanced | Danger zone title is `text-destructive`; `highQualityNeedsKey` stays visible text when no key is stored |
+| Profile | email is plain text with no `htmlFor` and no `profileEmailAria`; loading renders `h-8` skeleton rows |
+| Security | the reveal control is not `absolute`; the intro renders |
+| Integrations | `IntegrationsSection` body has two direct group children; AI connections flush list and ghost Add; new Zotero test: connected ghost Test/Disconnect, not-connected rows, run-together regression |
+| `TagInput` | no `border` on chips or list items; `success`/`destructive` tokens |
+| Copy corrections | `tabConsensusDesc` and `highQualityHint` text asserted |
