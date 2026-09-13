@@ -6396,57 +6396,6 @@
         "title": "LlmEndpointUpdateRequest",
         "type": "object"
       },
-      "LlmEngineAlternate": {
-        "additionalProperties": false,
-        "description": "One fallback engine pair \u2014 the stored and request entry shape.\n\n``extra=\"forbid\"`` + bounded field lengths: a REQUEST entry smuggling\nkeys (temperature/seed \u2014 same posture as ``LlmEngineUpdateRequest``) or\nan oversized value is a hard 422; a hand-written STORED entry with the\nsame defects is dropped by the tolerant per-entry validator on\n``LlmEngineStored.alternates`` \u2014 the entry degrades, never the payload.",
-        "properties": {
-          "model": {
-            "maxLength": 200,
-            "title": "Model",
-            "type": "string"
-          },
-          "provider": {
-            "maxLength": 200,
-            "title": "Provider",
-            "type": "string"
-          }
-        },
-        "required": [
-          "provider",
-          "model"
-        ],
-        "title": "LlmEngineAlternate",
-        "type": "object"
-      },
-      "LlmEngineAlternateRead": {
-        "description": "One alternate as the popover renders it: the pair plus its canonical\ncatalogue id and a per-entry ``retired`` flag (the catalogue no longer\nlists that pair).",
-        "properties": {
-          "canonical": {
-            "title": "Canonical",
-            "type": "string"
-          },
-          "model": {
-            "title": "Model",
-            "type": "string"
-          },
-          "provider": {
-            "title": "Provider",
-            "type": "string"
-          },
-          "retired": {
-            "title": "Retired",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "provider",
-          "model",
-          "canonical",
-          "retired"
-        ],
-        "title": "LlmEngineAlternateRead",
-        "type": "object"
-      },
       "LlmEngineCatalogEntryRead": {
         "description": "One selectable engine as the picker renders it.",
         "properties": {
@@ -6502,16 +6451,8 @@
         "type": "object"
       },
       "LlmEngineRead": {
-        "description": "The resolved engine view the \u2699 popover renders.\n\n``source`` says whether the pair is the project's stored choice or the\nserver's env default; ``retired`` flags a stored pair the catalogue no\nlonger lists (new runs are refused until a manager re-chooses).\n``availability`` maps provider \u2192 whether the CALLER can run it (their\nown stored key, or a global service key) \u2014 booleans only, never key\nmaterial or metadata. ``alternates`` is the stored fallback list with\na per-entry ``retired`` flag.\n\n``endpoint_id`` / ``endpoint_label`` are the ONLY endpoint data on this\nread (decision 12 \u2014 no embedded endpoints matrix; the picker's endpoint\ngroups come from the manager-only endpoints listing instead): the\nstored pointer plus the row's label for the chip. ``endpoint_label`` is\n``None`` for catalogue engines AND for a dangling pointer (row gone \u2014\n``retired`` is True then).",
+        "description": "The member-visible read (reshaped in Task 22 into default/effective).\n\n``source`` says whether the pair is the project's stored choice or the\nserver's env default; ``retired`` flags a stored pair the catalogue no\nlonger lists (new runs are refused until a manager re-chooses).\n``availability`` maps provider \u2192 whether the CALLER can run it (their\nown stored key, or a global service key) \u2014 booleans only, never key\nmaterial or metadata. ``user_choice_allowed`` is the manager lock.",
         "properties": {
-          "alternates": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/LlmEngineAlternateRead"
-            },
-            "title": "Alternates",
-            "type": "array"
-          },
           "availability": {
             "additionalProperties": {
               "type": "boolean"
@@ -6525,29 +6466,6 @@
             },
             "title": "Catalog",
             "type": "array"
-          },
-          "endpoint_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Endpoint Id"
-          },
-          "endpoint_label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Endpoint Label"
           },
           "mode": {
             "enum": [
@@ -6610,6 +6528,10 @@
               }
             ],
             "title": "Updated By Name"
+          },
+          "user_choice_allowed": {
+            "title": "User Choice Allowed",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6618,6 +6540,7 @@
           "mode",
           "source",
           "retired",
+          "user_choice_allowed",
           "catalog",
           "availability"
         ],
@@ -6626,34 +6549,8 @@
       },
       "LlmEngineUpdateRequest": {
         "additionalProperties": false,
-        "description": "PUT body for the project engine.\n\n``mode: Literal[\"fast\", \"verified\"]`` is the closed write gate (\u00a75 \u2014\nVerified shipped with the verify pass; anything else is a free 422);\n``extra=\"forbid\"`` blocks smuggled keys (no temperature/seed, by design).\n``alternates`` is tri-state: ``None`` (field absent) keeps the stored\nlist, ``[]`` clears it, a list replaces it.\n\n``endpoint_id`` selects a project custom endpoint as the engine (C2\nB8): it requires ``provider == \"openai_compatible\"`` and the service\nvalidates the endpoint (project-scoped, model allowed, verified)\ninstead of the catalogue. Omitted/None = a catalogue engine.",
+        "description": "PUT body for the project default (\u00a74): always a catalogue pair, so\nthere is no ``connection_id`` field \u2014 ``extra=\"forbid\"`` makes a\nsubmitted one (or ``alternates`` / ``endpoint_id``) the 422 \u00a76 asks for.",
         "properties": {
-          "alternates": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/LlmEngineAlternate"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Alternates"
-          },
-          "endpoint_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Endpoint Id"
-          },
           "mode": {
             "default": "fast",
             "enum": [
@@ -6670,6 +6567,11 @@
           "provider": {
             "title": "Provider",
             "type": "string"
+          },
+          "user_choice_allowed": {
+            "default": true,
+            "title": "User Choice Allowed",
+            "type": "boolean"
           }
         },
         "required": [
@@ -13961,7 +13863,7 @@
         ]
       },
       "put": {
-        "description": "Persist the project's engine choice (validated, attributed).\n\n``alternates`` rides the same write: ``None`` (field absent) keeps the\nstored list, ``[]`` clears it, a list replaces it \u2014 every entry\ncatalogue-validated by the service (unknown pair \u2192 400).\n\n``endpoint_id`` (B8) selects an endpoint-backed engine; the service\nvalidates it against the project's endpoints instead of the catalogue\n(shape/ownership/verification failures \u2192 400 like any other refusal).",
+        "description": "Persist the project's default engine choice (validated, attributed).\n\nThe default is always a catalogue pair (\u00a73.1) \u2014 a host provider or an\noff-catalogue pair is a 400. ``user_choice_allowed`` rides the same\nwrite: ``False`` binds members to this default.",
         "operationId": "set_llm_engine_api_v1_projects__project_id__llm_engine_put",
         "parameters": [
           {

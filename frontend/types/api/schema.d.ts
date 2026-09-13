@@ -830,15 +830,11 @@ export interface paths {
         get: operations["get_llm_engine_api_v1_projects__project_id__llm_engine_get"];
         /**
          * Set Llm Engine
-         * @description Persist the project's engine choice (validated, attributed).
+         * @description Persist the project's default engine choice (validated, attributed).
          *
-         *     ``alternates`` rides the same write: ``None`` (field absent) keeps the
-         *     stored list, ``[]`` clears it, a list replaces it — every entry
-         *     catalogue-validated by the service (unknown pair → 400).
-         *
-         *     ``endpoint_id`` (B8) selects an endpoint-backed engine; the service
-         *     validates it against the project's endpoints instead of the catalogue
-         *     (shape/ownership/verification failures → 400 like any other refusal).
+         *     The default is always a catalogue pair (§3.1) — a host provider or an
+         *     off-catalogue pair is a 400. ``user_choice_allowed`` rides the same
+         *     write: ``False`` binds members to this default.
          */
         put: operations["set_llm_engine_api_v1_projects__project_id__llm_engine_put"];
         post?: never;
@@ -4522,38 +4518,6 @@ export interface components {
             label: string;
         };
         /**
-         * LlmEngineAlternate
-         * @description One fallback engine pair — the stored and request entry shape.
-         *
-         *     ``extra="forbid"`` + bounded field lengths: a REQUEST entry smuggling
-         *     keys (temperature/seed — same posture as ``LlmEngineUpdateRequest``) or
-         *     an oversized value is a hard 422; a hand-written STORED entry with the
-         *     same defects is dropped by the tolerant per-entry validator on
-         *     ``LlmEngineStored.alternates`` — the entry degrades, never the payload.
-         */
-        LlmEngineAlternate: {
-            /** Model */
-            model: string;
-            /** Provider */
-            provider: string;
-        };
-        /**
-         * LlmEngineAlternateRead
-         * @description One alternate as the popover renders it: the pair plus its canonical
-         *     catalogue id and a per-entry ``retired`` flag (the catalogue no longer
-         *     lists that pair).
-         */
-        LlmEngineAlternateRead: {
-            /** Canonical */
-            canonical: string;
-            /** Model */
-            model: string;
-            /** Provider */
-            provider: string;
-            /** Retired */
-            retired: boolean;
-        };
-        /**
          * LlmEngineCatalogEntryRead
          * @description One selectable engine as the picker renders it.
          */
@@ -4580,39 +4544,22 @@ export interface components {
         };
         /**
          * LlmEngineRead
-         * @description The resolved engine view the ⚙ popover renders.
+         * @description The member-visible read (reshaped in Task 22 into default/effective).
          *
          *     ``source`` says whether the pair is the project's stored choice or the
          *     server's env default; ``retired`` flags a stored pair the catalogue no
          *     longer lists (new runs are refused until a manager re-chooses).
          *     ``availability`` maps provider → whether the CALLER can run it (their
          *     own stored key, or a global service key) — booleans only, never key
-         *     material or metadata. ``alternates`` is the stored fallback list with
-         *     a per-entry ``retired`` flag.
-         *
-         *     ``endpoint_id`` / ``endpoint_label`` are the ONLY endpoint data on this
-         *     read (decision 12 — no embedded endpoints matrix; the picker's endpoint
-         *     groups come from the manager-only endpoints listing instead): the
-         *     stored pointer plus the row's label for the chip. ``endpoint_label`` is
-         *     ``None`` for catalogue engines AND for a dangling pointer (row gone —
-         *     ``retired`` is True then).
+         *     material or metadata. ``user_choice_allowed`` is the manager lock.
          */
         LlmEngineRead: {
-            /**
-             * Alternates
-             * @default []
-             */
-            alternates: components["schemas"]["LlmEngineAlternateRead"][];
             /** Availability */
             availability: {
                 [key: string]: boolean;
             };
             /** Catalog */
             catalog: components["schemas"]["LlmEngineCatalogEntryRead"][];
-            /** Endpoint Id */
-            endpoint_id?: string | null;
-            /** Endpoint Label */
-            endpoint_label?: string | null;
             /**
              * Mode
              * @enum {string}
@@ -4635,27 +4582,16 @@ export interface components {
             updated_at?: string | null;
             /** Updated By Name */
             updated_by_name?: string | null;
+            /** User Choice Allowed */
+            user_choice_allowed: boolean;
         };
         /**
          * LlmEngineUpdateRequest
-         * @description PUT body for the project engine.
-         *
-         *     ``mode: Literal["fast", "verified"]`` is the closed write gate (§5 —
-         *     Verified shipped with the verify pass; anything else is a free 422);
-         *     ``extra="forbid"`` blocks smuggled keys (no temperature/seed, by design).
-         *     ``alternates`` is tri-state: ``None`` (field absent) keeps the stored
-         *     list, ``[]`` clears it, a list replaces it.
-         *
-         *     ``endpoint_id`` selects a project custom endpoint as the engine (C2
-         *     B8): it requires ``provider == "openai_compatible"`` and the service
-         *     validates the endpoint (project-scoped, model allowed, verified)
-         *     instead of the catalogue. Omitted/None = a catalogue engine.
+         * @description PUT body for the project default (§4): always a catalogue pair, so
+         *     there is no ``connection_id`` field — ``extra="forbid"`` makes a
+         *     submitted one (or ``alternates`` / ``endpoint_id``) the 422 §6 asks for.
          */
         LlmEngineUpdateRequest: {
-            /** Alternates */
-            alternates?: components["schemas"]["LlmEngineAlternate"][] | null;
-            /** Endpoint Id */
-            endpoint_id?: string | null;
             /**
              * Mode
              * @default fast
@@ -4666,6 +4602,11 @@ export interface components {
             model: string;
             /** Provider */
             provider: string;
+            /**
+             * User Choice Allowed
+             * @default true
+             */
+            user_choice_allowed: boolean;
         };
         /** ManagerReviewVisibilityPayload */
         ManagerReviewVisibilityPayload: {

@@ -13,6 +13,8 @@ Role matrix through the real ASGI app + real Postgres membership rows:
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
@@ -175,3 +177,11 @@ async def test_byok_only_reflects_the_deployment_global_key(
     body = (await client_as_reviewer.get(_url())).json()["data"]
     anthropic = [e for e in body["catalog"] if e["provider"] == "anthropic"]
     assert all(e["byok_only"] is False for e in anthropic)
+
+
+@pytest.mark.asyncio
+async def test_put_with_a_connection_id_is_422(client_as_manager: AsyncClient) -> None:
+    r = await client_as_manager.put(
+        _url(), json={"provider": "openai", "model": "gpt-5.6-terra", "connection_id": str(uuid4())}
+    )
+    assert r.status_code == 422

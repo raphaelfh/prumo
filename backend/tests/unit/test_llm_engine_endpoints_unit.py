@@ -23,7 +23,6 @@ from fastapi import HTTPException
 
 from app.api.v1.endpoints.llm_engine import get_llm_engine, set_llm_engine
 from app.schemas.llm_engine import (
-    LlmEngineAlternate,
     LlmEngineRead,
     LlmEngineStored,
     LlmEngineUpdateRequest,
@@ -43,6 +42,7 @@ def _read(provider: str = "openai", model: str = "gpt-4o-mini") -> LlmEngineRead
         mode="fast",
         source="default",
         retired=False,
+        user_choice_allowed=True,
         catalog=[],
         availability={"openai": True, "anthropic": False},
     )
@@ -93,8 +93,9 @@ async def test_get_maps_missing_project_to_404() -> None:
 async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
     """The service receives NAMED validated fields — ``updated_by`` from the
     auth dependency, never the body — and the response is the re-read view.
-    ``endpoint_id`` (B8) rides the same named pass-through."""
-    project_id, manager, endpoint_id = uuid4(), uuid4(), uuid4()
+    ``user_choice_allowed`` (the manager lock) rides the same named
+    pass-through."""
+    project_id, manager = uuid4(), uuid4()
     data = _read(model="gpt-4o")
     service = MagicMock()
     service.set_for_project = AsyncMock(
@@ -107,10 +108,7 @@ async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
         resp = await _put(
             project_id=project_id,
             body=LlmEngineUpdateRequest(
-                provider="openai",
-                model="gpt-4o",
-                alternates=[LlmEngineAlternate(provider="anthropic", model="claude-sonnet-5")],
-                endpoint_id=endpoint_id,
+                provider="openai", model="gpt-4o", user_choice_allowed=False
             ),
             request=_request(),
             db=db,
@@ -125,8 +123,7 @@ async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
         model="gpt-4o",
         mode="fast",
         updated_by=manager,
-        alternates=[LlmEngineAlternate(provider="anthropic", model="claude-sonnet-5")],
-        endpoint_id=endpoint_id,
+        user_choice_allowed=False,
     )
     db.commit.assert_awaited_once()
 
@@ -157,32 +154,3 @@ async def test_put_maps_service_errors_to_status(raised: Exception, expected_sta
         )
 
     assert exc_info.value.status_code == expected_status
-
-
-@pytest.mark.asyncio
-async def test_put_maps_an_alternates_value_error_to_400() -> None:
-    """The alternates write-gate ValueError rides the same 400 mapping —
-    and the body's alternates actually reach the service call."""
-    service = MagicMock()
-    service.set_for_project = AsyncMock(
-        side_effect=ValueError(
-            "Unknown alternate engine openai:gpt-99 — not in the server catalogue"
-        )
-    )
-    alternates = [LlmEngineAlternate(provider="openai", model="gpt-99")]
-
-    with (
-        patch(f"{_EP}.LlmEngineService", return_value=service),
-        pytest.raises(HTTPException) as exc_info,
-    ):
-        await _put(
-            project_id=uuid4(),
-            body=LlmEngineUpdateRequest(provider="openai", model="gpt-4o", alternates=alternates),
-            request=_request(),
-            db=AsyncMock(),
-            manager_id=uuid4(),
-        )
-
-    assert exc_info.value.status_code == 400
-    assert "alternate engine" in exc_info.value.detail
-    assert service.set_for_project.await_args.kwargs["alternates"] == alternates

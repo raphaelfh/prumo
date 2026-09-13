@@ -30,9 +30,11 @@ from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.repositories import ExtractionRunRepository
+from app.schemas.llm_connection import UserConnectionCreateRequest
 from app.schemas.llm_endpoint import LlmEndpointCreateRequest
-from app.schemas.llm_engine import LlmEngineAlternate, LlmEngineStored
+from app.schemas.llm_engine import LlmEngineStored
 from app.schemas.llm_target import LlmTarget
+from app.services.llm_connection_service import LlmConnectionService, owned_user_connection
 from app.services.llm_endpoint_service import LlmEndpointService
 from app.services.llm_engine_service import LlmEngineService
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -181,8 +183,7 @@ async def set_project_engine(
     provider: str,
     model: str,
     mode: str = "fast",
-    alternates: list[LlmEngineAlternate] | None = None,
-    endpoint_id: UUID | None = None,
+    user_choice_allowed: bool = True,
 ) -> LlmEngineStored:
     """The seeded project's engine choice, written by the primary manager."""
     return await LlmEngineService(db).set_for_project(
@@ -191,8 +192,7 @@ async def set_project_engine(
         model=model,
         mode=mode,  # type: ignore[arg-type]
         updated_by=SEED.primary_profile,
-        alternates=alternates,
-        endpoint_id=endpoint_id,
+        user_choice_allowed=user_choice_allowed,
     )
 
 
@@ -227,6 +227,38 @@ async def make_endpoint(
         ),
     )
     row = await service.get(project_id or SEED.primary_project, read.id)
+    row.validation_status = validation_status
+    row.capabilities = {"output_mode": output_mode, "models_seen": []}
+    await db.flush()
+    return read.id
+
+
+async def make_host_connection(
+    db: AsyncSession,
+    *,
+    user_id: UUID = SEED.primary_profile,
+    label: str = "engine-suite-host",
+    base_url: str = "https://8.8.8.8/v1",
+    api_key: str | None = "sk-engine-suite",
+    allowed_models: list[str] | None = None,
+    validation_status: str = "ok",
+    output_mode: str | None = "tool",
+) -> UUID:
+    """A user-owned host connection in the given probe state (the retired
+    ``make_endpoint`` shape): created through the real service, then armed
+    directly on the row — the probe itself is the verify suite's contract."""
+    read = await LlmConnectionService(db).create_user(
+        user_id=user_id,
+        payload=UserConnectionCreateRequest(
+            provider="openai_compatible",
+            label=label,
+            base_url=base_url,
+            api_key=SecretStr(api_key) if api_key is not None else None,
+            allowed_models=allowed_models if allowed_models is not None else ["endpoint-model-x"],
+        ),
+    )
+    row = await owned_user_connection(db, read.id, user_id)
+    assert row is not None
     row.validation_status = validation_status
     row.capabilities = {"output_mode": output_mode, "models_seen": []}
     await db.flush()

@@ -11,8 +11,6 @@ duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/servi
 duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_draft_lock_service.py::take_over_draft_lock  # UPDATE: scope must be inline in the mutating WHERE, cannot delegate
 duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_restore_service.py::restore_snapshot
 duplicate-predicate::ProjectExtractionTemplate{id,project_id}::backend/app/services/template_version_service.py::republish
-duplicate-predicate::ProjectLlmEndpoint{id,project_id}::backend/app/services/llm_endpoint_service.py::get
-duplicate-predicate::ProjectLlmEndpoint{id,project_id}::backend/app/services/llm_engine_service.py::_endpoint_row
 duplicate-predicate::UserAPIKey{id,user_id}::backend/app/repositories/user_api_key_repository.py::deactivate  # UPDATE: scope inline in the mutating WHERE
 duplicate-predicate::UserAPIKey{id,user_id}::backend/app/repositories/user_api_key_repository.py::get_by_id_and_user  # the SELECT the three writers above mirror; one class, four statement types
 duplicate-predicate::UserAPIKey{id,user_id}::backend/app/repositories/user_api_key_repository.py::hard_delete  # DELETE: scope inline in the mutating WHERE
