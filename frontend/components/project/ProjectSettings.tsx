@@ -3,8 +3,8 @@
  * Data and persistence delegated to useProjectSettings.
  */
 
-import {useState} from 'react';
-import {FileText, Info, Save, Settings as SettingsIcon, ShieldCheck, Users} from 'lucide-react';
+import {useSearchParams} from 'react-router';
+import {Bot, FileText, Info, MessageSquareText, Save, Settings as SettingsIcon, ShieldCheck, Users} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {PageHeader} from '@/components/patterns/PageHeader';
@@ -19,18 +19,32 @@ import {AdvancedSettingsSection} from './settings/AdvancedSettingsSection';
 import {ReviewConsensusSection} from './settings/ReviewConsensusSection';
 import {t} from '@/lib/copy';
 
-export type TabId = 'basic' | 'review' | 'team' | 'consensus' | 'advanced';
+export type SectionId =
+  | 'basic'
+  | 'review'
+  | 'review-question'
+  | 'ai-engine'
+  | 'team'
+  | 'consensus'
+  | 'advanced';
 
-interface TabConfig {
-  id: TabId;
+interface SectionConfig {
+  id: SectionId;
   label: string;
-    icon: typeof Info;
+  icon: typeof Info;
   description: string;
 }
 
-const TABS: TabConfig[] = [
+const SECTIONS: SectionConfig[] = [
     {id: 'basic', label: t('project', 'tabBasic'), icon: Info, description: t('project', 'tabBasicDesc')},
     {id: 'review', label: t('project', 'tabReview'), icon: FileText, description: t('project', 'tabReviewDesc')},
+    {
+        id: 'review-question',
+        label: t('project', 'tabReviewQuestion'),
+        icon: MessageSquareText,
+        description: t('project', 'tabReviewQuestionDesc'),
+    },
+    {id: 'ai-engine', label: t('project', 'tabAiEngine'), icon: Bot, description: t('project', 'tabAiEngineDesc')},
     {id: 'team', label: t('project', 'tabTeam'), icon: Users, description: t('project', 'tabTeamDesc')},
     {
         id: 'consensus',
@@ -46,12 +60,29 @@ const TABS: TabConfig[] = [
     },
 ];
 
+const SECTION_IDS = new Set<string>(SECTIONS.map((s) => s.id));
+
+/** The URL owns the section: read every render, never mirrored into state. */
+function parseSection(value: string | null): SectionId {
+  return value && SECTION_IDS.has(value) ? (value as SectionId) : 'basic';
+}
+
 interface ProjectSettingsProps {
     projectId: string;
 }
 
 export function ProjectSettings({ projectId }: ProjectSettingsProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('basic');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const activeSection = parseSection(searchParams.get('section'));
+    const selectSection = (id: SectionId) =>
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('section', id);
+                return next;
+            },
+            {replace: true},
+        );
     const {project, loading, hasUnsavedChanges, updateProject, saveProject} = useProjectSettings(projectId);
     const {isManager} = useProjectMemberRole(projectId);
 
@@ -69,13 +100,13 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
   if (!project) return null;
 
-    const activeTabConfig = TABS.find((t) => t.id === activeTab);
+    const activeSectionConfig = SECTIONS.find((s) => s.id === activeSection);
 
   return (
     <div className="h-full flex flex-col bg-background">
         <PageHeader
             title={hasUnsavedChanges ? t('project', 'settingsTitleUnsaved') : t('project', 'settingsTitle')}
-            description={activeTabConfig?.description}
+            description={activeSectionConfig?.description}
             actions={
                 hasUnsavedChanges ? (
                     <Button onClick={saveProject} disabled={loading} size="sm" className="text-[13px]">
@@ -87,17 +118,16 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
         />
 
       <div className="flex-1 flex overflow-hidden">
-          <aside
-              className="w-56 shrink-0 border-r border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] overflow-y-auto">
+          <aside className="w-56 shrink-0 overflow-y-auto border-r border-border/40">
               <nav className="py-4 px-2 space-y-0.5">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
+            {SECTIONS.map((section) => {
+              const Icon = section.icon;
+              const isActive = activeSection === section.id;
               return (
                 <button
-                  key={tab.id}
+                  key={section.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => selectSection(section.id)}
                   className={cn(
                       'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-[13px] font-medium transition-colors duration-75',
                       'hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
@@ -105,7 +135,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                   )}
                 >
                     <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5}/>
-                    {tab.label}
+                    {section.label}
                 </button>
               );
             })}
@@ -114,20 +144,18 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
         <main className="flex-1 overflow-y-auto bg-background">
             <div className="w-full max-w-[1920px] mx-auto px-6 py-6 lg:px-8 lg:py-8">
-                {activeTab === 'basic' && (
+                {activeSection === 'basic' && (
                     <BasicInfoSection project={project} onChange={updateProject}/>
                 )}
-                {activeTab === 'review' && (
-                    <div className="space-y-4">
-                        <ReviewDetailsSection projectId={projectId} project={project} onChange={updateProject}/>
-                        <AiEngineSection projectId={projectId}/>
-                    </div>
+                {activeSection === 'review' && (
+                    <ReviewDetailsSection projectId={projectId} project={project} onChange={updateProject}/>
                 )}
-                {activeTab === 'team' && <TeamMembersSection projectId={projectId}/>}
-                {activeTab === 'consensus' && (
+                {activeSection === 'ai-engine' && <AiEngineSection projectId={projectId}/>}
+                {activeSection === 'team' && <TeamMembersSection projectId={projectId}/>}
+                {activeSection === 'consensus' && (
                     <ReviewConsensusSection projectId={projectId} />
                 )}
-                {activeTab === 'advanced' && (
+                {activeSection === 'advanced' && (
                     <AdvancedSettingsSection
                         project={project}
                         onChange={updateProject}
