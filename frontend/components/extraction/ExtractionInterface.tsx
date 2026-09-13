@@ -21,7 +21,6 @@ import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateCards} from './config/ConfigureTemplateCards';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {HITLExportDialog} from '@/components/hitl/HITLExportDialog';
-import {LlmEngineChip} from './LlmEngineChip';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
@@ -348,14 +347,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       case 'configuration':
         return (
           <div className="flex min-h-0 flex-1 flex-col gap-4">
-            {/* Project-regime chrome (§5, C1b): the engine chip lives ABOVE
-                the versioned template card — choosing an engine never arms
-                the Draft chip and never enters the Publish diff. The chip
-                OWNS its flex row, so a failed read renders no empty strip. */}
-            {/* With a template on screen the chip rides IN the config bar
-                (2026-08-29 consolidation) — it only owns a row of its own
-                when there is no bar to ride in. */}
-            {!activeTemplate && <LlmEngineChip projectId={projectId} />}
             {activeTemplate ? (
               // Dashboard regime: the page never scrolls — the grid card
               // absorbs the leftover height and scrolls internally. The
@@ -413,18 +404,12 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   };
 
   // The versioned-card side of the Configuration tab (everything BELOW the
-  // project-regime chrome row that hosts the engine chip).
+  // project-regime chrome row).
   const renderConfigurationBody = () => {
     return activeTemplate ? (
           <TemplateConfigEditor
             projectId={projectId}
             templateId={activeTemplate.id}
-            engineSlot={
-              <LlmEngineChip
-                projectId={projectId}
-                templateId={activeTemplate.id}
-              />
-            }
             onActiveTemplateChanged={handleActiveTemplateChanged}
           />
         ) : (

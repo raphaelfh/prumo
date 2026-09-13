@@ -56,7 +56,6 @@ frontend/lib/copy/common.ts:pdfLoadError
 frontend/lib/copy/common.ts:pdfLoadErrorDesc
 frontend/lib/copy/common.ts:pdfNotLinked
 frontend/lib/copy/common.ts:pdfNotLinkedDesc
-frontend/lib/copy/common.ts:removeAria
 frontend/lib/copy/common.ts:unknownError
 frontend/lib/copy/common.ts:userRoleAria
 frontend/lib/copy/consensus.ts:templatesEditAction
@@ -64,13 +63,13 @@ frontend/lib/copy/consensus.ts:templatesOverrideAction
 frontend/lib/copy/layout.ts:themeToggleDark
 frontend/lib/copy/layout.ts:themeToggleLight
 frontend/lib/copy/layout.ts:themeToggleSystem
-frontend/lib/copy/llmEngine.ts:alternatesAddLabel
 frontend/lib/copy/navigation.ts:ariaBack
 frontend/lib/copy/navigation.ts:ariaCollapseSidebar
 frontend/lib/copy/navigation.ts:ariaExpandSidebar
 frontend/lib/copy/navigation.ts:ariaOpenSearch
 frontend/lib/copy/navigation.ts:notifProjectCompletedMessage
 frontend/lib/copy/navigation.ts:notifProjectCompletedTitle
+frontend/lib/copy/navigation.ts:searchPlaceholder
 frontend/lib/copy/navigation.ts:viewSwitcherTrigger
 frontend/lib/copy/pages.ts:dashboardErrorProjectIdNotReturned
 frontend/lib/copy/pages.ts:dashboardUnexpectedError

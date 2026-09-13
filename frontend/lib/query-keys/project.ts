@@ -18,8 +18,6 @@ export const projectKeys = {
   llmEngines: () => [...projectKeys.all, 'llm-engine'] as const,
   llmEngine: (projectId: string) =>
     [...projectKeys.all, 'llm-engine', projectId] as const,
-  llmEndpoints: (projectId: string) =>
-    [...projectKeys.all, 'llm-endpoints', projectId] as const,
   connections: (projectId: string) =>
     [...projectKeys.all, 'connections', projectId] as const,
   aiContext: (projectId: string) =>
