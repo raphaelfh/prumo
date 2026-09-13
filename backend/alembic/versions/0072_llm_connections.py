@@ -78,9 +78,7 @@ def upgrade() -> None:
         sa.Column("label", sa.Text(), nullable=False),
         sa.Column("base_url", sa.Text(), nullable=True),
         sa.Column("encrypted_api_key", sa.Text(), nullable=True),
-        sa.Column(
-            "allowed_models", JSONB(), server_default=sa.text("'[]'::jsonb"), nullable=False
-        ),
+        sa.Column("allowed_models", JSONB(), server_default=sa.text("'[]'::jsonb"), nullable=False),
         sa.Column("capabilities", JSONB(), server_default=sa.text("'{}'::jsonb"), nullable=False),
         sa.Column("validation_status", sa.Text(), server_default="unverified", nullable=False),
         sa.Column("last_validated_at", sa.DateTime(timezone=True), nullable=True),
