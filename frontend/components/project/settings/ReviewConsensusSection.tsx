@@ -217,15 +217,11 @@ export function ReviewConsensusSection({
 
       <SettingsGroup title={t('consensus', 'templatesTitle')} hint={t('consensus', 'templatesDesc')}>
         {templatesLoading ? (
-          <div className="text-[12px] text-muted-foreground py-3">
-            {t('consensus', 'templatesLoading')}
-          </div>
+          <p className="text-[13px] text-muted-foreground">{t('consensus', 'templatesLoading')}</p>
         ) : allTemplates.length === 0 ? (
-          <div className="text-[12px] text-muted-foreground py-3">
-            {t('consensus', 'templatesEmpty')}
-          </div>
+          <p className="text-[13px] text-muted-foreground">{t('consensus', 'templatesEmpty')}</p>
         ) : (
-          <div className="space-y-2">
+          <div role="list" className="space-y-0.5">
             {allTemplates.map((template) => (
               <TemplateConsensusOverride
                 key={template.id}

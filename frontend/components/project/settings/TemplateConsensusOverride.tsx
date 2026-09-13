@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { SettingsActions } from '@/components/settings';
 import { t } from '@/lib/copy';
 import {
   useClearTemplateHitlConfig,
@@ -112,35 +112,26 @@ export function TemplateConsensusOverride({
   };
 
   return (
-    <div className="border border-border/40 rounded-md">
+    <div role="listitem">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className={cn(
-          'w-full flex items-center justify-between gap-3 px-3 py-2.5',
-          'text-left text-[13px] hover:bg-muted/40 transition-colors',
-          'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/20',
-          expanded && 'border-b border-border/40',
-        )}
         aria-expanded={expanded}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring"
       >
-        <span className="flex items-center gap-2 min-w-0">
-          {expanded ? (
-            <ChevronDown className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-          ) : (
-            <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-          )}
-          <span className="font-medium truncate">{template.name}</span>
-          {template.framework && (
-            <span className="text-muted-foreground/60 truncate">
-              · {template.framework}
-            </span>
-          )}
-        </span>
-        {config.isLoading ? (
-          <Skeleton className="h-5 w-24" />
+        {expanded ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
         ) : (
-          <Badge variant={isOverridden ? 'default' : 'outline'} className="text-[11px] shrink-0">
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+        )}
+        <span className="truncate font-medium">{template.name}</span>
+        {template.framework && (
+          <span className="truncate text-muted-foreground">· {template.framework}</span>
+        )}
+        {config.isLoading ? (
+          <Skeleton className="ml-auto h-5 w-24 shrink-0" />
+        ) : (
+          <Badge variant={isOverridden ? 'default' : 'outline'} className="ml-auto shrink-0 text-[11px]">
             {isOverridden
               ? t('consensus', 'templatesOverriddenBadge')
               : t('consensus', 'templatesInheritsBadge')}
@@ -149,12 +140,12 @@ export function TemplateConsensusOverride({
       </button>
 
       {expanded && (
-        <div className="p-4 space-y-4">
+        <div className="space-y-1 pb-2">
           {config.isLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-9 w-full max-w-md" />
-              <Skeleton className="h-9 w-full max-w-md" />
-            </div>
+            <>
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </>
           ) : (
             <ConsensusConfigForm
               value={draft}
@@ -165,32 +156,24 @@ export function TemplateConsensusOverride({
             />
           )}
 
-          <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/40">
-            <div>
-              {isOverridden && canEdit && (
+          {canEdit && (
+            <SettingsActions>
+              {isOverridden && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleClear}
                   disabled={clear.isPending || upsert.isPending}
-                  className="text-[12px] text-muted-foreground hover:text-destructive"
                 >
-                  <X className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+                  <X className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
                   {t('consensus', 'templatesRemoveOverride')}
                 </Button>
               )}
-            </div>
-            {canEdit && (
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={saveDisabled}
-                className="text-[12px]"
-              >
+              <Button size="sm" onClick={handleSave} disabled={saveDisabled}>
                 {upsert.isPending ? t('consensus', 'saving') : t('consensus', 'save')}
               </Button>
-            )}
-          </div>
+            </SettingsActions>
+          )}
         </div>
       )}
     </div>

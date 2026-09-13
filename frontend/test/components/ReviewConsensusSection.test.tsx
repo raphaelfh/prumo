@@ -1,5 +1,6 @@
 /** Review consensus as a flat settings page (spec 2026-09-13 §4.3, §10). */
 import {render, screen} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/hooks/useProjectMemberRole', () => ({useProjectMemberRole: vi.fn()}));
@@ -135,5 +136,63 @@ describe('ReviewConsensusSection', () => {
 
   it('carries the corrected tab description', () => {
     expect(consensus.tabConsensusDesc).toBe('Consensus rule and arbitrator');
+  });
+});
+
+const TEMPLATE = {id: 't1', name: 'CHARMS', framework: 'CHARMS'};
+
+function mockTemplate(over: Record<string, unknown> = {}, isLoading = false) {
+  vi.mocked(useProjectTemplates).mockImplementation((({kind}: {kind: string}) =>
+    ({data: kind === 'extraction' ? [TEMPLATE] : [], isLoading: false})) as never);
+  vi.mocked(hitl.useTemplateHitlConfig).mockReturnValue({
+    data: isLoading ? undefined : config({scope_kind: 'template', inherited: true, ...over}),
+    isLoading,
+  } as never);
+  vi.mocked(hitl.useUpsertTemplateHitlConfig).mockReturnValue({mutateAsync: vi.fn(), isPending: false} as never);
+  vi.mocked(hitl.useClearTemplateHitlConfig).mockReturnValue({mutateAsync: vi.fn(), isPending: false} as never);
+}
+
+describe('ReviewConsensusSection — per-template overrides', () => {
+  it('lists overrides as flush row buttons with no frame', () => {
+    mockTemplate();
+    render(<ReviewConsensusSection projectId="p1" />);
+    const list = screen.getByRole('list');
+    const row = screen.getByRole('button', {name: /CHARMS/});
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+    expect(row).toHaveClass('hover:bg-muted/60');
+    for (const el of [list, screen.getByRole('listitem'), row]) {
+      expect(el.className).not.toMatch(/(?:^|\s)border(?:\s|$)/);
+    }
+    expect(row).toHaveTextContent(consensus.templatesInheritsBadge);
+  });
+
+  it('expands into rule rows and ghost/primary actions', async () => {
+    mockTemplate({inherited: false});
+    render(<ReviewConsensusSection projectId="p1" />);
+    await userEvent.click(screen.getByRole('button', {name: /CHARMS/}));
+    // project default rule + this override's rule
+    expect(screen.getAllByText(consensus.ruleLabel)).toHaveLength(2);
+    expect(screen.getByRole('button', {name: consensus.templatesRemoveOverride})).toBeInTheDocument();
+    expect(screen.getByRole('button', {name: consensus.save})).toBeInTheDocument();
+  });
+
+  it('keeps loading and empty states as muted lines inside the group', () => {
+    vi.mocked(useProjectTemplates).mockReturnValue({data: undefined, isLoading: true} as never);
+    const {unmount} = render(<ReviewConsensusSection projectId="p1" />);
+    expect(screen.getByText(consensus.templatesLoading)).toHaveClass('text-[13px]', 'text-muted-foreground');
+    unmount();
+    vi.mocked(useProjectTemplates).mockReturnValue({data: [], isLoading: false} as never);
+    render(<ReviewConsensusSection projectId="p1" />);
+    expect(screen.getByText(consensus.templatesEmpty)).toHaveClass('text-[13px]', 'text-muted-foreground');
+  });
+
+  it('renders the expanded-body skeleton as h-8 rows', async () => {
+    mockTemplate({}, true);
+    render(<ReviewConsensusSection projectId="p1" />);
+    await userEvent.click(screen.getByRole('button', {name: /CHARMS/}));
+    const item = screen.getByRole('listitem');
+    const bodySkeletons = [...item.querySelectorAll('.animate-pulse')].filter((el) => !el.closest('button'));
+    expect(bodySkeletons.length).toBe(2);
+    bodySkeletons.forEach((el) => expect(el).toHaveClass('h-8'));
   });
 });
