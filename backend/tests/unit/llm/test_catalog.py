@@ -9,14 +9,28 @@ and the guarantee that every listed provider is one ``build_model`` accepts
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import yaml
+from pydantic import ValidationError
 
 from app.core.config import settings
-from app.llm.catalog import CATALOG, CatalogEntry, canonical, find_entry
+from app.llm import catalog as catalog_module
+from app.llm.catalog import (
+    CATALOG,
+    CatalogEntry,
+    CatalogRow,
+    canonical,
+    find_entry,
+    load_catalog,
+    selectable_catalog,
+)
 from app.llm.provider import build_model
-from app.llm.registry import get_provider
+from app.llm.registry import get_provider, llm_provider_ids
 
 _VALID_COST_TIERS = {"$", "$$", "$$$"}
+_MODELS_DIR = Path(catalog_module.__file__).parent / "models"
 
 
 def test_catalog_pairs_are_unique() -> None:
@@ -80,3 +94,58 @@ def test_every_catalog_provider_is_a_registry_llm_provider() -> None:
     for entry in CATALOG:
         spec = get_provider(entry.provider)
         assert spec is not None and spec.serves == "llm"
+
+
+def test_catalogue_file_set_equals_the_registry_llm_providers() -> None:
+    """§1.1: every file name is a registry LLM provider and every LLM
+    provider has a file — a provider without a file has no picker rows."""
+    files = {p.stem for p in _MODELS_DIR.glob("*.yaml")}
+    assert files == set(llm_provider_ids())
+
+
+def test_catalog_is_ordered_by_registry_then_file_order() -> None:
+    order = list(llm_provider_ids())
+    providers = [entry.provider for entry in CATALOG]
+    assert providers == sorted(providers, key=order.index)
+    for provider in order:
+        rows = yaml.safe_load((_MODELS_DIR / f"{provider}.yaml").read_text()) or []
+        assert [e.model for e in CATALOG if e.provider == provider] == [r["model"] for r in rows]
+
+
+def test_malformed_row_fails_to_load(tmp_path: Path) -> None:
+    """``extra="forbid"`` + required fields: a typo in the data file is an
+    import-time failure, never a silently dropped model."""
+    (tmp_path / "openai.yaml").write_text(
+        "- model: gpt-x\n  label: X\n  best_for: y\n  context_window: 1\n  cost_tier: '$'\n  colour: red\n"
+    )
+    with pytest.raises(ValidationError):
+        load_catalog(tmp_path, ("openai",))
+
+
+def test_missing_file_fails_to_load(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        load_catalog(tmp_path, ("openai",))
+
+
+def test_deprecated_row_resolves_but_is_not_selectable(tmp_path: Path) -> None:
+    (tmp_path / "openai.yaml").write_text(
+        "- model: gpt-live\n  label: Live\n  best_for: a\n  context_window: 1\n  cost_tier: '$'\n"
+        "- model: gpt-old\n  label: Old\n  best_for: b\n  context_window: 1\n  cost_tier: '$'\n"
+        "  deprecated: true\n"
+    )
+    entries = load_catalog(tmp_path, ("openai",))
+    assert [e.model for e in entries] == ["gpt-live", "gpt-old"]
+    assert entries[1].deprecated is True
+    by_pair = {(e.provider, e.model): e for e in entries}
+    assert by_pair[("openai", "gpt-old")] is not None  # what find_entry does
+    assert [e.model for e in entries if not e.deprecated] == ["gpt-live"]
+
+
+def test_selectable_catalog_omits_deprecated_rows() -> None:
+    assert all(not e.deprecated for e in selectable_catalog())
+    assert len(selectable_catalog()) <= len(CATALOG)
+
+
+def test_catalog_row_defaults_deprecated_false() -> None:
+    row = CatalogRow(model="m", label="L", best_for="b", context_window=1, cost_tier="$")
+    assert row.deprecated is False

@@ -123,9 +123,9 @@ class Settings(BaseSettings):
 
     # =================== GLOBAL PROVIDER KEYS ===================
     # Optional operator keys. Each hosted provider in app.llm.registry names
-    # ONE of these; when it is empty the provider is BYOK-only in this
-    # deployment (registry.is_byok_only). Never a host-bearing provider —
-    # a host is a per-connection fact.
+    # ONE of these; when it is empty the provider needs a user or project
+    # key in this deployment (the engine read's ``availability``). Never a
+    # host-bearing provider — a host is a per-connection fact.
     # Read dynamically by app.llm.registry.global_key_for via
     # getattr(settings, spec.global_key_setting) — no static `settings.X`
     # reference exists, so the vulture dead-code scan cannot see the read.
@@ -162,7 +162,7 @@ class Settings(BaseSettings):
     # key is configured, else the free PyMuPDF parser. This scalar is only the
     # factory's last-resort fallback when no per-call backend is given.
     PARSER_BACKEND: str = "pymupdf"
-    # Optional global LlamaCloud key; per-user BYOK (APIKeyService) takes
+    # Optional global LlamaCloud key; per-user BYOK (llm_connections) takes
     # precedence over this global fallback.
     LLAMA_CLOUD_API_KEY: str | None = None
     # Cap the blocking LlamaParse parse() call. The SDK's own default is

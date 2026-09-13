@@ -8,6 +8,7 @@
 import {useState} from "react";
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -129,12 +130,12 @@ export function ArticlesExportDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent size="md">
                 <DialogHeader>
                     <DialogTitle>{t("articles", "exportTitle")}</DialogTitle>
                     <DialogDescription>{t("articles", "exportDesc")}</DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-6 py-2">
+                <DialogBody className="grid gap-6">
                     <div className="space-y-3">
                         <Label>{t("articles", "exportFormats")}</Label>
                         <div className="flex flex-wrap gap-4">
@@ -149,7 +150,7 @@ export function ArticlesExportDialog({
                                     />
                                     <Label
                                         htmlFor={`format-${id}`}
-                                        className="text-sm font-normal cursor-pointer"
+                                        className="text-sm font-normal"
                                     >
                                         {t("articles", labelKey)}
                                     </Label>
@@ -169,7 +170,7 @@ export function ArticlesExportDialog({
                                     <RadioGroupItem value={id} id={`scope-${id}`}/>
                                     <Label
                                         htmlFor={`scope-${id}`}
-                                        className="text-sm font-normal cursor-pointer"
+                                        className="text-sm font-normal"
                                     >
                                         {t("articles", labelKey)}
                                     </Label>
@@ -188,7 +189,7 @@ export function ArticlesExportDialog({
                                 <RadioGroupItem value="current_list" id="scope-current"/>
                                 <Label
                                     htmlFor="scope-current"
-                                    className="text-sm font-normal cursor-pointer"
+                                    className="text-sm font-normal"
                                 >
                                     {t("articles", "exportArticleScopeCurrentList")} (
                                     {currentListIds.length})
@@ -198,7 +199,7 @@ export function ArticlesExportDialog({
                                 <RadioGroupItem value="selected" id="scope-selected"/>
                                 <Label
                                     htmlFor="scope-selected"
-                                    className="text-sm font-normal cursor-pointer"
+                                    className="text-sm font-normal"
                                 >
                                     {t("articles", "exportArticleScopeSelected")} ({selectedIds.length}
                                     )
@@ -211,7 +212,7 @@ export function ArticlesExportDialog({
                             </p>
                         )}
                     </div>
-                </div>
+                </DialogBody>
                 <DialogFooter>
                     <Button
                       size="sm"

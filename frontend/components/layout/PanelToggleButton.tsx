@@ -6,10 +6,8 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react';
-import { HeaderIconButton } from '@/components/layout/HeaderIconButton';
-import { KbdBadge, type KbdKey } from '@/components/ui/kbd-badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ariaKeyShortcuts } from '@/lib/platform';
+import { IconButton } from '@/components/patterns/IconButton';
+import { type KbdKey } from '@/components/ui/kbd-badge';
 import { cn } from '@/lib/utils';
 
 interface PanelToggleButtonProps {
@@ -48,37 +46,27 @@ const GLYPHS: Record<PanelToggleButtonProps['side'], {Close: typeof PanelLeftClo
 export function PanelToggleButton({ side, pressed, onToggle, ariaLabel, shortcut, className }: PanelToggleButtonProps) {
   const {Close, Open} = GLYPHS[side];
   return (
-    // Local provider, like ArticlesList's ToolbarAction: Radix throws without
-    // one, and every header that mounts this toggle is also rendered alone.
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <HeaderIconButton
-            onClick={onToggle}
-            aria-pressed={pressed}
-            aria-keyshortcuts={shortcut ? ariaKeyShortcuts(shortcut) : undefined}
-            aria-label={ariaLabel}
-            className={cn('relative', className)}
-          >
-            <span className="relative block h-4 w-4">
-              <Close
-                strokeWidth={1.5}
-                className={cn('absolute inset-0 h-4 w-4 transition-opacity duration-150 ease-out motion-reduce:duration-0', pressed ? 'opacity-100' : 'opacity-0')}
-                aria-hidden="true"
-              />
-              <Open
-                strokeWidth={1.5}
-                className={cn('absolute inset-0 h-4 w-4 transition-opacity duration-150 ease-out motion-reduce:duration-0', pressed ? 'opacity-0' : 'opacity-100')}
-                aria-hidden="true"
-              />
-            </span>
-          </HeaderIconButton>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="flex items-center gap-2">
-          <span>{ariaLabel}</span>
-          {shortcut ? <KbdBadge keys={shortcut} /> : null}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <IconButton
+      label={ariaLabel}
+      shortcut={shortcut}
+      side="bottom"
+      onClick={onToggle}
+      aria-pressed={pressed}
+      className={cn('relative', className)}
+      icon={
+        <span className="relative block h-4 w-4">
+          <Close
+            strokeWidth={1.5}
+            className={cn('absolute inset-0 h-4 w-4 transition-opacity duration-150 ease-out motion-reduce:duration-0', pressed ? 'opacity-100' : 'opacity-0')}
+            aria-hidden="true"
+          />
+          <Open
+            strokeWidth={1.5}
+            className={cn('absolute inset-0 h-4 w-4 transition-opacity duration-150 ease-out motion-reduce:duration-0', pressed ? 'opacity-0' : 'opacity-100')}
+            aria-hidden="true"
+          />
+        </span>
+      }
+    />
   );
 }

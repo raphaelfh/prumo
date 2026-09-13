@@ -610,12 +610,12 @@ export function TemplateConfigGridPanel({
   };
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- panel-scoped shortcuts delegated from focused descendants; the card is never a click/focus target
     <div
       // @container/grid is declared HERE, not on the row below: the toolbar's
-      // rail toggle has to query the same width the rail's own
-      // `@[52rem]/grid` gate reads, and an element cannot query a container it
-      // declares itself. The card and that row are the same width, so the
-      // threshold is unchanged.
+      // rail toggle must query the width the rail's `@[52rem]/grid` gate reads,
+      // and an element cannot query a container it declares itself. The card
+      // and that row are the same width, so the threshold is unchanged.
       className="@container/grid flex max-h-full min-h-0 flex-col overflow-hidden rounded-md border bg-card"
       onKeyDown={(event) => {
         if (event.key === 'Escape') handleEscapeEscalate();
@@ -752,7 +752,7 @@ export function TemplateConfigGridPanel({
             every capability stays editable on narrow containers. */}
         {isNarrow ? (
           <Sheet open={sheetOpen && !diffSheetOpen} onOpenChange={setSheetOpen}>
-            <SheetContent side="right" className="w-[320px] p-0 sm:max-w-[320px]">
+            <SheetContent side="right" size="narrow">
               <SheetHeader className="sr-only">
                 <SheetTitle>{t('extraction', 'inspectorSheetTitle')}</SheetTitle>
                 <SheetDescription>

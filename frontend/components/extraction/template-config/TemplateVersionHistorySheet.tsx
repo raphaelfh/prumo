@@ -195,7 +195,6 @@ export function TemplateVersionHistorySheet({
     >
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-[26rem]"
       >
         <SheetHeader className="border-b px-5 py-4 text-left">
           <SheetTitle>{t('templateConfig', 'historySheetTitle')}</SheetTitle>

@@ -52,7 +52,7 @@ async def _run_parse(
     from app.core.config import settings as app_settings
     from app.core.deps import get_supabase_client
     from app.core.factories import create_document_parser, create_storage_adapter
-    from app.services.api_key_service import APIKeyService
+    from app.services import llm_connection_service
     from app.services.document_parsing_service import DocumentParsingService
     from app.services.parser_settings_service import ParserSettingsService
     from app.worker._session import worker_session
@@ -64,12 +64,14 @@ async def _run_parse(
         # otherwise. An explicit "docling" never looks up a key.
         pref = await ParserSettingsService(session).get_for_project(UUID(project_id))
 
-        # BYOK llama_cloud key (BYOK > global); fetched only when the cloud
-        # path is reachable (auto or explicit llamaparse).
+        # llama_cloud key through the ONE ladder (§3.3): the kicker's own
+        # connection, the project's shared connection, then the global
+        # setting. Parsing records no LLM provenance, so only the key is used.
         llama_key: str | None = None
         if pref in ("auto", "llamaparse"):
-            # Parsing records no LLM provenance, so only the key is needed.
-            _resolved = await APIKeyService(session, user_id).get_key_for_provider("llama_cloud")
+            _resolved = await llm_connection_service.resolve_provider_key(
+                session, provider="llama_cloud", project_id=UUID(project_id), user_id=UUID(user_id)
+            )
             llama_key = _resolved.key if _resolved is not None else None
 
         if pref == "docling":

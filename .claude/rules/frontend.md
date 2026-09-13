@@ -43,11 +43,11 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   i18n) — never hardcode strings in components.
 - shadcn/Radix primitives; `cn()` merge order matters; every
   interactive element keeps a visible focus state.
-- **Every icon-only or short-label button exposes its description on
-  hover** via the shadcn `Tooltip` (`TooltipTrigger asChild`), with the
-  description text routed through `lib/copy/`. Icon-only buttons also
-  carry an `aria-label`. A bare icon or terse label ("No information",
-  a history glyph) must never leave the user guessing what it does.
+- **Every icon-only control is `IconButton`** (`components/patterns/IconButton.tsx`):
+  its required `label`, routed through `lib/copy/`, is the accessible name
+  and the tooltip. Text buttons get a tooltip only when it adds information.
+  A bare icon or terse label must never leave the user guessing what it does.
+  Gated by `scripts/fitness/check_ui_primitives.py`.
 - **A label that folds on a narrow bar folds to `sr-only`, never to
   `hidden`.** The idiom is `sr-only @[<w>]/<container>:not-sr-only` (see
   `TemplateConfigEditor`, `TemplateConfigPublishControls`,
@@ -55,10 +55,9 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   accessibility tree, so the control's accessible name silently loses the
   word it was collapsing — and an `aria-label` "fix" for that is worse: it
   REPLACES the composed name and erases any sibling chip or badge inside
-  the button. Verified live: the QA surface's AI-instruction trigger must read
-  "General AI instruction1 to customize", and the extraction config bar's AI
-  chip (`LlmEngineChip` — the bar's ONE trigger into `AiConfigDialog`) must
-  read "AI configuration<model>…1 to customize", warning included.
+  the button. Verified live: the QA surface's AI-instruction trigger
+  (`TemplateInstructionControl` — the config bar's ONE trigger into
+  `AiConfigDialog`) must read "General AI instruction1 to customize".
 - Visual language is authoritative in `frontend-ux` (it outranks the
   `frontend-design` plugin on core product UI — that plugin is for
   greenfield only). After a non-trivial UI change, verify with your

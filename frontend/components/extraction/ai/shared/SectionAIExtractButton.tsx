@@ -9,13 +9,7 @@
 
 import { Loader2, Sparkles } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { IconButton } from "@/components/patterns/IconButton";
 import { t } from "@/lib/copy";
 import { useRunEditability } from "@/components/runs/RunEditabilityContext";
 import { useSectionExtraction } from "@/hooks/extraction/useSectionExtraction";
@@ -84,31 +78,17 @@ export function SectionAIExtractButton({
       : t("extraction", "extractSectionWithAI").replace("{{label}}", entityLabel);
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="p-0 shrink-0"
-            onClick={handleClick}
-            disabled={disabled || loading}
-            title={label}
-            aria-label={label}
-            data-testid={`section-ai-extract-${entityTypeId}`}
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            ) : (
-              <Sparkles className="h-4 w-4 text-primary" />
-            )}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{label}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <IconButton
+      className="shrink-0"
+      onClick={handleClick}
+      disabled={disabled || loading}
+      label={label}
+      data-testid={`section-ai-extract-${entityTypeId}`}
+      icon={loading ? (
+        <Loader2 className="animate-spin text-primary" />
+      ) : (
+        <Sparkles className="text-primary" />
+      )}
+    />
   );
 }

@@ -62,7 +62,10 @@ guard that drifted or was never made.
   `project_template_active_service.owned_template`,
   `template_section_service.owned_section`,
   `article_read_service.owned_article`,
-  `ExtractionInstanceRepository.get_in_coordinate`. Need a new pair? Add
+  `ExtractionInstanceRepository.get_in_coordinate`,
+  `llm_connection_service.owned_user_connection` (a user-scope connection
+  in its owner), `llm_connection_service.owned_project_connection` (a
+  project-scope connection in its project). Need a new pair? Add
   ONE guard and import it — never copy a sibling. This list is load-bearing:
   the CI gate matches WHERE-clause shapes, so it cannot see a
   `db.get`-then-compare copy — the enumeration is what prevents copy #3.

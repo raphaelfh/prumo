@@ -95,3 +95,17 @@ describe('button size scale', () => {
     expect(classesOf('Go')).toContain('[@media(pointer:coarse)]:h-11');
   });
 });
+
+describe('button interaction feel', () => {
+  it('ghost shows a fill on hover and a stronger one while pressed, never a border', () => {
+    render(<Button variant="ghost">Go</Button>);
+    const classes = classesOf('Go');
+    expect(classes).toEqual(expect.arrayContaining(['hover:bg-accent', 'active:bg-accent/80']));
+    expect(classes).not.toContain('border');
+  });
+
+  it('changes colour silently (75 ms)', () => {
+    render(<Button>Go</Button>);
+    expect(classesOf('Go')).toContain('duration-75');
+  });
+});

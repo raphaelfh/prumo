@@ -98,7 +98,11 @@ describe("ParseStatusControl", () => {
     (apiClient as ReturnType<typeof vi.fn>).mockResolvedValue({});
     renderControl({ id: "f1", extractionStatus: "parse_failed", extractionError: "libxcb.so.1 missing" });
     await user.hover(screen.getByRole("button", { name: /docReparse/ }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("libxcb.so.1 missing");
+    const tip = await screen.findByRole("tooltip");
+    expect(tip).toHaveTextContent("libxcb.so.1 missing");
+    // IconButton wraps tooltip content in a <span>; a <p> (block) inside it
+    // is invalid HTML (block-in-inline) — the lines must be <span className="block">.
+    expect(tip.querySelector("p")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /docReparse/ }));
     await waitFor(() => {
       expect(apiClient).toHaveBeenCalledWith("/api/v1/article-files/f1/reparse", { method: "POST" });

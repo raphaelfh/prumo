@@ -17,16 +17,13 @@
 import { type ReactNode, type Ref, useImperativeHandle, useRef, useState } from 'react';
 import { ListTree } from 'lucide-react';
 import SectionNavRail from '@/components/extraction/SectionNavRail';
-import { HeaderIconButton } from '@/components/layout/HeaderIconButton';
+import { IconButton } from '@/components/patterns/IconButton';
 import { useRunEditability } from '@/components/runs/RunEditabilityContext';
 import { SectionOpenContext, type SectionOpenState } from '@/components/runs/SectionOpenContext';
-import { KbdBadge } from '@/components/ui/kbd-badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useJumpToNextPendingField } from '@/hooks/extraction/useJumpToNextPendingField';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { t } from '@/lib/copy';
 import { globalProgressFromRegistry, type SectionNavItem } from '@/lib/extraction/sectionRegistry';
-import { ariaKeyShortcuts } from '@/lib/platform';
 import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'prumo:run:section-nav:open';
@@ -118,26 +115,15 @@ export function SectionNavLayout({ items, activeId, onSelect, children, ref }: S
           )}
         >
           <div className={cn(railOpen && 'px-1.5 pb-1')}>
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <HeaderIconButton
-                    type="button"
-                    onClick={toggleRail}
-                    aria-expanded={railOpen}
-                    aria-label={toggleLabel}
-                    aria-keyshortcuts={ariaKeyShortcuts(TOGGLE_KEYS)}
-                    className={cn(railOpen && 'text-foreground')}
-                  >
-                    <ListTree strokeWidth={1.5} />
-                  </HeaderIconButton>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="flex items-center gap-2">
-                  <span>{toggleLabel}</span>
-                  <KbdBadge keys={TOGGLE_KEYS} />
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <IconButton
+              label={toggleLabel}
+              shortcut={TOGGLE_KEYS}
+              side="right"
+              onClick={toggleRail}
+              aria-expanded={railOpen}
+              className={cn(railOpen && 'text-foreground')}
+              icon={<ListTree strokeWidth={1.5} />}
+            />
           </div>
           {railOpen && (
             <SectionNavRail

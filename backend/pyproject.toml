@@ -36,6 +36,7 @@ dependencies = [
     "openai>=1.0.0",
     "pydantic-ai-slim[openai,anthropic,google]>=1.107.0,<2.0.0",
     "logfire[fastapi,celery]>=3.0.0",
+    "pyyaml>=6.0",
     # PDF Processing
     "pymupdf>=1.24.0",  # fitz — simple/free parser (PymupdfParser)
     # Pinned: the parser stack is drift-sensitive — an unpinned rapidocr bump to
@@ -205,3 +206,13 @@ ignore_decorators = [
 # Pydantic settings/schema declaration.
 ignore_names = ["model_config", "cls"]
 min_confidence = 60
+
+[tool.uv]
+# CVE floor for a TRANSITIVE dependency (docling-ibm-models pulls
+# transformers). docling caps transformers <5.9 on darwin only; Linux (CI,
+# the Railway image) allows <6. Without this marker-scoped constraint the
+# universal lock keeps one version for both platforms and ships the
+# vulnerable 5.8.x (PYSEC-2026-3929, fixed in 5.10.0) to Linux.
+constraint-dependencies = [
+    "transformers>=5.10.0; sys_platform != 'darwin'",
+]

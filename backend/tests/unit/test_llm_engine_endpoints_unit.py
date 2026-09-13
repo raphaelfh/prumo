@@ -21,12 +21,19 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.api.v1.endpoints.llm_engine import get_llm_engine, set_llm_engine
+from app.api.v1.endpoints.llm_engine import (
+    clear_my_llm_engine,
+    get_llm_engine,
+    set_llm_engine,
+    set_my_llm_engine,
+)
 from app.schemas.llm_engine import (
-    LlmEngineAlternate,
+    LlmEngineDefaultRead,
+    LlmEngineEffectiveRead,
     LlmEngineRead,
     LlmEngineStored,
     LlmEngineUpdateRequest,
+    UserEngineUpdateRequest,
 )
 from app.services.parser_settings_service import ProjectNotFoundError
 
@@ -34,17 +41,30 @@ _EP = "app.api.v1.endpoints.llm_engine"
 
 _get = getattr(get_llm_engine, "__wrapped__", get_llm_engine)
 _put = getattr(set_llm_engine, "__wrapped__", set_llm_engine)
+_put_me = getattr(set_my_llm_engine, "__wrapped__", set_my_llm_engine)
+_delete_me = getattr(clear_my_llm_engine, "__wrapped__", clear_my_llm_engine)
 
 
 def _read(provider: str = "openai", model: str = "gpt-4o-mini") -> LlmEngineRead:
     return LlmEngineRead(
-        provider=provider,
-        model=model,
-        mode="fast",
-        source="default",
-        retired=False,
+        default=LlmEngineDefaultRead(
+            provider=provider,
+            model=model,
+            mode="fast",
+            source="env_default",
+            retired=False,
+            user_choice_allowed=True,
+        ),
+        effective=LlmEngineEffectiveRead(
+            provider=provider,
+            model=model,
+            mode="fast",
+            source="env_default",
+            retired=False,
+        ),
+        source="env_default",
         catalog=[],
-        availability={"openai": True, "anthropic": False},
+        availability={"openai": "global", "anthropic": None},
     )
 
 
@@ -93,8 +113,9 @@ async def test_get_maps_missing_project_to_404() -> None:
 async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
     """The service receives NAMED validated fields — ``updated_by`` from the
     auth dependency, never the body — and the response is the re-read view.
-    ``endpoint_id`` (B8) rides the same named pass-through."""
-    project_id, manager, endpoint_id = uuid4(), uuid4(), uuid4()
+    ``user_choice_allowed`` (the manager lock) rides the same named
+    pass-through."""
+    project_id, manager = uuid4(), uuid4()
     data = _read(model="gpt-4o")
     service = MagicMock()
     service.set_for_project = AsyncMock(
@@ -107,10 +128,7 @@ async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
         resp = await _put(
             project_id=project_id,
             body=LlmEngineUpdateRequest(
-                provider="openai",
-                model="gpt-4o",
-                alternates=[LlmEngineAlternate(provider="anthropic", model="claude-sonnet-5")],
-                endpoint_id=endpoint_id,
+                provider="openai", model="gpt-4o", user_choice_allowed=False
             ),
             request=_request(),
             db=db,
@@ -125,8 +143,7 @@ async def test_put_writes_named_fields_and_returns_the_fresh_read() -> None:
         model="gpt-4o",
         mode="fast",
         updated_by=manager,
-        alternates=[LlmEngineAlternate(provider="anthropic", model="claude-sonnet-5")],
-        endpoint_id=endpoint_id,
+        user_choice_allowed=False,
     )
     db.commit.assert_awaited_once()
 
@@ -159,30 +176,98 @@ async def test_put_maps_service_errors_to_status(raised: Exception, expected_sta
     assert exc_info.value.status_code == expected_status
 
 
+# ---------------------------------------------------------------------------
+# PUT / DELETE …/llm-engine/me — the viewer's own row
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.asyncio
-async def test_put_maps_an_alternates_value_error_to_400() -> None:
-    """The alternates write-gate ValueError rides the same 400 mapping —
-    and the body's alternates actually reach the service call."""
+async def test_put_me_writes_the_viewer_row_and_returns_the_fresh_read() -> None:
+    """The write takes the viewer from the auth dependency (never the body)
+    and ``is_manager`` from the single membership helper; the response is
+    the re-read view, committed."""
+    project_id, viewer = uuid4(), uuid4()
+    data = _read(provider="anthropic", model="claude-haiku-4-5")
     service = MagicMock()
-    service.set_for_project = AsyncMock(
-        side_effect=ValueError(
-            "Unknown alternate engine openai:gpt-99 — not in the server catalogue"
-        )
-    )
-    alternates = [LlmEngineAlternate(provider="openai", model="gpt-99")]
+    service.get_engine_read = AsyncMock(return_value=data)
+    db = AsyncMock()
+    set_row = AsyncMock()
 
     with (
+        patch(f"{_EP}.set_user_engine", set_row),
+        patch(f"{_EP}.viewer_is_manager", AsyncMock(return_value=False)),
         patch(f"{_EP}.LlmEngineService", return_value=service),
-        pytest.raises(HTTPException) as exc_info,
     ):
-        await _put(
-            project_id=uuid4(),
-            body=LlmEngineUpdateRequest(provider="openai", model="gpt-4o", alternates=alternates),
+        resp = await _put_me(
+            project_id=project_id,
+            body=UserEngineUpdateRequest(provider="anthropic", model="claude-haiku-4-5"),
             request=_request(),
-            db=AsyncMock(),
-            manager_id=uuid4(),
+            db=db,
+            viewer_id=viewer,
         )
 
-    assert exc_info.value.status_code == 400
-    assert "alternate engine" in exc_info.value.detail
-    assert service.set_for_project.await_args.kwargs["alternates"] == alternates
+    assert resp.ok is True
+    assert resp.data is data
+    assert resp.trace_id == "trace-llm-engine"
+    set_row.assert_awaited_once_with(
+        db,
+        user_id=viewer,
+        project_id=project_id,
+        provider="anthropic",
+        model="claude-haiku-4-5",
+        mode="fast",
+        connection_id=None,
+        is_manager=False,
+    )
+    service.get_engine_read.assert_awaited_once_with(project_id, viewer)
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raised", "expected_status"),
+    [
+        (ValueError("Unknown engine"), 400),
+        (ProjectNotFoundError("Project x not found"), 404),
+    ],
+    ids=["invalid-pair", "missing-project"],
+)
+async def test_put_me_maps_service_errors_to_status(
+    raised: Exception, expected_status: int
+) -> None:
+    """``EngineLockedError`` / ``EngineNeedsKeyError`` are AppErrors and
+    deliberately NOT caught here — the registered handler serves their typed
+    403 / 422 envelopes; only a bad pair (400) and a missing project (404)
+    are mapped."""
+    db = AsyncMock()
+
+    with (
+        patch(f"{_EP}.set_user_engine", AsyncMock(side_effect=raised)),
+        patch(f"{_EP}.viewer_is_manager", AsyncMock(return_value=False)),
+        patch(f"{_EP}.LlmEngineService", return_value=MagicMock()),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await _put_me(
+            project_id=uuid4(),
+            body=UserEngineUpdateRequest(provider="openai", model="gpt-4o"),
+            request=_request(),
+            db=db,
+            viewer_id=uuid4(),
+        )
+
+    assert exc_info.value.status_code == expected_status
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_me_clears_the_viewer_row_and_commits() -> None:
+    project_id, viewer = uuid4(), uuid4()
+    db = AsyncMock()
+
+    with patch(f"{_EP}.clear_user_engine", AsyncMock(return_value=True)) as clear_row:
+        resp = await _delete_me(project_id=project_id, request=_request(), db=db, viewer_id=viewer)
+
+    assert resp.ok is True
+    assert resp.data.cleared is True
+    clear_row.assert_awaited_once_with(db, user_id=viewer, project_id=project_id)
+    db.commit.assert_awaited_once()

@@ -14,7 +14,7 @@
 
 import {useState} from 'react';
 import {Input} from '@/components/ui/input';
-import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Badge} from '@/components/ui/badge';
 import {KbdBadge} from '@/components/ui/kbd-badge';
 import {GripVertical, Plus, X} from 'lucide-react';
@@ -92,16 +92,14 @@ function SortableItem({ id, value, index, onRemove, disabled }: SortableItemProp
       <Badge variant="secondary" className="text-xs">
         {index + 1}
       </Badge>
-      <Button
-        type="button"
-        variant="ghost"
+      <IconButton
         size="icon-xs"
         className="opacity-0 group-hover:opacity-100 transition-opacity"
         onClick={onRemove}
         disabled={disabled}
-      >
-        <X className="h-3 w-3" />
-      </Button>
+        label={t('extraction', 'optionRemove')}
+        icon={<X />}
+      />
     </div>
   );
 }
@@ -194,15 +192,13 @@ export function AllowedValuesList({
             <p className="text-xs text-destructive mt-1">{error}</p>
           )}
         </div>
-        <Button
-          type="button"
+        <IconButton
           onClick={handleAdd}
           disabled={disabled || !inputValue.trim()}
-          size="icon"
           variant="outline"
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
+          label={t('extraction', 'optionAdd')}
+          icon={<Plus />}
+        />
       </div>
 
       {/* Lista de valores */}
@@ -250,16 +246,14 @@ export function AllowedValuesList({
                   <Badge variant="secondary" className="text-xs">
                     {index + 1}
                   </Badge>
-                  <Button
-                    type="button"
-                    variant="ghost"
+                  <IconButton
                     size="icon-xs"
                     className="opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => handleRemove(index)}
                     disabled={disabled}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+                    label={t('extraction', 'optionRemove')}
+                    icon={<X />}
+                  />
                 </div>
               ))
             )}

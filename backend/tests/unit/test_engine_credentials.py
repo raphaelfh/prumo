@@ -1,394 +1,223 @@
-"""B9 — the ONE engine-credentials resolver.
-
-Every LLM call site resolves (api_key, key_scope, base_url, endpoint_id)
-here, so an endpoint engine can never run on a cloud key and a cloud
-engine can never inherit a stale base_url. The two collaborators are
-patched in the RESOLVER's namespace (``LlmEndpointService`` /
-``APIKeyService``) — the seam every caller shares.
-
-The endpoint branch NEVER falls back to the cloud path: an endpoint the
-project no longer has (deleted, or a cross-project id riding a pinned
-snapshot) is the typed ``EndpointUnavailableError``, not somebody else's
-key.
-"""
+"""The ONE place an engine turns into credentials (§3.3): a pinned
+connection through the owner guard, else the one ladder; never a cloud
+fallback for a pinned host."""
 
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
 
 import app.services.engine_credentials as ec
 from app.schemas.llm_target import LlmTarget
-from app.services.api_key_service import KeyScope, ResolvedKey
 from app.services.engine_credentials import (
     EngineCredentials,
     rekey_for_adopted_engine,
     resolve_engine_credentials,
 )
-from app.services.llm_endpoint_service import EndpointNotFoundError, EndpointUnavailableError
+from app.services.llm_connection_service import (
+    ConnectionUnavailableError,
+    KeyScope,
+    ResolvedKey,
+)
 
-_PROJECT = UUID("11111111-1111-1111-1111-111111111111")
-_USER = "22222222-2222-2222-2222-222222222222"
-_KEY = "sk-endpoint-secret-material"
+_PROJECT = uuid4()
+_USER = uuid4()
+_CID_A = str(uuid4())
+_CID_B = str(uuid4())
+_CID_C = str(uuid4())
 
 
-def _endpoint_row(base_url: str = "https://llm.lab.example.com/v1") -> MagicMock:
-    row = MagicMock()
-    row.base_url = base_url
+def _row(connection_id: UUID, *, base_url: str = "https://8.8.8.8/v1") -> Any:
+    row = type("Row", (), {})()
+    row.id, row.base_url, row.label, row.encrypted_api_key = (
+        connection_id,
+        base_url,
+        "host",
+        "cipher",
+    )
     return row
 
 
-def _stub_endpoint_service(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    row: Any = None,
-    get_error: Exception | None = None,
-    key: str | None = _KEY,
-    decrypt_error: Exception | None = None,
-) -> dict[str, Any]:
-    """Patch the resolver's ``LlmEndpointService`` seam; return the call log."""
-    log: dict[str, Any] = {}
+def _stub_guard(monkeypatch: pytest.MonkeyPatch, row: Any | None) -> list[tuple[UUID, UUID]]:
+    calls: list[tuple[UUID, UUID]] = []
 
+    async def fake(_db: Any, connection_id: UUID, user_id: UUID) -> Any:
+        calls.append((connection_id, user_id))
+        return row
+
+    monkeypatch.setattr(ec, "owned_user_connection", fake)
+    return calls
+
+
+def _stub_decrypt(
+    monkeypatch: pytest.MonkeyPatch, key: str | None, error: Exception | None = None
+) -> None:
     class _Service:
-        def __init__(self, db: Any) -> None:
-            log["db"] = db
+        def __init__(self, _db: Any) -> None: ...
 
-        async def get(self, project_id: UUID, endpoint_id: UUID) -> Any:
-            log["get"] = (project_id, endpoint_id)
-            if get_error is not None:
-                raise get_error
-            return row
-
-        async def decrypt_key(self, endpoint: Any) -> str | None:
-            log["decrypted"] = endpoint
-            if decrypt_error is not None:
-                raise decrypt_error
+        async def decrypt_key(self, _row: Any) -> str | None:
+            if error is not None:
+                raise error
             return key
 
-    monkeypatch.setattr(ec, "LlmEndpointService", _Service)
-    return log
+    monkeypatch.setattr(ec, "LlmConnectionService", _Service)
 
 
-def _stub_key_service(
-    monkeypatch: pytest.MonkeyPatch,
-    resolved: ResolvedKey | None,
-) -> list[Any]:
-    """Patch the resolver's ``APIKeyService`` seam; return the ask log."""
-    asked: list[Any] = []
+def _stub_ladder(monkeypatch: pytest.MonkeyPatch, resolved: ResolvedKey | None) -> list[str]:
+    asked: list[str] = []
 
-    class _Keys:
-        def __init__(self, _db: Any, user_id: Any) -> None:
-            asked.append(("init", user_id))
+    async def fake(_session: Any, *, provider: str, **_kwargs: Any) -> ResolvedKey | None:
+        asked.append(provider)
+        return resolved
 
-        async def get_key_for_provider(self, provider: str) -> ResolvedKey | None:
-            asked.append(("ask", provider))
-            return resolved
-
-    monkeypatch.setattr(ec, "APIKeyService", _Keys)
+    monkeypatch.setattr(ec, "resolve_provider_key", fake)
     return asked
 
 
 @pytest.mark.asyncio
-async def test_endpoint_engine_resolves_key_scope_url_and_id(
+async def test_pinned_connection_resolves_through_the_owner_guard(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The endpoint branch returns all four fields together — the key, the
-    SHARED_ENDPOINT scope, the row's base_url and the identity it was
-    resolved FOR — and never touches the cloud key path."""
-    endpoint_id = uuid4()
-    log = _stub_endpoint_service(monkeypatch, row=_endpoint_row())
-    asked = _stub_key_service(monkeypatch, ResolvedKey("sk-cloud", KeyScope.USER_BYOK))
-
+    cid = uuid4()
+    calls = _stub_guard(monkeypatch, _row(cid))
+    _stub_decrypt(monkeypatch, "sk-host")
+    asked = _stub_ladder(monkeypatch, ResolvedKey("cloud", KeyScope.GLOBAL_SERVICE))
     creds = await resolve_engine_credentials(
-        MagicMock(),
-        user_id=_USER,
+        object(),
+        user_id=str(_USER),
         project_id=_PROJECT,
-        engine=LlmTarget(
-            provider="openai_compatible", model="llama3", endpoint_id=str(endpoint_id)
-        ),
+        engine=LlmTarget(provider="openai_compatible", model="llama3", connection_id=str(cid)),
     )
-
     assert creds == EngineCredentials(
-        api_key=_KEY,
-        key_scope=KeyScope.SHARED_ENDPOINT,
-        base_url="https://llm.lab.example.com/v1",
-        endpoint_id=str(endpoint_id),
-    )
-    # Project-scoped fetch: a cross-project id in a pinned snapshot must be a
-    # miss, never another project's key (BOLA gate).
-    assert log["get"] == (_PROJECT, endpoint_id)
-    assert asked == [], f"the endpoint branch reached the cloud key path: {asked}"
-
-
-@pytest.mark.asyncio
-async def test_keyless_endpoint_resolves_to_no_key_but_keeps_the_url(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A keyless endpoint (local Ollama) is legal: ``api_key`` is None and
-    ``build_model``'s ``no-key-required`` placeholder covers it — the
-    base_url still has to travel."""
-    _stub_endpoint_service(
-        monkeypatch, row=_endpoint_row("https://ollama.lab.example.com/v1"), key=None
-    )
-    _stub_key_service(monkeypatch, None)
-
-    creds = await resolve_engine_credentials(
-        MagicMock(),
-        user_id=_USER,
-        project_id=_PROJECT,
-        engine=LlmTarget(provider="openai_compatible", model="llama3", endpoint_id=str(uuid4())),
-    )
-
-    assert creds.api_key is None
-    assert creds.key_scope is KeyScope.SHARED_ENDPOINT
-    assert creds.base_url == "https://ollama.lab.example.com/v1"
-
-
-@pytest.mark.asyncio
-async def test_missing_endpoint_is_the_typed_error_never_a_cloud_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Deleted endpoint (or a cross-project id): typed 409, and the cloud
-    key path is NEVER consulted — a silent fallback would bill a stranger's
-    key and run a different engine than the run is pinned to."""
-    endpoint_id = uuid4()
-    _stub_endpoint_service(monkeypatch, get_error=EndpointNotFoundError("gone"))
-    asked = _stub_key_service(monkeypatch, ResolvedKey("sk-cloud", KeyScope.GLOBAL_SERVICE))
-
-    with pytest.raises(EndpointUnavailableError) as excinfo:
-        await resolve_engine_credentials(
-            MagicMock(),
-            user_id=_USER,
-            project_id=_PROJECT,
-            engine=LlmTarget(
-                provider="openai_compatible", model="llama3", endpoint_id=str(endpoint_id)
-            ),
-        )
-
-    assert excinfo.value.code == "LLM_ENDPOINT_UNAVAILABLE"
-    assert asked == [], f"a missing endpoint fell back to a cloud key: {asked}"
-
-
-@pytest.mark.asyncio
-async def test_undecryptable_endpoint_key_propagates_the_typed_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``decrypt_key`` already maps ``InvalidToken`` to the typed error (B4);
-    the resolver must not swallow it into a keyless run."""
-    _stub_endpoint_service(
-        monkeypatch,
-        row=_endpoint_row(),
-        decrypt_error=EndpointUnavailableError("cannot be decrypted"),
-    )
-    asked = _stub_key_service(monkeypatch, ResolvedKey("sk-cloud", KeyScope.GLOBAL_SERVICE))
-
-    with pytest.raises(EndpointUnavailableError):
-        await resolve_engine_credentials(
-            MagicMock(),
-            user_id=_USER,
-            project_id=_PROJECT,
-            engine=LlmTarget(
-                provider="openai_compatible", model="llama3", endpoint_id=str(uuid4())
-            ),
-        )
-    assert asked == []
-
-
-@pytest.mark.asyncio
-async def test_catalog_engine_passes_through_to_the_api_key_service(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """No ``endpoint_id`` → exactly today's BYOK-then-global lookup, with no
-    base_url and no endpoint identity."""
-    _stub_endpoint_service(monkeypatch, row=_endpoint_row())
-    asked = _stub_key_service(monkeypatch, ResolvedKey("sk-cloud", KeyScope.USER_BYOK))
-
-    creds = await resolve_engine_credentials(
-        MagicMock(),
-        user_id=_USER,
-        project_id=_PROJECT,
-        engine=LlmTarget(provider="anthropic", model="claude-sonnet-5"),
-    )
-
-    assert creds == EngineCredentials(
-        api_key="sk-cloud",
+        api_key="sk-host",
         key_scope=KeyScope.USER_BYOK,
-        base_url=None,
-        endpoint_id=None,
+        base_url="https://8.8.8.8/v1",
+        connection_id=str(cid),
     )
-    assert asked == [("init", _USER), ("ask", "anthropic")]
+    assert calls == [(cid, _USER)] and asked == []
 
 
 @pytest.mark.asyncio
-async def test_catalog_engine_with_no_key_anywhere_resolves_to_all_none(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("connection_id", [str(uuid4()), "not-a-uuid"])
+async def test_missing_foreign_or_corrupt_pin_is_the_typed_409_never_a_cloud_key(
+    monkeypatch: pytest.MonkeyPatch, connection_id: str
 ) -> None:
-    """Nothing stored: no key and no scope — ``build_model``'s global
-    fallback stays the last resort, and no scope is invented."""
-    _stub_key_service(monkeypatch, None)
-
-    creds = await resolve_engine_credentials(
-        MagicMock(),
-        user_id=_USER,
-        project_id=_PROJECT,
-        engine=LlmTarget(provider="openai", model="gpt-4o-mini"),
-    )
-
-    assert creds == EngineCredentials(api_key=None, key_scope=None, base_url=None, endpoint_id=None)
-
-
-def test_repr_never_carries_the_key() -> None:
-    """§5.2: the key is never logged. These objects ride in service
-    attributes that land in tracebacks and debug logs, so the default
-    dataclass repr (which prints every field) is not acceptable."""
-    creds = EngineCredentials(
-        api_key=_KEY,
-        key_scope=KeyScope.SHARED_ENDPOINT,
-        base_url="https://llm.lab.example.com/v1",
-        endpoint_id="0b8f3d3e-8a54-4c1e-9d8e-1f2a3b4c5d6e",
-    )
-
-    for rendered in (repr(creds), str(creds), f"{creds}", repr([creds])):
-        assert _KEY not in rendered, f"the key leaked into {rendered!r}"
-    assert "redacted" in repr(creds)
-    # The safe half must still be debuggable.
-    assert "shared_endpoint" in repr(creds)
-    assert "https://llm.lab.example.com/v1" in repr(creds)
-    assert "0b8f3d3e-8a54-4c1e-9d8e-1f2a3b4c5d6e" in repr(creds)
-    assert "api_key=None" in repr(EngineCredentials(None, None, None, None))
-
-
-@pytest.mark.asyncio
-async def test_malformed_endpoint_id_is_the_typed_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A pinned snapshot carries the endpoint id as a plain JSON string, so a
-    hand-edited/corrupt one reaches here — typed 409, never a raw 500."""
-    _stub_endpoint_service(monkeypatch, row=_endpoint_row())
-    asked = _stub_key_service(monkeypatch, ResolvedKey("sk-cloud", KeyScope.GLOBAL_SERVICE))
-
-    with pytest.raises(EndpointUnavailableError):
+    _stub_guard(monkeypatch, None)
+    asked = _stub_ladder(monkeypatch, ResolvedKey("cloud", KeyScope.GLOBAL_SERVICE))
+    with pytest.raises(ConnectionUnavailableError):
         await resolve_engine_credentials(
-            MagicMock(),
+            object(),
             user_id=_USER,
             project_id=_PROJECT,
-            engine=LlmTarget(
-                provider="openai_compatible", model="llama3", endpoint_id="not-a-uuid"
-            ),
+            engine=LlmTarget(provider="openai_compatible", model="m", connection_id=connection_id),
         )
     assert asked == []
+
+
+@pytest.mark.asyncio
+async def test_undecryptable_pin_propagates_the_typed_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cid = uuid4()
+    _stub_guard(monkeypatch, _row(cid))
+    _stub_decrypt(monkeypatch, None, ConnectionUnavailableError("cannot decrypt"))
+    with pytest.raises(ConnectionUnavailableError):
+        await resolve_engine_credentials(
+            object(),
+            user_id=_USER,
+            project_id=_PROJECT,
+            engine=LlmTarget(provider="openai_compatible", model="m", connection_id=str(cid)),
+        )
+
+
+@pytest.mark.asyncio
+async def test_keyless_host_is_legal(monkeypatch: pytest.MonkeyPatch) -> None:
+    cid = uuid4()
+    _stub_guard(monkeypatch, _row(cid))
+    _stub_decrypt(monkeypatch, None)
+    creds = await resolve_engine_credentials(
+        object(),
+        user_id=_USER,
+        project_id=_PROJECT,
+        engine=LlmTarget(provider="openai_compatible", model="m", connection_id=str(cid)),
+    )
+    assert creds.api_key is None and creds.key_scope is KeyScope.USER_BYOK and creds.base_url
+
+
+@pytest.mark.asyncio
+async def test_catalogue_engine_walks_the_one_ladder(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked = _stub_ladder(monkeypatch, ResolvedKey("sk-shared", KeyScope.PROJECT_SHARED))
+    creds = await resolve_engine_credentials(
+        object(),
+        user_id=_USER,
+        project_id=_PROJECT,
+        engine=LlmTarget(provider="anthropic", model="m"),
+    )
+    assert creds == EngineCredentials(
+        api_key="sk-shared", key_scope=KeyScope.PROJECT_SHARED, base_url=None, connection_id=None
+    )
+    assert asked == ["anthropic"]
+
+
+@pytest.mark.asyncio
+async def test_no_key_anywhere_is_none_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_ladder(monkeypatch, None)
+    creds = await resolve_engine_credentials(
+        object(), user_id=_USER, project_id=_PROJECT, engine=LlmTarget(provider="openai", model="m")
+    )
+    assert creds == EngineCredentials(
+        api_key=None, key_scope=None, base_url=None, connection_id=None
+    )
+
+
+def test_repr_never_prints_the_key() -> None:
+    creds = EngineCredentials(
+        api_key="sk-secret", key_scope=KeyScope.USER_BYOK, base_url=None, connection_id=None
+    )
+    assert "sk-secret" not in repr(creds) and "<redacted>" in repr(creds)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("keyed_for", "current_endpoint", "engine_endpoint"),
+    ("keyed_for", "current_cid", "engine_cid", "expect_rekey"),
     [
-        pytest.param(None, None, "e1", id="no-declared-identity"),
-        pytest.param("openai", None, None, id="same-catalog-engine"),
-        pytest.param("openai_compatible", "e1", "e1", id="same-endpoint"),
+        ("openai", None, None, False),
+        ("openai", None, _CID_C, True),
+        ("openai_compatible", _CID_A, _CID_B, True),
+        ("openai_compatible", _CID_A, _CID_A, False),
+        (None, None, None, False),
+        (None, _CID_A, _CID_A, True),
     ],
 )
-async def test_rekey_returns_none_when_the_identity_still_fits(
+async def test_rekey_identity_is_provider_plus_connection(
     monkeypatch: pytest.MonkeyPatch,
     keyed_for: str | None,
-    current_endpoint: str | None,
-    engine_endpoint: str | None,
+    current_cid: str | None,
+    engine_cid: str | None,
+    expect_rekey: bool,
 ) -> None:
-    """No re-resolution when the settled engine is the one the credentials
-    were resolved for — and never for a caller that declared no identity."""
-    asked = _stub_key_service(monkeypatch, ResolvedKey("sk-cloud", KeyScope.USER_BYOK))
-    _stub_endpoint_service(monkeypatch, row=_endpoint_row())
-
-    rekeyed = await rekey_for_adopted_engine(
-        MagicMock(),
+    asked = _stub_ladder(monkeypatch, ResolvedKey("k", KeyScope.USER_BYOK))
+    _stub_guard(monkeypatch, _row(uuid4()))
+    _stub_decrypt(monkeypatch, "k")
+    provider = "openai_compatible" if engine_cid else "openai"
+    result = await rekey_for_adopted_engine(
+        object(),
         user_id=_USER,
         project_id=_PROJECT,
-        engine=LlmTarget(provider=keyed_for or "openai", model="m", endpoint_id=engine_endpoint),
-        current=EngineCredentials(None, None, None, current_endpoint),
+        engine=LlmTarget(provider=provider, model="m", connection_id=engine_cid),
+        current=EngineCredentials(
+            api_key="old", key_scope=KeyScope.USER_BYOK, base_url=None, connection_id=current_cid
+        ),
         keyed_for=keyed_for,
     )
-
-    assert rekeyed is None
-    assert asked == []
+    assert (result is not None) is expect_rekey, asked
 
 
-@pytest.mark.asyncio
-async def test_rekey_re_resolves_endpoint_credentials_for_an_undeclared_identity(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``keyed_for=None`` means "no identity declared" — that licenses
-    reusing CATALOGUE credentials, never an ENDPOINT's.
-
-    An endpoint credential is a key bound to one host; a caller that cannot
-    say which engine it was keyed for cannot vouch that it is this one, so
-    the pair is re-resolved instead of shipped to whatever host settles.
-    """
-    _stub_endpoint_service(monkeypatch, row=_endpoint_row("https://b.example.com/v1"), key="key-b")
-    endpoint_a, endpoint_b = str(uuid4()), str(uuid4())
-
-    rekeyed = await rekey_for_adopted_engine(
-        MagicMock(),
-        user_id=_USER,
-        project_id=_PROJECT,
-        engine=LlmTarget(provider="openai_compatible", model="m", endpoint_id=endpoint_b),
-        current=EngineCredentials(
-            "key-a", KeyScope.SHARED_ENDPOINT, "https://a.example.com/v1", endpoint_a
-        ),
-        keyed_for=None,
+def test_legacy_pinned_snapshot_with_endpoint_id_validates() -> None:
+    """§7.4 read tolerance: nothing writes ``endpoint_id`` again; old pins read."""
+    target = LlmTarget.model_validate(
+        {"provider": "openai_compatible", "model": "m", "endpoint_id": "x"}
     )
-
-    assert rekeyed == EngineCredentials(
-        api_key="key-b",
-        key_scope=KeyScope.SHARED_ENDPOINT,
-        base_url="https://b.example.com/v1",
-        endpoint_id=endpoint_b,
-    )
-
-
-@pytest.mark.asyncio
-async def test_rekey_fires_for_two_endpoints_sharing_one_provider(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """THE blocking case: both engines say ``openai_compatible``, so only the
-    endpoint half of the identity can tell them apart — provider equality
-    alone would run endpoint B's pin on endpoint A's key and host."""
-    _stub_endpoint_service(monkeypatch, row=_endpoint_row("https://b.example.com/v1"), key="key-b")
-    endpoint_a, endpoint_b = str(uuid4()), str(uuid4())
-
-    rekeyed = await rekey_for_adopted_engine(
-        MagicMock(),
-        user_id=_USER,
-        project_id=_PROJECT,
-        engine=LlmTarget(provider="openai_compatible", model="m", endpoint_id=endpoint_b),
-        current=EngineCredentials(
-            "key-a", KeyScope.SHARED_ENDPOINT, "https://a.example.com/v1", endpoint_a
-        ),
-        keyed_for="openai_compatible",
-    )
-
-    assert rekeyed == EngineCredentials(
-        api_key="key-b",
-        key_scope=KeyScope.SHARED_ENDPOINT,
-        base_url="https://b.example.com/v1",
-        endpoint_id=endpoint_b,
-    )
-
-
-@pytest.mark.asyncio
-async def test_user_id_may_be_a_uuid_object(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The worker holds a str, the services a UUID — both reach the same
-    ``APIKeyService`` unchanged."""
-    asked = _stub_key_service(monkeypatch, None)
-    user = uuid4()
-
-    await resolve_engine_credentials(
-        AsyncMock(),
-        user_id=user,
-        project_id=_PROJECT,
-        engine=LlmTarget(provider="openai", model="gpt-4o-mini"),
-    )
-
-    assert asked[0] == ("init", user)
+    assert target.connection_id is None and target.deviation is False

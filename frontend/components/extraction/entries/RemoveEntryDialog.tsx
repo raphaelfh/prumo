@@ -9,6 +9,7 @@
 import {useState} from 'react';
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -86,7 +87,7 @@ export function RemoveEntryDialog({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && !loading && onCancel()}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
             <Trash2 className="h-5 w-5" />
@@ -99,7 +100,7 @@ export function RemoveEntryDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <DialogBody className="space-y-4">
             {/* Warning if there is extracted data */}
           {hasExtractedData ? (
             <Alert variant="destructive">
@@ -164,7 +165,7 @@ export function RemoveEntryDialog({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button

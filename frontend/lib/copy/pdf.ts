@@ -17,6 +17,9 @@ export const pdf = {
     viewerZoomLevel: 'Zoom level',
     viewerSearch: 'Search in document',
     viewerSearchHint: '⌘F / Ctrl+F',
+    viewerSearchPrevMatch: 'Previous match',
+    viewerSearchNextMatch: 'Next match',
+    viewerSearchClose: 'Close search',
     readerEmpty:
       'The parsed text is not ready yet. Parsing usually finishes shortly after upload — try again in a minute, or switch back to the original file.',
     readerLoading: 'Loading parsed text…',

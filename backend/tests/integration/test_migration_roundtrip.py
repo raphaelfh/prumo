@@ -27,7 +27,6 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -1329,109 +1328,8 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0071_registry_providers"
+    expected_head = "0073_drop_legacy_credentials"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
-
-
-_PROVIDER_CHECK_DEF = text(
-    "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
-    "WHERE conname = 'user_api_keys_provider_check'"
-)
-
-
-@pytest.mark.asyncio
-async def test_provider_check_constraint_matches_the_registry_at_head(
-    migration_session: AsyncSession,
-) -> None:
-    """The drift guard reaches the live database, not just the SQLAlchemy
-    model. ``tests/unit/llm/test_registry.py`` pins the CHECK literal baked
-    into ``UserAPIKey.__table__`` against the registry, but that only
-    proves the Python-side model and the registry agree — the migration
-    that actually shipped the CHECK to Postgres could still diverge (a
-    forgotten provider, a hand-edited migration). This reads the
-    constraint definition Postgres actually enforces at head and asserts
-    it names exactly the registry's provider ids, no more, no fewer.
-    """
-    from app.llm.registry import provider_ids
-
-    definition = (await migration_session.execute(_PROVIDER_CHECK_DEF)).scalar()
-    assert definition is not None, "user_api_keys_provider_check must exist at head"
-
-    # Postgres may store "provider IN ('a', 'b')" verbatim, or reformat it
-    # as "provider = ANY (ARRAY['a'::text, 'b'::text])" — parse quoted
-    # literals out of either shape rather than matching the SQL text.
-    found_ids = set(re.findall(r"'([^']*)'", definition))
-    assert found_ids == set(provider_ids()), (
-        f"live CHECK constraint providers {found_ids} != registry {set(provider_ids())} "
-        f"(raw definition: {definition!r})"
-    )
-
-
-# --- 0071: narrow user_api_keys.provider to the registry's providers ---
-# Self-contained fixture ids (0071-prefixed): the scratch DB is shared across
-# this file's tests via a session-scoped fixture and pytest-randomly can
-# reorder test execution, so this cannot rely on another test's fixture rows
-# having been inserted first.
-_R71_PROFILE = "00710000-0000-4000-8000-00000000000a"
-_R71_GEMINI_KEY = "00710000-0000-4000-8000-000000000001"
-_R71_GROK_KEY = "00710000-0000-4000-8000-000000000002"
-
-
-@pytest.mark.asyncio
-async def test_migration_0071_deletes_orphaned_providers_and_narrows_the_check(
-    migration_db_url: str, migration_session: AsyncSession
-) -> None:
-    """``0071_registry_providers`` deletes stranded gemini/grok rows and
-    narrows the ``provider`` CHECK to the registry's providers.
-
-    Driven through alembic rather than by re-issuing the statement, so it
-    is the migration's own SQL under test: seed a gemini row while
-    downgraded to the parent, then upgrade and watch it go; the narrowed
-    CHECK must then reject a fresh grok insert.
-    """
-    _run_alembic("downgrade", "0070_annotation_updated_at", database_url=migration_db_url)
-    try:
-        await migration_session.execute(
-            text(
-                "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
-                f"('{_R71_PROFILE}', 'registry-0071@integration-test.prumo.local', "
-                "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')"
-            )
-        )
-        await migration_session.execute(
-            text(
-                "INSERT INTO public.profiles (id, email, full_name) VALUES "
-                f"('{_R71_PROFILE}', 'registry-0071@integration-test.prumo.local', "
-                "'Registry 0071')"
-            )
-        )
-        await migration_session.execute(
-            text(
-                "INSERT INTO public.user_api_keys "
-                "(id, user_id, provider, encrypted_api_key, is_active, is_default) VALUES "
-                f"('{_R71_GEMINI_KEY}', '{_R71_PROFILE}', 'gemini', 'enc-gemini', true, false)"
-            )
-        )
-        await migration_session.commit()
-    finally:
-        _run_alembic("upgrade", "head", database_url=migration_db_url)
-
-    await migration_session.commit()
-    assert (
-        await migration_session.execute(
-            text(f"SELECT count(*) FROM public.user_api_keys WHERE id = '{_R71_GEMINI_KEY}'")
-        )
-    ).scalar() == 0, "the orphaned gemini row must be deleted by the upgrade"
-
-    with pytest.raises(IntegrityError, match="user_api_keys_provider_check"):
-        await migration_session.execute(
-            text(
-                "INSERT INTO public.user_api_keys "
-                "(id, user_id, provider, encrypted_api_key, is_active, is_default) VALUES "
-                f"('{_R71_GROK_KEY}', '{_R71_PROFILE}', 'grok', 'enc-grok', true, false)"
-            )
-        )
-    await migration_session.rollback()
 
 
 @pytest.mark.asyncio
@@ -1575,3 +1473,149 @@ async def test_sweep_tolerates_a_concurrent_sweeper(
 
     # Both attempted, neither raised out of the sweep.
     assert len(admin.dropped) == 2
+
+
+# --- 0072: llm_connections + user_project_engines -------------------------
+_CONN_CHECK_DEF = text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = :name")
+
+
+@pytest.mark.asyncio
+async def test_llm_connections_checks_match_the_registry_at_head(
+    migration_session: AsyncSession,
+) -> None:
+    """The live CHECKs name exactly the registry's providers / project
+    scopes — the migration is hand-written literals, so this is the only
+    thing tying it to ``app.llm.registry``. Names carry the ``ck_`` prefix
+    the naming convention adds (models/base.py)."""
+    import re
+
+    from app.llm.registry import REGISTRY, provider_ids
+
+    provider_def = (
+        await migration_session.execute(
+            _CONN_CHECK_DEF, {"name": "ck_llm_connections_provider_check"}
+        )
+    ).scalar()
+    assert provider_def is not None, "ck_llm_connections_provider_check must exist at head"
+    assert set(re.findall(r"'([a-z_]+)'", provider_def)) == set(provider_ids())
+
+    scopes_def = (
+        await migration_session.execute(
+            _CONN_CHECK_DEF, {"name": "ck_llm_connections_scopes_check"}
+        )
+    ).scalar()
+    assert scopes_def is not None, "ck_llm_connections_scopes_check must exist at head"
+    expected = {spec.id for spec in REGISTRY if "project" in spec.scopes}
+    assert set(re.findall(r"'([a-z_]+)'", scopes_def)) - {"user"} == expected
+
+
+@pytest.mark.asyncio
+async def test_0072_tables_are_deny_all_and_revoked(migration_session: AsyncSession) -> None:
+    for table in ("llm_connections", "user_project_engines"):
+        policies = (
+            (
+                await migration_session.execute(
+                    text("SELECT polname FROM pg_policy WHERE polrelid = CAST(:t AS regclass)"),
+                    {"t": f"public.{table}"},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert policies == ["deny_all"], table
+        grants = (
+            await migration_session.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.role_table_grants "
+                    "WHERE table_schema = 'public' AND table_name = :t "
+                    "AND grantee IN ('authenticated', 'anon')"
+                ),
+                {"t": table},
+            )
+        ).scalar()
+        assert grants == 0, table
+
+
+# --- 0073: drop user_api_keys / project_llm_endpoints, strip alternates -----
+_R73_PROFILE = "00730000-0000-4000-8000-00000000000a"
+_R73_WITH = "00730000-0000-4000-8000-000000000001"
+_R73_WITHOUT = "00730000-0000-4000-8000-000000000002"
+_R73_SEED = (
+    "INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES "
+    f"('{_R73_PROFILE}', 'legacy-0073@integration-test.prumo.local', "
+    "'00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')",
+    "INSERT INTO public.profiles (id, email, full_name) VALUES "
+    f"('{_R73_PROFILE}', 'legacy-0073@integration-test.prumo.local', 'Legacy 0073')",
+    "INSERT INTO public.projects (id, name, created_by_id, is_active, settings) VALUES "
+    f"('{_R73_WITH}', 'Alternates 0073', '{_R73_PROFILE}', true, "
+    '\'{"parsing": {"type": "standard"}, "llm_engine": {"provider": "openai", '
+    '"model": "gpt-5.6-terra", "mode": "fast", "alternates": [{"provider": "anthropic", '
+    '"model": "claude-sonnet-5"}]}}\'::jsonb)',
+    "INSERT INTO public.projects (id, name, created_by_id, is_active, settings) VALUES "
+    f"('{_R73_WITHOUT}', 'No alternates 0073', '{_R73_PROFILE}', true, "
+    '\'{"llm_engine": {"provider": "openai", "model": "gpt-5.6-terra", "mode": "verified"}}\'::jsonb)',
+)
+_R73_SETTINGS = text("SELECT settings::text FROM public.projects WHERE id = :pid")
+_R73_TABLE_EXISTS = text("SELECT to_regclass(:name) IS NOT NULL")
+
+
+@pytest.mark.asyncio
+async def test_migration_0073_drops_the_legacy_tables_and_strips_alternates(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    """§2 + §7.5: driven through alembic. Seeded while downgraded to 0072,
+    upgraded to head: ``alternates`` is gone from the row that carried it,
+    the row without it is byte-identical, both legacy tables and the
+    orphaned trigger function are gone; the downgrade re-creates the
+    tables' schema and never resurrects ``alternates``."""
+    _run_alembic("downgrade", "0072_llm_connections", database_url=migration_db_url)
+    try:
+        for stmt in _R73_SEED:
+            await migration_session.execute(text(stmt))
+        await migration_session.commit()
+        before_without = (
+            await migration_session.execute(_R73_SETTINGS, {"pid": _R73_WITHOUT})
+        ).scalar_one()
+        assert (
+            await migration_session.execute(_R73_TABLE_EXISTS, {"name": "public.user_api_keys"})
+        ).scalar() is True
+        # Release the AccessShare locks the reads above took: the alembic
+        # subprocess below needs ACCESS EXCLUSIVE to DROP those tables and
+        # would block forever behind an open read transaction (file rule).
+        await migration_session.rollback()
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    await migration_session.commit()
+
+    with_settings = (
+        await migration_session.execute(_R73_SETTINGS, {"pid": _R73_WITH})
+    ).scalar_one()
+    assert "alternates" not in with_settings and '"parsing"' in with_settings
+    assert (
+        await migration_session.execute(_R73_SETTINGS, {"pid": _R73_WITHOUT})
+    ).scalar_one() == before_without
+    for name in ("public.user_api_keys", "public.project_llm_endpoints"):
+        assert (
+            await migration_session.execute(_R73_TABLE_EXISTS, {"name": name})
+        ).scalar() is False, name
+    assert (
+        await migration_session.execute(
+            text("SELECT count(*) FROM pg_proc WHERE proname = 'ensure_single_default_api_key'")
+        )
+    ).scalar() == 0
+
+    await migration_session.rollback()
+    _run_alembic("downgrade", "0072_llm_connections", database_url=migration_db_url)
+    try:
+        await migration_session.commit()
+        assert (
+            await migration_session.execute(_R73_TABLE_EXISTS, {"name": "public.user_api_keys"})
+        ).scalar() is True
+        assert (
+            "alternates"
+            not in (await migration_session.execute(_R73_SETTINGS, {"pid": _R73_WITH})).scalar_one()
+        )
+        await migration_session.rollback()
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    await migration_session.commit()

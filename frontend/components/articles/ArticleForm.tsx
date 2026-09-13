@@ -5,7 +5,6 @@
 
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
-import {TooltipProvider} from "@/components/ui/tooltip";
 import {toast} from "sonner";
 import {
   BookOpen,
@@ -707,7 +706,6 @@ export function ArticleForm({
     );
 
     return (
-      <TooltipProvider delayDuration={200}>
         <div className="flex flex-col bg-background min-h-0 h-full">
             {/* The hosting panel's strip already names the article and owns
                 the exit, so the form itself keeps only the actions. Below lg
@@ -806,6 +804,5 @@ export function ArticleForm({
       )}
 
     </div>
-      </TooltipProvider>
   );
 }

@@ -15,6 +15,10 @@ export interface ListRowCardProps {
 /**
  * Presentational card for one list row on narrow viewports (xs, below sm).
  * frontend-ux: text-[13px], border-border/40, hover:bg-muted/50, duration-75.
+ *
+ * A clickable row is a stretched overlay <button> named by the title, with the
+ * leading control and actions raised above it — never a role="button" wrapper
+ * around them, because interactive elements must not nest.
  */
 export function ListRowCard({
                                 title,
@@ -26,15 +30,27 @@ export function ListRowCard({
                                 onClick,
                                 className,
                             }: ListRowCardProps) {
-    const content = (
-        <>
-            {leading && (
-                <div className="shrink-0 flex items-center" onClick={(e) => e.stopPropagation()}>
-                    {leading}
-                </div>
+    const titleId = React.useId();
+
+    return (
+        <div
+            className={cn(
+                'relative flex items-center gap-3 py-2 px-2 border-b border-border/40',
+                'hover:bg-muted/50 transition-[background-color] duration-75',
+                className
             )}
+        >
+            {onClick && (
+                <button
+                    type="button"
+                    aria-labelledby={titleId}
+                    onClick={onClick}
+                    className="absolute inset-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                />
+            )}
+            {leading && <div className="relative z-10 shrink-0 flex items-center">{leading}</div>}
             <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-foreground truncate">{title}</div>
+                <div id={titleId} className="text-[13px] font-medium text-foreground truncate">{title}</div>
                 {subtitle != null && (
                     <div className="text-[13px] text-muted-foreground truncate mt-0.5">{subtitle}</div>
                 )}
@@ -44,28 +60,10 @@ export function ListRowCard({
                     </div>
                 )}
             </div>
-            <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <div className="relative z-10 shrink-0 flex items-center gap-2">
                 {primaryAction}
                 {secondaryActions}
             </div>
-        </>
+        </div>
     );
-
-    const wrapperClass = cn(
-        'flex items-center gap-3 py-2 px-2 border-b border-border/40',
-        'hover:bg-muted/50 transition-[background-color] duration-75',
-        onClick && 'cursor-pointer',
-        className
-    );
-
-    if (onClick) {
-        return (
-            <div role="button" tabIndex={0} className={wrapperClass} onClick={onClick}
-                 onKeyDown={(e) => e.key === 'Enter' && onClick()}>
-                {content}
-            </div>
-        );
-    }
-
-    return <div className={wrapperClass}>{content}</div>;
 }
