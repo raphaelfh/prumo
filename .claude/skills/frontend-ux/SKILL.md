@@ -235,3 +235,39 @@ census flagging anything under 24×24.
       an `outline-ring` and a selected state (§4.6).
 - [ ] Icon-only controls are `IconButton` with a real `label`; shortcuts only where bound.
 - [ ] No `TooltipProvider` outside `App.tsx`; no `cursor-*` class except `peer-`/`group-` relations, `col-resize`, `grabbing`.
+- [ ] Configuration lives in a view; a popup is a confirm, a short form or a sheet (§ 8).
+- [ ] Overlays use a `size` and header/body/footer — no size or padding class on the content.
+
+## 8. Overlays (popups, confirmations, sheets)
+
+**Prefer a view.** Anything with tabs, sections, a list, or its own save and
+cancel lifecycle is a route, not a popup. A popup is right only when:
+
+| Surface | When |
+|---|---|
+| `AlertDialog` | A decision blocks the page: confirm, discard, delete. |
+| `Dialog` | A short, one-step form or a transient picker. |
+| `Sheet` | Persistent context beside a page that stays readable (inspector, history, diff). |
+
+**One frame, three sizes — never a width, height or padding class on the content**
+(`check_ui_primitives.py` gates it):
+
+| `size` | Width | Height | Use |
+|---|---|---|---|
+| `sm` | 400px | content, ≤85dvh | confirmations (the `AlertDialog` default), one field |
+| `md` | 560px | content, ≤85dvh | forms (the `Dialog` default) |
+| `lg` | 800px | fixed 85dvh | lists, pickers, imports — fixed so tabs and loading do not resize it |
+| Sheet `default` / `narrow` | 420px / 320px | full height | context / navigation rails and inspectors |
+
+- Compose `DialogHeader` → `DialogBody` → `DialogFooter`. The content has no
+  padding; the body is the only scroll region. A `<form>` around them is
+  `className="contents"`.
+- Footer: Cancel (`outline`, `sm`) immediately left of the primary
+  (`default` or `destructive`, `sm`), right-aligned; a tertiary action sits
+  far left (`sm:justify-between`). A destructive `AlertDialogAction` takes
+  `variant="destructive"`; Radix focuses Cancel, so Enter never destroys.
+- Motion is 150/100 ms (sheets 200/150), fade plus a 2% scale, off under
+  `prefers-reduced-motion`. Below `sm` every dialog is a bottom sheet.
+- Surface: hairline `border-border/40`; light mode a soft two-layer shadow
+  (`shadow-elev-overlay`), dark mode no shadow and one surface step up
+  (`bg-popover`). Backdrop `bg-black/60`.

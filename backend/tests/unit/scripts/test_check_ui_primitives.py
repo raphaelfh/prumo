@@ -19,13 +19,20 @@ def test_current_tree_matches_baseline() -> None:
     assert proc.returncode == 0, proc.stdout
 
 
-def test_scanner_sees_real_offenders_without_a_baseline() -> None:
-    """Removed in Task 15, when the tree reaches zero."""
+BASELINE = REPO_ROOT / "scripts" / "fitness" / "check_ui_primitives.baseline"
+
+
+def test_tree_is_clean_with_no_baseline() -> None:
     proc = subprocess.run(
         [sys.executable, str(CHECK), "--baseline", "/dev/null"],
         capture_output=True,
         text=True,
         timeout=60,
     )
-    assert proc.returncode == 1, "no offenders found in the real tree — the parser is broken"
-    assert "frontend/" in proc.stdout
+    assert proc.returncode == 0, proc.stdout
+    assert "OK (0 " in proc.stdout
+
+
+def test_baseline_file_is_gone() -> None:
+    """The migration finished. A baseline file would let a violation back in unnoticed."""
+    assert not BASELINE.exists(), "re-adding check_ui_primitives.baseline re-opens the ratchet"

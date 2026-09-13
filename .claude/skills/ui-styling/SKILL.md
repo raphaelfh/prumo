@@ -344,6 +344,14 @@ reference. Match the chrome dimensions in any new viewer.
 - Both close on `Esc` and outside click — do **not** disable that without a
   destructive-change confirmation in `AlertDialog`.
 
+**Frame mechanics.** Dialog, AlertDialog and Sheet read their classes from
+`components/ui/overlay-frame.ts`. Centring is `inset-0 m-auto`, never
+`translate-*`: in Tailwind v4 `translate` is its own CSS property, and the
+animate plugin's keyframe `transform` would compose with it and make the frame
+jump. `sm`/`md` use `h-fit` + `max-h-[85dvh]`; `lg` a fixed `h-[85dvh]`. Width
+and height live only in the cva variants, which is why a className on the
+content is gated.
+
 ### `field-just-updated` flash
 
 Already wired in `index.css`. Toggle the class for ~1.5s after an AI refresh
