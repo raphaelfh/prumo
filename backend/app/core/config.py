@@ -132,12 +132,14 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
     GOOGLE_API_KEY: str | None = None
+    OLLAMA_API_KEY: str | None = None
 
     # =================== LLM (provider-agnostic) ===================
     # Single authoritative model/provider for AI extraction. The former
     # OPENAI_DEFAULT_MODEL was defined but never read at runtime; it is
     # collapsed here. Providers and their optional operator keys are declared
-    # in app.llm.registry (OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY);
+    # in app.llm.registry (OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY,
+    # OLLAMA_API_KEY);
     # a provider whose key is empty is BYOK-only in that deployment.
     # The default must stay in app.llm.catalog.CATALOG — a default that falls
     # off the roster reads as "retired" and blocks every run that never chose

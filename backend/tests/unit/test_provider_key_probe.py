@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.provider_key_probe import probe_hosted_key
+from app.llm.registry import REGISTRY
+from app.services.provider_key_probe import _PROBES, probe_hosted_key
 
 
 def _client_returning(status_code: int, *, method: str) -> MagicMock:
@@ -29,6 +30,8 @@ def _client_returning(status_code: int, *, method: str) -> MagicMock:
         ("anthropic", "post", 403, ("failed", "unauthorized")),
         ("google", "get", 400, ("failed", "unauthorized")),
         ("llama_cloud", "get", 500, ("failed", "http_500")),
+        ("ollama", "post", 200, ("ok", None)),
+        ("ollama", "post", 401, ("failed", "unauthorized")),
     ],
 )
 async def test_status_maps_to_outcome(
@@ -55,6 +58,22 @@ async def test_key_travels_in_a_header_never_the_url() -> None:
     assert (
         "sk-secret" not in call.args[0] and call.kwargs["headers"]["x-goog-api-key"] == "sk-secret"
     )
+
+
+def test_every_hosted_provider_has_a_probe() -> None:
+    # A hosted provider without a probe makes verify raise KeyError (a 500).
+    hosted = {spec.id for spec in REGISTRY if not spec.needs_host}
+    assert hosted == set(_PROBES)
+
+
+@pytest.mark.asyncio
+async def test_ollama_key_travels_in_a_bearer_header() -> None:
+    client = _client_returning(200, method="post")
+    with patch("httpx.AsyncClient", client):
+        await probe_hosted_key("ollama", "ollama-secret")
+    call = client.return_value.__aenter__.return_value.post.call_args
+    assert "ollama-secret" not in call.args[0]
+    assert call.kwargs["headers"]["Authorization"] == "Bearer ollama-secret"
 
 
 @pytest.mark.asyncio
