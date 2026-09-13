@@ -5,16 +5,34 @@
  * (only when the provider needs one). Replaces the API keys section.
  */
 import {useState} from 'react';
-import {ExternalLink, Plus} from 'lucide-react';
+import {ExternalLink, Loader2, Plus, RefreshCw, Trash2} from 'lucide-react';
 import {toast} from 'sonner';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Skeleton} from '@/components/ui/skeleton';
-import {useCreateMyConnection, useMyConnections, useProviders} from '@/hooks/user/useLlmConnections';
+import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
+import {
+  useCreateMyConnection,
+  useDeleteMyConnection,
+  useMyConnections,
+  useProviders,
+  useVerifyMyConnection,
+} from '@/hooks/user/useLlmConnections';
 import {t} from '@/lib/copy';
 import type {LlmConnectionRead, ProviderRead} from '@/services/llmConnectionsService';
 
@@ -24,7 +42,36 @@ const STATUS_COPY = {
   failed: 'statusFailed',
 } as const;
 
+/**
+ * A failed mutation shows the server's own detail (the 422 host/SSRF text,
+ * the provider's rejection) next to the generic line — a bare "Failed to …"
+ * leaves the user with nothing to act on.
+ */
+function errorToast(key: 'createError' | 'removeError' | 'verifyError', error: Error) {
+  const generic = t('llmConnections', key);
+  toast.error(
+    error.message === ''
+      ? generic
+      : t('llmConnections', 'errorDetail').replace('{{error}}', generic).replace('{{reason}}', error.message),
+  );
+}
+
 function ConnectionRow({row, provider}: {row: LlmConnectionRead; provider: ProviderRead | undefined}) {
+  const verify = useVerifyMyConnection();
+  const remove = useDeleteMyConnection();
+  const onVerify = () =>
+    verify.mutate(row.id, {
+      onSuccess: (r) =>
+        r.validation_status === 'ok'
+          ? toast.success(t('llmConnections', 'verifySuccess'))
+          : toast.error(t('llmConnections', 'verifyFailed').replace('{{reason}}', r.error ?? r.validation_status)),
+      onError: (error) => errorToast('verifyError', error),
+    });
+  const onRemove = () =>
+    remove.mutate(row.id, {
+      onSuccess: () => toast.success(t('llmConnections', 'removeSuccess')),
+      onError: (error) => errorToast('removeError', error),
+    });
   return (
     <li className="flex items-center gap-3 px-2 py-1.5 text-[13px]">
       <span className="font-medium">{row.label}</span>
@@ -33,6 +80,38 @@ function ConnectionRow({row, provider}: {row: LlmConnectionRead; provider: Provi
       <Badge variant={row.validation_status === 'ok' ? 'default' : 'secondary'}>
         {t('llmConnections', STATUS_COPY[row.validation_status])}
       </Badge>
+      <div className="ml-auto flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label={t('llmConnections', 'verifyAria')} onClick={onVerify} disabled={verify.isPending}>
+              {verify.isPending ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} /> : <RefreshCw className="h-4 w-4" strokeWidth={1.5} />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('llmConnections', 'verifyAria')}</TooltipContent>
+        </Tooltip>
+        <AlertDialog>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label={t('llmConnections', 'removeAria')}>
+                  <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                </Button>
+              </AlertDialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{t('llmConnections', 'removeAria')}</TooltipContent>
+          </Tooltip>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('llmConnections', 'removeTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('llmConnections', 'removeDescription')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('llmConnections', 'cancelButton')}</AlertDialogCancel>
+              <AlertDialogAction onClick={onRemove}>{t('llmConnections', 'removeConfirm')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </li>
   );
 }
@@ -49,14 +128,14 @@ function AddForm({providers, onDone}: {providers: ProviderRead[]; onDone: () => 
       {provider, label, api_key: apiKey === '' ? null : apiKey, base_url: spec?.needs_host ? baseUrl : null, allowed_models: []},
       {
         onSuccess: () => { toast.success(t('llmConnections', 'createSuccess')); onDone(); },
-        onError: () => toast.error(t('llmConnections', 'createError')),
+        onError: (error) => errorToast('createError', error),
       },
     );
   return (
     <form className="space-y-3 rounded-md border border-border/40 p-3" onSubmit={(e) => { e.preventDefault(); submit(); }}>
       <div className="space-y-1.5">
         <Label htmlFor="conn-provider" className="text-[13px] font-medium">{t('llmConnections', 'providerLabel')}</Label>
-        <Select value={provider} onValueChange={setProvider}>
+        <Select value={provider} onValueChange={(next) => { setProvider(next); setBaseUrl(''); }}>
           <SelectTrigger id="conn-provider" className="h-9 text-[13px]"><SelectValue placeholder={t('llmConnections', 'providerPlaceholder')} /></SelectTrigger>
           <SelectContent>
             {providers.map((p) => (
@@ -84,7 +163,7 @@ function AddForm({providers, onDone}: {providers: ProviderRead[]; onDone: () => 
       )}
       <div className="space-y-1.5">
         <Label htmlFor="conn-key" className="text-[13px] font-medium">{t('llmConnections', 'keyLabel')}</Label>
-        <Input id="conn-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+        <Input id="conn-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
           placeholder={spec?.key_optional ? t('llmConnections', 'keyOptionalPlaceholder') : t('llmConnections', 'keyPlaceholder')} className="h-9 text-[13px]" />
       </div>
       <div className="flex items-center gap-2">
@@ -101,6 +180,10 @@ export function AiConnectionsSection() {
   const connections = useMyConnections();
   const providers = useProviders();
   const [adding, setAdding] = useState(false);
+  // Either read failing leaves the Add form without its provider list; one
+  // error line owns both, and its retry refetches both.
+  const hasError = connections.isError || providers.isError;
+  const retryBoth = () => { void connections.refetch(); void providers.refetch(); };
   const userProviders = (providers.data ?? []).filter((p) => p.scopes.includes('user'));
   const addButton = (
     <Button size="sm" onClick={() => setAdding(true)} disabled={!providers.data || adding}>
@@ -114,23 +197,27 @@ export function AiConnectionsSection() {
           <li><Skeleton className="h-7 w-full" /></li><li><Skeleton className="h-7 w-full" /></li>
         </ul>
       )}
-      {connections.isError && (
+      {hasError && (
         <p className="flex items-center gap-2 text-[13px] text-destructive">
           {t('llmConnections', 'listLoadError')}
-          <Button size="sm" variant="ghost" onClick={() => void connections.refetch()}>{t('llmConnections', 'retry')}</Button>
+          <Button size="sm" variant="ghost" onClick={retryBoth}>{t('llmConnections', 'retry')}</Button>
         </p>
       )}
-      {connections.data && connections.data.length === 0 && !adding && (
+      {!hasError && connections.data && connections.data.length === 0 && !adding && (
         <p className="flex items-center gap-3 text-[13px] text-muted-foreground">{t('llmConnections', 'listEmpty')}{addButton}</p>
       )}
-      {connections.data && connections.data.length > 0 && (
+      {!hasError && connections.data && connections.data.length > 0 && (
         <ul className="divide-y divide-border/40">
           {connections.data.map((row) => (
             <ConnectionRow key={row.id} row={row} provider={providers.data?.find((p) => p.id === row.provider)} />
           ))}
         </ul>
       )}
-      {adding ? <AddForm providers={userProviders} onDone={() => setAdding(false)} /> : (connections.data?.length ?? 0) > 0 || connections.isError || connections.isPending ? addButton : null}
+      {adding ? (
+        <AddForm providers={userProviders} onDone={() => setAdding(false)} />
+      ) : !hasError && ((connections.data?.length ?? 0) > 0 || connections.isPending) ? (
+        addButton
+      ) : null}
     </div>
   );
 }

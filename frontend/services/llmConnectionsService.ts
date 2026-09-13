@@ -35,3 +35,20 @@ export function fetchProviders(): Promise<ErrorResult<ProviderRead[]>> {
 export function createMyConnection(body: UserConnectionCreateRequest): Promise<ErrorResult<LlmConnectionRead>> {
   return toResult(() => apiClient<LlmConnectionRead>(ME, {method: 'POST', body}), 'llmConnectionsService.createMyConnection');
 }
+
+export type LlmConnectionVerifyResult = components['schemas']['LlmConnectionVerifyResult'];
+export type LlmConnectionDeleteResult = components['schemas']['LlmConnectionDeleteResult'];
+
+export function deleteMyConnection(id: string): Promise<ErrorResult<LlmConnectionDeleteResult>> {
+  return toResult(
+    () => apiClient<LlmConnectionDeleteResult>(`${ME}/${id}`, {method: 'DELETE'}),
+    'llmConnectionsService.deleteMyConnection',
+  );
+}
+
+export function verifyMyConnection(id: string): Promise<ErrorResult<LlmConnectionVerifyResult>> {
+  return toResult(
+    () => apiClient<LlmConnectionVerifyResult>(`${ME}/${id}/verify`, {method: 'POST'}),
+    'llmConnectionsService.verifyMyConnection',
+  );
+}

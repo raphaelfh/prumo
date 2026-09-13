@@ -1,16 +1,17 @@
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {renderHook, waitFor} from '@testing-library/react';
+import {act, renderHook, waitFor} from '@testing-library/react';
 import type {ReactNode} from 'react';
 import {describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/services/llmConnectionsService', () => ({
   fetchMyConnections: vi.fn(),
   fetchProjectConnections: vi.fn(),
+  createMyConnection: vi.fn(),
 }));
 
 import {meKeys, projectKeys} from '@/lib/query-keys';
-import {fetchMyConnections, fetchProjectConnections} from '@/services/llmConnectionsService';
-import {useMyConnections} from '@/hooks/user/useLlmConnections';
+import {createMyConnection, fetchMyConnections, fetchProjectConnections} from '@/services/llmConnectionsService';
+import {useCreateMyConnection, useMyConnections} from '@/hooks/user/useLlmConnections';
 import {useProjectConnections} from '@/hooks/project/useProjectConnections';
 
 function wrapper() {
@@ -36,5 +37,21 @@ describe('connection hooks', () => {
     const {result} = renderHook(() => useProjectConnections(null), {wrapper: wrapper()});
     expect(result.current.fetchStatus).toBe('idle');
     expect(fetchProjectConnections).not.toHaveBeenCalled();
+  });
+
+  it('a user-connection mutation invalidates the list and every engine read', async () => {
+    vi.mocked(createMyConnection).mockResolvedValue({ok: true, data: {id: 'c1'} as never});
+    const client = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
+    client.setQueryData(meKeys.connections(), []);
+    client.setQueryData(projectKeys.llmEngine('p1'), {source: 'project'});
+    const w = ({children}: {children: ReactNode}) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const {result} = renderHook(() => useCreateMyConnection(), {wrapper: w});
+    await act(async () => {
+      await result.current.mutateAsync({provider: 'openai', label: 'x', api_key: 'k', base_url: null, allowed_models: []});
+    });
+    expect(client.getQueryState(meKeys.connections())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(projectKeys.llmEngine('p1'))?.isInvalidated).toBe(true);
   });
 });

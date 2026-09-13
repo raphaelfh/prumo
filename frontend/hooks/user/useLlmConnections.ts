@@ -4,9 +4,13 @@ import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import {meKeys, projectKeys} from '@/lib/query-keys';
 import {
   createMyConnection,
+  deleteMyConnection,
   fetchMyConnections,
   fetchProviders,
+  verifyMyConnection,
+  type LlmConnectionDeleteResult,
   type LlmConnectionRead,
+  type LlmConnectionVerifyResult,
   type ProviderRead,
   type UserConnectionCreateRequest,
 } from '@/services/llmConnectionsService';
@@ -51,6 +55,30 @@ export function useCreateMyConnection() {
   return useMutation<LlmConnectionRead, Error, UserConnectionCreateRequest>({
     mutationFn: async (body) => {
       const result = await createMyConnection(body);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteMyConnection() {
+  const invalidate = useInvalidateMine();
+  return useMutation<LlmConnectionDeleteResult, Error, string>({
+    mutationFn: async (id) => {
+      const result = await deleteMyConnection(id);
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useVerifyMyConnection() {
+  const invalidate = useInvalidateMine();
+  return useMutation<LlmConnectionVerifyResult, Error, string>({
+    mutationFn: async (id) => {
+      const result = await verifyMyConnection(id);
       if (!result.ok) throw result.error;
       return result.data;
     },
