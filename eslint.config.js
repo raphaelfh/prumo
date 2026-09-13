@@ -54,6 +54,11 @@ export default tseslint.config(
         // <button type="button">, or a stretched overlay control.
         "jsx-a11y/click-events-have-key-events": "error",
         "jsx-a11y/no-static-element-interactions": "error",
+        // Handlers on non-interactive roles. A focusable, keyboard-operable
+        // separator (PaneResizer, ColumnResizeHandle, resizable-panel) is an
+        // ARIA widget the plugin models as static, so those carry a reasoned
+        // disable; anything else should become a real control.
+        "jsx-a11y/no-noninteractive-element-interactions": "error",
         "no-console": ["warn", {allow: ["warn", "error", "time", "timeEnd", "group", "groupEnd"]}],
         // react-router-dom was removed in React Router v8 (#562 /
         // GHSA-qwww-vcr4-c8h2). Uninstalling it already breaks a stale import

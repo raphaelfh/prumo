@@ -68,6 +68,28 @@ describe('useResizableTableColumns', () => {
         release();
     });
 
+    it('hands a keyboard handle the width and clamps, and clamps + persists what it sets', () => {
+        const {result} = renderHook(() => useHarness());
+
+        const props = result.current.getHandleProps('year');
+        expect(props).toMatchObject({width: 100, min: 80, max: 600});
+
+        // No mouseup follows a keypress, so the write must persist on its own.
+        act(() => {
+            props.onWidth(1000);
+        });
+
+        expect(result.current.columnWidths.year).toBe(600);
+        expect(result.current.columnWidths.title).toBe(320);
+        expect(result.current.getHandleProps('year').width).toBe(600);
+        expect(JSON.parse(localStorage.getItem('test-resize-widths') ?? '{}').year).toBe(600);
+
+        act(() => {
+            result.current.getHandleProps('year').onWidth(10);
+        });
+        expect(result.current.columnWidths.year).toBe(80);
+    });
+
     it('persists widths to localStorage on mouseup', () => {
         const {result} = renderHook(() => useHarness());
 

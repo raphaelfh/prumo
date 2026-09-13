@@ -41,6 +41,7 @@ import {
     ListToolbarSearch,
     ResponsiveList,
     useResizableTableColumns,
+    ColumnResizeHandle,
 } from "@/components/shared/list";
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
@@ -341,7 +342,7 @@ export function ArticlesList({
         }
         return {...DEFAULT_COLUMN_WIDTHS};
     });
-    const {startResize} = useResizableTableColumns({
+    const {getHandleProps} = useResizableTableColumns({
         columnWidths,
         setColumnWidths,
         defaultColumnWidths: DEFAULT_COLUMN_WIDTHS,
@@ -748,14 +749,9 @@ export function ArticlesList({
                                               </span>
                                           </div>
                                       )}
-                                      <div
-                                          role="separator"
-                                          aria-label={t('articles', 'listResizeColumn')}
-                                          onMouseDown={(e) => {
-                                              e.preventDefault();
-                                              startResize(col.id, e.clientX);
-                                          }}
-                                          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
+                                      <ColumnResizeHandle
+                                          label={t('articles', 'listResizeColumn').replace('{{column}}', col.label)}
+                                          {...getHandleProps(col.id)}
                                       />
                                   </TableHead>
                               ))}

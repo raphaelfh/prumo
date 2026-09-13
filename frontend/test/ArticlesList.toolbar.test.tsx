@@ -115,6 +115,21 @@ describe("ArticlesList title cell", () => {
     });
 });
 
+describe("ArticlesList column resize", () => {
+    it("resizes a column from the keyboard through a separator named by its column", async () => {
+        const user = userEvent.setup();
+        renderList([article("a1", "First")]);
+
+        const handle = screen.getByRole("separator", {name: "Resize Title column"});
+        const before = Number(handle.getAttribute("aria-valuenow"));
+
+        handle.focus();
+        await user.keyboard("{ArrowRight}");
+
+        expect(handle).toHaveAttribute("aria-valuenow", String(before + 16));
+    });
+});
+
 describe("ArticlesList PDF chip", () => {
     it("opens the main PDF from the keyboard", async () => {
         const user = userEvent.setup();
