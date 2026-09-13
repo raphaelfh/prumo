@@ -52,3 +52,25 @@ export function verifyMyConnection(id: string): Promise<ErrorResult<LlmConnectio
     'llmConnectionsService.verifyMyConnection',
   );
 }
+
+export type ProjectConnectionCreateRequest = components['schemas']['ProjectConnectionCreateRequest'];
+
+export function createProjectConnection(
+  projectId: string,
+  body: ProjectConnectionCreateRequest,
+): Promise<ErrorResult<LlmConnectionRead>> {
+  return toResult(
+    () => apiClient<LlmConnectionRead>(projectConnectionsPath(projectId), {method: 'POST', body}),
+    'llmConnectionsService.createProjectConnection',
+  );
+}
+
+export function deleteProjectConnection(
+  projectId: string,
+  id: string,
+): Promise<ErrorResult<LlmConnectionDeleteResult>> {
+  return toResult(
+    () => apiClient<LlmConnectionDeleteResult>(`${projectConnectionsPath(projectId)}/${id}`, {method: 'DELETE'}),
+    'llmConnectionsService.deleteProjectConnection',
+  );
+}

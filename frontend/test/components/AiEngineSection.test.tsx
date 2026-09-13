@@ -1,9 +1,9 @@
 /** §7.6: manager editable card, non-manager read-only, lock PUTs the default,
- * card load error. The Shared keys cases are Task 27's half of this file. */
+ * card load error, plus the Shared keys table, form and per-block states. */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {render, screen, waitFor} from '@testing-library/react';
+import {render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {http, HttpResponse} from 'msw';
+import {delay, http, HttpResponse} from 'msw';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {TooltipProvider} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
@@ -33,6 +33,7 @@ const PROVIDERS = [
   {id: 'llama_cloud', label: 'LlamaCloud', description: 'parsing', docs_url: 'https://y', needs_host: false, key_optional: false, scopes: ['project', 'user'], global_key_available: false},
   {id: 'openai_compatible', label: 'Custom host', description: 'h', docs_url: null, needs_host: true, key_optional: true, scopes: ['user'], global_key_available: false},
 ];
+const SHARED = {id: 's1', scope: 'project', provider: 'llama_cloud', label: 'parsing key', base_url: null, has_api_key: true, allowed_models: [], capabilities: {output_mode: null, models_seen: []}, validation_status: 'unverified', last_validated_at: null, last_used_at: null, created_by_name: 'Alice', created_at: '2026-09-13T00:00:00Z'};
 function renderSection() {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}, mutations: {retry: false}}});
   return render(<QueryClientProvider client={client}><TooltipProvider><AiEngineSection projectId="p1" /></TooltipProvider></QueryClientProvider>);
@@ -43,6 +44,7 @@ beforeEach(() => {
   server.use(
     http.get('*/api/v1/projects/p1/llm-engine', () => ok(READ)),
     http.get('*/api/v1/me/providers', () => ok(PROVIDERS)),
+    http.get('*/api/v1/projects/p1/connections', () => ok([SHARED])),
   );
 });
 
@@ -74,5 +76,63 @@ describe('AiEngineSection', () => {
     renderSection();
     await userEvent.click(await screen.findByRole('switch', {name: t('llmConnections', 'lockLabel')}));
     await waitFor(() => expect(puts).toEqual([{provider: 'openai', model: 'gpt-4o-mini', mode: 'fast', user_choice_allowed: false}]));
+  });
+
+  it('shows a skeleton for the AI engine card while the read is pending', async () => {
+    server.use(http.get('*/api/v1/projects/p1/llm-engine', async () => { await delay(50); return ok(READ); }));
+    renderSection();
+    expect(screen.getByTestId('ai-engine-skeleton')).toBeInTheDocument();
+    expect(await screen.findByRole('switch', {name: t('llmConnections', 'lockLabel')})).toBeInTheDocument();
+    expect(screen.queryByTestId('ai-engine-skeleton')).not.toBeInTheDocument();
+  });
+
+  it('a manager sees the Shared keys table with serves tags', async () => {
+    renderSection();
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('parsing key')).toBeInTheDocument();
+    expect(within(table).getByText(t('llmConnections', 'servesParsing'))).toBeInTheDocument();
+  });
+
+  it('a non-manager sees no shared-keys table and never fetches the list', async () => {
+    role.isManager = false;
+    let projectListHits = 0;
+    server.use(http.get('*/api/v1/projects/p1/connections', () => { projectListHits += 1; return ok([]); }));
+    renderSection();
+    expect(await screen.findByText('GPT-4o mini')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(projectListHits).toBe(0);
+  });
+
+  it('renders the empty shared-keys state', async () => {
+    server.use(http.get('*/api/v1/projects/p1/connections', () => ok([])));
+    renderSection();
+    expect(await screen.findByText(t('llmConnections', 'sharedEmpty'))).toBeInTheDocument();
+  });
+
+  it('each block renders its own load error without blanking the other', async () => {
+    server.use(http.get('*/api/v1/projects/p1/connections', () => HttpResponse.json({ok: false, error: {code: 'X', message: 'boom'}}, {status: 500})));
+    renderSection();
+    expect(await screen.findByText(t('llmConnections', 'sharedLoadError'))).toBeInTheDocument();
+    expect(await screen.findByRole('switch', {name: t('llmConnections', 'lockLabel')})).toBeInTheDocument();
+  });
+
+  it('adding a shared key posts and the table refreshes; removing deletes', async () => {
+    const posted: unknown[] = [];
+    let rows: unknown[] = [];
+    server.use(
+      http.get('*/api/v1/projects/p1/connections', () => ok(rows)),
+      http.post('*/api/v1/projects/p1/connections', async ({request}) => { posted.push(await request.json()); rows = [SHARED]; return ok(SHARED); }),
+      http.delete('*/api/v1/projects/p1/connections/s1', () => { rows = []; return ok({deleted: true, id: 's1'}); }),
+    );
+    renderSection();
+    await userEvent.click(await screen.findByRole('button', {name: t('llmConnections', 'sharedAddButton')}));
+    await userEvent.type(screen.getByLabelText(t('llmConnections', 'labelLabel')), 'parsing key');
+    await userEvent.type(screen.getByLabelText(t('llmConnections', 'keyLabel')), 'lc-1');
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'saveButton')}));
+    await waitFor(() => expect(posted).toEqual([{provider: 'openai', label: 'parsing key', api_key: 'lc-1', base_url: null, allowed_models: []}]));
+    expect(await screen.findByText('parsing key')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'sharedRemoveAria')}));
+    await userEvent.click(screen.getByRole('button', {name: t('llmConnections', 'removeConfirm')}));
+    await waitFor(() => expect(screen.getByText(t('llmConnections', 'sharedEmpty'))).toBeInTheDocument());
   });
 });
