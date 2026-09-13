@@ -155,6 +155,61 @@ describe('ImportTemplateDialog (add a template)', () => {
     await waitFor(() => expect(onActiveTemplateChanged).toHaveBeenCalledWith('imported-id'));
   });
 
+  it('selects a template from the card overlay (not just the name label) and enables submit', async () => {
+    // The card lost its own onClick (task-10 fix round 1, R13): a bare
+    // clickable div with no role/label fell through the base-layer arrow-
+    // cursor rule to the text I-beam. It is now an absolutely-positioned,
+    // aria-hidden `<label htmlFor={template.id}>` stacked over the whole
+    // card, which is the CSS-guaranteed top hit target for a click anywhere
+    // in that area (a positioned element always paints over static
+    // in-flow content in the same stacking context) — so a click on the
+    // card's description or framework badge reaches this overlay in a real
+    // browser. jsdom has no layout engine and cannot replicate that
+    // pixel-level hit-testing, so this exercises the overlay control
+    // directly rather than the description text it visually sits above.
+    const user = userEvent.setup();
+    renderDialog(
+      <ImportTemplateDialog
+        projectId="p"
+        open
+        onOpenChange={vi.fn()}
+        onActiveTemplateChanged={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('import-template-submit')).toBeDisabled();
+    expect(screen.getByRole('radio', {name: 'CHARMS'})).not.toBeChecked();
+
+    const overlay = document.querySelector('label[aria-hidden="true"]');
+    expect(overlay).not.toBeNull();
+    await user.click(overlay as HTMLElement);
+
+    expect(screen.getByRole('radio', {name: 'CHARMS'})).toBeChecked();
+    expect(screen.getByTestId('import-template-submit')).toBeEnabled();
+  });
+
+  it('stacks the visible name label above the card overlay so a real browser click reaches it', async () => {
+    // The e2e flow (template-import.ui.e2e.ts) clicks the visible
+    // `<label>CHARMS</label>` when the submit is already enabled; without a
+    // higher stacking order than the absolutely-positioned card overlay,
+    // Playwright's actionability check finds the overlay intercepting the
+    // click. jsdom does no hit-testing, so assert the class directly.
+    const user = userEvent.setup();
+    renderDialog(
+      <ImportTemplateDialog
+        projectId="p"
+        open
+        onOpenChange={vi.fn()}
+        onActiveTemplateChanged={vi.fn()}
+      />,
+    );
+    const nameLabel = screen.getByText('CHARMS', {selector: 'label'});
+    expect(nameLabel.className.split(/\s+/)).toEqual(expect.arrayContaining(['relative', 'z-10']));
+
+    expect(screen.getByRole('radio', {name: 'CHARMS'})).not.toBeChecked();
+    await user.click(nameLabel);
+    expect(screen.getByRole('radio', {name: 'CHARMS'})).toBeChecked();
+  });
+
   it('refreshes the list for an import but NOT for a Switch', async () => {
     const user = userEvent.setup();
     const {invalidateSpy} = renderDialog(

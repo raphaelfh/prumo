@@ -41,7 +41,7 @@ export function CommandPalette({
   const hasArticles = articles && articles.length > 0 && onNavigate != null;
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog open={open} onOpenChange={onOpenChange} title={t('runs', 'commandTitle')}>
       <CommandInput placeholder={t('runs', 'commandPlaceholder')} />
       <CommandList>
         <CommandEmpty>{t('runs', 'commandEmpty')}</CommandEmpty>

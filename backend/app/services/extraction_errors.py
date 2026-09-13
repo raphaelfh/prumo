@@ -50,7 +50,7 @@ def classify_extraction_error(exc: BaseException) -> tuple[ExtractionErrorCode, 
     # this module is imported on the API process too (only for the enum/type).
     from app.llm.provider import MissingLLMKeyError
     from app.services.entity_key import MissingEntityKeyError
-    from app.services.llm_endpoint_service import EndpointUnavailableError
+    from app.services.llm_connection_service import ConnectionUnavailableError
     from app.services.llm_engine_service import EngineRetiredError
 
     if isinstance(exc, MissingLLMKeyError):
@@ -63,11 +63,10 @@ def classify_extraction_error(exc: BaseException) -> tuple[ExtractionErrorCode, 
         # message already says a manager must choose a new model.
         return ExtractionErrorCode.ENGINE_RETIRED, str(exc).strip() or _GENERIC_MESSAGE
 
-    if isinstance(exc, EndpointUnavailableError):
-        # The ENGINE_RETIRED pattern for endpoint engines (decision 13):
-        # ``resolve_project_engine`` raises it for a dangling / unverified /
-        # model-dropped endpoint, ``decrypt_key`` for a key that no longer
-        # decrypts. The message already says how to recover.
+    if isinstance(exc, ConnectionUnavailableError):
+        # The ENGINE_RETIRED pattern for host-connection engines: a pinned
+        # connection gone / foreign / undecryptable. The message already says
+        # how to recover.
         return ExtractionErrorCode.LLM_ENDPOINT_UNAVAILABLE, str(exc).strip() or _GENERIC_MESSAGE
 
     if isinstance(exc, MissingEntityKeyError):

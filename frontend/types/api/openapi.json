@@ -206,88 +206,6 @@
         "title": "AISuggestionsResponse",
         "type": "object"
       },
-      "APIKeyResponse": {
-        "description": "Resposta with data de uma API key (sem a key em si).",
-        "properties": {
-          "createdAt": {
-            "title": "Createdat",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "isActive": {
-            "title": "Isactive",
-            "type": "boolean"
-          },
-          "isDefault": {
-            "title": "Isdefault",
-            "type": "boolean"
-          },
-          "keyName": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Keyname"
-          },
-          "lastUsedAt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lastusedat"
-          },
-          "lastValidatedAt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lastvalidatedat"
-          },
-          "provider": {
-            "title": "Provider",
-            "type": "string"
-          },
-          "validationStatus": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Validationstatus"
-          }
-        },
-        "required": [
-          "id",
-          "provider",
-          "keyName",
-          "isActive",
-          "isDefault",
-          "validationStatus",
-          "lastUsedAt",
-          "lastValidatedAt",
-          "createdAt"
-        ],
-        "title": "APIKeyResponse",
-        "type": "object"
-      },
       "AdvanceStageRequest": {
         "properties": {
           "target_stage": {
@@ -636,102 +554,6 @@
           "ok"
         ],
         "title": "ApiResponse[ConsensusResultResponse]",
-        "type": "object"
-      },
-      "ApiResponse_CreateAPIKeyResponse_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CreateAPIKeyResponse"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[CreateAPIKeyResponse]",
-        "type": "object"
-      },
-      "ApiResponse_DeleteAPIKeyResult_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DeleteAPIKeyResult"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[DeleteAPIKeyResult]",
         "type": "object"
       },
       "ApiResponse_DiscardDraftResponse_": {
@@ -1166,12 +988,12 @@
         "title": "ApiResponse[HitlConfigRead]",
         "type": "object"
       },
-      "ApiResponse_KeyValidationResult_": {
+      "ApiResponse_LlmConnectionDeleteResult_": {
         "properties": {
           "data": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/KeyValidationResult"
+                "$ref": "#/components/schemas/LlmConnectionDeleteResult"
               },
               {
                 "type": "null"
@@ -1211,15 +1033,15 @@
         "required": [
           "ok"
         ],
-        "title": "ApiResponse[KeyValidationResult]",
+        "title": "ApiResponse[LlmConnectionDeleteResult]",
         "type": "object"
       },
-      "ApiResponse_ListAPIKeysData_": {
+      "ApiResponse_LlmConnectionRead_": {
         "properties": {
           "data": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ListAPIKeysData"
+                "$ref": "#/components/schemas/LlmConnectionRead"
               },
               {
                 "type": "null"
@@ -1259,15 +1081,15 @@
         "required": [
           "ok"
         ],
-        "title": "ApiResponse[ListAPIKeysData]",
+        "title": "ApiResponse[LlmConnectionRead]",
         "type": "object"
       },
-      "ApiResponse_ListProvidersData_": {
+      "ApiResponse_LlmConnectionVerifyResult_": {
         "properties": {
           "data": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ListProvidersData"
+                "$ref": "#/components/schemas/LlmConnectionVerifyResult"
               },
               {
                 "type": "null"
@@ -1307,151 +1129,7 @@
         "required": [
           "ok"
         ],
-        "title": "ApiResponse[ListProvidersData]",
-        "type": "object"
-      },
-      "ApiResponse_LlmEndpointDeleteResult_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LlmEndpointDeleteResult"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[LlmEndpointDeleteResult]",
-        "type": "object"
-      },
-      "ApiResponse_LlmEndpointProbeResult_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LlmEndpointProbeResult"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[LlmEndpointProbeResult]",
-        "type": "object"
-      },
-      "ApiResponse_LlmEndpointRead_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LlmEndpointRead"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[LlmEndpointRead]",
+        "title": "ApiResponse[LlmConnectionVerifyResult]",
         "type": "object"
       },
       "ApiResponse_LlmEngineRead_": {
@@ -2922,54 +2600,6 @@
         "title": "ApiResponse[Union[SaveCredentialsResponse, TestConnectionResponse, ListCollectionsResponse, FetchItemsResponse, FetchAttachmentsResponse, DownloadAttachmentResponse, SyncCollectionResponse, SyncStatusResponse, SyncRetryFailedResponse, SyncItemResultsResponse]]",
         "type": "object"
       },
-      "ApiResponse_UpdateAPIKeyResult_": {
-        "properties": {
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UpdateAPIKeyResult"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Dados da resposta"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ErrorDetail"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error details"
-          },
-          "ok": {
-            "description": "Indica se a operacao foi bem-sucedida",
-            "title": "Ok",
-            "type": "boolean"
-          },
-          "trace_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "rastreamento",
-            "title": "Trace Id"
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "title": "ApiResponse[UpdateAPIKeyResult]",
-        "type": "object"
-      },
       "ApiResponse_UpdateTemplateActiveResponse_": {
         "properties": {
           "data": {
@@ -3064,6 +2694,54 @@
           "ok"
         ],
         "title": "ApiResponse[UpdateTemplateInstructionResponse]",
+        "type": "object"
+      },
+      "ApiResponse_UserEngineClearResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserEngineClearResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[UserEngineClearResult]",
         "type": "object"
       },
       "ApiResponse_list_AISuggestionHistoryItem__": {
@@ -3222,13 +2900,13 @@
         "title": "ApiResponse[list[ArticleRunRef]]",
         "type": "object"
       },
-      "ApiResponse_list_LlmEndpointRead__": {
+      "ApiResponse_list_LlmConnectionRead__": {
         "properties": {
           "data": {
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/LlmEndpointRead"
+                  "$ref": "#/components/schemas/LlmConnectionRead"
                 },
                 "type": "array"
               },
@@ -3271,7 +2949,59 @@
         "required": [
           "ok"
         ],
-        "title": "ApiResponse[list[LlmEndpointRead]]",
+        "title": "ApiResponse[list[LlmConnectionRead]]",
+        "type": "object"
+      },
+      "ApiResponse_list_ProviderRead__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProviderRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[ProviderRead]]",
         "type": "object"
       },
       "ApiResponse_list_UUID__": {
@@ -3880,107 +3610,6 @@
         "title": "ConsensusResultResponse",
         "type": "object"
       },
-      "CreateAPIKeyRequest": {
-        "description": "Request for criar nova API key.",
-        "properties": {
-          "apiKey": {
-            "description": "API key do provedor",
-            "minLength": 10,
-            "title": "Apikey",
-            "type": "string"
-          },
-          "isDefault": {
-            "default": true,
-            "description": "Se deve ser a key default for o provedor",
-            "title": "Isdefault",
-            "type": "boolean"
-          },
-          "keyName": {
-            "anyOf": [
-              {
-                "maxLength": 100,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Nome optional for identificar a key",
-            "title": "Keyname"
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Metadata extras (modelo preferido, etc.)",
-            "title": "Metadata"
-          },
-          "provider": {
-            "description": "Provedor da API. Valores: ('openai', 'anthropic', 'google', 'llama_cloud')",
-            "title": "Provider",
-            "type": "string"
-          },
-          "validateKey": {
-            "default": true,
-            "description": "Se deve validar a key antes de salvar",
-            "title": "Validatekey",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "provider",
-          "apiKey"
-        ],
-        "title": "CreateAPIKeyRequest",
-        "type": "object"
-      },
-      "CreateAPIKeyResponse": {
-        "description": "Resposta apos criar API key.",
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "isDefault": {
-            "title": "Isdefault",
-            "type": "boolean"
-          },
-          "provider": {
-            "title": "Provider",
-            "type": "string"
-          },
-          "validationMessage": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Validationmessage"
-          },
-          "validationStatus": {
-            "title": "Validationstatus",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "provider",
-          "validationStatus",
-          "validationMessage",
-          "isDefault"
-        ],
-        "title": "CreateAPIKeyResponse",
-        "type": "object"
-      },
       "CreateConsensusRequest": {
         "properties": {
           "field_id": {
@@ -4178,25 +3807,6 @@
           "project_template_id"
         ],
         "title": "CreateRunRequest",
-        "type": "object"
-      },
-      "DeleteAPIKeyResult": {
-        "description": "Payload de ``DELETE /user-api-keys/{id}``.",
-        "properties": {
-          "deleted": {
-            "title": "Deleted",
-            "type": "boolean"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "deleted"
-        ],
-        "title": "DeleteAPIKeyResult",
         "type": "object"
       },
       "DiffStatus": {
@@ -4761,7 +4371,7 @@
         "type": "string"
       },
       "ExtractionErrorCode": {
-        "description": "Stable code for a terminal extraction failure, or for a typed\nsynchronous refusal on the extraction write paths.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_project_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``ENTRY_KEY_DUPLICATE`` \u2014 manual entry creation named an identity the\n  coordinate already holds (``EntryKeyDuplicateError``), refused as a 409\n  rather than silently renaming the entry the way the retired model path\n  did (\"Cox Model (2)\").\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
+        "description": "Stable code for a terminal extraction failure, or for a typed\nsynchronous refusal on the extraction write paths.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``ENTRY_KEY_DUPLICATE`` \u2014 manual entry creation named an identity the\n  coordinate already holds (``EntryKeyDuplicateError``), refused as a 409\n  rather than silently renaming the entry the way the retired model path\n  did (\"Cox Model (2)\").\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
         "enum": [
           "PDF_NOT_FOUND",
           "MISSING_API_KEY",
@@ -5556,47 +5166,6 @@
         "title": "InstanceIdentityUpdateRequest",
         "type": "object"
       },
-      "KeyValidationResult": {
-        "description": "Payload de ``POST /user-api-keys/{id}/validate``.",
-        "properties": {
-          "message": {
-            "title": "Message",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "valid",
-              "invalid",
-              "pending"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "message"
-        ],
-        "title": "KeyValidationResult",
-        "type": "object"
-      },
-      "ListAPIKeysData": {
-        "description": "Payload de ``GET /user-api-keys``.",
-        "properties": {
-          "keys": {
-            "items": {
-              "$ref": "#/components/schemas/APIKeyResponse"
-            },
-            "title": "Keys",
-            "type": "array"
-          }
-        },
-        "required": [
-          "keys"
-        ],
-        "title": "ListAPIKeysData",
-        "type": "object"
-      },
       "ListCollectionsResponse": {
         "description": "Response de listar collections.",
         "properties": {
@@ -5615,57 +5184,144 @@
         "title": "ListCollectionsResponse",
         "type": "object"
       },
-      "ListProvidersData": {
-        "description": "Payload de ``GET /user-api-keys/providers``.",
+      "LlmConnectionDeleteResult": {
         "properties": {
-          "providers": {
-            "items": {
-              "$ref": "#/components/schemas/ProviderInfo"
-            },
-            "title": "Providers",
-            "type": "array"
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
           }
         },
         "required": [
-          "providers"
+          "deleted",
+          "id"
         ],
-        "title": "ListProvidersData",
+        "title": "LlmConnectionDeleteResult",
         "type": "object"
       },
-      "LlmEndpointCapabilities": {
-        "description": "What the probe learned about an endpoint.\n\n``output_mode`` is the highest probe-ladder rung the endpoint passed\n(tool \u2192 native \u2192 prompted); ``None`` means never probed.\n``models_seen`` is the sanitized ``/models`` listing captured at\nprobe time (capped at the probe seam, not here).",
+      "LlmConnectionRead": {
         "properties": {
-          "models_seen": {
-            "default": [],
+          "allowed_models": {
             "items": {
               "type": "string"
             },
-            "title": "Models Seen",
+            "title": "Allowed Models",
             "type": "array"
           },
-          "output_mode": {
+          "base_url": {
             "anyOf": [
               {
-                "enum": [
-                  "tool",
-                  "native",
-                  "prompted"
-                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Output Mode"
+            "title": "Base Url"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/LlmEndpointCapabilities"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Name"
+          },
+          "has_api_key": {
+            "title": "Has Api Key",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "last_validated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Validated At"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "user",
+              "project"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "validation_status": {
+            "enum": [
+              "unverified",
+              "ok",
+              "failed"
+            ],
+            "title": "Validation Status",
+            "type": "string"
           }
         },
-        "title": "LlmEndpointCapabilities",
+        "required": [
+          "id",
+          "scope",
+          "provider",
+          "label",
+          "base_url",
+          "has_api_key",
+          "allowed_models",
+          "capabilities",
+          "validation_status",
+          "last_validated_at",
+          "last_used_at",
+          "created_by_name",
+          "created_at"
+        ],
+        "title": "LlmConnectionRead",
         "type": "object"
       },
-      "LlmEndpointCreateRequest": {
+      "LlmConnectionUpdateRequest": {
         "additionalProperties": false,
-        "description": "POST body for a new endpoint.\n\n``api_key`` is either omitted/``None`` (a keyless endpoint, e.g.\nlocal Ollama) or a non-empty secret \u2014 an empty string is a mistake,\nnot keyless, and is rejected.",
+        "description": "Full-replace ``label`` / ``base_url`` / ``allowed_models``; ``api_key``\ntri-state: ``None`` keeps, ``\"\"`` clears (host-bearing providers only \u2014\nthe service refuses it elsewhere), non-empty re-encrypts.",
         "properties": {
           "allowed_models": {
             "default": [],
@@ -5691,9 +5347,16 @@
             "title": "Api Key"
           },
           "base_url": {
-            "maxLength": 2048,
-            "title": "Base Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
           },
           "label": {
             "maxLength": 80,
@@ -5703,34 +5366,12 @@
           }
         },
         "required": [
-          "label",
-          "base_url"
+          "label"
         ],
-        "title": "LlmEndpointCreateRequest",
+        "title": "LlmConnectionUpdateRequest",
         "type": "object"
       },
-      "LlmEndpointDeleteResult": {
-        "description": "DELETE returns 200 + this envelope payload (house pattern \u2014\n``DeleteAPIKeyResult``; a 204 would violate the envelope gate).",
-        "properties": {
-          "deleted": {
-            "title": "Deleted",
-            "type": "boolean"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "deleted",
-          "id"
-        ],
-        "title": "LlmEndpointDeleteResult",
-        "type": "object"
-      },
-      "LlmEndpointProbeResult": {
-        "description": "Outcome of a verify probe, as returned to the manager.\n\n``error`` is sanitized \u2014 a reason class only (timeout, refused,\nTLS, HTTP status), never raw upstream bodies or connection detail.",
+      "LlmConnectionVerifyResult": {
         "properties": {
           "error": {
             "anyOf": [
@@ -5781,181 +5422,38 @@
           "models_seen",
           "error"
         ],
-        "title": "LlmEndpointProbeResult",
+        "title": "LlmConnectionVerifyResult",
         "type": "object"
       },
-      "LlmEndpointRead": {
-        "description": "One endpoint as the manager-only surface renders it.\n\nNEVER carries key material \u2014 ``has_api_key`` is the only trace that\na key exists. ``base_url`` is visible because this read serves the\nmanager management surface only.",
+      "LlmEndpointCapabilities": {
+        "description": "What the probe learned about an endpoint.\n\n``output_mode`` is the highest probe-ladder rung the endpoint passed\n(tool \u2192 native \u2192 prompted); ``None`` means never probed.\n``models_seen`` is the sanitized ``/models`` listing captured at\nprobe time (capped at the probe seam, not here).",
         "properties": {
-          "allowed_models": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Allowed Models",
-            "type": "array"
-          },
-          "base_url": {
-            "title": "Base Url",
-            "type": "string"
-          },
-          "capabilities": {
-            "$ref": "#/components/schemas/LlmEndpointCapabilities"
-          },
-          "created_by_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By Name"
-          },
-          "has_api_key": {
-            "title": "Has Api Key",
-            "type": "boolean"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "last_validated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Validated At"
-          },
-          "validation_status": {
-            "enum": [
-              "unverified",
-              "ok",
-              "failed"
-            ],
-            "title": "Validation Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "label",
-          "base_url",
-          "has_api_key",
-          "allowed_models",
-          "capabilities",
-          "validation_status",
-          "last_validated_at",
-          "created_by_name"
-        ],
-        "title": "LlmEndpointRead",
-        "type": "object"
-      },
-      "LlmEndpointUpdateRequest": {
-        "additionalProperties": false,
-        "description": "PUT is full-replace for ``label``/``base_url``/``allowed_models``.\n\n``api_key`` is tri-state: ``None`` = keep the stored key; ``\"\"`` =\nclear it (endpoint becomes keyless); a non-empty string = set a new\nkey. The tri-state semantics are applied by the service \u2014 this shape\nonly distinguishes the three states without ever echoing the secret.",
-        "properties": {
-          "allowed_models": {
+          "models_seen": {
             "default": [],
             "items": {
-              "maxLength": 200,
               "type": "string"
             },
-            "maxItems": 200,
-            "title": "Allowed Models",
+            "title": "Models Seen",
             "type": "array"
           },
-          "api_key": {
+          "output_mode": {
             "anyOf": [
               {
-                "format": "password",
-                "type": "string",
-                "writeOnly": true
+                "enum": [
+                  "tool",
+                  "native",
+                  "prompted"
+                ],
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Api Key"
-          },
-          "base_url": {
-            "maxLength": 2048,
-            "title": "Base Url",
-            "type": "string"
-          },
-          "label": {
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Label",
-            "type": "string"
+            "title": "Output Mode"
           }
         },
-        "required": [
-          "label",
-          "base_url"
-        ],
-        "title": "LlmEndpointUpdateRequest",
-        "type": "object"
-      },
-      "LlmEngineAlternate": {
-        "additionalProperties": false,
-        "description": "One fallback engine pair \u2014 the stored and request entry shape.\n\n``extra=\"forbid\"`` + bounded field lengths: a REQUEST entry smuggling\nkeys (temperature/seed \u2014 same posture as ``LlmEngineUpdateRequest``) or\nan oversized value is a hard 422; a hand-written STORED entry with the\nsame defects is dropped by the tolerant per-entry validator on\n``LlmEngineStored.alternates`` \u2014 the entry degrades, never the payload.",
-        "properties": {
-          "model": {
-            "maxLength": 200,
-            "title": "Model",
-            "type": "string"
-          },
-          "provider": {
-            "maxLength": 200,
-            "title": "Provider",
-            "type": "string"
-          }
-        },
-        "required": [
-          "provider",
-          "model"
-        ],
-        "title": "LlmEngineAlternate",
-        "type": "object"
-      },
-      "LlmEngineAlternateRead": {
-        "description": "One alternate as the popover renders it: the pair plus its canonical\ncatalogue id and a per-entry ``retired`` flag (the catalogue no longer\nlists that pair).",
-        "properties": {
-          "canonical": {
-            "title": "Canonical",
-            "type": "string"
-          },
-          "model": {
-            "title": "Model",
-            "type": "string"
-          },
-          "provider": {
-            "title": "Provider",
-            "type": "string"
-          },
-          "retired": {
-            "title": "Retired",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "provider",
-          "model",
-          "canonical",
-          "retired"
-        ],
-        "title": "LlmEngineAlternateRead",
+        "title": "LlmEndpointCapabilities",
         "type": "object"
       },
       "LlmEngineCatalogEntryRead": {
@@ -5964,10 +5462,6 @@
           "best_for": {
             "title": "Best For",
             "type": "string"
-          },
-          "byok_only": {
-            "title": "Byok Only",
-            "type": "boolean"
           },
           "canonical": {
             "title": "Canonical",
@@ -6006,60 +5500,14 @@
           "label",
           "best_for",
           "context_window",
-          "cost_tier",
-          "byok_only"
+          "cost_tier"
         ],
         "title": "LlmEngineCatalogEntryRead",
         "type": "object"
       },
-      "LlmEngineRead": {
-        "description": "The resolved engine view the \u2699 popover renders.\n\n``source`` says whether the pair is the project's stored choice or the\nserver's env default; ``retired`` flags a stored pair the catalogue no\nlonger lists (new runs are refused until a manager re-chooses).\n``availability`` maps provider \u2192 whether the CALLER can run it (their\nown stored key, or a global service key) \u2014 booleans only, never key\nmaterial or metadata. ``alternates`` is the stored fallback list with\na per-entry ``retired`` flag.\n\n``endpoint_id`` / ``endpoint_label`` are the ONLY endpoint data on this\nread (decision 12 \u2014 no embedded endpoints matrix; the picker's endpoint\ngroups come from the manager-only endpoints listing instead): the\nstored pointer plus the row's label for the chip. ``endpoint_label`` is\n``None`` for catalogue engines AND for a dangling pointer (row gone \u2014\n``retired`` is True then).",
+      "LlmEngineDefaultRead": {
+        "description": "The project default with its lock and attribution (\u00a74).",
         "properties": {
-          "alternates": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/LlmEngineAlternateRead"
-            },
-            "title": "Alternates",
-            "type": "array"
-          },
-          "availability": {
-            "additionalProperties": {
-              "type": "boolean"
-            },
-            "title": "Availability",
-            "type": "object"
-          },
-          "catalog": {
-            "items": {
-              "$ref": "#/components/schemas/LlmEngineCatalogEntryRead"
-            },
-            "title": "Catalog",
-            "type": "array"
-          },
-          "endpoint_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Endpoint Id"
-          },
-          "endpoint_label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Endpoint Label"
-          },
           "mode": {
             "enum": [
               "fast",
@@ -6094,7 +5542,7 @@
           "source": {
             "enum": [
               "project",
-              "default"
+              "env_default"
             ],
             "title": "Source",
             "type": "string"
@@ -6121,6 +5569,10 @@
               }
             ],
             "title": "Updated By Name"
+          },
+          "user_choice_allowed": {
+            "title": "User Choice Allowed",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6129,31 +5581,15 @@
           "mode",
           "source",
           "retired",
-          "catalog",
-          "availability"
+          "user_choice_allowed"
         ],
-        "title": "LlmEngineRead",
+        "title": "LlmEngineDefaultRead",
         "type": "object"
       },
-      "LlmEngineUpdateRequest": {
-        "additionalProperties": false,
-        "description": "PUT body for the project engine.\n\n``mode: Literal[\"fast\", \"verified\"]`` is the closed write gate (\u00a75 \u2014\nVerified shipped with the verify pass; anything else is a free 422);\n``extra=\"forbid\"`` blocks smuggled keys (no temperature/seed, by design).\n``alternates`` is tri-state: ``None`` (field absent) keeps the stored\nlist, ``[]`` clears it, a list replaces it.\n\n``endpoint_id`` selects a project custom endpoint as the engine (C2\nB8): it requires ``provider == \"openai_compatible\"`` and the service\nvalidates the endpoint (project-scoped, model allowed, verified)\ninstead of the catalogue. Omitted/None = a catalogue engine.",
+      "LlmEngineEffectiveRead": {
+        "description": "What the VIEWER's next run runs on: their own row, or the default.\nThe run form renders this, never ``default``.",
         "properties": {
-          "alternates": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/LlmEngineAlternate"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Alternates"
-          },
-          "endpoint_id": {
+          "connection_id": {
             "anyOf": [
               {
                 "format": "uuid",
@@ -6163,8 +5599,118 @@
                 "type": "null"
               }
             ],
-            "title": "Endpoint Id"
+            "title": "Connection Id"
           },
+          "connection_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Label"
+          },
+          "mode": {
+            "enum": [
+              "fast",
+              "verified"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "retired": {
+            "title": "Retired",
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "user",
+              "project",
+              "env_default"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "mode",
+          "source",
+          "retired"
+        ],
+        "title": "LlmEngineEffectiveRead",
+        "type": "object"
+      },
+      "LlmEngineRead": {
+        "description": "\u00a74: ``availability`` says whose credential a row on each provider would\nrun on for THIS caller \u2014 a scope tag, never key material.",
+        "properties": {
+          "availability": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "user",
+                    "project",
+                    "global"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Availability",
+            "type": "object"
+          },
+          "catalog": {
+            "items": {
+              "$ref": "#/components/schemas/LlmEngineCatalogEntryRead"
+            },
+            "title": "Catalog",
+            "type": "array"
+          },
+          "default": {
+            "$ref": "#/components/schemas/LlmEngineDefaultRead"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/LlmEngineEffectiveRead"
+          },
+          "source": {
+            "enum": [
+              "user",
+              "project",
+              "env_default"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "default",
+          "effective",
+          "source",
+          "catalog",
+          "availability"
+        ],
+        "title": "LlmEngineRead",
+        "type": "object"
+      },
+      "LlmEngineUpdateRequest": {
+        "additionalProperties": false,
+        "description": "PUT body for the project default (\u00a74): always a catalogue pair, so\nthere is no ``connection_id`` field \u2014 ``extra=\"forbid\"`` makes a\nsubmitted one (or ``alternates`` / ``endpoint_id``) the 422 \u00a76 asks for.",
+        "properties": {
           "mode": {
             "default": "fast",
             "enum": [
@@ -6181,6 +5727,11 @@
           "provider": {
             "title": "Provider",
             "type": "string"
+          },
+          "user_choice_allowed": {
+            "default": true,
+            "title": "User Choice Allowed",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6869,6 +6420,63 @@
         "title": "ProjectArchiveUpdate",
         "type": "object"
       },
+      "ProjectConnectionCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_models": {
+            "default": [],
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Allowed Models",
+            "type": "array"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 50,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "label"
+        ],
+        "title": "ProjectConnectionCreateRequest",
+        "type": "object"
+      },
       "ProposalRecordResponse": {
         "properties": {
           "confidence_score": {
@@ -6955,33 +6563,63 @@
         "title": "ProposalRecordResponse",
         "type": "object"
       },
-      "ProviderInfo": {
-        "description": "One supported BYOK provider (public catalogue).",
+      "ProviderRead": {
+        "description": "\u00a74 ``GET /me/providers`` row; ``global_key_available`` is per deployment.",
         "properties": {
           "description": {
             "title": "Description",
             "type": "string"
           },
-          "docsUrl": {
-            "title": "Docsurl",
-            "type": "string"
+          "docs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docs Url"
+          },
+          "global_key_available": {
+            "title": "Global Key Available",
+            "type": "boolean"
           },
           "id": {
             "title": "Id",
             "type": "string"
           },
-          "name": {
-            "title": "Name",
+          "key_optional": {
+            "title": "Key Optional",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
             "type": "string"
+          },
+          "needs_host": {
+            "title": "Needs Host",
+            "type": "boolean"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
           }
         },
         "required": [
           "id",
-          "name",
+          "label",
           "description",
-          "docsUrl"
+          "docs_url",
+          "needs_host",
+          "key_optional",
+          "scopes",
+          "global_key_available"
         ],
-        "title": "ProviderInfo",
+        "title": "ProviderRead",
         "type": "object"
       },
       "PublishedStateResponse": {
@@ -10481,69 +10119,6 @@
         "title": "TestConnectionResponse",
         "type": "object"
       },
-      "UpdateAPIKeyRequest": {
-        "description": "Request for atualizar API key.",
-        "properties": {
-          "isActive": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Se a key esta ativa",
-            "title": "Isactive"
-          },
-          "isDefault": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Se deve ser a key default",
-            "title": "Isdefault"
-          },
-          "keyName": {
-            "anyOf": [
-              {
-                "maxLength": 100,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Nome for identificar a key",
-            "title": "Keyname"
-          }
-        },
-        "title": "UpdateAPIKeyRequest",
-        "type": "object"
-      },
-      "UpdateAPIKeyResult": {
-        "description": "Payload de ``PATCH /user-api-keys/{id}``.",
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "updated": {
-            "title": "Updated",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "updated"
-        ],
-        "title": "UpdateAPIKeyResult",
-        "type": "object"
-      },
       "UpdateTemplateActiveRequest": {
         "properties": {
           "is_active": {
@@ -10619,6 +10194,117 @@
           "llm_template_instruction"
         ],
         "title": "UpdateTemplateInstructionResponse",
+        "type": "object"
+      },
+      "UserConnectionCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_models": {
+            "default": [],
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Allowed Models",
+            "type": "array"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 50,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "label"
+        ],
+        "title": "UserConnectionCreateRequest",
+        "type": "object"
+      },
+      "UserEngineClearResult": {
+        "properties": {
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cleared"
+        ],
+        "title": "UserEngineClearResult",
+        "type": "object"
+      },
+      "UserEngineUpdateRequest": {
+        "additionalProperties": false,
+        "description": "PUT body for the viewer's own row (\u00a74). ``connection_id`` is the\ncaller's own host connection, required iff ``provider`` is\n``openai_compatible`` (the service checks ownership and the probe).",
+        "properties": {
+          "connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "mode": {
+            "default": "fast",
+            "enum": [
+              "fast",
+              "verified"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "UserEngineUpdateRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -11821,6 +11507,254 @@
         ]
       }
     },
+    "/api/v1/me/connections": {
+      "get": {
+        "operationId": "list_my_connections_api_v1_me_connections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_LlmConnectionRead__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List My Connections",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "operationId": "create_my_connection_api_v1_me_connections_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserConnectionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConnectionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create My Connection",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/connections/{connection_id}": {
+      "delete": {
+        "operationId": "delete_my_connection_api_v1_me_connections__connection_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConnectionDeleteResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete My Connection",
+        "tags": [
+          "me"
+        ]
+      },
+      "put": {
+        "operationId": "update_my_connection_api_v1_me_connections__connection_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmConnectionUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConnectionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update My Connection",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/connections/{connection_id}/verify": {
+      "post": {
+        "operationId": "verify_my_connection_api_v1_me_connections__connection_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConnectionVerifyResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Verify My Connection",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/providers": {
+      "get": {
+        "operationId": "list_providers_api_v1_me_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ProviderRead__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List Providers",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/ai-context": {
       "get": {
         "description": "The stored PICOTS, the labels the prompt will use, the switch, the preview.",
@@ -11981,6 +11915,292 @@
           }
         ],
         "summary": "Set Archived",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/connections": {
+      "get": {
+        "operationId": "list_project_connections_api_v1_projects__project_id__connections_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_LlmConnectionRead__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List Project Connections",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "operationId": "create_project_connection_api_v1_projects__project_id__connections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectConnectionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConnectionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create Project Connection",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/connections/{connection_id}": {
+      "delete": {
+        "operationId": "delete_project_connection_api_v1_projects__project_id__connections__connection_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConnectionDeleteResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete Project Connection",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "operationId": "update_project_connection_api_v1_projects__project_id__connections__connection_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmConnectionUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConnectionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Project Connection",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/connections/{connection_id}/verify": {
+      "post": {
+        "operationId": "verify_project_connection_api_v1_projects__project_id__connections__connection_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConnectionVerifyResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Verify Project Connection",
         "tags": [
           "projects"
         ]
@@ -12425,297 +12645,6 @@
         ]
       }
     },
-    "/api/v1/projects/{project_id}/llm-endpoints": {
-      "get": {
-        "description": "Every endpoint of the project \u2014 the manager management surface.",
-        "operationId": "list_llm_endpoints_api_v1_projects__project_id__llm_endpoints_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_LlmEndpointRead__"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "List Llm Endpoints",
-        "tags": [
-          "projects"
-        ]
-      },
-      "post": {
-        "description": "Register an endpoint (URL vetted, key encrypted service-side).",
-        "operationId": "create_llm_endpoint_api_v1_projects__project_id__llm_endpoints_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LlmEndpointCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LlmEndpointRead_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Create Llm Endpoint",
-        "tags": [
-          "projects"
-        ]
-      }
-    },
-    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}": {
-      "delete": {
-        "description": "Delete the endpoint \u2014 200 + typed result (decision 15, never 204).\n\n``EndpointUnavailableError`` (the project engine still points here)\npropagates to the AppError handler's 409 envelope.",
-        "operationId": "delete_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "endpoint_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Endpoint Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LlmEndpointDeleteResult_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Delete Llm Endpoint",
-        "tags": [
-          "projects"
-        ]
-      },
-      "put": {
-        "description": "Full-replace update; ``api_key`` tri-state is applied service-side.",
-        "operationId": "update_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "endpoint_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Endpoint Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LlmEndpointUpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LlmEndpointRead_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Update Llm Endpoint",
-        "tags": [
-          "projects"
-        ]
-      }
-    },
-    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}/verify": {
-      "post": {
-        "description": "Run the capabilities probe and persist its outcome (commit after the\nservice call \u2014 the llm-engine PUT pattern).\n\n``EndpointUnavailableError`` (stored key no longer decrypts) propagates\nto the AppError handler's 409 envelope.",
-        "operationId": "verify_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__verify_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "endpoint_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Endpoint Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LlmEndpointProbeResult_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Verify Llm Endpoint",
-        "tags": [
-          "projects"
-        ]
-      }
-    },
     "/api/v1/projects/{project_id}/llm-engine": {
       "get": {
         "description": "Resolved engine + catalogue + the caller's per-provider availability.",
@@ -12765,7 +12694,7 @@
         ]
       },
       "put": {
-        "description": "Persist the project's engine choice (validated, attributed).\n\n``alternates`` rides the same write: ``None`` (field absent) keeps the\nstored list, ``[]`` clears it, a list replaces it \u2014 every entry\ncatalogue-validated by the service (unknown pair \u2192 400).\n\n``endpoint_id`` (B8) selects an endpoint-backed engine; the service\nvalidates it against the project's endpoints instead of the catalogue\n(shape/ownership/verification failures \u2192 400 like any other refusal).",
+        "description": "Persist the project's default engine choice (validated, attributed).\n\nThe default is always a catalogue pair (\u00a73.1) \u2014 a host provider or an\noff-catalogue pair is a 400. ``user_choice_allowed`` rides the same\nwrite: ``False`` binds members to this default.",
         "operationId": "set_llm_engine_api_v1_projects__project_id__llm_engine_put",
         "parameters": [
           {
@@ -12817,6 +12746,112 @@
           }
         ],
         "summary": "Set Llm Engine",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/llm-engine/me": {
+      "delete": {
+        "description": "Drop the viewer's own row \u2014 the project default takes over again.",
+        "operationId": "clear_my_llm_engine_api_v1_projects__project_id__llm_engine_me_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserEngineClearResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Clear My Llm Engine",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "description": "The viewer's own engine for new runs (\u00a74): 403 while locked for a\nnon-manager, 422 without a credential (AppErrors, typed envelopes).",
+        "operationId": "set_my_llm_engine_api_v1_projects__project_id__llm_engine_me_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserEngineUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmEngineRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Set My Llm Engine",
         "tags": [
           "projects"
         ]
@@ -15297,277 +15332,6 @@
         "summary": "Get Run View",
         "tags": [
           "extraction-runs"
-        ]
-      }
-    },
-    "/api/v1/user-api-keys": {
-      "get": {
-        "description": "List todas as API keys do user (sem expor as keys).",
-        "operationId": "list_api_keys_api_v1_user_api_keys_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "active_only",
-            "required": false,
-            "schema": {
-              "default": true,
-              "title": "Active Only",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ListAPIKeysData_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Listar API keys",
-        "tags": [
-          "User API Keys"
-        ]
-      },
-      "post": {
-        "description": "Adiciona nova API key for um provedor.",
-        "operationId": "create_api_key_api_v1_user_api_keys_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAPIKeyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CreateAPIKeyResponse_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Criar API key",
-        "tags": [
-          "User API Keys"
-        ]
-      }
-    },
-    "/api/v1/user-api-keys/providers": {
-      "get": {
-        "description": "List os provedores de IA suportados.",
-        "operationId": "list_providers_api_v1_user_api_keys_providers_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ListProvidersData_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Listar provedores suportados",
-        "tags": [
-          "User API Keys"
-        ]
-      }
-    },
-    "/api/v1/user-api-keys/{key_id}": {
-      "delete": {
-        "description": "Remove permanentemente uma API key.",
-        "operationId": "delete_api_key_api_v1_user_api_keys__key_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "key_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Key Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DeleteAPIKeyResult_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Remover API key",
-        "tags": [
-          "User API Keys"
-        ]
-      },
-      "patch": {
-        "description": "Update propriedades de uma API key.",
-        "operationId": "update_api_key_api_v1_user_api_keys__key_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "key_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Key Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAPIKeyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UpdateAPIKeyResult_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Atualizar API key",
-        "tags": [
-          "User API Keys"
-        ]
-      }
-    },
-    "/api/v1/user-api-keys/{key_id}/validate": {
-      "post": {
-        "description": "Revalida uma API key existente.",
-        "operationId": "validate_api_key_api_v1_user_api_keys__key_id__validate_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "key_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Key Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_KeyValidationResult_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "Supabase JWT": []
-          }
-        ],
-        "summary": "Revalidar API key",
-        "tags": [
-          "User API Keys"
         ]
       }
     },

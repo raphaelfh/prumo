@@ -10,7 +10,7 @@
 import {useEffect, useMemo, useState} from 'react';
 import {Bell, CheckCircle2, Clock, Loader2, X, XCircle} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {HeaderIconButton} from '@/components/layout/HeaderIconButton';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Badge} from '@/components/ui/badge';
 import {
     DropdownMenu,
@@ -219,35 +219,39 @@ export function NotificationCenter() {
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
-        <HeaderIconButton
+        <IconButton
+          label={bellLabel}
+          side="bottom"
           className={cn(
               'relative',
               hasActiveBackgroundJobs && 'text-foreground/90 [&_svg]:opacity-90'
           )}
           aria-busy={hasActiveBackgroundJobs}
-          aria-label={bellLabel}
-        >
-            <Bell strokeWidth={1.5}/>
-            {hasActiveBackgroundJobs && (
-                <span
-                    className="pointer-events-none absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-info shadow-[0_0_0_1px_hsl(var(--background))] motion-safe:animate-pulse"
-                    aria-hidden
-                />
-            )}
-          {unreadCount > 0 && (
-            // Non-destructive: a finished background job is informational, not an
-            // error — a primary-accent count, not the alarming red destructive
-            // badge. The count is announced via the button's aria-label, so the
-            // badge itself is aria-hidden to avoid a double read.
-            <Badge
-              variant="default"
-              aria-hidden="true"
-              className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
-            >
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </Badge>
-          )}
-        </HeaderIconButton>
+          icon={
+            <>
+              <Bell strokeWidth={1.5}/>
+              {hasActiveBackgroundJobs && (
+                  <span
+                      className="pointer-events-none absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-info shadow-[0_0_0_1px_hsl(var(--background))] motion-safe:animate-pulse"
+                      aria-hidden
+                  />
+              )}
+              {unreadCount > 0 && (
+                // Non-destructive: a finished background job is informational, not an
+                // error — a primary-accent count, not the alarming red destructive
+                // badge. The count is announced via the button's aria-label, so the
+                // badge itself is aria-hidden to avoid a double read.
+                <Badge
+                  variant="default"
+                  aria-hidden="true"
+                  className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Badge>
+              )}
+            </>
+          }
+        />
       </DropdownMenuTrigger>
       
       <DropdownMenuContent align="end" className="w-[min(400px,calc(100vw-1rem))]">
@@ -311,18 +315,19 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
     <div
       className={cn(
         'group relative p-3 rounded-lg border transition-colors',
-        isClickable ? 'has-[[role=menuitem]:hover]:bg-accent' : 'bg-background'
+        isClickable ? 'hover:bg-accent' : 'bg-background'
       )}
     >
       {isClickable && (
         // Stretched control instead of an onClick on the card: the card nests
-        // the remove button, and interactive elements must not nest. It is a
-        // menuitem, not a <button>, because Radix menus swallow Tab — arrow
-        // keys reach only menuitems.
+        // the dismiss button, and interactive elements must not nest. It is a
+        // menuitem, not a <button>, because Radix menus swallow Tab
+        // (@radix-ui/react-menu preventDefaults it) — arrow keys reach only
+        // menuitems, so a <button> here is mouse-only.
         <DropdownMenuItem
           aria-label={getJobTitle(job)}
           onSelect={() => onClick(job)}
-          className="absolute inset-0 cursor-pointer rounded-lg p-0 focus:bg-transparent data-[highlighted]:bg-transparent focus-visible:outline-2 focus-visible:outline-ring"
+          className="absolute inset-0 rounded-lg p-0 focus:bg-transparent data-[highlighted]:bg-transparent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         />
       )}
       <div className="flex items-start gap-3">
@@ -337,15 +342,14 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
             <p className="text-sm font-medium leading-tight">
               {getJobTitle(job)}
             </p>
-            
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative z-10 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+
+            <IconButton
+              label={t('navigation', 'notificationDismiss')}
+              size="icon-xs"
+              className="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={(e) => onRemove(job.id, e)}
-            >
-              <X className="h-3 w-3" />
-            </Button>
+              icon={<X />}
+            />
           </div>
 
           <p className="text-xs text-muted-foreground line-clamp-2">

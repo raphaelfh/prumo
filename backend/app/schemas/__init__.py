@@ -38,12 +38,6 @@ from app.schemas.extraction import (
     SingleSectionResult,
     ValueResponse,
 )
-from app.schemas.user_api_key import (
-    APIKeyResponse,
-    CreateAPIKeyRequest,
-    CreateAPIKeyResponse,
-    UpdateAPIKeyRequest,
-)
 from app.schemas.zotero import (
     DownloadAttachmentRequest,
     DownloadAttachmentResponse,
@@ -103,10 +97,6 @@ __all__ = [
     "SaveValueRequest",
     "ValueResponse",
     # User API Keys
-    "CreateAPIKeyRequest",
-    "UpdateAPIKeyRequest",
-    "APIKeyResponse",
-    "CreateAPIKeyResponse",
     # Article
     "ArticleCreate",
     "ArticleUpdate",

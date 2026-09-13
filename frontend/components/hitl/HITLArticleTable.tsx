@@ -424,8 +424,7 @@ export function HITLArticleTable({
             open={filterPopoverOpen}
             onOpenChange={setFilterPopoverOpen}
             activeCount={activeFiltersCount}
-            tooltipLabel={t("extraction", "tableShortcutFilter")}
-            ariaLabel={t("extraction", "tableShortcutFilter")}
+            label={t("shared", "listFilter")}
           >
             <ListFilterPanel
               fields={FILTER_FIELDS}

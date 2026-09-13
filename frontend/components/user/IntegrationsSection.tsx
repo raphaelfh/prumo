@@ -1,9 +1,9 @@
 /**
- * Integrations section: API keys and Zotero.
+ * Integrations section: AI connections and Zotero.
  */
 
 import {SettingsSection} from '@/components/settings';
-import {ApiKeysSection} from '@/components/user/ApiKeysSection';
+import {AiConnectionsSection} from '@/components/user/AiConnectionsSection';
 import {ZoteroIntegrationSection} from '@/components/project/settings/ZoteroIntegrationSection';
 import {t} from '@/lib/copy';
 
@@ -11,10 +11,10 @@ export function IntegrationsSection() {
   return (
       <div className="space-y-8">
           <SettingsSection
-              title={t('user', 'integrationsApiKeysTitle')}
-              description={t('user', 'integrationsApiKeysDescription')}
+              title={t('llmConnections', 'integrationsTitle')}
+              description={t('llmConnections', 'integrationsDescription')}
           >
-              <ApiKeysSection/>
+              <AiConnectionsSection/>
           </SettingsSection>
           <SettingsSection
               title={t('user', 'integrationsZoteroTitle')}

@@ -161,6 +161,54 @@ describe("NotificationCenter", () => {
         open.mockRestore();
     });
 
+    it("exposes a clickable job as a menuitem named by its title, and clicking it fires the click handler", async () => {
+        const user = userEvent.setup();
+        const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+        act(() => {
+            useBackgroundJobs.setState({
+                jobs: [completedExportJob("job-1")],
+                lastReadAt: Date.now(),
+            });
+        });
+        render(
+            <MemoryRouter>
+                <NotificationCenter />
+            </MemoryRouter>,
+        );
+
+        await user.click(screen.getByRole("button", {name: /notifications/i}));
+
+        // A menuitem, not a button: see the keyboard test above.
+        const jobItem = await screen.findByRole("menuitem", {name: "Export to Excel"});
+        await user.click(jobItem);
+
+        expect(openSpy).toHaveBeenCalledWith("https://example.test/export.xlsx", "_blank", "noopener,noreferrer");
+        openSpy.mockRestore();
+    });
+
+    it("dismisses a job without firing the click handler", async () => {
+        const user = userEvent.setup();
+        const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+        act(() => {
+            useBackgroundJobs.setState({
+                jobs: [completedExportJob("job-1")],
+                lastReadAt: Date.now(),
+            });
+        });
+        render(
+            <MemoryRouter>
+                <NotificationCenter />
+            </MemoryRouter>,
+        );
+
+        await user.click(screen.getByRole("button", {name: /notifications/i}));
+        await user.click(screen.getByRole("button", {name: /dismiss/i}));
+
+        expect(useBackgroundJobs.getState().jobs).toHaveLength(0);
+        expect(openSpy).not.toHaveBeenCalled();
+        openSpy.mockRestore();
+    });
+
     it("names a generic template noun when the job carries no template name", async () => {
         const user = userEvent.setup();
         // Hold the job in-flight: the trailing template slot is only rendered

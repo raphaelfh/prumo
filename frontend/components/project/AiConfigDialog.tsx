@@ -39,9 +39,8 @@ import {useAiContext} from '@/hooks/project/useAiContext';
 import {useTemplateInstruction} from '@/hooks/extraction/useTemplateInstruction';
 import {PicotsPane} from './PicotsPane';
 import {TemplateInstructionPane} from '@/components/extraction/TemplateInstructionPane';
-import {LlmEnginePane} from '@/components/extraction/LlmEnginePane';
 
-export type AiConfigTab = 'model' | 'picots' | 'instruction';
+export type AiConfigTab = 'picots' | 'instruction';
 
 const SLOT_TOTAL = 6;
 
@@ -59,7 +58,7 @@ const CUSTOMIZE_SLOT = /\[customize:[^\]]*\]/g;
  * panel's real bottom edge (sticky-inside-a-padded-scrollport floats a
  * padding-width gap above it). */
 const PANE_CLASS =
-  'mt-0 flex h-[min(60dvh,28rem)] min-h-0 flex-col overflow-hidden data-[state=inactive]:hidden';
+  'mt-0 flex flex-1 min-h-0 flex-col overflow-hidden data-[state=inactive]:hidden';
 
 interface TemplateSlot {
   id: string;
@@ -76,9 +75,6 @@ interface AiConfigDialogProps {
   /** Which tab a trigger opens onto. The state resets with the content on
    * close, so each open lands on the trigger's own tab. */
   initialTab?: AiConfigTab;
-  /** The model tab — mounted on the extraction surfaces, where an engine is
-   * what the project actually runs on. */
-  withModel?: boolean;
   /** Without a template there is no instruction to edit (the project
    * settings summary opens the dialog this way). */
   template?: TemplateSlot;
@@ -103,7 +99,6 @@ function TabBadge({children, tone}: {children: string; tone?: 'warning'}) {
 interface AiConfigTabsProps {
   projectId: string;
   initialTab: AiConfigTab;
-  withModel: boolean;
   template?: TemplateSlot;
   onClose: () => void;
 }
@@ -113,7 +108,6 @@ interface AiConfigTabsProps {
 function AiConfigTabs({
   projectId,
   initialTab,
-  withModel,
   template,
   onClose,
 }: AiConfigTabsProps) {
@@ -137,18 +131,13 @@ function AiConfigTabs({
     <Tabs
       value={tab}
       onValueChange={(next) => setTab(next as AiConfigTab)}
-      className="flex min-h-0 flex-col"
+      className="flex min-h-0 flex-1 flex-col"
     >
       {/* `overflow-x-auto` is the backstop, not the plan: TAB_CLASS tightens
           the triggers enough to fit a 390px phone, and the scroll only ever
           engages on a narrower one — where a reachable tab beats a clipped
           one. `shrink-0` keeps the labels from squashing first. */}
       <TabsList className="mx-4 mt-3 shrink-0 justify-start overflow-x-auto">
-        {withModel && (
-          <TabsTrigger value="model" className={TAB_CLASS}>
-            {t('llmEngine', 'modelTabLabel')}
-          </TabsTrigger>
-        )}
         <TabsTrigger value="picots" className={TAB_CLASS}>
           {t('aiContext', 'dialogTitle')}
           <TabBadge>{`${filled}/${SLOT_TOTAL}`}</TabBadge>
@@ -162,20 +151,6 @@ function AiConfigTabs({
           </TabsTrigger>
         )}
       </TabsList>
-
-      {withModel && (
-        <TabsContent
-          forceMount
-          value="model"
-          data-testid="ai-config-model-panel"
-          className={PANE_CLASS}
-        >
-          <p className="mx-4 mb-2 mt-3 shrink-0 text-xs text-muted-foreground">
-            {t('llmEngine', 'modelScopeHint')}
-          </p>
-          <LlmEnginePane projectId={projectId} />
-        </TabsContent>
-      )}
 
       <TabsContent
         forceMount
@@ -194,7 +169,7 @@ function AiConfigTabs({
           forceMount
           value="instruction"
           data-testid="ai-config-instruction-panel"
-          className={`${PANE_CLASS} px-4 pb-4`}
+          className={`${PANE_CLASS} px-5 pb-5`}
         >
           <p className="mb-2 mt-3 shrink-0 text-xs text-muted-foreground">
             {t('extraction', 'instructionScopeHint')}
@@ -217,18 +192,15 @@ export function AiConfigDialog({
   open,
   onOpenChange,
   initialTab = 'picots',
-  withModel = false,
   template,
 }: AiConfigDialogProps) {
   const close = () => onOpenChange(false);
-  const tabbed = withModel || template != null;
+  const tabbed = template != null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex w-[calc(100vw-2rem)] max-w-2xl flex-col gap-0 rounded-lg p-0">
-        {/* `text-left` overrides shadcn's centred narrow default: a centred
-            title under a left-aligned tab row reads as two designs. */}
-        <DialogHeader className="shrink-0 space-y-0.5 border-b border-border/40 px-4 py-3 pr-10 text-left sm:text-left">
+      <DialogContent size="lg">
+        <DialogHeader>
           <DialogTitle className="text-[15px]">
             {tabbed
               ? t('aiContext', 'configDialogTitle')
@@ -244,7 +216,6 @@ export function AiConfigDialog({
           <AiConfigTabs
             projectId={projectId}
             initialTab={initialTab}
-            withModel={withModel}
             template={template}
             onClose={close}
           />

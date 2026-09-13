@@ -46,13 +46,6 @@ class Profile(Base, TimestampMixin):
         foreign_keys="ProjectMember.user_id",
     )
 
-    # API keys de provedores externos (OpenAI, Anthropic, etc.)
-    api_keys: Mapped[list["UserAPIKey"]] = relationship(  # type: ignore  # noqa: F821
-        "UserAPIKey",
-        back_populates="user",
-        cascade="all, delete-orphan",
-    )
-
     # Integracao Zotero
     zotero_integration: Mapped["ZoteroIntegration | None"] = relationship(  # type: ignore  # noqa: F821
         "ZoteroIntegration",

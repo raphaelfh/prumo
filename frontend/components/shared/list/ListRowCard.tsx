@@ -45,7 +45,7 @@ export function ListRowCard({
                     type="button"
                     aria-labelledby={titleId}
                     onClick={onClick}
-                    className="absolute inset-0 cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                    className="absolute inset-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 />
             )}
             {leading && <div className="relative z-10 shrink-0 flex items-center">{leading}</div>}

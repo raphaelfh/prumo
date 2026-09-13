@@ -20,20 +20,6 @@ import {MemoryRouter} from 'react-router';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-// The model tab reads the engine catalogue; mocked so this suite stays about
-// the dialog's own composition (the picker has its own two suites).
-vi.mock('@/hooks/extraction/useLlmEngine', () => ({
-  useLlmEngine: () => ({data: undefined, isError: true, isPending: false}),
-  useSetLlmEngine: () => ({mutate: vi.fn(), isPending: false}),
-}));
-vi.mock('@/hooks/extraction/useLlmEndpoints', () => ({
-  useLlmEndpoints: () => ({data: [], isError: false, isPending: false}),
-  useCreateLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
-  useUpdateLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
-  useDeleteLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
-  useVerifyLlmEndpoint: () => ({mutate: vi.fn(), isPending: false}),
-}));
-
 const getTemplateInstruction = vi.fn();
 const updateTemplateInstruction = vi.fn();
 vi.mock('@/services/templateInstructionService', () => ({
@@ -239,7 +225,7 @@ describe('AiConfigDialog — review question (no template)', () => {
 function TemplateModeHarness({
   initialTab,
 }: {
-  initialTab?: 'model' | 'picots' | 'instruction';
+  initialTab?: 'picots' | 'instruction';
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   return (
@@ -248,7 +234,6 @@ function TemplateModeHarness({
       open
       onOpenChange={vi.fn()}
       initialTab={initialTab}
-      withModel
       template={{
         id: TEMPLATE_ID,
         instructionDraft: draft,
@@ -258,7 +243,7 @@ function TemplateModeHarness({
   );
 }
 
-function renderTemplateMode(initialTab?: 'model' | 'picots' | 'instruction') {
+function renderTemplateMode(initialTab?: 'picots' | 'instruction') {
   const queryClient = new QueryClient({
     defaultOptions: {queries: {retry: false}, mutations: {retry: false}},
   });
@@ -275,9 +260,9 @@ describe('AiConfigDialog — tabbed (with template)', () => {
   it('carries every tab and opens on the tab the trigger asked for', async () => {
     renderTemplateMode('instruction');
 
-    // One popup for everything the AI is configured with: the model that
-    // runs it, the project's question, and the template's instruction.
-    expect(screen.getByRole('tab', {name: /Model/})).toBeInTheDocument();
+    // One popup for the project's question and the template's instruction;
+    // the engine lives on the worklist gear.
+    expect(screen.queryByRole('tab', {name: /Model/})).not.toBeInTheDocument();
     expect(
       screen.getByRole('tab', {name: /Review question/}),
     ).toBeInTheDocument();

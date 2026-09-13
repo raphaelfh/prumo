@@ -1,9 +1,9 @@
 import * as React from 'react';
-import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {ChevronDown, ChevronsUpDown, ChevronUp, LayoutGrid, SlidersHorizontal} from 'lucide-react';
+import {t} from '@/lib/copy';
 
 interface SortOption {
     value: string;
@@ -23,15 +23,16 @@ export interface ListDisplaySortPopoverProps {
     sortDirection: 'asc' | 'desc';
     onSortFieldChange: (value: string) => void;
     onSortDirectionChange: () => void;
-    orderLabel?: string;
+    orderLabel: string;
     /** Display section (optional). If omitted or empty, only sort is shown. */
     columns?: DisplayColumnOption[];
     visibleKeys?: Record<string, boolean>;
     onToggleColumn?: (key: string) => void;
+    /** Required whenever `columns` is passed — matches `tooltipLabel`/`ariaLabel`: no hardcoded English default. */
     displayPropertiesLabel?: string;
     /** Trigger / i18n */
-    tooltipLabel?: string;
-    ariaLabel?: string;
+    tooltipLabel: string;
+    ariaLabel: string;
 }
 
 export function ListDisplaySortPopover({
@@ -40,36 +41,27 @@ export function ListDisplaySortPopover({
                                            sortDirection,
                                            onSortFieldChange,
                                            onSortDirectionChange,
-                                           orderLabel = 'Ordering',
+                                           orderLabel,
                                            columns,
                                            visibleKeys = {},
                                            onToggleColumn,
-                                           displayPropertiesLabel = 'Display properties',
-                                           tooltipLabel = 'Display & sort',
-                                           ariaLabel = 'Display options',
+                                           displayPropertiesLabel,
+                                           tooltipLabel,
+                                           ariaLabel,
                                        }: ListDisplaySortPopoverProps) {
     const [open, setOpen] = React.useState(false);
     const showDisplaySection = Array.isArray(columns) && columns.length > 0 && onToggleColumn;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <PopoverTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
-                                aria-label={ariaLabel}
-                            >
-                                <SlidersHorizontal className="h-4 w-4"/>
-                            </Button>
-                        </PopoverTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">{tooltipLabel}</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
+            <PopoverTrigger asChild>
+                <IconButton
+                    label={ariaLabel}
+                    tooltip={tooltipLabel}
+                    side="bottom"
+                    icon={<SlidersHorizontal />}
+                />
+            </PopoverTrigger>
             <PopoverContent className="w-72 p-0 border-border/50 shadow-elev-popover" align="end">
                 <div className="p-3 space-y-4">
                     <div className="space-y-2">
@@ -90,18 +82,12 @@ export function ListDisplaySortPopover({
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <Button
+                            <IconButton
+                                label={t('shared', 'listToggleSortDirection')}
                                 variant="outline"
-                                size="icon"
-                                className="h-8 w-8 p-0 shrink-0"
                                 onClick={onSortDirectionChange}
-                            >
-                                {sortDirection === 'asc' ? (
-                                    <ChevronUp className="h-3.5 w-3.5"/>
-                                ) : (
-                                    <ChevronDown className="h-3.5 w-3.5"/>
-                                )}
-                            </Button>
+                                icon={sortDirection === 'asc' ? <ChevronUp /> : <ChevronDown />}
+                            />
                         </div>
                     </div>
                     {showDisplaySection && (
@@ -117,7 +103,7 @@ export function ListDisplaySortPopover({
                                         type="button"
                                         disabled={disabled}
                                         onClick={() => !disabled && onToggleColumn?.(key)}
-                                        className={`rounded-md border px-2 py-1 text-[12px] transition-colors disabled:opacity-60 disabled:cursor-default ${
+                                        className={`rounded-md border px-2 py-1 text-[12px] transition-colors disabled:opacity-60 ${
                                             visibleKeys[key]
                                                 ? 'border-primary/50 bg-primary/10 text-foreground'
                                                 : 'border-border/40 bg-muted/30 text-muted-foreground hover:bg-muted/50'

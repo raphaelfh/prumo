@@ -5,8 +5,7 @@
 
 import {Label} from '@/components/ui/label';
 import {Textarea} from '@/components/ui/textarea';
-import {Button} from '@/components/ui/button';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {IconButton} from '@/components/patterns/IconButton';
 import {HelpCircle} from 'lucide-react';
 import {Separator} from '@/components/ui/separator';
 import {TagInput} from '@/components/settings';
@@ -59,24 +58,13 @@ export function PICOTSItemEditor({
             {label}
           </Label>
           {infoTooltip !== '' && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className="rounded-full"
-                  type="button"
-                  aria-label={t('project', 'picotsHelpAria')}
-                >
-                    <HelpCircle className="text-muted-foreground" strokeWidth={1.5}/>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-sm">
-                  <p className="text-[13px]">{infoTooltip}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+            <IconButton
+              label={t('project', 'picotsHelpAria')}
+              tooltip={infoTooltip}
+              size="icon-xs"
+              className="rounded-full"
+              icon={<HelpCircle strokeWidth={1.5}/>}
+            />
           )}
         </div>
         <Textarea

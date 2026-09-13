@@ -22,10 +22,10 @@ from app.models.extraction import ExtractionRun
 from app.repositories import ExtractionRunRepository
 from app.schemas.llm_target import LlmTarget
 from app.schemas.prompt_composition import PromptComposition
-from app.services.llm_engine_service import resolve_project_engine
+from app.services.llm_engine_service import resolve_engine
 
 if TYPE_CHECKING:
-    from app.services.api_key_service import KeyScope
+    from app.services.llm_connection_service import KeyScope
 
 
 async def freeze_run_engine(
@@ -72,7 +72,7 @@ async def read_pinned_engine(db: AsyncSession, run_id: UUID) -> LlmTarget | None
 
 
 async def resolve_engine_for_run(
-    db: AsyncSession, *, run_id: UUID | None, project_id: UUID, repin: bool
+    db: AsyncSession, *, run_id: UUID | None, project_id: UUID, repin: bool, user_id: UUID
 ) -> LlmTarget:
     """The engine an attempt must run on — a READ; the write is the service's.
 
@@ -87,12 +87,15 @@ async def resolve_engine_for_run(
     resolved (the standalone paths reuse the coordinate's live run), and
     pinning from here would take the row lock before the run is even
     validated — held, on the in-request route, across the whole LLM call.
+
+    ``user_id`` is the kicker's id: it decides whose engine row (and, through
+    it, whose key) the fallback resolution takes.
     """
     if run_id is not None and not repin:
         pinned = await read_pinned_engine(db, run_id)
         if pinned is not None:
             return pinned
-    return await resolve_project_engine(db, project_id)
+    return await resolve_engine(db, project_id, user_id)
 
 
 def build_proposal_engine(
@@ -118,16 +121,19 @@ def build_proposal_engine(
     per-section LLM-call fact that would be a lie per field). Those keep flowing
     from the run snapshot, which readers merge underneath this.
 
-    ``endpoint_id`` is recorded here and nowhere else: ``build_run_provenance``
-    does not capture it, so custom-endpoint runs (C2) otherwise carry no engine
-    identity beyond a bare model string.
+    ``connection_id`` is recorded here and nowhere else: ``build_run_provenance``
+    does not capture it, so host-connection runs otherwise carry no engine
+    identity beyond a bare model string. ``deviation`` rides along so a reader
+    can tell a pin that departed from the project default apart from one that
+    followed it.
     """
     if snapshot is None:
         return None
     return {
         "provider": engine.provider,
         "model": engine.model,
-        "endpoint_id": engine.endpoint_id,
+        "connection_id": engine.connection_id,
+        "deviation": engine.deviation,
         "key_scope": snapshot.get("key_scope"),
         "mode_requested": snapshot.get("mode_requested"),
         "mode_executed": snapshot.get("mode_executed"),

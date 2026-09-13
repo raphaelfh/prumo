@@ -274,6 +274,14 @@ fight them. Things Radix cannot do for you:
   copy that lands on muted surfaces.
 - **`prefers-reduced-motion`** — see `field-just-updated` in `index.css` for
   the pattern; any new keyframe animation must guard the same way.
+- **Tooltips on disabled controls.** A disabled button has
+  `pointer-events-none`, so nothing on it can open a tooltip. `IconButton`
+  hangs the tooltip on a wrapping `span` when `disabled`; do the same by hand
+  for a disabled text button that must explain itself.
+- **One tooltip provider.** `Tooltip` renders its own provider when none is
+  mounted, so a component rendered alone in a test works without one. A test
+  that asserts tooltip text synchronously wraps the render in
+  `<TooltipProvider delayDuration={0}>`.
 
 Deep dive: `references/a11y.md`.
 
@@ -335,6 +343,14 @@ reference. Match the chrome dimensions in any new viewer.
   user needs to keep the underlying list visible.
 - Both close on `Esc` and outside click — do **not** disable that without a
   destructive-change confirmation in `AlertDialog`.
+
+**Frame mechanics.** Dialog, AlertDialog and Sheet read their classes from
+`components/ui/overlay-frame.ts`. Centring is `inset-0 m-auto`, never
+`translate-*`: in Tailwind v4 `translate` is its own CSS property, and the
+animate plugin's keyframe `transform` would compose with it and make the frame
+jump. `sm`/`md` use `h-fit` + `max-h-[85dvh]`; `lg` a fixed `h-[85dvh]`. Width
+and height live only in the cva variants, which is why a className on the
+content is gated.
 
 ### `field-just-updated` flash
 

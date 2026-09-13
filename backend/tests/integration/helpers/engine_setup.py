@@ -20,6 +20,7 @@ from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest_asyncio
+from fastapi import Request
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import text
@@ -30,25 +31,35 @@ from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.repositories import ExtractionRunRepository
-from app.schemas.llm_endpoint import LlmEndpointCreateRequest
-from app.schemas.llm_engine import LlmEngineAlternate, LlmEngineStored
+from app.schemas.llm_connection import UserConnectionCreateRequest
+from app.schemas.llm_engine import LlmEngineStored
 from app.schemas.llm_target import LlmTarget
-from app.services.llm_endpoint_service import LlmEndpointService
+from app.services.llm_connection_service import LlmConnectionService, owned_user_connection
 from app.services.llm_engine_service import LlmEngineService
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
 
+_PROFILE_HEADER = "x-test-profile"
+
 
 def client_as(profile_id: str, db_session: AsyncSession) -> AsyncClient:
-    """An ASGI client authenticated as ``profile_id``, on the test session."""
+    """An ASGI client authenticated as ``profile_id``, on the test session.
+
+    ``app.dependency_overrides`` is process-global, so a test taking TWO
+    client fixtures would otherwise run both as whichever identity was
+    built last — silently, and a role assertion would prove nothing. The
+    identity therefore rides the request (a header the client sends by
+    default) and the override reads it back, so N clients coexist.
+    """
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
-    async def override_get_current_user() -> TokenPayload:
+    async def override_get_current_user(request: Request) -> TokenPayload:
+        sub = request.headers.get(_PROFILE_HEADER, profile_id)
         return TokenPayload(
-            sub=profile_id,
-            email=f"{profile_id}@integration-test.prumo.local",
+            sub=sub,
+            email=f"{sub}@integration-test.prumo.local",
             role="authenticated",
             aal="aal1",
         )
@@ -59,7 +70,11 @@ def client_as(profile_id: str, db_session: AsyncSession) -> AsyncClient:
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_supabase] = override_get_supabase
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    return AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={_PROFILE_HEADER: profile_id},
+    )
 
 
 @pytest_asyncio.fixture
@@ -144,14 +159,14 @@ async def pin_run(
     provider: str,
     model: str,
     mode: str = "fast",
-    endpoint_id: str | None = None,
+    connection_id: str | None = None,
 ) -> None:
     """Pre-pin the run the way a prior attempt's freeze write would have.
 
     ``mode`` fills both frozen mode fields (the freeze is a request-echo;
     execution truth lives on the section snapshot, never here).
-    ``endpoint_id`` pins an ENDPOINT engine (B8) — a plain string, the way
-    the JSONB snapshot stores it.
+    ``connection_id`` pins a HOST-CONNECTION engine — a plain string, the
+    way the JSONB snapshot stores it.
     """
     await ExtractionRunRepository(db).freeze_engine(
         run.id,
@@ -160,7 +175,7 @@ async def pin_run(
             model=model,
             mode_requested=mode,
             mode_executed=mode,
-            endpoint_id=endpoint_id,
+            connection_id=connection_id,
         ).model_dump(),
     )
 
@@ -181,8 +196,7 @@ async def set_project_engine(
     provider: str,
     model: str,
     mode: str = "fast",
-    alternates: list[LlmEngineAlternate] | None = None,
-    endpoint_id: UUID | None = None,
+    user_choice_allowed: bool = True,
 ) -> LlmEngineStored:
     """The seeded project's engine choice, written by the primary manager."""
     return await LlmEngineService(db).set_for_project(
@@ -191,42 +205,36 @@ async def set_project_engine(
         model=model,
         mode=mode,  # type: ignore[arg-type]
         updated_by=SEED.primary_profile,
-        alternates=alternates,
-        endpoint_id=endpoint_id,
+        user_choice_allowed=user_choice_allowed,
     )
 
 
-async def make_endpoint(
+async def make_host_connection(
     db: AsyncSession,
     *,
-    project_id: UUID | None = None,
-    label: str = "engine-suite-endpoint",
+    user_id: UUID = SEED.primary_profile,
+    label: str = "engine-suite-host",
     base_url: str = "https://8.8.8.8/v1",
-    api_key: str = "sk-engine-suite",
+    api_key: str | None = "sk-engine-suite",
     allowed_models: list[str] | None = None,
     validation_status: str = "ok",
     output_mode: str | None = "tool",
 ) -> UUID:
-    """A project endpoint in the given probe state, for endpoint-engine tests.
-
-    Created through the real service (Fernet, SSRF-vetted literal public
-    IP), then armed directly on the row — the B4 suite's
-    ``_arm_probe_state`` approach: the probe itself is B5's contract, not
-    this surface's. ``base_url``/``api_key`` are parameterised so a test
-    can tell TWO endpoints apart at the wire (B9 adoption).
-    """
-    service = LlmEndpointService(db)
-    read = await service.create(
-        project_id=project_id or SEED.primary_project,
-        created_by=SEED.primary_profile,
-        payload=LlmEndpointCreateRequest(
+    """A user-owned host connection in the given probe state (the retired
+    ``make_endpoint`` shape): created through the real service, then armed
+    directly on the row — the probe itself is the verify suite's contract."""
+    read = await LlmConnectionService(db).create_user(
+        user_id=user_id,
+        payload=UserConnectionCreateRequest(
+            provider="openai_compatible",
             label=label,
             base_url=base_url,
-            api_key=SecretStr(api_key),
+            api_key=SecretStr(api_key) if api_key is not None else None,
             allowed_models=allowed_models if allowed_models is not None else ["endpoint-model-x"],
         ),
     )
-    row = await service.get(project_id or SEED.primary_project, read.id)
+    row = await owned_user_connection(db, read.id, user_id)
+    assert row is not None
     row.validation_status = validation_status
     row.capabilities = {"output_mode": output_mode, "models_seen": []}
     await db.flush()

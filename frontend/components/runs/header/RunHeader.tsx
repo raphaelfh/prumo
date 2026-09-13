@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { HeaderShell } from '@/components/layout/HeaderShell';
 import { RunHeaderProvider, type RunHeaderValue } from './RunHeaderContext';
 import { RunStatus } from './RunStatus';
@@ -73,7 +72,6 @@ function RunHeaderRoot({
 }) {
   return (
     <RunHeaderProvider value={value}>
-      <TooltipProvider delayDuration={200}>
         {/* relative (not sticky): run pages don't scroll the header out — the
             body is a fixed-height panel split. Shadow stays off (border-only).
             HeaderShell owns the `@container/headerbar` + frosted chrome, so the
@@ -81,7 +79,6 @@ function RunHeaderRoot({
         <HeaderShell position="relative">
           {children}
         </HeaderShell>
-      </TooltipProvider>
     </RunHeaderProvider>
   );
 }

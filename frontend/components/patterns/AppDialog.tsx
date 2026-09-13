@@ -19,6 +19,7 @@
 import React from 'react';
 import {
     Dialog,
+    DialogBody,
     DialogContent,
     DialogDescription,
     DialogFooter,
@@ -26,7 +27,6 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import {Button, type ButtonProps} from '@/components/ui/button';
-import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 
 interface AppDialogProps {
@@ -35,7 +35,7 @@ interface AppDialogProps {
   title: string;
   description?: string;
   children: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
+  size?: 'sm' | 'md' | 'lg';
   onConfirm?: () => void | Promise<void>;
   onCancel?: () => void;
   confirmLabel?: string;
@@ -44,15 +44,6 @@ interface AppDialogProps {
   isLoading?: boolean;
   showFooter?: boolean;
 }
-
-const sizeClasses = {
-  sm: 'max-w-sm',
-  md: 'max-w-md',
-  lg: 'max-w-lg',
-  xl: 'max-w-xl',
-  '2xl': 'max-w-2xl',
-  '4xl': 'max-w-4xl',
-};
 
 export function AppDialog({
   open,
@@ -79,29 +70,19 @@ export function AppDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn(sizeClasses[size])}>
+      <DialogContent size={size}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        
-        <div className="py-4">{children}</div>
-        
+        <DialogBody>{children}</DialogBody>
         {showFooter && (
           <DialogFooter>
-            <Button
-              variant="outline" 
-              onClick={handleCancel}
-              disabled={isLoading}
-            >
+            <Button variant="outline" size="sm" onClick={handleCancel} disabled={isLoading}>
               {cancelLabel}
             </Button>
             {onConfirm && (
-              <Button
-                variant={confirmVariant} 
-                onClick={onConfirm}
-                disabled={isLoading}
-              >
+              <Button variant={confirmVariant} size="sm" onClick={onConfirm} disabled={isLoading}>
                 {confirmLabel}
               </Button>
             )}

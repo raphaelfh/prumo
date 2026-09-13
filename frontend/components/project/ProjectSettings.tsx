@@ -13,6 +13,7 @@ import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 
 import {BasicInfoSection} from './settings/BasicInfoSection';
 import {ReviewDetailsSection} from './settings/ReviewDetailsSection';
+import {AiEngineSection} from './settings/AiEngineSection';
 import {TeamMembersSection} from './settings/TeamMembersSection';
 import {AdvancedSettingsSection} from './settings/AdvancedSettingsSection';
 import {ReviewConsensusSection} from './settings/ReviewConsensusSection';
@@ -117,7 +118,10 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                     <BasicInfoSection project={project} onChange={updateProject}/>
                 )}
                 {activeTab === 'review' && (
-                    <ReviewDetailsSection projectId={projectId} project={project} onChange={updateProject}/>
+                    <div className="space-y-4">
+                        <ReviewDetailsSection projectId={projectId} project={project} onChange={updateProject}/>
+                        <AiEngineSection projectId={projectId}/>
+                    </div>
                 )}
                 {activeTab === 'team' && <TeamMembersSection projectId={projectId}/>}
                 {activeTab === 'consensus' && (

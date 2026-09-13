@@ -1,5 +1,6 @@
-import {Button} from '@/components/ui/button';
+import {IconButton} from '@/components/patterns/IconButton';
 import {ChevronDown, ChevronsUpDown, ChevronUp} from 'lucide-react';
+import {t} from '@/lib/copy';
 
 type SortDirection = 'asc' | 'desc';
 
@@ -10,7 +11,6 @@ interface SortIconHeaderProps {
     labelClassName?: string;
     iconClassName?: string;
     containerClassName?: string;
-    ariaLabel?: string;
 }
 
 export function SortIconHeader({
@@ -20,7 +20,6 @@ export function SortIconHeader({
     labelClassName,
     iconClassName,
     containerClassName,
-    ariaLabel,
 }: SortIconHeaderProps) {
     const icon = direction === 'asc'
         ? <ChevronUp className={iconClassName ?? 'h-3 w-3 text-foreground shrink-0'}/>
@@ -33,15 +32,13 @@ export function SortIconHeader({
             <span className={labelClassName ?? 'text-[11px] font-medium text-muted-foreground uppercase tracking-wider'}>
                 {label}
             </span>
-            <Button
-                variant="ghost"
-                size="icon"
+            <IconButton
+                label={t('shared', 'listSortBy').replace('{{label}}', label)}
+                size="icon-xs"
                 onClick={onSort}
-                aria-label={ariaLabel ?? `Sort by ${label}`}
-                className="h-4 w-4 p-0 hover:bg-transparent"
-            >
-                {icon}
-            </Button>
+                className="hover:bg-transparent"
+                icon={icon}
+            />
         </div>
     );
 }

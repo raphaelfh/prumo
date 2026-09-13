@@ -3,7 +3,7 @@
  */
 
 import {useEffect, useState} from 'react';
-import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,} from '@/components/ui/dialog';
+import {Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,} from '@/components/ui/dialog';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -221,8 +221,8 @@ export function ZoteroImportDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
-        <DialogHeader className="shrink-0">
+        <DialogContent size="lg">
+        <DialogHeader>
             <DialogTitle>{t('articles', 'zoteroTitle')}</DialogTitle>
           <DialogDescription>
               {currentStep === 'select-collection' && t('articles', 'zoteroSelectCollection')}
@@ -231,9 +231,7 @@ export function ZoteroImportDialog({
           </DialogDescription>
         </DialogHeader>
 
-            {/* Scrollable content area */}
-        <ScrollArea className="flex-1 -mx-6 px-6">
-          <div className="space-y-4 py-2">
+        <DialogBody className="space-y-4">
           {/* Step 1: Selecionar Collection */}
           {currentStep === 'select-collection' && (
             <div className="space-y-4">
@@ -312,7 +310,7 @@ export function ZoteroImportDialog({
                     }
                   />
                   <div className="space-y-1 flex-1">
-                    <Label htmlFor="download-pdfs" className="cursor-pointer">
+                    <Label htmlFor="download-pdfs">
                         {t('articles', 'zoteroDownloadPdfs')}
                     </Label>
                     <p className="text-sm text-muted-foreground">
@@ -332,7 +330,7 @@ export function ZoteroImportDialog({
                       }
                     />
                     <div className="space-y-1 flex-1">
-                      <Label htmlFor="only-pdfs" className="cursor-pointer">
+                      <Label htmlFor="only-pdfs">
                           {t('articles', 'zoteroOnlyPdfs')}
                       </Label>
                       <p className="text-sm text-muted-foreground">
@@ -351,7 +349,7 @@ export function ZoteroImportDialog({
                     }
                   />
                   <div className="space-y-1 flex-1">
-                    <Label htmlFor="update-existing" className="cursor-pointer">
+                    <Label htmlFor="update-existing">
                         {t('articles', 'zoteroUpdateExisting')}
                     </Label>
                     <p className="text-sm text-muted-foreground">
@@ -369,7 +367,7 @@ export function ZoteroImportDialog({
                     }
                   />
                   <div className="space-y-1 flex-1">
-                    <Label htmlFor="import-tags" className="cursor-pointer">
+                    <Label htmlFor="import-tags">
                         {t('articles', 'zoteroImportTagsAsKeywords')}
                     </Label>
                     <p className="text-sm text-muted-foreground">
@@ -475,14 +473,12 @@ export function ZoteroImportDialog({
               )}
             </div>
           )}
-          </div>
-        </ScrollArea>
+        </DialogBody>
 
-            {/* Footer with buttons */}
-        <div className="flex justify-between pt-4 border-t shrink-0">
+        <DialogFooter className="sm:justify-between">
           <div>
             {currentStep === 'configure-options' && (
-              <Button variant="outline" onClick={handleBack} disabled={importing}>
+              <Button variant="outline" size="sm" onClick={handleBack} disabled={importing}>
                 <ChevronLeft className="mr-2 h-4 w-4" />
                   {t('articles', 'zoteroBack')}
               </Button>
@@ -490,7 +486,7 @@ export function ZoteroImportDialog({
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleClose}>
+            <Button variant="outline" size="sm" onClick={handleClose}>
               {importing ? (
                 <>
                   <Minimize2 className="mr-2 h-4 w-4" />
@@ -502,14 +498,14 @@ export function ZoteroImportDialog({
             </Button>
 
             {currentStep === 'select-collection' && (
-              <Button onClick={handleNext} disabled={!canProceed}>
+              <Button size="sm" onClick={handleNext} disabled={!canProceed}>
                   {t('articles', 'zoteroNext')}
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Button>
             )}
 
             {currentStep === 'configure-options' && (
-              <Button onClick={handleStartImport} disabled={importing}>
+              <Button size="sm" onClick={handleStartImport} disabled={importing}>
                 {importing ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -524,7 +520,7 @@ export function ZoteroImportDialog({
               </Button>
             )}
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
 
@@ -539,11 +535,11 @@ export function ZoteroImportDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={handleConfirmCancel}>
-            <XCircle className="mr-2 h-4 w-4" />
+            <XCircle />
               {t('articles', 'zoteroCancelImport')}
           </AlertDialogCancel>
           <AlertDialogAction onClick={handleConfirmMinimize}>
-            <Minimize2 className="mr-2 h-4 w-4" />
+            <Minimize2 />
               {t('articles', 'zoteroContinueInBackground')}
           </AlertDialogAction>
         </AlertDialogFooter>

@@ -121,7 +121,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               {/* Detalhes do erro (apenas em desenvolvimento) */}
               {this.props.showDetails && this.state.error && (
                 <details className="rounded-md border p-3 text-sm">
-                  <summary className="cursor-pointer font-medium text-foreground hover:text-foreground/90">
+                  <summary className="font-medium text-foreground hover:text-foreground/90">
                     <Bug className="mr-2 inline h-4 w-4" />
                       {t('common', 'errorBoundaryTechnicalDetails')}
                   </summary>

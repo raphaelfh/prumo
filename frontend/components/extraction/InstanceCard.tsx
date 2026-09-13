@@ -18,18 +18,12 @@
  */
 
 import {useState} from 'react';
-import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
+import {IconButton} from '@/components/patterns/IconButton';
 import {Pencil, Trash2} from 'lucide-react';
 import {t} from '@/lib/copy';
 import {DEFAULT_ENTRY_NOUN, displayEntryKey} from '@/lib/extraction/entryKey';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {RenameEntryDialog, type EntryIdentityChanges} from './AddEntryDialog';
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
@@ -97,9 +91,6 @@ export function InstanceCard(props: InstanceCardProps) {
     <div className="bg-muted/30 rounded-lg border border-border/60 shadow-elev-card">
         {/* Instance header */}
       <div className="px-8 py-5 border-b border-border/40">
-        {/* One provider for the header's icon-button tooltips (shared
-            skip-delay when moving between rename/remove). */}
-        <TooltipProvider>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1 min-w-0">
               {/* Number badge */}
@@ -112,46 +103,24 @@ export function InstanceCard(props: InstanceCardProps) {
             </span>
 
             {!readOnly && onRename && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => setRenaming(true)}
-                    aria-label={renameActionLabel}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{renameActionLabel}</p>
-                </TooltipContent>
-              </Tooltip>
+              <IconButton
+                label={renameActionLabel}
+                onClick={() => setRenaming(true)}
+                icon={<Pencil />}
+              />
             )}
           </div>
 
             {/* Remove button — hidden on read-only runs */}
           {!readOnly && canRemove && onRemove && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onRemove}
-                  aria-label={removeActionLabel}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{removeActionLabel}</p>
-              </TooltipContent>
-            </Tooltip>
+            <IconButton
+              label={removeActionLabel}
+              onClick={onRemove}
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              icon={<Trash2 />}
+            />
           )}
         </div>
-        </TooltipProvider>
       </div>
 
       {onRename && (

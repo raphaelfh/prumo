@@ -48,12 +48,6 @@ import {
 interface TemplateConfigEditorProps {
   projectId: string;
   templateId: string;
-  /** Project-scoped chrome the PAGE owns, rendered into the config bar so
-   * it stops costing a row of its own. Passed as a slot rather than built
-   * here on purpose: choosing an engine must never arm the Draft chip or
-   * enter the Publish diff, so the control stays outside this component's
-   * template-versioned state. Optional — the editor renders without it. */
-  engineSlot?: React.ReactNode;
   /** The dialog inside this editor can switch/import the ACTIVE template;
    * the host owns that state (this editor is keyed by it), so it must be
    * told which id is active now. */
@@ -69,7 +63,6 @@ function BarDivider() {
 export function TemplateConfigEditor({
   projectId,
   templateId,
-  engineSlot,
   onActiveTemplateChanged,
 }: TemplateConfigEditorProps) {
   // ONE cached read of the template structure, shared with the grid panel
@@ -327,20 +320,6 @@ export function TemplateConfigEditor({
               .replace("{{main}}", String(rootEntityTypes.length))}
           </span>
         </div>
-        {engineSlot && (
-          <>
-            {/* shrink-0, deliberately: the chip's own wrapper is
-                `justify-end`, so squeezing its box spills the content off the
-                LEFT edge ("GPT-" clipped) instead of ellipsing. It sheds parts
-                of itself by container query instead — see LlmEngineChip. */}
-            <div className="shrink-0">{engineSlot}</div>
-            {/* Hairline between the project regime (the model, the review
-                question and everything else the chip opens) and the
-                versioned-template regime: none of it is part of what Publish
-                ships. */}
-            <BarDivider />
-          </>
-        )}
         <div className="flex shrink-0 items-center gap-1">
           <TemplateExportButton projectId={projectId} templateId={templateId} />
           <Tooltip>

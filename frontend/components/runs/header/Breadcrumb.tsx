@@ -1,5 +1,5 @@
 import { ArrowLeft } from 'lucide-react';
-import { HeaderIconButton } from '@/components/layout/HeaderIconButton';
+import { IconButton } from '@/components/patterns/IconButton';
 import { t } from '@/lib/copy';
 import { TruncatedText } from './TruncatedText';
 
@@ -17,16 +17,15 @@ interface BreadcrumbProps {
 export function Breadcrumb({ onBack, title }: BreadcrumbProps) {
   return (
     <nav className="flex min-w-0 shrink items-center gap-1" aria-label="breadcrumb">
-      <HeaderIconButton
-        aria-label={t('common', 'back')}
+      <IconButton
+        label={t('common', 'back')}
         onClick={onBack}
         // Lowest-priority identity affordance, so the back arrow folds first.
         // App-nav escape stays available via the always-present SidebarToggle
         // (and the MobileNav drawer below lg, plus the browser back button).
         className="hidden @[42rem]/headerbar:inline-flex"
-      >
-        <ArrowLeft strokeWidth={1.5} aria-hidden="true" />
-      </HeaderIconButton>
+        icon={<ArrowLeft strokeWidth={1.5} aria-hidden="true" />}
+      />
       <TruncatedText text={title} className="min-w-0 text-sm font-medium text-foreground" />
     </nav>
   );

@@ -1,12 +1,11 @@
 import { Loader2, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/patterns/IconButton';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { t } from '@/lib/copy';
 
 interface AIActionsProps {
@@ -32,16 +31,13 @@ export function AIActions({ pendingCount, canExtract, extracting, onExtract, onO
     : t('runs', 'aiActionsLabel');
   return (
     <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              aria-label={ariaLabel}
-              data-testid="run-ai-actions"
-              className="relative h-7 w-7 shrink-0 p-0"
-            >
+      <DropdownMenuTrigger asChild>
+        <IconButton
+          label={ariaLabel}
+          data-testid="run-ai-actions"
+          className="relative"
+          icon={
+            <>
               {extracting ? (
                 <Loader2 className="h-4 w-4 animate-spin text-ai" aria-hidden="true" />
               ) : (
@@ -52,11 +48,10 @@ export function AIActions({ pendingCount, canExtract, extracting, onExtract, onO
                   {pendingCount}
                 </span>
               )}
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent>{ariaLabel}</TooltipContent>
-      </Tooltip>
+            </>
+          }
+        />
+      </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {canExtract && (
           <DropdownMenuItem disabled={extracting} onSelect={() => onExtract()}>

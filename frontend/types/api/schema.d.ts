@@ -452,6 +452,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Connections */
+        get: operations["list_my_connections_api_v1_me_connections_get"];
+        put?: never;
+        /** Create My Connection */
+        post: operations["create_my_connection_api_v1_me_connections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update My Connection */
+        put: operations["update_my_connection_api_v1_me_connections__connection_id__put"];
+        post?: never;
+        /** Delete My Connection */
+        delete: operations["delete_my_connection_api_v1_me_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/connections/{connection_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify My Connection */
+        post: operations["verify_my_connection_api_v1_me_connections__connection_id__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Providers */
+        get: operations["list_providers_api_v1_me_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/ai-context": {
         parameters: {
             query?: never;
@@ -497,6 +567,59 @@ export interface paths {
          * @description Archive (`archived=true`) or restore, returning the row as stored.
          */
         patch: operations["set_archived_api_v1_projects__project_id__archive_patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Project Connections */
+        get: operations["list_project_connections_api_v1_projects__project_id__connections_get"];
+        put?: never;
+        /** Create Project Connection */
+        post: operations["create_project_connection_api_v1_projects__project_id__connections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Project Connection */
+        put: operations["update_project_connection_api_v1_projects__project_id__connections__connection_id__put"];
+        post?: never;
+        /** Delete Project Connection */
+        delete: operations["delete_project_connection_api_v1_projects__project_id__connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/connections/{connection_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Project Connection */
+        post: operations["verify_project_connection_api_v1_projects__project_id__connections__connection_id__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/extraction-export": {
@@ -618,81 +741,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{project_id}/llm-endpoints": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Llm Endpoints
-         * @description Every endpoint of the project — the manager management surface.
-         */
-        get: operations["list_llm_endpoints_api_v1_projects__project_id__llm_endpoints_get"];
-        put?: never;
-        /**
-         * Create Llm Endpoint
-         * @description Register an endpoint (URL vetted, key encrypted service-side).
-         */
-        post: operations["create_llm_endpoint_api_v1_projects__project_id__llm_endpoints_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Update Llm Endpoint
-         * @description Full-replace update; ``api_key`` tri-state is applied service-side.
-         */
-        put: operations["update_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__put"];
-        post?: never;
-        /**
-         * Delete Llm Endpoint
-         * @description Delete the endpoint — 200 + typed result (decision 15, never 204).
-         *
-         *     ``EndpointUnavailableError`` (the project engine still points here)
-         *     propagates to the AppError handler's 409 envelope.
-         */
-        delete: operations["delete_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/projects/{project_id}/llm-endpoints/{endpoint_id}/verify": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Verify Llm Endpoint
-         * @description Run the capabilities probe and persist its outcome (commit after the
-         *     service call — the llm-engine PUT pattern).
-         *
-         *     ``EndpointUnavailableError`` (stored key no longer decrypts) propagates
-         *     to the AppError handler's 409 envelope.
-         */
-        post: operations["verify_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__verify_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/projects/{project_id}/llm-engine": {
         parameters: {
             query?: never;
@@ -707,19 +755,40 @@ export interface paths {
         get: operations["get_llm_engine_api_v1_projects__project_id__llm_engine_get"];
         /**
          * Set Llm Engine
-         * @description Persist the project's engine choice (validated, attributed).
+         * @description Persist the project's default engine choice (validated, attributed).
          *
-         *     ``alternates`` rides the same write: ``None`` (field absent) keeps the
-         *     stored list, ``[]`` clears it, a list replaces it — every entry
-         *     catalogue-validated by the service (unknown pair → 400).
-         *
-         *     ``endpoint_id`` (B8) selects an endpoint-backed engine; the service
-         *     validates it against the project's endpoints instead of the catalogue
-         *     (shape/ownership/verification failures → 400 like any other refusal).
+         *     The default is always a catalogue pair (§3.1) — a host provider or an
+         *     off-catalogue pair is a 400. ``user_choice_allowed`` rides the same
+         *     write: ``False`` binds members to this default.
          */
         put: operations["set_llm_engine_api_v1_projects__project_id__llm_engine_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/llm-engine/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set My Llm Engine
+         * @description The viewer's own engine for new runs (§4): 403 while locked for a
+         *     non-manager, 422 without a credential (AppErrors, typed envelopes).
+         */
+        put: operations["set_my_llm_engine_api_v1_projects__project_id__llm_engine_me_put"];
+        post?: never;
+        /**
+         * Clear My Llm Engine
+         * @description Drop the viewer's own row — the project default takes over again.
+         */
+        delete: operations["clear_my_llm_engine_api_v1_projects__project_id__llm_engine_me_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1586,94 +1655,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/user-api-keys": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Listar API keys
-         * @description List todas as API keys do user (sem expor as keys).
-         */
-        get: operations["list_api_keys_api_v1_user_api_keys_get"];
-        put?: never;
-        /**
-         * Criar API key
-         * @description Adiciona nova API key for um provedor.
-         */
-        post: operations["create_api_key_api_v1_user_api_keys_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/user-api-keys/providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Listar provedores suportados
-         * @description List os provedores de IA suportados.
-         */
-        get: operations["list_providers_api_v1_user_api_keys_providers_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/user-api-keys/{key_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remover API key
-         * @description Remove permanentemente uma API key.
-         */
-        delete: operations["delete_api_key_api_v1_user_api_keys__key_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Atualizar API key
-         * @description Update propriedades de uma API key.
-         */
-        patch: operations["update_api_key_api_v1_user_api_keys__key_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/user-api-keys/{key_id}/validate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Revalidar API key
-         * @description Revalida uma API key existente.
-         */
-        post: operations["validate_api_key_api_v1_user_api_keys__key_id__validate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/zotero/{action}": {
         parameters: {
             query?: never;
@@ -1822,30 +1803,6 @@ export interface components {
             /** Suggestions */
             suggestions: components["schemas"]["AISuggestionItem"][];
         };
-        /**
-         * APIKeyResponse
-         * @description Resposta with data de uma API key (sem a key em si).
-         */
-        APIKeyResponse: {
-            /** Createdat */
-            createdAt: string;
-            /** Id */
-            id: string;
-            /** Isactive */
-            isActive: boolean;
-            /** Isdefault */
-            isDefault: boolean;
-            /** Keyname */
-            keyName: string | null;
-            /** Lastusedat */
-            lastUsedAt: string | null;
-            /** Lastvalidatedat */
-            lastValidatedAt: string | null;
-            /** Provider */
-            provider: string;
-            /** Validationstatus */
-            validationStatus: string | null;
-        };
         /** AdvanceStageRequest */
         AdvanceStageRequest: {
             /** Target Stage */
@@ -1968,40 +1925,6 @@ export interface components {
         ApiResponse_ConsensusResultResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ConsensusResultResponse"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[CreateAPIKeyResponse] */
-        ApiResponse_CreateAPIKeyResponse_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["CreateAPIKeyResponse"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[DeleteAPIKeyResult] */
-        ApiResponse_DeleteAPIKeyResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["DeleteAPIKeyResult"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2168,10 +2091,10 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[KeyValidationResult] */
-        ApiResponse_KeyValidationResult_: {
+        /** ApiResponse[LlmConnectionDeleteResult] */
+        ApiResponse_LlmConnectionDeleteResult_: {
             /** @description Dados da resposta */
-            data?: components["schemas"]["KeyValidationResult"] | null;
+            data?: components["schemas"]["LlmConnectionDeleteResult"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2185,10 +2108,10 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[ListAPIKeysData] */
-        ApiResponse_ListAPIKeysData_: {
+        /** ApiResponse[LlmConnectionRead] */
+        ApiResponse_LlmConnectionRead_: {
             /** @description Dados da resposta */
-            data?: components["schemas"]["ListAPIKeysData"] | null;
+            data?: components["schemas"]["LlmConnectionRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2202,61 +2125,10 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[ListProvidersData] */
-        ApiResponse_ListProvidersData_: {
+        /** ApiResponse[LlmConnectionVerifyResult] */
+        ApiResponse_LlmConnectionVerifyResult_: {
             /** @description Dados da resposta */
-            data?: components["schemas"]["ListProvidersData"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[LlmEndpointDeleteResult] */
-        ApiResponse_LlmEndpointDeleteResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["LlmEndpointDeleteResult"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[LlmEndpointProbeResult] */
-        ApiResponse_LlmEndpointProbeResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["LlmEndpointProbeResult"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[LlmEndpointRead] */
-        ApiResponse_LlmEndpointRead_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["LlmEndpointRead"] | null;
+            data?: components["schemas"]["LlmConnectionVerifyResult"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2783,23 +2655,6 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[UpdateAPIKeyResult] */
-        ApiResponse_UpdateAPIKeyResult_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["UpdateAPIKeyResult"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
         /** ApiResponse[UpdateTemplateActiveResponse] */
         ApiResponse_UpdateTemplateActiveResponse_: {
             /** @description Dados da resposta */
@@ -2821,6 +2676,23 @@ export interface components {
         ApiResponse_UpdateTemplateInstructionResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["UpdateTemplateInstructionResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[UserEngineClearResult] */
+        ApiResponse_UserEngineClearResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["UserEngineClearResult"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2894,13 +2766,33 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[list[LlmEndpointRead]] */
-        ApiResponse_list_LlmEndpointRead__: {
+        /** ApiResponse[list[LlmConnectionRead]] */
+        ApiResponse_list_LlmConnectionRead__: {
             /**
              * Data
              * @description Dados da resposta
              */
-            data?: components["schemas"]["LlmEndpointRead"][] | null;
+            data?: components["schemas"]["LlmConnectionRead"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[list[ProviderRead]] */
+        ApiResponse_list_ProviderRead__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["ProviderRead"][] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3202,62 +3094,6 @@ export interface components {
             consensus: components["schemas"]["ConsensusDecisionResponse"];
             published: components["schemas"]["PublishedStateResponse"];
         };
-        /**
-         * CreateAPIKeyRequest
-         * @description Request for criar nova API key.
-         */
-        CreateAPIKeyRequest: {
-            /**
-             * Apikey
-             * @description API key do provedor
-             */
-            apiKey: string;
-            /**
-             * Isdefault
-             * @description Se deve ser a key default for o provedor
-             * @default true
-             */
-            isDefault: boolean;
-            /**
-             * Keyname
-             * @description Nome optional for identificar a key
-             */
-            keyName?: string | null;
-            /**
-             * Metadata
-             * @description Metadata extras (modelo preferido, etc.)
-             */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
-            /**
-             * Provider
-             * @description Provedor da API. Valores: ('openai', 'anthropic', 'google', 'llama_cloud')
-             */
-            provider: string;
-            /**
-             * Validatekey
-             * @description Se deve validar a key antes de salvar
-             * @default true
-             */
-            validateKey: boolean;
-        };
-        /**
-         * CreateAPIKeyResponse
-         * @description Resposta apos criar API key.
-         */
-        CreateAPIKeyResponse: {
-            /** Id */
-            id: string;
-            /** Isdefault */
-            isDefault: boolean;
-            /** Provider */
-            provider: string;
-            /** Validationmessage */
-            validationMessage: string | null;
-            /** Validationstatus */
-            validationStatus: string;
-        };
         /** CreateConsensusRequest */
         CreateConsensusRequest: {
             /**
@@ -3345,16 +3181,6 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
-        };
-        /**
-         * DeleteAPIKeyResult
-         * @description Payload de ``DELETE /user-api-keys/{id}``.
-         */
-        DeleteAPIKeyResult: {
-            /** Deleted */
-            deleted: boolean;
-            /** Id */
-            id: string;
         };
         /**
          * DiffStatus
@@ -3694,7 +3520,7 @@ export interface components {
          *       mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).
          *     - ``LLM_ENDPOINT_UNAVAILABLE`` — the engine's custom endpoint cannot
          *       serve: row deleted, unverified, model dropped
-         *       (``resolve_project_engine``), or its key no longer decrypts
+         *       (``resolve_engine``), or its key no longer decrypts
          *       (``EndpointUnavailableError``; enqueue-time validation is a 409).
          *     - ``MISSING_ENTITY_KEY`` — a repeating section declares no
          *       ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
@@ -4058,27 +3884,6 @@ export interface components {
             templateId: string;
         };
         /**
-         * KeyValidationResult
-         * @description Payload de ``POST /user-api-keys/{id}/validate``.
-         */
-        KeyValidationResult: {
-            /** Message */
-            message: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "valid" | "invalid" | "pending";
-        };
-        /**
-         * ListAPIKeysData
-         * @description Payload de ``GET /user-api-keys``.
-         */
-        ListAPIKeysData: {
-            /** Keys */
-            keys: components["schemas"]["APIKeyResponse"][];
-        };
-        /**
          * ListCollectionsResponse
          * @description Response de listar collections.
          */
@@ -4088,13 +3893,88 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** LlmConnectionDeleteResult */
+        LlmConnectionDeleteResult: {
+            /** Deleted */
+            deleted: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** LlmConnectionRead */
+        LlmConnectionRead: {
+            /** Allowed Models */
+            allowed_models: string[];
+            /** Base Url */
+            base_url: string | null;
+            capabilities: components["schemas"]["LlmEndpointCapabilities"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By Name */
+            created_by_name: string | null;
+            /** Has Api Key */
+            has_api_key: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Last Validated At */
+            last_validated_at: string | null;
+            /** Provider */
+            provider: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "user" | "project";
+            /**
+             * Validation Status
+             * @enum {string}
+             */
+            validation_status: "unverified" | "ok" | "failed";
+        };
         /**
-         * ListProvidersData
-         * @description Payload de ``GET /user-api-keys/providers``.
+         * LlmConnectionUpdateRequest
+         * @description Full-replace ``label`` / ``base_url`` / ``allowed_models``; ``api_key``
+         *     tri-state: ``None`` keeps, ``""`` clears (host-bearing providers only —
+         *     the service refuses it elsewhere), non-empty re-encrypts.
          */
-        ListProvidersData: {
-            /** Providers */
-            providers: components["schemas"]["ProviderInfo"][];
+        LlmConnectionUpdateRequest: {
+            /**
+             * Allowed Models
+             * @default []
+             */
+            allowed_models: string[];
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Label */
+            label: string;
+        };
+        /** LlmConnectionVerifyResult */
+        LlmConnectionVerifyResult: {
+            /** Error */
+            error: string | null;
+            /** Models Seen */
+            models_seen: string[];
+            /** Output Mode */
+            output_mode: ("tool" | "native" | "prompted") | null;
+            /**
+             * Validation Status
+             * @enum {string}
+             */
+            validation_status: "ok" | "failed";
         };
         /**
          * LlmEndpointCapabilities
@@ -4115,156 +3995,12 @@ export interface components {
             output_mode?: ("tool" | "native" | "prompted") | null;
         };
         /**
-         * LlmEndpointCreateRequest
-         * @description POST body for a new endpoint.
-         *
-         *     ``api_key`` is either omitted/``None`` (a keyless endpoint, e.g.
-         *     local Ollama) or a non-empty secret — an empty string is a mistake,
-         *     not keyless, and is rejected.
-         */
-        LlmEndpointCreateRequest: {
-            /**
-             * Allowed Models
-             * @default []
-             */
-            allowed_models: string[];
-            /** Api Key */
-            api_key?: string | null;
-            /** Base Url */
-            base_url: string;
-            /** Label */
-            label: string;
-        };
-        /**
-         * LlmEndpointDeleteResult
-         * @description DELETE returns 200 + this envelope payload (house pattern —
-         *     ``DeleteAPIKeyResult``; a 204 would violate the envelope gate).
-         */
-        LlmEndpointDeleteResult: {
-            /** Deleted */
-            deleted: boolean;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-        };
-        /**
-         * LlmEndpointProbeResult
-         * @description Outcome of a verify probe, as returned to the manager.
-         *
-         *     ``error`` is sanitized — a reason class only (timeout, refused,
-         *     TLS, HTTP status), never raw upstream bodies or connection detail.
-         */
-        LlmEndpointProbeResult: {
-            /** Error */
-            error: string | null;
-            /** Models Seen */
-            models_seen: string[];
-            /** Output Mode */
-            output_mode: ("tool" | "native" | "prompted") | null;
-            /**
-             * Validation Status
-             * @enum {string}
-             */
-            validation_status: "ok" | "failed";
-        };
-        /**
-         * LlmEndpointRead
-         * @description One endpoint as the manager-only surface renders it.
-         *
-         *     NEVER carries key material — ``has_api_key`` is the only trace that
-         *     a key exists. ``base_url`` is visible because this read serves the
-         *     manager management surface only.
-         */
-        LlmEndpointRead: {
-            /** Allowed Models */
-            allowed_models: string[];
-            /** Base Url */
-            base_url: string;
-            capabilities: components["schemas"]["LlmEndpointCapabilities"];
-            /** Created By Name */
-            created_by_name: string | null;
-            /** Has Api Key */
-            has_api_key: boolean;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Label */
-            label: string;
-            /** Last Validated At */
-            last_validated_at: string | null;
-            /**
-             * Validation Status
-             * @enum {string}
-             */
-            validation_status: "unverified" | "ok" | "failed";
-        };
-        /**
-         * LlmEndpointUpdateRequest
-         * @description PUT is full-replace for ``label``/``base_url``/``allowed_models``.
-         *
-         *     ``api_key`` is tri-state: ``None`` = keep the stored key; ``""`` =
-         *     clear it (endpoint becomes keyless); a non-empty string = set a new
-         *     key. The tri-state semantics are applied by the service — this shape
-         *     only distinguishes the three states without ever echoing the secret.
-         */
-        LlmEndpointUpdateRequest: {
-            /**
-             * Allowed Models
-             * @default []
-             */
-            allowed_models: string[];
-            /** Api Key */
-            api_key?: string | null;
-            /** Base Url */
-            base_url: string;
-            /** Label */
-            label: string;
-        };
-        /**
-         * LlmEngineAlternate
-         * @description One fallback engine pair — the stored and request entry shape.
-         *
-         *     ``extra="forbid"`` + bounded field lengths: a REQUEST entry smuggling
-         *     keys (temperature/seed — same posture as ``LlmEngineUpdateRequest``) or
-         *     an oversized value is a hard 422; a hand-written STORED entry with the
-         *     same defects is dropped by the tolerant per-entry validator on
-         *     ``LlmEngineStored.alternates`` — the entry degrades, never the payload.
-         */
-        LlmEngineAlternate: {
-            /** Model */
-            model: string;
-            /** Provider */
-            provider: string;
-        };
-        /**
-         * LlmEngineAlternateRead
-         * @description One alternate as the popover renders it: the pair plus its canonical
-         *     catalogue id and a per-entry ``retired`` flag (the catalogue no longer
-         *     lists that pair).
-         */
-        LlmEngineAlternateRead: {
-            /** Canonical */
-            canonical: string;
-            /** Model */
-            model: string;
-            /** Provider */
-            provider: string;
-            /** Retired */
-            retired: boolean;
-        };
-        /**
          * LlmEngineCatalogEntryRead
          * @description One selectable engine as the picker renders it.
          */
         LlmEngineCatalogEntryRead: {
             /** Best For */
             best_for: string;
-            /** Byok Only */
-            byok_only: boolean;
             /** Canonical */
             canonical: string;
             /** Context Window */
@@ -4282,40 +4018,10 @@ export interface components {
             provider: string;
         };
         /**
-         * LlmEngineRead
-         * @description The resolved engine view the ⚙ popover renders.
-         *
-         *     ``source`` says whether the pair is the project's stored choice or the
-         *     server's env default; ``retired`` flags a stored pair the catalogue no
-         *     longer lists (new runs are refused until a manager re-chooses).
-         *     ``availability`` maps provider → whether the CALLER can run it (their
-         *     own stored key, or a global service key) — booleans only, never key
-         *     material or metadata. ``alternates`` is the stored fallback list with
-         *     a per-entry ``retired`` flag.
-         *
-         *     ``endpoint_id`` / ``endpoint_label`` are the ONLY endpoint data on this
-         *     read (decision 12 — no embedded endpoints matrix; the picker's endpoint
-         *     groups come from the manager-only endpoints listing instead): the
-         *     stored pointer plus the row's label for the chip. ``endpoint_label`` is
-         *     ``None`` for catalogue engines AND for a dangling pointer (row gone —
-         *     ``retired`` is True then).
+         * LlmEngineDefaultRead
+         * @description The project default with its lock and attribution (§4).
          */
-        LlmEngineRead: {
-            /**
-             * Alternates
-             * @default []
-             */
-            alternates: components["schemas"]["LlmEngineAlternateRead"][];
-            /** Availability */
-            availability: {
-                [key: string]: boolean;
-            };
-            /** Catalog */
-            catalog: components["schemas"]["LlmEngineCatalogEntryRead"][];
-            /** Endpoint Id */
-            endpoint_id?: string | null;
-            /** Endpoint Label */
-            endpoint_label?: string | null;
+        LlmEngineDefaultRead: {
             /**
              * Mode
              * @enum {string}
@@ -4333,32 +4039,68 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "project" | "default";
+            source: "project" | "env_default";
             /** Updated At */
             updated_at?: string | null;
             /** Updated By Name */
             updated_by_name?: string | null;
+            /** User Choice Allowed */
+            user_choice_allowed: boolean;
+        };
+        /**
+         * LlmEngineEffectiveRead
+         * @description What the VIEWER's next run runs on: their own row, or the default.
+         *     The run form renders this, never ``default``.
+         */
+        LlmEngineEffectiveRead: {
+            /** Connection Id */
+            connection_id?: string | null;
+            /** Connection Label */
+            connection_label?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "fast" | "verified";
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+            /** Retired */
+            retired: boolean;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "user" | "project" | "env_default";
+        };
+        /**
+         * LlmEngineRead
+         * @description §4: ``availability`` says whose credential a row on each provider would
+         *     run on for THIS caller — a scope tag, never key material.
+         */
+        LlmEngineRead: {
+            /** Availability */
+            availability: {
+                [key: string]: ("user" | "project" | "global") | null;
+            };
+            /** Catalog */
+            catalog: components["schemas"]["LlmEngineCatalogEntryRead"][];
+            default: components["schemas"]["LlmEngineDefaultRead"];
+            effective: components["schemas"]["LlmEngineEffectiveRead"];
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "user" | "project" | "env_default";
         };
         /**
          * LlmEngineUpdateRequest
-         * @description PUT body for the project engine.
-         *
-         *     ``mode: Literal["fast", "verified"]`` is the closed write gate (§5 —
-         *     Verified shipped with the verify pass; anything else is a free 422);
-         *     ``extra="forbid"`` blocks smuggled keys (no temperature/seed, by design).
-         *     ``alternates`` is tri-state: ``None`` (field absent) keeps the stored
-         *     list, ``[]`` clears it, a list replaces it.
-         *
-         *     ``endpoint_id`` selects a project custom endpoint as the engine (C2
-         *     B8): it requires ``provider == "openai_compatible"`` and the service
-         *     validates the endpoint (project-scoped, model allowed, verified)
-         *     instead of the catalogue. Omitted/None = a catalogue engine.
+         * @description PUT body for the project default (§4): always a catalogue pair, so
+         *     there is no ``connection_id`` field — ``extra="forbid"`` makes a
+         *     submitted one (or ``alternates`` / ``endpoint_id``) the 422 §6 asks for.
          */
         LlmEngineUpdateRequest: {
-            /** Alternates */
-            alternates?: components["schemas"]["LlmEngineAlternate"][] | null;
-            /** Endpoint Id */
-            endpoint_id?: string | null;
             /**
              * Mode
              * @default fast
@@ -4369,6 +4111,11 @@ export interface components {
             model: string;
             /** Provider */
             provider: string;
+            /**
+             * User Choice Allowed
+             * @default true
+             */
+            user_choice_allowed: boolean;
         };
         /** ManagerReviewVisibilityPayload */
         ManagerReviewVisibilityPayload: {
@@ -4691,6 +4438,22 @@ export interface components {
             /** Archived */
             archived: boolean;
         };
+        /** ProjectConnectionCreateRequest */
+        ProjectConnectionCreateRequest: {
+            /**
+             * Allowed Models
+             * @default []
+             */
+            allowed_models: string[];
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+        };
         /** ProposalRecordResponse */
         ProposalRecordResponse: {
             /** Confidence Score */
@@ -4732,18 +4495,26 @@ export interface components {
             source_user_id: string | null;
         };
         /**
-         * ProviderInfo
-         * @description One supported BYOK provider (public catalogue).
+         * ProviderRead
+         * @description §4 ``GET /me/providers`` row; ``global_key_available`` is per deployment.
          */
-        ProviderInfo: {
+        ProviderRead: {
             /** Description */
             description: string;
-            /** Docsurl */
-            docsUrl: string;
+            /** Docs Url */
+            docs_url: string | null;
+            /** Global Key Available */
+            global_key_available: boolean;
             /** Id */
             id: string;
-            /** Name */
-            name: string;
+            /** Key Optional */
+            key_optional: boolean;
+            /** Label */
+            label: string;
+            /** Needs Host */
+            needs_host: boolean;
+            /** Scopes */
+            scopes: string[];
         };
         /** PublishedStateResponse */
         PublishedStateResponse: {
@@ -6410,37 +6181,6 @@ export interface components {
             /** User Name */
             user_name?: string | null;
         };
-        /**
-         * UpdateAPIKeyRequest
-         * @description Request for atualizar API key.
-         */
-        UpdateAPIKeyRequest: {
-            /**
-             * Isactive
-             * @description Se a key esta ativa
-             */
-            isActive?: boolean | null;
-            /**
-             * Isdefault
-             * @description Se deve ser a key default
-             */
-            isDefault?: boolean | null;
-            /**
-             * Keyname
-             * @description Nome for identificar a key
-             */
-            keyName?: string | null;
-        };
-        /**
-         * UpdateAPIKeyResult
-         * @description Payload de ``PATCH /user-api-keys/{id}``.
-         */
-        UpdateAPIKeyResult: {
-            /** Id */
-            id: string;
-            /** Updated */
-            updated: boolean;
-        };
         /** UpdateTemplateActiveRequest */
         UpdateTemplateActiveRequest: {
             /** Is Active */
@@ -6474,6 +6214,47 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
+        };
+        /** UserConnectionCreateRequest */
+        UserConnectionCreateRequest: {
+            /**
+             * Allowed Models
+             * @default []
+             */
+            allowed_models: string[];
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+        };
+        /** UserEngineClearResult */
+        UserEngineClearResult: {
+            /** Cleared */
+            cleared: boolean;
+        };
+        /**
+         * UserEngineUpdateRequest
+         * @description PUT body for the viewer's own row (§4). ``connection_id`` is the
+         *     caller's own host connection, required iff ``provider`` is
+         *     ``openai_compatible`` (the service checks ownership and the probe).
+         */
+        UserEngineUpdateRequest: {
+            /** Connection Id */
+            connection_id?: string | null;
+            /**
+             * Mode
+             * @default fast
+             * @enum {string}
+             */
+            mode: "fast" | "verified";
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -7207,6 +6988,176 @@ export interface operations {
             };
         };
     };
+    list_my_connections_api_v1_me_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_LlmConnectionRead__"];
+                };
+            };
+        };
+    };
+    create_my_connection_api_v1_me_connections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserConnectionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_my_connection_api_v1_me_connections__connection_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmConnectionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_my_connection_api_v1_me_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionDeleteResult_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_my_connection_api_v1_me_connections__connection_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionVerifyResult_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_providers_api_v1_me_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_ProviderRead__"];
+                };
+            };
+        };
+    };
     read_ai_context_api_v1_projects__project_id__ai_context_get: {
         parameters: {
             query?: never;
@@ -7295,6 +7246,172 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_ProjectArchiveRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_project_connections_api_v1_projects__project_id__connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_LlmConnectionRead__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_project_connection_api_v1_projects__project_id__connections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectConnectionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_project_connection_api_v1_projects__project_id__connections__connection_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmConnectionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_connection_api_v1_projects__project_id__connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionDeleteResult_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_project_connection_api_v1_projects__project_id__connections__connection_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmConnectionVerifyResult_"];
                 };
             };
             /** @description Validation Error */
@@ -7569,172 +7686,6 @@ export interface operations {
             };
         };
     };
-    list_llm_endpoints_api_v1_projects__project_id__llm_endpoints_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_list_LlmEndpointRead__"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_llm_endpoint_api_v1_projects__project_id__llm_endpoints_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LlmEndpointCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_LlmEndpointRead_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                endpoint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LlmEndpointUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_LlmEndpointRead_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                endpoint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_LlmEndpointDeleteResult_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    verify_llm_endpoint_api_v1_projects__project_id__llm_endpoints__endpoint_id__verify_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                endpoint_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_LlmEndpointProbeResult_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_llm_engine_api_v1_projects__project_id__llm_engine_get: {
         parameters: {
             query?: never;
@@ -7788,6 +7739,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_LlmEngineRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_my_llm_engine_api_v1_projects__project_id__llm_engine_me_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserEngineUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmEngineRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_my_llm_engine_api_v1_projects__project_id__llm_engine_me_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_UserEngineClearResult_"];
                 };
             };
             /** @description Validation Error */
@@ -9178,187 +9195,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_RunViewResponse_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_api_keys_api_v1_user_api_keys_get: {
-        parameters: {
-            query?: {
-                active_only?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_ListAPIKeysData_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_api_key_api_v1_user_api_keys_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateAPIKeyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_CreateAPIKeyResponse_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_providers_api_v1_user_api_keys_providers_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_ListProvidersData_"];
-                };
-            };
-        };
-    };
-    delete_api_key_api_v1_user_api_keys__key_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                key_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_DeleteAPIKeyResult_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_api_key_api_v1_user_api_keys__key_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                key_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateAPIKeyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_UpdateAPIKeyResult_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    validate_api_key_api_v1_user_api_keys__key_id__validate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                key_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_KeyValidationResult_"];
                 };
             };
             /** @description Validation Error */

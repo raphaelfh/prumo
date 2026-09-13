@@ -50,11 +50,6 @@ def engine_seams(monkeypatch: pytest.MonkeyPatch) -> LlmTarget:
     """Patch the task-module engine seams — ``_FakeSession`` has no ``execute``
     or ``get``, so the real resolver cannot run here."""
     target = LlmTarget(provider="openai", model="task-resolved-model")
-    monkeypatch.setattr(
-        extraction_tasks,
-        "resolve_project_engine",
-        AsyncMock(return_value=target),
-    )
     monkeypatch.setattr(extraction_tasks, "resolve_engine_for_run", AsyncMock(return_value=target))
     return target
 
@@ -147,15 +142,15 @@ class TestRunSectionExtractionTaskSingle:
         fake_service.run_from_request = AsyncMock(
             return_value=_single_result(run_id, entity_type_id)
         )
-        fake_api_key = MagicMock()
-        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
 
         with (
             patch(
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch(
@@ -189,15 +184,15 @@ class TestRunSectionExtractionTaskSingle:
         fake_service.run_from_request = AsyncMock(
             return_value=_single_result(run_id, entity_type_id)
         )
-        fake_api_key = MagicMock()
-        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
 
         with (
             patch(
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -227,15 +222,15 @@ class TestRunSectionExtractionTaskBatch:
         session = _FakeSession()
         fake_service = MagicMock()
         fake_service.run_from_request = AsyncMock(return_value=_batch_result(run_id))
-        fake_api_key = MagicMock()
-        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
 
         with (
             patch(
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -281,15 +276,15 @@ class TestRunSectionExtractionTaskRollback:
         session = _FakeSession()
         fake_service = MagicMock()
         fake_service.run_from_request = AsyncMock(side_effect=RuntimeError("llm exploded"))
-        fake_api_key = MagicMock()
-        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
 
         with (
             patch(
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -322,15 +317,15 @@ class TestRunSectionExtractionTaskAllFailed:
         fake_service.run_from_request = AsyncMock(
             side_effect=BatchAllSectionsFailed("all 3 sections failed")
         )
-        fake_api_key = MagicMock()
-        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
 
         with (
             patch(
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -361,15 +356,15 @@ class TestRunSectionExtractionTaskErrorCode:
         session = _FakeSession()
         fake_service = MagicMock()
         fake_service.run_from_request = AsyncMock(side_effect=exc)
-        fake_api_key = MagicMock()
-        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
 
         with (
             patch(
                 "app.services.section_extraction_service.SectionExtractionService",
                 return_value=fake_service,
             ),
-            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -415,7 +410,7 @@ class TestRunSectionExtractionTaskEngineRetired:
         }
 
         # Raised through the task's resolver seam — in production
-        # ``resolve_engine_for_run`` delegates to ``resolve_project_engine``,
+        # ``resolve_engine_for_run`` delegates to ``resolve_engine``,
         # which is where the roster check actually lives.
         monkeypatch.setattr(
             extraction_tasks,
@@ -428,11 +423,11 @@ class TestRunSectionExtractionTaskEngineRetired:
         )
 
         session = _FakeSession()
-        fake_api_key = MagicMock()
-        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
 
         with (
-            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -503,8 +498,6 @@ class TestHumanKickoffVersusRetry:
             ctor.update(kwargs)
             return fake_service
 
-        fake_api_key = MagicMock()
-        fake_api_key.get_key_for_provider = AsyncMock(return_value=None)
         session = _FakeSession()
 
         with (
@@ -512,7 +505,9 @@ class TestHumanKickoffVersusRetry:
                 "app.services.section_extraction_service.SectionExtractionService",
                 side_effect=_capture,
             ),
-            patch("app.services.engine_credentials.APIKeyService", return_value=fake_api_key),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
             patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
             patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
             patch("app.worker._session.worker_session", new=_session_factory(session)),
@@ -533,6 +528,9 @@ class TestHumanKickoffVersusRetry:
         """
         ctor, service, resolver = self._apply_attempt(monkeypatch, retries=0)
 
+        assert resolver.await_args.kwargs["user_id"] is not None, (
+            "the worker did not thread the kicker's id into the resolution"
+        )
         assert resolver.await_args.kwargs["repin"] is True, (
             "attempt 0 was not resolved as a human kickoff"
         )
@@ -551,6 +549,9 @@ class TestHumanKickoffVersusRetry:
         """
         ctor, service, resolver = self._apply_attempt(monkeypatch, retries=1)
 
+        assert resolver.await_args.kwargs["user_id"] is not None, (
+            "the worker did not thread the kicker's id into the resolution"
+        )
         assert resolver.await_args.kwargs["repin"] is False, (
             "a retry was resolved as a human kickoff"
         )

@@ -123,7 +123,8 @@ describe("ArticlesList PDF chip", () => {
         vi.mocked(fetchArticlePdfSignedUrl).mockResolvedValue({ok: true, data: "https://example.test/a1.pdf"});
         renderList([article("a1", "First")]);
 
-        const chip = await screen.findByRole("button", {name: "Open PDF"});
+        // Named by its visible text; the "Open PDF" tooltip adds the action.
+        const chip = await screen.findByRole("button", {name: "PDF"});
         chip.focus();
         await user.keyboard("{Enter}");
 

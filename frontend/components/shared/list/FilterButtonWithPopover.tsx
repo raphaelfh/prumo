@@ -1,53 +1,40 @@
 import * as React from 'react';
-import {Button} from '@/components/ui/button';
-import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
-import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {Filter} from 'lucide-react';
+
+import {IconButton} from '@/components/patterns/IconButton';
+import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
+import {cn} from '@/lib/utils';
 
 interface FilterButtonWithPopoverProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     activeCount: number;
-    tooltipLabel: string;
-    ariaLabel: string;
+    /** Accessible name and tooltip. The F chip is added here: every caller mounts useListKeyboardShortcuts, which binds F. */
+    label: string;
     children: React.ReactNode;
 }
 
-export function FilterButtonWithPopover({
-                                            open,
-                                            onOpenChange,
-                                            activeCount,
-                                            tooltipLabel,
-                                            ariaLabel,
-                                            children,
-                                        }: FilterButtonWithPopoverProps) {
+export function FilterButtonWithPopover({open, onOpenChange, activeCount, label, children}: FilterButtonWithPopoverProps) {
     return (
         <Popover open={open} onOpenChange={onOpenChange} modal={false}>
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <PopoverTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className={`h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors relative ${
-                                    activeCount > 0 ? 'text-primary' : 'text-muted-foreground'
-                                }`}
-                                aria-label={ariaLabel}
-                            >
-                                <Filter className="h-4 w-4"/>
-                                {activeCount > 0 && (
-                                    <span
-                                        className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary/15 px-0.5 text-[10px] font-semibold text-primary">
-                    {activeCount}
-                  </span>
-                                )}
-                            </Button>
-                        </PopoverTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">{tooltipLabel}</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
+            <PopoverTrigger asChild>
+                <IconButton
+                    label={label}
+                    shortcut={['F']}
+                    side="bottom"
+                    className={cn('relative', activeCount > 0 && 'text-primary')}
+                    icon={
+                        <>
+                            <Filter />
+                            {activeCount > 0 && (
+                                <span className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary/15 px-0.5 text-[10px] font-semibold text-primary">
+                                    {activeCount}
+                                </span>
+                            )}
+                        </>
+                    }
+                />
+            </PopoverTrigger>
             <PopoverContent
                 className="p-0 border-border/50 shadow-elev-popover max-h-[min(85vh,28rem)] overflow-y-auto overflow-x-hidden"
                 align="end"

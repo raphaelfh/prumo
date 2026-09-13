@@ -1,20 +1,38 @@
-"""Server-curated catalogue of selectable extraction engines (§5, C1b).
+"""Server-curated catalogue of selectable extraction engines (§5, C1b; §1.1).
 
-The single place that says which (provider, model) pairs a project manager
-may pick in the ⚙ popover. Deliberately small, curated data — a roster edit
-is a one-line diff here, and a pair dropped from this tuple is *retired*:
-projects still storing it are blocked from new runs (typed 409) until a
-manager picks a new model.
-
-Whether a provider needs the user's own key is NOT a catalogue fact: it
-depends on the deployment (``app.llm.registry.is_byok_only``) and is
-computed on the engine read.
+The catalogue is DATA: ``models/<provider>.yaml``, one file per registry LLM
+provider, loaded once at import through a Pydantic row model. Updating
+models is a file edit, no Python. A row marked ``deprecated`` is still
+found by :func:`find_entry` (existing pins and the retirement check keep
+working) but :func:`selectable_catalog` omits it, so the picker never
+offers it.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.llm.registry import llm_provider_ids
+
+_MODELS_DIR = Path(__file__).parent / "models"
+
+
+class CatalogRow(BaseModel):
+    """One YAML row. ``extra="forbid"``: a typo is an import failure."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1)
+    best_for: str = Field(min_length=1)
+    context_window: int = Field(gt=0)
+    cost_tier: Literal["$", "$$", "$$$"]
+    deprecated: bool = False
 
 
 @dataclass(frozen=True)
@@ -27,116 +45,44 @@ class CatalogEntry:
     best_for: str
     context_window: int
     cost_tier: Literal["$", "$$", "$$$"]
+    deprecated: bool = False
 
 
-CATALOG: tuple[CatalogEntry, ...] = (
-    CatalogEntry(
-        provider="openai",
-        model="gpt-5.6-luna",
-        label="GPT-5.6 Luna",
-        best_for="Fast, low-cost default for routine extraction",
-        context_window=1_050_000,
-        cost_tier="$",
-    ),
-    CatalogEntry(
-        provider="openai",
-        model="gpt-5.6-terra",
-        label="GPT-5.6 Terra",
-        best_for="Balanced reasoning and cost on dense or ambiguous articles",
-        context_window=1_050_000,
-        cost_tier="$$",
-    ),
-    CatalogEntry(
-        provider="openai",
-        model="gpt-5.6-sol",
-        label="GPT-5.6 Sol",
-        best_for="Frontier reasoning for the hardest extractions",
-        context_window=1_050_000,
-        cost_tier="$$$",
-    ),
-    CatalogEntry(
-        provider="openai",
-        model="gpt-4o-mini",
-        label="GPT-4o mini",
-        best_for="Previous-generation budget option kept for existing projects",
-        context_window=128_000,
-        cost_tier="$",
-    ),
-    CatalogEntry(
-        provider="anthropic",
-        model="claude-sonnet-5",
-        label="Claude Sonnet 5",
-        best_for="High-quality reasoning and grounded evidence",
-        context_window=1_000_000,
-        cost_tier="$$",
-    ),
-    CatalogEntry(
-        provider="anthropic",
-        model="claude-haiku-4-5",
-        label="Claude Haiku 4.5",
-        best_for="Fast Claude option for high-volume extraction",
-        context_window=200_000,
-        # $1/$5 per MTok sits with terra ($2/$12), not with luna ($0.20/$1.20):
-        # tiers are honest across providers, not within one.
-        cost_tier="$$",
-    ),
-    CatalogEntry(
-        provider="anthropic",
-        model="claude-opus-5",
-        label="Claude Opus 5",
-        best_for="Deepest Claude reasoning for complex or degraded articles",
-        context_window=1_000_000,
-        cost_tier="$$$",
-    ),
-    # Google tiers by list price against the roster above: Flash-Lite
-    # ($0.25/$1.50) sits with luna; 3.8 Flash ($1.50/$7.50 standard) and
-    # 3.1 Pro ($2/$12) sit with terra. Google's model page states no
-    # context window; 1M is the documented Gemini generation window.
-    CatalogEntry(
-        provider="google",
-        model="gemini-3.1-flash-lite",
-        label="Gemini 3.1 Flash-Lite",
-        best_for="Cheapest Gemini for high-volume extraction",
-        context_window=1_000_000,
-        cost_tier="$",
-    ),
-    CatalogEntry(
-        provider="google",
-        model="gemini-3.8-flash",
-        label="Gemini 3.8 Flash",
-        best_for="Current Gemini workhorse: strong reasoning at Flash cost",
-        context_window=1_000_000,
-        cost_tier="$$",
-    ),
-    CatalogEntry(
-        provider="google",
-        model="gemini-3.1-pro-preview",
-        label="Gemini 3.1 Pro (preview)",
-        best_for="Strongest Gemini reasoning; preview model id",
-        context_window=1_000_000,
-        cost_tier="$$",
-    ),
-)
+def load_catalog(models_dir: Path, providers: tuple[str, ...]) -> tuple[CatalogEntry, ...]:
+    """Every provider's file, in registry order, rows in file order.
 
+    A missing file raises ``FileNotFoundError`` and a malformed row raises
+    ``ValidationError`` — both at import, never at request time.
+    """
+    entries: list[CatalogEntry] = []
+    for provider in providers:
+        raw = yaml.safe_load((models_dir / f"{provider}.yaml").read_text(encoding="utf-8")) or []
+        for item in raw:
+            row = CatalogRow.model_validate(item)
+            entries.append(CatalogEntry(provider=provider, **row.model_dump()))
+    return tuple(entries)
+
+
+CATALOG: tuple[CatalogEntry, ...] = load_catalog(_MODELS_DIR, llm_provider_ids())
 
 _BY_PAIR: dict[tuple[str, str], CatalogEntry] = {(e.provider, e.model): e for e in CATALOG}
+
+
+def selectable_catalog() -> tuple[CatalogEntry, ...]:
+    """The rows the picker offers: everything not deprecated."""
+    return tuple(e for e in CATALOG if not e.deprecated)
 
 
 def find_entry(provider: str, model: str) -> CatalogEntry | None:
     """The catalogue entry for an exact (provider, model) pair, or ``None``.
 
-    ``None`` is the *retired* signal: stored engines are validated against
-    the catalogue on write, so a miss on read means the roster moved on.
+    ``None`` is the *retired* signal; a deprecated row is still found.
     """
     return _BY_PAIR.get((provider, model))
 
 
 def canonical_pair(provider: str, model: str) -> str:
-    """The ``provider:model`` string provenance carries (§5).
-
-    Takes the bare pair so stored (possibly retired) engines — which have no
-    catalogue entry — get the same string as catalogue entries do.
-    """
+    """The ``provider:model`` string provenance carries (§5)."""
     return f"{provider}:{model}"
 
 

@@ -25,6 +25,7 @@ import {Alert, AlertDescription} from '@/components/ui/alert';
 import {Button} from '@/components/ui/button';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -169,8 +170,8 @@ export function AddEntryDialog({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && !loading && onCancel()}>
-      <DialogContent className="sm:max-w-[500px]">
-        <form onSubmit={handleSubmit}>
+      <DialogContent size="sm">
+        <form onSubmit={handleSubmit} className="contents">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
@@ -181,7 +182,7 @@ export function AddEntryDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="entry-key" className="flex items-center gap-1">
                 {fieldLabel}
@@ -201,7 +202,7 @@ export function AddEntryDialog({
 
             <ErrorAlert error={error} />
             <SiblingChips keys={existingKeys} />
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button size="sm" type="button" variant="outline" onClick={onCancel} disabled={loading}>
@@ -298,8 +299,8 @@ export function RenameEntryDialog({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && !loading && onCancel()}>
-      <DialogContent className="sm:max-w-[500px]">
-        <form onSubmit={handleSubmit}>
+      <DialogContent size="md">
+        <form onSubmit={handleSubmit} className="contents">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-5 w-5 text-primary" />
@@ -310,7 +311,7 @@ export function RenameEntryDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="entry-rename-label" className="flex items-center gap-1">
                 {labelField}
@@ -344,7 +345,7 @@ export function RenameEntryDialog({
 
             <ErrorAlert error={error} />
             <SiblingChips keys={siblingKeys} />
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button size="sm" type="button" variant="outline" onClick={onCancel} disabled={loading}>
