@@ -44,83 +44,107 @@ def _req() -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_delete_maps_not_found_to_404() -> None:
+    cid, user_id = uuid4(), uuid4()
+    db = AsyncMock()
     service = MagicMock()
     service.delete_user = AsyncMock(side_effect=ConnectionNotFoundError("nope"))
     with (
         patch(f"{_EP}.LlmConnectionService", return_value=service),
         pytest.raises(HTTPException) as exc,
     ):
-        await _delete(uuid4(), _req(), AsyncMock(), uuid4())
+        await _delete(cid, _req(), db, user_id)
     assert exc.value.status_code == 404
+    service.delete_user.assert_awaited_once_with(user_id=user_id, connection_id=cid)
+    db.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_delete_commits_and_wraps_the_typed_result() -> None:
-    cid, db = uuid4(), AsyncMock()
+    cid, user_id, db = uuid4(), uuid4(), AsyncMock()
     service = MagicMock()
     service.delete_user = AsyncMock(return_value=LlmConnectionDeleteResult(deleted=True, id=cid))
     with patch(f"{_EP}.LlmConnectionService", return_value=service):
-        resp = await _delete(cid, _req(), db, uuid4())
+        resp = await _delete(cid, _req(), db, user_id)
     assert resp.ok is True and resp.data.id == cid
+    service.delete_user.assert_awaited_once_with(user_id=user_id, connection_id=cid)
     db.commit.assert_awaited_once()
+    db.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_update_maps_value_error_to_400() -> None:
+    cid, user_id, db = uuid4(), uuid4(), AsyncMock()
+    body = LlmConnectionUpdateRequest(label="x")
     service = MagicMock()
     service.update_user = AsyncMock(side_effect=ValueError("already exists"))
     with (
         patch(f"{_EP}.LlmConnectionService", return_value=service),
         pytest.raises(HTTPException) as exc,
     ):
-        await _update(uuid4(), LlmConnectionUpdateRequest(label="x"), _req(), AsyncMock(), uuid4())
+        await _update(cid, body, _req(), db, user_id)
     assert exc.value.status_code == 400
+    service.update_user.assert_awaited_once_with(user_id=user_id, connection_id=cid, payload=body)
+    db.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_create_commits_and_maps_a_url_rejection_to_400() -> None:
+    user_id = uuid4()
     body = UserConnectionCreateRequest(provider="openai", label="x", api_key=SecretStr("k"))
     db, service = AsyncMock(), MagicMock()
     service.create_user = AsyncMock(return_value=MagicMock())
     with patch(f"{_EP}.LlmConnectionService", return_value=service):
-        resp = await _create(body, _req(), db, uuid4())
+        resp = await _create(body, _req(), db, user_id)
     assert resp.ok is True
+    service.create_user.assert_awaited_once_with(user_id=user_id, payload=body)
     db.commit.assert_awaited_once()
+    db.rollback.assert_not_awaited()
+
+    db2 = AsyncMock()
     service.create_user = AsyncMock(side_effect=EndpointUrlError("private address"))
     with (
         patch(f"{_EP}.LlmConnectionService", return_value=service),
         pytest.raises(HTTPException) as exc,
     ):
-        await _create(body, _req(), AsyncMock(), uuid4())
+        await _create(body, _req(), db2, user_id)
     assert exc.value.status_code == 400
+    db2.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_list_wraps_the_service_rows() -> None:
+    user_id = uuid4()
     service = MagicMock()
     service.list_user = AsyncMock(return_value=[])
     with patch(f"{_EP}.LlmConnectionService", return_value=service):
-        resp = await _list(_req(), AsyncMock(), uuid4())
+        resp = await _list(_req(), AsyncMock(), user_id)
     assert resp.ok is True and resp.data == []
+    service.list_user.assert_awaited_once_with(user_id)
 
 
 @pytest.mark.asyncio
 async def test_verify_maps_not_found_to_404_and_a_failed_revet_to_400() -> None:
+    cid, user_id, db = uuid4(), uuid4(), AsyncMock()
     service = MagicMock()
     service.verify_user = AsyncMock(side_effect=ConnectionNotFoundError("nope"))
     with (
         patch(f"{_EP}.LlmConnectionService", return_value=service),
         pytest.raises(HTTPException) as exc,
     ):
-        await _verify(uuid4(), _req(), AsyncMock(), uuid4())
+        await _verify(cid, _req(), db, user_id)
     assert exc.value.status_code == 404
+    service.verify_user.assert_awaited_once_with(user_id=user_id, connection_id=cid)
+    db.rollback.assert_not_awaited()
+
+    db2 = AsyncMock()
     service.verify_user = AsyncMock(side_effect=EndpointUrlError("dns"))
     with (
         patch(f"{_EP}.LlmConnectionService", return_value=service),
         pytest.raises(HTTPException) as exc,
     ):
-        await _verify(uuid4(), _req(), AsyncMock(), uuid4())
+        await _verify(cid, _req(), db2, user_id)
     assert exc.value.status_code == 400
+    db2.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
