@@ -491,7 +491,6 @@ export const extraction = {
     matchHintAiInstruction: 'in AI instruction',
     matchHintOptions: 'in options',
     // Template config inspector (B-1 shell; field form editable in place)
-    inspectorEmptyTitle: 'Nothing selected',
     inspectorEmptyHint: 'Select a field or a section to see its details.',
     inspectorSectionLabel: 'Section',
     inspectorKeyLabel: 'Key',

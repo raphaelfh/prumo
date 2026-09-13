@@ -12,6 +12,7 @@ import type {ExtractionFieldUpdate} from '@/types/extraction';
 import {AllowedUnitsList} from '../dialogs/AllowedUnitsList';
 import {AllowedValuesList} from '../dialogs/AllowedValuesList';
 import {Label, ReadOnlyValue} from './inspectorShared';
+import {TemplateInspectorTemplatePane} from './TemplateInspectorTemplatePane';
 import {
   SectionInspectorForm,
   sectionContentKey,
@@ -66,6 +67,12 @@ export type SaveFieldHandler = (
 const PANEL_CLASS =
   'w-[300px] shrink-0 overflow-y-auto bg-muted/20 px-3.5 py-3 text-[13px]';
 
+/** The template instruction draft, owned by the editor so re-selecting a row never destroys it. */
+export interface TemplateInstructionSlot {
+  draft: string | null;
+  onDraftChange: (draft: string | null) => void;
+}
+
 interface TemplateInspectorProps {
   /** Section-pane commit context (B-8 T6) — the immediate PATCH needs
    * the route ids the panel already holds. */
@@ -92,6 +99,8 @@ interface TemplateInspectorProps {
   moveDisabled: boolean;
   /** Deep-link from the grid; only forwarded when it targets `field`. */
   focusGroup?: InspectorFocusGroup | null;
+  /** Shown with nothing selected: the inspector is then the template pane. */
+  instruction: TemplateInstructionSlot;
   className?: string;
   /** Dragged width (PaneResizer) — docked host only; the Sheet host is
    * sized by the overlay and passes none. */
@@ -547,16 +556,18 @@ export function TemplateInspector({
   onMoveField,
   moveDisabled,
   focusGroup,
+  instruction,
   className,
   style,
 }: TemplateInspectorProps) {
   if (!field && !section) {
     return (
       <aside style={style} className={cn(PANEL_CLASS, className)}>
-        <div className="font-medium">{t('extraction', 'inspectorEmptyTitle')}</div>
-        <p className="mt-1 text-muted-foreground">
-          {t('extraction', 'inspectorEmptyHint')}
-        </p>
+        <TemplateInspectorTemplatePane
+          projectId={projectId}
+          templateId={templateId}
+          instruction={instruction}
+        />
       </aside>
     );
   }

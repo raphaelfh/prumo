@@ -19,6 +19,7 @@ import { AlertTriangle, Import, Loader2, Plus } from "lucide-react";
 import { TemplateConfigGridPanel } from "@/components/extraction/template-config/TemplateConfigGridPanel";
 import { TemplateConfigPublishControls } from "@/components/extraction/template-config/TemplateConfigPublishControls";
 import { TemplateExportButton } from "@/components/extraction/template-config/TemplateExportButton";
+import { TemplateInstructionControl } from "@/components/extraction/TemplateInstructionControl";
 import {
   Tooltip,
   TooltipContent,
@@ -94,6 +95,10 @@ export function TemplateConfigEditor({
   // while the grid hosts the inspector Sheet, and two modal sheets must
   // never stack — so the flag belongs to their nearest common owner, here.
   const [diffSheetOpen, setDiffSheetOpen] = useState(false);
+  // The template instruction draft outlives inspector selection changes; the
+  // editor is keyed by template id, so a template switch starts clean.
+  const [instructionDraft, setInstructionDraft] = useState<string | null>(null);
+  const [templateFocusSeq, setTemplateFocusSeq] = useState(0);
   // B-9d retired the delete-confirm dialog: the Publish ☑ ack gates what
   // reaches published data, and the grid arms a 6s Undo for the misclick.
   // The mutation stays here because the editor owns the cache refresh.
@@ -289,9 +294,10 @@ export function TemplateConfigEditor({
       {/* ONE configuration bar, and ONE trigger per destination. It absorbed
           three stacked bands (the engine chip's own row, this command bar and
           the 48px AI instruction row), and then the three AI triggers it had
-          collected — engine, review question, ✨ instruction — which all
-          opened the SAME AiConfigDialog on different tabs. The dialog's own
-          tab strip is the picker; the bar carries one chip. Priority tracks
+          collected — engine, review question, ✨ instruction. The ✨ trigger
+          reveals the template's AI instruction in the inspector; the engine
+          lives on the worklist gear and the review question in Project →
+          Configuration. Priority tracks
           (RunHeader's contract): the identity track is the only elastic one,
           every command is shrink-0, and Publish never collapses. */}
       <div
@@ -321,6 +327,13 @@ export function TemplateConfigEditor({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <TemplateInstructionControl
+            projectId={projectId}
+            templateId={templateId}
+            draft={instructionDraft}
+            onActivate={() => setTemplateFocusSeq((n) => n + 1)}
+          />
+          <BarDivider />
           <TemplateExportButton projectId={projectId} templateId={templateId} />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -420,6 +433,8 @@ export function TemplateConfigEditor({
             history={history}
             onAddSection={() => setAddSectionMode({ kind: "root" })}
             onAddGroup={() => setAddSectionMode({ kind: "group" })}
+            instruction={{ draft: instructionDraft, onDraftChange: setInstructionDraft }}
+            templateFocusSeq={templateFocusSeq}
           />
         </div>
       )}

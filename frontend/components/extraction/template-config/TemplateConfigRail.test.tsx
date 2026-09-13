@@ -12,6 +12,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 // templateService -> apiClient -> the supabase client, which throws on
 // import when env is absent (CI).
 vi.mock('@/services/templateService', () => ({updateSection: vi.fn()}));
+vi.mock('@/components/extraction/TemplateInstructionPane', () => ({TemplateInstructionPane: () => null}));
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
   useTemplateEntityTypes: vi.fn(),
@@ -117,6 +118,8 @@ const panel = () => (
       sectionActions={sectionActions}
       onAddSection={vi.fn()}
       onAddGroup={vi.fn()}
+      instruction={{draft: null, onDraftChange: vi.fn()}}
+      templateFocusSeq={0}
     />
   </TooltipProvider>
   </QueryClientProvider>

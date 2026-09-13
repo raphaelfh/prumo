@@ -135,6 +135,7 @@ function renderInspector(
     sections: moveTargets,
     onMoveField: vi.fn(),
     moveDisabled: false,
+    instruction: {draft: null, onDraftChange: vi.fn()},
     ...over,
   };
   const view = render(<TemplateInspector {...props} />);
@@ -191,6 +192,7 @@ function renderSection(
     sections: moveTargets,
     onMoveField: vi.fn(),
     moveDisabled: false,
+    instruction: {draft: null, onDraftChange: vi.fn()},
     ...over,
   };
   const view = render(

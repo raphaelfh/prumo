@@ -448,6 +448,8 @@ function ConfigSurface({forceDiffOpen = false}: {forceDiffOpen?: boolean}) {
         }}
         onAddSection={vi.fn()}
         onAddGroup={vi.fn()}
+        instruction={{draft: null, onDraftChange: vi.fn()}}
+        templateFocusSeq={0}
       />
     </TooltipProvider>
   );
