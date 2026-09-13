@@ -61,7 +61,8 @@ Non-goals:
 | Extra scope | Linkable settings sections (+ AI engine as its own rail item) | Deep links replace popups as the way other surfaces point at settings. |
 | Inline section creation | Deferred to its own spec | Reverses a documented decision (B-8) and needs a backend PATCH change. |
 | `lg` dialog height | Hug content, cap 85dvh; a loading body reserves a min height | Removes dead space; the reserve stops the frame jumping while a list loads. |
-| Shortcut guard | Depends on PR #892 (`fix(shortcuts): gate chords on open AlertDialogs`) | The new discard confirm is an `AlertDialog`; without #892, app chords fire under it. |
+| View gutter | Every project tab follows Articles: full-bleed, one `p-2` inset owned by the view (user request, 2026-09-13) | Extraction sat inside ProjectView's `px-4 py-3 lg:px-6` + `max-w-[1800px]`; QA added its own `p-4 lg:p-6` on top of it (doubled padding). Articles' 8px inset is the density the user picked; `frontend-ux` §6 moves to it. |
+| Shortcut guard | Merged as PR #892 (`fix(shortcuts): gate chords on open AlertDialogs`) | The new discard confirm is an `AlertDialog`; without #892, app chords fire under it. |
 
 ## 4. Design
 
@@ -172,6 +173,24 @@ height on its loading body only (`min-h-[50dvh]` on the skeleton wrapper inside
 `ArticleFileUploadDialogNew`, `ZoteroImportDialog`, `ImportTemplateDialog`.
 The `frontend-ux` §8 table, the `ui-styling` "Frame mechanics" paragraph and
 the overlay-frame test move from "fixed 85dvh" to "content, ≤85dvh".
+
+### 4.5 One view gutter: the Articles pattern
+
+Measured on `dev` (1280 px): the Articles list starts 8px from the sidebar
+edge (`ArticlesSplitShell` list pane `p-2`, tab full-bleed); Data extraction
+starts 24px in (ProjectView's non-full-bleed wrapper `px-4 py-3 lg:px-6`,
+capped at `max-w-[1800px]`); Quality assessment starts 48px in at `lg`
+(that wrapper plus its own `p-4 lg:p-6` — the doubled-padding violation of
+`frontend-ux` §6 rule 2).
+
+- `ProjectView` renders every tab full-bleed; `FULL_BLEED_TABS` and the
+  padded wrapper branch are deleted (no tab uses them any more).
+- `ExtractionInterface` owns one `p-2` inset on its content column;
+  `QualityAssessmentInterface` replaces each `p-4 lg:p-6` with `p-2`.
+- `frontend-ux` §6 page-gutter row and `.claude/rules/frontend.md` edge-budget
+  line change from `px-4 py-3 lg:px-6` to `p-2`, citing Articles.
+- Project settings keeps its form gutter here; sub-project 3's density pass
+  takes it (it is a prose form, not a list view).
 
 ## 5. States and errors
 

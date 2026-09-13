@@ -27,7 +27,7 @@ owner: '@raphaelfh'
 - React Compiler builds with `panicThreshold: 'all_errors'`: no `try/finally` in component bodies; no refs read during render; derive state in render rather than syncing it in an effect.
 - Vitest: mock `@/lib/copy` as `t: (_ns, key) => key` only where the neighbouring tests already do; mock any service that imports the API client (it builds the Supabase client at module scope and throws in CI without env).
 - Commits: conventional, one per task, ending with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
-- Depends on PR #892 (`fix(shortcuts): gate chords on open AlertDialogs`) for the discard confirm's shortcut behaviour; nothing here re-implements it.
+- PR #892 (`fix(shortcuts): gate chords on open AlertDialogs`, merged) already suppresses app chords under the discard confirm; nothing here re-implements it. Merge `origin/dev` into the branch before Task 3.
 
 ## File map
 
@@ -60,6 +60,9 @@ owner: '@raphaelfh'
 | `frontend/components/extraction/template-config/TemplateConfigGridPanel.templateFocus.test.tsx` (new) | 5 | panel wiring |
 | `frontend/components/extraction/template-config/TemplateInspectorTemplatePane.test.tsx` (new) | 5 | pane host |
 | `frontend/lib/copy/extraction.ts` | 4, 5 | dead keys removed |
+| `frontend/pages/ProjectView.tsx` | 6 | every tab full-bleed |
+| `frontend/components/extraction/ExtractionInterface.tsx`, `frontend/components/quality/QualityAssessmentInterface.tsx` | 6 | one `p-2` view inset |
+| `.claude/skills/frontend-ux/SKILL.md` §6, `.claude/rules/frontend.md` | 6 | gutter rule = Articles |
 
 ---
 
@@ -1171,7 +1174,53 @@ git commit -m "fix(extraction): template AI instruction reachable again, in the 
 
 ---
 
-### Task 6: Full gate, visual pass, PR
+### Task 6: One view gutter — the Articles pattern
+
+**Files:**
+- Modify: `frontend/pages/ProjectView.tsx` (`FULL_BLEED_TABS` line ~21, the return block ~263-273)
+- Modify: `frontend/components/extraction/ExtractionInterface.tsx` (root return, `<div className="flex min-h-0 flex-1 flex-col">` under `<div className="flex h-full min-h-0 flex-col">`, ~line 418)
+- Modify: `frontend/components/quality/QualityAssessmentInterface.tsx` (every `p-4 lg:p-6`, ~lines 120, 130, 184, 196, 220)
+- Modify: `.claude/skills/frontend-ux/SKILL.md` §6 table first row, `.claude/rules/frontend.md` edge-budget bullet
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: every project tab is full-bleed; each view owns exactly one `p-2` inset.
+
+- [ ] **Step 1: Measure before** (spec §4.5; one browser session against this worktree's own Vite on a non-8080 port, logged in as the e2e fixture owner — measure BEFORE editing, keep the session for Step 4). On `/projects/<id>?tab=articles`, `?tab=extraction`, `?tab=quality&qaTab=assessment` run in the page:
+
+```js
+(() => {
+  const main = document.querySelector('main') ?? document.body;
+  const firstInput = main.querySelector('input[type="search"], input, table, [role="grid"]');
+  const sidebar = document.querySelector('[data-sidebar], aside');
+  return {left: Math.round(firstInput.getBoundingClientRect().left - (sidebar?.getBoundingClientRect().right ?? 0))};
+})()
+```
+
+Record the three numbers (expected ≈ 8 / 24 / 48).
+
+- [ ] **Step 2: Implement.** `ProjectView.tsx`: delete `const FULL_BLEED_TABS = …` and `const isFullBleed = …`; the return's conditional becomes the single `<div className="flex-1 overflow-y-auto">{renderContent()}</div>`. `ExtractionInterface.tsx`: the content column `<div className="flex min-h-0 flex-1 flex-col">` becomes `<div className="flex min-h-0 flex-1 flex-col p-2">`. `QualityAssessmentInterface.tsx`: replace every `p-4 lg:p-6` with `p-2` and every `pb-4 p-4 lg:p-6` with `p-2` (`grep -n "lg:p-6" frontend/components/quality/QualityAssessmentInterface.tsx` must return nothing afterwards).
+
+- [ ] **Step 3: Docs.** `frontend-ux/SKILL.md` §6 first row becomes:
+
+```markdown
+| Page gutter (viewport → workspace)    | `p-2`, owned by the view         | The Articles list's 8px inset. A tab never inherits a padded wrapper from `ProjectView`; each view sets its own single inset. |
+```
+
+`.claude/rules/frontend.md`: `Page gutter \`px-4 py-3 lg:px-6\` (never wider)` becomes `Page gutter \`p-2\`, owned by the view (the Articles pattern)`.
+
+- [ ] **Step 4: Verify** — `npx vitest run frontend/components/extraction frontend/components/quality frontend/test/components frontend/pages 2>/dev/null; npm run typecheck && npx knip --no-tag-hints`, then re-run the Step 1 measurement in the SAME browser session. Expected: all three ≈ 8 (±1); no horizontal scrollbar at 390 px on any of the three tabs.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add frontend/pages/ProjectView.tsx frontend/components/extraction/ExtractionInterface.tsx frontend/components/quality/QualityAssessmentInterface.tsx .claude/skills/frontend-ux/SKILL.md .claude/rules/frontend.md
+git commit -m "feat(layout): every project view uses the Articles gutter"
+```
+
+---
+
+### Task 7: Full gate, visual pass, PR
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-09-13-configuration-as-views.md` (tick boxes; `status: shipped` only after merge)
