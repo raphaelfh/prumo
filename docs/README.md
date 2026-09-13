@@ -24,6 +24,7 @@ tutorial lives here.*
 | Guide | When to read |
 | --- | --- |
 | [Seed the database](./how-to/seed-database.md) | After `make reset-db` or when bootstrapping a new env |
+| [Use the agent skills](./how-to/use-agent-skills.md) | Choosing which Claude Code skill to run at each step of a change |
 
 ## Reference — *information lookup*
 

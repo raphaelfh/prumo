@@ -36,6 +36,8 @@ Does it cross >=2 layers (UI -> API -> DB)?         -> Playwright E2E flow
 Is the bug a race / timing / fixture leak?          -> read references/flakiness.md first
 ```
 
+**Name the seam before the test.** A seam is the public interface the test observes through: an endpoint, a service function, a hook's return value, what the user sees. Write down the seams under test first; for non-trivial work, agree them with the user. Tests live at seams, never against internals. When the interface itself looks wrong for testing, load `codebase-design`.
+
 ## 3. Commands
 
 | Goal                                              | Command                                                                                |
@@ -305,6 +307,9 @@ Retries: `retries: process.env.CI ? 1 : 0` for `local-api`/`local-ui`/`local-hit
 - **CSS selectors in Playwright** — break on the next Tailwind refactor; use role/label.
 - **Bumping `retries` to silence flake** — re-read §8.
 - **Snapshotting volatile UI** — mask timestamps, IDs, user names. Don't ratchet `maxDiffPixels` upward to hide drift.
+- **Tautological assertions** — the expected value is computed the way the code computes it, so the test cannot disagree. Examples: `expect(total(items)).toBe(items.reduce(...))`, or comparing a Pydantic response model to one built from the same inputs, which stays green when fields drift. Expected values come from an independent source: a literal, a worked example, the spec.
+- **Vacuous tests** — the assertion never runs against the case it names: an empty list iterated, a mocked branch never taken, a filter that matches nothing. Assert the precondition (the row exists, the list is non-empty) before the outcome.
+- **Testing past the interface** — mocking your own collaborators, asserting call counts or order, or verifying a write by querying the table instead of reading it back through the interface. The tell: the test breaks on a refactor that changed no behaviour.
 
 ## 11. References (progressive disclosure)
 

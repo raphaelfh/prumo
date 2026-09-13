@@ -13,6 +13,21 @@ Random fixes waste time and mask the real issue. On prumo, the cost is paid in H
 
 Don't skip the process because the bug seems simple: most prumo bugs touch 2+ layers (request → service → DB → RLS, or hook → service → cache → API).
 
+## Phase 1 gate — a red loop before any theory
+
+Phase 1 is done only when you can name **one command** you have **already run**, with its output shown, that is:
+
+- **Red-capable**: it drives the real bug path and asserts the user's exact symptom, so it goes red on this bug and green once fixed. "Runs without error" does not count.
+- **Deterministic**: same verdict every run. For a flaky bug, a pinned, high reproduction rate.
+- **Fast**: seconds, not minutes.
+- **Agent-runnable**: no human in the loop.
+
+Build it in roughly this order: a failing pytest or vitest at the seam that reaches the bug; a `curl` against the local API with a real JWT; a Playwright script asserting on DOM, console, or network; a replayed captured payload; a throwaway harness calling the service directly; `git bisect run` between a good and a bad SHA; the same input through two versions or configs, diffed.
+
+Then **tighten** it: narrow the test scope, pin time and seeds, assert on the symptom rather than "didn't crash". For a non-deterministic bug, raise the reproduction rate (`--count=50`, parallel runs, injected sleeps) until it is debuggable. If you cannot build a loop, stop and say what you tried and what access you need.
+
+**Minimise** once it is red: cut inputs, fixtures, callers and steps one at a time, re-running after each cut, until every remaining element is load-bearing. The minimal repro becomes the regression test.
+
 ## Phase 1 delta — where prumo state can drift
 
 prumo's request lifecycle has six places where state can drift. Instrument *all*
@@ -38,9 +53,11 @@ logger.info("advance_stage.committed")
 
 ```ts
 // frontend hook / service
-console.debug('[useExtractionData] queryKey', queryKey, 'enabled', enabled);
-console.debug('[extractionValueService] payload', payload);
+console.debug('[DEBUG-a4f2] useExtractionData queryKey', queryKey, 'enabled', enabled);
+console.debug('[DEBUG-a4f2] extractionValueService payload', payload);
 ```
+
+Tag every temporary probe with one unique prefix such as `[DEBUG-a4f2]`, in Python and TypeScript alike. Cleanup is then one `grep -rn "DEBUG-a4f2"` that must come back empty. Bound structlog context (`run_id`, `project_id`) is the permanent kind and stays.
 
 Run once. Read the logs/console. **Then** identify which layer is wrong. Theorising before this step is how you spend two hours fixing the wrong layer.
 
@@ -64,11 +81,17 @@ If the exception lands inside `extraction_consensus_service.py` but the bad inpu
 2. **Compare against the canonical reference.** For anything in extraction/HITL: `docs/reference/extraction-hitl-architecture.md`. Read the relevant section in full, not just the headers.
 3. **Map dependencies.** What migrations did this code grow with? What seed data does it assume? What RLS does it presume? What Pydantic schema does the frontend expect?
 
+## Phase 3 delta — ranked, falsifiable hypotheses
+
+This overrides the single-hypothesis step of the generic method. List **3–5 hypotheses, ranked**, before testing any. One hypothesis anchors on the first plausible idea. Each must state its prediction: "If X is the cause, then changing Y makes the bug disappear." A hypothesis with no prediction is a vibe; sharpen or drop it. Show the list to the user when they are present; they often re-rank it instantly. Test in rank order, one variable at a time, each probe mapped to one prediction.
+
 ## Phase 4 delta — the failing test, per layer
 
-- Backend: a pytest in `backend/tests/` that reproduces the bug, fails on `main`, passes after the fix.
-- Frontend: a vitest with the smallest possible component + a mocked service that triggers the bug.
+- Backend: a pytest in `backend/tests/` that reproduces the bug, fails on `dev`, passes after the fix.
+- Frontend: a vitest with the smallest possible component + MSW handlers that trigger the bug.
 - For DB invariants, a test that calls the service twice / concurrently / with the bad input the wild caller sent.
+
+The test only counts at a **correct seam**: one that reproduces the bug as it happens at the call site. If the only reachable seam is too shallow (one caller when the bug needs two, a unit test that cannot replay the chain), a test there is false confidence. Say so in the PR: a missing seam is an architecture finding for `/improve-codebase-architecture`.
 
 Verify via `verification-before-completion/SKILL.md` — it carries prumo's command table.
 
@@ -102,9 +125,10 @@ Symptom: a reviewer occasionally sees a 409 from `POST /api/v1/runs/{id}/advance
 
 ## What good looks like
 
-- Phase 1 produces logs with `run_id` and `project_id` bound.
+- Phase 1 names one red loop command, shown with its output, and logs with `run_id` and `project_id` bound.
 - Phase 2 cites a working sibling and the canonical doc.
-- Phase 3 states one hypothesis in writing.
-- Phase 4 produces (a) a failing test that now passes, (b) one focused change, (c) green `make test-backend` / `npm test` output.
+- Phase 3 shows a ranked list of falsifiable hypotheses, and names the one that held.
+- Phase 4 produces (a) a failing test at a correct seam that now passes, or a stated missing seam, (b) one focused change, (c) green `make test-backend` / `npm run test:run` output, and (d) the original loop re-run green.
+- Cleanup: `grep` for the debug tag returns nothing, and the PR body states the hypothesis that turned out correct.
 
-If any of those four are missing, the bug isn't fixed — it's hidden.
+If any of those are missing, the bug isn't fixed — it's hidden.

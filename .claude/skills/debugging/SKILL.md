@@ -41,7 +41,7 @@ Each has a known shape. Run the framework first; pattern-matching by gut is what
 
 ## Cross-skill flow
 
-1. **Bug arrives** → `systematic-debugging` Phase 1 (reproduce, gather evidence at *every* layer, do not theorise yet).
+1. **Bug arrives** → `systematic-debugging` Phase 1: build a red loop command, minimise it, gather evidence at *every* layer. No theory until the loop goes red.
 2. **Symptom is downstream of trigger** → switch to `root-cause-tracing` to walk back.
 3. **Root cause confirmed, fix ready** → before writing the fix, apply `defense-in-depth` so the class is closed, not just this instance.
 4. **About to claim it's done** → `verification-before-completion` to actually run `make test-backend`, `pytest -k <name>`, `vitest run <path>`, `ruff check`, `npm run typecheck`, and read the output.

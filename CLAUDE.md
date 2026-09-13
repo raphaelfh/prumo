@@ -59,6 +59,15 @@ load reliably.
 - Deploy / promotion / rollback → `deploy-release`
 - Architectural drift sweep → `architectural-quality-loop`
 - Visual feedback loop on a screen → `design-review`
+- Module interface / seam / deepening design → `codebase-design`
+- Stress-testing a plan or decision (interview) → `grilling`
+- Domain term or ADR change → `domain-modeling`
+- Throwaway prototype (state logic or UI variants) → `prototype`
+- Editing a skill, CLAUDE.md, rules or memory → `writing-for-agents`
+
+User-invoked only: `/improve-codebase-architecture`, `/retro`, `/handoff`,
+`/wait-what`, `/ship-spec`, `/preflight`, `/merge-train`. The end-to-end flow is in
+[`docs/how-to/use-agent-skills.md`](docs/how-to/use-agent-skills.md).
 
 ## Stack
 
