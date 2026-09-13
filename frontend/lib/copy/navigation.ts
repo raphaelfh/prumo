@@ -49,7 +49,6 @@ export const navigation = {
     ariaExpandSidebar: 'Expand sidebar',
     ariaCollapseSidebar: 'Collapse sidebar',
     ariaBack: 'Back',
-    searchPlaceholder: 'Search…',
     ariaOpenSearch: 'Open search',
     sendFeedback: 'Send feedback',
     feedbackTitle: 'Send Feedback',

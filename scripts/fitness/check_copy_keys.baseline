@@ -69,7 +69,6 @@ frontend/lib/copy/navigation.ts:ariaExpandSidebar
 frontend/lib/copy/navigation.ts:ariaOpenSearch
 frontend/lib/copy/navigation.ts:notifProjectCompletedMessage
 frontend/lib/copy/navigation.ts:notifProjectCompletedTitle
-frontend/lib/copy/navigation.ts:searchPlaceholder
 frontend/lib/copy/navigation.ts:viewSwitcherTrigger
 frontend/lib/copy/pages.ts:dashboardErrorProjectIdNotReturned
 frontend/lib/copy/pages.ts:dashboardUnexpectedError
