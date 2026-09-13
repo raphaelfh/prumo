@@ -407,3 +407,11 @@ section wins.
    overlay control (`absolute inset-0`) above its content, so it gains the
    arrow and keyboard access without nesting interactive elements. This
    replaces § 9.4's "no element gains a role" for real click targets only.
+11. **Two deliberate deviations from § 4.5–4.6, kept after the final review.**
+   Sheets export no `SheetBody`/`SheetFooter`: only
+   `TemplateConfigDiffSheet` and `TemplateVersionHistorySheet` have a footer,
+   and both hand-roll a bordered header and footer at `px-5 py-4`. A shared
+   helper for two callers is not worth re-adding the `SheetFooter` that was
+   deleted as dead. And `TemplateDiscardDialog` is the one `md` alert dialog,
+   not `sm`: its body has confirm, acknowledge (with the orphan list), refused
+   and result phases, and the list does not fit the 400 px frame.
