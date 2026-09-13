@@ -10,6 +10,7 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.schemas.llm_connection import (
     LlmConnectionUpdateRequest,
     ProjectConnectionCreateRequest,
@@ -17,9 +18,12 @@ from app.schemas.llm_connection import (
 )
 from app.services.llm_connection_service import (
     ConnectionNotFoundError,
+    KeyScope,
     LlmConnectionService,
+    ResolvedKey,
     owned_project_connection,
     owned_user_connection,
+    resolve_provider_key,
 )
 from tests.integration.conftest import SEED
 
@@ -144,3 +148,105 @@ async def test_clearing_the_key_is_refused_on_a_hosted_provider(db_session: Asyn
             connection_id=cid,
             payload=LlmConnectionUpdateRequest(label="k", api_key=SecretStr("")),
         )
+
+
+@pytest.mark.asyncio
+async def test_ladder_user_then_project_then_global(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-global")
+    kw = {"provider": "openai", "project_id": SEED.primary_project}
+    assert await resolve_provider_key(
+        db_session, user_id=SEED.reviewer_profile, **kw
+    ) == ResolvedKey("sk-global", KeyScope.GLOBAL_SERVICE)
+    await _project_key(db_session)
+    assert await resolve_provider_key(
+        db_session, user_id=SEED.reviewer_profile, **kw
+    ) == ResolvedKey("sk-project", KeyScope.PROJECT_SHARED)
+    await _user_key(db_session)
+    assert await resolve_provider_key(
+        db_session, user_id=SEED.primary_profile, **kw
+    ) == ResolvedKey("sk-user", KeyScope.USER_BYOK)
+    # Per caller: the reviewer has no key of their own and still sees the project's.
+    assert (
+        await resolve_provider_key(db_session, user_id=SEED.reviewer_profile, **kw)
+    ).scope is KeyScope.PROJECT_SHARED
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    assert (
+        await resolve_provider_key(
+            db_session,
+            provider="anthropic",
+            project_id=SEED.primary_project,
+            user_id=SEED.reviewer_profile,
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_llama_cloud_key_resolves_for_parsing(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Port of test_api_key_llama_cloud.py (§7.5): a user-scope llama_cloud
+    connection resolves USER_BYOK; a project-scope one resolves
+    PROJECT_SHARED for a member without a key."""
+    monkeypatch.setattr(settings, "LLAMA_CLOUD_API_KEY", None)
+    await _user_key(db_session, "llama_cloud", "lc-secret")
+    assert await resolve_provider_key(
+        db_session,
+        provider="llama_cloud",
+        project_id=SEED.primary_project,
+        user_id=SEED.primary_profile,
+    ) == ResolvedKey("lc-secret", KeyScope.USER_BYOK)
+    await _project_key(db_session, "llama_cloud", "lc-shared")
+    assert await resolve_provider_key(
+        db_session,
+        provider="llama_cloud",
+        project_id=SEED.primary_project,
+        user_id=SEED.reviewer_profile,
+    ) == ResolvedKey("lc-shared", KeyScope.PROJECT_SHARED)
+
+
+@pytest.mark.asyncio
+async def test_ladder_skips_host_rows_and_tolerates_several_shared_keys(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A keyed HOST is never handed out as a bare provider key, and two
+    shared keys for one provider (distinct labels - legal at project scope)
+    resolve to one of them, never ``MultipleResultsFound``."""
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    svc = LlmConnectionService(db_session)
+    await svc.create_user(
+        user_id=SEED.primary_profile,
+        payload=UserConnectionCreateRequest(
+            provider="openai_compatible",
+            label="h",
+            base_url="https://8.8.8.8/v1",
+            api_key=SecretStr("host-key"),
+        ),
+    )
+    assert (
+        await resolve_provider_key(
+            db_session,
+            provider="openai_compatible",
+            project_id=SEED.primary_project,
+            user_id=SEED.primary_profile,
+        )
+        is None
+    )
+    await _project_key(db_session, key="sk-first")
+    await svc.create_project(
+        project_id=SEED.primary_project,
+        created_by=SEED.primary_profile,
+        payload=ProjectConnectionCreateRequest(
+            provider="openai", label="second", api_key=SecretStr("sk-second")
+        ),
+    )
+    resolved = await resolve_provider_key(
+        db_session,
+        provider="openai",
+        project_id=SEED.primary_project,
+        user_id=SEED.reviewer_profile,
+    )
+    assert resolved is not None and resolved.scope is KeyScope.PROJECT_SHARED
+    assert resolved.key in {"sk-first", "sk-second"}  # same-transaction created_at ties are legal

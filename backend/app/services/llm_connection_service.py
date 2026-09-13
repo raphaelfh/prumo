@@ -15,18 +15,22 @@ derived keys). Key material never reaches a read model or an error.
 from __future__ import annotations
 
 import base64
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import NamedTuple
 from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.error_handler import AppError
 from app.core.integrity import violates_constraint
 from app.core.net_guard import validate_endpoint_url
 from app.core.security import derive_encryption_key
-from app.llm.registry import get_provider
+from app.llm.registry import get_provider, global_key_for
 from app.models.llm_connection import LlmConnection
 from app.schemas.llm_connection import (
     LlmConnectionDeleteResult,
@@ -41,9 +45,12 @@ from app.services.profile_names import profile_names
 __all__ = [
     "ConnectionNotFoundError",
     "ConnectionUnavailableError",
+    "KeyScope",
     "LlmConnectionService",
+    "ResolvedKey",
     "owned_project_connection",
     "owned_user_connection",
+    "resolve_provider_key",
 ]
 
 _HOSTED_PROVIDER_INDEX = "uq_llm_connections_user_hosted_provider"
@@ -51,6 +58,19 @@ _IDENTITY_INDEXES = (
     "uq_llm_connections_user_identity",
     "uq_llm_connections_project_identity",
 )
+
+
+class KeyScope(StrEnum):
+    """Whose key paid for a call — recordable in provenance; the key never is."""
+
+    USER_BYOK = "user_byok"
+    PROJECT_SHARED = "project_shared"
+    GLOBAL_SERVICE = "global_service"
+
+
+class ResolvedKey(NamedTuple):
+    key: str
+    scope: KeyScope
 
 
 class ConnectionUnavailableError(AppError):
@@ -314,3 +334,57 @@ class LlmConnectionService:
                 f"The stored key for connection {row.id} ({row.label!r}) cannot be decrypted. "
                 "Re-enter the key."
             ) from None
+
+
+async def _scoped_key_row(
+    db: AsyncSession,
+    *,
+    provider: str,
+    scope: str,
+    owner_column: InstrumentedAttribute[UUID | None],
+    owner_id: UUID,
+) -> LlmConnection | None:
+    """The keyed, host-less row for (scope, owner, provider) — a host's key
+    is never handed out as a bare provider key. Project scope is unique on
+    (project, provider, label), so several shared keys for one provider are
+    legal: take the oldest, never ``scalar_one`` (MultipleResultsFound → 500).
+    """
+    return (
+        await db.execute(
+            select(LlmConnection)
+            .where(
+                LlmConnection.scope == scope,
+                owner_column == owner_id,
+                LlmConnection.provider == provider,
+                LlmConnection.base_url.is_(None),
+                LlmConnection.encrypted_api_key.is_not(None),
+            )
+            .order_by(LlmConnection.created_at, LlmConnection.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def resolve_provider_key(
+    session: AsyncSession, *, provider: str, project_id: UUID, user_id: UUID
+) -> ResolvedKey | None:
+    """THE credential ladder: caller's user-scope key → project's shared key →
+    the deployment's global setting. First hit wins; ``None`` when nothing has
+    a key.
+    """
+    service = LlmConnectionService(session)
+    for scope, column, owner, key_scope in (
+        ("user", LlmConnection.user_id, user_id, KeyScope.USER_BYOK),
+        ("project", LlmConnection.project_id, project_id, KeyScope.PROJECT_SHARED),
+    ):
+        row = await _scoped_key_row(
+            session, provider=provider, scope=scope, owner_column=column, owner_id=owner
+        )
+        if row is not None:
+            key = await service.decrypt_key(row)
+            if key:
+                row.last_used_at = datetime.now(UTC)
+                await session.flush()
+                return ResolvedKey(key, key_scope)
+    global_key = global_key_for(provider)
+    return ResolvedKey(global_key, KeyScope.GLOBAL_SERVICE) if global_key else None
