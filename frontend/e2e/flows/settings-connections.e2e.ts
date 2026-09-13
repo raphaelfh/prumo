@@ -12,7 +12,7 @@ test.describe('Settings and AI connection flows', () => {
     const env = loadE2EEnv();
     await loginViaUi(page);
     await page.goto(`${env.frontendUrl}/settings?tab=integrations`);
-    await expect(page.getByText('AI connections')).toBeVisible();
+    await expect(page.getByRole('heading', {name: 'AI connections'})).toBeVisible();
   });
 
   test('lists providers and runs the connection lifecycle', async ({request, page}) => {

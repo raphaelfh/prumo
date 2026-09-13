@@ -239,7 +239,10 @@ export function EngineGear({projectId}: {projectId: string}) {
                                                             {t('llmConnections', TAG_COPY[availability])}
                                                         </Badge>
                                                     ) : (
-                                                        <Badge variant="secondary">
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="border-dashed text-muted-foreground"
+                                                        >
                                                             {t('llmConnections', 'tagNeedsKey')}
                                                         </Badge>
                                                     )}

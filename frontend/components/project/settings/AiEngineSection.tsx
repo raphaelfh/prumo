@@ -175,7 +175,7 @@ function SharedKeys({projectId, providers}: {projectId: string; providers: Provi
       },
     );
   const addButton = (
-    <Button size="sm" onClick={() => setAdding(true)} disabled={adding}>
+    <Button size="sm" variant="outline" onClick={() => setAdding(true)} disabled={adding}>
       <Plus className="mr-1 h-4 w-4" strokeWidth={1.5} />
       {t('llmConnections', 'sharedAddButton')}
     </Button>
@@ -197,10 +197,10 @@ function SharedKeys({projectId, providers}: {projectId: string; providers: Provi
         </p>
       )}
       {connections.data && connections.data.length === 0 && !adding && (
-        <p className="flex items-center gap-3 text-[13px] text-muted-foreground">
-          {t('llmConnections', 'sharedEmpty')}
+        <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
+          <span>{t('llmConnections', 'sharedEmpty')}</span>
           {addButton}
-        </p>
+        </div>
       )}
       {connections.data && connections.data.length > 0 && (
         <Table>

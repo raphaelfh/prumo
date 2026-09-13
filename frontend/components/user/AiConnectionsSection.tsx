@@ -186,7 +186,7 @@ export function AiConnectionsSection() {
   const retryBoth = () => { void connections.refetch(); void providers.refetch(); };
   const userProviders = (providers.data ?? []).filter((p) => p.scopes.includes('user'));
   const addButton = (
-    <Button size="sm" onClick={() => setAdding(true)} disabled={!providers.data || adding}>
+    <Button size="sm" variant="outline" onClick={() => setAdding(true)} disabled={!providers.data || adding}>
       <Plus className="mr-1 h-4 w-4" strokeWidth={1.5} />{t('llmConnections', 'addButton')}
     </Button>
   );
@@ -204,7 +204,10 @@ export function AiConnectionsSection() {
         </p>
       )}
       {!hasError && connections.data && connections.data.length === 0 && !adding && (
-        <p className="flex items-center gap-3 text-[13px] text-muted-foreground">{t('llmConnections', 'listEmpty')}{addButton}</p>
+        <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
+          <span>{t('llmConnections', 'listEmpty')}</span>
+          {addButton}
+        </div>
       )}
       {!hasError && connections.data && connections.data.length > 0 && (
         <ul className="divide-y divide-border/40">
