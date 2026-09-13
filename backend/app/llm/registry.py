@@ -2,21 +2,19 @@
 
 Every layer derives from this tuple: ``build_model``, the catalogue's
 provider ids, the key schema validator, the provider metadata the API
-returns, the global-key lookup, and the DB CHECK literal on
-``user_api_keys.provider``. The CHECK literal computed here is asserted
-equal to the registry by a unit test (``tests/unit/llm/test_registry.py``)
-AND to the live database constraint by the migration roundtrip suite
-(``tests/integration/test_migration_roundtrip.py``) — adding a provider is
-one entry here plus one migration, and forgetting the migration fails
-both.
+returns, the global-key lookup, and the DB CHECK literals on
+``llm_connections.provider`` and the ``scopes`` CHECK (asserted equal by
+``tests/unit/llm/test_llm_connection_model.py`` and
+``test_migration_roundtrip.py``) — adding a provider is one entry here
+plus one migration, and forgetting the migration fails both.
 
 Rules encoded as data, not comments elsewhere:
 
 * Every hosted provider names a global key setting; only a host-bearing
   provider has none (a host is a per-connection fact, there is no
   operator default host).
-* ``byok_only`` is never stored: :func:`is_byok_only` computes it per
-  deployment as "hosted provider whose global setting is empty".
+* Nothing about credentials is stored here: :func:`global_key_for` feeds
+  the ``global`` tier of the engine read's ``availability``.
 """
 
 from __future__ import annotations
@@ -137,11 +135,3 @@ def global_key_for(provider_id: str) -> str | None:
         return None
     value = getattr(settings, spec.global_key_setting, None)
     return value or None
-
-
-def is_byok_only(provider_id: str) -> bool:
-    """Hosted provider with no operator key in this deployment."""
-    spec = get_provider(provider_id)
-    if spec is None or spec.needs_host:
-        return False
-    return global_key_for(provider_id) is None

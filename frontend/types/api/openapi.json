@@ -3210,6 +3210,54 @@
         "title": "ApiResponse[UpdateTemplateInstructionResponse]",
         "type": "object"
       },
+      "ApiResponse_UserEngineClearResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserEngineClearResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[UserEngineClearResult]",
+        "type": "object"
+      },
       "ApiResponse_list_AISuggestionHistoryItem__": {
         "properties": {
           "data": {
@@ -5009,7 +5057,7 @@
         "type": "string"
       },
       "ExtractionErrorCode": {
-        "description": "Stable code for a terminal extraction failure, or for a typed\nsynchronous refusal on the extraction write paths.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_project_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``ENTRY_KEY_DUPLICATE`` \u2014 manual entry creation named an identity the\n  coordinate already holds (``EntryKeyDuplicateError``), refused as a 409\n  rather than silently renaming the entry the way the retired model path\n  did (\"Cox Model (2)\").\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
+        "description": "Stable code for a terminal extraction failure, or for a typed\nsynchronous refusal on the extraction write paths.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``ENTRY_KEY_DUPLICATE`` \u2014 manual entry creation named an identity the\n  coordinate already holds (``EntryKeyDuplicateError``), refused as a 409\n  rather than silently renaming the entry the way the retired model path\n  did (\"Cox Model (2)\").\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
         "enum": [
           "PDF_NOT_FOUND",
           "MISSING_API_KEY",
@@ -6403,10 +6451,6 @@
             "title": "Best For",
             "type": "string"
           },
-          "byok_only": {
-            "title": "Byok Only",
-            "type": "boolean"
-          },
           "canonical": {
             "title": "Canonical",
             "type": "string"
@@ -6444,29 +6488,14 @@
           "label",
           "best_for",
           "context_window",
-          "cost_tier",
-          "byok_only"
+          "cost_tier"
         ],
         "title": "LlmEngineCatalogEntryRead",
         "type": "object"
       },
-      "LlmEngineRead": {
-        "description": "The member-visible read (reshaped in Task 22 into default/effective).\n\n``source`` says whether the pair is the project's stored choice or the\nserver's env default; ``retired`` flags a stored pair the catalogue no\nlonger lists (new runs are refused until a manager re-chooses).\n``availability`` maps provider \u2192 whether the CALLER can run it (their\nown stored key, or a global service key) \u2014 booleans only, never key\nmaterial or metadata. ``user_choice_allowed`` is the manager lock.",
+      "LlmEngineDefaultRead": {
+        "description": "The project default with its lock and attribution (\u00a74).",
         "properties": {
-          "availability": {
-            "additionalProperties": {
-              "type": "boolean"
-            },
-            "title": "Availability",
-            "type": "object"
-          },
-          "catalog": {
-            "items": {
-              "$ref": "#/components/schemas/LlmEngineCatalogEntryRead"
-            },
-            "title": "Catalog",
-            "type": "array"
-          },
           "mode": {
             "enum": [
               "fast",
@@ -6501,7 +6530,7 @@
           "source": {
             "enum": [
               "project",
-              "default"
+              "env_default"
             ],
             "title": "Source",
             "type": "string"
@@ -6540,7 +6569,126 @@
           "mode",
           "source",
           "retired",
-          "user_choice_allowed",
+          "user_choice_allowed"
+        ],
+        "title": "LlmEngineDefaultRead",
+        "type": "object"
+      },
+      "LlmEngineEffectiveRead": {
+        "description": "What the VIEWER's next run runs on: their own row, or the default.\nThe run form renders this, never ``default``.",
+        "properties": {
+          "connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "connection_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Label"
+          },
+          "mode": {
+            "enum": [
+              "fast",
+              "verified"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "retired": {
+            "title": "Retired",
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "user",
+              "project",
+              "env_default"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "mode",
+          "source",
+          "retired"
+        ],
+        "title": "LlmEngineEffectiveRead",
+        "type": "object"
+      },
+      "LlmEngineRead": {
+        "description": "\u00a74: ``availability`` says whose credential a row on each provider would\nrun on for THIS caller \u2014 a scope tag, never key material.",
+        "properties": {
+          "availability": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "user",
+                    "project",
+                    "global"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Availability",
+            "type": "object"
+          },
+          "catalog": {
+            "items": {
+              "$ref": "#/components/schemas/LlmEngineCatalogEntryRead"
+            },
+            "title": "Catalog",
+            "type": "array"
+          },
+          "default": {
+            "$ref": "#/components/schemas/LlmEngineDefaultRead"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/LlmEngineEffectiveRead"
+          },
+          "source": {
+            "enum": [
+              "user",
+              "project",
+              "env_default"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "default",
+          "effective",
+          "source",
           "catalog",
           "availability"
         ],
@@ -11185,6 +11333,60 @@
         "title": "UserConnectionCreateRequest",
         "type": "object"
       },
+      "UserEngineClearResult": {
+        "properties": {
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cleared"
+        ],
+        "title": "UserEngineClearResult",
+        "type": "object"
+      },
+      "UserEngineUpdateRequest": {
+        "additionalProperties": false,
+        "description": "PUT body for the viewer's own row (\u00a74). ``connection_id`` is the\ncaller's own host connection, required iff ``provider`` is\n``openai_compatible`` (the service checks ownership and the probe).",
+        "properties": {
+          "connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "mode": {
+            "default": "fast",
+            "enum": [
+              "fast",
+              "verified"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "UserEngineUpdateRequest",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -13915,6 +14117,112 @@
           }
         ],
         "summary": "Set Llm Engine",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/llm-engine/me": {
+      "delete": {
+        "description": "Drop the viewer's own row \u2014 the project default takes over again.",
+        "operationId": "clear_my_llm_engine_api_v1_projects__project_id__llm_engine_me_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserEngineClearResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Clear My Llm Engine",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "description": "The viewer's own engine for new runs (\u00a74): 403 while locked for a\nnon-manager, 422 without a credential (AppErrors, typed envelopes).",
+        "operationId": "set_my_llm_engine_api_v1_projects__project_id__llm_engine_me_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserEngineUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmEngineRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Set My Llm Engine",
         "tags": [
           "projects"
         ]

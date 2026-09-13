@@ -49,22 +49,23 @@ async def test_member_get_returns_resolved_view(client_as_reviewer: AsyncClient)
     r = await client_as_reviewer.get(_url())
     assert r.status_code == 200, r.text
     data = r.json()["data"]
-    assert data["source"] == "default"
-    assert data["provider"] == settings.LLM_PROVIDER
-    assert data["model"] == settings.LLM_DEFAULT_MODEL
-    assert data["retired"] is False
+    assert data["source"] == "env_default"
+    assert data["default"]["source"] == "env_default"
+    assert data["default"]["provider"] == settings.LLM_PROVIDER
+    assert data["effective"]["model"] == settings.LLM_DEFAULT_MODEL
+    assert data["default"]["retired"] is False
     # The server-curated roster rides along for the picker.
     pairs = {(e["provider"], e["model"]) for e in data["catalog"]}
     assert ("openai", "gpt-5.6-luna") in pairs
     assert ("openai", "gpt-4o-mini") in pairs  # kept for existing projects
     assert ("anthropic", "claude-sonnet-5") in pairs
-    assert all("canonical" in e and "byok_only" in e for e in data["catalog"])
-    # Availability: booleans only — never key ids / metadata.
+    assert all("canonical" in e for e in data["catalog"])
+    assert all("byok_only" not in e for e in data["catalog"])
+    # Availability: a scope tag per registry LLM provider — never key material.
     availability = data["availability"]
-    assert set(availability) == {e["provider"] for e in data["catalog"]}
-    assert all(isinstance(v, bool) for v in availability.values())
-    # The reviewer has no stored anthropic key and there is no global one.
-    assert availability["anthropic"] is False
+    assert set(availability) == {"openai", "anthropic", "google", "openai_compatible"}
+    # The reviewer has no anthropic credential on any rung of the ladder.
+    assert availability["anthropic"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -89,15 +90,15 @@ async def test_manager_put_persists_and_attributes(client_as_manager: AsyncClien
     r = await client_as_manager.put(_url(), json={"provider": "openai", "model": "gpt-5.6-terra"})
     assert r.status_code == 200, r.text
     data = r.json()["data"]
-    assert data["source"] == "project"
-    assert (data["provider"], data["model"]) == ("openai", "gpt-5.6-terra")
-    assert data["updated_by_name"] == "Integration Primary"
-    assert data["updated_at"] is not None
+    assert data["default"]["source"] == "project"
+    assert (data["default"]["provider"], data["default"]["model"]) == ("openai", "gpt-5.6-terra")
+    assert data["default"]["updated_by_name"] == "Integration Primary"
+    assert data["default"]["updated_at"] is not None
 
     # The GET reflects the write (same session — SAVEPOINT-isolated).
     r2 = await client_as_manager.get(_url())
     assert r2.status_code == 200
-    assert r2.json()["data"]["model"] == "gpt-5.6-terra"
+    assert r2.json()["data"]["default"]["model"] == "gpt-5.6-terra"
 
 
 @pytest.mark.asyncio
@@ -114,11 +115,11 @@ async def test_put_verified_mode_round_trips(client_as_manager: AsyncClient) -> 
         _url(), json={"provider": "openai", "model": "gpt-5.6-terra", "mode": "verified"}
     )
     assert r.status_code == 200, r.text
-    assert r.json()["data"]["mode"] == "verified"
+    assert r.json()["data"]["default"]["mode"] == "verified"
 
     r2 = await client_as_manager.get(_url())
     assert r2.status_code == 200
-    data = r2.json()["data"]
+    data = r2.json()["data"]["default"]
     assert data["mode"] == "verified"
     assert data["source"] == "project"
 
@@ -150,7 +151,7 @@ async def test_get_normalizes_a_stored_unknown_mode_to_fast(
     )
     r = await client_as_manager.get(_url())
     assert r.status_code == 200, r.text
-    data = r.json()["data"]
+    data = r.json()["data"]["default"]
     assert data["mode"] == "fast"
     assert (data["provider"], data["model"]) == ("openai", "gpt-5.6-terra")
     assert data["source"] == "project"
@@ -165,23 +166,91 @@ async def test_put_smuggled_key_is_422(client_as_manager: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_byok_only_reflects_the_deployment_global_key(
-    client_as_reviewer: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
-    body = (await client_as_reviewer.get(_url())).json()["data"]
-    anthropic = [e for e in body["catalog"] if e["provider"] == "anthropic"]
-    assert anthropic and all(e["byok_only"] is True for e in anthropic)
-
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
-    body = (await client_as_reviewer.get(_url())).json()["data"]
-    anthropic = [e for e in body["catalog"] if e["provider"] == "anthropic"]
-    assert all(e["byok_only"] is False for e in anthropic)
-
-
-@pytest.mark.asyncio
 async def test_put_with_a_connection_id_is_422(client_as_manager: AsyncClient) -> None:
     r = await client_as_manager.put(
         _url(), json={"provider": "openai", "model": "gpt-5.6-terra", "connection_id": str(uuid4())}
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_availability_is_per_caller(
+    client_as_manager: AsyncClient, client_as_reviewer: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§7.5: user > project > global > null, and the map is the CALLER's."""
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-global")
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    assert (await client_as_reviewer.get(_url())).json()["data"]["availability"][
+        "openai"
+    ] == "global"
+    await client_as_manager.post(
+        f"/api/v1/projects/{SEED.primary_project}/connections",
+        json={"provider": "openai", "label": "shared", "api_key": "sk-shared"},
+    )
+    assert (await client_as_reviewer.get(_url())).json()["data"]["availability"][
+        "openai"
+    ] == "project"
+    await client_as_reviewer.post(
+        "/api/v1/me/connections", json={"provider": "openai", "label": "mine", "api_key": "sk-mine"}
+    )
+    body = (await client_as_reviewer.get(_url())).json()["data"]["availability"]
+    assert body["openai"] == "user" and body["google"] is None and body["openai_compatible"] is None
+    assert (await client_as_manager.get(_url())).json()["data"]["availability"][
+        "openai"
+    ] == "project"
+
+
+@pytest.mark.asyncio
+async def test_user_row_put_and_delete(
+    client_as_reviewer: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant")
+    r = await client_as_reviewer.put(
+        f"{_url()}/me", json={"provider": "anthropic", "model": "claude-haiku-4-5"}
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["source"] == "user" and data["effective"]["model"] == "claude-haiku-4-5"
+    assert data["default"]["source"] == "env_default"
+    r = await client_as_reviewer.delete(f"{_url()}/me")
+    assert r.status_code == 200 and r.json()["data"] == {"cleared": True}
+    assert (await client_as_reviewer.get(_url())).json()["data"]["source"] == "env_default"
+
+
+@pytest.mark.asyncio
+async def test_user_row_put_is_403_while_locked_for_a_member(
+    client_as_manager: AsyncClient, client_as_reviewer: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant")
+    r = await client_as_manager.put(
+        _url(),
+        json={"provider": "openai", "model": "gpt-5.6-terra", "user_choice_allowed": False},
+    )
+    assert r.status_code == 200 and r.json()["data"]["default"]["user_choice_allowed"] is False
+    r = await client_as_reviewer.put(
+        f"{_url()}/me", json={"provider": "anthropic", "model": "claude-haiku-4-5"}
+    )
+    assert r.status_code == 403 and r.json()["error"]["code"] == "LLM_ENGINE_LOCKED"
+    r = await client_as_manager.put(
+        f"{_url()}/me", json={"provider": "anthropic", "model": "claude-haiku-4-5"}
+    )
+    assert r.status_code == 200 and r.json()["data"]["source"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_user_row_put_without_a_credential_is_422(
+    client_as_reviewer: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    r = await client_as_reviewer.put(
+        f"{_url()}/me", json={"provider": "google", "model": "gemini-3.8-flash"}
+    )
+    assert r.status_code == 422 and r.json()["error"]["code"] == "LLM_ENGINE_NEEDS_KEY"
+
+
+@pytest.mark.asyncio
+async def test_outsider_user_row_put_is_403(client_as_outsider: AsyncClient) -> None:
+    r = await client_as_outsider.put(
+        f"{_url()}/me", json={"provider": "openai", "model": "gpt-5.6-terra"}
+    )
+    assert r.status_code == 403

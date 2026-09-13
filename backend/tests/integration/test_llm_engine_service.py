@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.llm.catalog import find_entry
+from app.llm.registry import llm_provider_ids
 from app.services.llm_engine_service import (
     EngineRetiredError,
     LlmEngineService,
@@ -125,14 +126,14 @@ async def test_get_engine_read_serves_catalog_and_caller_availability(
     read = await LlmEngineService(db_session).get_engine_read(
         SEED.primary_project, SEED.reviewer_profile
     )
-    assert read.source == "default"
-    assert read.model == settings.LLM_DEFAULT_MODEL
-    assert read.updated_by_name is None
+    assert read.source == "env_default"
+    assert read.effective.model == settings.LLM_DEFAULT_MODEL
+    assert read.default.updated_by_name is None
     pairs = {(e.provider, e.model) for e in read.catalog}
     assert ("openai", "gpt-4o-mini") in pairs
-    assert set(read.availability) == {e.provider for e in read.catalog}
+    assert set(read.availability) == set(llm_provider_ids())
     # The reviewer stores no anthropic key and no global anthropic key exists.
-    assert read.availability["anthropic"] is False
+    assert read.availability["anthropic"] is None
 
 
 @pytest.mark.asyncio
@@ -142,8 +143,8 @@ async def test_get_engine_read_names_the_updater(db_session: AsyncSession) -> No
         SEED.primary_project, SEED.primary_profile
     )
     assert read.source == "project"
-    assert read.updated_by_name == "Integration Primary"
-    assert read.updated_at is not None
+    assert read.default.updated_by_name == "Integration Primary"
+    assert read.default.updated_at is not None
 
 
 @pytest.mark.asyncio
@@ -285,4 +286,4 @@ async def test_set_persists_the_lock_and_the_read_carries_it(db_session: AsyncSe
     read = await LlmEngineService(db_session).get_engine_read(
         SEED.primary_project, SEED.reviewer_profile
     )
-    assert read.user_choice_allowed is False
+    assert read.default.user_choice_allowed is False

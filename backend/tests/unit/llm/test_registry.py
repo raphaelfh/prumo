@@ -14,7 +14,6 @@ from app.llm.registry import (
     ProviderSpec,
     get_provider,
     global_key_for,
-    is_byok_only,
     llm_provider_ids,
     provider_ids,
     storable_providers,
@@ -76,17 +75,6 @@ def test_global_key_for_host_bearing_provider_is_none() -> None:
 
 def test_global_key_for_unknown_provider_is_none() -> None:
     assert global_key_for("grok") is None
-
-
-def test_byok_only_is_computed_from_the_deployment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
-    assert is_byok_only("anthropic") is True
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-global")
-    assert is_byok_only("anthropic") is False
-
-
-def test_host_bearing_provider_is_never_byok_only() -> None:
-    assert is_byok_only("openai_compatible") is False
 
 
 def test_user_api_keys_check_literal_equals_the_registry() -> None:

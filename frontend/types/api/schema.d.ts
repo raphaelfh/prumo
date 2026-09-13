@@ -844,6 +844,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/llm-engine/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set My Llm Engine
+         * @description The viewer's own engine for new runs (§4): 403 while locked for a
+         *     non-manager, 422 without a credential (AppErrors, typed envelopes).
+         */
+        put: operations["set_my_llm_engine_api_v1_projects__project_id__llm_engine_me_put"];
+        post?: never;
+        /**
+         * Clear My Llm Engine
+         * @description Drop the viewer's own row — the project default takes over again.
+         */
+        delete: operations["clear_my_llm_engine_api_v1_projects__project_id__llm_engine_me_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/manager-review-visibility": {
         parameters: {
             query?: never;
@@ -3004,6 +3029,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[UserEngineClearResult] */
+        ApiResponse_UserEngineClearResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["UserEngineClearResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[list[AISuggestionHistoryItem]] */
         ApiResponse_list_AISuggestionHistoryItem__: {
             /**
@@ -3904,7 +3946,7 @@ export interface components {
          *       mid-flight (``EngineRetiredError``; enqueue-time validation is a 409).
          *     - ``LLM_ENDPOINT_UNAVAILABLE`` — the engine's custom endpoint cannot
          *       serve: row deleted, unverified, model dropped
-         *       (``resolve_project_engine``), or its key no longer decrypts
+         *       (``resolve_engine``), or its key no longer decrypts
          *       (``EndpointUnavailableError``; enqueue-time validation is a 409).
          *     - ``MISSING_ENTITY_KEY`` — a repeating section declares no
          *       ``is_entity_key`` field (``MissingEntityKeyError``), refused before any
@@ -4524,8 +4566,6 @@ export interface components {
         LlmEngineCatalogEntryRead: {
             /** Best For */
             best_for: string;
-            /** Byok Only */
-            byok_only: boolean;
             /** Canonical */
             canonical: string;
             /** Context Window */
@@ -4543,23 +4583,10 @@ export interface components {
             provider: string;
         };
         /**
-         * LlmEngineRead
-         * @description The member-visible read (reshaped in Task 22 into default/effective).
-         *
-         *     ``source`` says whether the pair is the project's stored choice or the
-         *     server's env default; ``retired`` flags a stored pair the catalogue no
-         *     longer lists (new runs are refused until a manager re-chooses).
-         *     ``availability`` maps provider → whether the CALLER can run it (their
-         *     own stored key, or a global service key) — booleans only, never key
-         *     material or metadata. ``user_choice_allowed`` is the manager lock.
+         * LlmEngineDefaultRead
+         * @description The project default with its lock and attribution (§4).
          */
-        LlmEngineRead: {
-            /** Availability */
-            availability: {
-                [key: string]: boolean;
-            };
-            /** Catalog */
-            catalog: components["schemas"]["LlmEngineCatalogEntryRead"][];
+        LlmEngineDefaultRead: {
             /**
              * Mode
              * @enum {string}
@@ -4577,13 +4604,60 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "project" | "default";
+            source: "project" | "env_default";
             /** Updated At */
             updated_at?: string | null;
             /** Updated By Name */
             updated_by_name?: string | null;
             /** User Choice Allowed */
             user_choice_allowed: boolean;
+        };
+        /**
+         * LlmEngineEffectiveRead
+         * @description What the VIEWER's next run runs on: their own row, or the default.
+         *     The run form renders this, never ``default``.
+         */
+        LlmEngineEffectiveRead: {
+            /** Connection Id */
+            connection_id?: string | null;
+            /** Connection Label */
+            connection_label?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "fast" | "verified";
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+            /** Retired */
+            retired: boolean;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "user" | "project" | "env_default";
+        };
+        /**
+         * LlmEngineRead
+         * @description §4: ``availability`` says whose credential a row on each provider would
+         *     run on for THIS caller — a scope tag, never key material.
+         */
+        LlmEngineRead: {
+            /** Availability */
+            availability: {
+                [key: string]: ("user" | "project" | "global") | null;
+            };
+            /** Catalog */
+            catalog: components["schemas"]["LlmEngineCatalogEntryRead"][];
+            default: components["schemas"]["LlmEngineDefaultRead"];
+            effective: components["schemas"]["LlmEngineEffectiveRead"];
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "user" | "project" | "env_default";
         };
         /**
          * LlmEngineUpdateRequest
@@ -6767,6 +6841,31 @@ export interface components {
             /** Provider */
             provider: string;
         };
+        /** UserEngineClearResult */
+        UserEngineClearResult: {
+            /** Cleared */
+            cleared: boolean;
+        };
+        /**
+         * UserEngineUpdateRequest
+         * @description PUT body for the viewer's own row (§4). ``connection_id`` is the
+         *     caller's own host connection, required iff ``provider`` is
+         *     ``openai_compatible`` (the service checks ownership and the probe).
+         */
+        UserEngineUpdateRequest: {
+            /** Connection Id */
+            connection_id?: string | null;
+            /**
+             * Mode
+             * @default fast
+             * @enum {string}
+             */
+            mode: "fast" | "verified";
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -8416,6 +8515,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_LlmEngineRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_my_llm_engine_api_v1_projects__project_id__llm_engine_me_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserEngineUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_LlmEngineRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_my_llm_engine_api_v1_projects__project_id__llm_engine_me_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_UserEngineClearResult_"];
                 };
             };
             /** @description Validation Error */

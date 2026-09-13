@@ -20,6 +20,7 @@ from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest_asyncio
+from fastapi import Request
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import text
@@ -38,17 +39,27 @@ from app.services.llm_engine_service import LlmEngineService
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
 
+_PROFILE_HEADER = "x-test-profile"
+
 
 def client_as(profile_id: str, db_session: AsyncSession) -> AsyncClient:
-    """An ASGI client authenticated as ``profile_id``, on the test session."""
+    """An ASGI client authenticated as ``profile_id``, on the test session.
+
+    ``app.dependency_overrides`` is process-global, so a test taking TWO
+    client fixtures would otherwise run both as whichever identity was
+    built last — silently, and a role assertion would prove nothing. The
+    identity therefore rides the request (a header the client sends by
+    default) and the override reads it back, so N clients coexist.
+    """
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
-    async def override_get_current_user() -> TokenPayload:
+    async def override_get_current_user(request: Request) -> TokenPayload:
+        sub = request.headers.get(_PROFILE_HEADER, profile_id)
         return TokenPayload(
-            sub=profile_id,
-            email=f"{profile_id}@integration-test.prumo.local",
+            sub=sub,
+            email=f"{sub}@integration-test.prumo.local",
             role="authenticated",
             aal="aal1",
         )
@@ -59,7 +70,11 @@ def client_as(profile_id: str, db_session: AsyncSession) -> AsyncClient:
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_supabase] = override_get_supabase
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    return AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={_PROFILE_HEADER: profile_id},
+    )
 
 
 @pytest_asyncio.fixture

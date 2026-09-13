@@ -74,28 +74,58 @@ class LlmEngineCatalogEntryRead(BaseModel):
     best_for: str
     context_window: int
     cost_tier: Literal["$", "$$", "$$$"]
-    byok_only: bool
 
 
-class LlmEngineRead(BaseModel):
-    """The member-visible read (reshaped in Task 22 into default/effective).
-
-    ``source`` says whether the pair is the project's stored choice or the
-    server's env default; ``retired`` flags a stored pair the catalogue no
-    longer lists (new runs are refused until a manager re-chooses).
-    ``availability`` maps provider → whether the CALLER can run it (their
-    own stored key, or a global service key) — booleans only, never key
-    material or metadata. ``user_choice_allowed`` is the manager lock.
-    """
+class LlmEngineDefaultRead(BaseModel):
+    """The project default with its lock and attribution (§4)."""
 
     provider: str
     model: str
     mode: Literal["fast", "verified"]
-    source: Literal["project", "default"]
+    source: Literal["project", "env_default"]
     retired: bool
     user_choice_allowed: bool
     updated_by_name: str | None = None
     updated_at: datetime | None = None
     previous_model: str | None = None
+
+
+class LlmEngineEffectiveRead(BaseModel):
+    """What the VIEWER's next run runs on: their own row, or the default.
+    The run form renders this, never ``default``."""
+
+    provider: str
+    model: str
+    mode: Literal["fast", "verified"]
+    source: Literal["user", "project", "env_default"]
+    retired: bool
+    connection_id: UUID | None = None
+    connection_label: str | None = None
+
+
+class LlmEngineRead(BaseModel):
+    """§4: ``availability`` says whose credential a row on each provider would
+    run on for THIS caller — a scope tag, never key material."""
+
+    default: LlmEngineDefaultRead
+    effective: LlmEngineEffectiveRead
+    source: Literal["user", "project", "env_default"]
     catalog: list[LlmEngineCatalogEntryRead]
-    availability: dict[str, bool]
+    availability: dict[str, Literal["user", "project", "global"] | None]
+
+
+class UserEngineUpdateRequest(BaseModel):
+    """PUT body for the viewer's own row (§4). ``connection_id`` is the
+    caller's own host connection, required iff ``provider`` is
+    ``openai_compatible`` (the service checks ownership and the probe)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    model: str
+    mode: Literal["fast", "verified"] = "fast"
+    connection_id: UUID | None = None
+
+
+class UserEngineClearResult(BaseModel):
+    cleared: bool

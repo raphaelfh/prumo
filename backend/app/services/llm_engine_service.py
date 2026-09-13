@@ -30,19 +30,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.error_handler import AppError
 from app.core.logging import get_logger
-from app.llm.catalog import CATALOG, canonical, find_entry, selectable_catalog
-from app.llm.registry import is_byok_only
+from app.llm.catalog import canonical, find_entry, selectable_catalog
+from app.llm.registry import llm_provider_ids
 from app.models.llm_connection import UserProjectEngine
 from app.models.project import Project
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.llm_engine import (
     LlmEngineCatalogEntryRead,
+    LlmEngineDefaultRead,
+    LlmEngineEffectiveRead,
     LlmEngineRead,
     LlmEngineStored,
 )
 from app.schemas.llm_target import LlmTarget
-from app.services.api_key_service import APIKeyService
-from app.services.llm_connection_service import owned_user_connection
+from app.services.llm_connection_service import availability_map, owned_user_connection
 from app.services.parser_settings_service import ProjectNotFoundError
 from app.services.profile_names import profile_names
 
@@ -306,37 +307,64 @@ class LlmEngineService:
         return stored
 
     async def get_engine_read(self, project_id: UUID, viewer_id: UUID) -> LlmEngineRead:
-        """The whole member-visible read model for the ⚙ popover.
+        """The whole member-visible read model for the ⚙ popover (§4).
 
-        Resolved engine + attribution name (batched profile select) + the
-        server-curated roster + the CALLER's per-provider availability —
-        booleans only (``has_key_for_provider`` is an existence probe: no
-        decrypt, no ``update_last_used`` write). Never another user's keys.
-        Plus the manager lock (``user_choice_allowed``).
+        ``default`` is the project's choice with its lock and attribution;
+        ``effective`` is what the VIEWER's next run runs on — their own
+        ``user_project_engines`` row when the lock allows it (or they
+        manage the project), else the default. ``availability`` is the
+        credential ladder's dry run for THIS caller: a scope tag per
+        registry LLM provider, never key material.
         """
         resolved = await self.get_for_project(project_id)
         stored = resolved.stored
-
         updated_by_name: str | None = None
         if stored is not None and stored.updated_by is not None:
-            names = await profile_names(self.db, {stored.updated_by})
-            updated_by_name = names.get(stored.updated_by)
-
-        keys = APIKeyService(self.db, viewer_id)
-        availability: dict[str, bool] = {}
-        for provider in sorted({entry.provider for entry in CATALOG}):
-            availability[provider] = await keys.has_key_for_provider(provider)
-
-        return LlmEngineRead(
+            updated_by_name = (await profile_names(self.db, {stored.updated_by})).get(
+                stored.updated_by
+            )
+        default_source: Literal["project", "env_default"] = (
+            "project" if stored is not None else "env_default"
+        )
+        default = LlmEngineDefaultRead(
             provider=resolved.provider,
             model=resolved.model,
             mode=resolved.mode,
-            source=resolved.source,
+            source=default_source,
             retired=resolved.retired,
             user_choice_allowed=resolved.user_choice_allowed,
             updated_by_name=updated_by_name,
             updated_at=stored.updated_at if stored is not None else None,
             previous_model=stored.previous_model if stored is not None else None,
+        )
+        effective = LlmEngineEffectiveRead(
+            provider=default.provider,
+            model=default.model,
+            mode=default.mode,
+            source=default_source,
+            retired=default.retired,
+        )
+        row = await get_user_engine(self.db, user_id=viewer_id, project_id=project_id)
+        if row is not None and (
+            resolved.user_choice_allowed or await viewer_is_manager(self.db, project_id, viewer_id)
+        ):
+            label: str | None = None
+            if row.connection_id is not None:
+                conn = await owned_user_connection(self.db, row.connection_id, viewer_id)
+                label = conn.label if conn is not None else None
+            effective = LlmEngineEffectiveRead(
+                provider=row.provider,
+                model=row.model,
+                mode=row.mode if row.mode in ("fast", "verified") else "fast",  # type: ignore[arg-type]
+                source="user",
+                retired=await user_row_is_retired(self.db, row),
+                connection_id=row.connection_id,
+                connection_label=label,
+            )
+        return LlmEngineRead(
+            default=default,
+            effective=effective,
+            source=effective.source,
             catalog=[
                 LlmEngineCatalogEntryRead(
                     provider=entry.provider,
@@ -346,9 +374,10 @@ class LlmEngineService:
                     best_for=entry.best_for,
                     context_window=entry.context_window,
                     cost_tier=entry.cost_tier,
-                    byok_only=is_byok_only(entry.provider),
                 )
                 for entry in selectable_catalog()
             ],
-            availability=availability,
+            availability=await availability_map(
+                self.db, project_id=project_id, user_id=viewer_id, providers=llm_provider_ids()
+            ),
         )
