@@ -184,6 +184,19 @@ describe('ReviewQuestionSection — review question (no template)', () => {
     // draft of six blank slots that could be written over the stored question.
     expect(screen.queryByRole('button', {name: /Save/})).toBeNull();
   });
+
+  it('shows skeleton rows while loading, not "Saving…" or a Population field', () => {
+    vi.mocked(useAiContext).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+    } as unknown as ReturnType<typeof useAiContext>);
+
+    render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+
+    expect(screen.queryByText('Saving…')).toBeNull();
+    expect(screen.queryByLabelText('Population')).toBeNull();
+  });
 });
 
 describe('ReviewQuestionSection footer', () => {
@@ -230,5 +243,21 @@ describe('ReviewQuestionSection footer', () => {
     expect(screen.getByText('Only project managers can change the review question.')).toBeInTheDocument();
     expect(document.querySelector('pre')?.textContent).toBe('- Population: Adults\n  Include: NYHA II-IV');
     expect(screen.queryByLabelText('Population')).toBeNull();
+  });
+
+  it('a non-manager sees the load-error line, not the empty-preview text, when the read failed', () => {
+    vi.mocked(useProjectMemberRole).mockReturnValue({
+      isManager: false,
+    } as unknown as ReturnType<typeof useProjectMemberRole>);
+    vi.mocked(useAiContext).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+    } as unknown as ReturnType<typeof useAiContext>);
+
+    render(<ReviewQuestionSection projectId={PROJECT_ID} onDirtyChange={onDirtyChange} />);
+
+    expect(screen.getByText('Could not load the review question')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing yet. Fill in at least one part above.')).toBeNull();
   });
 });

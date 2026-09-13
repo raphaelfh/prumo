@@ -269,6 +269,10 @@ after reading the code this spec surveyed. Where they disagree, this section win
 4. **"Nothing selected" goes.** The inspector's no-selection state becomes the
    template pane; `extraction.inspectorEmptyTitle` is deleted and
    `inspectorEmptyHint` stays as the one muted line.
+5. **No "Template" kind badge.** `TemplateInspectorTemplatePane` renders the
+   instruction label, scope hint, editor and the select-a-row hint only; a
+   kind badge would be one more label on a pane whose sole content is the
+   template, against this train's fewer-elements goal.
 
 ## 9. Follow-ups recorded
 

@@ -55,9 +55,11 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   accessibility tree, so the control's accessible name silently loses the
   word it was collapsing — and an `aria-label` "fix" for that is worse: it
   REPLACES the composed name and erases any sibling chip or badge inside
-  the button. Verified live: the QA surface's AI-instruction trigger
-  (`TemplateInstructionControl` — the config bar's ONE trigger into
-  `AiConfigDialog`) must read "General AI instruction1 to customize".
+  the button. `TemplateInstructionControl` (✨) is this pattern's live
+  example: on QA it toggles an inline instruction editor on the tool row;
+  on extraction, the same control on the config bar reveals the template's
+  instruction in the grid inspector. Verified live: the QA surface's
+  AI-instruction trigger must read "General AI instruction1 to customize".
 - Visual language is authoritative in `frontend-ux` (it outranks the
   `frontend-design` plugin on core product UI — that plugin is for
   greenfield only). After a non-trivial UI change, verify with your

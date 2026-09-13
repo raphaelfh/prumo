@@ -204,7 +204,7 @@ Three rules follow, and they are the ones that actually get broken:
    every time focus lands. Reference: `template-config/PaneResizer.tsx`.
 4. **Reclaimed outer space is spent inside, not banked.** Tightening a gutter is
    only a win if what it reveals is still readable: the same pass that cut this
-   surface's page gutter from 40px to 24px spent part of it widening the outline
+   surface's page gutter to the Articles `p-2` inset spent part of it widening the outline
    rail and loosening its rows from 1px gaps to 2px with 4/8px padding. Density
    is *more content legibly*, never *the same content, closer together*.
 

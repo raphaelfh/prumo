@@ -1,6 +1,6 @@
 import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {MemoryRouter, useLocation} from 'react-router';
+import {MemoryRouter, useLocation, useNavigate} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
@@ -48,6 +48,16 @@ import {ProjectSettings} from '@/components/project/ProjectSettings';
 function LocationProbe() {
   const location = useLocation();
   return <output data-testid="search">{location.search}</output>;
+}
+
+/** Mimics the sidebar's `/projects/${id}?tab=${item.id}` link: navigates WITHOUT `section`. */
+function NavigateToConfigTab() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" data-testid="sidebar-configuration-link" onClick={() => navigate('/projects/p1?tab=settings')}>
+      sidebar
+    </button>
+  );
 }
 
 function renderAt(search: string) {
@@ -111,6 +121,32 @@ describe('ProjectSettings unsaved review question', () => {
 
   it('switches without asking while the review question is clean', async () => {
     renderAt('?tab=settings&section=review-question');
+    await userEvent.click(screen.getByRole('button', {name: 'tabTeam'}));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByTestId('section-team')).toBeInTheDocument();
+  });
+
+  it('resets the dirty flag when the section changes outside the rail (sidebar link)', async () => {
+    render(
+      <MemoryRouter initialEntries={['/projects/p1?tab=settings&section=review-question']}>
+        <ProjectSettings projectId="p1" />
+        <NavigateToConfigTab />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    // Make review-question dirty.
+    await userEvent.click(screen.getByTestId('section-review-question'));
+
+    // Sidebar-style navigation: rewrites the query WITHOUT `section`.
+    await userEvent.click(screen.getByTestId('sidebar-configuration-link'));
+    expect(screen.getByTestId('section-basic')).toBeInTheDocument();
+
+    // Reopen review question (clean — do not click the dirty stub again).
+    await userEvent.click(screen.getByRole('button', {name: 'tabReviewQuestion'}));
+    expect(screen.getByTestId('section-review-question')).toBeInTheDocument();
+
+    // Now navigate away via the rail: must NOT prompt to discard.
     await userEvent.click(screen.getByRole('button', {name: 'tabTeam'}));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(screen.getByTestId('section-team')).toBeInTheDocument();

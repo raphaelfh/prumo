@@ -31,6 +31,7 @@ import {
 import {Switch} from '@/components/ui/switch';
 import {Label} from '@/components/ui/label';
 import {Separator} from '@/components/ui/separator';
+import {Skeleton} from '@/components/ui/skeleton';
 import {t} from '@/lib/copy';
 import {useAiContext, useSetAiContext} from '@/hooks/project/useAiContext';
 import type {
@@ -239,7 +240,17 @@ export function PicotsPane({projectId, onDirtyChange}: PicotsPaneProps) {
     return <p className="text-[13px] text-destructive">{t('aiContext', 'loadError')}</p>;
   }
   if (!data) {
-    return <p className="text-[13px] text-muted-foreground">{t('aiContext', 'saving')}</p>;
+    return (
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <Skeleton className="h-8 w-40 rounded-md" />
+          <Skeleton className="h-5 w-9 rounded-full" />
+        </div>
+        <Skeleton className="h-20 w-full rounded-md" />
+        <Skeleton className="h-20 w-full rounded-md" />
+        <Skeleton className="h-20 w-full rounded-md" />
+      </div>
+    );
   }
   return (
     <PicotsForm
@@ -255,10 +266,16 @@ export function PicotsPane({projectId, onDirtyChange}: PicotsPaneProps) {
 
 /** What a non-manager sees: the server-rendered prompt text, verbatim. */
 export function PicotsPreview({projectId}: {projectId: string}) {
-  const {data} = useAiContext(projectId);
+  const {data, isError} = useAiContext(projectId);
+  if (isError) {
+    return <p className="text-[13px] text-destructive">{t('aiContext', 'loadError')}</p>;
+  }
+  if (!data) {
+    return <Skeleton className="h-20 w-full rounded-md" />;
+  }
   return (
     <pre className="max-h-80 overflow-auto rounded-md bg-muted/40 p-2.5 text-xs whitespace-pre-wrap">
-      {data?.preview ?? t('aiContext', 'previewEmpty')}
+      {data.preview ?? t('aiContext', 'previewEmpty')}
     </pre>
   );
 }

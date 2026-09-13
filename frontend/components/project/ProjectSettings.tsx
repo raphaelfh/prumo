@@ -107,6 +107,11 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
         }
         selectSection(id);
     };
+    // The section can change outside the rail (e.g. the sidebar's `?tab=settings` link, which
+    // drops `section`), leaving a stale dirty flag with nothing left to discard. Render-phase
+    // reset: only while the discard confirm is not pending (activeSection stays 'review-question'
+    // while pending, so this does not fire mid-discard).
+    if (activeSection !== 'review-question' && reviewQuestionDirty) setReviewQuestionDirty(false);
 
   if (loading && !project) {
     return (
