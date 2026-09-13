@@ -22,7 +22,7 @@ from app.models.extraction import ExtractionRun
 from app.repositories import ExtractionRunRepository
 from app.schemas.llm_target import LlmTarget
 from app.schemas.prompt_composition import PromptComposition
-from app.services.llm_engine_service import resolve_project_engine
+from app.services.llm_engine_service import resolve_engine
 
 if TYPE_CHECKING:
     from app.services.llm_connection_service import KeyScope
@@ -72,7 +72,7 @@ async def read_pinned_engine(db: AsyncSession, run_id: UUID) -> LlmTarget | None
 
 
 async def resolve_engine_for_run(
-    db: AsyncSession, *, run_id: UUID | None, project_id: UUID, repin: bool
+    db: AsyncSession, *, run_id: UUID | None, project_id: UUID, repin: bool, user_id: UUID
 ) -> LlmTarget:
     """The engine an attempt must run on — a READ; the write is the service's.
 
@@ -87,12 +87,15 @@ async def resolve_engine_for_run(
     resolved (the standalone paths reuse the coordinate's live run), and
     pinning from here would take the row lock before the run is even
     validated — held, on the in-request route, across the whole LLM call.
+
+    ``user_id`` is the kicker's id: it decides whose engine row (and, through
+    it, whose key) the fallback resolution takes.
     """
     if run_id is not None and not repin:
         pinned = await read_pinned_engine(db, run_id)
         if pinned is not None:
             return pinned
-    return await resolve_project_engine(db, project_id)
+    return await resolve_engine(db, project_id, user_id)
 
 
 def build_proposal_engine(

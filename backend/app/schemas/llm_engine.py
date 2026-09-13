@@ -5,7 +5,7 @@
 at the single write site (``LlmEngineService.set_for_project`` —
 ``updated_at`` is a datetime, so a hand-rolled dict dies in ``json.dumps``
 at flush) and ``model_validate``d at exactly the two read boundaries
-(``get_for_project`` / ``resolve_project_engine``). Every non-identity field
+(``get_for_project`` / ``resolve_engine``). Every non-identity field
 defaults so older payloads keep validating when the shape widens.
 
 The request/read models below are the endpoint contract; the endpoint never

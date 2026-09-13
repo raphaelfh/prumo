@@ -410,7 +410,7 @@ class TestRunSectionExtractionTaskEngineRetired:
         }
 
         # Raised through the task's resolver seam — in production
-        # ``resolve_engine_for_run`` delegates to ``resolve_project_engine``,
+        # ``resolve_engine_for_run`` delegates to ``resolve_engine``,
         # which is where the roster check actually lives.
         monkeypatch.setattr(
             extraction_tasks,
@@ -528,6 +528,9 @@ class TestHumanKickoffVersusRetry:
         """
         ctor, service, resolver = self._apply_attempt(monkeypatch, retries=0)
 
+        assert resolver.await_args.kwargs["user_id"] is not None, (
+            "the worker did not thread the kicker's id into the resolution"
+        )
         assert resolver.await_args.kwargs["repin"] is True, (
             "attempt 0 was not resolved as a human kickoff"
         )
@@ -546,6 +549,9 @@ class TestHumanKickoffVersusRetry:
         """
         ctor, service, resolver = self._apply_attempt(monkeypatch, retries=1)
 
+        assert resolver.await_args.kwargs["user_id"] is not None, (
+            "the worker did not thread the kicker's id into the resolution"
+        )
         assert resolver.await_args.kwargs["repin"] is False, (
             "a retry was resolved as a human kickoff"
         )

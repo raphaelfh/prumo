@@ -18,7 +18,7 @@ from app.llm.catalog import find_entry
 from app.services.llm_engine_service import (
     EngineRetiredError,
     LlmEngineService,
-    resolve_project_engine,
+    resolve_engine,
 )
 from app.services.parser_settings_service import ParserSettingsService, ProjectNotFoundError
 from tests.integration.conftest import SEED
@@ -197,7 +197,7 @@ async def test_sibling_parsing_key_survives_an_engine_write(db_session: AsyncSes
 
 
 # ---------------------------------------------------------------------------
-# resolve_project_engine — read boundary #2 (T4)
+# resolve_engine — read boundary #2 (T4)
 # ---------------------------------------------------------------------------
 
 
@@ -217,7 +217,7 @@ async def _bypass_write_llm_engine(db: AsyncSession, payload: str) -> None:
 
 @pytest.mark.asyncio
 async def test_resolve_unset_falls_back_to_the_env_default(db_session: AsyncSession) -> None:
-    target = await resolve_project_engine(db_session, SEED.primary_project)
+    target = await resolve_engine(db_session, SEED.primary_project, SEED.reviewer_profile)
     assert (target.provider, target.model) == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)
     assert (target.mode_requested, target.mode_executed) == ("fast", "fast")
 
@@ -225,7 +225,7 @@ async def test_resolve_unset_falls_back_to_the_env_default(db_session: AsyncSess
 @pytest.mark.asyncio
 async def test_resolve_returns_the_project_pair(db_session: AsyncSession) -> None:
     await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-5")
-    target = await resolve_project_engine(db_session, SEED.primary_project)
+    target = await resolve_engine(db_session, SEED.primary_project, SEED.reviewer_profile)
     assert (target.provider, target.model) == ("anthropic", "claude-sonnet-5")
     assert (target.mode_requested, target.mode_executed) == ("fast", "fast")
 
@@ -240,7 +240,7 @@ async def test_resolve_raises_retired_for_a_bypass_written_unknown_pair(
         db_session, '{"provider": "openai", "model": "gpt-net-new-nonsense"}'
     )
     with pytest.raises(EngineRetiredError) as exc_info:
-        await resolve_project_engine(db_session, SEED.primary_project)
+        await resolve_engine(db_session, SEED.primary_project, SEED.reviewer_profile)
     assert exc_info.value.code == "LLM_ENGINE_RETIRED"
     assert exc_info.value.status_code == 409
 
@@ -250,7 +250,7 @@ async def test_resolve_treats_structural_garbage_as_unset(db_session: AsyncSessi
     """A payload that does not even parse degrades to the env default —
     contained, never a 500 on every read."""
     await _bypass_write_llm_engine(db_session, '"gpt-5.6-terra"')
-    target = await resolve_project_engine(db_session, SEED.primary_project)
+    target = await resolve_engine(db_session, SEED.primary_project, SEED.reviewer_profile)
     assert (target.provider, target.model) == (settings.LLM_PROVIDER, settings.LLM_DEFAULT_MODEL)
 
 
@@ -264,7 +264,7 @@ async def test_resolve_normalizes_a_non_string_mode_and_keeps_the_pair(
     await _bypass_write_llm_engine(
         db_session, '{"provider": "openai", "model": "gpt-5.6-terra", "mode": 123}'
     )
-    target = await resolve_project_engine(db_session, SEED.primary_project)
+    target = await resolve_engine(db_session, SEED.primary_project, SEED.reviewer_profile)
     assert (target.provider, target.model) == ("openai", "gpt-5.6-terra"), (
         "a garbage MODE must not throw the stored PAIR away"
     )

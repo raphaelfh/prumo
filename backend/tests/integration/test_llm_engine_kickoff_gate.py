@@ -111,3 +111,31 @@ async def test_section_continuation_with_run_id_is_gated_too(
     assert r.status_code == 409, r.text
     assert r.json()["error"]["code"] == "LLM_ENGINE_RETIRED"
     fake_delay.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_kickoff_on_a_user_row_whose_connection_is_gone_is_typed_409(
+    client_as_manager: AsyncClient, db_session: AsyncSession
+) -> None:
+    """The user-row half of the same gate: the caller's own engine row, not
+    the project default, is what retired — and it is still a typed 409."""
+    from app.services.llm_connection_service import LlmConnectionService
+    from app.services.user_engine_service import set_user_engine
+
+    cid = await engine_setup.make_host_connection(db_session, label="kickoff-gone")
+    await set_user_engine(
+        db_session,
+        user_id=SEED.primary_profile,
+        project_id=SEED.primary_project,
+        provider="openai_compatible",
+        model="endpoint-model-x",
+        mode="fast",
+        connection_id=cid,
+        is_manager=True,
+    )
+    await LlmConnectionService(db_session).delete_user(
+        user_id=SEED.primary_profile, connection_id=cid
+    )
+    r = await client_as_manager.post("/api/v1/extraction/sections", json=_section_payload())
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "LLM_ENGINE_RETIRED"

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import random
 from typing import Any
+from uuid import UUID
 
 from celery import Task
 
@@ -105,12 +106,14 @@ def run_section_extraction_task(
                 # then resolve the key for it. A retry that keyed for the
                 # manager's NEW provider while running the pinned one gets a
                 # spurious MissingLLMKeyError and a key_scope recorded
-                # against a provider that never ran.
+                # against a provider that never ran. The kicker's id decides
+                # whose engine and whose key.
                 engine = await resolve_engine_for_run(
                     session,
                     run_id=request.run_id,
                     project_id=request.project_id,
                     repin=repin,
+                    user_id=UUID(user_id),
                 )
 
                 credentials = await resolve_engine_credentials(

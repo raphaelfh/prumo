@@ -52,7 +52,7 @@ __all__ = [
     "ProjectNotFoundError",
     "ResolvedProjectEngine",
     "get_user_engine",
-    "resolve_project_engine",
+    "resolve_engine",
     "user_row_is_retired",
     "viewer_is_manager",
 ]
@@ -130,33 +130,58 @@ async def viewer_is_manager(db: AsyncSession, project_id: UUID, viewer_id: UUID)
     )
 
 
-async def resolve_project_engine(db: AsyncSession, project_id: UUID) -> LlmTarget:
-    """The engine an extraction kicked off in ``project_id`` runs on.
+async def resolve_engine(db: AsyncSession, project_id: UUID, user_id: UUID) -> LlmTarget:
+    """The engine ``user_id``'s next run in ``project_id`` runs on (§3.2).
+
+    1. The project default; retired (catalogue miss) → ``EngineRetiredError``
+       (a manager must re-choose).
+    2. If the caller may choose (``user_choice_allowed``, or a manager) and a
+       ``user_project_engines`` row exists: validate it the same way; retired
+       → ``EngineRetiredError`` worded for the user; valid → that engine with
+       ``deviation`` computed against the default NOW and never recomputed.
+    3. Otherwise the default. The lock is enforced here, not in the UI.
 
     Read boundary #2 (with :meth:`LlmEngineService.get_for_project`): the
     stored payload is ``model_validate``d here, never re-parsed downstream.
     Unset — or structurally unparseable (see :func:`_stored_engine`) — falls
-    back to the env default pair. A well-formed pair the catalogue no longer
-    lists raises :class:`EngineRetiredError`.
-
-    The returned target carries the mode fields too — the freeze pins the
-    whole spine (as a request-echo; execution truth is per-section).
+    back to the env default pair.
     """
     project = await db.get(Project, project_id)
     stored = _stored_engine(project.settings if project is not None else None)
     if stored is None:
-        return LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
-    if find_entry(stored.provider, stored.model) is None:
-        raise EngineRetiredError(
-            f"The project's stored engine {stored.provider}:{stored.model} is no longer "
-            "available. Ask a project manager to choose a new model."
+        default = LlmTarget(provider=settings.LLM_PROVIDER, model=settings.LLM_DEFAULT_MODEL)
+        allowed = True
+    else:
+        if find_entry(stored.provider, stored.model) is None:
+            raise EngineRetiredError(
+                f"The project's stored engine {stored.provider}:{stored.model} is no longer "
+                "available. Ask a project manager to choose a new model."
+            )
+        mode = _normalized_mode(stored, project_id)
+        default = LlmTarget(
+            provider=stored.provider,
+            model=stored.model,
+            mode_requested=mode,
+            mode_executed=mode,
         )
-    mode = _normalized_mode(stored, project_id)
+        allowed = stored.user_choice_allowed
+    row = await get_user_engine(db, user_id=user_id, project_id=project_id)
+    if row is None or not (allowed or await viewer_is_manager(db, project_id, user_id)):
+        return default
+    if await user_row_is_retired(db, row):
+        raise EngineRetiredError(
+            f"Your engine for this project ({row.provider}:{row.model}) is no longer available. "
+            "Pick a new model."
+        )
+    row_mode = row.mode if row.mode in ("fast", "verified") else "fast"
     return LlmTarget(
-        provider=stored.provider,
-        model=stored.model,
-        mode_requested=mode,
-        mode_executed=mode,
+        provider=row.provider,
+        model=row.model,
+        mode_requested=row_mode,
+        mode_executed=row_mode,
+        connection_id=str(row.connection_id) if row.connection_id is not None else None,
+        deviation=(row.provider, row.model) != (default.provider, default.model)
+        or row.connection_id is not None,
     )
 
 

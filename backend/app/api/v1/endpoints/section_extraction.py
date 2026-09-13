@@ -36,7 +36,7 @@ from app.services.coordinate_coherence import (
     CoordinateMismatchError,
     assert_instance_in_coordinate,
 )
-from app.services.llm_engine_service import resolve_project_engine
+from app.services.llm_engine_service import resolve_engine
 from app.services.template_section_service import SectionNotFoundError, owned_section
 from app.utils.rate_limiter import limiter
 from app.worker.celery_app import REDIS_URL
@@ -215,7 +215,7 @@ async def extract_section(
     # registered AppError handler serves the typed 409 (error.code
     # LLM_ENGINE_RETIRED). The worker re-resolves at execution time, so this
     # only fails fast — and spares the reviewer a queued job that will die.
-    engine = await resolve_project_engine(db, payload.project_id)
+    engine = await resolve_engine(db, payload.project_id, current_user_sub)
 
     if not _is_queue_available():
         return JSONResponse(

@@ -57,7 +57,7 @@ from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_snapshot import entity_types_for_version
-from app.services.llm_engine_service import resolve_project_engine
+from app.services.llm_engine_service import resolve_engine
 from app.services.llm_field_filter import LlmFieldFilter, build_llm_field_filter
 from app.services.run_engine_freeze import build_proposal_engine, freeze_run_engine
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -1733,7 +1733,7 @@ class SectionExtractionService(LoggerMixin):
         # C1a: server-owned, never client-chosen. C1b: the candidate is the
         # project's resolved engine, not a ``settings`` re-read.
         if engine is None:
-            engine = await resolve_project_engine(self.db, payload.project_id)
+            engine = await resolve_engine(self.db, payload.project_id, UUID(self.user_id))
 
         if payload.entity_type_id is not None:
             return await self.extract_section(

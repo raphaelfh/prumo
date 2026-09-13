@@ -1281,7 +1281,11 @@ async def test_resolve_engine_for_run_reads_the_pin_only_for_a_retry(
     await engine_setup.set_project_engine(db_session, "anthropic", "claude-haiku-4-5")
     run = await engine_setup.run_in_extract(db_session)
     await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
-    coords = {"run_id": run.id, "project_id": SEED.primary_project}
+    coords = {
+        "run_id": run.id,
+        "project_id": SEED.primary_project,
+        "user_id": SEED.primary_profile,
+    }
 
     retry = await resolve_engine_for_run(db_session, repin=False, **coords)
     kickoff = await resolve_engine_for_run(db_session, repin=True, **coords)
