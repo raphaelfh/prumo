@@ -229,7 +229,29 @@ hugging a short state. Carried from sub-project 1: confirm the hover fill on
 - **Deep links to removed sections.** None exist today (no inbound
   `?tab=settings` links outside the sidebar), so the URL contract starts clean.
 
-## 8. Follow-ups recorded
+## 8. Amendments from planning
+
+Recorded while writing `docs/superpowers/plans/2026-09-13-configuration-as-views.md`,
+after reading the code this spec surveyed. Where they disagree, this section wins.
+
+1. **Non-manager review question.** `PICOTSItemEditor` has no disabled mode,
+   so a non-manager sees the server preview (`aiContext.preview`, or
+   `previewEmpty`) and the `managerOnly` line instead of disabled fields.
+2. **Extraction ✨ trigger has no `aria-expanded`.** The editor cannot see the
+   panel's selection, so on extraction the trigger is a reveal button (it
+   clears the selection and opens the inspector). QA keeps `aria-expanded`
+   because its host owns the expander state. `expanded` is optional on
+   `TemplateInstructionControl`.
+3. **Grid panel line budget.** `TemplateConfigGridPanel.tsx` sits at exactly
+   the 800-line cap (`check_file_size.py` fails on `> 800`). Inspector
+   visibility (`dockedOpen`, `sheetOpen`, open/toggle/close) moves into
+   `template-config/useInspectorHost.ts` before the template-focus logic is
+   added, and the panel must stay ≤ 800 lines.
+4. **"Nothing selected" goes.** The inspector's no-selection state becomes the
+   template pane; `extraction.inspectorEmptyTitle` is deleted and
+   `inspectorEmptyHint` stays as the one muted line.
+
+## 9. Follow-ups recorded
 
 - **Inline section creation** — reverses the B-8 decision
   (`docs/superpowers/plans/2026-08-08-template-config-b8-entry-label.md`,
