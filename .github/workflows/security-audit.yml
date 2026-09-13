@@ -33,7 +33,13 @@ jobs:
         run: uv export --frozen --no-dev --no-emit-project --format requirements-txt > requirements-audit.txt
       - name: Audit
         working-directory: backend
-        run: uvx pip-audit --strict -r requirements-audit.txt
+        # PYSEC-2026-3804 / GHSA-4j2p-28q2-5m79: accelerate path traversal via a
+        # sharded checkpoint. No fixed release exists (OSV, 2026-09-13), and
+        # accelerate is a transitive dep of docling that prumo never uses to
+        # load checkpoints. Drop the ignore as soon as a fixed version ships.
+        run: >-
+          uvx pip-audit --strict -r requirements-audit.txt
+          --ignore-vuln PYSEC-2026-3804 --ignore-vuln GHSA-4j2p-28q2-5m79
 
   npm-audit:
     name: npm audit (frontend)
