@@ -19,11 +19,20 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
-import { AlertCircle, FileText } from "lucide-react";
+import {
+  AlertCircle,
+  Calendar,
+  CheckCircle,
+  Edit,
+  FileText,
+  PlayCircle,
+  User,
+} from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/patterns/IconButton";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -413,7 +422,7 @@ export function HITLArticleTable({
   return (
     <div className="flex h-full min-h-0 flex-col gap-2" data-testid={`hitl-${kind}-table`}>
       <div className="flex flex-col gap-2 shrink-0">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full">
           <ListToolbarSearch
             ref={searchInputRef}
             placeholder={t("extraction", "tableSearchPlaceholderShortcut")}
@@ -458,13 +467,13 @@ export function HITLArticleTable({
             tooltipLabel={t("extraction", "tableDisplayAndSort")}
             ariaLabel={t("extraction", "tableDisplayOptions")}
           />
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          {toolbarActions}
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
             <ListCount
               visible={filteredAndSorted.length}
               total={articles.length}
               label={t("extraction", "tableArticlesCount")}
             />
-            {toolbarActions}
           </div>
         </div>
         <ActiveFilterChips
@@ -479,9 +488,9 @@ export function HITLArticleTable({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40">
-        <Table containerClassName="overflow-visible">
+        <Table containerClassName="overflow-visible" className="table-fixed w-max min-w-full">
           <TableHeader className="sticky top-0 z-10 bg-background">
-            <TableRow className="h-8 border-b border-border/40 hover:bg-transparent">
+            <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
               <TableHead className={`${TABLE_CELL_CLASS} w-[46%]`}>
                 <SortIconHeader
                   label={t("extraction", "tableColumnTitle")}
@@ -490,7 +499,9 @@ export function HITLArticleTable({
                 />
               </TableHead>
               <TableHead className={`${TABLE_CELL_CLASS} hidden md:table-cell w-[20%]`}>
-                {t("extraction", "tableColumnAuthors")}
+                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  {t("extraction", "tableColumnAuthors")}
+                </span>
               </TableHead>
               <TableHead className={`${TABLE_CELL_CLASS} hidden md:table-cell w-[10%]`}>
                 <SortIconHeader
@@ -501,59 +512,124 @@ export function HITLArticleTable({
                   onSort={() => handleSort("publication_year")}
                 />
               </TableHead>
-              <TableHead className={`${TABLE_CELL_CLASS} w-[18%]`}>
+              <TableHead className={`${TABLE_CELL_CLASS} w-[18%] text-center`}>
                 <SortIconHeader
                   label={t("extraction", "tableColumnStatus")}
                   direction={sortField === "progress" ? sortDirection : null}
                   onSort={() => handleSort("progress")}
+                  containerClassName="flex items-center justify-center gap-1"
                 />
               </TableHead>
-              <TableHead className={`${TABLE_CELL_CLASS} w-[6%] text-right`}>
-                {t("extraction", "tableActions")}
+              <TableHead className={`${TABLE_CELL_CLASS} w-[6%] text-center`}>
+                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  {t("extraction", "tableActions")}
+                </span>
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredAndSorted.map((article) => (
+            {filteredAndSorted.map((article) => {
+              const progress = getProgress(article);
+              const isComplete = progress >= 100;
+              const hasInstances =
+                (valuesByArticle.get(article.id)?.instances.length ?? 0) > 0;
+              const title = article.title ?? t("qa", "untitledArticle");
+              const openRow = () =>
+                navigate(rowActionHref(article.id, templateId));
+
+              return (
                 <TableRow
                   key={article.id}
+                  role="button"
+                  tabIndex={0}
                   data-testid={`hitl-${kind}-row-${article.id}`}
-                  className="h-12 border-b border-border/30 hover:bg-accent/30"
+                  aria-label={t("extraction", "tableOpenRowAria").replace(
+                    "{{title}}",
+                    title,
+                  )}
+                  onClick={openRow}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openRow();
+                    }
+                  }}
+                  className="border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 >
-                  <TableCell className={TABLE_CELL_CLASS}>
-                    <div className="line-clamp-2 font-medium">
-                      {article.title ?? t("qa", "untitledArticle")}
+                  <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`}>
+                    <div className="line-clamp-1 leading-tight text-foreground font-medium">
+                      {title}
                     </div>
                   </TableCell>
-                  <TableCell className={`${TABLE_CELL_CLASS} hidden md:table-cell`}>
-                    <span className="line-clamp-1 text-sm text-muted-foreground">
-                      {article.authors?.length
-                        ? article.authors.slice(0, 3).join(", ") +
-                          (article.authors.length > 3 ? " et al." : "")
-                        : "—"}
-                    </span>
+                  <TableCell
+                    className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
+                  >
+                    {article.authors && article.authors.length > 0 ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-1 cursor-help">
+                            <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                            <span className="truncate block min-w-0">
+                              {article.authors.slice(0, 1).join(", ")}
+                              {article.authors.length > 1 &&
+                                ` +${article.authors.length - 1}`}
+                            </span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p className="text-xs">{article.authors.join(", ")}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <span className="text-muted-foreground">N/A</span>
+                    )}
                   </TableCell>
-                  <TableCell className={`${TABLE_CELL_CLASS} hidden md:table-cell`}>
-                    <span className="text-sm text-muted-foreground">
-                      {article.publication_year ?? "—"}
-                    </span>
+                  <TableCell
+                    className={`hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px]`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3 text-muted-foreground" />
+                      {article.publication_year ?? "N/A"}
+                    </div>
                   </TableCell>
-                  <TableCell className={TABLE_CELL_CLASS}>
-                    <StatusRing progress={getProgress(article)} />
+                  <TableCell className={`${TABLE_CELL_CLASS} text-center`}>
+                    <StatusRing progress={progress} />
                   </TableCell>
-                  <TableCell className={`${TABLE_CELL_CLASS} text-right`}>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8"
-                      onClick={() => navigate(rowActionHref(article.id, templateId))}
-                      data-testid={`hitl-${kind}-row-action-${article.id}`}
-                    >
-                      {t("extraction", "tableActionOpen")}
-                    </Button>
+                  <TableCell
+                    className={`${TABLE_CELL_CLASS} text-center`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {!hasInstances ? (
+                      <IconButton
+                        onClick={openRow}
+                        variant="outline"
+                        label={t("extraction", "tableStart")}
+                        className="rounded-full border-border/60 bg-background shadow-none"
+                        data-testid={`hitl-${kind}-row-action-${article.id}`}
+                        icon={<PlayCircle />}
+                      />
+                    ) : (
+                      <IconButton
+                        onClick={openRow}
+                        variant="outline"
+                        label={
+                          isComplete
+                            ? t("extraction", "tableView")
+                            : t("extraction", "tableContinue")
+                        }
+                        className={`rounded-full shadow-none ${
+                          isComplete
+                            ? "border-border/60 bg-background"
+                            : "border-info/30 bg-info/10 text-info hover:bg-info/20"
+                        }`}
+                        data-testid={`hitl-${kind}-row-action-${article.id}`}
+                        icon={isComplete ? <CheckCircle /> : <Edit />}
+                      />
+                    )}
                   </TableCell>
                 </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
       </div>
