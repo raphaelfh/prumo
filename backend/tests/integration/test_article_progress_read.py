@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRun
@@ -19,6 +20,7 @@ from app.models.extraction_workflow import (
 from app.repositories.article_progress_repository import ArticleProgressRepository
 from app.schemas.article_progress import ArticleProgressKind, ArticleProgressRead
 from app.services.article_progress_service import get_article_progress
+from app.services.extraction_run_read_service import resolve_form_runs
 from tests.factories.template_factory import TemplateFactory
 from tests.integration.conftest import SEED
 
@@ -310,3 +312,126 @@ async def test_template_without_instances_runs_no_value_query(db_session: AsyncS
     ) as values:
         assert (await _read(db_session, w)).articles == []
     values.assert_not_awaited()
+
+
+async def _statements(db: AsyncSession, w: World) -> list[tuple[str, Any]]:
+    """Every (SQL, bind params) the read executes, captured at the cursor."""
+    conn = (await db.connection()).sync_connection
+    seen: list[tuple[str, Any]] = []
+
+    def capture(_c: Any, _cur: Any, statement: str, params: Any, _ctx: Any, _many: bool) -> None:
+        seen.append((statement, params))
+
+    event.listen(conn, "before_cursor_execute", capture)
+    try:
+        await _read(db, w)
+    finally:
+        event.remove(conn, "before_cursor_execute", capture)
+    return seen
+
+
+async def test_more_than_1000_instances_returned_in_full(db_session: AsyncSession) -> None:
+    w = await _world(db_session, per_article=1001)
+    ids = [i.id for i in (await _read(db_session, w)).articles[0].instances]
+    assert len(ids) == 1001 and set(ids) == set(w.inst[w.aids[0]]) and ids == sorted(ids)
+
+
+async def test_extraction_ignores_values_from_a_stale_run(db_session: AsyncSession) -> None:
+    w = await _world(db_session)
+    aid, iid = w.aids[0], w.inst[w.aids[0]][0]
+    await _state(
+        db_session,
+        await _run(db_session, w, aid, "finalized", 0),
+        iid,
+        w.fid,
+        "edit",
+        {"value": "stale"},
+    )
+    await _proposal(
+        db_session, await _run(db_session, w, aid, "extract", 1), iid, w.fid, {"value": "fresh"}
+    )
+    assert (await _values(db_session, w))[aid] == {(iid, w.fid): {"value": "fresh"}}
+
+
+async def test_article_without_form_run_is_listed_with_no_values(db_session: AsyncSession) -> None:
+    w = await _world(db_session, articles=2)
+    with_run, without = w.aids
+    await _proposal(
+        db_session,
+        await _run(db_session, w, with_run, "extract", 0),
+        w.inst[with_run][0],
+        w.fid,
+        {"value": "x"},
+    )
+    await _proposal(
+        db_session,
+        await _run(db_session, w, without, "cancelled", 0),
+        w.inst[without][0],
+        w.fid,
+        {"value": "y"},
+    )
+    read = {a.article_id: a for a in (await _read(db_session, w)).articles}
+    assert read[with_run].values and read[without].values == []
+    assert [i.id for i in read[without].instances] == w.inst[
+        without
+    ]  # listed with its instances: renders 0 %
+
+
+async def test_bind_parameter_count_is_independent_of_article_count(
+    db_session: AsyncSession,
+) -> None:
+    small = [len(p) for _, p in await _statements(db_session, await _world(db_session, articles=3))]
+    large = [
+        len(p) for _, p in await _statements(db_session, await _world(db_session, articles=1500))
+    ]
+    assert len(small) == 3  # owned_template, list_instances, list_caller_values
+    assert small == large
+
+
+async def test_form_run_scoping_agrees_with_resolve_form_runs(db_session: AsyncSession) -> None:
+    w = await _world(db_session, articles=3)
+    mixed, finalized_only, no_run = w.aids
+    plan = {
+        mixed: [("cancelled", 2), ("finalized", 0), ("extract", 1)],
+        finalized_only: [("finalized", 0), ("finalized", 1)],
+        no_run: [],
+    }
+    for aid, runs in plan.items():
+        for (
+            stage,
+            minute,
+        ) in runs:  # older runs get NEWER proposals: a leaked non-chosen run would win the merge
+            run = await _run(db_session, w, aid, stage, minute)
+            await _proposal(
+                db_session, run, w.inst[aid][0], w.fid, {"value": str(run)}, minute=10 - minute
+            )
+    refs = await resolve_form_runs(db_session, w.aids, project_id=PID, template_id=w.tid)
+    values = await _values(db_session, w)
+    assert [r.run_id is None for r in refs] == [False, False, True]
+    for ref in refs:
+        want = (
+            {}
+            if ref.run_id is None
+            else {(w.inst[ref.article_id][0], w.fid): {"value": str(ref.run_id)}}
+        )
+        assert values[ref.article_id] == want
+
+
+async def test_values_are_read_in_one_statement_with_one_form_run_choice(
+    db_session: AsyncSession,
+) -> None:
+    w, _, iid, run = await _one_coord(db_session)
+    await _state(db_session, run, iid, w.fid, "edit", {"value": "x"})
+    value_reads = [
+        sql
+        for sql, _ in await _statements(db_session, w)
+        if "extraction_reviewer_states" in sql or "extraction_proposal_records" in sql
+    ]
+    assert len(value_reads) == 1
+    assert (
+        "extraction_reviewer_states" in value_reads[0]
+        and "extraction_proposal_records" in value_reads[0]
+    )
+    assert (
+        len(re.findall(r"\bform_runs AS\s*\(", value_reads[0])) == 1
+    )  # SQLAlchemy renders "WITH form_runs AS \n("

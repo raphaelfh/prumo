@@ -43,7 +43,7 @@ async def get_article_progress(
         )
         article_of[inst.id] = inst.article_id
     rows = await repo.list_caller_values(
-        project_id=project_id, template_id=template_id, user_id=user_id
+        project_id=project_id, template_id=template_id, user_id=user_id, kind=kind
     )
     winners: dict[tuple[UUID, UUID], Any] = {}
     for row in rows:  # pass 1: the caller's current decisions

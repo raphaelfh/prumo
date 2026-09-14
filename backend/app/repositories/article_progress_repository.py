@@ -1,22 +1,24 @@
 """Set-based reads behind the article progress read (spec R8-R12); no statement binds a Python id list. list_caller_values
-is ONE statement: current-decision states (LEFT JOIN accepted proposal) UNION ALL human proposals; instances filter project+template."""
+is ONE statement: current-decision states (LEFT JOIN accepted proposal) UNION ALL human proposals; instances filter project+template.
+For kind="extraction" both branches join one form_runs CTE (R10), so the form-run choice is made once per request."""
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import String, and_, cast, literal_column, null, select, union_all
+from sqlalchemy import CTE, String, and_, case, cast, literal_column, null, select, union_all
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.models.extraction import ExtractionInstance
+from app.models.extraction import ExtractionInstance, ExtractionRun, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionReviewerDecision,
     ExtractionReviewerState,
 )
+from app.schemas.article_progress import ArticleProgressKind
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,34 @@ class CallerValueRow:
     id: UUID
 
 
+_LIVE = (
+    ExtractionRunStage.PENDING.value,
+    ExtractionRunStage.EXTRACT.value,
+    ExtractionRunStage.CONSENSUS.value,
+)
+
+
+def _form_runs(*, project_id: UUID, template_id: UUID) -> CTE:
+    """Each article's form run with resolve_form_runs semantics: the newest live run, else the newest finalized run,
+    never a cancelled one (parity: test_form_run_scoping_agrees_with_resolve_form_runs). Set-based: no id list is bound."""
+    run = ExtractionRun
+    return (
+        select(run.id.label("run_id"))
+        .where(run.project_id == project_id, run.template_id == template_id)
+        .where(
+            run.kind == "extraction", run.stage.in_([*_LIVE, ExtractionRunStage.FINALIZED.value])
+        )
+        .distinct(run.article_id)
+        .order_by(
+            run.article_id,
+            case((run.stage.in_(_LIVE), 0), else_=1),
+            run.created_at.desc(),
+            run.id.desc(),
+        )
+        .cte("form_runs")
+    )
+
+
 class ArticleProgressRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -55,7 +85,7 @@ class ArticleProgressRepository:
         return [ProgressInstanceRow(*row) for row in (await self.db.execute(stmt)).all()]
 
     async def list_caller_values(
-        self, *, project_id: UUID, template_id: UUID, user_id: UUID
+        self, *, project_id: UUID, template_id: UUID, user_id: UUID, kind: ArticleProgressKind
     ) -> list[CallerValueRow]:
         inst, state, dec, prop = (
             ExtractionInstance,
@@ -98,6 +128,12 @@ class ArticleProgressRepository:
             .where(inst.project_id == project_id, inst.template_id == template_id)
             .where(prop.source == "human", prop.source_user_id == user_id)
         )
+        if (
+            kind == "extraction"
+        ):  # R10: ONE form-run choice both branches share, so one snapshot; QA is not run-scoped (R11)
+            form_runs = _form_runs(project_id=project_id, template_id=template_id)
+            states = states.join(form_runs, form_runs.c.run_id == state.run_id)
+            proposals = proposals.join(form_runs, form_runs.c.run_id == prop.run_id)
         values = union_all(states, proposals).subquery("caller_values")
         stmt = select(values).order_by(
             values.c.created_at.desc(), values.c.id.desc()
