@@ -146,6 +146,10 @@ export function HITLArticleTable({
   toolbarActions,
 }: Props) {
   const navigate = useNavigate();
+  const openRowLabel =
+    kind === "quality_assessment"
+      ? t("qa", "tableOpenRowAria")
+      : t("extraction", "tableOpenRowAria");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
@@ -540,26 +544,20 @@ export function HITLArticleTable({
               return (
                 <TableRow
                   key={article.id}
-                  role="button"
-                  tabIndex={0}
                   data-testid={`hitl-${kind}-row-${article.id}`}
-                  aria-label={t("extraction", "tableOpenRowAria").replace(
-                    "{{title}}",
-                    title,
-                  )}
-                  onClick={openRow}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      openRow();
-                    }
-                  }}
-                  className="border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                  className="relative border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8"
                 >
                   <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`}>
-                    <div className="line-clamp-1 leading-tight text-foreground font-medium">
+                    {/* The row is not a control (it holds the action button);
+                        this button is, stretched over the row by its ::after. */}
+                    <button
+                      type="button"
+                      onClick={openRow}
+                      aria-label={openRowLabel.replace("{{title}}", title)}
+                      className="line-clamp-1 w-full text-left leading-tight text-foreground font-medium focus-visible:outline-hidden after:absolute after:inset-0 focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+                    >
                       {title}
-                    </div>
+                    </button>
                   </TableCell>
                   <TableCell
                     className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
@@ -567,7 +565,7 @@ export function HITLArticleTable({
                     {article.authors && article.authors.length > 0 ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <div className="flex items-center gap-1 cursor-help">
+                          <div className="relative z-10 flex items-center gap-1 cursor-help">
                             <User className="h-3 w-3 text-muted-foreground shrink-0" />
                             <span className="truncate block min-w-0">
                               {article.authors.slice(0, 1).join(", ")}
@@ -581,7 +579,7 @@ export function HITLArticleTable({
                         </TooltipContent>
                       </Tooltip>
                     ) : (
-                      <span className="text-muted-foreground">N/A</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   <TableCell
@@ -589,22 +587,20 @@ export function HITLArticleTable({
                   >
                     <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
-                      {article.publication_year ?? "N/A"}
+                      {article.publication_year ?? "—"}
                     </div>
                   </TableCell>
                   <TableCell className={`${TABLE_CELL_CLASS} text-center`}>
                     <StatusRing progress={progress} />
                   </TableCell>
-                  <TableCell
-                    className={`${TABLE_CELL_CLASS} text-center`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <TableCell className={`${TABLE_CELL_CLASS} text-center`}>
+                    {/* relative z-10: above the row's stretched open control. */}
                     {!hasInstances ? (
                       <IconButton
                         onClick={openRow}
                         variant="outline"
                         label={t("extraction", "tableStart")}
-                        className="rounded-full border-border/60 bg-background shadow-none"
+                        className="relative z-10 rounded-full border-border/60 bg-background shadow-none"
                         data-testid={`hitl-${kind}-row-action-${article.id}`}
                         icon={<PlayCircle />}
                       />
@@ -617,7 +613,7 @@ export function HITLArticleTable({
                             ? t("extraction", "tableView")
                             : t("extraction", "tableContinue")
                         }
-                        className={`rounded-full shadow-none ${
+                        className={`relative z-10 rounded-full shadow-none ${
                           isComplete
                             ? "border-border/60 bg-background"
                             : "border-info/30 bg-info/10 text-info hover:bg-info/20"
