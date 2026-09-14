@@ -15,10 +15,12 @@
  * with the bar-selected template id, so the user lands on the right session.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, FileText, FileUp, ShieldCheck } from "lucide-react";
 
+import { ErrorState } from "@/components/patterns/ErrorState";
 import { IconButton } from "@/components/patterns/IconButton";
 import {
   Card,
@@ -29,8 +31,8 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
 import { t } from "@/lib/copy";
+import { articleKeys } from "@/lib/query-keys";
 import {
   HITLActiveTemplateBar,
   useActiveTemplateSelection,
@@ -39,9 +41,14 @@ import { HITLArticleTable } from "@/components/hitl/HITLArticleTable";
 import {EngineGear} from '@/components/extraction/EngineGear';
 import { HITLExportDialog } from "@/components/hitl/HITLExportDialog";
 import { QualityAssessmentConfiguration } from "@/components/quality/QualityAssessmentConfiguration";
+import {
+  articleExtractionValuesKeys,
+  useArticleExtractionValues,
+} from "@/hooks/extraction/useArticleExtractionValues";
 import { useProjectTemplates } from "@/hooks/hitl/useProjectTemplates";
 import { useProjectMemberRole } from "@/hooks/useProjectMemberRole";
 import { useQAWorklist } from "@/hooks/qa/useQAWorklist";
+import { fetchProjectArticles } from "@/services/articlesService";
 
 type QaTab = "assessment" | "dashboard" | "configuration";
 
@@ -52,6 +59,7 @@ interface Props {
 export function QualityAssessmentInterface({ projectId }: Props) {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const tabFromUrl = searchParams.get("qaTab") as QaTab | null;
   const activeTab: QaTab =
@@ -74,45 +82,49 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   const { isManager } = useProjectMemberRole(projectId);
   const [showExportDialog, setShowExportDialog] = useState(false);
 
-  // Dashboard counters — same shape as extraction's stats card row.
-  const [stats, setStats] = useState({
-    totalArticles: 0,
-    assessmentsStarted: 0,
-    progressPercentage: 0,
+  // Dashboard counters — same shape as extraction's stats card row. They derive
+  // from the reads the worklist already shares instead of an ad-hoc fetch, and
+  // a failed read renders an error state: zeros would read as "nothing started".
+  // Both reads stay disabled off the dashboard tab.
+  const onDashboard = activeTab === "dashboard";
+  const dashboardArticles = useQuery({
+    queryKey: articleKeys.byProject(projectId),
+    enabled: onDashboard && !!projectId,
+    queryFn: async () => {
+      const result = await fetchProjectArticles(projectId);
+      if (!result.ok) throw new Error(t("qa", "dashboardLoadError"));
+      return result.data;
+    },
   });
+  const dashboardTemplateId = onDashboard ? activeTemplate?.id : undefined;
+  const {
+    valuesByArticle,
+    isLoading: valuesLoading,
+    error: valuesError,
+  } = useArticleExtractionValues(
+    projectId,
+    dashboardTemplateId,
+    user?.id,
+    "quality_assessment",
+  );
 
-  useEffect(() => {
-    if (!projectId || !activeTemplate || !user) return;
-    let cancelled = false;
-    void (async () => {
-      const articlesRes = await supabase
-        .from("articles")
-        .select("id", { count: "exact", head: true })
-        .eq("project_id", projectId);
-      const totalArticles = articlesRes.count ?? 0;
+  const totalArticles = dashboardArticles.data?.length ?? 0;
+  // The map is keyed by every article with at least one instance of the tool.
+  const assessmentsStarted = valuesByArticle.size;
+  const progressPercentage =
+    totalArticles > 0 ? Math.round((assessmentsStarted / totalArticles) * 100) : 0;
 
-      const instancesRes = await supabase
-        .from("extraction_instances")
-        .select("article_id")
-        .eq("project_id", projectId)
-        .eq("template_id", activeTemplate.id);
-      const articlesWithInstances = new Set(
-        (instancesRes.data ?? []).map((row: any) => row.article_id),
-      );
-
-      if (cancelled) return;
-      const started = articlesWithInstances.size;
-      setStats({
-        totalArticles,
-        assessmentsStarted: started,
-        progressPercentage:
-          totalArticles > 0 ? Math.round((started / totalArticles) * 100) : 0,
-      });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, activeTemplate, user]);
+  const retryDashboard = () => {
+    void dashboardArticles.refetch();
+    void queryClient.invalidateQueries({
+      queryKey: articleExtractionValuesKeys.byTemplate(
+        projectId,
+        dashboardTemplateId ?? "",
+        user?.id ?? "",
+        "quality_assessment",
+      ),
+    });
+  };
 
   if (activeTab === "configuration") {
     return (
@@ -128,6 +140,13 @@ export function QualityAssessmentInterface({ projectId }: Props) {
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {dashboardArticles.isError || valuesError ? (
+            <ErrorState message={t("qa", "dashboardLoadError")} onRetry={retryDashboard} />
+          ) : !user || dashboardArticles.isPending || valuesLoading ? (
+            // No user yet = the values read is disabled, not empty: zeros here
+            // would read as "nothing started".
+            <Skeleton data-testid="qa-dashboard-skeleton" className="h-28 w-full" />
+          ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             <Card className="border-border/40 shadow-elev-popover">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
@@ -137,7 +156,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
                 <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-xl font-bold">{stats.totalArticles}</div>
+                <div className="text-xl font-bold">{totalArticles}</div>
                 <p className="text-[13px] text-muted-foreground">
                   {t("extraction", "dashboardInProject")}
                 </p>
@@ -151,7 +170,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
                 <CheckCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-xl font-bold">{stats.assessmentsStarted}</div>
+                <div className="text-xl font-bold">{assessmentsStarted}</div>
                 <p className="text-[13px] text-muted-foreground">
                   {activeTemplate?.name ?? "—"}
                 </p>
@@ -165,13 +184,14 @@ export function QualityAssessmentInterface({ projectId }: Props) {
                 <ShieldCheck className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-xl font-bold">{stats.progressPercentage}%</div>
+                <div className="text-xl font-bold">{progressPercentage}%</div>
                 <p className="text-[13px] text-muted-foreground">
                   {t("qa", "dashboardDesc")}
                 </p>
               </CardContent>
             </Card>
           </div>
+          )}
         </div>
       </div>
     );
