@@ -1,24 +1,33 @@
-import {render, screen} from '@testing-library/react';
+import {useState} from 'react';
+import {render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {MemoryRouter, useLocation, useNavigate} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
+// Stateful: an edit through a section's onChange really flips hasUnsavedChanges.
 vi.mock('@/hooks/useProjectSettings', () => ({
-  useProjectSettings: () => ({
-    project: {id: 'p1', name: 'P'},
-    loading: false,
-    hasUnsavedChanges: false,
-    updateProject: vi.fn(),
-    saveProject: vi.fn(),
-  }),
+  useProjectSettings: () => {
+    const [dirty, setDirty] = useState(false);
+    return {
+      project: {id: 'p1', name: 'P'},
+      loading: false,
+      hasUnsavedChanges: dirty,
+      updateProject: () => setDirty(true),
+      saveProject: vi.fn(),
+    };
+  },
 }));
 vi.mock('@/hooks/useProjectMemberRole', () => ({
   useProjectMemberRole: () => ({isManager: true}),
 }));
 // The sections are stubs: this file pins navigation wiring only.
 vi.mock('@/components/project/settings/BasicInfoSection', () => ({
-  BasicInfoSection: () => <div data-testid="section-basic" />,
+  BasicInfoSection: ({onChange}: {onChange: (patch: object) => void}) => (
+    <button type="button" data-testid="section-basic" onClick={() => onChange({name: 'edited'})}>
+      edit
+    </button>
+  ),
 }));
 vi.mock('@/components/project/settings/ReviewDetailsSection', () => ({
   ReviewDetailsSection: () => <div data-testid="section-review" />,
@@ -105,6 +114,28 @@ describe('ProjectSettings sections', () => {
     for (const old of ['max-w-[1920px]', 'mx-auto', 'px-6', 'py-6', 'lg:px-8', 'lg:py-8']) {
       expect(inner).not.toHaveClass(old);
     }
+  });
+});
+
+describe('ProjectSettings header (no layout shift on the first edit)', () => {
+  const header = (container: HTMLElement) => container.querySelector('[data-slot="page-header"]');
+
+  it('keeps the same header mounted before and after the form becomes dirty', async () => {
+    const {container} = renderAt('?tab=settings&section=basic');
+    const before = header(container);
+    expect(before).not.toBeNull();
+    expect(screen.queryByRole('button', {name: /settingsSaveChanges/})).toBeNull();
+
+    await userEvent.click(screen.getByTestId('section-basic'));
+
+    // Same node, not a remount: the header reserved its row from the first paint.
+    expect(header(container)).toBe(before);
+    expect(within(before as HTMLElement).getByRole('button', {name: /settingsSaveChanges/})).toBeInTheDocument();
+  });
+
+  it('renders no title in the header (the breadcrumb names the page, #901)', () => {
+    const {container} = renderAt('?tab=settings&section=basic');
+    expect(header(container)?.textContent).toBe('');
   });
 });
 
