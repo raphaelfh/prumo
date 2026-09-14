@@ -2900,6 +2900,58 @@
         "title": "ApiResponse[list[ArticleRunRef]]",
         "type": "object"
       },
+      "ApiResponse_list_GlobalTemplateSummaryRead__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GlobalTemplateSummaryRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[GlobalTemplateSummaryRead]]",
+        "type": "object"
+      },
       "ApiResponse_list_LlmConnectionRead__": {
         "properties": {
           "data": {
@@ -2950,6 +3002,58 @@
           "ok"
         ],
         "title": "ApiResponse[list[LlmConnectionRead]]",
+        "type": "object"
+      },
+      "ApiResponse_list_ProjectTemplateRead__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProjectTemplateRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[ProjectTemplateRead]]",
         "type": "object"
       },
       "ApiResponse_list_ProviderRead__": {
@@ -5000,6 +5104,67 @@
         "title": "FormRunsRequest",
         "type": "object"
       },
+      "GlobalTemplateSummaryRead": {
+        "description": "A global template as the import pickers list it.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "entity_types_count": {
+            "title": "Entity Types Count",
+            "type": "integer"
+          },
+          "framework": {
+            "enum": [
+              "CHARMS",
+              "PICOS",
+              "CUSTOM"
+            ],
+            "title": "Framework",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "extraction",
+              "quality_assessment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "framework",
+          "version",
+          "kind",
+          "entity_types_count"
+        ],
+        "title": "GlobalTemplateSummaryRead",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -6475,6 +6640,111 @@
           "label"
         ],
         "title": "ProjectConnectionCreateRequest",
+        "type": "object"
+      },
+      "ProjectTemplateRead": {
+        "description": "A project's template, active or not.\n\n``schema`` carries the template-level declared data (``scope_rules``,\n``derived_judgments``) the QA worklist computes scoped progress from.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "framework": {
+            "enum": [
+              "CHARMS",
+              "PICOS",
+              "CUSTOM"
+            ],
+            "title": "Framework",
+            "type": "string"
+          },
+          "global_template_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Global Template Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "extraction",
+              "quality_assessment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "schema": {
+            "additionalProperties": true,
+            "title": "Schema",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "global_template_id",
+          "name",
+          "description",
+          "framework",
+          "version",
+          "kind",
+          "schema",
+          "is_active",
+          "created_at",
+          "created_by"
+        ],
+        "title": "ProjectTemplateRead",
         "type": "object"
       },
       "ProposalRecordResponse": {
@@ -12974,6 +13244,66 @@
       }
     },
     "/api/v1/projects/{project_id}/templates": {
+      "get": {
+        "description": "The project's templates of one kind, for members \u2014 the table's read\npolicy is ``is_project_member``.",
+        "operationId": "get_project_templates_api_v1_projects__project_id__templates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "extraction",
+                "quality_assessment"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ProjectTemplateRead__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Project Templates",
+        "tags": [
+          "template-catalogue"
+        ]
+      },
       "post": {
         "description": "Create a project template that starts with no sections.\n\nManager-gated like clone and import below: it deactivates the project's\ncurrent extraction template, which is project-wide configuration. Same\nresponse shape as those two \u2014 the manager lands in the configuration\neditor on a published, empty v1.",
         "operationId": "create_project_template_api_v1_projects__project_id__templates_post",
@@ -15332,6 +15662,58 @@
         "summary": "Get Run View",
         "tags": [
           "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/templates/global": {
+      "get": {
+        "description": "The global catalogue of one kind.\n\nAny signed-in user may read it \u2014 the same rule as the table's\n``SELECT USING (true)`` policy.",
+        "operationId": "get_global_templates_api_v1_templates_global_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "extraction",
+                "quality_assessment"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_GlobalTemplateSummaryRead__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Global Templates",
+        "tags": [
+          "template-catalogue"
         ]
       }
     },

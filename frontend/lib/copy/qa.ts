@@ -108,6 +108,7 @@ export const qa = {
   missingRouteParams: 'Missing route parameters.',
   templateNotFound:
     'Quality-Assessment template {{templateId}} not found. The link may be stale — pick a template from the list and try again.',
+  templateLoadError: 'Couldn’t load this project’s quality-assessment templates. Reload the page to try again.',
   reopenButton: 'Reopen for revision',
   reopenProgress: 'Reopening…',
   publishedState: 'Published',

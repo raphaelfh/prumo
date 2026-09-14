@@ -77,7 +77,7 @@ describe('useHITLProjectTemplates', () => {
   it('loads the list and the catalogue with one request each', async () => {
     const {result} = renderTemplates();
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(fetchProjectTemplates).toHaveBeenCalledExactlyOnceWith('p', 'quality_assessment', true);
+    expect(fetchProjectTemplates).toHaveBeenCalledExactlyOnceWith('p', 'quality_assessment');
     expect(fetchGlobalTemplates).toHaveBeenCalledExactlyOnceWith('quality_assessment');
     expect(result.current.globalTemplates).toHaveLength(1);
   });
@@ -200,6 +200,6 @@ describe('useProjectTemplates', () => {
     await waitFor(() => expect(result.current.all.data).toHaveLength(2));
     // Same cache entry, narrowed by `select` — not a second request.
     expect(result.current.active.data).toEqual([PROBAST]);
-    expect(fetchProjectTemplates).toHaveBeenCalledExactlyOnceWith('p', 'quality_assessment', true);
+    expect(fetchProjectTemplates).toHaveBeenCalledExactlyOnceWith('p', 'quality_assessment');
   });
 });

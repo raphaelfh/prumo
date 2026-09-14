@@ -16,6 +16,7 @@ import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {ExtractionEntityType, ExtractionField} from '@/types/extraction';
 import type {QATemplate, QADomain} from '@/types/qa';
 import type {ReviewKind} from '@/lib/comparison/permissions';
+import type {components} from '@/types/api/schema';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -81,82 +82,26 @@ export function loadProjectQATemplate(
 // useHITLProjectTemplates: fetch project and global templates
 // ---------------------------------------------------------------------------
 
-export interface ProjectTemplateRow {
-  id: string;
-  project_id: string;
-  global_template_id: string | null;
-  name: string;
-  description: string | null;
-  framework: string;
-  version: string;
-  kind: ReviewKind;
-  /**
-   * Template-level declared data (`scope_rules`, `derived_judgments`). The
-   * `select('*')` below already returns it; only this type used to hide it.
-   */
-  schema?: Record<string, unknown> | null;
-  is_active: boolean;
-  created_at: string;
-  created_by: string | null;
-}
+export type ProjectTemplateRow = components['schemas']['ProjectTemplateRead'];
+export type GlobalTemplateRow = components['schemas']['GlobalTemplateSummaryRead'];
 
-export interface GlobalTemplateRow {
-  id: string;
-  name: string;
-  description: string | null;
-  framework: string;
-  version: string;
-  kind: ReviewKind;
-}
-
-/**
- * Fetch project-scoped extraction templates filtered by kind.
- * Pass includeInactive=true to include templates with is_active=false.
- *
- * NOTE: throws on error — callers (useHITLProjectTemplates callbacks)
- * handle via their own try/catch inside useCallback.
- */
-export type HITLKindParam = ReviewKind;
-
+/** The project's templates of one kind, active and inactive, newest first. */
 export function fetchProjectTemplates(
   projectId: string,
-  kind: HITLKindParam,
-  includeInactive: boolean,
+  kind: ReviewKind,
 ): Promise<ErrorResult<ProjectTemplateRow[]>> {
-  return toResult(async () => {
-    let query = supabase
-      .from('project_extraction_templates')
-      .select('*')
-      .eq('project_id', projectId)
-      .eq('kind', kind)
-      .order('created_at', {ascending: false});
-    if (!includeInactive) {
-      query = query.eq('is_active', true);
-    }
-    const {data, error: queryError} = await query;
-    if (queryError) throw queryError;
-    return (data ?? []) as ProjectTemplateRow[];
-  }, 'qaTemplateService.fetchProjectTemplates');
+  return toResult(
+    () => apiClient<ProjectTemplateRow[]>(`/api/v1/projects/${projectId}/templates?kind=${kind}`),
+    'qaTemplateService.fetchProjectTemplates',
+  );
 }
 
-/**
- * Fetch all global templates of a given kind ordered by name.
- *
- * NOTE: throws on error — callers (useHITLProjectTemplates callbacks)
- * handle via their own try/catch inside useCallback.
- */
-export function fetchGlobalTemplates(
-  kind: HITLKindParam,
-): Promise<ErrorResult<GlobalTemplateRow[]>> {
-  return toResult(async () => {
-    const {data, error: queryError} = await supabase
-      .from('extraction_templates_global')
-      .select('id, name, description, framework, version, kind')
-      .eq('kind', kind)
-      .order('name', {ascending: true});
-    if (queryError) throw queryError;
-    return (data ?? []) as GlobalTemplateRow[];
-  }, 'qaTemplateService.fetchGlobalTemplates');
+/** The global catalogue of one kind still offered for import, by name. */
+export function fetchGlobalTemplates(kind: ReviewKind): Promise<ErrorResult<GlobalTemplateRow[]>> {
+  return toResult(
+    () => apiClient<GlobalTemplateRow[]>(`/api/v1/templates/global?kind=${kind}`),
+    'qaTemplateService.fetchGlobalTemplates',
+  );
 }
 
 // ---------------------------------------------------------------------------

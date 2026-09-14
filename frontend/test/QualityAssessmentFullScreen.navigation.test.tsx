@@ -63,8 +63,13 @@ import { apiClient } from "@/integrations/api";
 
 import {
   BLIND_PERMISSIONS,
+  makeApiClientDefault,
 } from "./helpers/qaFullScreenMocks";
 import { renderPage } from "./helpers/qaFullScreenRender";
+
+// A per-test apiClient override answers its own URLs and hands every other
+// one to the shared default (template lists, files, suggestions).
+const answerByDefault = makeApiClientDefault();
 
 const mockedPermissions = vi.mocked(useComparisonPermissions);
 
@@ -170,7 +175,7 @@ describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
       if (url.includes("/files") || url.includes("/text-blocks")) {
         return [];
       }
-      return {};
+      return answerByDefault(url);
     });
   });
 
@@ -327,7 +332,7 @@ describe("QualityAssessmentFullScreen — run-switch hydration (in-place article
         if (url.includes("/files") || url.includes("/text-blocks")) {
           return [];
         }
-        return {};
+        return answerByDefault(url);
       },
     );
   });
@@ -459,7 +464,7 @@ describe("QualityAssessmentFullScreen — status popover reviewer denominator", 
       if (url.includes("/files") || url.includes("/text-blocks")) {
         return [];
       }
-      return {};
+      return answerByDefault(url);
     });
   });
 

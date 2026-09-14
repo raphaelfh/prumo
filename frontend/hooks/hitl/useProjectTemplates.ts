@@ -72,7 +72,7 @@ export function useProjectTemplates({
     // structurally shares the `select` result so the active-only readers
     // don't re-render when an inactive row changes.
     queryFn: async (): Promise<ProjectTemplate[]> => {
-      const result = await fetchProjectTemplates(projectId, kind, true);
+      const result = await fetchProjectTemplates(projectId, kind);
       if (!result.ok) throw result.error;
       return result.data;
     },

@@ -25,6 +25,7 @@ vi.mock('@/hooks/hitl/useProjectTemplates', () => ({
     error: null,
   }),
   useInvalidateProjectTemplates: () => vi.fn(),
+  useGlobalTemplateCatalogue: () => ({data: [], isPending: false}),
 }));
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
   useArticleExtractionValues: () => ({valuesByArticle: new Map()}),
