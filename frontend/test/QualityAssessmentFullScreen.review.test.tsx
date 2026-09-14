@@ -33,9 +33,11 @@ const membersFixture = vi.hoisted(() => ({
   rows: [] as Array<Record<string, unknown>>,
 }));
 
+const tablesFixture = vi.hoisted(() => ({}) as Record<string, unknown>);
+
 vi.mock("@/integrations/supabase/client", async () => {
   const { makeSupabaseClientMock } = await import("./helpers/qaFullScreenMocks");
-  return { supabase: makeSupabaseClientMock(membersFixture) };
+  return { supabase: makeSupabaseClientMock(membersFixture, tablesFixture) };
 });
 
 // The PDF viewer pulls in worker/canvas globals (pdfjs/DOMMatrix) not worth
@@ -66,6 +68,10 @@ import { apiClient } from "@/integrations/api";
 
 import {
   BLIND_PERMISSIONS,
+  PARTICIPANTS_DOMAIN,
+  ROB_FIELD,
+  SIGNALING_QUESTION,
+  makeApiClientDefault,
 } from "./helpers/qaFullScreenMocks";
 import { renderPage } from "./helpers/qaFullScreenRender";
 
@@ -735,5 +741,43 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
         "/projects/p1/articles/a2/quality-assessment/tpl-1",
       ),
     );
+  });
+});
+
+describe("QualityAssessmentFullScreen — jump to the next pending item", () => {
+  const ANALYSIS = { ...PARTICIPANTS_DOMAIN, id: "et-2", name: "analysis", label: "Analysis", sort_order: 2 };
+  const REQUIRED = { ...SIGNALING_QUESTION, id: "f-3", entity_type_id: "et-2", name: "q4_1", is_required: true };
+
+  beforeEach(() => {
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    tablesFixture.extraction_entity_types = [
+      { ...PARTICIPANTS_DOMAIN, extraction_fields: [SIGNALING_QUESTION, ROB_FIELD] },
+      { ...ANALYSIS, extraction_fields: [REQUIRED] },
+    ];
+    const byDefault = makeApiClientDefault();
+    vi.mocked(apiClient).mockImplementation(async (url: string) =>
+      url === "/api/v1/hitl/sessions"
+        ? { run_id: "run-1", kind: "quality_assessment", project_template_id: "tpl-1",
+            instances_by_entity_type: { "et-1": "inst-1", "et-2": "inst-2" } }
+        : byDefault(url),
+    );
+  });
+
+  afterEach(() => {
+    delete tablesFixture.extraction_entity_types;
+    vi.mocked(apiClient).mockImplementation(makeApiClientDefault());
+  });
+
+  it("a jump to the next pending item marks the section it lands in active", async () => {
+    renderPage();
+    const rail = await screen.findByRole("navigation", { name: "Section navigation" });
+    const analysis = await within(rail).findByRole("button", { name: /Analysis/ });
+    const participants = within(rail).getByRole("button", { name: /Participants/ });
+    // Precondition: the first domain owns the rail; "Analysis" is closed and pending.
+    expect(participants).toHaveAttribute("aria-current", "true");
+    expect(analysis).not.toHaveAttribute("aria-current");
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() => expect(analysis).toHaveAttribute("aria-current", "true"));
+    expect(participants).not.toHaveAttribute("aria-current");
   });
 });

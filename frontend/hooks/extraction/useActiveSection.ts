@@ -94,6 +94,10 @@ export function useActiveSection(sectionIds: string[]): UseActiveSectionResult {
   useEffect(() => {
     const ids = key === '' ? [] : key.split('|');
     if (ids.length === 0) return;
+    // `sectionIds` can arrive after mount (an async-loaded form): the first
+    // render's initial state has nothing to pick from, so re-pick once the
+    // list lands or the current pick falls out of it.
+    setActiveId((current) => (current !== null && ids.includes(current) ? current : ids[0]));
     // Resolved on use, not at setup: the pane only overflows once the form has
     // laid out, and a miss here would silently disable the spy for good.
     let scroller: HTMLElement | null = null;

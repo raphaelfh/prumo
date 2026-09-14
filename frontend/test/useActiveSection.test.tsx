@@ -1,7 +1,38 @@
 // frontend/test/useActiveSection.test.tsx
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { pickActiveSection, useActiveSection } from '@/hooks/extraction/useActiveSection';
+
+/** jsdom has no layout and no frame loop: frames run when the test says so. */
+function manualFrames() {
+  const queue: FrameRequestCallback[] = [];
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => queue.push(cb));
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  return { pending: () => queue.length, flush: () => act(() => queue.splice(0).forEach((cb) => cb(0))) };
+}
+
+/** An overflowing pane holding one section per entry, `top` px below the pane's top edge. */
+function paneWith(tops: Record<string, number>) {
+  const pane = document.createElement('div');
+  pane.style.overflowY = 'auto';
+  Object.defineProperty(pane, 'scrollHeight', { value: 3000 });
+  Object.defineProperty(pane, 'clientHeight', { value: 600 });
+  Object.defineProperty(pane, 'scrollTop', { value: 0, writable: true });
+  pane.getBoundingClientRect = () => ({ top: 0, height: 600 }) as DOMRect;
+  const sections = Object.entries(tops).map(([id, top]) => {
+    const el = document.createElement('section');
+    el.getBoundingClientRect = () => ({ top, height: 200 }) as DOMRect;
+    pane.appendChild(el);
+    return [id, el] as const;
+  });
+  document.body.appendChild(pane);
+  return { pane, sections };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  document.body.innerHTML = '';
+});
 
 describe('pickActiveSection', () => {
   // Tops are pane-relative pixels; the activation line sits at 200.
@@ -75,5 +106,46 @@ describe('useActiveSection', () => {
     const { result } = renderHook(() => useActiveSection(['s1', 's2']));
     act(() => result.current.scrollToSection('s2'));
     expect(result.current.activeId).toBe('s2');
+  });
+
+  it('recomputes the active section from a pane scroll, once per frame', () => {
+    const frames = manualFrames();
+    const { result } = renderHook(() => useActiveSection(['s1', 's2', 's3']));
+    const { pane, sections } = paneWith({ s1: -500, s2: 100, s3: 700 });
+    act(() => sections.forEach(([id, el]) => result.current.registerSection(id, el)));
+    pane.dispatchEvent(new Event('scroll'));
+    pane.dispatchEvent(new Event('scroll'));
+    expect(frames.pending()).toBe(1);
+    expect(result.current.activeId).toBe('s1');
+    frames.flush();
+    // 's2' starts above the 120px activation line and 's3' below it.
+    expect(result.current.activeId).toBe('s2');
+  });
+
+  it('holds a clicked section for two frames against the landing scroll', () => {
+    const frames = manualFrames();
+    const { result } = renderHook(() => useActiveSection(['s1', 's2', 's3']));
+    const { pane, sections } = paneWith({ s1: -500, s2: 100, s3: 700 });
+    act(() => sections.forEach(([id, el]) => result.current.registerSection(id, el)));
+    act(() => result.current.scrollToSection('s3'));
+    // Frame 1: the landing scroll measures 's2' at the line; the hold keeps 's3'.
+    pane.dispatchEvent(new Event('scroll'));
+    frames.flush();
+    expect(result.current.activeId).toBe('s3');
+    // Frame 2 releases the hold, so the next scroll belongs to the reader again.
+    frames.flush();
+    pane.dispatchEvent(new Event('scroll'));
+    frames.flush();
+    expect(result.current.activeId).toBe('s2');
+  });
+
+  it('focuses the section with preventScroll so focus never scrolls an ancestor', () => {
+    const { result } = renderHook(() => useActiveSection(['s1', 's2']));
+    const el = document.createElement('div');
+    el.tabIndex = -1;
+    const focus = vi.spyOn(el, 'focus');
+    act(() => result.current.registerSection('s1', el));
+    act(() => result.current.scrollToSection('s1'));
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 });

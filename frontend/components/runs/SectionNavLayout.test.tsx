@@ -179,4 +179,18 @@ describe('SectionNavLayout — section open state', () => {
     expect(onSelect).toHaveBeenCalledWith('todo');
     expect(screen.getByLabelText('todo field')).toBeInTheDocument();
   });
+
+  it('a mod+Enter jump calls onActivate with the section it lands in', async () => {
+    const onActivate = vi.fn();
+    render(
+      <SectionNavLayout items={sections} activeId={null} onSelect={vi.fn()} onActivate={onActivate}>
+        <Section id="done" pending={false} />
+        <Section id="todo" pending />
+      </SectionNavLayout>,
+    );
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    expect(screen.getByLabelText('todo field')).toHaveFocus();
+    expect(onActivate).toHaveBeenCalledWith('todo');
+    expect(onActivate).not.toHaveBeenCalledWith('done');
+  });
 });
