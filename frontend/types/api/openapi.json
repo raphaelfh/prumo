@@ -460,6 +460,54 @@
         "title": "ApiResponse[ArticleFileResponse]",
         "type": "object"
       },
+      "ApiResponse_ArticleProgressRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArticleProgressRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ArticleProgressRead]",
+        "type": "object"
+      },
       "ApiResponse_CloneTemplateResponse_": {
         "properties": {
           "data": {
@@ -3338,6 +3386,96 @@
           "updatedAt"
         ],
         "title": "ArticleFileResponse",
+        "type": "object"
+      },
+      "ArticleProgressInstanceRead": {
+        "properties": {
+          "entity_type_id": {
+            "format": "uuid",
+            "title": "Entity Type Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entity_type_id"
+        ],
+        "title": "ArticleProgressInstanceRead",
+        "type": "object"
+      },
+      "ArticleProgressItemRead": {
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/ArticleProgressInstanceRead"
+            },
+            "title": "Instances",
+            "type": "array"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/ArticleProgressValueRead"
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "article_id",
+          "instances",
+          "values"
+        ],
+        "title": "ArticleProgressItemRead",
+        "type": "object"
+      },
+      "ArticleProgressRead": {
+        "properties": {
+          "articles": {
+            "items": {
+              "$ref": "#/components/schemas/ArticleProgressItemRead"
+            },
+            "title": "Articles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "articles"
+        ],
+        "title": "ArticleProgressRead",
+        "type": "object"
+      },
+      "ArticleProgressValueRead": {
+        "properties": {
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "instance_id",
+          "field_id",
+          "value"
+        ],
+        "title": "ArticleProgressValueRead",
         "type": "object"
       },
       "ArticleRunRef": {
@@ -13522,6 +13660,78 @@
           }
         ],
         "summary": "Get Template Active Version",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}/article-progress": {
+      "get": {
+        "description": "The caller's own per-article progress values for a template's worklist.\n\nMember-gated like ``active-version``: 403 before any template lookup (no existence\noracle). Missing or unknown ``kind`` is a 422; a foreign, unknown or other-kind template, 404.",
+        "operationId": "get_template_article_progress_api_v1_projects__project_id__templates__template_id__article_progress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "extraction",
+                "quality_assessment"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ArticleProgressRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Article Progress",
         "tags": [
           "project-templates"
         ]

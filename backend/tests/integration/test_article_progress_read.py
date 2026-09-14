@@ -3,14 +3,24 @@
 from __future__ import annotations
 
 import re
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
+import pytest
+import pytest_asyncio
+from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
+import app.api.v1.endpoints.project_templates as project_templates_endpoints
+from app.core.deps import get_db
+from app.core.security import TokenPayload, get_current_user
+from app.main import app
 from app.models.extraction import ExtractionRun
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
@@ -22,7 +32,7 @@ from app.schemas.article_progress import ArticleProgressKind, ArticleProgressRea
 from app.services.article_progress_service import get_article_progress
 from app.services.extraction_run_read_service import resolve_form_runs
 from tests.factories.template_factory import TemplateFactory
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, make_proposal, open_session
 
 PID, ME, OTHER = SEED.primary_project, SEED.primary_profile, SEED.reviewer_profile
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -435,3 +445,274 @@ async def test_values_are_read_in_one_statement_with_one_form_run_choice(
     assert (
         len(re.findall(r"\bform_runs AS\s*\(", value_reads[0])) == 1
     )  # SQLAlchemy renders "WITH form_runs AS \n("
+
+
+# =================== HTTP: endpoint + guards + rate limit (Task 2) ===================
+_ART_HI, _ART_LO = (
+    UUID("ffffffff-9999-00f2-0000-000000000002"),
+    UUID("ffffffff-9999-00f2-0000-000000000001"),
+)
+_PROBE_ET = UUID("ffffffff-9999-00f4-0000-000000000001")
+
+
+def _progress_url(project_id: UUID, template_id: UUID, kind: str | None = "extraction") -> str:
+    url = f"/api/v1/projects/{project_id}/templates/{template_id}/article-progress"
+    return url if kind is None else f"{url}?kind={kind}"
+
+
+async def _call_handler(db: AsyncSession, project_id: UUID, template_id: UUID, kind: str):
+    # A real starlette Request: slowapi's wrapper rejects anything else while the limiter is live.
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": _progress_url(project_id, template_id, None),
+        "headers": [],
+        "query_string": b"",
+        "client": ("127.0.0.1", 1),
+        "app": app,
+    }
+    request = Request(scope)
+    request.state.trace_id = "trace-article-progress"
+    return await project_templates_endpoints.get_template_article_progress(
+        project_id=project_id,
+        template_id=template_id,
+        request=request,
+        db=db,
+        kind=kind,
+        user_sub=SEED.primary_profile,
+    )
+
+
+def _pin_token_subject(user_id: UUID) -> None:
+    async def override_get_current_user() -> TokenPayload:
+        return TokenPayload(sub=str(user_id), email=None, role="authenticated", aal="aal1")
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+
+@pytest_asyncio.fixture
+async def progress_member_client(db_client: AsyncClient) -> AsyncClient:
+    _pin_token_subject(SEED.primary_profile)  # db_client clears overrides at teardown
+    return db_client
+
+
+@pytest_asyncio.fixture
+async def progress_outsider_client(db_client: AsyncClient) -> AsyncClient:
+    _pin_token_subject(SEED.outsider_profile)
+    return db_client
+
+
+@pytest_asyncio.fixture
+async def progress_anonymous_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides.pop(get_current_user, None)  # no test auth override: real bearer check
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.mark.asyncio
+async def test_member_reads_own_progress_per_article(db_session, progress_member_client) -> None:
+    session = await open_session(
+        db_session,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
+    await make_proposal(
+        db_session,
+        run_id=session.run_id,
+        instance_id=SEED.primary_instance,
+        field_id=SEED.primary_field,
+        user_id=SEED.primary_profile,
+        value=42,
+    )
+    resp = await progress_member_client.get(
+        _progress_url(SEED.primary_project, SEED.primary_template)
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ok"] is True
+    item = next(a for a in body["data"]["articles"] if a["article_id"] == str(SEED.primary_article))
+    assert set(item) == {"article_id", "instances", "values"}
+    instance = {"id": str(SEED.primary_instance), "entity_type_id": str(SEED.primary_entity_type)}
+    assert instance in item["instances"]
+    key = (str(SEED.primary_instance), str(SEED.primary_field))
+    assert len([v for v in item["values"] if (v["instance_id"], v["field_id"]) == key]) == 1
+    expected = await get_article_progress(
+        db_session,
+        project_id=SEED.primary_project,
+        template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+        kind="extraction",
+    )
+    assert body["data"] == expected.model_dump(mode="json")
+    direct = await _call_handler(
+        db_session, SEED.primary_project, SEED.primary_template, "extraction"
+    )
+    assert direct.ok is True and direct.trace_id == "trace-article-progress"
+    assert direct.data.model_dump(mode="json") == body["data"]
+
+
+@pytest.mark.asyncio
+async def test_response_is_ordered_by_article_then_instance_id(
+    db_session, progress_member_client
+) -> None:
+    # Every row is inserted in DESCENDING id order, so an unordered scan cannot pass by accident.
+    params = {
+        "pid": str(SEED.primary_project),
+        "tid": str(SEED.primary_template),
+        "uid": str(SEED.primary_profile),
+        "et1": str(SEED.primary_entity_type),
+        "et2": str(_PROBE_ET),
+        "hi": str(_ART_HI),
+        "lo": str(_ART_LO),
+    }
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_entity_types (id, project_template_id, name, label, cardinality, "
+            "parent_entity_type_id, sort_order, is_required) VALUES (:et2, :tid, 'ordering_probe', 'Ordering probe', 'one', NULL, 1, false)"
+        ),
+        params,
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:hi, :pid, 'ordering probe', 1), (:lo, :pid, 'ordering probe', 1)"
+        ),
+        params,
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_instances (id, project_id, template_id, entity_type_id, "
+            "article_id, label, created_by) VALUES "
+            "('ffffffff-9999-00f6-0000-000000000004', :pid, :tid, :et2, :hi, 'p', :uid), "
+            "('ffffffff-9999-00f6-0000-000000000003', :pid, :tid, :et1, :hi, 'p', :uid), "
+            "('ffffffff-9999-00f6-0000-000000000002', :pid, :tid, :et2, :lo, 'p', :uid), "
+            "('ffffffff-9999-00f6-0000-000000000001', :pid, :tid, :et1, :lo, 'p', :uid)"
+        ),
+        params,
+    )
+    await db_session.flush()
+    resp = await progress_member_client.get(
+        _progress_url(SEED.primary_project, SEED.primary_template)
+    )
+    assert resp.status_code == 200, resp.text
+    articles = resp.json()["data"]["articles"]
+    article_ids = [a["article_id"] for a in articles]
+    assert {str(_ART_HI), str(_ART_LO)} <= set(article_ids)
+    assert article_ids == sorted(article_ids, key=UUID)
+    hi = next(a for a in articles if a["article_id"] == str(_ART_HI))
+    assert len(hi["instances"]) == 2  # precondition: per-article order is observable
+    for item in articles:
+        instance_ids = [i["id"] for i in item["instances"]]
+        assert instance_ids == sorted(instance_ids, key=UUID)
+
+
+@pytest.mark.asyncio
+async def test_missing_kind_is_422(progress_member_client) -> None:
+    resp = await progress_member_client.get(
+        _progress_url(SEED.primary_project, SEED.primary_template, kind=None)
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_unknown_kind_is_422(progress_member_client) -> None:
+    resp = await progress_member_client.get(
+        _progress_url(SEED.primary_project, SEED.primary_template, kind="qa")
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_non_member_gets_403_for_real_and_unknown_template(progress_outsider_client) -> None:
+    real = await progress_outsider_client.get(
+        _progress_url(SEED.primary_project, SEED.primary_template)
+    )
+    unknown = await progress_outsider_client.get(_progress_url(SEED.primary_project, uuid4()))
+    assert real.status_code == 403, real.text
+    assert unknown.status_code == 403, unknown.text
+    assert real.json()["error"] == unknown.json()["error"]  # no existence oracle
+
+
+@pytest.mark.asyncio
+async def test_missing_or_invalid_token_gets_401(progress_anonymous_client) -> None:
+    assert get_current_user not in app.dependency_overrides  # precondition: real auth runs
+    url = _progress_url(SEED.primary_project, SEED.primary_template)
+    missing = await progress_anonymous_client.get(url)
+    invalid = await progress_anonymous_client.get(
+        url, headers={"Authorization": "Bearer not-a-jwt"}
+    )
+    assert missing.status_code == 401, missing.text
+    assert invalid.status_code == 401, invalid.text
+
+
+@pytest.mark.asyncio
+async def test_template_from_other_project_is_not_found(db_session, progress_member_client) -> None:
+    # The caller manages BOTH projects, so a 404 (not a 403) is the template guard speaking.
+    foreign = await progress_member_client.get(
+        _progress_url(SEED.secondary_project, SEED.primary_template)
+    )
+    unknown = await progress_member_client.get(_progress_url(SEED.primary_project, uuid4()))
+    assert foreign.status_code == 404, foreign.text
+    assert unknown.status_code == 404, unknown.text
+    with pytest.raises(HTTPException) as exc:
+        await _call_handler(db_session, SEED.secondary_project, SEED.primary_template, "extraction")
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_kind_mismatch_is_not_found(db_session, progress_member_client) -> None:
+    kind = (
+        await db_session.execute(
+            text(
+                "SELECT kind FROM public.project_extraction_templates WHERE id = :id AND project_id = :pid"
+            ),
+            {"id": str(SEED.primary_template), "pid": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+    assert kind == "extraction"  # precondition
+    resp = await progress_member_client.get(
+        _progress_url(SEED.primary_project, SEED.primary_template, kind="quality_assessment")
+    )
+    assert resp.status_code == 404, resp.text
+    with pytest.raises(HTTPException) as exc:
+        await _call_handler(
+            db_session, SEED.primary_project, SEED.primary_template, "quality_assessment"
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_article_progress_is_rate_limited_at_60_per_minute(
+    db_session, progress_member_client
+) -> None:
+    # The autouse _isolated_rate_limits fixture reset the limiter before this test.
+    template_id = await TemplateFactory(
+        db_session, SEED.primary_project, SEED.primary_profile
+    ).create(name="rate-limit-probe", kind="extraction")
+    count = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM public.extraction_instances WHERE template_id = :t "
+                "AND project_id = :pid"
+            ),
+            {"t": str(template_id), "pid": str(SEED.primary_project)},
+        )
+    ).scalar_one()
+    assert count == 0  # precondition: no instances, so each request is three cheap statements
+    url = _progress_url(SEED.primary_project, template_id)
+    for attempt in range(60):
+        resp = await progress_member_client.get(url)
+        assert resp.status_code == 200, f"request {attempt + 1}: {resp.text}"
+        assert resp.json()["data"] == {"articles": []}
+    limited = await progress_member_client.get(url)
+    assert limited.status_code == 429, limited.text
+    assert "Rate limit exceeded" in limited.text
