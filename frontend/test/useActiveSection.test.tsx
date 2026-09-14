@@ -148,4 +148,25 @@ describe('useActiveSection', () => {
     act(() => result.current.scrollToSection('s1'));
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   });
+
+  it('keeps the user-picked section active when the id list changes but still contains it', () => {
+    const { result, rerender } = renderHook((ids: string[]) => useActiveSection(ids), {
+      initialProps: ['s1', 's2', 's3'],
+    });
+    act(() => result.current.activateSection('s2'));
+    expect(result.current.activeId).toBe('s2');
+    // Reordered and extended: 's2' is still present, so the pick must not snap
+    // back to the new first entry.
+    rerender(['s3', 's2', 's1', 's4']);
+    expect(result.current.activeId).toBe('s2');
+  });
+
+  it('adopts the first section once an empty id list is populated after mount', () => {
+    const { result, rerender } = renderHook((ids: string[]) => useActiveSection(ids), {
+      initialProps: [] as string[],
+    });
+    expect(result.current.activeId).toBeNull();
+    rerender(['s1', 's2']);
+    expect(result.current.activeId).toBe('s1');
+  });
 });
