@@ -102,7 +102,7 @@ Regenerate the Supabase advisor baseline for prumo. Steps:
 3. For EVERY advisor in both sets, build fingerprint
    f"{categories[0].lower()}:{cache_key}" using the advisor's first
    category and its cache_key verbatim (keep spaces/commas).
-4. Read <PROJECT_ROOT>/.claude/skills/preflight/supabase-advisors.baseline
+4. Read <PROJECT_ROOT>/.claude/commands/preflight/supabase-advisors.baseline
    and keep its leading comment block (every line starting with "#").
 5. Write that comment block, followed by the deduped ascending-sorted
    fingerprints (one per line, trailing newline), back to the same path.
@@ -273,7 +273,7 @@ When a credential IS available (PATH 1 or 2), run three checks:
      where <category> is the advisor's first `categories` entry lowercased
      ("security"/"performance") and <cache_key> is its `cache_key` verbatim
      (keep any spaces/commas). Read the baseline set from
-     <PROJECT_ROOT>/.claude/skills/preflight/supabase-advisors.baseline
+     <PROJECT_ROOT>/.claude/commands/preflight/supabase-advisors.baseline
      (every non-blank line NOT starting with "#" is one known fingerprint).
      Partition the live advisors:
        - KNOWN = in the baseline → pre-existing backlog. Never FAILs, but ≥1

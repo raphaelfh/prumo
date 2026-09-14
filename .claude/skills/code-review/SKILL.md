@@ -73,7 +73,7 @@ Skipping any step is lying, not reviewing.
 - Committing because the change "looks small".
 - Trusting an agent's report instead of reading its tool outputs.
 
-Full protocol: `../debugging/verification-before-completion/SKILL.md` (the canonical gate; `references/verification-before-completion.md` now redirects there).
+Full command table and per-area patterns: `references/verification-before-completion.md`.
 
 ---
 
@@ -155,6 +155,7 @@ Why: Stale-cache bugs are silent — users see old data and assume their click f
 - [ ] Bug fixes include a regression test asserting the original symptom is gone.
 - [ ] No flaky `sleep`-based tests — use deterministic fixtures or `freeze_time`.
 - [ ] Backend test names describe the scenario, not the code path. `test_ensure_project_member_blocks_outsider` > `test_ensure_project_member_3`.
+- [ ] Each new assertion can fail: expected values are independent literals, not recomputed from the code under test, and the test asserts its precondition before its outcome (`web-testing` §10).
 
 ### J. Style + meta
 
@@ -170,6 +171,20 @@ Why: Stale-cache bugs are silent — users see old data and assume their click f
 - [ ] The PR's **Definition of Done** block (`.github/PULL_REQUEST_TEMPLATE.md`) is filled — evidence ticked, not hoped.
 
 Why: ADRs and reference docs that lag the code drift out of sync — the `glossary-sync` fitness check only catches concept-vocabulary drift, not endpoint/architecture docs. Bind the decision to the diff that makes it.
+
+---
+
+## The spec axis — does the diff do what was asked?
+
+The checklist above is the **standards** axis. A diff can pass it and still build the wrong thing. When the work has a source of intent (a `/ship-spec` spec or plan, a GitHub issue named in the commits, a plan under `docs/superpowers/plans/`), review that axis too, in a **separate sub-agent** so neither review colours the other.
+
+Brief the spec sub-agent with the diff command (`git diff <base>...HEAD`), the commit list, and the spec path. Ask it to report, quoting the spec line for each finding:
+
+1. Requirements missing or only partly done.
+2. Behaviour in the diff nobody asked for (scope creep).
+3. Requirements that look implemented but wrong.
+
+Report the two axes under separate headings. Don't merge or re-rank them into one list: that is how one axis masks the other. Inside `/ship-spec`, `ship-reviewer` already reviews against the plan; this section is for work done outside it. With no spec at all, say "no spec available" and skip the axis.
 
 ---
 

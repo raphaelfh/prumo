@@ -3,7 +3,6 @@ paths:
   - "frontend/**"
   - "vite.config.ts"
   - "vitest.config.ts"
-  - "tailwind.config.ts"
 ---
 
 # Frontend conventions (prumo)

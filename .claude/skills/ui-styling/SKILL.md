@@ -1,10 +1,9 @@
 ---
 name: ui-styling
-description: "Tailwind + shadcn/ui + Radix mechanics for the prumo frontend (Vite + React 19 + TS strict). Use whenever you are adding or editing a `frontend/components/**/*.tsx` file, installing a new shadcn primitive, writing className strings, building a cva variant, touching `frontend/index.css` / `tailwind.config.ts` / `components.json`, wiring dark mode, fixing a contrast/focus/keyboard a11y bug, or hand-rolling a Radix primitive. Be a little pushy: if you are about to write JSX with classes, read this first — it will stop you from inventing colors, breaking the cn() merge order, or shipping focus-less buttons. For the project's *visual language* (Plane/Linear aesthetic, header height, density, hover affordances) see the sibling `frontend-ux` skill; this skill is the *how* layer underneath."
+description: "Tailwind + shadcn/ui + Radix mechanics for the prumo frontend (Vite + React 19 + TS strict). Use whenever you are adding or editing a `frontend/components/**/*.tsx` file, installing a new shadcn primitive, writing className strings, building a cva variant, touching `frontend/index.css` / `components.json`, wiring dark mode, fixing a contrast/focus/keyboard a11y bug, or hand-rolling a Radix primitive. Be a little pushy: if you are about to write JSX with classes, read this first — it will stop you from inventing colors, breaking the cn() merge order, or shipping focus-less buttons. For the project's *visual language* (Plane/Linear aesthetic, header height, density, hover affordances) see the sibling `frontend-ux` skill; this skill is the *how* layer underneath."
 paths:
   - "frontend/components/**/*.tsx"
   - "frontend/index.css"
-  - "tailwind.config.ts"
   - "components.json"
 ---
 
@@ -32,7 +31,6 @@ it ends up that way**.
 Files you will touch most:
 
 - `/Users/raphael/PycharmProjects/prumo/components.json`
-- `/Users/raphael/PycharmProjects/prumo/tailwind.config.ts`
 - `/Users/raphael/PycharmProjects/prumo/frontend/index.css`
 - `/Users/raphael/PycharmProjects/prumo/frontend/lib/utils.ts` (the `cn` helper)
 - `/Users/raphael/PycharmProjects/prumo/frontend/components/ui/*`
@@ -55,7 +53,7 @@ Files you will touch most:
    `text-gray-500` is a smell — it dies in dark mode.
 3. **Pair every fg with its bg.** `bg-primary` always wants
    `text-primary-foreground`; `bg-muted` wants `text-muted-foreground`. The
-   tokens are defined that way in `frontend/index.css` and `tailwind.config.ts`.
+   tokens are defined that way in `frontend/index.css` (`@theme`).
 4. **Always extend the base via the `className` prop**, never override base
    styles in the consuming file by re-declaring layout primitives. Pass a thin
    delta. `cn()` will merge correctly. **Exception — Button height:** the size
@@ -194,32 +192,19 @@ The tokens we actually have (see `frontend/index.css`):
 | `--shadow-card` / `--shadow-popover` (CSS-only) | Box-shadow elevation, consumed via `shadow-elev-card` / `shadow-elev-popover` utilities |
 
 Adding a token: add it in **both** `:root` and `.dark` in
-`frontend/index.css`, then add the mapping in `tailwind.config.ts` under
-`theme.extend.colors`. Use HSL **without** the `hsl()` wrapper so opacity
-modifiers (`bg-primary/10`) keep working.
+`frontend/index.css`, then map it in the same file's `@theme inline` block
+(`--color-<name>: hsl(var(--<name>))`). Use HSL **without** the `hsl()`
+wrapper so opacity modifiers (`bg-primary/10`) keep working.
 
-### Box-shadow tokens — name them out of the colour namespace
+### Box-shadow tokens — the `elev-` prefix
 
-Tailwind's `shadow-*` plugin matches against both `theme.boxShadow` **and**
-`theme.colors`. When a `boxShadow` key shares a name with a colour key
-(e.g. `card`, `popover`), Tailwind generates `shadow-{name}` as a colour
-modifier (`--tw-shadow-color: hsl(var(--{name}))`) instead of an actual
-box-shadow — so the resulting `box-shadow` resolves to `none`. The
-in-tree convention is to prefix shadow keys with `elev-`:
-
-```ts
-// tailwind.config.ts
-boxShadow: {
-  "elev-card":    "var(--shadow-card)",
-  "elev-popover": "var(--shadow-popover)",
-}
-```
-
-If you add another shadow level, pick a name that is **not** also in
-`theme.colors` and **add it to the `extendTailwindMerge` shadow group**
-in `frontend/lib/utils.ts` so `cn()` correctly dedupes it against the
-built-in `shadow-{size}` utilities (otherwise the shadcn `<Card>` base
-`shadow-xs` will silently win the cascade).
+Shadow tokens are mapped in `@theme inline` as `--shadow-elev-card`,
+`--shadow-elev-popover`, `--shadow-elev-header`, `--shadow-elev-overlay`, each
+reading a `--shadow-*` custom property. The `elev-` prefix keeps shadow names
+out of the color namespace (a v3 collision that made `shadow-card` resolve to
+`none`); keep it for any new level. Register the new class in the twMerge
+shadow group in `frontend/lib/utils.ts`, or `cn()` will let shadcn's base
+`shadow-xs` win the cascade.
 
 Tailwind is **v4.3.3**, CSS-first: `frontend/index.css` imports `tailwindcss`
 and declares the theme in `@theme inline`; there is no `tailwind.config.ts`.
@@ -235,7 +220,7 @@ narrow widths as part of the build, not a later pass — `design-review` capture
 every screen at ~390 regardless of what you changed.
 
 **Breakpoint scale.** Tailwind defaults — `sm` 640, `md` 768, `lg` 1024, `xl`
-1280 — with `2xl` overridden to **1400px** in `tailwind.config.ts`. Mobile-first:
+1280, `2xl` 1536 — nothing overridden in `index.css`. Mobile-first:
 unprefixed = base, prefixes layer *upward* (`grid-cols-1 lg:grid-cols-2`), so
 build the narrow case first and add the wide case on top. There are no `max-*`
 prefixes in the codebase — don't introduce them; restructure mobile-first instead.
@@ -344,8 +329,8 @@ strings ellipsize instead of forcing horizontal scroll.
 Two-pane layout via `ResizablePanelGroup` (`ui/resizable.tsx`). PDF gets a
 `bg-muted/30` backdrop and rounded inner container; toolbar sits in a
 sticky `h-10 border-b border-border/40` strip — see
-`frontend/components/extraction/ExtractionPDFPanel.tsx` for the live
-reference. Match the chrome dimensions in any new viewer.
+`frontend/components/runs/RunPdfContent.tsx` and `frontend/pdf-viewer/` for the
+live reference. Match the chrome dimensions in any new viewer.
 
 ### Instance editor (Dialog vs Sheet)
 
@@ -382,7 +367,7 @@ second highlight scheme.
 | Header reflows on window resize but not when the panel resizes | Used `md:`/`lg:` (viewport) where you wanted `@md:`/`@container` (element width). |
 | Variant prop is typed `any`                   | Missing `VariantProps<typeof xxxVariants>` on the props interface.                |
 | Toast not announced                           | You bypassed `useToast` and rendered a `<div>` yourself.                          |
-| Custom `shadow-*` utility resolves to `box-shadow: none` | Key collides with a `theme.colors` key — Tailwind treats it as a shadow-colour modifier. Rename the `boxShadow` key (e.g. prefix `elev-`). |
+| Custom `shadow-*` utility resolves to `box-shadow: none` | Key collides with a `theme.colors` key — Tailwind treats it as a shadow-color modifier. Rename the `boxShadow` key (e.g. prefix `elev-`). |
 | Custom `shadow-*` utility is overridden by shadcn `<Card>` `shadow-xs` | Missing entry in `extendTailwindMerge` shadow group in `frontend/lib/utils.ts`. |
 
 ## When to reach for a reference
@@ -393,8 +378,8 @@ second highlight scheme.
   asChild composition, typing tricks, escape hatches.
 - `references/theming.md` — adding tokens, multi-theme via `data-theme`,
   radius scale, charts, the `sidebar-*` namespace.
-- `references/tailwind-v4.md` — what changes if/when we migrate; do not
-  apply v4 patterns to v3 code.
+- `references/tailwind-v4.md` — how v4 is wired here (`@theme inline`,
+  `@source`, renamed utilities); translate any v3 snippet before pasting.
 - `references/a11y.md` — patterns for the bits Radix does not give you;
   testing flow, live-region examples specific to extraction streaming.
 
@@ -408,10 +393,10 @@ second highlight scheme.
 - Re-implementing a Radix primitive because "Radix is too heavy". The
   primitive is already in the bundle if you imported a sibling from
   `components/ui`.
-- Adding a `tailwind.config.ts` plugin for a one-off effect — usually a
-  custom utility in `@layer utilities` in `index.css` is enough.
+- Adding an `@plugin` for a one-off effect — usually a custom `@utility` in
+  `index.css` is enough.
 - Inline `style={{}}` for layout. The exceptions are dynamic values that
   truly cannot be enumerated (e.g. `style={{ width: pct + "%" }}` for a
   progress bar driven by a number); even then prefer CSS variables.
 - Writing English strings inline. Route through `frontend/lib/copy/*` —
-  this is project-wide policy (see `.claude/CLAUDE.md` §1).
+  this is project-wide policy (see the root `CLAUDE.md`, Hard rules).

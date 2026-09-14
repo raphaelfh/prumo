@@ -13,7 +13,7 @@ and writes files to paths resolved via aliases.
   "rsc": false,              // Vite, no Server Components
   "tsx": true,
   "tailwind": {
-    "config": "tailwind.config.ts",
+    "config": "",              // Tailwind v4: CSS-first, no JS config
     "css": "frontend/index.css",
     "baseColor": "slate",
     "cssVariables": true,
@@ -70,7 +70,7 @@ shadcn re-add is destructive. Two strategies to keep local edits safe:
    `rounded-md` → `rounded-lg` globally, add a `xs` size variant). Track these
    as small, intentional diffs against upstream.
 2. **For one-off domain needs, wrap, don't fork.** Create
-   `frontend/components/extraction/PrimaryActionButton.tsx` that imports
+   a wrapper such as `frontend/components/runs/header/PrimaryAction.tsx` that imports
    `Button` and adds extraction-specific behavior. The wrapper survives `shadcn
    add` because the CLI never touches it.
 
@@ -92,7 +92,7 @@ const buttonVariants = cva(/* ... */, {
 });
 ```
 
-The semantic tokens already exist in `index.css` + `tailwind.config.ts`, so no
+The semantic tokens already exist in `index.css` (`@theme inline`), so no
 config changes are needed.
 
 ## Custom registries
