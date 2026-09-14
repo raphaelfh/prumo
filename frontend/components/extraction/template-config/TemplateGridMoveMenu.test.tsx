@@ -51,9 +51,6 @@ vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
 vi.mock('@/hooks/shared/useContainerNarrow', () => ({
   useContainerNarrow: vi.fn(() => false),
 }));
-vi.mock('@/services/extractionFieldService', () => ({
-  validateFieldImpact: vi.fn(),
-}));
 // Callable: T5's undo wrapper toasts on every settled move dispatch.
 vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), {error: vi.fn(), success: vi.fn(), info: vi.fn()}),

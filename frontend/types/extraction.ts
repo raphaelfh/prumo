@@ -260,11 +260,6 @@ export interface ExtractionFieldInsert extends Omit<ExtractionFieldInput, 'sort_
 
 // =================== FIELD MANAGEMENT TYPES ===================
 
-// FieldValidationResult lives in services/extractionFieldService.ts, next to
-// the call that produces it. The copy that used to sit here was a stale
-// duplicate (message optional instead of required) that only tests reached.
-
-
 /**
  * User role in the project (for permission control)
  */

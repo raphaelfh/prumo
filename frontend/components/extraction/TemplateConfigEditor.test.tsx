@@ -54,7 +54,6 @@ vi.mock('@/services/templateService', () => ({
   updateEntityTypeLabel: vi.fn(),
 }));
 vi.mock('@/services/extractionFieldService', () => ({
-  validateFieldImpact: vi.fn(),
   deleteField: vi.fn(),
   insertField: vi.fn(),
 }));
@@ -100,12 +99,7 @@ import {useInsertTemplateField} from '@/hooks/extraction/useInsertTemplateField'
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {templateEntityTypesKeys} from '@/lib/query-keys/extraction';
-import {
-  deleteField,
-  insertField,
-  validateFieldImpact,
-  type FieldValidationResult,
-} from '@/services/extractionFieldService';
+import {deleteField, insertField} from '@/services/extractionFieldService';
 
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 
@@ -204,17 +198,6 @@ beforeEach(() => {
     enqueueInsert: vi.fn(() => ({clientKey: 'pending-1', name: 'peso'})),
     enqueueUpdate: vi.fn(),
   });
-  vi.mocked(validateFieldImpact).mockResolvedValue({
-    ok: true,
-    data: {
-      canDelete: true,
-      canUpdate: true,
-      canChangeType: true,
-      extractedValuesCount: 0,
-      affectedArticles: [],
-      message: 'safe',
-    } satisfies FieldValidationResult,
-  });
   vi.mocked(deleteField).mockResolvedValue({ok: true, data: undefined});
 });
 
@@ -238,19 +221,6 @@ describe('TemplateConfigEditor — delete-field hosting (B-9d)', () => {
     await waitFor(() => expect(deleteField).toHaveBeenCalledWith('p1', 't1', 'f1'));
     await waitFor(() => expect(invalidateStructure).toHaveBeenCalled());
     expect(screen.queryByRole('alertdialog')).toBeNull();
-  });
-
-  it('does not probe field impact before deleting', async () => {
-    // The probe existed to populate the dialog. The DB is the real
-    // invariant: six field_id FKs are ON DELETE RESTRICT, and the
-    // mutation hook already renders that 23503 as friendly copy.
-    renderEditor();
-    await screen.findByRole('button', {name: 'Study design'});
-
-    await openRowMenuDelete();
-
-    await waitFor(() => expect(deleteField).toHaveBeenCalled());
-    expect(vi.mocked(validateFieldImpact)).not.toHaveBeenCalled();
   });
 
   it('Undo re-creates the field WITH its AI instruction, dispositions and validation schema', async () => {

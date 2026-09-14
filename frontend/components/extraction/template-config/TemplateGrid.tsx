@@ -105,8 +105,8 @@ interface TemplateGridProps {
   /** Required-cell toggle (Task 5): the panel routes the write (update
    * mutation for real rows, insert queue for pending rows). */
   onToggleRequired: (field: GridField, isRequired: boolean) => void;
-  /** Type-menu pick (Task 5): the panel runs the impact probe and the
-   * type-dependent clears before writing. */
+  /** Type-menu pick (Task 5): the panel applies the type-dependent clears
+   * before writing. */
   onChangeType: (field: GridField, fieldType: string) => void;
   /** ✨/Options cell activation (Task 5): the panel selects the field and
    * opens the inspector on the group (docked or Sheet). */

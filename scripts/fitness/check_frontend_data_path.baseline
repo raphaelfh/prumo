@@ -13,8 +13,6 @@ frontend/services/articlesService.ts|articles:6
 frontend/services/extractionDataService.ts|articles:2
 frontend/services/extractionDataService.ts|project_extraction_templates:1
 frontend/services/extractionDataService.ts|projects:1
-frontend/services/extractionFieldService.ts|extraction_proposal_records:1
-frontend/services/extractionFieldService.ts|extraction_reviewer_decisions:1
 frontend/services/extractionFieldService.ts|project_members:1
 frontend/services/extractionInstanceService.ts|extraction_instances:1
 frontend/services/profileService.ts|profiles:2

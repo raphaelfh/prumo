@@ -1,11 +1,11 @@
 /**
  * Extraction field service — field writes on the typed B-7 endpoints,
- * plus permission checks and the ADVISORY impact probe.
+ * plus the project permission check.
  *
  * Writes (insert/update/delete/move/reorder) go through apiClient onto
  * `/api/v1/projects/{pid}/templates/{tid}/fields...` — manager-gated,
- * BOLA-checked and server-validated. Reads (permission probe, impact
- * probe) stay PostgREST until the read-path consolidation follow-up.
+ * BOLA-checked and server-validated. The permission check still reads
+ * PostgREST until the read-path consolidation reaches `project_members`.
  *
  * Service-layer contract (zero-bailouts spec): exported functions never
  * throw across the boundary; they return ErrorResult<T>. try/catch and
@@ -91,84 +91,6 @@ export function checkProjectPermissions(
       role,
     } satisfies PermissionCheckResult;
   }, 'checkProjectPermissions');
-}
-
-// ---------------------------------------------------------------------------
-// Field impact validation
-// ---------------------------------------------------------------------------
-
-export interface FieldValidationResult {
-  canDelete: boolean;
-  canUpdate: boolean;
-  canChangeType: boolean;
-  extractedValuesCount: number;
-  affectedArticles: string[];
-  message: string;
-}
-
-/**
- * Count workflow rows referencing a field — reviewer decisions
- * (non-reject, grouped by article) plus AI/human proposal records.
- * Used to determine whether a field can be deleted or its type changed.
- *
- * ADVISORY only (B-5 Task 7): reject-only decisions and consensus/
- * published rows RESTRICT at the DB yet count 0 here — the 409 →
- * PgError('23503') translation in `deleteField` is the real invariant.
- * This probe just explains the common in-use cases before the backend
- * refuses.
- */
-export function validateFieldImpact(
-  fieldId: string,
-  safeMessage: string,
-  inUseMessage: (count: number, articles: number) => string,
-): Promise<ErrorResult<FieldValidationResult>> {
-  return toResult(async () => {
-    // Honest debt: the proposal-records count is a direct workflow-table
-    // read from the frontend (same as the reviewer-decisions read below
-    // it). B-7 moved only the config WRITES onto typed endpoints; these
-    // reads move with the read-path consolidation follow-up (the
-    // multi-line fitness-regex fix + honest baseline, split out of B-7).
-    const [decisionsResult, proposalsResult] = await Promise.all([
-      supabase
-        .from('extraction_reviewer_decisions')
-        .select('id, decision, run:run_id(article_id)')
-        .eq('field_id', fieldId)
-        .neq('decision', 'reject'),
-      supabase
-        .from('extraction_proposal_records')
-        .select('id', {count: 'exact', head: true})
-        .eq('field_id', fieldId),
-    ]);
-
-    if (decisionsResult.error) throw decisionsResult.error;
-    if (proposalsResult.error) throw proposalsResult.error;
-
-    const decisionRows = decisionsResult.data;
-    const proposalCount = proposalsResult.count ?? 0;
-    const extractedCount = (decisionRows?.length ?? 0) + proposalCount;
-    const affectedArticles = Array.from(
-      new Set(
-        (decisionRows ?? [])
-          .map((d: {run: {article_id: string} | {article_id: string}[] | null}) => {
-            const run = Array.isArray(d.run) ? d.run[0] : d.run;
-            return run?.article_id;
-          })
-          .filter((id): id is string => Boolean(id)),
-      ),
-    );
-    const hasValues = extractedCount > 0;
-
-    return {
-      canDelete: !hasValues,
-      canUpdate: true,
-      canChangeType: !hasValues,
-      extractedValuesCount: extractedCount,
-      affectedArticles,
-      message: hasValues
-        ? inUseMessage(extractedCount, affectedArticles.length)
-        : safeMessage,
-    };
-  }, 'validateFieldImpact');
 }
 
 // ---------------------------------------------------------------------------

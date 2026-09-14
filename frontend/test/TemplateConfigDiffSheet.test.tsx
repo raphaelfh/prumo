@@ -30,9 +30,6 @@ vi.mock('@/services/templateInstructionService', () => ({
   getTemplateInstruction: vi.fn(async () => ({ok: true, data: null})),
   updateTemplateInstruction: vi.fn(),
 }));
-vi.mock('@/services/extractionFieldService', () => ({
-  validateFieldImpact: vi.fn(),
-}));
 vi.mock('@/hooks/extraction/useTemplateEntityTypes', () => ({
   useTemplateEntityTypes: vi.fn(),
 }));

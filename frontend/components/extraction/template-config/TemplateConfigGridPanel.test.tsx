@@ -29,9 +29,6 @@ vi.mock('@/hooks/extraction/useInsertTemplateField', () => ({
 vi.mock('@/hooks/shared/useContainerNarrow', () => ({useContainerNarrow: vi.fn(() => false)}));
 // B-6: the move dispatcher is stubbed inert here — TemplateGridMove.test.tsx owns it.
 vi.mock('./useMoveFieldTo', () => ({useMoveFieldTo: ({tree}: {tree: unknown}) => ({moveFieldTo: () => null, announcement: null, displayTree: tree})}));
-vi.mock('@/services/extractionFieldService', () => ({
-  validateFieldImpact: vi.fn(),
-}));
 vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
 
 import {TooltipProvider} from '@/components/ui/tooltip';
@@ -42,7 +39,6 @@ import {
 } from '@/hooks/extraction/useInsertTemplateField';
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
-import {validateFieldImpact, type FieldValidationResult} from '@/services/extractionFieldService';
 import {toast} from 'sonner';
 import type {ExtractionField} from '@/types/extraction';
 
@@ -165,25 +161,9 @@ function stubInsertQueue() {
   return {enqueueInsert, enqueueUpdate};
 }
 
-/** Impact-probe stub (type changes route through it on REAL rows). */
-function stubProbe(canChangeType: boolean) {
-  vi.mocked(validateFieldImpact).mockResolvedValue({
-    ok: true,
-    data: {
-      canDelete: canChangeType,
-      canUpdate: true,
-      canChangeType,
-      extractedValuesCount: canChangeType ? 0 : 3,
-      affectedArticles: [],
-      message: '',
-    } satisfies FieldValidationResult,
-  });
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   stubInsertQueue();
-  stubProbe(true);
   vi.mocked(useContainerNarrow).mockReturnValue(false);
 });
 
@@ -514,7 +494,7 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it('writes a grid type change after the impact probe allows it, with type-dependent clears', async () => {
+  it('writes a grid type change straight to the update, with type-dependent clears — no refusal for recorded data (the Publish ack gates it)', async () => {
     const mutate = mockMutation();
     mockEntityTypes();
     render(panel());
@@ -527,7 +507,6 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
     );
 
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(validateFieldImpact)).toHaveBeenCalledTimes(1);
     expect(mutate).toHaveBeenCalledWith(
       {
         fieldId: 'f1',
@@ -541,50 +520,10 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
       },
       undefined,
     );
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('refuses a grid type change when the probe says no — toast, no write', async () => {
-    stubProbe(false);
-    const mutate = mockMutation();
-    mockEntityTypes();
-    render(panel());
-
-    await userEvent.click(
-      screen.getAllByRole('button', {name: /gridTypeMenuAria/})[0],
-    );
-    await userEvent.click(
-      await screen.findByRole('menuitemradio', {name: 'fieldTypeNumber'}),
-    );
-
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('errors_cannotChangeFieldType'),
-    );
-    expect(mutate).not.toHaveBeenCalled();
-  });
-
-  it('refuses a type change when the probe FAILS — probe-failed copy, not the has-data diagnosis', async () => {
-    vi.mocked(validateFieldImpact).mockResolvedValue({
-      ok: false,
-      error: new Error('boom'),
-    } as never);
-    const mutate = mockMutation();
-    mockEntityTypes();
-    render(panel());
-
-    await userEvent.click(
-      screen.getAllByRole('button', {name: /gridTypeMenuAria/})[0],
-    );
-    await userEvent.click(
-      await screen.findByRole('menuitemradio', {name: 'fieldTypeNumber'}),
-    );
-
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('errors_typeChangeProbeFailed'),
-    );
-    expect(mutate).not.toHaveBeenCalled();
-  });
-
-  it('skips the probe for type changes on PENDING rows — the queue serializes them', async () => {
+  it('routes type changes on PENDING rows through the insert queue', async () => {
     const {enqueueUpdate} = stubInsertQueue();
     const mutate = mockMutation();
     mockEntityTypes();
@@ -597,7 +536,6 @@ describe('TemplateConfigGridPanel — control-cell write routing (B-5 Task 5)', 
       await screen.findByRole('menuitemradio', {name: 'fieldTypeNumber'}),
     );
 
-    expect(vi.mocked(validateFieldImpact)).not.toHaveBeenCalled();
     expect(enqueueUpdate).toHaveBeenCalledWith(
       'pending-1',
       expect.objectContaining({field_type: 'number'}),

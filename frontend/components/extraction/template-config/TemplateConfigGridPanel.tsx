@@ -14,7 +14,6 @@ import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes'
 import {useUpdateTemplateField} from '@/hooks/extraction/useUpdateTemplateField';
 import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
 import {t} from '@/lib/copy';
-import {validateFieldImpact} from '@/services/extractionFieldService';
 import {
   ExtractionFieldSchema,
   type ExtractionFieldUpdate,
@@ -59,8 +58,7 @@ import {
  * inspector visibility — plus ALL the inline write paths: label/key
  * commits and every inspector/control-cell save go through the panel's
  * `saveFieldUpdates` routing (B-5 Tasks 3+5) — real rows through the
- * `useUpdateTemplateField` mutation (type changes probed first via
- * `validateFieldImpact`), PENDING optimistic rows through the serialized
+ * `useUpdateTemplateField` mutation, PENDING optimistic rows through the serialized
  * `useInsertTemplateField` queue (Task 4), whose rows are merged into the
  * tree input here — never written into the shared template-entity-types
  * cache, which the worklist/dashboard read. Since B-4, edits are draft
@@ -423,9 +421,10 @@ export function TemplateConfigGridPanel({
    * Required checkbox, the Type menu and the inspector form (Task 5).
    * Pending rows go through the insert queue (no probe: a row that never
    * existed server-side cannot hold extracted data). Real rows go through
-   * the update mutation; a TYPE change runs the impact probe first and is
-   * refused with the friendly toast when the field already holds data —
-   * the same semantics the edit dialog had.
+   * the update mutation — a TYPE change included. Changing the type of a
+   * field that already holds answers is allowed: the Publish review marks
+   * it destructive and its ☑ is the gate before recorded data is touched
+   * (B-9b2b; pinned by `test_field_type_change_is_acked_not_blocked.py`).
    */
   const saveFieldUpdates = (
     field: GridField,
@@ -438,40 +437,10 @@ export function TemplateConfigGridPanel({
       onSaved?.();
       return;
     }
-    const typeChanged =
-      typeof updates.field_type === 'string' &&
-      updates.field_type !== field.fieldType;
-    if (!typeChanged) {
-      updateField.mutate(
-        {fieldId: field.id, updates},
-        onSaved ? {onSuccess: onSaved} : undefined,
-      );
-      return;
-    }
-    void (async () => {
-      const probe = await validateFieldImpact(
-        field.id,
-        t('extraction', 'fieldSafeToModifyMessage'),
-        (count, articles) =>
-          t('extraction', 'fieldExtractedValuesMessage')
-            .replace('{{count}}', String(count))
-            .replace('{{n}}', String(articles)),
-      );
-      if (!probe.ok) {
-        // The probe itself failed — an honest "could not verify", not
-        // the has-extracted-data diagnosis.
-        toast.error(t('extraction', 'errors_typeChangeProbeFailed'));
-        return;
-      }
-      if (!probe.data.canChangeType) {
-        toast.error(t('extraction', 'errors_cannotChangeFieldType'));
-        return;
-      }
-      updateField.mutate(
-        {fieldId: field.id, updates},
-        onSaved ? {onSuccess: onSaved} : undefined,
-      );
-    })();
+    updateField.mutate(
+      {fieldId: field.id, updates},
+      onSaved ? {onSuccess: onSaved} : undefined,
+    );
   };
 
   /**

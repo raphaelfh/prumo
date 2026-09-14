@@ -59,9 +59,6 @@ vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
 vi.mock('@/hooks/shared/useContainerNarrow', () => ({
   useContainerNarrow: vi.fn(() => false),
 }));
-vi.mock('@/services/extractionFieldService', () => ({
-  validateFieldImpact: vi.fn(),
-}));
 
 import {toast} from 'sonner';
 
