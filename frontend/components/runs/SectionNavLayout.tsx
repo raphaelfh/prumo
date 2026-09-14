@@ -2,8 +2,8 @@
  * The run form's section navigation, shared by extraction and QA.
  *
  * Owns what the two screens must not re-implement:
- * - the rail's visibility — binary, the rail or nothing (never a strip),
- *   remembered in this browser, toggled by its button or ⌘\;
+ * - the rail's width — labels + counts, or a left-aligned strip of status
+ *   dots — remembered in this browser, toggled by its button or ⌘\;
  * - which sections are open (`SectionOpenContext`), so picking a section in the
  *   rail, jumping to a required field inside a closed one, or revealing one from
  *   outside through `SectionNavHandle`, opens it;
@@ -55,12 +55,14 @@ export interface SectionNavLayoutProps {
   items: SectionNavItem[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  /** Shade a section now — used by the jump, which scrolls a field not the heading. */
+  onActivate?: (id: string) => void;
   /** The form. Its column is the only region the jump walks. */
   children: ReactNode;
   ref?: Ref<SectionNavHandle>;
 }
 
-export function SectionNavLayout({ items, activeId, onSelect, children, ref }: SectionNavLayoutProps) {
+export function SectionNavLayout({ items, activeId, onSelect, onActivate, children, ref }: SectionNavLayoutProps) {
   const [railOpen, setRailOpen] = useState(readStoredOpen);
   const toggleRail = () => {
     writeStoredOpen(!railOpen);
@@ -73,6 +75,7 @@ export function SectionNavLayout({ items, activeId, onSelect, children, ref }: S
     setOpen: (id, open) => setOpenById((prev) => ({ ...prev, [id]: open })),
   };
   const revealSection = (id: string) => {
+    onActivate?.(id);
     sectionOpen.setOpen(id, true);
     onSelect(id);
   };
@@ -83,6 +86,7 @@ export function SectionNavLayout({ items, activeId, onSelect, children, ref }: S
   const jumpToNextPending = useJumpToNextPendingField(formColumnRef, {
     pendingIds: new Set(items.filter((i) => i.requiredFilled < i.requiredTotal).map((i) => i.id)),
     open: (id) => sectionOpen.setOpen(id, true),
+    onLanded: onActivate,
   });
   // The rail's jump button hides on the same condition.
   const canJump = !readOnly && globalProgressFromRegistry(items).requiredLeft > 0;
@@ -106,15 +110,15 @@ export function SectionNavLayout({ items, activeId, onSelect, children, ref }: S
 
   return (
     <SectionOpenContext.Provider value={sectionOpen}>
-      <div className={cn('flex', railOpen ? 'gap-4' : 'gap-2')}>
+      <div className={cn('flex', railOpen ? 'gap-4' : 'gap-1.5')}>
         {/* One toggle element in both states, so keyboard focus survives the switch. */}
         <div
           className={cn(
-            'sticky top-0 flex flex-col self-start',
-            railOpen && 'w-[184px] border-r border-border/40 bg-muted/30 py-2',
+            'sticky top-0 flex flex-col self-start border-r border-border/40',
+            railOpen ? 'w-[184px] bg-muted/30 py-2' : 'w-8 items-center py-1',
           )}
         >
-          <div className={cn(railOpen && 'px-1.5 pb-1')}>
+          <div className={cn(railOpen ? 'px-1.5 pb-1' : 'pb-0.5')}>
             <IconButton
               label={toggleLabel}
               shortcut={TOGGLE_KEYS}
@@ -125,14 +129,13 @@ export function SectionNavLayout({ items, activeId, onSelect, children, ref }: S
               icon={<ListTree strokeWidth={1.5} />}
             />
           </div>
-          {railOpen && (
-            <SectionNavRail
-              items={items}
-              activeId={activeId}
-              onSelect={revealSection}
-              onJumpToNextPending={jumpToNextPending}
-            />
-          )}
+          <SectionNavRail
+            compact={!railOpen}
+            items={items}
+            activeId={activeId}
+            onSelect={revealSection}
+            onJumpToNextPending={jumpToNextPending}
+          />
         </div>
         <div ref={formColumnRef} className="min-w-0 flex-1">
           {children}

@@ -1,6 +1,6 @@
 /**
  * QualityAssessmentFullScreen — moving between articles: the worklist, the
- * header pager (J/K, ⌘K), in-place run-switch hydration, and the status
+ * header pager ([ / ], ⌘K), in-place run-switch hydration, and the status
  * popover's reviewer denominator.
  */
 import { screen, waitFor, within } from "@testing-library/react";
@@ -63,8 +63,13 @@ import { apiClient } from "@/integrations/api";
 
 import {
   BLIND_PERMISSIONS,
+  makeApiClientDefault,
 } from "./helpers/qaFullScreenMocks";
 import { renderPage } from "./helpers/qaFullScreenRender";
+
+// A per-test apiClient override answers its own URLs and hands every other
+// one to the shared default (template lists, files, suggestions).
+const answerByDefault = makeApiClientDefault();
 
 const mockedPermissions = vi.mocked(useComparisonPermissions);
 
@@ -115,12 +120,12 @@ describe("QualityAssessmentFullScreen — worklist navigation", () => {
 
 /**
  * Header article pager + shortcut parity with the extraction screen
- * (2026-08-22). The shared help panel has always advertised "J / K — Next /
- * previous article" on BOTH run screens; until this change the QA screen had
- * no pager, no J/K and no ⌘K palette, so the help panel promised a binding
+ * (2026-08-22). The shared help panel has always advertised previous / next
+ * article on BOTH run screens; until this change the QA screen had
+ * no pager, no [ / ] and no ⌘K palette, so the help panel promised a binding
  * that did not exist.
  */
-describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
+describe("QualityAssessmentFullScreen — header pager, [ / ] and ⌘K", () => {
   beforeAll(() => {
     // cmdk scrolls the selected item into view; jsdom has no scrollIntoView.
     Element.prototype.scrollIntoView = vi.fn();
@@ -170,7 +175,7 @@ describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
       if (url.includes("/files") || url.includes("/text-blocks")) {
         return [];
       }
-      return {};
+      return answerByDefault(url);
     });
   });
 
@@ -206,11 +211,11 @@ describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
     );
   });
 
-  it("J opens the next article — the binding the help panel already promised", async () => {
+  it("] opens the next article — the binding the help panel already promised", async () => {
     renderPage();
-    // Wait for the worklist read to land; below two articles J/K is inert.
+    // Wait for the worklist read to land; below two articles [ / ] is inert.
     await screen.findByRole("button", { name: /next article/i });
-    await userEvent.keyboard("j");
+    await userEvent.keyboard("]");
     await waitFor(() =>
       expect(screen.getByTestId("probe-location")).toHaveTextContent(
         "/projects/p1/articles/a2/quality-assessment/tpl-1",
@@ -218,15 +223,15 @@ describe("QualityAssessmentFullScreen — header pager, J/K and ⌘K", () => {
     );
   });
 
-  it("J on the LAST article stays put (end-of-list guard, no wrap); K still walks back", async () => {
+  it("] on the LAST article stays put (end-of-list guard, no wrap); [ still walks back", async () => {
     renderPage("/projects/p1/articles/a2/quality-assessment/tpl-1");
     await screen.findByRole("button", { name: /next article/i });
-    // "a2" is last, so J has nowhere to go; K walks back to "a1".
-    await userEvent.keyboard("j");
+    // "a2" is last, so ] has nowhere to go; [ walks back to "a1".
+    await userEvent.keyboard("]");
     expect(screen.getByTestId("probe-location")).toHaveTextContent(
       "/projects/p1/articles/a2/quality-assessment/tpl-1",
     );
-    await userEvent.keyboard("k");
+    await userEvent.keyboard("[[");
     await waitFor(() =>
       expect(screen.getByTestId("probe-location")).toHaveTextContent(
         "/projects/p1/articles/a1/quality-assessment/tpl-1",
@@ -327,7 +332,7 @@ describe("QualityAssessmentFullScreen — run-switch hydration (in-place article
         if (url.includes("/files") || url.includes("/text-blocks")) {
           return [];
         }
-        return {};
+        return answerByDefault(url);
       },
     );
   });
@@ -459,7 +464,7 @@ describe("QualityAssessmentFullScreen — status popover reviewer denominator", 
       if (url.includes("/files") || url.includes("/text-blocks")) {
         return [];
       }
-      return {};
+      return answerByDefault(url);
     });
   });
 

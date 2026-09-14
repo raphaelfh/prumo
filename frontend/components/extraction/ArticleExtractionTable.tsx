@@ -68,12 +68,10 @@ import {
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {useQueryClient} from '@tanstack/react-query';
 import {loadExtractionTableArticles} from '@/services/articlesService';
-import {getCurrentUserId} from '@/services/authService';
 import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
-import {
-  useArticleExtractionValues,
-  articleExtractionValuesKeys,
-} from '@/hooks/extraction/useArticleExtractionValues';
+import {resolveProgressGate, useCallerArticleProgress} from '@/hooks/extraction/useCallerArticleProgress';
+import {ErrorState} from '@/components/patterns/ErrorState';
+import {articleExtractionValuesKeys} from '@/lib/query-keys/extraction';
 import {computeRowProgress} from '@/lib/extraction/progress';
 
 interface Article {
@@ -178,7 +176,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
   const [articles, setArticles] = useState<ArticleWithExtraction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
     // Filter and sort state
   const [globalFilter, setGlobalFilter] = useState('');
@@ -190,16 +187,11 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
   // Required-field structure (cached by template id) for the canonical
   // progress metric shared with the form header and QA list.
   // ACTIVE snapshot (B-3a); errors gate the render — see HITLArticleTable.
-  const {
-    entityTypes,
-    isLoading: entityTypesLoading,
-    isError: entityTypesError,
-  } = useActiveTemplateStructure(projectId, templateId);
-  // Per-article values, shared with the HITL list and dashboard (replaces this
-  // table's own instances/states/proposals fetch). Run-scoped to each
-  // article's form run for kind='extraction'.
-  const {valuesByArticle, isLoading: valuesLoading} =
-    useArticleExtractionValues(projectId, templateId, currentUserId);
+  const structure = useActiveTemplateStructure(projectId, templateId);
+  const {entityTypes} = structure;
+  // Per-article values and the progress user id, through the ONE shared gate (R37).
+  const progress = useCallerArticleProgress(projectId, templateId);
+  const {valuesByArticle, userId} = progress;
   const queryClient = useQueryClient();
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
         if (typeof window === 'undefined') return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS};
@@ -233,17 +225,9 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     },
   });
 
-    // Declare loadCurrentUser before any use to avoid TDZ
-  const loadCurrentUser = async () => {
-    const result = await getCurrentUserId();
-    if (result.ok && result.data) {
-      setCurrentUserId(result.data);
-    }
-  };
-
     // Declare loadArticles before any use to avoid TDZ
   const loadArticles = async () => {
-    if (!projectId || !templateId || !currentUserId) {
+    if (!projectId || !templateId || !userId) {
       return;
     }
 
@@ -286,12 +270,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     loadArticlesRef.current = loadArticles;
   }, [loadArticles]);
 
-    // Load current user ID
-  useEffect(() => {
-    // Microtask so the loader's setState calls run in an async callback.
-    queueMicrotask(() => void loadCurrentUser());
-  }, [loadCurrentUser]);
-
     // Load project articles. Depend ONLY on the primitive identifiers — never
     // on `loadArticles`. Its identity changes on every render (it is a plain
     // async function the React Compiler does not stabilise for dependency
@@ -301,10 +279,10 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     // which the effect above refreshes before this one runs in the same commit
     // (same pattern as the auto-refresh effect below).
   useEffect(() => {
-    if (projectId && templateId && currentUserId) {
+    if (projectId && templateId && userId) {
       void loadArticlesRef.current?.();
     }
-  }, [projectId, templateId, currentUserId]);
+  }, [projectId, templateId, userId]);
 
     // Auto-refresh when returning to page (after finishing extraction)
     // Ensures data is updated after changes made on other pages
@@ -322,7 +300,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     if (
       projectId && 
       templateId && 
-      currentUserId && 
+      userId && 
       isProjectExtractionRoute &&
       currentPath !== lastPathRef.current &&
       cameFromExtractionFullscreen &&
@@ -342,7 +320,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
         // Update ref even if not reloading
       lastPathRef.current = currentPath;
     }
-  }, [location.pathname, projectId, templateId, currentUserId]); // Reload when route changes
+  }, [location.pathname, projectId, templateId, userId]); // Reload when route changes
 
     // Compute extraction progress
   // Per-article completion %, computed once per render. Uses the canonical
@@ -581,9 +559,14 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     });
 
     // Loading state — skeleton matching table layout (frontend-ux compact)
-  if (loading || entityTypesLoading || entityTypesError || valuesLoading) {
+  // R19 in the ONE shared order (R37): auth resolving → skeleton; signed out → unavailable, before
+  // `loading`, which never clears without a user; a failed read → retry THAT read; pending → skeleton.
+  const gate = resolveProgressGate(progress, structure);
+  if (gate.state === 'signedOut') return <ErrorState message={t('extraction', 'progressUnavailable')} />;
+  if (gate.state === 'error') return <ErrorState message={t('extraction', 'errorLoadProgress')} onRetry={gate.retry} />;
+  if (gate.state !== 'ready' || loading) {
     return (
-        <div className="space-y-3">
+        <div className="space-y-3" data-testid="extraction-table-loading">
             <div className="flex flex-wrap items-center gap-2">
                 <Skeleton className="h-8 flex-1 min-w-[200px] rounded-md"/>
                 <Skeleton className="h-8 w-8 rounded-md"/>
@@ -883,27 +866,27 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
 
               return (
                   <TableRow key={article.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={openRow}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    openRow();
-                                }
-                            }}
-                            aria-label={t('extraction', 'tableOpenRowAria').replace('{{title}}', article.title)}
-                            className="border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
-                      {/* stopPropagation: toggling the checkbox must not open the row */}
-                      <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`} onClick={(e) => e.stopPropagation()}>
+                            data-testid={`extraction-row-${article.id}`}
+                            className="relative border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8">
+                      {/* relative z-10 on the checkbox, authors tooltip and action: above the stretched open control. */}
+                      <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`}>
                     <Checkbox
+                      className="relative z-10"
                       checked={isSelected(article.id)}
                       onCheckedChange={() => toggleArticle(article.id)}
                       aria-label={t('extraction', 'tableSelectArticleAria').replace('{{title}}', article.title)}
                     />
                   </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`} style={getColumnStyle('title')}>
-                          <div className="line-clamp-1 leading-tight text-foreground font-medium">{article.title}</div>
+                          {/* The row is not a control (it holds the checkbox and action button);
+                              this button is, stretched over the row by its ::after. */}
+                          <button
+                              type="button"
+                              onClick={openRow}
+                              aria-label={t('extraction', 'tableOpenRowAria').replace('{{title}}', article.title)}
+                              className="line-clamp-1 w-full text-left leading-tight text-foreground font-medium focus-visible:outline-hidden after:absolute after:inset-0 focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring">
+                              {article.title}
+                          </button>
                   </TableCell>
                       <TableCell
                           className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
@@ -911,7 +894,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                     {article.authors && article.authors.length > 0 ? (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <div className="flex items-center gap-1 cursor-help">
+                                    <div className="relative z-10 flex items-center gap-1 cursor-help">
                                         <User className="h-3 w-3 text-muted-foreground shrink-0"/>
                                         <span className="truncate block min-w-0">
                                           {article.authors.slice(0, 1).join(', ')}
@@ -924,27 +907,26 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                 </TooltipContent>
                             </Tooltip>
                     ) : (
-                        <span className="text-muted-foreground">N/A</span>
+                        <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                       <TableCell className={`hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px]`} style={getColumnStyle('year')}>
                           <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
-                      {article.publication_year || 'N/A'}
+                      {article.publication_year ?? '—'}
                     </div>
                   </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
                     <StatusRing progress={getProgress(article)} />
                   </TableCell>
-                      <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}
-                                 onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}>
                     {!hasInstances ? (
                         <IconButton
                             onClick={() => handleStartExtraction(article.id)}
                             disabled={article.isLoading}
                             variant="outline"
                             label={t('extraction', 'tableStart')}
-                            className="rounded-full border-border/60 bg-background shadow-none"
+                            className="relative z-10 rounded-full border-border/60 bg-background shadow-none"
                             icon={article.isLoading ? (
                                 <Loader2 className="animate-spin"/>
                             ) : (
@@ -956,7 +938,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                             onClick={() => handleContinueExtraction(article.id)}
                             variant="outline"
                             label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
-                            className={`rounded-full shadow-none ${
+                            className={`relative z-10 rounded-full shadow-none ${
                                 isComplete
                                     ? 'border-border/60 bg-background'
                                     : 'border-info/30 bg-info/10 text-info hover:bg-info/20'

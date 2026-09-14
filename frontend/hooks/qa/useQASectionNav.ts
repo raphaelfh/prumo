@@ -39,6 +39,6 @@ export function useQASectionNav(
     })),
     values,
   );
-  const { activeId, registerSection, scrollToSection } = useActiveSection(items.map((s) => s.id));
-  return { renderedDomains, items, activeId, registerSection, scrollToSection };
+  const { activeId, registerSection, scrollToSection, activateSection } = useActiveSection(items.map((s) => s.id));
+  return { renderedDomains, items, activeId, registerSection, scrollToSection, activateSection };
 }

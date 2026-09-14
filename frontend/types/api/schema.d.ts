@@ -835,7 +835,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Project Templates
+         * @description The project's templates of one kind, for members — the table's read
+         *     policy is ``is_project_member``.
+         */
+        get: operations["get_project_templates_api_v1_projects__project_id__templates_get"];
         put?: never;
         /**
          * Create Project Template
@@ -970,6 +975,29 @@ export interface paths {
          *     would read as fully complete.
          */
         get: operations["get_template_active_version_api_v1_projects__project_id__templates__template_id__active_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/templates/{template_id}/article-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Article Progress
+         * @description The caller's own per-article progress values for a template's worklist.
+         *
+         *     Member-gated like ``active-version``: 403 before any template lookup (no existence
+         *     oracle). Missing or unknown ``kind`` is a 422; a foreign, unknown or other-kind template, 404.
+         */
+        get: operations["get_template_article_progress_api_v1_projects__project_id__templates__template_id__article_progress_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1655,6 +1683,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/templates/global": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Global Templates
+         * @description The global catalogue of one kind.
+         *
+         *     Any signed-in user may read it — the same rule as the table's
+         *     ``SELECT USING (true)`` policy.
+         */
+        get: operations["get_global_templates_api_v1_templates_global_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/zotero/{action}": {
         parameters: {
             query?: never;
@@ -1891,6 +1942,23 @@ export interface components {
         ApiResponse_ArticleFileResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ArticleFileResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ArticleProgressRead] */
+        ApiResponse_ArticleProgressRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ArticleProgressRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2766,6 +2834,26 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[list[GlobalTemplateSummaryRead]] */
+        ApiResponse_list_GlobalTemplateSummaryRead__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["GlobalTemplateSummaryRead"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[list[LlmConnectionRead]] */
         ApiResponse_list_LlmConnectionRead__: {
             /**
@@ -2773,6 +2861,26 @@ export interface components {
              * @description Dados da resposta
              */
             data?: components["schemas"]["LlmConnectionRead"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[list[ProjectTemplateRead]] */
+        ApiResponse_list_ProjectTemplateRead__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["ProjectTemplateRead"][] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -2957,6 +3065,51 @@ export interface components {
              * Format: date-time
              */
             updatedAt: string;
+        };
+        /** ArticleProgressInstanceRead */
+        ArticleProgressInstanceRead: {
+            /**
+             * Entity Type Id
+             * Format: uuid
+             */
+            entity_type_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** ArticleProgressItemRead */
+        ArticleProgressItemRead: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /** Instances */
+            instances: components["schemas"]["ArticleProgressInstanceRead"][];
+            /** Values */
+            values: components["schemas"]["ArticleProgressValueRead"][];
+        };
+        /** ArticleProgressRead */
+        ArticleProgressRead: {
+            /** Articles */
+            articles: components["schemas"]["ArticleProgressItemRead"][];
+        };
+        /** ArticleProgressValueRead */
+        ArticleProgressValueRead: {
+            /**
+             * Field Id
+             * Format: uuid
+             */
+            field_id: string;
+            /**
+             * Instance Id
+             * Format: uuid
+             */
+            instance_id: string;
+            /** Value */
+            value: unknown;
         };
         /**
          * ArticleRunRef
@@ -3796,6 +3949,35 @@ export interface components {
              */
             template_id: string;
         };
+        /**
+         * GlobalTemplateSummaryRead
+         * @description A global template as the import pickers list it.
+         */
+        GlobalTemplateSummaryRead: {
+            /** Description */
+            description: string | null;
+            /** Entity Types Count */
+            entity_types_count: number;
+            /**
+             * Framework
+             * @enum {string}
+             */
+            framework: "CHARMS" | "PICOS" | "CUSTOM";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "extraction" | "quality_assessment";
+            /** Name */
+            name: string;
+            /** Version */
+            version: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -4454,6 +4636,56 @@ export interface components {
             label: string;
             /** Provider */
             provider: string;
+        };
+        /**
+         * ProjectTemplateRead
+         * @description A project's template, active or not.
+         *
+         *     ``schema`` carries the template-level declared data (``scope_rules``,
+         *     ``derived_judgments``) the QA worklist computes scoped progress from.
+         */
+        ProjectTemplateRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Description */
+            description: string | null;
+            /**
+             * Framework
+             * @enum {string}
+             */
+            framework: "CHARMS" | "PICOS" | "CUSTOM";
+            /** Global Template Id */
+            global_template_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "extraction" | "quality_assessment";
+            /** Name */
+            name: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Schema */
+            schema: {
+                [key: string]: unknown;
+            };
+            /** Version */
+            version: string;
         };
         /** ProposalRecordResponse */
         ProposalRecordResponse: {
@@ -7889,6 +8121,39 @@ export interface operations {
             };
         };
     };
+    get_project_templates_api_v1_projects__project_id__templates_get: {
+        parameters: {
+            query: {
+                kind: "extraction" | "quality_assessment";
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_ProjectTemplateRead__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_project_template_api_v1_projects__project_id__templates_post: {
         parameters: {
             query?: never;
@@ -8192,6 +8457,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_TemplateActiveVersionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_article_progress_api_v1_projects__project_id__templates__template_id__article_progress_get: {
+        parameters: {
+            query: {
+                kind: "extraction" | "quality_assessment";
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ArticleProgressRead_"];
                 };
             };
             /** @description Validation Error */
@@ -9196,6 +9495,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_RunViewResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_global_templates_api_v1_templates_global_get: {
+        parameters: {
+            query: {
+                kind: "extraction" | "quality_assessment";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_GlobalTemplateSummaryRead__"];
                 };
             };
             /** @description Validation Error */

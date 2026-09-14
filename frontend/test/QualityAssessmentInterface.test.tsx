@@ -2,9 +2,11 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { QualityAssessmentInterface } from '@/components/quality/QualityAssessmentInterface';
+import { articleKeys } from '@/lib/query-keys';
+import { t } from '@/lib/copy';
 
 const PROBAST_GLOBAL = {
   id: 'tpl-probast-global',
@@ -29,8 +31,42 @@ const PROBAST_PROJECT = {
   created_by: 'user-1',
 };
 
+const ARTICLE_1 = {
+  id: 'article-1',
+  title: 'A predictive model for X',
+  authors: ['Doe', 'Roe'],
+  publication_year: 2024,
+  created_at: '2026-01-01T00:00:00Z',
+};
+
+// Per-test PostgREST answers: `rows` overrides a table's rows, `errors` makes
+// a table's read fail. Reset before every test.
+const db = vi.hoisted(() => ({
+  rows: {} as Record<string, unknown[]>,
+  errors: {} as Record<string, { message: string }>,
+}));
+
+const session = vi.hoisted(() => ({
+  user: { id: 'user-1' } as { id: string } | null,
+  loading: false,
+}));
+
+// The per-article progress read is mocked at the hook boundary. The real shared
+// gate (useCallerArticleProgress) runs on top of it, fed by the useAuth mock.
+const progress = vi.hoisted(() => ({
+  valuesByArticle: new Map<string, unknown>(),
+  isLoading: false,
+  isError: false,
+  isUnavailable: false,
+  refetch: vi.fn(),
+}));
+
+vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
+  useArticleExtractionValues: () => ({ ...progress }),
+}));
+
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({ user: { id: 'user-1' } }),
+  useAuth: () => ({ user: session.user, loading: session.loading }),
 }));
 
 // The worklist toolbar mounts the engine gear (spec §5); its hooks are stubbed
@@ -87,22 +123,35 @@ vi.mock('@/integrations/api', () => ({
     if (path.includes('/active-version')) {
       return { version_id: 'v1', version: 1, entity_types: [] };
     }
+    if (path === '/api/v1/projects/p1/templates?kind=quality_assessment') {
+      return [PROBAST_PROJECT];
+    }
+    if (path === '/api/v1/templates/global?kind=quality_assessment') {
+      return [PROBAST_GLOBAL];
+    }
     return { project_template_id: 'tpl-probast-project' };
   }),
 }));
 
 vi.mock('@/integrations/supabase/client', () => {
-  function makeBuilder(rows: unknown, count: number | null = null) {
-    const result = { data: rows, error: null, count };
+  function makeBuilder(rows: unknown, error: { message: string } | null = null) {
+    const result = { data: error ? null : rows, error, count: null };
     const b: Record<string, unknown> = {
       select: () => b,
       eq: () => b,
       in: () => b,
       order: () => b,
+      range: () => b,
       then: (cb: (r: typeof result) => unknown) => Promise.resolve(cb(result)),
     };
     return b;
   }
+
+  // Resolved per call: vi.mock is hoisted above the fixture constants.
+  const defaultRows = (table: string): unknown[] =>
+    ({
+      articles: [ARTICLE_1],
+    })[table] ?? [];
 
   return {
     supabase: {
@@ -110,30 +159,8 @@ vi.mock('@/integrations/supabase/client', () => {
         getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }),
       },
       from: (table: string) => {
-        if (table === 'extraction_templates_global') {
-          return makeBuilder([PROBAST_GLOBAL]);
-        }
-        if (table === 'project_extraction_templates') {
-          return makeBuilder([PROBAST_PROJECT]);
-        }
-        if (table === 'articles') {
-          return makeBuilder(
-            [
-              {
-                id: 'article-1',
-                title: 'A predictive model for X',
-                authors: ['Doe', 'Roe'],
-                publication_year: 2024,
-                created_at: '2026-01-01T00:00:00Z',
-              },
-            ],
-            1,
-          );
-        }
-        if (table === 'extraction_instances' || table === 'extraction_reviewer_states') {
-          return makeBuilder([]);
-        }
-        return makeBuilder([]);
+        if (db.errors[table]) return makeBuilder(null, db.errors[table]);
+        return makeBuilder(db.rows[table] ?? defaultRows(table));
       },
     },
   };
@@ -144,15 +171,15 @@ function LocationProbe() {
   return <div data-testid="probe-pathname">{loc.pathname}</div>;
 }
 
-function renderInterface() {
+function renderInterface(entry = '/projects/p1') {
   // HITLArticleTable now uses TanStack Query (useTemplateEntityTypes /
   // useArticleExtractionValues), so the tree needs a QueryClientProvider.
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/p1']}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route
             path="/projects/:projectId"
@@ -163,7 +190,20 @@ function renderInterface() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...view, queryClient };
 }
+
+beforeEach(() => {
+  db.rows = {};
+  db.errors = {};
+  session.user = { id: 'user-1' };
+  session.loading = false;
+  progress.valuesByArticle = new Map();
+  progress.isLoading = false;
+  progress.isError = false;
+  progress.isUnavailable = false;
+  progress.refetch = vi.fn();
+});
 
 describe('QualityAssessmentInterface', () => {
   it('renders the assessment table with the active QA template', async () => {
@@ -204,7 +244,9 @@ describe('QualityAssessmentInterface', () => {
     renderInterface();
 
     // The button lives in HITLArticleTable's toolbar via `toolbarActions` —
-    // the same slot and placement the extraction table uses.
+    // the same slot and placement the extraction table uses. Wait for the rows:
+    // the loading skeleton renders the toolbar too, then unmounts (R19).
+    await screen.findByText(/A predictive model for X/);
     const exportButton = await screen.findByTestId('qa-export-button');
     await waitFor(() => expect(exportButton).toBeEnabled());
     await user.click(exportButton);
@@ -218,10 +260,112 @@ describe('QualityAssessmentInterface', () => {
     const user = userEvent.setup();
     renderInterface();
 
+    await screen.findByText(/A predictive model for X/); // past the loading skeleton's toolbar (R19)
     const gear = await screen.findByTestId('engine-gear');
     await user.hover(gear);
     expect(
       (await screen.findAllByText(/Your engine for new runs: GPT-4o mini/)).length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe('QualityAssessmentInterface dashboard', () => {
+  const DASHBOARD = '/projects/p1?qaTab=dashboard';
+  const LOAD_ERROR = /Couldn’t load quality-assessment progress/;
+  const UNAVAILABLE = t('extraction', 'progressUnavailable');
+
+  function seedTwoArticlesOneStarted() {
+    db.rows.articles = [ARTICLE_1, { ...ARTICLE_1, id: 'article-2', title: 'Second' }];
+    progress.valuesByArticle = new Map([
+      ['article-1', { instances: [{ id: 'inst-1', entity_type_id: 'et-1' }], values: [] }],
+    ]);
+  }
+
+  it('counts articles with progress data against the project total', async () => {
+    seedTwoArticlesOneStarted();
+    renderInterface(DASHBOARD);
+
+    expect(await screen.findByText('50%')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+  });
+
+  it('shows the error state, not zero counts, when the progress read fails', async () => {
+    seedTwoArticlesOneStarted();
+    progress.isError = true;
+    renderInterface(DASHBOARD);
+
+    expect(await screen.findByText(LOAD_ERROR)).toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    expect(screen.queryByText('50%')).not.toBeInTheDocument();
+  });
+
+  it('shows the error state, not zero counts, when the articles read fails', async () => {
+    seedTwoArticlesOneStarted();
+    db.errors.articles = { message: 'permission denied' };
+    renderInterface(DASHBOARD);
+
+    expect(await screen.findByText(LOAD_ERROR)).toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+
+  it('recovers the counts when the user retries after a failed read', async () => {
+    const user = userEvent.setup();
+    seedTwoArticlesOneStarted();
+    db.errors.articles = { message: 'network down' };
+    renderInterface(DASHBOARD);
+
+    await screen.findByText(LOAD_ERROR);
+    delete db.errors.articles;
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(await screen.findByText('50%')).toBeInTheDocument();
+    expect(screen.queryByText(LOAD_ERROR)).not.toBeInTheDocument();
+    expect(progress.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows progress unavailable, not the skeleton, once auth resolves with no user', async () => {
+    session.user = null;
+    progress.isUnavailable = true;
+    seedTwoArticlesOneStarted();
+    renderInterface(DASHBOARD);
+
+    expect(await screen.findByText(UNAVAILABLE)).toBeInTheDocument();
+    expect(screen.queryByTestId('qa-dashboard-skeleton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('50%')).not.toBeInTheDocument();
+  });
+
+  it('shows the skeleton while the user lookup is resolving', async () => {
+    session.user = null;
+    session.loading = true;
+    progress.isUnavailable = true;
+    seedTwoArticlesOneStarted();
+    const { queryClient } = renderInterface(DASHBOARD);
+
+    // Precondition: the article read resolved, so only auth can hold the skeleton.
+    await waitFor(() =>
+      expect(queryClient.getQueryState(articleKeys.byProject('p1'))?.status).toBe('success'),
+    );
+    // Give the resolved read time to re-render: the figures must never appear.
+    await expect(screen.findByText('50%', {}, { timeout: 300 })).rejects.toThrow();
+    expect(screen.getByTestId('qa-dashboard-skeleton')).toBeInTheDocument();
+    expect(screen.queryByText(UNAVAILABLE)).not.toBeInTheDocument();
+  });
+
+  it('does not refetch progress on retry while progress is unavailable', async () => {
+    const user = userEvent.setup();
+    seedTwoArticlesOneStarted();
+    progress.isUnavailable = true;
+    db.errors.articles = { message: 'network down' };
+    renderInterface(DASHBOARD);
+
+    await screen.findByText(LOAD_ERROR);
+    delete db.errors.articles;
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+
+    // Precondition: the retry ran, because the article read recovered the figures.
+    expect(await screen.findByText('50%')).toBeInTheDocument();
+    expect(progress.refetch).not.toHaveBeenCalled();
   });
 });

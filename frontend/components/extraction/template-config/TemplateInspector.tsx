@@ -28,8 +28,8 @@ import {
  * Docked, non-modal inspector (spec §2).
  *
  * Since B-5 Task 5 the field pane is the FULL editor: every capability
- * the field dialogs held is absorbed here — type (with the impact probe
- * running in the panel's save routing), units, option reorder,
+ * the field dialogs held is absorbed here — type (a change on a field with
+ * answers is gated by the Publish ☑, not here), units, option reorder,
  * allow-other and its label/placeholder, and the ADR-0016 dispositions —
  * because Task 8 deletes those dialogs. One explicit Save per edit
  * session; the write path is the panel's (`onSaveField` routes real rows

@@ -93,12 +93,6 @@ export interface ArticleInsertData {
  *
  * The id is what lets the form attach staged files immediately after creating
  * the row, instead of making the user reopen the article to reach the picker.
- *
- * NOTE: keep `await supabase` and `.from('articles')` on separate lines.
- * check_frontend_data_path.py matches the direct-table-read pattern with a
- * single-line regex, so collapsing this chain turns a grandfathered call into
- * a new violation and fails CI. Comments are not exempt from that regex
- * either, which is why this note spells the pattern out instead of quoting it.
  */
 export function insertArticle(
   articleData: ArticleInsertData,
@@ -394,34 +388,43 @@ export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
  */
 
 // ---------------------------------------------------------------------------
-// ExtractionInterface: article list for dashboard stats
+// Project-wide article lists (worklist, dashboard stats, HITL)
 // ---------------------------------------------------------------------------
 
-export interface ArticleRow {
-  id: string;
-  title: string;
-  doi?: string | null;
-  created_at: string;
-}
+/** PostgREST default max-rows. A short page is the last one. */
+const ARTICLES_PAGE = 1000;
 
 /**
- * Load articles for a project (for dashboard stats in ExtractionInterface).
- * Single-query relocation: no test needed.
+ * Read every article of a project, newest first.
+ *
+ * PostgREST caps a select at 1000 rows and says nothing about it, so an
+ * unpaged read silently drops article 1001 onward — and the three surfaces
+ * built on this list then disagree about how many articles a project has.
+ *
+ * `id` breaks ties on `created_at`: seeded or bulk-imported articles share a
+ * timestamp, and equal keys have no stable order across requests, so a row
+ * could repeat on one page and vanish from the next.
  */
-export function loadProjectArticles(
+async function selectAllProjectArticles<T>(
   projectId: string,
-): Promise<ErrorResult<ArticleRow[]>> {
-  return toResult(async () => {
+  columns: string,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += ARTICLES_PAGE) {
     const {data, error} = await supabase
       .from('articles')
-      .select('id, title, doi, created_at')
+      .select(columns)
       .eq('project_id', projectId)
-      .order('created_at', {ascending: false});
+      .order('created_at', {ascending: false})
+      .order('id')
+      .range(from, from + ARTICLES_PAGE - 1);
 
     if (error) throw error;
 
-    return (data || []) as ArticleRow[];
-  }, 'articlesService.loadProjectArticles');
+    const page = (data ?? []) as T[];
+    rows.push(...page);
+    if (page.length < ARTICLES_PAGE) return rows;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -442,17 +445,14 @@ export interface ArticleTableRow {
 export function loadExtractionTableArticles(
   projectId: string,
 ): Promise<ErrorResult<ArticleTableRow[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('articles')
-      .select('id, title, authors, publication_year, created_at')
-      .eq('project_id', projectId)
-      .order('created_at', {ascending: false});
-
-    if (error) throw error;
-
-    return (data || []) as ArticleTableRow[];
-  }, 'articlesService.loadExtractionTableArticles');
+  return toResult(
+    () =>
+      selectAllProjectArticles<ArticleTableRow>(
+        projectId,
+        'id, title, authors, publication_year, created_at',
+      ),
+    'articlesService.loadExtractionTableArticles',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -512,13 +512,12 @@ export interface ArticleListItem {
 export function fetchProjectArticles(
   projectId: string,
 ): Promise<ErrorResult<ArticleListItem[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('articles')
-      .select('id, title, authors, publication_year, created_at')
-      .eq('project_id', projectId)
-      .order('created_at', {ascending: false});
-    if (error) throw error;
-    return (data ?? []) as ArticleListItem[];
-  }, 'articlesService.fetchProjectArticles');
+  return toResult(
+    () =>
+      selectAllProjectArticles<ArticleListItem>(
+        projectId,
+        'id, title, authors, publication_year, created_at',
+      ),
+    'articlesService.fetchProjectArticles',
+  );
 }

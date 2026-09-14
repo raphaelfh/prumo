@@ -28,22 +28,6 @@ export type ExtractionValue =
 
 // =================== TEMPLATES ===================
 
-/**
- * Standardized global template (CHARMS, PICOS, PRISMA, etc.)
- * Maintained by admins, read-only for users
- */
-export interface GlobalExtractionTemplate {
-  id: string;
-  name: string;
-  description: string | null;
-  framework: ExtractionFramework;
-  version: string;
-  is_global: boolean;
-  schema: any;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface ProjectExtractionTemplate {
   id: string;
   project_id: string;
@@ -259,11 +243,6 @@ export interface ExtractionFieldInsert extends Omit<ExtractionFieldInput, 'sort_
 }
 
 // =================== FIELD MANAGEMENT TYPES ===================
-
-// FieldValidationResult lives in services/extractionFieldService.ts, next to
-// the call that produces it. The copy that used to sit here was a stale
-// duplicate (message optional instead of required) that only tests reached.
-
 
 /**
  * User role in the project (for permission control)

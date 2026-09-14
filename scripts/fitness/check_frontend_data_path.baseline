@@ -1,9 +1,26 @@
-# residual single-read-path violations grandfathered post-#324; shrink, don't grow
-# line numbers refreshed by the dead-code sweep (two sites deleted outright)
-frontend/hooks/extraction/helpers/queryEntityTypes.ts:15
-frontend/hooks/extraction/helpers/queryEntityTypes.ts:17
-frontend/lib/supabase/baseRepository.ts:94
-frontend/services/articlesExportService.ts:11
-frontend/services/extractionDataService.ts:61
-frontend/services/extractionDataService.ts:62
-frontend/services/extractionExportService.ts:7
+# Frontend data-path ratchet (constitution §VI): direct supabase.from reads
+# and VITE_API_URL wiring still in browser code, as `file|table:count`.
+# May shrink (run --update-baseline to tighten), never grow. A read moved
+# to another file is a new key.
+frontend/components/articles/RISImportDialog.tsx|articles:1
+frontend/hooks/extraction/helpers/getModelChildSections.ts|extraction_instances:1
+frontend/hooks/extraction/helpers/queryEntityTypes.ts|extraction_entity_types:2
+frontend/hooks/extraction/useTemplateEntityTypes.ts|extraction_entity_types:1
+frontend/lib/supabase/baseRepository.ts|<dynamic>:1
+frontend/services/articlesExportService.ts|VITE_API_URL:1
+frontend/services/articlesService.ts|article_files:7
+frontend/services/articlesService.ts|articles:6
+frontend/services/extractionDataService.ts|articles:2
+frontend/services/extractionDataService.ts|project_extraction_templates:1
+frontend/services/extractionDataService.ts|projects:1
+frontend/services/extractionFieldService.ts|project_members:1
+frontend/services/extractionInstanceService.ts|extraction_instances:1
+frontend/services/profileService.ts|profiles:2
+frontend/services/projectSettingsService.ts|profiles:1
+frontend/services/projectSettingsService.ts|project_members:5
+frontend/services/projectSettingsService.ts|projects:4
+frontend/services/projectsService.ts|articles:1
+frontend/services/projectsService.ts|projects:2
+frontend/services/qaTemplateService.ts|extraction_entity_types:1
+frontend/services/qaTemplateService.ts|project_extraction_templates:1
+frontend/services/zoteroImportService.ts|zotero_integrations:2

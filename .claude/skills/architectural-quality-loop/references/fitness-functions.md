@@ -126,12 +126,15 @@ After the `frontend/lib/query-keys/` convention is introduced, this check parses
 ### `check_frontend_data_path.py`
 
 Enforces the single read path (constitution §VI): all backend data flows
-through the typed `apiClient`. Outside `frontend/integrations/`, flags
-`supabase.from(` (direct table reads — `supabase.auth` / `.storage` are
-legitimate and do not match) and `import.meta.env.VITE_API_URL` (ad-hoc
-base-URL wiring around the client). Regex, not a TS parse, and comments are
-NOT exempt: an intentional mention must be baselined like any other site.
-Shrink-only `.baseline`.
+through the typed `apiClient`. In browser code (outside `frontend/integrations/`,
+test files and e2e) it counts `supabase.from(<table>)` (direct table reads —
+`supabase.auth` / `.storage` are legitimate and do not match) and
+`import.meta.env.VITE_API_URL` (ad-hoc base-URL wiring around the client).
+It scans whole files with comments blanked, so a chain split across lines
+counts and a mention in a comment does not. A ratchet: the baseline is
+`file|table:count` (`<dynamic>` for a non-literal table); a new key or a
+higher count fails, a read moved to another file is a new key, and a lower
+count passes and asks for `--update-baseline`, which only lowers counts.
 
 ### `check_file_size.py`
 

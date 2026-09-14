@@ -40,9 +40,6 @@ vi.mock('@/hooks/extraction/useInsertTemplateField', () => ({
 vi.mock('@/hooks/shared/useContainerNarrow', () => ({
   useContainerNarrow: vi.fn(() => false),
 }));
-vi.mock('@/services/extractionFieldService', () => ({
-  validateFieldImpact: vi.fn(),
-}));
 vi.mock('./useMoveFieldTo', () => ({
   useMoveFieldTo: ({tree}: {tree: unknown}) => ({
     moveFieldTo: () => null,

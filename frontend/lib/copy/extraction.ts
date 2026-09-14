@@ -62,7 +62,8 @@ export const extraction = {
     // ExtractionInterface loading & error
     loadingTemplates: 'Loading templates',
     errorLoadTemplates: 'Error loading templates',
-    errorLoadArticles: 'Error loading articles',
+    errorLoadProgress: 'Could not load progress',
+    progressUnavailable: 'Progress is unavailable without a signed-in user',
     errors_autoSaveFailed: 'Error saving data automatically',
     errors_advanceFailed: 'Could not advance the extraction stage',
     errors_markReadyFailed: 'Could not update your ready signal',
@@ -159,8 +160,6 @@ export const extraction = {
     errors_noPermissionAddField: 'You do not have permission to add fields',
     errors_validationPrefix: 'Validation: {{message}}',
     errors_duplicateFieldKey: 'A field with this key already exists in this section',
-    errors_cannotChangeFieldType: 'Cannot change field type when it already has extracted data',
-    errors_typeChangeProbeFailed: 'Could not verify the field’s extracted data — the type was not changed',
     // ExtractionErrorBoundary
     errorBoundaryTitle: 'Extraction error',
     errorBoundaryTryAgain: 'Try again',
@@ -385,9 +384,6 @@ export const extraction = {
     otherLabelLabel: '"Other" label',
     placeholderLabel: 'Placeholder',
     fieldPlaceholderEnter: 'Enter {{label}}',
-    // Impact-probe messages (delete confirm + type-change guard)
-    fieldExtractedValuesMessage: 'This field has {{count}} extracted values in {{n}} article(s).',
-    fieldSafeToModifyMessage: 'Field can be modified safely.',
     // Placeholders and inline UI (FieldInput, dialogs)
     selectFieldPlaceholder: 'Select {{label}}',
     addInstanceLabel: 'Add {{label}}',

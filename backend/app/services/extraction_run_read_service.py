@@ -639,7 +639,7 @@ async def resolve_form_runs(
 ) -> list[ArticleRunRef]:
     """Resolve the latest relevant run per article for the extraction form.
 
-    Parity with frontend ``findFormRunsByArticle``:
+    Form-run rule (the article-progress read applies it set-based in SQL):
     - Per article: latest non-terminal run; else latest finalized run.
     - Cancelled runs are excluded.
     - Returns one ArticleRunRef per input article_id (run_id=None when no run).

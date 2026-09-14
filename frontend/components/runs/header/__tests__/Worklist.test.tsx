@@ -37,7 +37,7 @@ describe('RunHeader.Worklist', () => {
     expect(screen.getByRole('navigation', { name: 'worklistPositionLabel' })).toBeInTheDocument();
   });
 
-  it('exposes the position via a visually-hidden polite live region, so a J/K move is announced', () => {
+  it('exposes the position via a visually-hidden polite live region, so a [ / ] move is announced', () => {
     renderWorklist({ currentId: 'a3' });
     const status = screen.getByRole('status');
     expect(status).toHaveTextContent('worklistPositionLabel');

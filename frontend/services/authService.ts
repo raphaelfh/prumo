@@ -11,20 +11,6 @@ import {supabase} from '@/integrations/supabase/client';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 
 // ---------------------------------------------------------------------------
-// ArticleExtractionTable: current authenticated user id
-// ---------------------------------------------------------------------------
-
-/**
- * Fetch the current authenticated user id.
- */
-export function getCurrentUserId(): Promise<ErrorResult<string | null>> {
-  return toResult(async () => {
-    const {data: {user}} = await supabase.auth.getUser();
-    return user?.id ?? null;
-  }, 'authService.getCurrentUserId');
-}
-
-// ---------------------------------------------------------------------------
 // Settings surfaces: session access token
 // ---------------------------------------------------------------------------
 

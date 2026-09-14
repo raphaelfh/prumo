@@ -5,7 +5,7 @@
  * stripped the flag; this file pins its removal.
  */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {renderHook, waitFor} from '@testing-library/react';
+import {act, renderHook, waitFor} from '@testing-library/react';
 import type {ReactNode} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
@@ -99,6 +99,13 @@ describe('useActiveTemplateStructure (B-3b)', () => {
       cardinality: 'many',
       sort_order: 1,
     });
+
+    // R17: consumers retry a failed structure read through `refetch`.
+    expect(getActiveTemplateStructure).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(getActiveTemplateStructure).toHaveBeenCalledTimes(2);
   });
 
   it('activates the phantom-slot: a required many-section with zero instances blocks 100%', async () => {

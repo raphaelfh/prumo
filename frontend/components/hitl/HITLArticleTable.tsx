@@ -7,7 +7,7 @@
  * into its own full-screen surface (extraction or QA).
  *
  * Progress is the canonical required-field metric (``computeRowProgress``)
- * over the per-article values from ``useArticleExtractionValues`` (the shared
+ * over the per-article values from ``useCallerArticleProgress`` (the shared
  * hook this table, the extraction table and the dashboard all consume), so
  * every surface shows the same percentage.
  *
@@ -31,6 +31,7 @@ import {
 import { toast } from "sonner";
 
 import { IconButton } from "@/components/patterns/IconButton";
+import { ErrorState } from "@/components/patterns/ErrorState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -56,13 +57,12 @@ import {
   type FilterValues,
 } from "@/components/shared/list";
 import { useListKeyboardShortcuts } from "@/hooks/useListKeyboardShortcuts";
-import { getCurrentUserId } from "@/services/authService";
 import { fetchProjectArticles, type ArticleListItem } from "@/services/articlesService";
 import { t } from "@/lib/copy";
 import { TABLE_CELL_CLASS } from "@/lib/table-constants";
 import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
 import { useActiveTemplateStructure } from "@/hooks/extraction/useActiveTemplateStructure";
-import { useArticleExtractionValues } from "@/hooks/extraction/useArticleExtractionValues";
+import { resolveProgressGate, useCallerArticleProgress } from "@/hooks/extraction/useCallerArticleProgress";
 import { scopedRowProgress } from "@/lib/qa/scopedProgress";
 
 type Article = ArticleListItem;
@@ -146,11 +146,14 @@ export function HITLArticleTable({
   toolbarActions,
 }: Props) {
   const navigate = useNavigate();
+  const openRowLabel =
+    kind === "quality_assessment"
+      ? t("qa", "tableOpenRowAria")
+      : t("extraction", "tableOpenRowAria");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [globalFilter, setGlobalFilter] = useState("");
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
@@ -163,49 +166,34 @@ export function HITLArticleTable({
   // ACTIVE snapshot (B-3a): worklist progress must not move on unpublished
   // draft edits. Errors gate the render below — an empty tree would compute
   // as fully complete.
-  const {
-    entityTypes,
-    isLoading: entityTypesLoading,
-    isError: entityTypesError,
-  } = useActiveTemplateStructure(projectId, templateId);
-  // Per-article values (instances + the user's persisted values), shared with
-  // the extraction table and the dashboard — replaces this table's own fetch.
-  const { valuesByArticle, isLoading: valuesLoading } =
-    useArticleExtractionValues(projectId, templateId, currentUserId, kind);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getCurrentUserId().then((result) => {
-      if (cancelled) return;
-      if (result.ok) setCurrentUserId(result.data);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const structure = useActiveTemplateStructure(projectId, templateId);
+  const { entityTypes } = structure;
+  // Per-article values and the progress user id, through the ONE shared gate (R37).
+  const progress = useCallerArticleProgress(projectId, templateId, kind);
+  const { valuesByArticle, userId } = progress;
 
   // Restart the loading state when the query coordinates change (during
   // render, so the fetch effect below never sets state synchronously).
-  const [prevQueryKey, setPrevQueryKey] = useState({ projectId, templateId, currentUserId });
+  const [prevQueryKey, setPrevQueryKey] = useState({ projectId, templateId, userId });
   if (
     projectId !== prevQueryKey.projectId ||
     templateId !== prevQueryKey.templateId ||
-    currentUserId !== prevQueryKey.currentUserId
+    userId !== prevQueryKey.userId
   ) {
-    setPrevQueryKey({ projectId, templateId, currentUserId });
-    if (projectId && templateId && currentUserId) {
+    setPrevQueryKey({ projectId, templateId, userId });
+    if (projectId && templateId && userId) {
       setLoading(true);
       setError(null);
     }
   }
 
   useEffect(() => {
-    if (!projectId || !templateId || !currentUserId) return;
+    if (!projectId || !templateId || !userId) return;
     let cancelled = false;
 
-    // Per-article instances + values now come from
-    // ``useArticleExtractionValues`` (shared with the extraction table and
-    // dashboard); this effect only loads the article rows themselves.
+    // Per-article instances + values come from ``useCallerArticleProgress``
+    // (the one progress gate shared with the extraction table and the
+    // dashboards); this effect only loads the article rows themselves.
     void fetchProjectArticles(projectId).then((result) => {
       if (cancelled) return;
       if (result.ok) {
@@ -221,7 +209,7 @@ export function HITLArticleTable({
     return () => {
       cancelled = true;
     };
-  }, [projectId, templateId, currentUserId]);
+  }, [projectId, templateId, userId]);
 
   // Per-article completion %, computed once per render.
   // getProgress is read in the sort comparator and several render paths.
@@ -374,9 +362,13 @@ export function HITLArticleTable({
     }
   };
 
-  if (loading || entityTypesLoading || entityTypesError || valuesLoading) {
+  const gate = resolveProgressGate(progress, structure); // R19, in the ONE shared order (R37)
+  if (gate.state === "signedOut") return <ErrorState message={t("extraction", "progressUnavailable")} />;
+  if (gate.state === "error") return <ErrorState message={t("extraction", "errorLoadProgress")} onRetry={gate.retry} />;
+  if (gate.state !== "ready" || loading) {
     return (
       <div className="space-y-3" data-testid={`hitl-${kind}-table-loading`}>
+        {toolbarActions && <div className="flex justify-end">{toolbarActions}</div>}
         <Skeleton className="h-8 w-full max-w-md" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -540,26 +532,20 @@ export function HITLArticleTable({
               return (
                 <TableRow
                   key={article.id}
-                  role="button"
-                  tabIndex={0}
                   data-testid={`hitl-${kind}-row-${article.id}`}
-                  aria-label={t("extraction", "tableOpenRowAria").replace(
-                    "{{title}}",
-                    title,
-                  )}
-                  onClick={openRow}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      openRow();
-                    }
-                  }}
-                  className="border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                  className="relative border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8"
                 >
                   <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`}>
-                    <div className="line-clamp-1 leading-tight text-foreground font-medium">
+                    {/* The row is not a control (it holds the action button);
+                        this button is, stretched over the row by its ::after. */}
+                    <button
+                      type="button"
+                      onClick={openRow}
+                      aria-label={openRowLabel.replace("{{title}}", title)}
+                      className="line-clamp-1 w-full text-left leading-tight text-foreground font-medium focus-visible:outline-hidden after:absolute after:inset-0 focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+                    >
                       {title}
-                    </div>
+                    </button>
                   </TableCell>
                   <TableCell
                     className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
@@ -567,7 +553,7 @@ export function HITLArticleTable({
                     {article.authors && article.authors.length > 0 ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <div className="flex items-center gap-1 cursor-help">
+                          <div className="relative z-10 flex items-center gap-1 cursor-help">
                             <User className="h-3 w-3 text-muted-foreground shrink-0" />
                             <span className="truncate block min-w-0">
                               {article.authors.slice(0, 1).join(", ")}
@@ -581,7 +567,7 @@ export function HITLArticleTable({
                         </TooltipContent>
                       </Tooltip>
                     ) : (
-                      <span className="text-muted-foreground">N/A</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   <TableCell
@@ -589,22 +575,20 @@ export function HITLArticleTable({
                   >
                     <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
-                      {article.publication_year ?? "N/A"}
+                      {article.publication_year ?? "—"}
                     </div>
                   </TableCell>
                   <TableCell className={`${TABLE_CELL_CLASS} text-center`}>
                     <StatusRing progress={progress} />
                   </TableCell>
-                  <TableCell
-                    className={`${TABLE_CELL_CLASS} text-center`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <TableCell className={`${TABLE_CELL_CLASS} text-center`}>
+                    {/* relative z-10: above the row's stretched open control. */}
                     {!hasInstances ? (
                       <IconButton
                         onClick={openRow}
                         variant="outline"
                         label={t("extraction", "tableStart")}
-                        className="rounded-full border-border/60 bg-background shadow-none"
+                        className="relative z-10 rounded-full border-border/60 bg-background shadow-none"
                         data-testid={`hitl-${kind}-row-action-${article.id}`}
                         icon={<PlayCircle />}
                       />
@@ -617,7 +601,7 @@ export function HITLArticleTable({
                             ? t("extraction", "tableView")
                             : t("extraction", "tableContinue")
                         }
-                        className={`rounded-full shadow-none ${
+                        className={`relative z-10 rounded-full shadow-none ${
                           isComplete
                             ? "border-border/60 bg-background"
                             : "border-info/30 bg-info/10 text-info hover:bg-info/20"

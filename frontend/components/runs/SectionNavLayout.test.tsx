@@ -48,30 +48,43 @@ beforeEach(() => {
 });
 
 describe('SectionNavLayout', () => {
-  it('shows the section rail by default, with a toggle that says it hides it', () => {
+  it('shows the section rail by default, with a toggle that says it collapses it', () => {
     render(<Layout />);
     expect(rail()).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'sectionNavHide' })).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('hides the rail entirely — no strip left behind — and remembers the choice', async () => {
+  it('collapses to a left-aligned dot strip and remembers the choice', async () => {
     const { unmount } = render(<Layout />);
     await userEvent.click(screen.getByRole('button', { name: 'sectionNavHide' }));
-    expect(rail()).not.toBeInTheDocument();
+    expect(rail()).toBeInTheDocument();
     expect(screen.queryByText('Source of data')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Source of data 1/2' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'sectionNavShow' })).toHaveAttribute('aria-expanded', 'false');
 
     unmount();
     render(<Layout />);
-    expect(rail()).not.toBeInTheDocument();
+    expect(screen.queryByText('Source of data')).not.toBeInTheDocument();
+    expect(rail()).toBeInTheDocument();
   });
 
-  it('mod+\\ toggles the rail', async () => {
+  it('the collapsed strip is the compact w-8 rail', async () => {
+    render(<Layout />);
+    const strip = () => rail()?.parentElement;
+    expect(strip()).toHaveClass('w-[184px]');
+    expect(strip()).not.toHaveClass('w-8');
+    await userEvent.click(screen.getByRole('button', { name: 'sectionNavHide' }));
+    expect(strip()).toHaveClass('w-8');
+    expect(strip()).not.toHaveClass('w-[184px]');
+  });
+
+  it('mod+\\ toggles the rail between labels and dots', async () => {
     render(<Layout />);
     await userEvent.keyboard('{Control>}\\{/Control}');
-    expect(rail()).not.toBeInTheDocument();
-    await userEvent.keyboard('{Control>}\\{/Control}');
+    expect(screen.queryByText('Source of data')).not.toBeInTheDocument();
     expect(rail()).toBeInTheDocument();
+    await userEvent.keyboard('{Control>}\\{/Control}');
+    expect(screen.getByText('Source of data')).toBeInTheDocument();
   });
 
   it('mod+Enter jumps to the next required field, even from inside a field', async () => {
@@ -165,5 +178,19 @@ describe('SectionNavLayout — section open state', () => {
 
     expect(onSelect).toHaveBeenCalledWith('todo');
     expect(screen.getByLabelText('todo field')).toBeInTheDocument();
+  });
+
+  it('a mod+Enter jump calls onActivate with the section it lands in', async () => {
+    const onActivate = vi.fn();
+    render(
+      <SectionNavLayout items={sections} activeId={null} onSelect={vi.fn()} onActivate={onActivate}>
+        <Section id="done" pending={false} />
+        <Section id="todo" pending />
+      </SectionNavLayout>,
+    );
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    expect(screen.getByLabelText('todo field')).toHaveFocus();
+    expect(onActivate).toHaveBeenCalledWith('todo');
+    expect(onActivate).not.toHaveBeenCalledWith('done');
   });
 });

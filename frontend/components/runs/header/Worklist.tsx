@@ -78,7 +78,7 @@ export function Worklist({ articles, currentId, onNavigate }: WorklistProps) {
       {/* Visually-hidden live region mirroring the counter: a route-param
           article change moves no focus and the visible counter is
           aria-hidden, so without this a screen-reader user never hears
-          that J/K (or the arrows) actually navigated. `role="status"` is
+          that [ / ] (or the arrows) actually navigated. `role="status"` is
           implicitly `aria-live="polite"`; kept explicit to match the
           project's other live regions (e.g. TemplateConfigGridPanel's
           moveAnnouncement). Always mounted so the announcement fires on

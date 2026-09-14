@@ -2,7 +2,7 @@ import { useKeyboardShortcuts, type Binding } from '@/hooks/useKeyboardShortcuts
 import { ARTICLE_NEXT_KEY, ARTICLE_PREV_KEY } from '@/lib/runs/shortcuts';
 
 export interface RunShortcutHandlers {
-  /** The run's article worklist. Fewer than two makes J/K inert. */
+  /** The run's article worklist. Fewer than two makes [ / ] inert. */
   articles: { id: string }[];
   currentArticleId: string;
   onNavigateToArticle: (id: string) => void;
@@ -14,7 +14,7 @@ export interface RunShortcutHandlers {
 
 /**
  * The run screens' article and palette keys (extraction + QA), bound through
- * the shared `useKeyboardShortcuts` so its guards apply: J/K are bare keys, so
+ * the shared `useKeyboardShortcuts` so its guards apply: [ / ] are bare keys, so
  * they stay inert while typing, with a modifier held, or under an open dialog
  * or popover.
  *

@@ -22,9 +22,6 @@ vi.mock('@/hooks/extraction/useInsertTemplateField', () => ({
 }));
 vi.mock('@/hooks/shared/useContainerNarrow', () => ({useContainerNarrow: vi.fn(() => false)}));
 vi.mock('./useMoveFieldTo', () => ({useMoveFieldTo: ({tree}: {tree: unknown}) => ({moveFieldTo: () => null, announcement: null, displayTree: tree})}));
-vi.mock('@/services/extractionFieldService', () => ({
-  validateFieldImpact: vi.fn(),
-}));
 vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
 vi.mock('@/components/extraction/TemplateInstructionPane', () => ({
   TemplateInstructionPane: ({templateId}: {templateId: string}) => <div data-testid={`instruction-pane-${templateId}`} />,

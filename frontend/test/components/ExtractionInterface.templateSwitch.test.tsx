@@ -23,14 +23,16 @@ vi.mock('@/hooks/hitl/useProjectTemplates', () => ({
     ],
     isLoading: false,
     error: null,
+    isError: false, refetch: vi.fn(),
   }),
   useInvalidateProjectTemplates: () => vi.fn(),
+  useGlobalTemplateCatalogue: () => ({data: [], isPending: false}),
 }));
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
-  useArticleExtractionValues: () => ({valuesByArticle: new Map()}),
+  useArticleExtractionValues: () => ({valuesByArticle: new Map(), isLoading: false, isError: false, isUnavailable: false, refetch: vi.fn()}),
 }));
 vi.mock('@/hooks/extraction/useActiveTemplateStructure', () => ({
-  useActiveTemplateStructure: () => ({entityTypes: [], isLoading: false, isError: false}),
+  useActiveTemplateStructure: () => ({entityTypes: [], isLoading: false, isError: false, error: null, refetch: vi.fn()}),
 }));
 vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
   useTemplateConfigCaches: () => ({invalidateAfterImport: vi.fn()}),
@@ -38,14 +40,9 @@ vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
 vi.mock('@/hooks/useProjectMemberRole', () => ({
   useProjectMemberRole: () => ({isManager: true, role: 'manager', loading: false}),
 }));
-vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'user-1'}})}));
-// The configuration tab's catalogue query would hit the stubbed supabase client.
-vi.mock('@/services/templateService', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/templateService')>()),
-  loadGlobalTemplates: vi.fn(async () => ({ok: true, data: []})),
-}));
+vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'user-1'}, loading: false})}));
 vi.mock('@/services/articlesService', () => ({
-  loadProjectArticles: vi.fn(() => new Promise(() => {})),
+  fetchProjectArticles: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock('@/components/extraction/ArticleExtractionTable', () => ({
   ArticleExtractionTable: () => <div data-testid="table-stub" />,

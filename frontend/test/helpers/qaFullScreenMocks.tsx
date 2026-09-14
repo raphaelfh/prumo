@@ -102,6 +102,9 @@ export function makeSupabaseClientMock(
       eq: () => builder,
       in: () => builder,
       order: () => builder,
+      // Paged reads (fetchProjectArticles) ask for a range; the stub answers
+      // the whole fixture, which is short enough to be the last page.
+      range: () => builder,
       maybeSingle: () => Promise.resolve(result),
       then: (cb: (r: typeof result) => unknown) => Promise.resolve(cb(result)),
     };
@@ -215,6 +218,14 @@ export function makeApiClientDefault() {
     }
     // Document switcher data source + reader blocks (array-typed).
     if (url.includes("/files") || url.includes("/text-blocks")) {
+      return [];
+    }
+    // The route's :templateId resolves against these two lists: tpl-1 is the
+    // project's own QA template, so it opens as a project template.
+    if (url === "/api/v1/projects/p1/templates?kind=quality_assessment") {
+      return [PROBAST_TEMPLATE];
+    }
+    if (url === "/api/v1/templates/global?kind=quality_assessment") {
       return [];
     }
     return {};

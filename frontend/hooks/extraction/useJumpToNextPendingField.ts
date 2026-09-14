@@ -6,21 +6,30 @@ import {
   firstFocusableControl,
   pickNextPending,
 } from '@/lib/extraction/pendingFields';
+import { scrollIntoPane } from '@/lib/runs/paneScroll';
 
 export interface PendingSections {
   /** Sections still holding an unanswered required field — the rail's own counts. */
   pendingIds: ReadonlySet<string>;
   /** Opens a section, so its rows mount. */
   open: (id: string) => void;
+  /** Shade the rail for the section the jump landed in, before the scroll settles. */
+  onLanded?: (sectionId: string) => void;
 }
 
 const SECTION_SELECTOR = '[data-section-id]';
 const NO_SECTIONS: ReadonlySet<string> = new Set();
 
-function landOn(row: HTMLElement): void {
-  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  // preventScroll: the smooth scroll above owns the movement; letting focus
-  // scroll too lands the row hard against the viewport edge.
+function owningSectionId(el: HTMLElement): string | undefined {
+  return el.closest<HTMLElement>(SECTION_SELECTOR)?.dataset.sectionId;
+}
+
+function landOn(row: HTMLElement, onLanded?: (sectionId: string) => void): void {
+  const sectionId = owningSectionId(row);
+  if (sectionId) onLanded?.(sectionId);
+  scrollIntoPane(row, 'center');
+  // preventScroll: the scroll above owns the movement; letting focus scroll too
+  // lands the row hard against the viewport edge.
   firstFocusableControl(row)?.focus({ preventScroll: true });
 }
 
@@ -73,7 +82,7 @@ export function useJumpToNextPendingField(
     if (!target) return;
     const sectionId = target.matches(PENDING_REQUIRED_SELECTOR) ? undefined : target.dataset.sectionId;
     if (sectionId === undefined) {
-      landOn(target);
+      landOn(target, sections?.onLanded);
       return;
     }
     // Commit the open now, so the row to land on exists before we look for it.
@@ -83,6 +92,6 @@ export function useJumpToNextPendingField(
     // stay anchored on the section, so the next jump moves past it.
     if (!row) return;
     lastTarget.current = row;
-    landOn(row);
+    landOn(row, sections?.onLanded);
   }, [containerRef, sections]);
 }

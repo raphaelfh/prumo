@@ -33,7 +33,6 @@ vi.mock('./useMoveFieldTo', () => ({
     displayTree: tree,
   }),
 }));
-vi.mock('@/services/extractionFieldService', () => ({validateFieldImpact: vi.fn()}));
 vi.mock('sonner', () => ({toast: {error: vi.fn(), success: vi.fn()}}));
 
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';

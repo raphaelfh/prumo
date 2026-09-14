@@ -308,46 +308,6 @@ export function loadUserProfile(
   }, 'projectSettingsService.loadUserProfile');
 }
 
-// ---------------------------------------------------------------------------
-// QualityAssessmentFullScreen: template kind resolution
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve whether a template id belongs to a project clone or the global pool.
- *
- * NOTE: errors cause kind:'missing' in the caller.
- */
-export interface ResolvedTemplateKind {
-  projectId: string | null;
-  globalId: string | null;
-}
-
-export function resolveQATemplateKind(
-  templateId: string,
-): Promise<ErrorResult<ResolvedTemplateKind>> {
-  return toResult(async () => {
-    const [projectRes, globalRes] = await Promise.all([
-      supabase
-        .from('project_extraction_templates')
-        .select('id')
-        .eq('id', templateId)
-        .eq('kind', 'quality_assessment')
-        .maybeSingle(),
-      supabase
-        .from('extraction_templates_global')
-        .select('id')
-        .eq('id', templateId)
-        .eq('kind', 'quality_assessment')
-        .maybeSingle(),
-    ]);
-    if (projectRes.error && globalRes.error) throw projectRes.error;
-    return {
-      projectId: projectRes.data?.id ?? null,
-      globalId: globalRes.data?.id ?? null,
-    };
-  }, 'projectSettingsService.resolveQATemplateKind');
-}
-
 /**
  * Load the member role and project blind-mode setting for comparison
  * permission computation. Throws when the member row is not found or the

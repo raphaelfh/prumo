@@ -18,6 +18,7 @@ export const qa = {
   noArticlesDesc: 'Add an article first; quality assessment runs against an article + tool pair.',
   loadArticlesError: 'Failed to load articles for the quality-assessment view.',
   untitledArticle: 'Untitled article',
+  tableOpenRowAria: 'Open assessment for {{title}}',
   noAuthors: 'Authors not provided',
 
   // QASectionAccordion — the per-domain judgment card
@@ -82,6 +83,7 @@ export const qa = {
   // Tab descriptions
   assessmentDesc: 'Run risk-of-bias assessments article by article',
   dashboardDesc: 'Project-level quality-assessment progress',
+  dashboardLoadError: 'Couldn’t load quality-assessment progress.',
   configurationDesc: 'Choose which quality-assessment tools the project runs',
 
   // Configuration tab
@@ -106,6 +108,7 @@ export const qa = {
   missingRouteParams: 'Missing route parameters.',
   templateNotFound:
     'Quality-Assessment template {{templateId}} not found. The link may be stale — pick a template from the list and try again.',
+  templateLoadError: 'Couldn’t load this project’s quality-assessment templates. Reload the page to try again.',
   reopenButton: 'Reopen for revision',
   reopenProgress: 'Reopening…',
   publishedState: 'Published',
