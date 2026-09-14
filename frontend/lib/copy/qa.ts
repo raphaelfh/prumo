@@ -83,6 +83,7 @@ export const qa = {
   // Tab descriptions
   assessmentDesc: 'Run risk-of-bias assessments article by article',
   dashboardDesc: 'Project-level quality-assessment progress',
+  dashboardLoadError: 'Couldn’t load quality-assessment progress.',
   configurationDesc: 'Choose which quality-assessment tools the project runs',
 
   // Configuration tab
