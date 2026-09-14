@@ -2,25 +2,22 @@
  * Regression test for the "extraction view stuck on the loading skeleton"
  * outage.
  *
- * Root cause: the initial-load effect depended on the `loadArticles`
- * function identity:
+ * Root cause: the initial-load effect listed the `loadArticles` function
+ * identity in its dependency array. `loadArticles` calls
+ * `setArticles(newArray)` + `setLoading`, which forces a re-render every time
+ * it runs. After #270 removed its `useCallback`, the React Compiler did not
+ * stabilise the plain async function for the purposes of that array, so each
+ * render produced a new identity → the effect re-fired → `loadArticles` ran
+ * again → ... an unbounded fetch loop that kept `loading === true` forever
+ * (the skeleton never cleared). Production fired the same `articles` request
+ * 383× in a few seconds.
  *
- *     useEffect(() => {
- *       if (projectId && templateId && currentUserId) loadArticles();
- *     }, [projectId, templateId, currentUserId, loadArticles]);
- *
- * `loadArticles` calls `setArticles(newArray)` + `setLoading`, which forces a
- * re-render every time it runs. After #270 removed its `useCallback`, the
- * React Compiler did not stabilise the plain async function for the purposes
- * of this dependency array, so each render produced a new identity → the
- * effect re-fired → `loadArticles` ran again → ... an unbounded fetch loop
- * that kept `loading === true` forever (the skeleton never cleared).
- * Production fired the same `articles` request 383× in a few seconds.
- *
- * This test pins the contract: mounting the table triggers the article load
- * exactly once, not in a loop. It keeps the component in its skeleton branch
- * (entity-types still loading) so the loop logic is exercised without
- * rendering the full table.
+ * Today the effect keys on `[projectId, templateId, userId]` only, where
+ * `userId` is the resolved caller from `useCallerArticleProgress` (driven here
+ * by the mocked `useAuth`). This test pins the contract: mounting the table
+ * triggers the article load once, not in a loop. It keeps the component in
+ * its skeleton branch (structure still loading) so the load effect runs
+ * without rendering the full table.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';

@@ -191,9 +191,9 @@ export function HITLArticleTable({
     if (!projectId || !templateId || !userId) return;
     let cancelled = false;
 
-    // Per-article instances + values now come from
-    // ``useArticleExtractionValues`` (shared with the extraction table and
-    // dashboard); this effect only loads the article rows themselves.
+    // Per-article instances + values come from ``useCallerArticleProgress``
+    // (the one progress gate shared with the extraction table and the
+    // dashboards); this effect only loads the article rows themselves.
     void fetchProjectArticles(projectId).then((result) => {
       if (cancelled) return;
       if (result.ok) {
