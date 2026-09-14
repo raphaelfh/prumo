@@ -883,27 +883,27 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
 
               return (
                   <TableRow key={article.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={openRow}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    openRow();
-                                }
-                            }}
-                            aria-label={t('extraction', 'tableOpenRowAria').replace('{{title}}', article.title)}
-                            className="border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
-                      {/* stopPropagation: toggling the checkbox must not open the row */}
-                      <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`} onClick={(e) => e.stopPropagation()}>
+                            data-testid={`extraction-row-${article.id}`}
+                            className="relative border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8">
+                      {/* relative z-10 on the checkbox, authors tooltip and action: above the stretched open control. */}
+                      <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`}>
                     <Checkbox
+                      className="relative z-10"
                       checked={isSelected(article.id)}
                       onCheckedChange={() => toggleArticle(article.id)}
                       aria-label={t('extraction', 'tableSelectArticleAria').replace('{{title}}', article.title)}
                     />
                   </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`} style={getColumnStyle('title')}>
-                          <div className="line-clamp-1 leading-tight text-foreground font-medium">{article.title}</div>
+                          {/* The row is not a control (it holds the checkbox and action button);
+                              this button is, stretched over the row by its ::after. */}
+                          <button
+                              type="button"
+                              onClick={openRow}
+                              aria-label={t('extraction', 'tableOpenRowAria').replace('{{title}}', article.title)}
+                              className="line-clamp-1 w-full text-left leading-tight text-foreground font-medium focus-visible:outline-hidden after:absolute after:inset-0 focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring">
+                              {article.title}
+                          </button>
                   </TableCell>
                       <TableCell
                           className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
@@ -911,7 +911,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                     {article.authors && article.authors.length > 0 ? (
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <div className="flex items-center gap-1 cursor-help">
+                                    <div className="relative z-10 flex items-center gap-1 cursor-help">
                                         <User className="h-3 w-3 text-muted-foreground shrink-0"/>
                                         <span className="truncate block min-w-0">
                                           {article.authors.slice(0, 1).join(', ')}
@@ -924,27 +924,26 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                 </TooltipContent>
                             </Tooltip>
                     ) : (
-                        <span className="text-muted-foreground">N/A</span>
+                        <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                       <TableCell className={`hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px]`} style={getColumnStyle('year')}>
                           <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
-                      {article.publication_year || 'N/A'}
+                      {article.publication_year ?? '—'}
                     </div>
                   </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
                     <StatusRing progress={getProgress(article)} />
                   </TableCell>
-                      <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}
-                                 onClick={(e) => e.stopPropagation()}>
+                      <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}>
                     {!hasInstances ? (
                         <IconButton
                             onClick={() => handleStartExtraction(article.id)}
                             disabled={article.isLoading}
                             variant="outline"
                             label={t('extraction', 'tableStart')}
-                            className="rounded-full border-border/60 bg-background shadow-none"
+                            className="relative z-10 rounded-full border-border/60 bg-background shadow-none"
                             icon={article.isLoading ? (
                                 <Loader2 className="animate-spin"/>
                             ) : (
@@ -956,7 +955,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                             onClick={() => handleContinueExtraction(article.id)}
                             variant="outline"
                             label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
-                            className={`rounded-full shadow-none ${
+                            className={`relative z-10 rounded-full shadow-none ${
                                 isComplete
                                     ? 'border-border/60 bg-background'
                                     : 'border-info/30 bg-info/10 text-info hover:bg-info/20'

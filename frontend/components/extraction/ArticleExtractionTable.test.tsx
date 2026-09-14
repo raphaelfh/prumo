@@ -23,14 +23,15 @@
  * rendering the full table.
  */
 
-import { render } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { loadSpy, getUserSpy } = vi.hoisted(() => ({
+const { loadSpy, getUserSpy, structure } = vi.hoisted(() => ({
   loadSpy: vi.fn(),
   getUserSpy: vi.fn(),
+  structure: { isLoading: true },
 }));
 
 vi.mock('@/lib/copy', () => ({
@@ -52,7 +53,7 @@ vi.mock('@/services/authService', () => ({
 vi.mock('@/hooks/extraction/useActiveTemplateStructure', () => ({
   useActiveTemplateStructure: () => ({
     entityTypes: [],
-    isLoading: true,
+    isLoading: structure.isLoading,
     isError: false,
     error: null,
   }),
@@ -87,6 +88,7 @@ function renderTable() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  structure.isLoading = true;
   getUserSpy.mockResolvedValue({ ok: true, data: 'user-1' });
   loadSpy.mockResolvedValue({
     ok: true,
@@ -113,5 +115,24 @@ describe('ArticleExtractionTable → initial load', () => {
     // With the bug this is dozens/hundreds of calls; fixed it is exactly one.
     expect(loadSpy.mock.calls.length).toBeLessThanOrEqual(2);
     expect(loadSpy).toHaveBeenCalledWith('p1');
+  });
+});
+
+describe('ArticleExtractionTable → rows', () => {
+  it('opens a row through a stretched button, never a role="button" row around other controls', async () => {
+    structure.isLoading = false;
+    renderTable();
+
+    // `t` is mocked to echo the key, so the control's name is the key itself.
+    const control = await screen.findByRole('button', { name: 'tableOpenRowAria' });
+    const row = screen.getByTestId('extraction-row-a1');
+
+    expect(row).not.toHaveAttribute('role', 'button');
+    expect(row).not.toHaveAttribute('tabindex');
+    expect(control.parentElement?.closest('button, [role="button"]')).toBeNull();
+    for (const nested of within(row).getAllByRole('checkbox')) {
+      expect(nested.parentElement?.closest('button, [role="button"]')).toBeNull();
+    }
+    expect(within(row).getByRole('button', { name: 'tableStart' })).toBeInTheDocument();
   });
 });

@@ -18,6 +18,7 @@ export const qa = {
   noArticlesDesc: 'Add an article first; quality assessment runs against an article + tool pair.',
   loadArticlesError: 'Failed to load articles for the quality-assessment view.',
   untitledArticle: 'Untitled article',
+  tableOpenRowAria: 'Open assessment for {{title}}',
   noAuthors: 'Authors not provided',
 
   // QASectionAccordion — the per-domain judgment card
