@@ -434,27 +434,6 @@ async function selectAllProjectArticles<T>(
 }
 
 // ---------------------------------------------------------------------------
-// ExtractionInterface: article list for dashboard stats
-// ---------------------------------------------------------------------------
-
-export interface ArticleRow {
-  id: string;
-  title: string;
-  doi?: string | null;
-  created_at: string;
-}
-
-/** Load articles for a project (for dashboard stats in ExtractionInterface). */
-export function loadProjectArticles(
-  projectId: string,
-): Promise<ErrorResult<ArticleRow[]>> {
-  return toResult(
-    () => selectAllProjectArticles<ArticleRow>(projectId, 'id, title, doi, created_at'),
-    'articlesService.loadProjectArticles',
-  );
-}
-
-// ---------------------------------------------------------------------------
 // ArticleExtractionTable: article list load
 // ---------------------------------------------------------------------------
 

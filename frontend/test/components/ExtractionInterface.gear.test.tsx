@@ -18,24 +18,25 @@ vi.mock('@/hooks/hitl/useProjectTemplates', () => ({
     data: [{id: 'tpl-1', name: 'T', kind: 'extraction', is_active: true}],
     isLoading: false,
     error: null,
+    isError: false, refetch: vi.fn(),
   }),
   useInvalidateProjectTemplates: () => vi.fn(),
 }));
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
-  useArticleExtractionValues: () => ({valuesByArticle: new Map()}),
+  useArticleExtractionValues: () => ({valuesByArticle: new Map(), isLoading: false, isError: false, isUnavailable: false, refetch: vi.fn()}),
 }));
 vi.mock('@/hooks/extraction/useActiveTemplateStructure', () => ({
-  useActiveTemplateStructure: () => ({entityTypes: [], isLoading: false, isError: false}),
+  useActiveTemplateStructure: () => ({entityTypes: [], isLoading: false, isError: false, error: null, refetch: vi.fn()}),
+}));
+vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'user-1'}, loading: false})}));
+vi.mock('@/services/articlesService', () => ({
+  fetchProjectArticles: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
   useTemplateConfigCaches: () => ({invalidateAfterImport: vi.fn()}),
 }));
 vi.mock('@/hooks/useProjectMemberRole', () => ({
   useProjectMemberRole: () => ({isManager: false, role: 'reviewer', loading: false}),
-}));
-vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'user-1'}})}));
-vi.mock('@/services/articlesService', () => ({
-  loadProjectArticles: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock('@/components/extraction/ArticleExtractionTable', () => ({
   ArticleExtractionTable: ({toolbarActions}: {toolbarActions: ReactNode}) => (

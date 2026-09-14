@@ -26,7 +26,6 @@ import {
   fetchProjectArticles,
   insertArticle,
   loadExtractionTableArticles,
-  loadProjectArticles,
   uploadArticleFile,
 } from '@/services/articlesService';
 
@@ -198,7 +197,6 @@ describe('articlesService — project article lists', () => {
   type ListLoader = (projectId: string) => Promise<ErrorResult<unknown[]>>;
   const loaders: Array<[string, ListLoader]> = [
     ['loadExtractionTableArticles', loadExtractionTableArticles],
-    ['loadProjectArticles', loadProjectArticles],
     ['fetchProjectArticles', fetchProjectArticles],
   ];
 
