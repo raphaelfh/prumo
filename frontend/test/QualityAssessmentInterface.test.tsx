@@ -49,11 +49,11 @@ const session = vi.hoisted(() => ({ user: { id: 'user-1' } as { id: string } | n
 
 // The per-article progress read is mocked at the hook boundary: the dashboard's
 // contract is "progress map + article list → counts or an error state",
-// independent of how the hook reads (PostgREST today, the API later).
+// independent of how the hook reads.
 const progress = vi.hoisted(() => ({
   valuesByArticle: new Map<string, unknown>(),
   isLoading: false,
-  error: null as Error | null,
+  isError: false,
 }));
 
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
@@ -193,7 +193,7 @@ beforeEach(() => {
   session.user = { id: 'user-1' };
   progress.valuesByArticle = new Map();
   progress.isLoading = false;
-  progress.error = null;
+  progress.isError = false;
 });
 
 describe('QualityAssessmentInterface', () => {
@@ -279,7 +279,7 @@ describe('QualityAssessmentInterface dashboard', () => {
 
   it('shows the error state, not zero counts, when the progress read fails', async () => {
     seedTwoArticlesOneStarted();
-    progress.error = new Error('permission denied');
+    progress.isError = true;
     renderInterface(DASHBOARD);
 
     expect(await screen.findByText(LOAD_ERROR)).toBeInTheDocument();

@@ -175,10 +175,11 @@ describe('articlesService — project article lists', () => {
     const chain: Record<string, unknown> = {};
     chain.select = vi.fn(() => chain);
     chain.eq = vi.fn(() => chain);
-    chain.order = vi.fn((column: string) => {
+    const order = vi.fn((column: string, _opts?: {ascending?: boolean}) => {
       orderedBy.push(column);
       return chain;
     });
+    chain.order = order;
     chain.range = vi.fn((from: number, to: number) => {
       range = [from, to];
       ranges.push([from, to]);
@@ -191,7 +192,7 @@ describe('articlesService — project article lists', () => {
       );
     };
     vi.mocked(supabase.from).mockReturnValue(chain as never);
-    return {ranges, orderedBy};
+    return {ranges, orderedBy, order};
   }
 
   type ListLoader = (projectId: string) => Promise<ErrorResult<unknown[]>>;
@@ -226,5 +227,17 @@ describe('articlesService — project article lists', () => {
     await load('proj-1');
 
     expect(orderedBy).toEqual(['created_at', 'id']);
+  });
+
+  it.each(loaders)('%s stops paging on the first short page', async (_name, load) => {
+    // 1200 rows = one full page, then a short page of 200. No third request.
+    const {ranges} = mockArticleRows(1200);
+    await load('proj-1');
+    expect(ranges).toEqual([[0, 999], [1000, 1999]]);
+  });
+  it.each(loaders)('%s orders by created_at descending, then id ascending', async (_name, load) => {
+    const {order} = mockArticleRows(3);
+    await load('proj-1');
+    expect(order.mock.calls).toEqual([['created_at', {ascending: false}], ['id']]);
   });
 });

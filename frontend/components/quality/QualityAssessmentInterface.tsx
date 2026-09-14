@@ -98,7 +98,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   const {
     valuesByArticle,
     isLoading: valuesLoading,
-    error: valuesError,
+    isError: valuesError,
   } = useArticleExtractionValues(
     projectId,
     dashboardTemplateId,

@@ -410,9 +410,6 @@ const ARTICLES_PAGE = 1000;
  * `id` breaks ties on `created_at`: seeded or bulk-imported articles share a
  * timestamp, and equal keys have no stable order across requests, so a row
  * could repeat on one page and vanish from the next.
- *
- * NOTE: keep `await supabase` and `.from('articles')` on separate lines
- * (see insertArticle).
  */
 async function selectAllProjectArticles<T>(
   projectId: string,
