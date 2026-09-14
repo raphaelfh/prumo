@@ -35,6 +35,11 @@ import sys
 import time
 from pathlib import Path
 
+# Comments are blanked before scanning: a `<Button className="h-8">` inside a
+# JSDoc usage example is documentation, not drift
+# (frontend/components/patterns/PageHeader.tsx has one).
+from _ts_source import QUOTES, strip_comments
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_REPO_ROOT = SCRIPT_DIR.parent.parent
 DEFAULT_BASELINE = SCRIPT_DIR / "check_button_scale.baseline"
@@ -45,44 +50,6 @@ TAG = "<Button"
 # A char right after "<Button" that means this is a DIFFERENT component
 # (<ButtonGroup, <Button.Root) rather than the Button itself.
 IDENT_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-")
-QUOTES = "\"'`"
-
-
-def strip_comments(src: str) -> str:
-    """Blank out // and /* */ comments, preserving length and newlines.
-
-    A `<Button className="h-8">` inside a JSDoc usage example is documentation,
-    not drift (frontend/components/patterns/PageHeader.tsx has one).
-    """
-    out = list(src)
-    i, n = 0, len(src)
-    while i < n:
-        ch = src[i]
-        if ch in QUOTES:
-            quote = ch
-            i += 1
-            while i < n and src[i] != quote:
-                if src[i] == "\\":
-                    i += 1
-                i += 1
-            i += 1
-            continue
-        if ch == "/" and i + 1 < n and src[i + 1] == "/":
-            while i < n and src[i] != "\n":
-                out[i] = " "
-                i += 1
-            continue
-        if ch == "/" and i + 1 < n and src[i + 1] == "*":
-            while i < n and not (src[i] == "*" and i + 1 < n and src[i + 1] == "/"):
-                if src[i] != "\n":
-                    out[i] = " "
-                i += 1
-            for j in range(i, min(i + 2, n)):
-                out[j] = " "
-            i += 2
-            continue
-        i += 1
-    return "".join(out)
 
 
 def tag_end(src: str, start: int) -> int:
