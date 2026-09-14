@@ -50,5 +50,6 @@ export function useArticleExtractionValues(
     // read as "loaded empty" — the worklist then paints every row as
     // not-started. Consumers keep a single `isLoading` gate.
     isLoading: query.isPending || query.isError,
+    error: query.error,
   };
 }

@@ -2,9 +2,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { QualityAssessmentInterface } from '@/components/quality/QualityAssessmentInterface';
+import { articleKeys } from '@/lib/query-keys';
 
 const PROBAST_GLOBAL = {
   id: 'tpl-probast-global',
@@ -29,8 +30,41 @@ const PROBAST_PROJECT = {
   created_by: 'user-1',
 };
 
+const ARTICLE_1 = {
+  id: 'article-1',
+  title: 'A predictive model for X',
+  authors: ['Doe', 'Roe'],
+  publication_year: 2024,
+  created_at: '2026-01-01T00:00:00Z',
+};
+
+// Per-test PostgREST answers: `rows` overrides a table's rows, `errors` makes
+// a table's read fail. Reset before every test.
+const db = vi.hoisted(() => ({
+  rows: {} as Record<string, unknown[]>,
+  errors: {} as Record<string, { message: string }>,
+}));
+
+const session = vi.hoisted(() => ({ user: { id: 'user-1' } as { id: string } | null }));
+
+// The per-article progress read is mocked at the hook boundary: the dashboard's
+// contract is "progress map + article list → counts or an error state",
+// independent of how the hook reads (PostgREST today, the API later).
+const progress = vi.hoisted(() => ({
+  valuesByArticle: new Map<string, unknown>(),
+  isLoading: false,
+  error: null as Error | null,
+}));
+
+vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
+  articleExtractionValuesKeys: {
+    byTemplate: (...scope: string[]) => ['article-extraction-values', ...scope],
+  },
+  useArticleExtractionValues: () => ({ ...progress }),
+}));
+
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({ user: { id: 'user-1' } }),
+  useAuth: () => ({ user: session.user }),
 }));
 
 // The worklist toolbar mounts the engine gear (spec §5); its hooks are stubbed
@@ -92,8 +126,8 @@ vi.mock('@/integrations/api', () => ({
 }));
 
 vi.mock('@/integrations/supabase/client', () => {
-  function makeBuilder(rows: unknown, count: number | null = null) {
-    const result = { data: rows, error: null, count };
+  function makeBuilder(rows: unknown, error: { message: string } | null = null) {
+    const result = { data: error ? null : rows, error, count: null };
     const b: Record<string, unknown> = {
       select: () => b,
       eq: () => b,
@@ -105,36 +139,22 @@ vi.mock('@/integrations/supabase/client', () => {
     return b;
   }
 
+  // Resolved per call: vi.mock is hoisted above the fixture constants.
+  const defaultRows = (table: string): unknown[] =>
+    ({
+      extraction_templates_global: [PROBAST_GLOBAL],
+      project_extraction_templates: [PROBAST_PROJECT],
+      articles: [ARTICLE_1],
+    })[table] ?? [];
+
   return {
     supabase: {
       auth: {
         getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }),
       },
       from: (table: string) => {
-        if (table === 'extraction_templates_global') {
-          return makeBuilder([PROBAST_GLOBAL]);
-        }
-        if (table === 'project_extraction_templates') {
-          return makeBuilder([PROBAST_PROJECT]);
-        }
-        if (table === 'articles') {
-          return makeBuilder(
-            [
-              {
-                id: 'article-1',
-                title: 'A predictive model for X',
-                authors: ['Doe', 'Roe'],
-                publication_year: 2024,
-                created_at: '2026-01-01T00:00:00Z',
-              },
-            ],
-            1,
-          );
-        }
-        if (table === 'extraction_instances' || table === 'extraction_reviewer_states') {
-          return makeBuilder([]);
-        }
-        return makeBuilder([]);
+        if (db.errors[table]) return makeBuilder(null, db.errors[table]);
+        return makeBuilder(db.rows[table] ?? defaultRows(table));
       },
     },
   };
@@ -145,15 +165,15 @@ function LocationProbe() {
   return <div data-testid="probe-pathname">{loc.pathname}</div>;
 }
 
-function renderInterface() {
+function renderInterface(entry = '/projects/p1') {
   // HITLArticleTable now uses TanStack Query (useTemplateEntityTypes /
   // useArticleExtractionValues), so the tree needs a QueryClientProvider.
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/p1']}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route
             path="/projects/:projectId"
@@ -164,7 +184,17 @@ function renderInterface() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...view, queryClient };
 }
+
+beforeEach(() => {
+  db.rows = {};
+  db.errors = {};
+  session.user = { id: 'user-1' };
+  progress.valuesByArticle = new Map();
+  progress.isLoading = false;
+  progress.error = null;
+});
 
 describe('QualityAssessmentInterface', () => {
   it('renders the assessment table with the active QA template', async () => {
@@ -224,5 +254,72 @@ describe('QualityAssessmentInterface', () => {
     expect(
       (await screen.findAllByText(/Your engine for new runs: GPT-4o mini/)).length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe('QualityAssessmentInterface dashboard', () => {
+  const DASHBOARD = '/projects/p1?qaTab=dashboard';
+  const LOAD_ERROR = /Couldn’t load quality-assessment progress/;
+
+  function seedTwoArticlesOneStarted() {
+    db.rows.articles = [ARTICLE_1, { ...ARTICLE_1, id: 'article-2', title: 'Second' }];
+    progress.valuesByArticle = new Map([
+      ['article-1', { instances: [{ id: 'inst-1', entity_type_id: 'et-1' }], values: [] }],
+    ]);
+  }
+
+  it('counts articles with progress data against the project total', async () => {
+    seedTwoArticlesOneStarted();
+    renderInterface(DASHBOARD);
+
+    expect(await screen.findByText('50%')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+  });
+
+  it('shows the error state, not zero counts, when the progress read fails', async () => {
+    seedTwoArticlesOneStarted();
+    progress.error = new Error('permission denied');
+    renderInterface(DASHBOARD);
+
+    expect(await screen.findByText(LOAD_ERROR)).toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    expect(screen.queryByText('50%')).not.toBeInTheDocument();
+  });
+
+  it('shows the error state, not zero counts, when the articles read fails', async () => {
+    seedTwoArticlesOneStarted();
+    db.errors.articles = { message: 'permission denied' };
+    renderInterface(DASHBOARD);
+
+    expect(await screen.findByText(LOAD_ERROR)).toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  });
+
+  it('recovers the counts when the user retries after a failed read', async () => {
+    const user = userEvent.setup();
+    seedTwoArticlesOneStarted();
+    db.errors.articles = { message: 'network down' };
+    renderInterface(DASHBOARD);
+
+    await screen.findByText(LOAD_ERROR);
+    delete db.errors.articles;
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(await screen.findByText('50%')).toBeInTheDocument();
+    expect(screen.queryByText(LOAD_ERROR)).not.toBeInTheDocument();
+  });
+
+  it('shows the skeleton, not zero counts, while there is no user', async () => {
+    session.user = null;
+    seedTwoArticlesOneStarted();
+    const { queryClient } = renderInterface(DASHBOARD);
+
+    // Precondition: the article read resolved, so only the missing user can hold the skeleton.
+    await waitFor(() =>
+      expect(queryClient.getQueryState(articleKeys.byProject('p1'))?.status).toBe('success'),
+    );
+    expect(screen.getByTestId('qa-dashboard-skeleton')).toBeInTheDocument();
+    expect(screen.queryByText('50%')).not.toBeInTheDocument();
   });
 });
