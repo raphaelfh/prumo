@@ -16,16 +16,11 @@ frontend/services/extractionDataService.ts|projects:1
 frontend/services/extractionFieldService.ts|project_members:1
 frontend/services/extractionInstanceService.ts|extraction_instances:1
 frontend/services/profileService.ts|profiles:2
-frontend/services/projectSettingsService.ts|extraction_templates_global:1
 frontend/services/projectSettingsService.ts|profiles:1
-frontend/services/projectSettingsService.ts|project_extraction_templates:1
 frontend/services/projectSettingsService.ts|project_members:5
 frontend/services/projectSettingsService.ts|projects:4
 frontend/services/projectsService.ts|articles:1
 frontend/services/projectsService.ts|projects:2
 frontend/services/qaTemplateService.ts|extraction_entity_types:1
-frontend/services/qaTemplateService.ts|extraction_templates_global:1
-frontend/services/qaTemplateService.ts|project_extraction_templates:2
-frontend/services/templateService.ts|extraction_entity_types:1
-frontend/services/templateService.ts|extraction_templates_global:1
+frontend/services/qaTemplateService.ts|project_extraction_templates:1
 frontend/services/zoteroImportService.ts|zotero_integrations:2

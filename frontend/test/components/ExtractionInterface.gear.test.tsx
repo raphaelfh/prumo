@@ -21,6 +21,7 @@ vi.mock('@/hooks/hitl/useProjectTemplates', () => ({
     isError: false, refetch: vi.fn(),
   }),
   useInvalidateProjectTemplates: () => vi.fn(),
+  useGlobalTemplateCatalogue: () => ({data: [], isPending: false}),
 }));
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
   useArticleExtractionValues: () => ({valuesByArticle: new Map(), isLoading: false, isError: false, isUnavailable: false, refetch: vi.fn()}),

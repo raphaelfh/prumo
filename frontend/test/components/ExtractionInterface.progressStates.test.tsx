@@ -13,6 +13,7 @@ const m = vi.hoisted(() => ({
 vi.mock('@/integrations/supabase/client', () => ({supabase: {auth: {getUser: vi.fn()}}}));
 vi.mock('@/hooks/hitl/useProjectTemplates', () => ({
   useProjectTemplates: () => m.templatesMock(), useInvalidateProjectTemplates: () => vi.fn(),
+  useGlobalTemplateCatalogue: () => ({data: [], isPending: false}),
 }));
 // The REAL shared gate (useCallerArticleProgress) runs: it composes the mocked useAuth with this mocked read.
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({useArticleExtractionValues: () => m.valuesMock()}));

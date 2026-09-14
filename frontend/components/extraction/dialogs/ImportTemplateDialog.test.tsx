@@ -8,10 +8,14 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 // One stable array: a fresh [] per render is a latent loop shape even now
 // that the render-phase selection sync is gone.
 const CATALOGUE = [
-  {id: 'g1', name: 'CHARMS', description: 'd', framework: 'CHARMS', version: '1.0', entityTypesCount: 14},
+  {id: 'g1', name: 'CHARMS', description: 'd', framework: 'CHARMS', version: '1.0', kind: 'extraction', entity_types_count: 14},
 ];
-vi.mock('@/hooks/extraction/useGlobalTemplates', () => ({
-  useGlobalTemplates: () => ({templates: CATALOGUE, loading: false, error: null, refresh: vi.fn()}),
+// Only the catalogue read is stubbed: the dialog's list refresh must stay the
+// real `useInvalidateProjectTemplates`, which the invalidate-count contract
+// below counts.
+vi.mock('@/hooks/hitl/useProjectTemplates', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/hitl/useProjectTemplates')>()),
+  useGlobalTemplateCatalogue: () => ({data: CATALOGUE, isPending: false}),
 }));
 // Both panes stay stubbed: un-stubbing ProjectTemplatesList would add its own
 // query and quietly break the invalidate-count contract below.

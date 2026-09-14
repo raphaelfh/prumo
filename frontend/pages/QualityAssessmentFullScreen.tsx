@@ -42,7 +42,7 @@ import { createViewerStore, subscribeReaderLocate } from "@prumo/pdf-viewer";
 import { RunPdfContent } from "@/components/runs/RunPdfContent";
 import { Badge } from "@/components/ui/badge";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
-import { resolveQATemplateKind } from "@/services/projectSettingsService";
+import { useQATemplateResolution } from "@/hooks/qa/useQATemplateResolution";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
 import { useQAWorklist } from "@/hooks/qa/useQAWorklist";
 import { useQAReopen } from "@/hooks/qa/useQAReopen";
@@ -110,52 +110,9 @@ export default function QualityAssessmentFullScreen() {
   }>();
   const navigate = useNavigate();
 
-  // The ``:templateId`` URL segment may point at either a project-level
-  // ``project_extraction_templates`` row (when the user landed here from
-  // the QA articles table — that table already operates on a project
-  // clone) or a global ``extraction_templates_global`` row (when the
-  // user opened QA from the data-extraction header menu, which lists
-  // the global pool). Resolve once before opening the session so we can
-  // route the id to the correct request field.
-  const [resolvedTemplate, setResolvedTemplate] = useState<
-    | { kind: "project"; id: string }
-    | { kind: "global"; id: string }
-    | { kind: "missing" }
-    | null
-  >(null);
-
-  // Reset the resolution whenever the URL segment changes (during render,
-  // so the lookup effect below never sets state synchronously).
-  const [prevTemplateId, setPrevTemplateId] = useState(templateId);
-  if (templateId !== prevTemplateId) {
-    setPrevTemplateId(templateId);
-    setResolvedTemplate(null);
-  }
-
-  useEffect(() => {
-    if (!templateId) {
-      return;
-    }
-    let cancelled = false;
-    resolveQATemplateKind(templateId).then((result) => {
-      if (cancelled) return;
-      if (!result.ok) {
-        setResolvedTemplate({kind: "missing"});
-        return;
-      }
-      const {projectId: projId, globalId} = result.data;
-      if (projId) {
-        setResolvedTemplate({kind: "project", id: projId});
-      } else if (globalId) {
-        setResolvedTemplate({kind: "global", id: globalId});
-      } else {
-        setResolvedTemplate({kind: "missing"});
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [templateId]);
+  // The ``:templateId`` segment names the project's QA template or a
+  // catalogue one; the session-open request takes each in its own field.
+  const { resolution: resolvedTemplate } = useQATemplateResolution(projectId, templateId);
 
   const {
     session,
@@ -404,7 +361,7 @@ export default function QualityAssessmentFullScreen() {
 
   // ONE place that knows the QA route shape. The :templateId segment is
   // carried through verbatim — it may name either a project or a global
-  // template (see resolveQATemplateKind above), so reconstructing it from the
+  // template (see useQATemplateResolution above), so reconstructing it from the
   // resolved template would silently rewrite the URL the user arrived on.
   const qaArticleRoute = (targetArticleId: string) =>
     `/projects/${projectId}/articles/${targetArticleId}/quality-assessment/${templateId}`;
@@ -603,11 +560,13 @@ export default function QualityAssessmentFullScreen() {
   }
 
   const loading =
-    resolvedTemplate === null || sessionLoading || templateLoading;
+    resolvedTemplate.kind === "pending" || sessionLoading || templateLoading;
   const error =
-    resolvedTemplate?.kind === "missing"
+    resolvedTemplate.kind === "missing"
       ? t("qa", "templateNotFound").replace("{{templateId}}", templateId ?? "")
-      : (sessionError ?? templateError);
+      : resolvedTemplate.kind === "error"
+        ? t("qa", "templateLoadError")
+        : (sessionError ?? templateError);
 
   // The API returns stage as `string`; cast to the narrow union the header lib expects.
   const runStage = (runDetail?.run.stage ?? null) as ExtractionRunStage | null;

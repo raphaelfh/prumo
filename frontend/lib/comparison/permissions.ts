@@ -26,9 +26,9 @@ export interface PermissionRules {
 
 /**
  * Canonical HITL "kind" discriminator (mirrors `run.kind` / the backend
- * `TemplateKind` enum). This is the single source of the union — `HITLKind`,
- * `HITLKindParam`, and any other kind type alias to this rather than
- * re-declaring the literal (which drifts).
+ * `TemplateKind` enum). This is the single source of the union — `HITLKind`
+ * and any other kind type alias to this rather than re-declaring the
+ * literal (which drifts).
  */
 export type ReviewKind = 'extraction' | 'quality_assessment';
 

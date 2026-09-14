@@ -28,8 +28,7 @@ import {Label} from '@/components/ui/label';
 import {Alert, AlertDescription} from '@/components/ui/alert';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {AlertTriangle, CheckCircle2, FileText, Import, Layers, Loader2} from 'lucide-react';
-import {useGlobalTemplates} from '@/hooks/extraction/useGlobalTemplates';
-import {useInvalidateProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
+import {useGlobalTemplateCatalogue, useInvalidateProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {importGlobalTemplate} from '@/services/templateImportService';
 
 import {ImportTemplateFilePane} from './ImportTemplateFilePane';
@@ -58,7 +57,9 @@ export function ImportTemplateDialog({
   onOpenChange,
   onActiveTemplateChanged,
 }: ImportTemplateDialogProps) {
-  const { templates, loading: loadingTemplates } = useGlobalTemplates();
+  const catalogue = useGlobalTemplateCatalogue('extraction', {enabled: open});
+  const templates = catalogue.data ?? [];
+  const loadingTemplates = catalogue.isPending;
   const invalidateProjectTemplates = useInvalidateProjectTemplates();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -202,7 +203,7 @@ export function ImportTemplateDialog({
                             <div className="flex items-center gap-4 text-xs text-muted-foreground">
                               <div className="flex items-center gap-1.5">
                                 <Layers className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                  <span>{template.entityTypesCount} {t('templateConfig', 'importSections')}</span>
+                                  <span>{template.entity_types_count} {t('templateConfig', 'importSections')}</span>
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -223,7 +224,7 @@ export function ImportTemplateDialog({
                     <AlertDescription>
                         <div className="font-medium mb-1">{t('templateConfig', 'importTemplateSelected')}</div>
                       <div className="text-sm">
-                          <strong>{selectedTemplate.name}</strong> — {selectedTemplate.entityTypesCount} {t('templateConfig', 'importSections')}. {t('templateConfig', 'importTemplateSelectedDetail')}
+                          <strong>{selectedTemplate.name}</strong> — {selectedTemplate.entity_types_count} {t('templateConfig', 'importSections')}. {t('templateConfig', 'importTemplateSelectedDetail')}
                       </div>
                     </AlertDescription>
                   </Alert>

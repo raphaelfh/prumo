@@ -18,7 +18,6 @@
  */
 
 import {ApiError, apiClient} from '@/integrations/api/client';
-import {supabase} from '@/integrations/supabase/client';
 import {t} from '@/lib/copy';
 import type {ErrorResult} from '@/lib/error-utils';
 import {PgError, toResult} from '@/lib/error-utils';
@@ -442,72 +441,6 @@ export async function deleteSection(
       throw error;
     }
   }, 'deleteSection');
-}
-
-// --- Global templates ---
-
-export interface GlobalTemplateWithCount {
-  id: string;
-  name: string;
-  framework: 'CHARMS' | 'PICOS' | 'CUSTOM';
-  description: string | null;
-  version: string | null;
-  is_global: boolean;
-  schema: unknown;
-  created_at: string | null;
-  updated_at: string | null;
-  entityTypesCount: number;
-}
-
-/**
- * Load all global extraction templates with entity-type counts.
- * Single round-trip: counts computed client-side over the flat entity-type
- * rows (tiny set, far cheaper than N per-template count queries).
- *
- * Scoped to `kind = 'extraction'`: the global catalogue holds both lineages,
- * and quality-assessment tools (PROBAST, QUADAS-2) belong to the QA
- * configuration screen — `qaTemplateService.fetchGlobalTemplates` reads them.
- */
-export function loadGlobalTemplates(): Promise<ErrorResult<GlobalTemplateWithCount[]>> {
-  return toResult(async () => {
-    const {data: templatesData, error: templatesError} = await supabase
-      .from('extraction_templates_global')
-      .select('*')
-      .eq('is_global', true)
-      .eq('kind', 'extraction')
-      .order('framework', {ascending: true});
-
-    if (templatesError) throw templatesError;
-
-    if (!templatesData || templatesData.length === 0) return [];
-
-    const templateIds = templatesData.map((t) => t.id);
-    const {data: entityTypeRows, error: countError} = await supabase
-      .from('extraction_entity_types')
-      .select('template_id')
-      .in('template_id', templateIds);
-
-    if (countError) throw countError;
-
-    const countByTemplateId = new Map<string, number>();
-    for (const row of entityTypeRows ?? []) {
-      const tid = (row as {template_id: string}).template_id;
-      countByTemplateId.set(tid, (countByTemplateId.get(tid) ?? 0) + 1);
-    }
-
-    return templatesData.map((template) => ({
-      id: template.id,
-      name: template.name,
-      framework: template.framework as 'CHARMS' | 'PICOS' | 'CUSTOM',
-      description: template.description,
-      version: template.version,
-      is_global: template.is_global,
-      schema: template.schema,
-      created_at: template.created_at,
-      updated_at: template.updated_at,
-      entityTypesCount: countByTemplateId.get(template.id) ?? 0,
-    }));
-  }, 'loadGlobalTemplates');
 }
 
 // --- Section creation ---
