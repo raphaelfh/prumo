@@ -399,10 +399,15 @@ async def test_bind_parameter_count_is_independent_of_article_count(
 
 
 async def test_form_run_scoping_agrees_with_resolve_form_runs(db_session: AsyncSession) -> None:
-    w = await _world(db_session, articles=3)
-    mixed, finalized_only, no_run = w.aids
+    w = await _world(db_session, articles=5)
+    mixed, extract_live, pending_only, finalized_only, no_run = w.aids
+    # Every live stage (pending/extract/consensus) is exercised: a stage dropped from either copy of the live
+    # tuple changes one side's choice. One live run per coordinate (uq_one_live_extraction_run_per_coord), so
+    # each live stage gets its own article.
     plan = {
-        mixed: [("cancelled", 2), ("finalized", 0), ("extract", 1)],
+        mixed: [("cancelled", 2), ("finalized", 0), ("consensus", 1)],
+        extract_live: [("finalized", 0), ("extract", 1)],
+        pending_only: [("pending", 0)],
         finalized_only: [("finalized", 0), ("finalized", 1)],
         no_run: [],
     }
@@ -417,7 +422,7 @@ async def test_form_run_scoping_agrees_with_resolve_form_runs(db_session: AsyncS
             )
     refs = await resolve_form_runs(db_session, w.aids, project_id=PID, template_id=w.tid)
     values = await _values(db_session, w)
-    assert [r.run_id is None for r in refs] == [False, False, True]
+    assert [r.run_id is None for r in refs] == [False, False, False, False, True]
     for ref in refs:
         want = (
             {}
