@@ -123,6 +123,12 @@ vi.mock('@/integrations/api', () => ({
     if (path.includes('/active-version')) {
       return { version_id: 'v1', version: 1, entity_types: [] };
     }
+    if (path === '/api/v1/projects/p1/templates?kind=quality_assessment') {
+      return [PROBAST_PROJECT];
+    }
+    if (path === '/api/v1/templates/global?kind=quality_assessment') {
+      return [PROBAST_GLOBAL];
+    }
     return { project_template_id: 'tpl-probast-project' };
   }),
 }));
@@ -144,8 +150,6 @@ vi.mock('@/integrations/supabase/client', () => {
   // Resolved per call: vi.mock is hoisted above the fixture constants.
   const defaultRows = (table: string): unknown[] =>
     ({
-      extraction_templates_global: [PROBAST_GLOBAL],
-      project_extraction_templates: [PROBAST_PROJECT],
       articles: [ARTICLE_1],
     })[table] ?? [];
 

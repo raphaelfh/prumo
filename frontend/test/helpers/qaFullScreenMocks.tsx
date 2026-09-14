@@ -220,6 +220,14 @@ export function makeApiClientDefault() {
     if (url.includes("/files") || url.includes("/text-blocks")) {
       return [];
     }
+    // The route's :templateId resolves against these two lists: tpl-1 is the
+    // project's own QA template, so it opens as a project template.
+    if (url === "/api/v1/projects/p1/templates?kind=quality_assessment") {
+      return [PROBAST_TEMPLATE];
+    }
+    if (url === "/api/v1/templates/global?kind=quality_assessment") {
+      return [];
+    }
     return {};
   };
 }

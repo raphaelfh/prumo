@@ -67,7 +67,7 @@ describe('ProjectTemplatesList', () => {
 
   it('asks the server only for this project, this kind, including inactive rows', async () => {
     renderList();
-    await waitFor(() => expect(fetchProjectTemplates).toHaveBeenCalledWith('p', 'extraction', true));
+    await waitFor(() => expect(fetchProjectTemplates).toHaveBeenCalledWith('p', 'extraction'));
   });
 
   it('surfaces a failed list reload instead of hiding it', async () => {

@@ -75,6 +75,10 @@ import {
 } from "./helpers/qaFullScreenMocks";
 import { renderPage } from "./helpers/qaFullScreenRender";
 
+// A per-test apiClient override answers its own URLs and hands every other
+// one to the shared default (template lists, files, suggestions).
+const answerByDefault = makeApiClientDefault();
+
 const mockedPermissions = vi.mocked(useComparisonPermissions);
 
 describe("QualityAssessmentFullScreen", () => {
@@ -391,7 +395,7 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
       if (url.includes("/files") || url.includes("/text-blocks")) {
         return [];
       }
-      return {};
+      return answerByDefault(url);
     });
   }
 
@@ -517,7 +521,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
       if (url.includes("/files") || url.includes("/text-blocks")) {
         return [];
       }
-      return {};
+      return answerByDefault(url);
     });
   }
 
@@ -754,12 +758,11 @@ describe("QualityAssessmentFullScreen — jump to the next pending item", () => 
       { ...PARTICIPANTS_DOMAIN, extraction_fields: [SIGNALING_QUESTION, ROB_FIELD] },
       { ...ANALYSIS, extraction_fields: [REQUIRED] },
     ];
-    const byDefault = makeApiClientDefault();
     vi.mocked(apiClient).mockImplementation(async (url: string) =>
       url === "/api/v1/hitl/sessions"
         ? { run_id: "run-1", kind: "quality_assessment", project_template_id: "tpl-1",
             instances_by_entity_type: { "et-1": "inst-1", "et-2": "inst-2" } }
-        : byDefault(url),
+        : answerByDefault(url),
     );
   });
 

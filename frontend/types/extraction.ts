@@ -28,22 +28,6 @@ export type ExtractionValue =
 
 // =================== TEMPLATES ===================
 
-/**
- * Standardized global template (CHARMS, PICOS, PRISMA, etc.)
- * Maintained by admins, read-only for users
- */
-export interface GlobalExtractionTemplate {
-  id: string;
-  name: string;
-  description: string | null;
-  framework: ExtractionFramework;
-  version: string;
-  is_global: boolean;
-  schema: any;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface ProjectExtractionTemplate {
   id: string;
   project_id: string;

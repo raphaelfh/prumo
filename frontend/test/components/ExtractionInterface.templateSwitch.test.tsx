@@ -26,6 +26,7 @@ vi.mock('@/hooks/hitl/useProjectTemplates', () => ({
     isError: false, refetch: vi.fn(),
   }),
   useInvalidateProjectTemplates: () => vi.fn(),
+  useGlobalTemplateCatalogue: () => ({data: [], isPending: false}),
 }));
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
   useArticleExtractionValues: () => ({valuesByArticle: new Map(), isLoading: false, isError: false, isUnavailable: false, refetch: vi.fn()}),
@@ -40,11 +41,6 @@ vi.mock('@/hooks/useProjectMemberRole', () => ({
   useProjectMemberRole: () => ({isManager: true, role: 'manager', loading: false}),
 }));
 vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'user-1'}, loading: false})}));
-// The configuration tab's catalogue query would hit the stubbed supabase client.
-vi.mock('@/services/templateService', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/templateService')>()),
-  loadGlobalTemplates: vi.fn(async () => ({ok: true, data: []})),
-}));
 vi.mock('@/services/articlesService', () => ({
   fetchProjectArticles: vi.fn(() => new Promise(() => {})),
 }));
