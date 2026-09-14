@@ -93,12 +93,6 @@ export interface ArticleInsertData {
  *
  * The id is what lets the form attach staged files immediately after creating
  * the row, instead of making the user reopen the article to reach the picker.
- *
- * NOTE: keep `await supabase` and `.from('articles')` on separate lines.
- * check_frontend_data_path.py matches the direct-table-read pattern with a
- * single-line regex, so collapsing this chain turns a grandfathered call into
- * a new violation and fails CI. Comments are not exempt from that regex
- * either, which is why this note spells the pattern out instead of quoting it.
  */
 export function insertArticle(
   articleData: ArticleInsertData,
