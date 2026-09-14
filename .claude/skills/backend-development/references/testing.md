@@ -89,7 +89,7 @@ def as_user(client, user_id: UUID):
 
 ## Factories
 
-Use a factory module (`backend/tests/factories.py`) for ORM instances:
+Use a factory module (`backend/tests/factories/`) for ORM instances:
 
 ```python
 async def create_project(db, *, manager_id: UUID) -> Project:

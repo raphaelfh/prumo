@@ -129,7 +129,7 @@ interface FooProps extends VariantProps<typeof fooVariants> {
 ```
 
 But: `grid-rows-${rows}` is **dynamic** and Tailwind cannot scan it. Either
-add a safelist entry in `tailwind.config.ts` or — better — use
+add an `@source inline(...)` safelist in `index.css` or — better — use
 `gridTemplateRows` via inline style or a CSS variable.
 
 ## Naming

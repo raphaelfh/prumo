@@ -14,7 +14,7 @@ owner: '@raphaelfh'
 
 **Baseline snapshot:** 2026-07-01, 199 advisors — 15 security, 184
 performance. The canonical fingerprint list is checked in at
-[`.claude/skills/preflight/supabase-advisors.baseline`](../../../.claude/skills/preflight/supabase-advisors.baseline).
+[`.claude/commands/preflight/supabase-advisors.baseline`](../../../.claude/commands/preflight/supabase-advisors.baseline).
 Regenerate after any remediation with `/preflight --update-advisors-baseline`
 so the gate tightens as items are fixed.
 

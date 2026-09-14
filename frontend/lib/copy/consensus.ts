@@ -4,7 +4,6 @@
 export const consensus = {
     // Tab + section
     tabConsensus: 'Review consensus',
-    tabConsensusDesc: 'Consensus rule and arbitrator',
     runsBannerTitle: 'These settings only affect articles started from now on',
     runsBannerBody:
         'Articles already in progress keep the settings they started with. Changes here apply the next time an article is opened for extraction or assessment.',

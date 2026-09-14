@@ -52,9 +52,9 @@ The architectural-quality-loop accepts `concept:<tag>` as a scope. Resolution ta
 | Tag | Resolves to |
 |---|---|
 | `concept:extraction-run` | `backend/app/services/extraction_*.py`, `backend/app/api/v1/endpoints/runs*.py`, `backend/app/models/extraction*.py`, `frontend/components/extraction/**`, `frontend/services/extraction*.ts` |
-| `concept:hitl-session` | `backend/app/services/hitl_session_service.py`, `backend/app/api/v1/endpoints/hitl_sessions*.py`, `frontend/services/hitlSessionService.ts`, `frontend/hooks/extraction/useHitl*.ts` |
-| `concept:reviewer-decision` | `backend/app/services/reviewer_decision_service.py`, `backend/app/repositories/extraction_reviewer_*.py`, `frontend/services/extractionValueService.ts` |
+| `concept:hitl-session` | `backend/app/services/hitl_session_service.py`, `backend/app/api/v1/endpoints/hitl_sessions*.py`, `frontend/services/extractionRunService.ts`, `frontend/hooks/extraction/useHitl*.ts` |
+| `concept:reviewer-decision` | `backend/app/services/extraction_review_service.py`, `backend/app/repositories/extraction_reviewer_*.py`, `frontend/services/extractionValueService.ts` |
 | `concept:template-clone` | `backend/app/services/template_clone_service.py`, `backend/tests/integration/test_template_clone_*.py` |
-| `concept:consensus` | `backend/app/services/consensus_service.py`, `frontend/components/consensus/**` |
+| `concept:consensus` | `backend/app/services/extraction_consensus_service.py`, `frontend/components/runs/Consensus*.tsx` |
 
 When you add a new concept tag, append a row here.

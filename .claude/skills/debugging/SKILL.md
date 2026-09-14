@@ -5,7 +5,7 @@ description: Dispatcher for prumo's debugging methodology — use the moment a u
 
 # Debugging (prumo)
 
-Four sub-skills, one philosophy: **evidence before hypothesis, root cause before fix, verification before claim**.
+Three sub-skills and one exit gate, one philosophy: **evidence before hypothesis, root cause before fix, verification before claim**.
 
 This is for *any* technical issue on prumo — backend (FastAPI + SQLAlchemy async + Celery + Supabase RLS), frontend (Vite + TanStack Query + Zustand), or the seams between them.
 
@@ -16,7 +16,7 @@ This is for *any* technical issue on prumo — backend (FastAPI + SQLAlchemy asy
 | systematic-debugging | `systematic-debugging/SKILL.md` | You just heard about a bug. Before any hypothesis. |
 | root-cause-tracing | `root-cause-tracing/SKILL.md` | Current evidence looks like a downstream symptom; you need to walk backwards through `Promise.all`, services, or the cache. |
 | defense-in-depth | `defense-in-depth/SKILL.md` | You found the root cause and now want to prevent the *class* of bug from recurring. Especially for auth, BOLA, RLS. |
-| verification-before-completion | `verification-before-completion/SKILL.md` | You are about to type "fixed", "done", "confirmed", "ready to merge". |
+| verification gate | `../code-review/references/verification-before-completion.md` | You are about to type "fixed", "done", "confirmed", "ready to merge". |
 
 ## Quick dispatch
 
@@ -25,7 +25,7 @@ This is for *any* technical issue on prumo — backend (FastAPI + SQLAlchemy asy
 | Test failure or unexpected behaviour, no theory yet | systematic-debugging |
 | Error appears inside `extraction_*`, deep in a service, but the trigger came from a hook/endpoint | root-cause-tracing |
 | Same class of bug keeps coming back (cache key drift, RLS gap, missing await) | defense-in-depth |
-| About to claim a fix lands or a flake is real | verification-before-completion |
+| About to claim a fix lands or a flake is real | the `code-review` verification gate |
 
 ## Why systematic beats guess-and-check
 
@@ -41,10 +41,10 @@ Each has a known shape. Run the framework first; pattern-matching by gut is what
 
 ## Cross-skill flow
 
-1. **Bug arrives** → `systematic-debugging` Phase 1 (reproduce, gather evidence at *every* layer, do not theorise yet).
+1. **Bug arrives** → `systematic-debugging` Phase 1: build a red loop command, minimise it, gather evidence at *every* layer. No theory until the loop goes red.
 2. **Symptom is downstream of trigger** → switch to `root-cause-tracing` to walk back.
 3. **Root cause confirmed, fix ready** → before writing the fix, apply `defense-in-depth` so the class is closed, not just this instance.
-4. **About to claim it's done** → `verification-before-completion` to actually run `make test-backend`, `pytest -k <name>`, `vitest run <path>`, `ruff check`, `npm run typecheck`, and read the output.
+4. **About to claim it's done** → the `code-review` verification gate to actually run `make test-backend`, `pytest -k <name>`, `vitest run <path>`, `ruff check`, `npm run typecheck`, and read the output.
 
 Skipping any step is how the same bug keeps coming back.
 

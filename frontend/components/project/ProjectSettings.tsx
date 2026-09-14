@@ -44,32 +44,20 @@ interface SectionConfig {
   id: SectionId;
   label: string;
   icon: typeof Info;
-  description: string;
 }
 
 const SECTIONS: SectionConfig[] = [
-    {id: 'basic', label: t('project', 'tabBasic'), icon: Info, description: t('project', 'tabBasicDesc')},
-    {id: 'review', label: t('project', 'tabReview'), icon: FileText, description: t('project', 'tabReviewDesc')},
+    {id: 'basic', label: t('project', 'tabBasic'), icon: Info},
+    {id: 'review', label: t('project', 'tabReview'), icon: FileText},
     {
         id: 'review-question',
         label: t('project', 'tabReviewQuestion'),
         icon: MessageSquareText,
-        description: t('project', 'tabReviewQuestionDesc'),
     },
-    {id: 'ai-engine', label: t('project', 'tabAiEngine'), icon: Bot, description: t('project', 'tabAiEngineDesc')},
-    {id: 'team', label: t('project', 'tabTeam'), icon: Users, description: t('project', 'tabTeamDesc')},
-    {
-        id: 'consensus',
-        label: t('consensus', 'tabConsensus'),
-        icon: ShieldCheck,
-        description: t('consensus', 'tabConsensusDesc'),
-    },
-    {
-        id: 'advanced',
-        label: t('project', 'tabAdvanced'),
-        icon: SettingsIcon,
-        description: t('project', 'tabAdvancedDesc')
-    },
+    {id: 'ai-engine', label: t('project', 'tabAiEngine'), icon: Bot},
+    {id: 'team', label: t('project', 'tabTeam'), icon: Users},
+    {id: 'consensus', label: t('consensus', 'tabConsensus'), icon: ShieldCheck},
+    {id: 'advanced', label: t('project', 'tabAdvanced'), icon: SettingsIcon},
 ];
 
 const SECTION_IDS = new Set<string>(SECTIONS.map((s) => s.id));
@@ -127,22 +115,18 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
   if (!project) return null;
 
-    const activeSectionConfig = SECTIONS.find((s) => s.id === activeSection);
-
   return (
     <div className="h-full flex flex-col bg-background">
-        <PageHeader
-            title={hasUnsavedChanges ? t('project', 'settingsTitleUnsaved') : t('project', 'settingsTitle')}
-            description={activeSectionConfig?.description}
-            actions={
-                hasUnsavedChanges ? (
+        {hasUnsavedChanges && (
+            <PageHeader
+                actions={
                     <Button onClick={saveProject} disabled={loading} size="sm" className="text-[13px]">
                         <Save className="mr-2 h-4 w-4" strokeWidth={1.5}/>
                         {loading ? t('project', 'settingsSaving') : t('project', 'settingsSaveChanges')}
                     </Button>
-                ) : undefined
-            }
-        />
+                }
+            />
+        )}
 
       <div className="flex-1 flex overflow-hidden">
           <aside className="w-56 shrink-0 overflow-y-auto border-r border-border/40">
