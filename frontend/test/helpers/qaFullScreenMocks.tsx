@@ -102,6 +102,9 @@ export function makeSupabaseClientMock(
       eq: () => builder,
       in: () => builder,
       order: () => builder,
+      // Paged reads (fetchProjectArticles) ask for a range; the stub answers
+      // the whole fixture, which is short enough to be the last page.
+      range: () => builder,
       maybeSingle: () => Promise.resolve(result),
       then: (cb: (r: typeof result) => unknown) => Promise.resolve(cb(result)),
     };

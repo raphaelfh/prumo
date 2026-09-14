@@ -30,9 +30,9 @@
  * the write. It is a realistic ordering (PostgREST and the API are different
  * hosts in production), not a contrived one.
  *
- * The J/K shortcut (`useRunShortcuts`) ignores keypresses while an editable
+ * The [ / ] shortcut (`useRunShortcuts`) ignores keypresses while an editable
  * element has focus (the typing guard it inherits from
- * `hooks/useKeyboardShortcuts.ts`, pinned by the unit test "ignores J/K while
+ * `hooks/useKeyboardShortcuts.ts`, pinned by the unit test "ignores [ / ] while
  * the user is typing in a field").
  * So the field is blurred (not waited on) right after typing, before the
  * pager key is pressed — otherwise the keystroke would just be typed into
@@ -148,7 +148,7 @@ async function pendingEditSurvivesKeyboardArticleChange(
   const nextEnabled = !(await nextButton.isDisabled());
   const prevEnabled = !(await prevButton.isDisabled());
   test.skip(!nextEnabled && !prevEnabled, "Both pager directions disabled — single-article worklist");
-  const key = (nextEnabled ? ARTICLE_NEXT_KEY : ARTICLE_PREV_KEY).toLowerCase();
+  const key = nextEnabled ? ARTICLE_NEXT_KEY : ARTICLE_PREV_KEY;
 
   const formPanel = page.locator(FORM_PANEL);
   const textFields = formPanel.getByRole("textbox");

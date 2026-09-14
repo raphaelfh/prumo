@@ -45,7 +45,28 @@ export const templateEntityTypesKeys = {
     ['template-entity-types', templateId] as const,
 };
 
-/** Template general AI instruction (Configuration row zero). */
+/**
+ * Per-article instances + values for worklist/dashboard progress.
+ * Keyed by (project, template, user, kind) so extraction and QA do not share
+ * a slot (extraction is run-scoped; QA is not).
+ */
+export const articleExtractionValuesKeys = {
+  all: ['article-extraction-values'] as const,
+  byTemplate: (
+    projectId: string,
+    templateId: string,
+    userId: string,
+    kind: string,
+  ) =>
+    [
+      ...articleExtractionValuesKeys.all,
+      projectId,
+      templateId,
+      userId,
+      kind,
+    ] as const,
+};
+
 /** ACTIVE-version template structure (worklist/dashboard reads, B-3a). */
 export const templateActiveStructureKeys = {
   all: ['template-active-structure'] as const,
@@ -53,6 +74,7 @@ export const templateActiveStructureKeys = {
     ['template-active-structure', projectId, templateId] as const,
 };
 
+/** Template general AI instruction (Configuration row zero). */
 export const templateInstructionKeys = {
   byTemplate: (projectId: string, templateId: string) =>
     ['template-instruction', projectId, templateId] as const,

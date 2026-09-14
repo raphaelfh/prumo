@@ -68,5 +68,7 @@ export function useActiveTemplateStructure(
     // tree computes as fully-complete progress, which is worse than a spinner.
     isError: query.isError,
     error: query.error,
+    // Retry for a failed structure read; the progress surfaces' ErrorState calls it (R17, R19).
+    refetch: query.refetch,
   };
 }

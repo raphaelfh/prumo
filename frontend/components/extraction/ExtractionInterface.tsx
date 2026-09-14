@@ -10,11 +10,12 @@ import {useSearchParams} from 'react-router';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {IconButton} from '@/components/patterns/IconButton';
+import {ErrorState} from '@/components/patterns/ErrorState';
 import {Skeleton} from '@/components/ui/skeleton';
 import {AlertCircle, FileUp, Settings} from 'lucide-react';
 import {useInvalidateProjectTemplates, useProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
-import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractionValues';
+import {resolveProgressGate, useCallerArticleProgress} from '@/hooks/extraction/useCallerArticleProgress';
 import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
 import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
@@ -23,11 +24,9 @@ import {ConfigureTemplateCards} from './config/ConfigureTemplateCards';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {HITLExportDialog} from '@/components/hitl/HITLExportDialog';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
-import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
-import {loadProjectArticles} from '@/services/articlesService';
+import {useProjectArticlesQuery} from '@/hooks/shared/useProjectArticlesQuery';
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
-import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
 interface ExtractionInterfaceProps {
@@ -35,22 +34,23 @@ interface ExtractionInterfaceProps {
 }
 
 export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
-  const { user } = useAuth();
   const {invalidateAfterImport} = useTemplateConfigCaches(projectId, undefined);
   const [searchParams, setSearchParams] = useSearchParams();
 
     // Read tab from URL or use default
   const tabFromUrl = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
-  const initialTab = (tabFromUrl && ['extraction', 'dashboard', 'configuration'].includes(tabFromUrl)) 
-    ? tabFromUrl 
+  const initialTab = (tabFromUrl && ['extraction', 'dashboard', 'configuration'].includes(tabFromUrl))
+    ? tabFromUrl
     : 'extraction';
-  
+
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'extraction' | 'dashboard' | 'configuration'>(initialTab);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [articles, setArticles] = useState<any[]>([]);
+  // One query definition with the QA dashboard: one shared cache entry (R18).
+  const articlesQuery = useProjectArticlesQuery(projectId);
+  const articles = articlesQuery.data ?? [];
 
     // The project's templates: one cached query, shared with the "switch
     // template" list inside the import dialog. Every write invalidates it.
@@ -71,21 +71,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const activeTemplate =
     templates.find((tpl) => tpl.id === activeTemplateId) ?? templates[0] ?? null;
 
-  // Per-article values + required-field structure, shared with the list
-  // tables. "Overall progress" below is the mean of the canonical per-article
-  // completion (previously "% of articles touched").
-  const { valuesByArticle } = useArticleExtractionValues(
-    projectId,
-    activeTemplate?.id,
-    user?.id,
-  );
+  // Per-article values + required-field structure, shared with the list tables
+  // through the one caller-progress gate (R37).
+  const progress = useCallerArticleProgress(projectId, activeTemplate?.id, 'extraction');
   // ACTIVE snapshot (B-3a). Loading/error must render a placeholder, never
   // stats computed from an empty tree (reads as inflated completeness).
-  const {
-    entityTypes,
-    isLoading: structureLoading,
-    isError: structureError,
-  } = useActiveTemplateStructure(projectId, activeTemplate?.id);
+  const structure = useActiveTemplateStructure(projectId, activeTemplate?.id);
+  const {entityTypes} = structure;
 
   const extractionStats = (() => {
     const totalArticles = articles.length;
@@ -95,7 +87,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     let empty = 0;
     let partial = 0;
     for (const article of articles) {
-      const d = valuesByArticle.get(article.id);
+      const d = progress.valuesByArticle.get(article.id);
       const pct = d ? computeRowProgress(d.instances, d.values, entityTypes) : 0;
       sum += pct;
       if (pct >= 100) completed += 1;
@@ -104,7 +96,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     }
     return {
       totalArticles,
-      extractionsStarted: valuesByArticle.size,
+      extractionsStarted: progress.valuesByArticle.size,
       extractionsCompleted: completed,
       progressPercentage: totalArticles > 0 ? Math.round(sum / totalArticles) : 0,
       distribution: { empty, partial, complete: completed },
@@ -179,32 +171,55 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     setActiveTab(tab);
   };
 
-  const loadArticles = async () => {
-    const result = await loadProjectArticles(projectId);
-    if (!result.ok) {
-      console.error("Error loading articles:", result.error);
-      toast.error(t('extraction', 'errorLoadArticles'));
-      return;
-    }
-    setArticles(result.data);
-  };
-
-    // Load articles and statistics
-  useEffect(() => {
-    if (projectId) {
-      // Microtask so the loader's setState calls run in an async callback.
-      queueMicrotask(() => void loadArticles());
-    }
-  }, [projectId]);
-
+  const renderConfigureCard = () => (
+          <Card className="border-info/30 bg-info/5">
+              <CardContent className="pt-4 pb-4 px-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start space-x-3">
+                  <Settings className="h-4 w-4 text-info mt-0.5 shrink-0" strokeWidth={1.5}/>
+                <div>
+                    <p className="text-[13px] font-medium text-foreground">{t('extraction', 'dashboardConfigureTitle')}</p>
+                    <p className="text-[13px] text-muted-foreground mt-1">
+                        {t('extraction', 'dashboardConfigureDesc')}
+                  </p>
+                  <div className="mt-3 space-y-2">
+                      <p className="text-[13px] text-foreground font-medium">{t('extraction', 'dashboardYouCan')}</p>
+                      <ul className="text-[13px] text-muted-foreground space-y-1 ml-4">
+                          <li>• {t('extraction', 'dashboardImportCharmsOption')}</li>
+                          <li>• {t('extraction', 'dashboardCreateSectionsOption')}</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+                      <Button onClick={() => setActiveTab('configuration')} className="w-full sm:w-auto sm:ml-4">
+                    <Settings className="h-4 w-4 mr-2" strokeWidth={1.5}/>
+                    {t('extraction', 'dashboardConfigureButton')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+  );
 
     // Render Dashboard tab
   const renderDashboard = () => {
-    // Same gate as the worklist tables: while the active-version structure
-    // is loading — or errored — show a placeholder, never numbers from [].
-    if (activeTemplate && (structureLoading || structureError)) {
-      return <Skeleton data-testid="dashboard-skeleton" className="h-48 w-full rounded-md border" />;
-    }
+    const skeleton = <Skeleton data-testid="dashboard-skeleton" className="h-48 w-full rounded-md border" />;
+    const loadError = (onRetry: () => void) => (
+      <ErrorState message={t('extraction', 'errorLoadProgress')} onRetry={onRetry} />
+    );
+    // R18, first match wins (templates LOADING never reaches here). 1. First template load failed, nothing
+    // cached: the page-level ErrorState is the one surface. A failed REFETCH keeps `data` and falls through.
+    if (projectTemplatesQuery.isError && projectTemplatesQuery.data === undefined) return null;
+    // 2. Before 3-8: without a template both progress reads are disabled and structure stays pending.
+    if (!activeTemplate) return renderConfigureCard();
+    if (articlesQuery.isPending) return skeleton; // 3
+    // 4. The article query keys on projectId alone, so its retry refetches that query, not progress.
+    if (articlesQuery.isError) return loadError(() => void articlesQuery.refetch());
+    // 5-8, in the ONE shared order (R37): auth resolving, signed out, a failed read (retry only it), pending reads.
+    const gate = resolveProgressGate(progress, structure);
+    if (gate.state === 'authResolving' || gate.state === 'loading') return skeleton; // 5, 8
+    if (gate.state === 'signedOut') return <ErrorState message={t('extraction', 'progressUnavailable')} />; // 6
+    if (gate.state === 'error') return loadError(gate.retry); // 7
+    // 9. The figures.
     return (
       <div className="space-y-4">
           {/* Dense stat strip — one bordered row of figures (replaces the
@@ -264,35 +279,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                   </div>
               </CardContent>
           </Card>
-
-      {!activeTemplate && !templatesLoading && (
-          <Card className="border-info/30 bg-info/5">
-              <CardContent className="pt-4 pb-4 px-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-start space-x-3">
-                  <Settings className="h-4 w-4 text-info mt-0.5 shrink-0" strokeWidth={1.5}/>
-                <div>
-                    <p className="text-[13px] font-medium text-foreground">{t('extraction', 'dashboardConfigureTitle')}</p>
-                    <p className="text-[13px] text-muted-foreground mt-1">
-                        {t('extraction', 'dashboardConfigureDesc')}
-                  </p>
-                  <div className="mt-3 space-y-2">
-                      <p className="text-[13px] text-foreground font-medium">{t('extraction', 'dashboardYouCan')}</p>
-                      <ul className="text-[13px] text-muted-foreground space-y-1 ml-4">
-                          <li>• {t('extraction', 'dashboardImportCharmsOption')}</li>
-                          <li>• {t('extraction', 'dashboardCreateSectionsOption')}</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-                      <Button onClick={() => setActiveTab('configuration')} className="w-full sm:w-auto sm:ml-4">
-                    <Settings className="h-4 w-4 mr-2" strokeWidth={1.5}/>
-                    {t('extraction', 'dashboardConfigureButton')}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
       </div>
     );
   };
@@ -333,10 +319,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             </CardContent>
           </Card>
         );
-      
+
       case 'dashboard':
         return renderDashboard();
-      
+
       case 'configuration':
         return (
           <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -416,8 +402,17 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         );
   };
 
+  // `null` only while templates load (the page skeleton below owns that) or on
+  // R18 step 1, where the page-level templates ErrorState is the one surface.
+  const tabContent = renderTabContent();
+
     return (
         <div className="flex h-full min-h-0 flex-col">
+            {/* The content region is flex-1: rendered empty, it would claim the
+                whole height and push the templates ErrorState below to the
+                bottom of the viewport. With nothing to show it is not rendered,
+                so that ErrorState sits at the top. */}
+            {(templatesLoading || tabContent !== null) && (
             <div className="flex min-h-0 flex-1 flex-col p-2">
                 {templatesLoading ? (
                     <div className="space-y-4 px-0 py-2" aria-busy="true" aria-label={t('extraction', 'loadingTemplates')}>
@@ -447,25 +442,16 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                         </div>
           </div>
                 ) : activeTab === 'extraction' || activeTab === 'configuration' ? (
-                    <div className="flex min-h-0 flex-1 flex-col">{renderTabContent()}</div>
+                    <div className="flex min-h-0 flex-1 flex-col">{tabContent}</div>
                 ) : (
-                    <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderTabContent()}</div>
+                    <div className="min-h-0 flex-1 overflow-y-auto pb-4">{tabContent}</div>
                 )}
             </div>
+            )}
 
-      {/* Error state */}
       {templatesError && (
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex items-center space-x-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              <div>
-                  <p className="font-medium">{t('extraction', 'errorLoadTemplates')}</p>
-                <p className="text-sm">{templatesError}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <ErrorState title={t('extraction', 'errorLoadTemplates')} message={templatesError}
+          onRetry={() => void projectTemplatesQuery.refetch()} />
       )}
 
             {/* Dialog to import global template */}

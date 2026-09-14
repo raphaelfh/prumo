@@ -5,14 +5,11 @@
 frontend/components/articles/RISImportDialog.tsx|articles:1
 frontend/hooks/extraction/helpers/getModelChildSections.ts|extraction_instances:1
 frontend/hooks/extraction/helpers/queryEntityTypes.ts|extraction_entity_types:2
-frontend/hooks/extraction/useArticleExtractionValues.ts|extraction_instances:1
-frontend/hooks/extraction/useArticleExtractionValues.ts|extraction_proposal_records:1
-frontend/hooks/extraction/useArticleExtractionValues.ts|extraction_reviewer_states:1
 frontend/hooks/extraction/useTemplateEntityTypes.ts|extraction_entity_types:1
 frontend/lib/supabase/baseRepository.ts|<dynamic>:1
 frontend/services/articlesExportService.ts|VITE_API_URL:1
 frontend/services/articlesService.ts|article_files:7
-frontend/services/articlesService.ts|articles:8
+frontend/services/articlesService.ts|articles:6
 frontend/services/extractionDataService.ts|articles:2
 frontend/services/extractionDataService.ts|project_extraction_templates:1
 frontend/services/extractionDataService.ts|projects:1

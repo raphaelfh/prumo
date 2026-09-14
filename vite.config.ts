@@ -6,7 +6,7 @@ import path from "path";
 export default defineConfig(({mode: _mode}) => ({
   server: {
     host: "::",
-    port: 8080,
+    port: Number(process.env.PORT) || 8080,
   },
     build: {
         chunkSizeWarningLimit: 800,

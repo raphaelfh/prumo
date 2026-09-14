@@ -18,7 +18,7 @@ describe('RunHeader.Help', () => {
       'shortcutPalette', 'shortcutNextPrev', 'shortcutJumpNext', 'shortcutTogglePdf',
       'shortcutSectionNav', 'shortcutSidebar', 'shortcutEsc',
     ].forEach((k) => expect(screen.getByText(k)).toBeInTheDocument());
-    ['⌘K', 'J / K', '⌘↵', '⌘⇧B', '⌘\\', '⌘B', 'Esc'].forEach((combo) =>
+    ['⌘K', '[ / ]', '⌘↵', '⌘⇧B', '⌘\\', '⌘B', 'Esc'].forEach((combo) =>
       expect(screen.getByText(combo)).toBeInTheDocument());
     // All five glossary entries.
     ['glossaryExtract', 'glossaryConsensus', 'glossaryFinalize', 'glossaryBlind', 'glossaryDiffer'].forEach((k) =>

@@ -4,7 +4,7 @@
  * `useRunShortcuts` binds from here and `RunHeader.Help` renders from here, so
  * a binding cannot exist on one screen while the help panel advertises
  * something else — which is exactly what happened before this file: the help
- * panel promised J/K on both run screens while only extraction bound them.
+ * panel promised next/prev on both run screens while only extraction bound them.
  */
 
 type RunShortcutId = 'palette' | 'nextPrev' | 'jumpNext' | 'togglePdf' | 'sectionNav' | 'sidebar' | 'esc';
@@ -26,13 +26,18 @@ export interface RunShortcut {
   copyKey: RunShortcutCopyKey;
 }
 
-/** Display casing. Matching is case-insensitive (see `useRunShortcuts`). */
-export const ARTICLE_NEXT_KEY = 'J';
-export const ARTICLE_PREV_KEY = 'K';
+/**
+ * Horizontal pager keys — previous / next, matching the header chevrons.
+ * Matched by `event.key` through `useKeyboardShortcuts`, whose bare-chord
+ * matcher rejects Alt/Ctrl: where `[` or `]` needs AltGr/Option (German
+ * QWERTZ, Mac AZERTY) the keys never fire, and the Worklist buttons still page.
+ */
+export const ARTICLE_PREV_KEY = '[';
+export const ARTICLE_NEXT_KEY = ']';
 
 export const RUN_SHORTCUTS: readonly RunShortcut[] = [
   { id: 'palette', combo: '⌘K', copyKey: 'shortcutPalette' },
-  { id: 'nextPrev', combo: `${ARTICLE_NEXT_KEY} / ${ARTICLE_PREV_KEY}`, copyKey: 'shortcutNextPrev' },
+  { id: 'nextPrev', combo: `${ARTICLE_PREV_KEY} / ${ARTICLE_NEXT_KEY}`, copyKey: 'shortcutNextPrev' },
   { id: 'jumpNext', combo: '⌘↵', copyKey: 'shortcutJumpNext' },
   { id: 'togglePdf', combo: '⌘⇧B', copyKey: 'shortcutTogglePdf' },
   { id: 'sectionNav', combo: '⌘\\', copyKey: 'shortcutSectionNav' },

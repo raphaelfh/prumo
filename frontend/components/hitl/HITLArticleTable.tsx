@@ -7,7 +7,7 @@
  * into its own full-screen surface (extraction or QA).
  *
  * Progress is the canonical required-field metric (``computeRowProgress``)
- * over the per-article values from ``useArticleExtractionValues`` (the shared
+ * over the per-article values from ``useCallerArticleProgress`` (the shared
  * hook this table, the extraction table and the dashboard all consume), so
  * every surface shows the same percentage.
  *
@@ -31,6 +31,7 @@ import {
 import { toast } from "sonner";
 
 import { IconButton } from "@/components/patterns/IconButton";
+import { ErrorState } from "@/components/patterns/ErrorState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -56,13 +57,12 @@ import {
   type FilterValues,
 } from "@/components/shared/list";
 import { useListKeyboardShortcuts } from "@/hooks/useListKeyboardShortcuts";
-import { getCurrentUserId } from "@/services/authService";
 import { fetchProjectArticles, type ArticleListItem } from "@/services/articlesService";
 import { t } from "@/lib/copy";
 import { TABLE_CELL_CLASS } from "@/lib/table-constants";
 import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
 import { useActiveTemplateStructure } from "@/hooks/extraction/useActiveTemplateStructure";
-import { useArticleExtractionValues } from "@/hooks/extraction/useArticleExtractionValues";
+import { resolveProgressGate, useCallerArticleProgress } from "@/hooks/extraction/useCallerArticleProgress";
 import { scopedRowProgress } from "@/lib/qa/scopedProgress";
 
 type Article = ArticleListItem;
@@ -154,7 +154,6 @@ export function HITLArticleTable({
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [globalFilter, setGlobalFilter] = useState("");
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
@@ -167,49 +166,34 @@ export function HITLArticleTable({
   // ACTIVE snapshot (B-3a): worklist progress must not move on unpublished
   // draft edits. Errors gate the render below — an empty tree would compute
   // as fully complete.
-  const {
-    entityTypes,
-    isLoading: entityTypesLoading,
-    isError: entityTypesError,
-  } = useActiveTemplateStructure(projectId, templateId);
-  // Per-article values (instances + the user's persisted values), shared with
-  // the extraction table and the dashboard — replaces this table's own fetch.
-  const { valuesByArticle, isLoading: valuesLoading } =
-    useArticleExtractionValues(projectId, templateId, currentUserId, kind);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getCurrentUserId().then((result) => {
-      if (cancelled) return;
-      if (result.ok) setCurrentUserId(result.data);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const structure = useActiveTemplateStructure(projectId, templateId);
+  const { entityTypes } = structure;
+  // Per-article values and the progress user id, through the ONE shared gate (R37).
+  const progress = useCallerArticleProgress(projectId, templateId, kind);
+  const { valuesByArticle, userId } = progress;
 
   // Restart the loading state when the query coordinates change (during
   // render, so the fetch effect below never sets state synchronously).
-  const [prevQueryKey, setPrevQueryKey] = useState({ projectId, templateId, currentUserId });
+  const [prevQueryKey, setPrevQueryKey] = useState({ projectId, templateId, userId });
   if (
     projectId !== prevQueryKey.projectId ||
     templateId !== prevQueryKey.templateId ||
-    currentUserId !== prevQueryKey.currentUserId
+    userId !== prevQueryKey.userId
   ) {
-    setPrevQueryKey({ projectId, templateId, currentUserId });
-    if (projectId && templateId && currentUserId) {
+    setPrevQueryKey({ projectId, templateId, userId });
+    if (projectId && templateId && userId) {
       setLoading(true);
       setError(null);
     }
   }
 
   useEffect(() => {
-    if (!projectId || !templateId || !currentUserId) return;
+    if (!projectId || !templateId || !userId) return;
     let cancelled = false;
 
-    // Per-article instances + values now come from
-    // ``useArticleExtractionValues`` (shared with the extraction table and
-    // dashboard); this effect only loads the article rows themselves.
+    // Per-article instances + values come from ``useCallerArticleProgress``
+    // (the one progress gate shared with the extraction table and the
+    // dashboards); this effect only loads the article rows themselves.
     void fetchProjectArticles(projectId).then((result) => {
       if (cancelled) return;
       if (result.ok) {
@@ -225,7 +209,7 @@ export function HITLArticleTable({
     return () => {
       cancelled = true;
     };
-  }, [projectId, templateId, currentUserId]);
+  }, [projectId, templateId, userId]);
 
   // Per-article completion %, computed once per render.
   // getProgress is read in the sort comparator and several render paths.
@@ -378,9 +362,13 @@ export function HITLArticleTable({
     }
   };
 
-  if (loading || entityTypesLoading || entityTypesError || valuesLoading) {
+  const gate = resolveProgressGate(progress, structure); // R19, in the ONE shared order (R37)
+  if (gate.state === "signedOut") return <ErrorState message={t("extraction", "progressUnavailable")} />;
+  if (gate.state === "error") return <ErrorState message={t("extraction", "errorLoadProgress")} onRetry={gate.retry} />;
+  if (gate.state !== "ready" || loading) {
     return (
       <div className="space-y-3" data-testid={`hitl-${kind}-table-loading`}>
+        {toolbarActions && <div className="flex justify-end">{toolbarActions}</div>}
         <Skeleton className="h-8 w-full max-w-md" />
         <Skeleton className="h-64 w-full" />
       </div>

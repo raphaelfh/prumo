@@ -25,6 +25,8 @@
   project template from such a document (same response as clone).
 * ``DELETE /api/v1/projects/{project_id}/templates/{template_id}`` —
   inactive, unreferenced templates only (typed 409s otherwise).
+* ``GET /api/v1/projects/{project_id}/templates/{template_id}/article-progress``
+  — the caller's own per-article values for worklist progress (members).
 
 These are project-scoped. ``POST /api/v1/hitl/sessions`` is per-article run
 lifecycle and is separate.
@@ -37,6 +39,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 
 from app.api.deps.security import require_project_manager, require_project_scope
 from app.core.deps import DbSession
+from app.schemas.article_progress import ArticleProgressKind, ArticleProgressRead
 from app.schemas.common import ApiResponse
 from app.schemas.hitl_session import (
     CloneTemplateRequest,
@@ -66,6 +69,7 @@ from app.schemas.hitl_session import (
     UpdateTemplateInstructionResponse,
 )
 from app.schemas.template_portable import PortableTemplate
+from app.services.article_progress_service import get_article_progress
 from app.services.project_template_active_service import (
     LastActiveExtractionTemplateError,
     ProjectTemplateNotFoundError,
@@ -615,6 +619,33 @@ async def get_template_active_version(
         result,
         trace_id=getattr(request.state, "trace_id", None),
     )
+
+
+@router.get(
+    "/{project_id}/templates/{template_id}/article-progress",
+    response_model=ApiResponse[ArticleProgressRead],
+)
+@limiter.limit("60/minute")
+async def get_template_article_progress(
+    project_id: UUID,
+    template_id: UUID,
+    request: Request,
+    db: DbSession,
+    kind: ArticleProgressKind,
+    user_sub: UUID = Depends(require_project_scope),
+) -> ApiResponse[ArticleProgressRead]:
+    """The caller's own per-article progress values for a template's worklist.
+
+    Member-gated like ``active-version``: 403 before any template lookup (no existence
+    oracle). Missing or unknown ``kind`` is a 422; a foreign, unknown or other-kind template, 404.
+    """
+    try:
+        result = await get_article_progress(
+            db, project_id=project_id, template_id=template_id, user_id=user_sub, kind=kind
+        )
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse.success(result, trace_id=getattr(request.state, "trace_id", None))
 
 
 @router.get("/{project_id}/templates/{template_id}/versions")

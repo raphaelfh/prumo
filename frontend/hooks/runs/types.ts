@@ -253,11 +253,6 @@ export interface RunViewResponse extends RunDetailResponse {
   general_instructions?: string | null;
 }
 
-export interface ArticleRunRef {
-  article_id: string;
-  run_id: string | null;
-}
-
 /**
  * TanStack Query key factory for run-scoped data.
  */

@@ -46,9 +46,30 @@ describe('SectionNavRail jump-to-next-unfilled', () => {
     expect(screen.queryByRole('button', { name: /sectionNavJumpNext/ })).not.toBeInTheDocument();
   });
 
+  it('keeps the jump control in compact mode as an icon-only button', async () => {
+    const onJump = vi.fn();
+    render(
+      <SectionNavRail compact items={incomplete} activeId={null} onSelect={vi.fn()} onJumpToNextPending={onJump} />,
+    );
+    const jump = screen.getByRole('button', { name: /sectionNavJumpNext/ });
+    expect(jump).toHaveAttribute('aria-keyshortcuts', 'Control+Enter');
+    await userEvent.click(jump);
+    expect(onJump).toHaveBeenCalledTimes(1);
+  });
+
   it('announces the chord SectionNavLayout binds', () => {
     render(<SectionNavRail items={incomplete} activeId={null} onSelect={vi.fn()} onJumpToNextPending={vi.fn()} />);
     // jsdom is not macOS, so `mod` announces as Control.
     expect(screen.getByRole('button', { name: /sectionNavJumpNext/ })).toHaveAttribute('aria-keyshortcuts', 'Control+Enter');
+  });
+
+  it('hides the jump control in compact mode on a read-only run', () => {
+    render(
+      <RunEditabilityProvider stage="finalized">
+        <SectionNavRail compact items={incomplete} activeId={null} onSelect={vi.fn()} onJumpToNextPending={vi.fn()} />
+      </RunEditabilityProvider>,
+    );
+    expect(screen.getByRole('button', { name: 'Participants 1/3' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sectionNavJumpNext/ })).not.toBeInTheDocument();
   });
 });
