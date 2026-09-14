@@ -26,7 +26,12 @@ export interface RunShortcut {
   copyKey: RunShortcutCopyKey;
 }
 
-/** Horizontal pager keys — previous / next, matching the header chevrons. */
+/**
+ * Horizontal pager keys — previous / next, matching the header chevrons.
+ * Matched by `event.key` through `useKeyboardShortcuts`, whose bare-chord
+ * matcher rejects Alt/Ctrl: where `[` or `]` needs AltGr/Option (German
+ * QWERTZ, Mac AZERTY) the keys never fire, and the Worklist buttons still page.
+ */
 export const ARTICLE_PREV_KEY = '[';
 export const ARTICLE_NEXT_KEY = ']';
 

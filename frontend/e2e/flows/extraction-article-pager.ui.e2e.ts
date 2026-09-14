@@ -148,7 +148,7 @@ async function pendingEditSurvivesKeyboardArticleChange(
   const nextEnabled = !(await nextButton.isDisabled());
   const prevEnabled = !(await prevButton.isDisabled());
   test.skip(!nextEnabled && !prevEnabled, "Both pager directions disabled — single-article worklist");
-  const key = (nextEnabled ? ARTICLE_NEXT_KEY : ARTICLE_PREV_KEY).toLowerCase();
+  const key = nextEnabled ? ARTICLE_NEXT_KEY : ARTICLE_PREV_KEY;
 
   const formPanel = page.locator(FORM_PANEL);
   const textFields = formPanel.getByRole("textbox");
