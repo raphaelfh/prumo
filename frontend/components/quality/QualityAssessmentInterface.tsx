@@ -17,7 +17,6 @@
 
 import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { useQuery } from "@tanstack/react-query";
 import { CheckCircle, FileText, FileUp, ShieldCheck } from "lucide-react";
 
 import { ErrorState } from "@/components/patterns/ErrorState";
@@ -31,7 +30,6 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { t } from "@/lib/copy";
-import { articleKeys } from "@/lib/query-keys";
 import {
   HITLActiveTemplateBar,
   useActiveTemplateSelection,
@@ -44,7 +42,7 @@ import { useCallerArticleProgress } from "@/hooks/extraction/useCallerArticlePro
 import { useProjectTemplates } from "@/hooks/hitl/useProjectTemplates";
 import { useProjectMemberRole } from "@/hooks/useProjectMemberRole";
 import { useQAWorklist } from "@/hooks/qa/useQAWorklist";
-import { fetchProjectArticles } from "@/services/articlesService";
+import { useProjectArticlesQuery } from "@/hooks/shared/useProjectArticlesQuery";
 
 type QaTab = "assessment" | "dashboard" | "configuration";
 
@@ -81,15 +79,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   // a failed read renders an error state: zeros would read as "nothing started".
   // Both reads stay disabled off the dashboard tab.
   const onDashboard = activeTab === "dashboard";
-  const dashboardArticles = useQuery({
-    queryKey: articleKeys.byProject(projectId),
-    enabled: onDashboard && !!projectId,
-    queryFn: async () => {
-      const result = await fetchProjectArticles(projectId);
-      if (!result.ok) throw new Error(t("qa", "dashboardLoadError"));
-      return result.data;
-    },
-  });
+  const dashboardArticles = useProjectArticlesQuery(projectId, { enabled: onDashboard });
   const dashboardTemplateId = onDashboard ? activeTemplate?.id : undefined;
   const progress = useCallerArticleProgress(
     projectId,

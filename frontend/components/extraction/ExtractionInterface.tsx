@@ -7,7 +7,6 @@
 
 import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router';
-import {useQuery} from '@tanstack/react-query';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {IconButton} from '@/components/patterns/IconButton';
@@ -26,9 +25,8 @@ import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {HITLExportDialog} from '@/components/hitl/HITLExportDialog';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
-import {fetchProjectArticles} from '@/services/articlesService';
+import {useProjectArticlesQuery} from '@/hooks/shared/useProjectArticlesQuery';
 import {useTemplateConfigCaches} from '@/hooks/extraction/useTemplateRepublish';
-import {articleKeys} from '@/lib/query-keys';
 import {t} from '@/lib/copy';
 
 interface ExtractionInterfaceProps {
@@ -50,15 +48,8 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
-  // Same key + fetcher as the QA dashboard: one shared cache entry (R18).
-  const articlesQuery = useQuery({
-    queryKey: articleKeys.byProject(projectId),
-    queryFn: async () => {
-      const result = await fetchProjectArticles(projectId);
-      if (!result.ok) throw result.error;
-      return result.data;
-    },
-  });
+  // One query definition with the QA dashboard: one shared cache entry (R18).
+  const articlesQuery = useProjectArticlesQuery(projectId);
   const articles = articlesQuery.data ?? [];
 
     // The project's templates: one cached query, shared with the "switch
@@ -411,8 +402,17 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         );
   };
 
+  // `null` only while templates load (the page skeleton below owns that) or on
+  // R18 step 1, where the page-level templates ErrorState is the one surface.
+  const tabContent = renderTabContent();
+
     return (
         <div className="flex h-full min-h-0 flex-col">
+            {/* The content region is flex-1: rendered empty, it would claim the
+                whole height and push the templates ErrorState below to the
+                bottom of the viewport. With nothing to show it is not rendered,
+                so that ErrorState sits at the top. */}
+            {(templatesLoading || tabContent !== null) && (
             <div className="flex min-h-0 flex-1 flex-col p-2">
                 {templatesLoading ? (
                     <div className="space-y-4 px-0 py-2" aria-busy="true" aria-label={t('extraction', 'loadingTemplates')}>
@@ -442,11 +442,12 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                         </div>
           </div>
                 ) : activeTab === 'extraction' || activeTab === 'configuration' ? (
-                    <div className="flex min-h-0 flex-1 flex-col">{renderTabContent()}</div>
+                    <div className="flex min-h-0 flex-1 flex-col">{tabContent}</div>
                 ) : (
-                    <div className="min-h-0 flex-1 overflow-y-auto pb-4">{renderTabContent()}</div>
+                    <div className="min-h-0 flex-1 overflow-y-auto pb-4">{tabContent}</div>
                 )}
             </div>
+            )}
 
       {templatesError && (
         <ErrorState title={t('extraction', 'errorLoadTemplates')} message={templatesError}
