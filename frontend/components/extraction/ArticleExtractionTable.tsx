@@ -68,12 +68,10 @@ import {
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {useQueryClient} from '@tanstack/react-query';
 import {loadExtractionTableArticles} from '@/services/articlesService';
-import {getCurrentUserId} from '@/services/authService';
 import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
-import {
-  useArticleExtractionValues,
-  articleExtractionValuesKeys,
-} from '@/hooks/extraction/useArticleExtractionValues';
+import {resolveProgressGate, useCallerArticleProgress} from '@/hooks/extraction/useCallerArticleProgress';
+import {ErrorState} from '@/components/patterns/ErrorState';
+import {articleExtractionValuesKeys} from '@/lib/query-keys/extraction';
 import {computeRowProgress} from '@/lib/extraction/progress';
 
 interface Article {
@@ -178,7 +176,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
   const [articles, setArticles] = useState<ArticleWithExtraction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
     // Filter and sort state
   const [globalFilter, setGlobalFilter] = useState('');
@@ -190,16 +187,11 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
   // Required-field structure (cached by template id) for the canonical
   // progress metric shared with the form header and QA list.
   // ACTIVE snapshot (B-3a); errors gate the render — see HITLArticleTable.
-  const {
-    entityTypes,
-    isLoading: entityTypesLoading,
-    isError: entityTypesError,
-  } = useActiveTemplateStructure(projectId, templateId);
-  // Per-article values, shared with the HITL list and dashboard (replaces this
-  // table's own instances/states/proposals fetch). Run-scoped to each
-  // article's form run for kind='extraction'.
-  const {valuesByArticle, isLoading: valuesLoading} =
-    useArticleExtractionValues(projectId, templateId, currentUserId);
+  const structure = useActiveTemplateStructure(projectId, templateId);
+  const {entityTypes} = structure;
+  // Per-article values and the progress user id, through the ONE shared gate (R37).
+  const progress = useCallerArticleProgress(projectId, templateId);
+  const {valuesByArticle, userId} = progress;
   const queryClient = useQueryClient();
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
         if (typeof window === 'undefined') return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS};
@@ -233,17 +225,9 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     },
   });
 
-    // Declare loadCurrentUser before any use to avoid TDZ
-  const loadCurrentUser = async () => {
-    const result = await getCurrentUserId();
-    if (result.ok && result.data) {
-      setCurrentUserId(result.data);
-    }
-  };
-
     // Declare loadArticles before any use to avoid TDZ
   const loadArticles = async () => {
-    if (!projectId || !templateId || !currentUserId) {
+    if (!projectId || !templateId || !userId) {
       return;
     }
 
@@ -286,12 +270,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     loadArticlesRef.current = loadArticles;
   }, [loadArticles]);
 
-    // Load current user ID
-  useEffect(() => {
-    // Microtask so the loader's setState calls run in an async callback.
-    queueMicrotask(() => void loadCurrentUser());
-  }, [loadCurrentUser]);
-
     // Load project articles. Depend ONLY on the primitive identifiers — never
     // on `loadArticles`. Its identity changes on every render (it is a plain
     // async function the React Compiler does not stabilise for dependency
@@ -301,10 +279,10 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     // which the effect above refreshes before this one runs in the same commit
     // (same pattern as the auto-refresh effect below).
   useEffect(() => {
-    if (projectId && templateId && currentUserId) {
+    if (projectId && templateId && userId) {
       void loadArticlesRef.current?.();
     }
-  }, [projectId, templateId, currentUserId]);
+  }, [projectId, templateId, userId]);
 
     // Auto-refresh when returning to page (after finishing extraction)
     // Ensures data is updated after changes made on other pages
@@ -322,7 +300,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     if (
       projectId && 
       templateId && 
-      currentUserId && 
+      userId && 
       isProjectExtractionRoute &&
       currentPath !== lastPathRef.current &&
       cameFromExtractionFullscreen &&
@@ -342,7 +320,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
         // Update ref even if not reloading
       lastPathRef.current = currentPath;
     }
-  }, [location.pathname, projectId, templateId, currentUserId]); // Reload when route changes
+  }, [location.pathname, projectId, templateId, userId]); // Reload when route changes
 
     // Compute extraction progress
   // Per-article completion %, computed once per render. Uses the canonical
@@ -581,9 +559,14 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     });
 
     // Loading state — skeleton matching table layout (frontend-ux compact)
-  if (loading || entityTypesLoading || entityTypesError || valuesLoading) {
+  // R19 in the ONE shared order (R37): auth resolving → skeleton; signed out → unavailable, before
+  // `loading`, which never clears without a user; a failed read → retry THAT read; pending → skeleton.
+  const gate = resolveProgressGate(progress, structure);
+  if (gate.state === 'signedOut') return <ErrorState message={t('extraction', 'progressUnavailable')} />;
+  if (gate.state === 'error') return <ErrorState message={t('extraction', 'errorLoadProgress')} onRetry={gate.retry} />;
+  if (gate.state !== 'ready' || loading) {
     return (
-        <div className="space-y-3">
+        <div className="space-y-3" data-testid="extraction-table-loading">
             <div className="flex flex-wrap items-center gap-2">
                 <Skeleton className="h-8 flex-1 min-w-[200px] rounded-md"/>
                 <Skeleton className="h-8 w-8 rounded-md"/>

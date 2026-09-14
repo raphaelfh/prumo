@@ -17,7 +17,6 @@
 
 import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, FileText, FileUp, ShieldCheck } from "lucide-react";
 
 import { ErrorState } from "@/components/patterns/ErrorState";
@@ -30,9 +29,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/contexts/AuthContext";
 import { t } from "@/lib/copy";
-import { articleKeys } from "@/lib/query-keys";
 import {
   HITLActiveTemplateBar,
   useActiveTemplateSelection,
@@ -41,14 +38,11 @@ import { HITLArticleTable } from "@/components/hitl/HITLArticleTable";
 import {EngineGear} from '@/components/extraction/EngineGear';
 import { HITLExportDialog } from "@/components/hitl/HITLExportDialog";
 import { QualityAssessmentConfiguration } from "@/components/quality/QualityAssessmentConfiguration";
-import {
-  articleExtractionValuesKeys,
-  useArticleExtractionValues,
-} from "@/hooks/extraction/useArticleExtractionValues";
+import { useCallerArticleProgress } from "@/hooks/extraction/useCallerArticleProgress";
 import { useProjectTemplates } from "@/hooks/hitl/useProjectTemplates";
 import { useProjectMemberRole } from "@/hooks/useProjectMemberRole";
 import { useQAWorklist } from "@/hooks/qa/useQAWorklist";
-import { fetchProjectArticles } from "@/services/articlesService";
+import { useProjectArticlesQuery } from "@/hooks/shared/useProjectArticlesQuery";
 
 type QaTab = "assessment" | "dashboard" | "configuration";
 
@@ -58,8 +52,6 @@ interface Props {
 
 export function QualityAssessmentInterface({ projectId }: Props) {
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
 
   const tabFromUrl = searchParams.get("qaTab") as QaTab | null;
   const activeTab: QaTab =
@@ -87,43 +79,25 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   // a failed read renders an error state: zeros would read as "nothing started".
   // Both reads stay disabled off the dashboard tab.
   const onDashboard = activeTab === "dashboard";
-  const dashboardArticles = useQuery({
-    queryKey: articleKeys.byProject(projectId),
-    enabled: onDashboard && !!projectId,
-    queryFn: async () => {
-      const result = await fetchProjectArticles(projectId);
-      if (!result.ok) throw new Error(t("qa", "dashboardLoadError"));
-      return result.data;
-    },
-  });
+  const dashboardArticles = useProjectArticlesQuery(projectId, { enabled: onDashboard });
   const dashboardTemplateId = onDashboard ? activeTemplate?.id : undefined;
-  const {
-    valuesByArticle,
-    isLoading: valuesLoading,
-    error: valuesError,
-  } = useArticleExtractionValues(
+  const progress = useCallerArticleProgress(
     projectId,
     dashboardTemplateId,
-    user?.id,
     "quality_assessment",
   );
 
   const totalArticles = dashboardArticles.data?.length ?? 0;
   // The map is keyed by every article with at least one instance of the tool.
-  const assessmentsStarted = valuesByArticle.size;
+  const assessmentsStarted = progress.valuesByArticle.size;
   const progressPercentage =
     totalArticles > 0 ? Math.round((assessmentsStarted / totalArticles) * 100) : 0;
 
   const retryDashboard = () => {
     void dashboardArticles.refetch();
-    void queryClient.invalidateQueries({
-      queryKey: articleExtractionValuesKeys.byTemplate(
-        projectId,
-        dashboardTemplateId ?? "",
-        user?.id ?? "",
-        "quality_assessment",
-      ),
-    });
+    // refetch() ignores `enabled: false`: a disabled progress read (no user or
+    // no active template) must stay unrequested.
+    if (!progress.isUnavailable) void progress.refetch();
   };
 
   if (activeTab === "configuration") {
@@ -140,11 +114,14 @@ export function QualityAssessmentInterface({ projectId }: Props) {
     return (
       <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {dashboardArticles.isError || valuesError ? (
+          {progress.isAuthResolving ? (
+            <Skeleton data-testid="qa-dashboard-skeleton" className="h-28 w-full" />
+          ) : progress.isSignedOut ? (
+            <ErrorState message={t("extraction", "progressUnavailable")} />
+          ) : dashboardArticles.isError || progress.isError ? (
             <ErrorState message={t("qa", "dashboardLoadError")} onRetry={retryDashboard} />
-          ) : !user || dashboardArticles.isPending || valuesLoading ? (
-            // No user yet = the values read is disabled, not empty: zeros here
-            // would read as "nothing started".
+          ) : dashboardArticles.isPending || progress.isLoading ? (
+            // Pending, including a paused read: zeros would read as "nothing started".
             <Skeleton data-testid="qa-dashboard-skeleton" className="h-28 w-full" />
           ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">

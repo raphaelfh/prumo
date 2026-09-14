@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { QualityAssessmentInterface } from '@/components/quality/QualityAssessmentInterface';
 import { articleKeys } from '@/lib/query-keys';
+import { t } from '@/lib/copy';
 
 const PROBAST_GLOBAL = {
   id: 'tpl-probast-global',
@@ -45,26 +46,27 @@ const db = vi.hoisted(() => ({
   errors: {} as Record<string, { message: string }>,
 }));
 
-const session = vi.hoisted(() => ({ user: { id: 'user-1' } as { id: string } | null }));
+const session = vi.hoisted(() => ({
+  user: { id: 'user-1' } as { id: string } | null,
+  loading: false,
+}));
 
-// The per-article progress read is mocked at the hook boundary: the dashboard's
-// contract is "progress map + article list → counts or an error state",
-// independent of how the hook reads (PostgREST today, the API later).
+// The per-article progress read is mocked at the hook boundary. The real shared
+// gate (useCallerArticleProgress) runs on top of it, fed by the useAuth mock.
 const progress = vi.hoisted(() => ({
   valuesByArticle: new Map<string, unknown>(),
   isLoading: false,
-  error: null as Error | null,
+  isError: false,
+  isUnavailable: false,
+  refetch: vi.fn(),
 }));
 
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
-  articleExtractionValuesKeys: {
-    byTemplate: (...scope: string[]) => ['article-extraction-values', ...scope],
-  },
   useArticleExtractionValues: () => ({ ...progress }),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({ user: session.user }),
+  useAuth: () => ({ user: session.user, loading: session.loading }),
 }));
 
 // The worklist toolbar mounts the engine gear (spec §5); its hooks are stubbed
@@ -139,6 +141,7 @@ vi.mock('@/integrations/supabase/client', () => {
       eq: () => b,
       in: () => b,
       order: () => b,
+      range: () => b,
       then: (cb: (r: typeof result) => unknown) => Promise.resolve(cb(result)),
     };
     return b;
@@ -194,9 +197,12 @@ beforeEach(() => {
   db.rows = {};
   db.errors = {};
   session.user = { id: 'user-1' };
+  session.loading = false;
   progress.valuesByArticle = new Map();
   progress.isLoading = false;
-  progress.error = null;
+  progress.isError = false;
+  progress.isUnavailable = false;
+  progress.refetch = vi.fn();
 });
 
 describe('QualityAssessmentInterface', () => {
@@ -238,7 +244,9 @@ describe('QualityAssessmentInterface', () => {
     renderInterface();
 
     // The button lives in HITLArticleTable's toolbar via `toolbarActions` —
-    // the same slot and placement the extraction table uses.
+    // the same slot and placement the extraction table uses. Wait for the rows:
+    // the loading skeleton renders the toolbar too, then unmounts (R19).
+    await screen.findByText(/A predictive model for X/);
     const exportButton = await screen.findByTestId('qa-export-button');
     await waitFor(() => expect(exportButton).toBeEnabled());
     await user.click(exportButton);
@@ -252,6 +260,7 @@ describe('QualityAssessmentInterface', () => {
     const user = userEvent.setup();
     renderInterface();
 
+    await screen.findByText(/A predictive model for X/); // past the loading skeleton's toolbar (R19)
     const gear = await screen.findByTestId('engine-gear');
     await user.hover(gear);
     expect(
@@ -263,6 +272,7 @@ describe('QualityAssessmentInterface', () => {
 describe('QualityAssessmentInterface dashboard', () => {
   const DASHBOARD = '/projects/p1?qaTab=dashboard';
   const LOAD_ERROR = /Couldn’t load quality-assessment progress/;
+  const UNAVAILABLE = t('extraction', 'progressUnavailable');
 
   function seedTwoArticlesOneStarted() {
     db.rows.articles = [ARTICLE_1, { ...ARTICLE_1, id: 'article-2', title: 'Second' }];
@@ -282,7 +292,7 @@ describe('QualityAssessmentInterface dashboard', () => {
 
   it('shows the error state, not zero counts, when the progress read fails', async () => {
     seedTwoArticlesOneStarted();
-    progress.error = new Error('permission denied');
+    progress.isError = true;
     renderInterface(DASHBOARD);
 
     expect(await screen.findByText(LOAD_ERROR)).toBeInTheDocument();
@@ -311,18 +321,51 @@ describe('QualityAssessmentInterface dashboard', () => {
 
     expect(await screen.findByText('50%')).toBeInTheDocument();
     expect(screen.queryByText(LOAD_ERROR)).not.toBeInTheDocument();
+    expect(progress.refetch).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the skeleton, not zero counts, while there is no user', async () => {
+  it('shows progress unavailable, not the skeleton, once auth resolves with no user', async () => {
     session.user = null;
+    progress.isUnavailable = true;
+    seedTwoArticlesOneStarted();
+    renderInterface(DASHBOARD);
+
+    expect(await screen.findByText(UNAVAILABLE)).toBeInTheDocument();
+    expect(screen.queryByTestId('qa-dashboard-skeleton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('50%')).not.toBeInTheDocument();
+  });
+
+  it('shows the skeleton while the user lookup is resolving', async () => {
+    session.user = null;
+    session.loading = true;
+    progress.isUnavailable = true;
     seedTwoArticlesOneStarted();
     const { queryClient } = renderInterface(DASHBOARD);
 
-    // Precondition: the article read resolved, so only the missing user can hold the skeleton.
+    // Precondition: the article read resolved, so only auth can hold the skeleton.
     await waitFor(() =>
       expect(queryClient.getQueryState(articleKeys.byProject('p1'))?.status).toBe('success'),
     );
+    // Give the resolved read time to re-render: the figures must never appear.
+    await expect(screen.findByText('50%', {}, { timeout: 300 })).rejects.toThrow();
     expect(screen.getByTestId('qa-dashboard-skeleton')).toBeInTheDocument();
-    expect(screen.queryByText('50%')).not.toBeInTheDocument();
+    expect(screen.queryByText(UNAVAILABLE)).not.toBeInTheDocument();
+  });
+
+  it('does not refetch progress on retry while progress is unavailable', async () => {
+    const user = userEvent.setup();
+    seedTwoArticlesOneStarted();
+    progress.isUnavailable = true;
+    db.errors.articles = { message: 'network down' };
+    renderInterface(DASHBOARD);
+
+    await screen.findByText(LOAD_ERROR);
+    delete db.errors.articles;
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+
+    // Precondition: the retry ran, because the article read recovered the figures.
+    expect(await screen.findByText('50%')).toBeInTheDocument();
+    expect(progress.refetch).not.toHaveBeenCalled();
   });
 });

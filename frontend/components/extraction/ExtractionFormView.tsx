@@ -84,7 +84,7 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
     articleId: props.articleId,
   });
   const sectionIds = sectionRegistry.map((s) => s.id);
-  const { activeId, registerSection, scrollToSection } = useActiveSection(sectionIds);
+  const { activeId, registerSection, scrollToSection, activateSection } = useActiveSection(sectionIds);
 
   const form: EntryFormContextValue = {
     projectId: props.projectId,
@@ -114,7 +114,7 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
   };
 
   return (
-    <SectionNavLayout ref={sectionNavRef} items={sectionRegistry} activeId={activeId} onSelect={scrollToSection}>
+    <SectionNavLayout ref={sectionNavRef} items={sectionRegistry} activeId={activeId} onSelect={scrollToSection} onActivate={activateSection}>
       {/*
         The Provider sits here, and this component is NOT memoized. Inside a
         memo boundary its comparator would gate the whole context: one

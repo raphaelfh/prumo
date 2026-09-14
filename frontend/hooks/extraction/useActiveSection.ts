@@ -1,80 +1,55 @@
 // frontend/hooks/extraction/useActiveSection.ts
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export function pickMostVisible(
-  entries: IntersectionObserverEntry[],
-  current: string | null,
-): string | null {
-  let bestId = current;
-  let bestRatio = -1;
-  for (const e of entries) {
-    if (!e.isIntersecting) continue;
-    const id = (e.target as HTMLElement).dataset.sectionId ?? null;
-    if (id && e.intersectionRatio > bestRatio) {
-      bestRatio = e.intersectionRatio;
-      bestId = id;
-    }
-  }
-  return bestId;
-}
+import { isScrolledToBottom } from '@/lib/articleFormScrollspy';
+import { findScrollParent, scrollIntoPane } from '@/lib/runs/paneScroll';
 
 /**
- * Resolve the active section from observer entries, clamping to the last section
- * when the scroll container has bottomed out. Short trailing sections can never
- * scroll up into the activation band, so without this clamp they'd never become
- * active when the user reaches the end of the form.
+ * Where the "you are here" line sits below the pane's top edge. Near the top on
+ * purpose: a section becomes active as its heading reaches reading position, and
+ * a short first section still owns the rail while the form is scrolled to 0.
  */
-export function resolveActiveSection(
-  entries: IntersectionObserverEntry[],
-  current: string | null,
-  atBottom: boolean,
-  lastId: string | null,
-): string | null {
-  if (atBottom && lastId) return lastId;
-  return pickMostVisible(entries, current);
-}
+const ANCHOR_PX = 120;
 
-function findScrollParent(el: HTMLElement | null): HTMLElement | null {
-  let node = el?.parentElement ?? null;
-  while (node) {
-    const overflowY = getComputedStyle(node).overflowY;
-    if (
-      (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
-      node.scrollHeight > node.clientHeight
-    ) {
-      return node;
-    }
-    node = node.parentElement;
+/**
+ * The section the reader is on: the last one starting at or above the activation
+ * line, or the first when none does. At the pane's bottom the last section wins —
+ * a short trailing section can never reach the line, so nothing else may hold the
+ * rail while the reader is looking at the end of the form.
+ *
+ * Positions, not intersection ratios: the input is plain numbers, so the decision
+ * is testable in jsdom (which has neither layout nor observer geometry), and a
+ * merely tall section can no longer outvote the one being read.
+ */
+export function pickActiveSection(
+  tops: readonly { id: string; top: number }[],
+  anchor: number,
+  atBottom: boolean,
+): string | null {
+  if (tops.length === 0) return null;
+  if (atBottom) return tops[tops.length - 1].id;
+  let active = tops[0].id;
+  for (const { id, top } of tops) {
+    if (top <= anchor) active = id;
   }
-  return null;
+  return active;
 }
 
 export interface UseActiveSectionResult {
   activeId: string | null;
   registerSection: (id: string, el: HTMLElement | null) => void;
   scrollToSection: (id: string) => void;
+  /** Paint the rail now — for a caller that scrolls something else (the jump). */
+  activateSection: (id: string) => void;
 }
 
 export function useActiveSection(sectionIds: string[]): UseActiveSectionResult {
   const [activeId, setActiveId] = useState<string | null>(sectionIds[0] ?? null);
   const refs = useRef(new Map<string, HTMLElement>());
-  const activeRef = useRef<string | null>(activeId);
-  // While a click-driven smooth scroll is in flight, the scrollspy stands down
-  // so it cannot revert the section the user just clicked (which may never reach
-  // the activation band — e.g. the last/short sections at the bottom).
-  const suppressRef = useRef(false);
-  const suppressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    activeRef.current = activeId;
-  }, [activeId]);
-
-  useEffect(
-    () => () => {
-      if (suppressTimer.current !== null) clearTimeout(suppressTimer.current);
-    },
-    [],
-  );
+  // A programmatic scroll owns the highlight until it lands: the pane cannot
+  // always bring the picked section to the activation line (the trailing ones),
+  // so the spy would read the landing position and hand the rail straight back.
+  const settling = useRef(0);
 
   const registerSection = useCallback((id: string, el: HTMLElement | null) => {
     if (el) {
@@ -85,40 +60,77 @@ export function useActiveSection(sectionIds: string[]): UseActiveSectionResult {
     }
   }, []);
 
-  const scrollToSection = useCallback((id: string) => {
-    const el = refs.current.get(id);
-    if (!el) return;
-    // Click intent wins: mark active immediately and hold it through the scroll.
-    setActiveId(id);
-    activeRef.current = id;
-    suppressRef.current = true;
-    if (suppressTimer.current !== null) clearTimeout(suppressTimer.current);
-    suppressTimer.current = setTimeout(() => {
-      suppressRef.current = false;
-    }, 700);
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    el.focus({ preventScroll: true });
+  // Two frames: the scroll event fires in the next rendering update, before the
+  // frame callbacks queued from inside one.
+  const holdThroughScroll = useCallback(() => {
+    settling.current += 1;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        settling.current -= 1;
+      });
+    });
   }, []);
+
+  const activateSection = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      holdThroughScroll();
+    },
+    [holdThroughScroll],
+  );
+
+  const scrollToSection = useCallback(
+    (id: string) => {
+      activateSection(id);
+      const el = refs.current.get(id);
+      if (!el) return;
+      scrollIntoPane(el, 'start');
+      el.focus({ preventScroll: true });
+    },
+    [activateSection],
+  );
 
   const key = sectionIds.join('|');
   useEffect(() => {
-    const observed = [...refs.current.values()];
-    if (observed.length === 0) return;
-    const scrollParent = findScrollParent(observed[0]);
-    const lastId = observed[observed.length - 1].dataset.sectionId ?? null;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (suppressRef.current) return;
-        const atBottom =
-          scrollParent !== null &&
-          scrollParent.scrollTop + scrollParent.clientHeight >= scrollParent.scrollHeight - 4;
-        setActiveId(resolveActiveSection(entries, activeRef.current, atBottom, lastId));
-      },
-      { rootMargin: '-20% 0px -70% 0px', threshold: [0, 0.25, 0.5, 1] },
-    );
-    observed.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
+    const ids = key === '' ? [] : key.split('|');
+    if (ids.length === 0) return;
+    // Resolved on use, not at setup: the pane only overflows once the form has
+    // laid out, and a miss here would silently disable the spy for good.
+    let scroller: HTMLElement | null = null;
+    let frame = 0;
+    const apply = () => {
+      frame = 0;
+      if (settling.current > 0) return;
+      scroller = scroller ?? findScrollParent(refs.current.get(ids[0]) ?? null);
+      if (!scroller) return;
+      const view = scroller.getBoundingClientRect();
+      const tops = ids.flatMap((id) => {
+        const el = refs.current.get(id);
+        return el ? [{ id, top: el.getBoundingClientRect().top - view.top }] : [];
+      });
+      const next = pickActiveSection(tops, ANCHOR_PX, isScrolledToBottom(scroller));
+      if (next) setActiveId(next);
+    };
+    const onScroll = () => {
+      if (frame === 0) frame = requestAnimationFrame(apply);
+    };
+    // Capture: a scroll event does not bubble, and the pane that scrolls is a
+    // nested one — listening at the document catches it wherever it is.
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener('scroll', onScroll, { capture: true });
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
   }, [key]);
 
-  return { activeId, registerSection, scrollToSection };
+  // `sectionIds` can arrive after mount (an async-loaded form) or drop the
+  // current pick (sections removed): fall back to the first id during render
+  // rather than storing the fallback in state, which would need a setState
+  // call inside the effect above.
+  return {
+    activeId: activeId !== null && sectionIds.includes(activeId) ? activeId : (sectionIds[0] ?? null),
+    registerSection,
+    scrollToSection,
+    activateSection,
+  };
 }

@@ -24,7 +24,6 @@ from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionPublishedState,
     ExtractionReviewerDecision,
-    ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
 from app.services._extraction_run_lock import load_run_for_update
@@ -34,7 +33,7 @@ from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_config_service import HitlConfigService
 from app.services.qa_divergence_gate import divergence_rationale_failure
-from app.services.value_semantics import is_value_filled, strip_verification
+from app.services.value_semantics import is_value_filled, resolve_reviewer_value, strip_verification
 
 
 class InvalidStageTransitionError(Exception):
@@ -576,13 +575,10 @@ class RunLifecycleService:
 
         resolved_values: list[tuple[UUID, UUID, Any]] = []
         for instance_id, field_id, decision, value, proposal_record_id in state_rows:
-            if decision == ExtractionReviewerDecisionType.REJECT.value:
-                continue
-            resolved = value
-            if resolved is None and proposal_record_id is not None:
-                resolved = proposal_values.get(proposal_record_id)
-            if is_value_filled(resolved):
-                resolved_values.append((instance_id, field_id, strip_verification(resolved)))
+            proposed = proposal_values.get(proposal_record_id) if proposal_record_id else None
+            resolved = resolve_reviewer_value(decision, value, proposed)
+            if resolved is not None:
+                resolved_values.append((instance_id, field_id, resolved))
         return resolved_values
 
     async def reopen_to_extract(

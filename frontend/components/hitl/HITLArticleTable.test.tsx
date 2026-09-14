@@ -10,14 +10,15 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+import { t } from '@/lib/copy';
 
-const { progressById } = vi.hoisted(() => ({
-  progressById: new Map<string, number>(),
+const { progressById, useAuthMock, structure, values, structureRefetch, valuesRefetch } = vi.hoisted(() => ({
+  progressById: new Map<string, number>(), useAuthMock: vi.fn(), structureRefetch: vi.fn(), valuesRefetch: vi.fn(),
+  structure: { isLoading: false, isError: false }, values: { isLoading: false, isError: false },
 }));
-
-vi.mock('@/services/authService', () => ({
-  getCurrentUserId: async () => ({ ok: true, data: 'user-1' }),
-}));
+const AUTH_USER = { user: { id: 'user-1' }, loading: false };
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => useAuthMock() }));
 
 vi.mock('@/services/articlesService', () => ({
   fetchProjectArticles: async () => ({
@@ -31,16 +32,15 @@ vi.mock('@/services/articlesService', () => ({
 }));
 
 vi.mock('@/hooks/extraction/useActiveTemplateStructure', () => ({
-  useActiveTemplateStructure: () => ({ entityTypes: [], isLoading: false, isError: false }),
+  useActiveTemplateStructure: () => ({ entityTypes: [], error: null, refetch: structureRefetch, ...structure }),
 }));
-
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
   useArticleExtractionValues: () => ({
     valuesByArticle: new Map([
       ['a-wip', { instances: [{ id: 'i1' }], values: 'a-wip' }],
       ['a-done', { instances: [{ id: 'i2' }], values: 'a-done' }],
     ]),
-    isLoading: false,
+    isUnavailable: false, refetch: valuesRefetch, ...values,
   }),
 }));
 
@@ -57,31 +57,25 @@ function LocationProbe() {
   return <div data-testid="probe-pathname">{useLocation().pathname}</div>;
 }
 
-function renderTable() {
-  render(
+function renderTable(toolbarActions?: ReactNode) {
+  const ui = () => (
     <MemoryRouter initialEntries={['/list']}>
       <Routes>
-        <Route
-          path="/list"
-          element={
-            <HITLArticleTable
-              kind="quality_assessment"
-              projectId="p1"
-              templateId="t1"
-              rowActionHref={(articleId, templateId) => `/qa/${articleId}/${templateId}`}
-            />
-          }
-        />
+        <Route path="/list" element={<HITLArticleTable kind="quality_assessment" projectId="p1" templateId="t1"
+          rowActionHref={(articleId, templateId) => `/qa/${articleId}/${templateId}`} toolbarActions={toolbarActions} />} />
         <Route path="*" element={<LocationProbe />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+  const view = render(ui());
+  return { rerender: () => view.rerender(ui()) };
 }
 
 const openControl = (title: string) =>
   screen.findByRole('button', { name: `Open assessment for ${title}` });
 
 beforeEach(() => {
+  vi.clearAllMocks(); useAuthMock.mockReturnValue(AUTH_USER); Object.assign(structure, { isLoading: false, isError: false }); Object.assign(values, { isLoading: false, isError: false });
   progressById.clear();
   progressById.set('a-wip', 40);
   progressById.set('a-done', 100);
@@ -143,5 +137,43 @@ describe('HITLArticleTable rows', () => {
     const row = screen.getByTestId('hitl-quality_assessment-row-a-new');
     expect(within(row).getAllByText('—')).toHaveLength(2);
     expect(within(row).queryByText('N/A')).toBeNull();
+  });
+});
+
+describe('HITLArticleTable progress states', () => {
+  const LOADING = 'hitl-quality_assessment-table-loading';
+  const retryName = t('patterns', 'errorTryAgain');
+  // A11: the retry refetches ONLY the query that failed.
+  it.each([
+    ['renders the error state when progress fails', values, valuesRefetch, structureRefetch],
+    ['renders the error state when the structure fails', structure, structureRefetch, valuesRefetch],
+  ])('%s', async (_name, failing, failedRefetch, otherRefetch) => {
+    failing.isError = true;
+    renderTable();
+    expect(await screen.findByText(t('extraction', 'errorLoadProgress'))).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: retryName }));
+    expect(failedRefetch).toHaveBeenCalledTimes(1);
+    expect(otherRefetch).not.toHaveBeenCalled();
+  });
+  it('keeps the toolbar actions rendered while progress loads', async () => {
+    values.isLoading = true;
+    renderTable(<button type="button">toolbar-action</button>);
+    expect(await screen.findByRole('button', { name: 'toolbar-action' })).toBeInTheDocument();
+    expect(screen.getByTestId(LOADING)).toBeInTheDocument();
+  });
+  it('shows the skeleton while the user lookup is resolving', async () => {
+    useAuthMock.mockReturnValue({ user: null, loading: true });
+    const view = renderTable();
+    expect(screen.getByTestId(LOADING)).toBeInTheDocument();
+    expect(screen.queryByText(t('extraction', 'progressUnavailable'))).toBeNull();
+    useAuthMock.mockReturnValue(AUTH_USER); // precondition: rows arrive once auth resolves
+    view.rerender();
+    expect(await openControl('Half done')).toBeInTheDocument();
+  });
+  it('renders progress unavailable once the lookup resolves with no user', async () => {
+    useAuthMock.mockReturnValue({ user: null, loading: false });
+    renderTable();
+    expect(await screen.findByText(t('extraction', 'progressUnavailable'))).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: retryName })).toBeNull();
   });
 });

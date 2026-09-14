@@ -17,6 +17,7 @@
  */
 
 import {act, render, screen, within} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {createRef} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import type {SectionNavHandle} from '@/components/runs/SectionNavLayout';
@@ -37,7 +38,13 @@ vi.mock('@/components/extraction/SectionAccordion', () => ({
       data-instance-ids={props.instances.map((i: any) => i.id).join(',')}
       data-parent-instance-id={props.parentInstanceId ?? ''}
       data-field-names={props.fields.map((f: any) => f.name).join(',')}
-    />
+    >
+      {props.fields.some((f: any) => f.is_required) && (
+        <div data-pending-required="">
+          <input aria-label={`${props.entityType.name} field`} />
+        </div>
+      )}
+    </div>
   ),
 }));
 
@@ -209,5 +216,28 @@ describe('ExtractionFormView → section nav handle', () => {
 
     const wrapper = screen.getByTestId('section-participants').parentElement;
     expect(vi.mocked(Element.prototype.scrollIntoView).mock.contexts).toContain(wrapper);
+  });
+});
+
+describe('ExtractionFormView → jump to the next pending field', () => {
+  it('a jump to the next pending field marks the section it lands in active', async () => {
+    const requiredSecond = {
+      ...SECOND_STUDY,
+      fields: [{id: 'f2', name: 'n_participants', label: 'Count', field_type: 'number', is_required: true}],
+    };
+    // The rail counts required fields per instance, so each root gets one.
+    const instances = [
+      {id: 'i1', entity_type_id: 'study-et', parent_instance_id: null},
+      {id: 'i2', entity_type_id: 'study2-et', parent_instance_id: null},
+    ];
+    render(<ExtractionFormView {...baseProps({entityTypes: [STUDY, requiredSecond], instances})} />);
+    const row = (name: RegExp) => within(screen.getByRole('navigation')).getByRole('button', {name});
+    expect(row(/Study Metadata/)).toHaveAttribute('aria-current', 'true'); // precondition
+
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+
+    expect(screen.getByLabelText('participants field')).toHaveFocus();
+    expect(row(/Participants/)).toHaveAttribute('aria-current', 'true');
+    expect(row(/Study Metadata/)).not.toHaveAttribute('aria-current');
   });
 });

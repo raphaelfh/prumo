@@ -62,7 +62,8 @@ export const extraction = {
     // ExtractionInterface loading & error
     loadingTemplates: 'Loading templates',
     errorLoadTemplates: 'Error loading templates',
-    errorLoadArticles: 'Error loading articles',
+    errorLoadProgress: 'Could not load progress',
+    progressUnavailable: 'Progress is unavailable without a signed-in user',
     errors_autoSaveFailed: 'Error saving data automatically',
     errors_advanceFailed: 'Could not advance the extraction stage',
     errors_markReadyFailed: 'Could not update your ready signal',

@@ -1,7 +1,7 @@
 /**
  * Paging to the next article must not paint the PREVIOUS run's form (2026-09-05).
  *
- * The extraction screen stays mounted across an article change (the J/K pager
+ * The extraction screen stays mounted across an article change (the [ / ] pager
  * only swaps the `:articleId` route param). `useExtractionSession` keeps the
  * previous article's `session` until the new `POST /api/v1/hitl/sessions`
  * resolves, so in the window where the page bootstrap has already settled but
@@ -51,7 +51,7 @@ vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
   }),
 }));
 
-// Two-article worklist so "J" has somewhere to go. The article id echoes back,
+// Two-article worklist so "]" has somewhere to go. The article id echoes back,
 // so paging swaps the header without touching the (project-level) template.
 vi.mock("@/services/extractionDataService", () => ({
   loadExtractionPhase1: vi.fn(async (articleId: string) => ({
@@ -279,8 +279,8 @@ describe("ExtractionFullScreen — paging to the next article", () => {
     renderPage();
     expect(await screen.findByText("First article field")).toBeInTheDocument();
 
-    // "J" — the worklist pager. Same route element, new :articleId.
-    await userEvent.keyboard("j");
+    // "]" — the worklist pager. Same route element, new :articleId.
+    await userEvent.keyboard("]");
     await waitFor(() =>
       expect(screen.getByTestId("probe-location")).toHaveTextContent(
         "/projects/p1/extraction/a2",
@@ -310,7 +310,7 @@ describe("ExtractionFullScreen — paging to the next article", () => {
     renderPage();
     expect(await screen.findByText("First article field")).toBeInTheDocument();
 
-    await userEvent.keyboard("j");
+    await userEvent.keyboard("]");
     await waitFor(() =>
       expect(screen.getByTestId("probe-location")).toHaveTextContent(
         "/projects/p1/extraction/a2",
@@ -336,7 +336,7 @@ describe("ExtractionFullScreen — paging to the next article", () => {
     expect(await screen.findByText("First article field")).toBeInTheDocument();
 
     await userEvent.type(screen.getAllByRole("textbox")[0], "pending edit");
-    await userEvent.keyboard("j");
+    await userEvent.keyboard("]");
 
     await waitFor(() =>
       expect(vi.mocked(apiClient)).toHaveBeenCalledWith(

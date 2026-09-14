@@ -983,6 +983,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/templates/{template_id}/article-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Template Article Progress
+         * @description The caller's own per-article progress values for a template's worklist.
+         *
+         *     Member-gated like ``active-version``: 403 before any template lookup (no existence
+         *     oracle). Missing or unknown ``kind`` is a 422; a foreign, unknown or other-kind template, 404.
+         */
+        get: operations["get_template_article_progress_api_v1_projects__project_id__templates__template_id__article_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/{template_id}/config-diff": {
         parameters: {
             query?: never;
@@ -1919,6 +1942,23 @@ export interface components {
         ApiResponse_ArticleFileResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ArticleFileResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ArticleProgressRead] */
+        ApiResponse_ArticleProgressRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ArticleProgressRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3025,6 +3065,51 @@ export interface components {
              * Format: date-time
              */
             updatedAt: string;
+        };
+        /** ArticleProgressInstanceRead */
+        ArticleProgressInstanceRead: {
+            /**
+             * Entity Type Id
+             * Format: uuid
+             */
+            entity_type_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** ArticleProgressItemRead */
+        ArticleProgressItemRead: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /** Instances */
+            instances: components["schemas"]["ArticleProgressInstanceRead"][];
+            /** Values */
+            values: components["schemas"]["ArticleProgressValueRead"][];
+        };
+        /** ArticleProgressRead */
+        ArticleProgressRead: {
+            /** Articles */
+            articles: components["schemas"]["ArticleProgressItemRead"][];
+        };
+        /** ArticleProgressValueRead */
+        ArticleProgressValueRead: {
+            /**
+             * Field Id
+             * Format: uuid
+             */
+            field_id: string;
+            /**
+             * Instance Id
+             * Format: uuid
+             */
+            instance_id: string;
+            /** Value */
+            value: unknown;
         };
         /**
          * ArticleRunRef
@@ -8372,6 +8457,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_TemplateActiveVersionRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_article_progress_api_v1_projects__project_id__templates__template_id__article_progress_get: {
+        parameters: {
+            query: {
+                kind: "extraction" | "quality_assessment";
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ArticleProgressRead_"];
                 };
             };
             /** @description Validation Error */

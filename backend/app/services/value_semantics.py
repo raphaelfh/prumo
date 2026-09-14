@@ -129,6 +129,15 @@ def is_value_filled(raw: Any) -> bool:
     return not is_value_empty(raw)
 
 
+def resolve_reviewer_value(decision: str, value: Any, proposed_value: Any) -> Any | None:
+    """A reviewer's CURRENT decision -> its value, or ``None`` for ``reject`` or an empty result. ``accept_proposal`` stores
+    ``value=None``, so it resolves to ``proposed_value``; a filled result loses ``verification``. The ONE resolver (lifecycle + progress)."""
+    if decision == "reject":
+        return None
+    resolved = value if value is not None else proposed_value
+    return strip_verification(resolved) if is_value_filled(resolved) else None
+
+
 # The in-band disposition strings retired by ADR-0016, mapped to their coded
 # marker. Both encodings are covered: the CHARMS/full-word set and the PROBAST
 # abbreviations ("NI" / "NA"). "Unclear" is intentionally absent — it is a

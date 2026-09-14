@@ -361,7 +361,7 @@ export default function QualityAssessmentFullScreen() {
 
   // ONE place that knows the QA route shape. The :templateId segment is
   // carried through verbatim — it may name either a project or a global
-  // template (see resolveQATemplateKind above), so reconstructing it from the
+  // template (see useQATemplateResolution above), so reconstructing it from the
   // resolved template would silently rewrite the URL the user arrived on.
   const qaArticleRoute = (targetArticleId: string) =>
     `/projects/${projectId}/articles/${targetArticleId}/quality-assessment/${templateId}`;
@@ -369,7 +369,7 @@ export default function QualityAssessmentFullScreen() {
   const goToArticle = (targetArticleId: string) =>
     navigate(qaArticleRoute(targetArticleId));
 
-  // Every run-screen keyboard binding (J/K, ⌘K, Escape) lives in the one
+  // Every run-screen keyboard binding ([ / ], ⌘K, Escape) lives in the one
   // shared hook, which owns the not-while-typing / no-modifier / end-of-list
   // guards — never re-stated here. Declared after goToArticle: the handler
   // object is built during render, so a call above it would hit the TDZ.
@@ -884,7 +884,7 @@ export default function QualityAssessmentFullScreen() {
       ) : null}
 
       {showFormStage && template && session && effectiveViewMode === "assess" ? (
-        <SectionNavLayout ref={sectionNavRef} items={sectionNav.items} activeId={sectionNav.activeId} onSelect={sectionNav.scrollToSection}>
+        <SectionNavLayout ref={sectionNavRef} items={sectionNav.items} activeId={sectionNav.activeId} onSelect={sectionNav.scrollToSection} onActivate={sectionNav.activateSection}>
           <div className="space-y-3">
             {template.description ? (
               <p className="text-sm text-muted-foreground">
