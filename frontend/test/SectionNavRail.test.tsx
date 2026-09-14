@@ -1,6 +1,7 @@
 // frontend/test/SectionNavRail.test.tsx
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import SectionNavRail from '@/components/extraction/SectionNavRail';
 import type { SectionNavItem } from '@/lib/extraction/sectionRegistry';
 
@@ -38,5 +39,32 @@ describe('SectionNavRail', () => {
     expect(screen.queryByText('3/12')).not.toBeInTheDocument();
     expect(screen.queryByText('sectionNavRequiredLeft')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Participants 3/12' })).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('shows the label and count in a tooltip when a dot takes focus', async () => {
+    render(<SectionNavRail compact items={items} activeId="s1" onSelect={() => {}} />);
+    await userEvent.tab();
+    expect(screen.getByRole('button', { name: 'Source of data 1/1' })).toHaveFocus();
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent('Source of data');
+    expect(tooltip).toHaveTextContent('1/1');
+  });
+
+  it('shows the label and count in a tooltip when a dot is hovered', async () => {
+    render(<SectionNavRail compact items={items} activeId="s1" onSelect={() => {}} />);
+    const dot = screen.getByRole('button', { name: 'Participants 3/12' });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    await userEvent.hover(dot);
+    expect(dot).not.toHaveFocus();
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent('Participants');
+    expect(tooltip).toHaveTextContent('3/12');
+  });
+
+  it('clicking a compact dot selects that section', () => {
+    const onSelect = vi.fn();
+    render(<SectionNavRail compact items={items} activeId="s1" onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Predictors 0/6' }));
+    expect(onSelect).toHaveBeenCalledWith('cs');
   });
 });

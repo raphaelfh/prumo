@@ -123,7 +123,7 @@ describe("QualityAssessmentFullScreen", () => {
     renderPage();
     const rail = await screen.findByRole("navigation", { name: "Section navigation" });
     expect(within(rail).getByRole("button", { name: /Participants/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Hide sections" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Collapse sections" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );

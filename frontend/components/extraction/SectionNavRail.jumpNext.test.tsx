@@ -62,4 +62,14 @@ describe('SectionNavRail jump-to-next-unfilled', () => {
     // jsdom is not macOS, so `mod` announces as Control.
     expect(screen.getByRole('button', { name: /sectionNavJumpNext/ })).toHaveAttribute('aria-keyshortcuts', 'Control+Enter');
   });
+
+  it('hides the jump control in compact mode on a read-only run', () => {
+    render(
+      <RunEditabilityProvider stage="finalized">
+        <SectionNavRail compact items={incomplete} activeId={null} onSelect={vi.fn()} onJumpToNextPending={vi.fn()} />
+      </RunEditabilityProvider>,
+    );
+    expect(screen.getByRole('button', { name: 'Participants 1/3' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sectionNavJumpNext/ })).not.toBeInTheDocument();
+  });
 });

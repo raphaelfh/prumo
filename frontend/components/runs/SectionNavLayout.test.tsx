@@ -48,7 +48,7 @@ beforeEach(() => {
 });
 
 describe('SectionNavLayout', () => {
-  it('shows the section rail by default, with a toggle that says it hides it', () => {
+  it('shows the section rail by default, with a toggle that says it collapses it', () => {
     render(<Layout />);
     expect(rail()).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'sectionNavHide' })).toHaveAttribute('aria-expanded', 'true');
@@ -66,6 +66,16 @@ describe('SectionNavLayout', () => {
     render(<Layout />);
     expect(screen.queryByText('Source of data')).not.toBeInTheDocument();
     expect(rail()).toBeInTheDocument();
+  });
+
+  it('the collapsed strip is the compact w-8 rail', async () => {
+    render(<Layout />);
+    const strip = () => rail()?.parentElement;
+    expect(strip()).toHaveClass('w-[184px]');
+    expect(strip()).not.toHaveClass('w-8');
+    await userEvent.click(screen.getByRole('button', { name: 'sectionNavHide' }));
+    expect(strip()).toHaveClass('w-8');
+    expect(strip()).not.toHaveClass('w-[184px]');
   });
 
   it('mod+\\ toggles the rail between labels and dots', async () => {
