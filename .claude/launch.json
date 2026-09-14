@@ -16,7 +16,7 @@
     {
       "name": "full-stack",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "make supabase-start supabase-migrate backend-start && npm run dev"],
+      "runtimeArgs": ["-c", "make supabase-start supabase-migrate db-migrate backend-start && npm run dev"],
       "port": 8080,
       "autoPort": true
     }
