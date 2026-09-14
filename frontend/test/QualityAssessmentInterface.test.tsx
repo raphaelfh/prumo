@@ -235,7 +235,9 @@ describe('QualityAssessmentInterface', () => {
     renderInterface();
 
     // The button lives in HITLArticleTable's toolbar via `toolbarActions` —
-    // the same slot and placement the extraction table uses.
+    // the same slot and placement the extraction table uses. Wait for the rows:
+    // the loading skeleton renders the toolbar too, then unmounts (R19).
+    await screen.findByText(/A predictive model for X/);
     const exportButton = await screen.findByTestId('qa-export-button');
     await waitFor(() => expect(exportButton).toBeEnabled());
     await user.click(exportButton);
@@ -249,6 +251,7 @@ describe('QualityAssessmentInterface', () => {
     const user = userEvent.setup();
     renderInterface();
 
+    await screen.findByText(/A predictive model for X/); // past the loading skeleton's toolbar (R19)
     const gear = await screen.findByTestId('engine-gear');
     await user.hover(gear);
     expect(

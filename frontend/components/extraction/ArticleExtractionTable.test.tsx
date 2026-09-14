@@ -23,16 +23,18 @@
  * rendering the full table.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { loadSpy, getUserSpy, structure } = vi.hoisted(() => ({
-  loadSpy: vi.fn(),
-  getUserSpy: vi.fn(),
-  structure: { isLoading: true },
+const { loadSpy, useAuthMock, structure, values, structureRefetch, valuesRefetch } = vi.hoisted(() => ({
+  loadSpy: vi.fn(), useAuthMock: vi.fn(), structureRefetch: vi.fn(), valuesRefetch: vi.fn(),
+  structure: { isLoading: true, isError: false }, values: { isLoading: false, isError: false },
 }));
+const AUTH_USER = { user: { id: 'user-1' }, loading: false };
 
 vi.mock('@/lib/copy', () => ({
   t: (_ns: string, key: string) => key,
@@ -42,28 +44,17 @@ vi.mock('@/services/articlesService', () => ({
   loadExtractionTableArticles: (...args: unknown[]) => loadSpy(...args),
 }));
 
-vi.mock('@/services/authService', () => ({
-  getCurrentUserId: (...args: unknown[]) => getUserSpy(...args),
-}));
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => useAuthMock() }));
 
 // Keep entity-types "loading" so the component stays in its skeleton branch:
 // the load effect still runs, we just avoid rendering the full table. The
 // mock also keeps the import chain away from the supabase client, which
 // crashes in CI where no VITE_SUPABASE_URL env exists.
 vi.mock('@/hooks/extraction/useActiveTemplateStructure', () => ({
-  useActiveTemplateStructure: () => ({
-    entityTypes: [],
-    isLoading: structure.isLoading,
-    isError: false,
-    error: null,
-  }),
+  useActiveTemplateStructure: () => ({ entityTypes: [], error: null, refetch: structureRefetch, ...structure }),
 }));
-
 vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
-  useArticleExtractionValues: () => ({
-    valuesByArticle: new Map(),
-    isLoading: false,
-  }),
+  useArticleExtractionValues: () => ({ valuesByArticle: new Map(), isUnavailable: false, refetch: valuesRefetch, ...values }),
 }));
 
 vi.mock('@/hooks/extraction/useFullAIExtraction', () => ({
@@ -72,23 +63,21 @@ vi.mock('@/hooks/extraction/useFullAIExtraction', () => ({
 
 import { ArticleExtractionTable } from '@/components/extraction/ArticleExtractionTable';
 
-function renderTable() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
+function renderTable(toolbarActions?: ReactNode) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const ui = () => (
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <ArticleExtractionTable projectId="p1" templateId="t1" />
-      </MemoryRouter>
-    </QueryClientProvider>,
+      <MemoryRouter><ArticleExtractionTable projectId="p1" templateId="t1" toolbarActions={toolbarActions} /></MemoryRouter>
+    </QueryClientProvider>
   );
+  const view = render(ui());
+  return { rerender: () => view.rerender(ui()) };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   structure.isLoading = true;
-  getUserSpy.mockResolvedValue({ ok: true, data: 'user-1' });
+  useAuthMock.mockReturnValue(AUTH_USER); structure.isError = false; Object.assign(values, { isLoading: false, isError: false });
   loadSpy.mockResolvedValue({
     ok: true,
     data: [
@@ -133,5 +122,45 @@ describe('ArticleExtractionTable → rows', () => {
       expect(nested.parentElement?.closest('button, [role="button"]')).toBeNull();
     }
     expect(within(row).getByRole('button', { name: 'tableStart' })).toBeInTheDocument();
+  });
+});
+
+describe('ArticleExtractionTable → progress states', () => {
+  beforeEach(() => { structure.isLoading = false; });
+  // A11: the retry refetches ONLY the query that failed.
+  it.each([
+    ['renders the error state when progress fails', values, valuesRefetch, structureRefetch],
+    ['renders the error state when the structure fails', structure, structureRefetch, valuesRefetch],
+  ])('%s', async (_name, failing, failedRefetch, otherRefetch) => {
+    failing.isError = true;
+    renderTable();
+    expect(await screen.findByText('errorLoadProgress')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'errorTryAgain' }));
+    expect(failedRefetch).toHaveBeenCalledTimes(1);
+    expect(otherRefetch).not.toHaveBeenCalled();
+  });
+  it('keeps the toolbar actions rendered while progress loads', async () => {
+    values.isLoading = true;
+    renderTable(<button type="button">toolbar-action</button>);
+    expect(await screen.findByRole('button', { name: 'toolbar-action' })).toBeInTheDocument();
+    expect(screen.getByTestId('extraction-table-loading')).toBeInTheDocument();
+  });
+  it('shows the skeleton while the user lookup is resolving', async () => {
+    useAuthMock.mockReturnValue({ user: null, loading: true });
+    const view = renderTable();
+    expect(screen.getByTestId('extraction-table-loading')).toBeInTheDocument();
+    expect(screen.queryByText('progressUnavailable')).toBeNull();
+    expect(loadSpy).not.toHaveBeenCalled();
+    // Precondition: the same mount loads once auth resolves, so the skeleton was auth's.
+    useAuthMock.mockReturnValue(AUTH_USER);
+    view.rerender();
+    await waitFor(() => expect(loadSpy).toHaveBeenCalledWith('p1'));
+  });
+  it('renders progress unavailable once the lookup resolves with no user', async () => {
+    useAuthMock.mockReturnValue({ user: null, loading: false });
+    renderTable();
+    expect(await screen.findByText('progressUnavailable')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'errorTryAgain' })).toBeNull();
+    expect(loadSpy).not.toHaveBeenCalled();
   });
 });
