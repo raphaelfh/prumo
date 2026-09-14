@@ -99,6 +99,7 @@ vi.mock('@/integrations/supabase/client', () => {
       eq: () => b,
       in: () => b,
       order: () => b,
+      range: () => b,
       then: (cb: (r: typeof result) => unknown) => Promise.resolve(cb(result)),
     };
     return b;

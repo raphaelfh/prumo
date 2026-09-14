@@ -21,7 +21,14 @@ vi.mock('@/lib/file-validation', () => ({detectFileFormat: vi.fn(() => 'applicat
 
 import {supabase} from '@/integrations/supabase/client';
 import {apiClient} from '@/integrations/api';
-import {insertArticle, uploadArticleFile} from '@/services/articlesService';
+import type {ErrorResult} from '@/lib/error-utils';
+import {
+  fetchProjectArticles,
+  insertArticle,
+  loadExtractionTableArticles,
+  loadProjectArticles,
+  uploadArticleFile,
+} from '@/services/articlesService';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -142,5 +149,82 @@ describe('articlesService.insertArticle', () => {
     const result = await insertArticle({project_id: 'proj-1', title: 'T'} as never);
 
     expect(result.ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Project-wide article lists
+// ---------------------------------------------------------------------------
+
+describe('articlesService — project article lists', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  /** PostgREST answers at most 1000 rows per request, without saying so. */
+  function mockArticleRows(total: number) {
+    const rows = Array.from({length: total}, (_, i) => ({
+      id: `art-${String(i).padStart(4, '0')}`,
+      title: `T${i}`,
+      authors: null,
+      publication_year: null,
+      doi: null,
+      created_at: '2026-01-01T00:00:00Z',
+    }));
+    const ranges: Array<[number, number]> = [];
+    const orderedBy: string[] = [];
+    let range: [number, number] | null = null;
+    const chain: Record<string, unknown> = {};
+    chain.select = vi.fn(() => chain);
+    chain.eq = vi.fn(() => chain);
+    chain.order = vi.fn((column: string) => {
+      orderedBy.push(column);
+      return chain;
+    });
+    chain.range = vi.fn((from: number, to: number) => {
+      range = [from, to];
+      ranges.push([from, to]);
+      return chain;
+    });
+    chain.then = (resolve: (v: {data: unknown; error: null}) => unknown) => {
+      const [from, to] = range ?? [0, 999];
+      return Promise.resolve(
+        resolve({data: rows.slice(from, Math.min(to + 1, from + 1000)), error: null}),
+      );
+    };
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
+    return {ranges, orderedBy};
+  }
+
+  type ListLoader = (projectId: string) => Promise<ErrorResult<unknown[]>>;
+  const loaders: Array<[string, ListLoader]> = [
+    ['loadExtractionTableArticles', loadExtractionTableArticles],
+    ['loadProjectArticles', loadProjectArticles],
+    ['fetchProjectArticles', fetchProjectArticles],
+  ];
+
+  it.each(loaders)(
+    '%s pages past the 1000-row cap instead of silently truncating',
+    async (_name, load) => {
+      // A single unpaged select drops article 1001 onward — and the worklist,
+      // the dashboard and the HITL list then disagree about how many exist.
+      const {ranges} = mockArticleRows(1200);
+
+      const result = await load('proj-1');
+
+      expect(result.ok).toBe(true);
+      expect(result.ok && result.data).toHaveLength(1200);
+      expect(ranges[0]).toEqual([0, 999]);
+      expect(ranges[1]?.[0]).toBe(1000);
+    },
+  );
+
+  it.each(loaders)('%s breaks created_at ties on a second column', async (_name, load) => {
+    // Seeded articles share a created_at. Without a tiebreaker the order is
+    // undefined across requests, so a row can repeat on one page and vanish
+    // from the next.
+    const {orderedBy} = mockArticleRows(3);
+
+    await load('proj-1');
+
+    expect(orderedBy).toEqual(['created_at', 'id']);
   });
 });

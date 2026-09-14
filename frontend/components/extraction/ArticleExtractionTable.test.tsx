@@ -64,7 +64,6 @@ vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
     valuesByArticle: new Map(),
     isLoading: false,
   }),
-  articleExtractionValuesKeys: { all: ['article-extraction-values'] },
 }));
 
 vi.mock('@/hooks/extraction/useFullAIExtraction', () => ({

@@ -394,6 +394,49 @@ export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
  */
 
 // ---------------------------------------------------------------------------
+// Project-wide article lists (worklist, dashboard stats, HITL)
+// ---------------------------------------------------------------------------
+
+/** PostgREST default max-rows. A short page is the last one. */
+const ARTICLES_PAGE = 1000;
+
+/**
+ * Read every article of a project, newest first.
+ *
+ * PostgREST caps a select at 1000 rows and says nothing about it, so an
+ * unpaged read silently drops article 1001 onward — and the three surfaces
+ * built on this list then disagree about how many articles a project has.
+ *
+ * `id` breaks ties on `created_at`: seeded or bulk-imported articles share a
+ * timestamp, and equal keys have no stable order across requests, so a row
+ * could repeat on one page and vanish from the next.
+ *
+ * NOTE: keep `await supabase` and `.from('articles')` on separate lines
+ * (see insertArticle).
+ */
+async function selectAllProjectArticles<T>(
+  projectId: string,
+  columns: string,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += ARTICLES_PAGE) {
+    const {data, error} = await supabase
+      .from('articles')
+      .select(columns)
+      .eq('project_id', projectId)
+      .order('created_at', {ascending: false})
+      .order('id')
+      .range(from, from + ARTICLES_PAGE - 1);
+
+    if (error) throw error;
+
+    const page = (data ?? []) as T[];
+    rows.push(...page);
+    if (page.length < ARTICLES_PAGE) return rows;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ExtractionInterface: article list for dashboard stats
 // ---------------------------------------------------------------------------
 
@@ -404,24 +447,14 @@ export interface ArticleRow {
   created_at: string;
 }
 
-/**
- * Load articles for a project (for dashboard stats in ExtractionInterface).
- * Single-query relocation: no test needed.
- */
+/** Load articles for a project (for dashboard stats in ExtractionInterface). */
 export function loadProjectArticles(
   projectId: string,
 ): Promise<ErrorResult<ArticleRow[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('articles')
-      .select('id, title, doi, created_at')
-      .eq('project_id', projectId)
-      .order('created_at', {ascending: false});
-
-    if (error) throw error;
-
-    return (data || []) as ArticleRow[];
-  }, 'articlesService.loadProjectArticles');
+  return toResult(
+    () => selectAllProjectArticles<ArticleRow>(projectId, 'id, title, doi, created_at'),
+    'articlesService.loadProjectArticles',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -442,17 +475,14 @@ export interface ArticleTableRow {
 export function loadExtractionTableArticles(
   projectId: string,
 ): Promise<ErrorResult<ArticleTableRow[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('articles')
-      .select('id, title, authors, publication_year, created_at')
-      .eq('project_id', projectId)
-      .order('created_at', {ascending: false});
-
-    if (error) throw error;
-
-    return (data || []) as ArticleTableRow[];
-  }, 'articlesService.loadExtractionTableArticles');
+  return toResult(
+    () =>
+      selectAllProjectArticles<ArticleTableRow>(
+        projectId,
+        'id, title, authors, publication_year, created_at',
+      ),
+    'articlesService.loadExtractionTableArticles',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -512,13 +542,12 @@ export interface ArticleListItem {
 export function fetchProjectArticles(
   projectId: string,
 ): Promise<ErrorResult<ArticleListItem[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('articles')
-      .select('id, title, authors, publication_year, created_at')
-      .eq('project_id', projectId)
-      .order('created_at', {ascending: false});
-    if (error) throw error;
-    return (data ?? []) as ArticleListItem[];
-  }, 'articlesService.fetchProjectArticles');
+  return toResult(
+    () =>
+      selectAllProjectArticles<ArticleListItem>(
+        projectId,
+        'id, title, authors, publication_year, created_at',
+      ),
+    'articlesService.fetchProjectArticles',
+  );
 }

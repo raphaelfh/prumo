@@ -31,4 +31,12 @@ describe('SectionNavRail', () => {
     render(<SectionNavRail items={items} activeId="s1" onSelect={() => {}} />);
     expect(screen.getByText('sectionNavRequiredLeft')).toBeInTheDocument();
   });
+
+  it('in compact mode keeps only status dots, hiding labels and the footer', () => {
+    render(<SectionNavRail compact items={items} activeId="s2" onSelect={() => {}} />);
+    expect(screen.queryByText('Source of data')).not.toBeInTheDocument();
+    expect(screen.queryByText('3/12')).not.toBeInTheDocument();
+    expect(screen.queryByText('sectionNavRequiredLeft')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Participants 3/12' })).toHaveAttribute('aria-current', 'true');
+  });
 });

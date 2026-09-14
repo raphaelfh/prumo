@@ -8,9 +8,11 @@ import { useJumpToNextPendingField } from './useJumpToNextPendingField';
 /** A stand-in for the form: a jump button, and sections it can open. */
 function Harness({
   pendingSectionIds = [],
+  onLanded,
   children,
 }: {
   pendingSectionIds?: string[];
+  onLanded?: (id: string) => void;
   children: (openIds: Set<string>) => ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -18,6 +20,7 @@ function Harness({
   const jump = useJumpToNextPendingField(ref, {
     pendingIds: new Set(pendingSectionIds),
     open: (id) => setOpenIds((prev) => new Set(prev).add(id)),
+    onLanded,
   });
   return (
     <>
@@ -138,6 +141,21 @@ describe('useJumpToNextPendingField — closed sections', () => {
     expect(screen.getByLabelText('first')).toHaveFocus();
     await userEvent.click(jumpButton());
     expect(screen.getByLabelText('second')).toHaveFocus();
+  });
+
+  it('reports the section it landed in so the rail can shade it immediately', async () => {
+    const onLanded = vi.fn();
+    render(
+      <Harness pendingSectionIds={['s']} onLanded={onLanded}>
+        {(open) => (
+          <Section id="s" open={open.has('s')}>
+            <Row id="inside" pending />
+          </Section>
+        )}
+      </Harness>,
+    );
+    await userEvent.click(jumpButton());
+    expect(onLanded).toHaveBeenCalledWith('s');
   });
 
   it('moves past a section that opens with no pending row inside', async () => {

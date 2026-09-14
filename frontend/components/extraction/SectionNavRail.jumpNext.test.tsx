@@ -46,6 +46,17 @@ describe('SectionNavRail jump-to-next-unfilled', () => {
     expect(screen.queryByRole('button', { name: /sectionNavJumpNext/ })).not.toBeInTheDocument();
   });
 
+  it('keeps the jump control in compact mode as an icon-only button', async () => {
+    const onJump = vi.fn();
+    render(
+      <SectionNavRail compact items={incomplete} activeId={null} onSelect={vi.fn()} onJumpToNextPending={onJump} />,
+    );
+    const jump = screen.getByRole('button', { name: /sectionNavJumpNext/ });
+    expect(jump).toHaveAttribute('aria-keyshortcuts', 'Control+Enter');
+    await userEvent.click(jump);
+    expect(onJump).toHaveBeenCalledTimes(1);
+  });
+
   it('announces the chord SectionNavLayout binds', () => {
     render(<SectionNavRail items={incomplete} activeId={null} onSelect={vi.fn()} onJumpToNextPending={vi.fn()} />);
     // jsdom is not macOS, so `mod` announces as Control.

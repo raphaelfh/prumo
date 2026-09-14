@@ -1,42 +1,43 @@
 // frontend/test/useActiveSection.test.tsx
 import { describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { pickMostVisible, resolveActiveSection, useActiveSection } from '@/hooks/extraction/useActiveSection';
+import { pickActiveSection, useActiveSection } from '@/hooks/extraction/useActiveSection';
 
-function entry(id: string, ratio: number, isIntersecting: boolean): IntersectionObserverEntry {
-  return {
-    target: { dataset: { sectionId: id } } as unknown as HTMLElement,
-    intersectionRatio: ratio,
-    isIntersecting,
-  } as unknown as IntersectionObserverEntry;
-}
+describe('pickActiveSection', () => {
+  // Tops are pane-relative pixels; the activation line sits at 200.
+  const form = [
+    { id: 'a', top: -320 },
+    { id: 'b', top: 40 },
+    { id: 'c', top: 900 },
+  ];
 
-describe('pickMostVisible', () => {
-  it('returns the id of the most-visible intersecting section', () => {
-    expect(pickMostVisible([entry('a', 0.2, true), entry('b', 0.7, true)], null)).toBe('b');
+  it('picks the last section that starts at or above the activation line', () => {
+    expect(pickActiveSection(form, 200, false)).toBe('b');
   });
-  it('keeps the current id when nothing is intersecting', () => {
-    expect(pickMostVisible([entry('a', 0, false)], 'a')).toBe('a');
-  });
-});
 
-describe('resolveActiveSection', () => {
-  it('clamps to the last section when the scroll container is at the bottom', () => {
-    // Nothing is intersecting in the activation band, but we are at the bottom,
-    // so the last (short, never-reaches-the-band) section should win.
-    expect(resolveActiveSection([entry('mid', 0, false)], 'mid', true, 'last')).toBe('last');
+  it('keeps the first section while the form sits below the line', () => {
+    expect(pickActiveSection([{ id: 'a', top: 640 }, { id: 'b', top: 1200 }], 200, false)).toBe('a');
   });
-  it('falls back to the most-visible section when not at the bottom', () => {
-    expect(resolveActiveSection([entry('a', 0.3, true), entry('b', 0.6, true)], null, false, 'last')).toBe('b');
+
+  it('gives the last section the rail once the pane has bottomed out', () => {
+    // The trailing section is short: it never reaches the line, so only the
+    // at-bottom case can hand it the rail.
+    expect(pickActiveSection(form, 200, true)).toBe('c');
   });
-  it('ignores the clamp when there is no last id', () => {
-    expect(resolveActiveSection([entry('a', 0.4, true)], null, true, null)).toBe('a');
+
+  it('a tall section no longer outvotes the one being read', () => {
+    // 'b' covers most of the pane, but the reader has scrolled past its start.
+    expect(pickActiveSection([{ id: 'b', top: -2000 }, { id: 'c', top: 120 }], 200, false)).toBe('c');
+  });
+
+  it('has nothing to say about an unmeasured form', () => {
+    expect(pickActiveSection([], 200, false)).toBeNull();
   });
 });
 
 describe('useActiveSection', () => {
   it('scrollToSection scrolls and focuses the registered element', () => {
-    const { result } = renderHook(() => useActiveSection(['s1']));
+    const { result } = renderHook(() => useActiveSection(['s1', 's2']));
     const el = document.createElement('div');
     el.tabIndex = -1;
     const scrollIntoView = vi.fn();
@@ -44,8 +45,20 @@ describe('useActiveSection', () => {
     const focus = vi.spyOn(el, 'focus');
     act(() => result.current.registerSection('s1', el));
     act(() => result.current.scrollToSection('s1'));
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    // No `behavior: 'smooth'`: a smooth scroll across this pane takes over a
+    // second, and the spy re-picks every section it drifts past.
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
     expect(focus).toHaveBeenCalled();
+  });
+
+  it('scrolls the last section the same way as any other', () => {
+    const { result } = renderHook(() => useActiveSection(['s1', 's2']));
+    const el = document.createElement('div');
+    const scrollIntoView = vi.fn();
+    el.scrollIntoView = scrollIntoView;
+    act(() => result.current.registerSection('s2', el));
+    act(() => result.current.scrollToSection('s2'));
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
   });
 
   it('marks the clicked section active immediately, even before any scroll settles', () => {
@@ -54,6 +67,12 @@ describe('useActiveSection', () => {
     const el = document.createElement('div');
     el.scrollIntoView = vi.fn();
     act(() => result.current.registerSection('s2', el));
+    act(() => result.current.scrollToSection('s2'));
+    expect(result.current.activeId).toBe('s2');
+  });
+
+  it('shades a section even when its node is not registered yet', () => {
+    const { result } = renderHook(() => useActiveSection(['s1', 's2']));
     act(() => result.current.scrollToSection('s2'));
     expect(result.current.activeId).toBe('s2');
   });

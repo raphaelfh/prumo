@@ -70,10 +70,8 @@ import {useQueryClient} from '@tanstack/react-query';
 import {loadExtractionTableArticles} from '@/services/articlesService';
 import {getCurrentUserId} from '@/services/authService';
 import {useActiveTemplateStructure} from '@/hooks/extraction/useActiveTemplateStructure';
-import {
-  useArticleExtractionValues,
-  articleExtractionValuesKeys,
-} from '@/hooks/extraction/useArticleExtractionValues';
+import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractionValues';
+import {articleExtractionValuesKeys} from '@/lib/query-keys/extraction';
 import {computeRowProgress} from '@/lib/extraction/progress';
 
 interface Article {

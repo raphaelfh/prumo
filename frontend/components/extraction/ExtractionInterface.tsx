@@ -74,7 +74,10 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   // Per-article values + required-field structure, shared with the list
   // tables. "Overall progress" below is the mean of the canonical per-article
   // completion (previously "% of articles touched").
-  const { valuesByArticle } = useArticleExtractionValues(
+  const {
+    valuesByArticle,
+    isLoading: valuesLoading,
+  } = useArticleExtractionValues(
     projectId,
     activeTemplate?.id,
     user?.id,
@@ -202,7 +205,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const renderDashboard = () => {
     // Same gate as the worklist tables: while the active-version structure
     // is loading — or errored — show a placeholder, never numbers from [].
-    if (activeTemplate && (structureLoading || structureError)) {
+    if (activeTemplate && (structureLoading || structureError || valuesLoading)) {
       return <Skeleton data-testid="dashboard-skeleton" className="h-48 w-full rounded-md border" />;
     }
     return (

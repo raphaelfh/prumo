@@ -82,7 +82,7 @@ export const runs = {
   shortcutsHeading: 'Keyboard shortcuts',
   glossaryHeading: 'Workflow',
   shortcutPalette: 'Command palette',
-  shortcutNextPrev: 'Next / previous article',
+  shortcutNextPrev: 'Previous / next article',
   shortcutJumpNext: 'Next required field',
   shortcutTogglePdf: 'Toggle source panel',
   shortcutSectionNav: 'Show / hide sections',

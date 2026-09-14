@@ -3,6 +3,7 @@ import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/copy';
 import { ariaKeyShortcuts } from '@/lib/platform';
+import { IconButton } from '@/components/patterns/IconButton';
 import { Button } from '@/components/ui/button';
 import { KbdBadge } from '@/components/ui/kbd-badge';
 import { Progress } from '@/components/ui/progress';
@@ -23,6 +24,8 @@ export interface SectionNavRailProps {
    * Optional: without it the rail keeps its counters and simply omits the control.
    */
   onJumpToNextPending?: () => void;
+  /** Labels, counts and footer drop; each section stays as a status dot. */
+  compact?: boolean;
 }
 
 const DOT_COLOR: Record<SectionNavState, string> = {
@@ -41,6 +44,7 @@ export default function SectionNavRail({
   activeId,
   onSelect,
   onJumpToNextPending,
+  compact = false,
 }: SectionNavRailProps) {
   // Read-only run: the "N required left" footer is a fill-completion CTA —
   // noise on a published view. Navigation (dots + labels) stays.
@@ -51,34 +55,69 @@ export default function SectionNavRail({
   // once there is nothing left to answer.
   const showJump = !readOnly && !!onJumpToNextPending && global.requiredLeft > 0;
   return (
-    <nav aria-label={t('extraction', 'sectionNavAria')} className="flex flex-col">
-      <ul className="flex-1 space-y-px">
+    <nav
+      aria-label={t('extraction', 'sectionNavAria')}
+      className={cn('flex flex-col', compact && 'items-center')}
+    >
+      <ul className={cn('flex-1 space-y-px', compact && 'flex flex-col items-center')}>
         {items.map((item) => {
           const isActive = item.id === activeId;
+          const count = `${item.requiredFilled}/${item.requiredTotal}`;
+          const row = (
+            <button
+              type="button"
+              aria-current={isActive ? 'true' : undefined}
+              aria-label={compact ? `${item.label} ${count}` : undefined}
+              onClick={() => onSelect(item.id)}
+              className={cn(
+                'flex items-center rounded-md text-[13px] text-muted-foreground',
+                'hover:bg-muted/40 duration-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                compact
+                  ? 'h-6 w-6 justify-center'
+                  : cn('w-full gap-2 px-2.5 py-1.5', item.level === 1 && 'pl-6'),
+                isActive && 'bg-info/10 text-foreground',
+              )}
+            >
+              <span className={cn('h-[7px] w-[7px] shrink-0 rounded-full', DOT_COLOR[item.state])} aria-hidden="true" />
+              {!compact && (
+                <>
+                  <span className="truncate">{item.label}</span>
+                  <span className="ml-auto text-[11px] font-medium text-muted-foreground">{count}</span>
+                </>
+              )}
+            </button>
+          );
           return (
             <li key={item.id}>
-              <button
-                type="button"
-                aria-current={isActive ? 'true' : undefined}
-                onClick={() => onSelect(item.id)}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground',
-                  'hover:bg-muted/40 duration-75 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                  item.level === 1 && 'pl-6',
-                  isActive && 'bg-info/10 text-foreground',
-                )}
-              >
-                <span className={cn('h-[7px] w-[7px] shrink-0 rounded-full', DOT_COLOR[item.state])} aria-hidden="true" />
-                <span className="truncate">{item.label}</span>
-                <span className="ml-auto text-[11px] font-medium text-muted-foreground">
-                  {item.requiredFilled}/{item.requiredTotal}
-                </span>
-              </button>
+              {compact ? (
+                <Tooltip delayDuration={0}>
+                  <TooltipTrigger asChild>{row}</TooltipTrigger>
+                  <TooltipContent side="right" className="flex items-center gap-2">
+                    <span>{item.label}</span>
+                    <span className="text-background/70">{count}</span>
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                row
+              )}
             </li>
           );
         })}
       </ul>
-      {!readOnly && (
+      {compact && showJump && (
+        <div className="mt-1 border-t border-border/40 pt-1">
+          <IconButton
+            label={t('extraction', 'sectionNavJumpNext')}
+            hint={t('extraction', 'sectionNavJumpNextHint')}
+            shortcut={['mod', 'Enter']}
+            side="right"
+            size="icon-xs"
+            onClick={onJumpToNextPending}
+            icon={<ArrowDown strokeWidth={1.5} />}
+          />
+        </div>
+      )}
+      {!compact && !readOnly && (
         <div className="mt-2 border-t border-border/40 px-2.5 pt-2">
           <Progress value={global.percentage} className="h-1" />
           <p className="mt-1 text-[11px] text-muted-foreground">

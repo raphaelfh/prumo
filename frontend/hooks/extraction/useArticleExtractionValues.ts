@@ -15,29 +15,16 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import { supabase } from '@/integrations/supabase/client';
-import { ExtractionValueService } from '@/services/extractionValueService';
-import {
-  buildArticleValueMap,
-  type ArticleProgressData,
-  type RawProposal,
-  type RawState,
-} from '@/lib/extraction/articleValues';
+import { articleExtractionValuesKeys } from '@/lib/query-keys/extraction';
+import { loadArticleProgressData } from '@/lib/extraction/loadArticleProgressData';
+import type { ArticleProgressData } from '@/lib/extraction/articleValues';
 import type { ReviewKind } from '@/lib/comparison/permissions';
-
-type ValuesKind = ReviewKind;
-
-export const articleExtractionValuesKeys = {
-  all: ['article-extraction-values'] as const,
-  byTemplate: (projectId: string, templateId: string, userId: string, kind: string) =>
-    ['article-extraction-values', projectId, templateId, userId, kind] as const,
-};
 
 export function useArticleExtractionValues(
   projectId: string | null | undefined,
   templateId: string | null | undefined,
   userId: string | null | undefined,
-  kind: ValuesKind = 'extraction',
+  kind: ReviewKind = 'extraction',
 ) {
   const query = useQuery({
     queryKey: articleExtractionValuesKeys.byTemplate(
@@ -48,94 +35,20 @@ export function useArticleExtractionValues(
     ),
     enabled: !!projectId && !!templateId && !!userId,
     staleTime: 30 * 1000,
-    queryFn: async (): Promise<Map<string, ArticleProgressData>> => {
-      const instRes = await supabase
-        .from('extraction_instances')
-        .select('id, article_id, entity_type_id')
-        .eq('project_id', projectId as string)
-        .eq('template_id', templateId as string);
-      if (instRes.error) throw instRes.error;
-      const instances = (instRes.data ?? []) as Array<{
-        id: string;
-        article_id: string | null;
-        entity_type_id: string;
-      }>;
-      const instanceIds = instances.map((i) => i.id);
-      if (instanceIds.length === 0) return new Map();
-
-      // Extraction: scope value reads to each article's form run. QA has no
-      // extraction form-run, so it stays unscoped (instance + reviewer only).
-      let runIds: string[] | null = null;
-      if (kind === 'extraction') {
-        const articleIds = Array.from(
-          new Set(instances.map((i) => i.article_id).filter((a): a is string => a != null)),
-        );
-        const formRunByArticle = await ExtractionValueService.findFormRunsByArticle(
-          articleIds,
-          templateId as string,
-          projectId as string,
-        );
-        runIds = Array.from(new Set(formRunByArticle.values()));
-      }
-
-      const states: RawState[] = [];
-      const proposals: RawProposal[] = [];
-      // For extraction with no form runs there is nothing to read; the
-      // instances still populate the map (values stay empty → 0% progress).
-      const hasValues = kind !== 'extraction' || (runIds !== null && runIds.length > 0);
-      if (hasValues) {
-        let statesQuery = supabase
-          .from('extraction_reviewer_states')
-          .select(
-            `instance_id, current_decision_id,
-             reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(field_id, value, decision)`,
-          )
-          .in('instance_id', instanceIds)
-          .eq('reviewer_id', userId as string);
-        let proposalsQuery = supabase
-          .from('extraction_proposal_records')
-          .select('instance_id, field_id, proposed_value, created_at')
-          .in('instance_id', instanceIds)
-          .eq('source', 'human')
-          .eq('source_user_id', userId as string)
-          .order('created_at', { ascending: false });
-        if (runIds !== null) {
-          statesQuery = statesQuery.in('run_id', runIds);
-          proposalsQuery = proposalsQuery.in('run_id', runIds);
-        }
-        const [statesRes, proposalsRes] = await Promise.all([statesQuery, proposalsQuery]);
-        if (statesRes.error) throw statesRes.error;
-        if (proposalsRes.error) throw proposalsRes.error;
-
-        for (const row of (statesRes.data ?? []) as Array<Record<string, unknown>>) {
-          const dec = Array.isArray(row.reviewer_decision)
-            ? row.reviewer_decision[0]
-            : row.reviewer_decision;
-          if (!dec) continue;
-          const d = dec as { field_id: string; value: unknown; decision: string };
-          states.push({
-            instance_id: row.instance_id as string,
-            field_id: d.field_id,
-            value: d.value,
-            decision: d.decision,
-          });
-        }
-        for (const p of (proposalsRes.data ?? []) as Array<Record<string, unknown>>) {
-          proposals.push({
-            instance_id: p.instance_id as string,
-            field_id: p.field_id as string,
-            proposed_value: p.proposed_value,
-          });
-        }
-      }
-
-      return buildArticleValueMap(instances, states, proposals);
-    },
+    queryFn: () =>
+      loadArticleProgressData(
+        projectId as string,
+        templateId as string,
+        userId as string,
+        kind,
+      ),
   });
 
   return {
     valuesByArticle: query.data ?? new Map<string, ArticleProgressData>(),
-    isLoading: query.isLoading,
-    error: query.error,
+    // isPending || isError: a disabled query or a failed fetch must not
+    // read as "loaded empty" — the worklist then paints every row as
+    // not-started. Consumers keep a single `isLoading` gate.
+    isLoading: query.isPending || query.isError,
   };
 }
