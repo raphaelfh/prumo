@@ -54,7 +54,6 @@ vi.mock('@/services/templateService', () => ({
   TemplateDiscardRefusal: class TemplateDiscardRefusal extends Error {},
 }));
 vi.mock('@/services/extractionFieldService', () => ({
-  validateFieldImpact: vi.fn(),
   deleteField: vi.fn(),
 }));
 vi.mock('@/hooks/extraction/useTemplateRepublish', () => ({
