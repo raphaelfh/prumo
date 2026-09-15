@@ -88,17 +88,9 @@ import {useDeleteEntries} from '@/hooks/extraction/useDeleteEntries';
 import {entrySlotKey, entrySlotsShowing} from '@/lib/extraction/entrySlots';
 import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
 import {displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
-import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
 import {isValueEmpty} from '@/lib/extraction/valueSemantics';
 import {createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
-
-const SCROLL_CONTAINERS_TO_PRESERVE = [
-  // Form panel — actual scroll happens on radix' inner viewport node.
-  '[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]',
-  // PDF viewer scroll container (Viewer.Body).
-  '[data-scroll-container="true"]',
-];
 
 // =================== COMPONENT ===================
 
@@ -406,11 +398,6 @@ export default function ExtractionFullScreen() {
   const { completedFields, totalFields, completionPercentage, isComplete } =
     useExtractionProgress(values, entityTypes, instances);
 
-  // Captures the scroll position of the form + PDF panels around async
-  // refreshes so the user does not get bounced back to the top after an AI
-  // extraction completes. See usePreserveScroll for the rAF dance.
-  const preserveScroll = usePreserveScroll(SCROLL_CONTAINERS_TO_PRESERVE);
-
     // Permissions hook (controls comparison access + the viewer write gate) —
     // declared before the autosave hook, whose `enabled` reads the role.
   const permissions = useComparisonPermissions(
@@ -578,8 +565,10 @@ export default function ExtractionFullScreen() {
   // saved decisions on refresh (the silent data-loss bug). The button is gated
   // on ``activeRunId`` (see ``canRunAI``), so a session must be open first.
   const { extractForRun, loading: extractingAI } = useRunAIExtraction({
+    // This job hook invalidates only the extraction key family, not the run
+    // view (``runsKeys``), so the run is re-read here alongside suggestions.
     onSuccess: async () => {
-      await handleExtractionComplete();
+      await Promise.all([refetchRun(), handleExtractionComplete()]);
     },
   });
 
@@ -872,86 +861,12 @@ export default function ExtractionFullScreen() {
     return null;
   }
 
-  /**
-   * Handler called after section extraction completes
-   *
-   * Refreshes suggestions and extracted values in background.
-   * Uses polling to ensure suggestions are loaded when available.
-   *
-   * IMPORTANT: This function must not block - runs in background.
-   */
-  const handleExtractionComplete = (_runId?: string) => {
-      // Run refresh in background (do not block).
-      // Wrapped in preserveScroll so the form + PDF panels keep their scroll
-      // position even though the underlying state updates trigger a re-render.
-    (async () => {
-      // Polling state declared outside try so the poll loop can run after
-      // the initial-refresh try/catch without triggering compiler value-block
-      // restrictions inside the try statement.
-      let attempts = 0;
-      const maxAttempts = 5;
-      const pollDelay = 1000;
-      let foundSuggestions: boolean;
-
-      try {
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        await preserveScroll(async () => {
-          // AI extraction creates a *new* run in `extract` stage (see
-          // ``SectionExtractionService.extract_section``); the proposals
-          // live on that new run, not on the session run the page was
-          // bound to. Refetch the HITL session first so ``activeRunId``
-          // re-resolves to the most-recent non-terminal run (the AI
-          // run); then refetch its detail so ``runDetail.proposals``
-          // hydrates ``useExtractedValues``. Without the session
-          // refetch, the form keeps reading the original session run
-          // and the extracted values never appear without F5.
-          try {
-            await sessionResult.refetch();
-          } catch (err) {
-            console.error('Error refetching session (non-critical):', err);
-          }
-          try {
-            // Refetching the run view also re-derives entity_types +
-            // instances (the form's single source of truth) — no separate
-            // instance refresh is needed.
-            await refetchRun();
-          } catch (err) {
-            console.error('Error refetching run (non-critical):', err);
-          }
-          await refreshValues();
-        });
-
-        // Wait briefly before suggestion polling so newly created
-        // instances are queryable.
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Polling for AI suggestions. Each attempt is wrapped in
-        // preserveScroll so suggestion-driven re-renders also keep the
-        // user's place. We use the direct result (not React state) to
-        // decide when to stop, which avoids racing the next render.
-        const result = await preserveScroll(refreshAISuggestions);
-        foundSuggestions = result.count > 0;
-      } catch (error) {
-        console.error('Error reloading suggestions:', error);
-        // Do not show error toast - suggestions may not have been created
-        // (already handled by extraction hook)
-        return;
-      }
-
-      // Poll loop runs outside the try/catch so complex conditions are not
-      // inside a try statement (React Compiler restriction).
-      if (foundSuggestions) return;
-      while (attempts < maxAttempts) {
-        attempts++;
-        await new Promise(resolve => setTimeout(resolve, pollDelay));
-        // refreshAISuggestions never rejects (terminal .catch in loadSuggestions) — safe outside try
-        const pollResult = await preserveScroll(refreshAISuggestions);
-        foundSuggestions = pollResult.count > 0;
-        if (foundSuggestions) return;
-      }
-    })();
-  };
+  // After an AI extraction job completes, reload suggestions at once: the job
+  // reports completed only after the proposals commit, every caller extracts on
+  // the session run (so the session never needs re-opening — doing so was the
+  // old blink), and AI never writes the caller's values. Suggestions keep the
+  // previous map until the new one lands, so nothing flashes empty.
+  const handleExtractionComplete = () => refreshAISuggestions();
 
   // P0 guide handler: scroll the form container to top and show a toast.
   // Jump-to-first-empty-field is a documented P1 refinement — not wired here.

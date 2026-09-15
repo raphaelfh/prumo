@@ -32,9 +32,9 @@ This is for *any* technical issue on prumo — backend (FastAPI + SQLAlchemy asy
 Empirically on this codebase: most "weird HITL behaviour" reports collapse into one of five classes:
 
 - BOLA on `backend/app/api/v1/endpoints/*` — a project member can act on another project's resource.
-- TOCTOU / race in `run_lifecycle_service.advance_stage` or `hitl_session_service.open_session`.
+- TOCTOU / race in `run_lifecycle_service.advance_stage` or `hitl_session_service.open_or_resume`.
 - Error swallowing inside `frontend/hooks/extraction/*` or `frontend/services/*` — `Promise.all` partial failure, `.catch(() => undefined)`.
-- Stale TanStack cache — query key is missing `run_id` or `template_version_id`.
+- Stale TanStack cache — the query key is missing a scoping id (`projectId`, `runId`, `templateId`) or was not built from a `frontend/lib/query-keys/` factory.
 - Drift: SQLAlchemy model ↔ Pydantic schema ↔ Alembic migration ↔ frontend Zod don't agree.
 
 Each has a known shape. Run the framework first; pattern-matching by gut is what produced the bug in the first place.

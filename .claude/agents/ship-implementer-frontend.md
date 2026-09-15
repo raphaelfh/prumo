@@ -45,13 +45,11 @@ carry.
 - **jsdom sees no layout and no Tailwind.** A test cannot prove a
   visual claim; a visual task ends with `/design-review`, not with a
   green Vitest run.
-- **React Compiler rules:** no `try/finally` or `throw` in component
-  bodies; IO errors flow through `ErrorResult` / `toResult`.
-- **All copy through `frontend/lib/copy/`** — an unreferenced key fails
-  the copy-key ratchet; a hardcoded string fails review.
-- **A mutation invalidates its TanStack keys** (stale-cache is a
-  recurring incident class); server-computed reads on the run form need
-  a refetch, not an optimistic patch.
+- The preloaded `frontend-development` skill carries the structural hard
+  rules (React Compiler, copy, key factories and invalidation). Beyond
+  them: an unreferenced copy key fails the copy-key ratchet, and a
+  server-computed read on the run form needs a refetch, not an
+  optimistic patch.
 - `zod .default()` splits input and output types: type the form as
   `useForm<In, unknown, Out>`.
 - **knip must stay at zero in both modes** (`npx knip` and

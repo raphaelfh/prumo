@@ -24,6 +24,9 @@ export function ExtractionReviewRow({instanceId, field, values, onValueChange, a
   const hidden = !!review?.navigation.focused && !focused;
   const history = review?.proposals.filter(proposal => proposal.source === 'ai' && proposal.instance_id === instanceId && proposal.field_id === field.id) ?? [];
   const acceptedId = review?.decisions.acceptedProposalIdFor(instanceId, field.id);
+  const pendingDecision = review?.decisions.pendingDecision ?? null;
+  const pendingProposalId = sameReviewCoordinate(pendingDecision, coordinate) ? pendingDecision?.proposalId : null;
+  const busy = !!review?.decisions.saving || !!review?.decisions.conflicted;
   const isAccepted = (proposal: AISuggestion) => review?.decisions.isAccepted({...coordinate, id: proposal.id, value: proposal.value}) ?? false;
   const acceptedOlder = history.find(item => item.id === acceptedId && item.id !== latest?.id && review?.decisions.isAccepted({...coordinate, id: item.id, value: unwrapProposedValue(item.proposed_value)}));
   const toggle = (proposal: AISuggestion) => {void review?.decisions.toggle({...coordinate, id: proposal.id, value: proposal.value, allowsNoInformation: field.allows_no_information !== false});};
@@ -47,11 +50,11 @@ export function ExtractionReviewRow({instanceId, field, values, onValueChange, a
         <DispositionRow field={field} value={value} onChange={onValueChange.bind(null, field.id)} disabled={review?.decisions.conflicted}/>
       </td>
       <td role="cell" className={cellClass}>
-        {latest ? <ProposalPreview latest={latest} count={Math.max(history.length, 1)} expanded={expanded} onExpand={() => open()} fieldType={field.field_type} allowedValues={field.allowed_values} accepted={isAccepted(latest)} saving={review?.decisions.saving || review?.decisions.conflicted} onToggle={() => toggle(latest)} acceptedOlder={!!acceptedOlder} onOpenAccepted={() => open(acceptedOlder?.id)} disclosureId={disclosureId}/> : <span className="text-xs text-muted-foreground">{t('extraction', 'reviewNoVersions')}</span>}
+        {latest ? <ProposalPreview latest={latest} count={Math.max(history.length, 1)} expanded={expanded} onExpand={() => open()} fieldType={field.field_type} allowedValues={field.allowed_values} accepted={isAccepted(latest)} saving={busy} pending={!!pendingProposalId && pendingProposalId === latest.id} onToggle={() => toggle(latest)} acceptedOlder={!!acceptedOlder} onOpenAccepted={() => open(acceptedOlder?.id)} disclosureId={disclosureId}/> : <span className="text-xs text-muted-foreground">{t('extraction', 'reviewNoVersions')}</span>}
       </td>
     </tr>
     {(visited || expanded) && getSuggestionsHistory && <tr role="row" hidden={hidden || !expanded} className={cn(stacked && 'block', (hidden || !expanded) && 'hidden')}><td role="cell" colSpan={3} className={cn('min-w-0 px-2 pb-3', stacked && 'block')}>
-      <ProposalDisclosure id={disclosureId} instanceId={instanceId} fieldId={field.id} getHistory={getSuggestionsHistory} expanded={expanded} acceptedProposalId={acceptedId} isAccepted={isAccepted} saving={!!review?.decisions.saving || !!review?.decisions.conflicted} onToggle={toggle} initialProposalId={initialProposalId} onActiveProposalChange={proposal => {if (expanded) review?.setActiveProposal(instanceId, field.id, proposal);}} fieldType={field.field_type} allowedValues={field.allowed_values}/>
+      <ProposalDisclosure id={disclosureId} instanceId={instanceId} fieldId={field.id} getHistory={getSuggestionsHistory} expanded={expanded} acceptedProposalId={acceptedId} isAccepted={isAccepted} saving={busy} pendingProposalId={pendingProposalId} onToggle={toggle} initialProposalId={initialProposalId} latestProposalId={latest?.id} onActiveProposalChange={proposal => {if (expanded) review?.setActiveProposal(instanceId, field.id, proposal);}} fieldType={field.field_type} allowedValues={field.allowed_values}/>
     </td></tr>}
   </>;
 }

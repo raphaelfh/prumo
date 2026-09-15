@@ -98,7 +98,7 @@ Two patterns that work:
    ```
    Retries are safe — duplicate inserts are no-ops.
 
-2. **Idempotency-key tracking.** For tasks whose effect can't be expressed as a single insert, write a `task_runs` row keyed by `(task_name, idempotency_key)` at the start, check before doing work:
+2. **Idempotency-key tracking.** For tasks whose effect can't be expressed as a single insert, record an idempotency key before doing work. No such table exists today; AI section extraction keys its replay on durable `extraction_attempts` rows instead (`extraction_attempt_service.py`). The shape:
    ```python
    key = f"extract:{article_id}:{template_id}"
    if await idempotency.already_done(db, key):

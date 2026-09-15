@@ -53,11 +53,17 @@ describe('inline proposal history', () => {
     expect(screen.getByText('First call reasoning')).toBeVisible();
     expect(screen.getByRole('button', {name: 'Unaccept extraction'})).toHaveAttribute('aria-pressed', 'true');
   });
-  it('disables every acceptance action during a save without painting optimistic acceptance', async () => {
-    render(<ProposalDisclosure {...base} saving isAccepted={() => false}/>);
+  it('blocks every acceptance action during a save without disabling it or painting optimistic acceptance', async () => {
+    const user = userEvent.setup();
+    render(<ProposalDisclosure {...base} saving pendingProposalId="new" isAccepted={() => false}/>);
     await screen.findByRole('article');
-    expect(screen.getByRole('button', {name: 'Accept extraction'})).toBeDisabled();
-    expect(screen.getByRole('button', {name: 'Accept extraction'})).toHaveAttribute('aria-pressed', 'false');
+    const check = screen.getByRole('button', {name: 'Accept extraction'});
+    expect(check).not.toBeDisabled();
+    expect(check).toHaveAttribute('aria-disabled', 'true');
+    expect(check).toHaveAttribute('aria-busy', 'true');
+    expect(check).toHaveAttribute('aria-pressed', 'false');
+    await user.click(check);
+    expect(onToggle).not.toHaveBeenCalled();
   });
 
   it('keeps equal-valued calls separate, newest first, and restores carousel selection after comparing', async () => {
@@ -111,14 +117,16 @@ describe('inline proposal history', () => {
   it('distinguishes initial loading/failure from refresh failure and retains loaded cards', async () => {
     let reject!: (reason: Error) => void;
     getHistory.mockImplementationOnce(() => new Promise((_, r) => {reject = r;}));
-    const user = userEvent.setup(); render(<ProposalDisclosure {...base} />);
+    const user = userEvent.setup(); const view = render(<ProposalDisclosure {...base} latestProposalId="new"/>);
     expect(await screen.findByRole('status')).toHaveTextContent('Loading extractions');
     await act(async () => reject(new Error('offline')));
     expect(screen.getByRole('alert')).toHaveTextContent('Could not load');
     await user.click(screen.getByRole('button', {name: 'Retry'}));
     await screen.findByText('Second call reasoning');
+    expect(screen.queryByRole('button', {name: /refresh/i})).not.toBeInTheDocument();
+    // A new extraction landing reloads the history in place.
     getHistory.mockRejectedValueOnce(new Error('offline'));
-    await user.click(screen.getByRole('button', {name: 'Refresh extractions'}));
+    view.rerender(<ProposalDisclosure {...base} latestProposalId="newest"/>);
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not refresh');
     expect(screen.getByText('Second call reasoning')).toBeVisible();
   });

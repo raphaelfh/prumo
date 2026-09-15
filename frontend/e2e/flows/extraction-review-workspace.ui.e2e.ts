@@ -212,16 +212,17 @@ test('keyboard focus never leaves a review control hidden under the sticky toolb
   const [first] = workspace.coordinates;
   await rowFor(page, first.label).getByRole('button', {name: REVIEW_VALUE, exact: true}).click();
   const disclosure = disclosureFor(page, first);
-  const refresh = disclosure.getByRole('button', {name: 'Refresh extractions', exact: true});
+  // With two extractions the compare toggle is the header control just before the card.
+  const headerControl = disclosure.getByRole('button', {name: 'Compare extractions', exact: true});
   const cardAccept = disclosure.getByRole('article').getByRole('button', {name: /^(Unaccept|Accept) extraction$/});
   await expect(cardAccept).toBeVisible();
 
   // Scroll the pane until the disclosure header sits fully under the sticky toolbar.
   const bar = await toolbar(page).locator('xpath=..').boundingBox();
-  const header = await refresh.boundingBox();
+  const header = await headerControl.boundingBox();
   if (!bar || !header) throw new Error('Toolbar and disclosure header need layout boxes.');
   await page.locator('[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]').evaluate((viewport, delta) => {viewport.scrollTop += delta;}, header.y - bar.y);
-  const covered = await refresh.evaluate(element => {
+  const covered = await headerControl.evaluate(element => {
     const box = element.getBoundingClientRect();
     return !element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
   });
@@ -229,8 +230,8 @@ test('keyboard focus never leaves a review control hidden under the sticky toolb
 
   await cardAccept.focus({timeout: 5000});
   await page.keyboard.press('Shift+Tab');
-  await expect(refresh).toBeFocused();
-  await expect.poll(() => refresh.evaluate(element => {
+  await expect(headerControl).toBeFocused();
+  await expect.poll(() => headerControl.evaluate(element => {
     const box = element.getBoundingClientRect();
     return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
   }), {timeout: 3000}).toBe(true);
@@ -360,7 +361,7 @@ test('shortcuts accept, focus and navigate but never while typing, in an open me
   await expect.poll(async () => (await decisionsFor(workspace.runId)).at(-1)).toMatchObject({field_id: first.id, value: {value: 'af'}});
   expect((await decisionsFor(workspace.runId)).filter(decision => decision.proposal_record_id !== null), 'the "a" typed into the editor wrote no acceptance').toEqual([]);
   await activate(page, first.label);
-  await expect(bar.getByRole('button', {name: 'Accept extraction', exact: true})).toBeEnabled();
+  await expect(rowFor(page, first.label).getByRole('button', {name: 'Accept extraction', exact: true})).toBeEnabled();
   await page.keyboard.press('a');
   await expect(rowFor(page, first.label).getByRole('button', {name: 'Unaccept extraction', exact: true})).toBeVisible();
   await expect.poll(async () => (await decisionsFor(workspace.runId)).at(-1)).toMatchObject({field_id: first.id, value: {value: REVIEW_VALUE}});
@@ -494,8 +495,9 @@ test('design review captures production states without horizontal page overflow'
   await toolbar(page).getByRole('button', {name: 'Leave focus', exact: true}).click();
   await activate(page, first.label);
   await toolbar(page).getByRole('button', {name: 'Focus question', exact: true}).click();
-  await toolbar(page).getByRole('button', {name: 'Accept extraction', exact: true}).click();
-  await expect(toolbar(page).getByRole('button', {name: 'Unaccept extraction', exact: true})).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('a');
+  // Focus mode adds the description to the rowheader's name, so the exact-label row locator cannot match here.
+  await expect(page.locator(`#review-question-${first.instanceId}_${first.id}`).getByRole('button', {name: 'Unaccept extraction', exact: true})).toHaveAttribute('aria-pressed', 'true');
   await expectGuideOn(page, first);
   await capture('review-active-actions');
 });

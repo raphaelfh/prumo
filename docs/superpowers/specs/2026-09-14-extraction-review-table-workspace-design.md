@@ -233,11 +233,11 @@ horizontal overflow.
 - AI kickoff exists only in the section header.
 - Keep one-click acceptance in the AI proposal cell, even when collapsed. It
   targets the displayed latest proposal. Each card also has its own check; the
-  quick bar targets the active carousel card (latest when none is selected).
+  `A` shortcut targets the active carousel card (latest when none is selected).
   Focus exists only in the quick-action bar.
 - When an older proposal is accepted and a newer one is pending, the row check
-  remains neutral; a quiet accepted-version indicator opens the older card,
-  whose check remains green.
+  remains neutral; a success-tinted accepted-version (history) indicator opens the
+  older card, whose check remains green.
 - There is no dedicated Actions column.
 - Icons have tooltips with a concise label and shortcut where applicable.
 - Selected actions use a subtle circular shadow with no border. Accepted uses a
@@ -250,13 +250,18 @@ The sticky bar contains, from left to right:
 
 - section-guide toggle at the far left;
 - current question label or compact question count;
-- accept/unaccept current proposal (`A`);
 - enter/leave focus mode (`F`), switching between open and closed focus icons;
 - previous question (`Shift+Left`);
 - next pending question (`Shift+Right`);
 - reset column widths;
-- undo latest local decision where the existing header does not already expose
-  the same action.
+- undo latest local decision (`Mod+Z`) where the existing header does not
+  already expose the same action;
+- redo latest undone decision (`Mod+Shift+Z`).
+
+Accept/unaccept is not duplicated on the bar: the row and card checks own it,
+and `A` accepts/unaccepts the current question's active proposal (the open card
+when the disclosure is open, else the latest). Undo and redo shortcuts do not
+fire inside fields, where the editor's own text undo wins.
 
 Undo covers the latest confirmed local manual edit, acceptance or unacceptance
 within the current user/run session, across question and entry navigation. Its
@@ -272,13 +277,22 @@ run write lock, before deduplication or append. A missing or different latest
 id returns HTTP 409 with typed `DECISION_CONFLICT` in the existing error envelope,
 without appending or changing reviewer state. Refreshing history before POST
 alone is insufficient. Omission or explicit null keeps existing unconditional
-API behavior; null does not mean "expect no decision". Only undo initially uses
-the condition, so autosave, acceptance, QA and consensus keep their contracts.
+API behavior; null does not mean "expect no decision". Undo, redo, acceptance
+and the workspace autosave send the condition whenever the reviewer's local
+history for the coordinate has a latest decision; with none they stay
+unconditional. QA and consensus keep their contracts. No client reads the run
+view before a decision POST: the server's run lock, stage check and condition
+are the authority, and a read happens only to refresh history after a conflict
+or a rejected write (a 400 whose run left `extract` is classified as a conflict).
 On conflict, retain the local draft and undo entry, display the error and refresh
 authoritative history/authority; never replace the expected id with an external
 decision just to retry. A successful prior local undo may advance the expected
 id of the next local undo at that coordinate. This adds no schema migration.
-Successful undo consumes that entry and adds no redo action. The toolbar supplies
+Successful undo consumes that entry and pushes it onto a local redo stack.
+Redo appends the undone decision's own typed value and proposal link, conditioned
+on the compensating undo edit still being the latest decision, and becomes
+undoable again. Any new local decision clears the redo stack; the redo stack
+resets with the undo stack. The toolbar supplies
 the fallback because the current extraction header has no undo action. Acceptance
 tests cover cross-question targeting, typed restoration, user/run isolation,
 pending-save serialization, failure/retry and stale-decision conflict.
@@ -311,9 +325,11 @@ Each card contains:
 - its own accept/unaccept check.
 
 The default view shows one card at a time with previous/next controls and an
-`n / total` position. A compare control switches to side-by-side cards. The
-side-by-side layout uses as many columns as fit at a readable minimum width and
-wraps remaining cards; it does not create horizontal page overflow. Switching
+`n / total` position; a horizontal trackpad swipe or Shift+wheel steps between
+cards. A compare control, shown pressed while active, switches to side-by-side
+cards in one horizontally scrolling row that snaps per card at a readable
+minimum width; the row scrolls inside the disclosure and never overflows the
+page. Switching
 back to the carousel restores the previously selected card.
 
 Locating a citation opens the document pane if needed, selects that citation as
@@ -328,8 +344,13 @@ Acceptance remains an append-only reviewer decision linked through
 
 - A card is accepted when the current reviewer's latest decision for that
   coordinate links to that proposal and the displayed value still matches it.
-- The card and quick-bar check stay green after refresh because this state is
-  derived from `RunDetailResponse.decisions`, not transient component state.
+- The card and row check stay green after refresh because this state is
+  derived from `RunDetailResponse.decisions` merged with this session's
+  confirmed decisions, not optimistic component state. A successful decision
+  does not refetch the run view (the workspace autosave never did); a failed or
+  conflicting one does.
+- When an older extraction is the accepted one, the row shows a success-tinted
+  history action that opens it, distinct from the latest extraction's check.
 - Clicking the green check again appends an `edit` restoring the immediately
   preceding reviewer decision's complete typed payload, including disposition,
   absence reason, units and multi-select codes. With no predecessor, use the
@@ -340,9 +361,11 @@ Derive restoration from run-detail decisions filtered to the current reviewer
 and `(run_id, instance_id, field_id)`, ordered by `(created_at, id)` ascending,
 matching deterministic backend latest-decision ordering. Flush and await pending
 autosave for that coordinate before accept/reverse; serialize its mutations.
-Failed autosave blocks acceptance and preserves the draft for retry. Disable
-repeat checks while saving; failed saves restore the previous confirmed visual
-state and expose retry. Refresh history after a stale-cache/conflict response.
+Failed autosave blocks acceptance and preserves the draft for retry. While a
+decision saves, only the clicked check shows a pending state (never the accepted
+fill); every other decision check ignores activation through `aria-disabled`
+rather than `disabled`, so no control remounts. Failed saves restore the
+previous confirmed visual state and expose retry. Refresh history after a stale-cache/conflict response.
 Accept A, then B, then reverse B restores A's typed value as an edit without an
 AI link, rather than silently re-accepting A. All decisions remain auditable.
 
@@ -385,7 +408,10 @@ known job. Completion invalidates only owning query-key-factory keys and never
 steals focus.
 
 The initiating icon becomes a spinner in place. Completion refreshes proposals
-without moving focus or opening the disclosure. Failure changes the same action
+and the AI suggestion map immediately, with no fixed delays or polling, and
+without moving focus, opening the disclosure, or blanking the previous values.
+An open disclosure reloads its history in place when the question's latest
+proposal changes; there is no manual refresh action (errors keep Retry). Failure changes the same action
 to a retry state with the classified error in its tooltip; retry reuses the same
 `requestId` only when resuming an uncertain transport result, and creates a new
 one after a confirmed terminal failure.
@@ -581,10 +607,10 @@ can have a brief under 300 lines. Fixtures are not production verification.
 | §§7.1/13 resizing | Component/browser: pointer capture, keyboard arrows/Home/End, double-click/toolbar reset, scoped persistence, clamp after pane change, coarse target; Articles default behavior regression. |
 | §§7.2/7.4 content | Component/browser: wrapping question, description hover/focus and focused inline, full proposal tooltip, downward disclosure. |
 | §7.3 editors | Component: units, codes/labels, multiple choice, boolean/date, dispositions and long text resize/save/reload. |
-| §§7.5/10 decisions | Integration: collapsed latest check, older accepted/new pending, correct toolbar/card target, green after reload, typed reversal, A→B→reverse, equal-time id ordering. |
-| §10 save races | Integration: pending draft flush, failed flush blocks accept, serialized repeat clicks, failed save retains confirmed state, foreign reviewer/coordinate excluded. |
+| §§7.5/10 decisions | Integration: collapsed latest check, older accepted/new pending, correct `A`/card target, green after reload, typed reversal, A→B→reverse, equal-time id ordering. |
+| §10 save races | Integration: pending draft flush, failed flush blocks accept, serialized repeat clicks, no run-view read before the POST, pending state on the clicked check only (no control remount), failed save retains confirmed state, foreign reviewer/coordinate excluded. |
 | §§8/13 navigation | Browser: toolbar-only focus, continuous background, previous/next pending, shortcut typing/menu/dialog guards, tooltips/aria, no focus steal, reduced motion. |
-| §9 cards/sources | Component/browser: carousel selection restored, side-by-side responsive wrap, each generation's details, each source's location, unavailable anchor preserves card. |
+| §9 cards/sources | Component/browser: carousel selection restored, swipe/Shift+wheel stepping, compare row horizontal snap scroll without page overflow, history reload in place on a new latest proposal, each generation's details, each source's location, unavailable anchor preserves card. |
 | §§11/12 scope/replay | Backend integration: foreign scope/owner denied, altered UUID payload conflict, same request/job/proposal/evidence, enqueue response-loss replay, duplicate delivery, fresh equal-value request appends. |
 | §12 engine/call isolation | Backend integration: interleaved section engines and retries retain target/key; no shared run lock across LLM calls; entry-specific prompt/usage; batch/QA compatibility. |
 | §12 historical privacy | Backend integration: two different prompts/tokens/models remain immutable, legacy unavailable facts, blind identity scrub and authorized reveal across history/hot reads/QA/consensus/export. |

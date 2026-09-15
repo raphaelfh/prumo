@@ -14,7 +14,10 @@ interface Coordinate { instanceId: string; fieldId: string }
 /** `conflict`: the review authority disagrees (409, moved head, run left extract); `failed`: anything else. */
 type Outcome = 'saved' | 'conflict' | 'failed';
 interface Proposal extends Coordinate { id: string; value: unknown; allowsNoInformation?: boolean }
-interface LocalDecision extends Coordinate { id: string; expectedId: string; predecessorId: string | null; predecessor: Record<string, unknown> }
+/** `value`/`proposalRecordId` are the action itself, so an undone action can be redone verbatim. */
+interface LocalDecision extends Coordinate { id: string; expectedId: string; predecessorId: string | null; predecessor: Record<string, unknown>; value: Record<string, unknown>; proposalRecordId: string | null }
+/** The in-flight decision; `proposalId` is null for undo/redo. */
+interface PendingDecision extends Coordinate { proposalId: string | null }
 interface Props extends Omit<UseAutoSaveProposalsProps, 'writeValue' | 'linkByKey'> {
   reviewerId: string | null;
   decisions?: readonly ReviewerDecisionResponse[];
@@ -33,19 +36,24 @@ export function useProposalDecision(props: Props) {
   const valuesRef = useRef(values);
   const reviewerRef = useRef(reviewerId);
   const stackRef = useRef<LocalDecision[]>([]);
+  const redoRef = useRef<LocalDecision[]>([]);
   const lockRef = useRef(false);
   const blockedSessionsRef = useRef(new WeakSet<object>());
-  const [state, setState] = useState({session, saving: false, conflicted: false, error: null as string | null, stack: [] as LocalDecision[]});
+  const decisionsRef = useRef(decisions);
+  const [state, setState] = useState({session, saving: false, pending: null as PendingDecision | null, conflicted: false, error: null as string | null, stack: [] as LocalDecision[], redo: [] as LocalDecision[]});
   const [confirmed, setConfirmed] = useState<{session: typeof session; rows: ReviewerDecisionResponse[]}>({session, rows: []});
+  const confirmedRef = useRef(confirmed);
   useEffect(() => {
     valuesRef.current = values;
     reviewerRef.current = reviewerId;
+    decisionsRef.current = decisions;
     if (scopeRef.current !== session) {
       scopeRef.current = session;
       stackRef.current = [];
+      redoRef.current = [];
       lockRef.current = false;
     }
-  }, [session, values, reviewerId]);
+  }, [session, values, reviewerId, decisions]);
 
   const isCurrent = () => scopeRef.current === session;
   const localRows = confirmed.session === session ? confirmed.rows : [];
@@ -68,12 +76,31 @@ export function useProposalDecision(props: Props) {
     if (link) linkByKey[key] = link;
   }
 
-  const record = (decision: ReviewerDecisionResponse, predecessor: Record<string, unknown>, undoable: boolean, predecessorId: string | null = null) => {
-    void queryClient.invalidateQueries({queryKey: runsKeys.detail(decision.run_id)});
+  /** The confirmed rows as of now (the ref is written with every confirmation), so async writes never read a stale render. */
+  const setRows = (rows: ReviewerDecisionResponse[]) => {
+    confirmedRef.current = {session, rows};
+    setConfirmed(confirmedRef.current);
+  };
+  const latestHistory = (coordinate: Coordinate, run = runId ?? '') => {
+    const local = confirmedRef.current.session === session ? confirmedRef.current.rows : [];
+    const rows = [...decisionsRef.current.filter(d => !local.some(item => item.id === d.id)), ...local];
+    return reviewerCoordinateHistory(rows, reviewerId, run, coordinate.instanceId, coordinate.fieldId);
+  };
+  /** Guard on the local head; with no head the append stays unconditional. */
+  const expectedHead = (history: readonly ReviewerDecisionResponse[]) => {
+    const id = history.at(-1)?.id;
+    return id ? {expected_current_decision_id: id} : {};
+  };
+
+  // Autosave never invalidates run detail either: confirmed rows are merged locally.
+  const record = (decision: ReviewerDecisionResponse, predecessor: Record<string, unknown>, undoable: boolean, predecessorId: string | null = null, redone = false) => {
     if (!isCurrent()) return;
-    setConfirmed(prev => ({session, rows: [...(prev.session === session ? prev.rows : []), decision]}));
-    if (undoable) stackRef.current.push({instanceId: decision.instance_id, fieldId: decision.field_id, id: decision.id, expectedId: decision.id, predecessorId, predecessor});
-    setState(prev => ({...prev, session, stack: [...stackRef.current]}));
+    setRows([...(confirmedRef.current.session === session ? confirmedRef.current.rows : []), decision]);
+    if (undoable) stackRef.current.push({instanceId: decision.instance_id, fieldId: decision.field_id, id: decision.id, expectedId: decision.id, predecessorId, predecessor,
+      value: decision.value ?? {value: null}, proposalRecordId: decision.proposal_record_id ?? null});
+    // A new action forks the history: what was undone before it can no longer be redone.
+    if (undoable && !redone) redoRef.current = [];
+    setState(prev => ({...prev, session, stack: [...stackRef.current], redo: [...redoRef.current]}));
   };
 
   const readHistory = async (coordinate: Coordinate): Promise<ReviewerDecisionResponse[] | Exclude<Outcome, 'saved'>> => {
@@ -81,12 +108,10 @@ export function useProposalDecision(props: Props) {
     const result = await readDecisionAuthority(runId);
     if (!result.ok) return 'failed';
     if (!isCurrent() || result.data.run.id !== runId) return 'conflict';
-    setConfirmed({session, rows: result.data.decisions});
+    setRows(result.data.decisions);
     if (result.data.run.stage !== 'extract') return 'conflict';
     return historyFor(result.data.decisions, coordinate);
   };
-  const failureOf = (error: unknown): Exclude<Outcome, 'saved'> =>
-    error instanceof ApiError && error.status === 409 && error.code === 'DECISION_CONFLICT' ? 'conflict' : 'failed';
 
   const freezeConflict = () => {
     blockedSessionsRef.current.add(session);
@@ -94,18 +119,34 @@ export function useProposalDecision(props: Props) {
     setState(prev => ({...prev, session, conflicted: true, error: t('extraction', 'reviewDecisionConflict')}));
   };
 
+  /** A 409 DECISION_CONFLICT is a conflict; a 400 is one only when fresh authority shows the run left extract.
+   * Both refresh the authoritative history; a known conflict also stops queued writes. */
+  const settleFailure = async (error: unknown, coordinate: Coordinate): Promise<Exclude<Outcome, 'saved'>> => {
+    if (!(error instanceof ApiError)) return 'failed';
+    if (error.status === 409 && error.code === 'DECISION_CONFLICT') {
+      freezeConflict();
+      await readHistory(coordinate);
+      return 'conflict';
+    }
+    if (error.status !== 400 || await readHistory(coordinate) !== 'conflict') return 'failed';
+    freezeConflict();
+    return 'conflict';
+  };
+
   const writeValue = async (params: WriteProposalParams): Promise<void> => {
     // A lifecycle flush belongs to its captured run, even after navigation.
     if (blockedSessionsRef.current.has(session) || !reviewerId || reviewerRef.current !== reviewerId) return Promise.reject(new Error(t('extraction', 'reviewDecisionConflict')));
-    const authority = await readDecisionAuthority(params.runId);
-    if (!authority.ok) return Promise.reject(authority.error);
-    if (blockedSessionsRef.current.has(session) || reviewerRef.current !== reviewerId || authority.data.run.id !== params.runId || authority.data.run.stage !== 'extract') return Promise.reject(new Error(t('extraction', 'reviewDecisionConflict')));
-    const history = reviewerCoordinateHistory(authority.data.decisions, reviewerId, params.runId, params.instanceId, params.fieldId);
+    const coordinate = {instanceId: params.instanceId, fieldId: params.fieldId};
+    const history = latestHistory(coordinate, params.runId);
     const result = await appendReviewerDecision(params.runId, {
       instance_id: params.instanceId, field_id: params.fieldId, decision: 'edit', proposal_record_id: null,
       value: params.absentReason ? {value: params.normalizedValue, absent_reason: params.absentReason} : {value: params.normalizedValue},
+      ...expectedHead(history),
     });
-    if (!result.ok) return Promise.reject(result.error);
+    if (!result.ok) {
+      await settleFailure(result.error, coordinate);
+      return Promise.reject(result.error);
+    }
     record(result.data, history.at(-1)?.value ?? {value: null}, true, history.at(-1)?.id ?? null);
   };
 
@@ -122,30 +163,29 @@ export function useProposalDecision(props: Props) {
     if (unchanged) onConfirmed(coordinate, value);
   };
 
-  const transact = (operation: () => Promise<Outcome>): Promise<boolean> => {
+  const transact = (target: PendingDecision | null, operation: () => Promise<Outcome>): Promise<boolean> => {
     if (blockedSessionsRef.current.has(session) || lockRef.current || !runId || !reviewerId || props.enabled === false || props.stage !== 'extract') return Promise.resolve(false);
     lockRef.current = true;
-    setState(prev => ({...prev, session, saving: true, error: null}));
+    setState(prev => ({...prev, session, saving: true, pending: target, error: null}));
     return operation().catch((): Outcome => 'failed').then(async outcome => {
       const ok = outcome === 'saved';
       if (!ok && isCurrent()) await queryClient.invalidateQueries({queryKey: runsKeys.detail(runId)});
       if (isCurrent()) {
         lockRef.current = false;
         const error = outcome === 'conflict' ? t('extraction', 'reviewDecisionConflict') : t('extraction', 'reviewDecisionSaveFailed');
-        setState(prev => ({...prev, session, saving: false, error: ok ? null : error}));
+        setState(prev => ({...prev, session, saving: false, pending: null, error: ok ? null : error}));
       }
       return ok;
     });
   };
 
-  const toggle = (proposal: Proposal): Promise<boolean> => transact(async () => {
+  const toggle = (proposal: Proposal): Promise<boolean> => transact({instanceId: proposal.instanceId, fieldId: proposal.fieldId, proposalId: proposal.id}, async () => {
     if (valueAbsentReason(proposal.value) === 'no_information' && proposal.allowsNoInformation === false) return 'conflict';
     await autosave.saveNow(proposal);
     let outcome: Outcome = 'failed';
     await autosave.runExclusive(async () => {
-      const history = await readHistory(proposal);
-      if (typeof history === 'string') { outcome = history; return; }
       if (!isCurrent()) return;
+      const history = latestHistory(proposal);
       const key = `${proposal.instanceId}_${proposal.fieldId}`;
       const draft = valuesRef.current[key];
       const reverse = acceptedProposal(history, draft) === proposal.id &&
@@ -154,8 +194,9 @@ export function useProposalDecision(props: Props) {
         instance_id: proposal.instanceId, field_id: proposal.fieldId, decision: 'edit',
         proposal_record_id: reverse ? null : proposal.id,
         value: reverse ? reversalPayload(history) : toConsensusValueEnvelope(proposal.value),
+        ...expectedHead(history),
       });
-      if (!result.ok) { outcome = failureOf(result.error); return; }
+      if (!result.ok) { outcome = await settleFailure(result.error, proposal); return; }
       record(result.data, history.at(-1)?.value ?? {value: null}, true, history.at(-1)?.id ?? null);
       reconcile(proposal, result.data, draft);
       outcome = 'saved';
@@ -163,49 +204,47 @@ export function useProposalDecision(props: Props) {
     return outcome;
   });
 
-  const undoLatestLocalDecision = (): Promise<boolean> => transact(async () => {
-    // Flush all questions before choosing the latest CONFIRMED local write.
-    await autosave.saveNow();
-    let outcome: Outcome = 'failed';
-    await autosave.runExclusive(async () => {
-      const entry = stackRef.current.at(-1);
-      if (!entry || !isCurrent()) return;
-      const history = await readHistory(entry);
-      // An unreadable authority is a retryable failure, not an observed conflict.
-      if (history === 'failed') return;
-      if (history === 'conflict' || history.at(-1)?.id !== entry.expectedId) {
-        // A known conflict must also stop queued debounce and lifecycle writes:
-        // refreshing the history changes links but does not discard the draft.
-        outcome = 'conflict';
-        if (isCurrent()) freezeConflict();
-        return;
-      }
-      const draft = valuesRef.current[`${entry.instanceId}_${entry.fieldId}`];
-      const result = await appendReviewerDecision(runId!, {
-        instance_id: entry.instanceId, field_id: entry.fieldId, decision: 'edit',
-        proposal_record_id: null, value: entry.predecessor,
-        expected_current_decision_id: entry.expectedId,
+  /** Replays the top of `stack` as a guarded append: the head must still be the entry's expected decision. */
+  const replayLocal = (stack: {current: LocalDecision[]}, payload: (entry: LocalDecision) => {value: Record<string, unknown>; proposal_record_id: string | null},
+    onSaved: (entry: LocalDecision, decision: ReviewerDecisionResponse) => void): Promise<boolean> => {
+    const top = stack.current.at(-1);
+    return transact(top ? {instanceId: top.instanceId, fieldId: top.fieldId, proposalId: null} : null, async () => {
+      // Flush all questions before choosing the latest CONFIRMED local write.
+      await autosave.saveNow();
+      let outcome: Outcome = 'failed';
+      await autosave.runExclusive(async () => {
+        const entry = stack.current.at(-1);
+        if (!entry || !isCurrent()) return;
+        const draft = valuesRef.current[`${entry.instanceId}_${entry.fieldId}`];
+        // No pre-read: the server's expected-head guard is the check. A conflict
+        // freezes queued writes and refreshes history without discarding the draft.
+        const result = await appendReviewerDecision(runId!, {
+          instance_id: entry.instanceId, field_id: entry.fieldId, decision: 'edit',
+          ...payload(entry), expected_current_decision_id: entry.expectedId,
+        });
+        if (!result.ok) { outcome = await settleFailure(result.error, entry); return; }
+        if (!isCurrent()) return;
+        stack.current.pop();
+        onSaved(entry, result.data);
+        reconcile(entry, result.data, draft);
+        outcome = 'saved';
       });
-      if (!result.ok) {
-        outcome = failureOf(result.error);
-        if (outcome === 'conflict') {
-          freezeConflict();
-          await readHistory(entry);
-        }
-        return;
-      }
-      if (!isCurrent()) return;
-      stackRef.current.pop();
-      // The compensating edit becomes the expected head for the preceding
-      // local action on this coordinate; it is not itself an undoable action.
-      const previous = [...stackRef.current].reverse().find(item => item.instanceId === entry.instanceId && item.fieldId === entry.fieldId);
-      if (previous && previous.expectedId === entry.predecessorId) previous.expectedId = result.data.id;
-      record(result.data, entry.predecessor, false);
-      reconcile(entry, result.data, draft);
-      outcome = 'saved';
+      return outcome;
     });
-    return outcome;
+  };
+
+  const undoLatestLocalDecision = (): Promise<boolean> => replayLocal(stackRef, entry => ({value: entry.predecessor, proposal_record_id: null}), (entry, decision) => {
+    // The compensating edit becomes the expected head for the preceding
+    // local action on this coordinate; it is not itself an undoable action.
+    const previous = [...stackRef.current].reverse().find(item => item.instanceId === entry.instanceId && item.fieldId === entry.fieldId);
+    if (previous && previous.expectedId === entry.predecessorId) previous.expectedId = decision.id;
+    redoRef.current.push({...entry, expectedId: decision.id});
+    record(decision, entry.predecessor, false);
   });
+
+  /** Re-applies the latest undone action, link included, on top of its compensating edit. */
+  const redoLatestLocalDecision = (): Promise<boolean> => replayLocal(redoRef, entry => ({value: entry.value, proposal_record_id: entry.proposalRecordId}),
+    (entry, decision) => record(decision, entry.predecessor, true, entry.expectedId, true));
 
   /** Explicitly resume the retained draft after refreshing current authority.
    * This does not rebase an undo entry onto an external decision. */
@@ -217,7 +256,7 @@ export function useProposalDecision(props: Props) {
     if (!isCurrent()) return false;
     const ok = authority.ok && authority.data.run.id === runId && authority.data.run.stage === 'extract';
     if (ok) {
-      setConfirmed({session, rows: authority.data.decisions});
+      setRows(authority.data.decisions);
       blockedSessionsRef.current.delete(session);
     }
     lockRef.current = false;
@@ -230,10 +269,14 @@ export function useProposalDecision(props: Props) {
     ? Promise.reject(new Error(t('extraction', 'reviewDecisionConflict')))
     : autosave.saveNow(scope);
 
-  const activeState = state.session === session ? state : {saving: false, conflicted: false, error: null, stack: []};
+  const activeState = state.session === session ? state : {saving: false, pending: null, conflicted: false, error: null, stack: [], redo: []};
   return {...autosave, saveNow, resumeDraftAfterConflict, conflicted: activeState.conflicted, toggle, isAccepted, acceptedProposalIdFor, undoLatestLocalDecision,
+    pendingDecision: activeState.pending,
     canUndo: activeState.stack.length > 0,
     undoTarget: activeState.stack.at(-1) ?? null,
+    redoLatestLocalDecision,
+    canRedo: activeState.redo.length > 0,
+    redoTarget: activeState.redo.at(-1) ?? null,
     saving: activeState.saving || autosave.saveState === 'saving',
     error: activeState.error ?? autosave.error,
   };
