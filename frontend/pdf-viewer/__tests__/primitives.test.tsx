@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {dirname, resolve} from 'node:path';
 import {render, screen, waitFor} from '@testing-library/react';
-import {beforeAll, describe, expect, it, vi} from 'vitest';
+import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest';
 
 // react-pdf's bundled pdfjs-dist is browser-only.
 // Shim it with the Node-compatible legacy build (same version family).
@@ -16,6 +16,7 @@ const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
 
 // Import AFTER the mock is registered so components see the shim.
 const {PrumoPdfViewer} = await import('../PrumoPdfViewer');
+const {createViewerStore} = await import('../core/store');
 
 // Override workerSrc AFTER engine import — the engine module unconditionally
 // writes a Vite-bundled URL that doesn't exist in Node.
@@ -33,6 +34,17 @@ beforeAll(() => {
   // Stub it out so CanvasLayer doesn't crash (render errors are caught
   // internally and logged as warnings, not thrown to the test).
   HTMLCanvasElement.prototype.getContext = () => null;
+
+  // The virtualizer treats a zero-size scroller as "not yet measurable" and
+  // mounts nothing (@tanstack/virtual-core's calculateRange bails out when
+  // outerSize === 0); jsdom never lays out real dimensions, so without this
+  // stub every page would stay unmounted, not just the ones off-screen.
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(300);
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(900);
+});
+
+afterAll(() => {
+  vi.restoreAllMocks();
 });
 
 describe('<PrumoPdfViewer> smoke tests', () => {
@@ -66,30 +78,30 @@ describe('<PrumoPdfViewer> smoke tests', () => {
   });
 
   it(
-    'renders pages with data-page-number attributes after load',
+    'renders the first pages with data-page-number attributes after load',
     async () => {
       const source = {
         kind: 'data' as const,
         data: fixtureBytes,
       };
+      const store = createViewerStore();
 
-      const {container} = render(<PrumoPdfViewer source={source} />);
-
-      // Wait for all 3 Viewer.Page wrapper divs to appear.
-      // data-page-number lives on Viewer.Page's <div>, not on the <canvas>.
+      const {container} = render(<PrumoPdfViewer source={source} store={store} />);
       await waitFor(
         () => {
-          // Specifically target the Viewer.Page wrappers (div elements)
-          const pages = container.querySelectorAll('div[data-page-number]');
-          expect(pages.length).toBe(3);
+          const nums = [...container.querySelectorAll('div[data-page-number]')].map((p) =>
+            Number(p.getAttribute('data-page-number')),
+          );
+          expect(nums).toEqual([1, 2]);
         },
         {timeout: 10000},
       );
-
-      const pages = Array.from(container.querySelectorAll('div[data-page-number]'));
-      const nums = pages.map((p) => Number(p.getAttribute('data-page-number')));
-      expect(nums).toEqual([1, 2, 3]);
+      // Precondition this test's overscan-1 mounting depends on: the stubbed
+      // 300px viewport (offsetHeight above) is shorter than the fixture's
+      // first page, so only the pages next to it mount, not the whole
+      // document.
+      expect(store.getState().pageSizes[1]?.height).toBeGreaterThan(300);
     },
-    15000, // pdfjs worker startup + 3-page async load can exceed 5 s
+    15000, // pdfjs worker startup + load can exceed 5 s
   );
 });

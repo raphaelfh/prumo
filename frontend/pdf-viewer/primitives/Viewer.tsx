@@ -1,13 +1,17 @@
-import {useRef, type CSSProperties, type ReactNode} from 'react';
+import {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
+import type {StoreApi} from 'zustand';
 import {ViewerProvider, useViewerStore} from '../core/context';
+import type {PDFSource} from '../core/source';
+import type {ViewerState} from '../core/state';
+import type {createViewerStore} from '../core/store';
 import {useDocumentLoader} from '../hooks/useDocumentLoader';
 import {usePageHandle} from '../hooks/usePageHandle';
 import {usePageScrollSync} from '../hooks/usePageScrollSync';
-import {displayedSize} from '../core/rotation';
-import type {PDFSource} from '../core/source';
-import type {StoreApi} from 'zustand';
-import type {ViewerState} from '../core/state';
-import type {createViewerStore} from '../core/store';
+import {layoutPageLocator, usePageLayout} from '../viewport/usePageLayout';
+import {useVirtualPages} from '../viewport/useVirtualPages';
+
+/** The scroll container `Viewer.Body` renders, for the `Viewer.Pages` inside it. */
+const ScrollerContext = createContext<HTMLElement | null>(null);
 
 interface RootProps {
   source: PDFSource | null;
@@ -27,15 +31,7 @@ function Root({source, store, initial, children, className}: RootProps) {
   );
 }
 
-function RootInner({
-  source,
-  children,
-  className,
-}: {
-  source: PDFSource | null;
-  children: ReactNode;
-  className?: string;
-}) {
+function RootInner({source, children, className}: {source: PDFSource | null; children: ReactNode; className?: string}) {
   useDocumentLoader({source});
   return (
     <div className={className} data-pdf-viewer-root="">
@@ -45,76 +41,73 @@ function RootInner({
 }
 
 function Body({children, className}: {children: ReactNode; className?: string}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const numPages = useViewerStore((s) => s.numPages);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const attach = useCallback((element: HTMLDivElement | null) => {
+    rootRef.current = element;
+    setScroller(element);
+  }, []);
+  const layout = usePageLayout();
+  const locator = useMemo(() => layoutPageLocator(layout), [layout]);
 
   // Navigation scrolls to the current page; scrolling publishes the page at
-  // the top of the viewport. The observer re-attaches when numPages changes
-  // (new page elements appear after load).
-  usePageScrollSync({
-    rootRef: ref,
-    scrollerSelector: '[data-pdf-viewer-body]',
-    pageAttribute: 'data-page-number',
-    pagesKey: numPages,
-  });
+  // the top of the viewport. Both read the page layout, so an unmounted page
+  // still has a position.
+  usePageScrollSync({rootRef, scrollerSelector: '[data-pdf-viewer-body]', locator, pagesKey: layout.numPages});
 
   return (
-    <div
-      ref={ref}
-      className={className}
-      data-pdf-viewer-body=""
-      style={{overflow: 'auto', position: 'relative', height: '100%'}}
-    >
-      {children}
-    </div>
+    <ScrollerContext.Provider value={scroller}>
+      <div ref={attach} className={className} data-pdf-viewer-body="" style={{overflow: 'auto', position: 'relative', height: '100%'}}>
+        {children}
+      </div>
+    </ScrollerContext.Provider>
   );
 }
 
+/**
+ * Mounts only the pages near the viewport, each in a slot the page layout
+ * positions. The column is as tall as the whole document, so the scrollbar
+ * and page navigation work before any other page has rendered.
+ */
 function Pages({children}: {children: (page: {number: number}) => ReactNode}) {
-  const numPages = useViewerStore((s) => s.numPages);
-  if (numPages === 0) return null;
+  const scroller = useContext(ScrollerContext);
+  const layout = usePageLayout();
+  const items = useVirtualPages({scroller, layout});
+  if (layout.numPages === 0) return null;
   return (
-    <div data-pdf-viewer-pages="" className="flex flex-col items-center gap-4 py-4">
-      {Array.from({length: numPages}, (_, i) => i + 1).map((n) => (
-        <div key={n}>{children({number: n})}</div>
-      ))}
+    <div data-pdf-viewer-pages="" style={{position: 'relative', margin: '0 auto', width: layout.width, height: layout.totalHeight}}>
+      {items.map((item) => {
+        const page = item.index + 1;
+        const {width, height} = layout.sizeOf(page);
+        return (
+          <div
+            key={item.key}
+            style={{position: 'absolute', top: layout.offsetOf(page), left: (layout.width - width) / 2, width, height}}
+          >
+            {children({number: page})}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function Page({
-  pageNumber,
-  children,
-}: {
-  pageNumber: number;
-  children?: ReactNode;
-}) {
+function Page({pageNumber, children}: {pageNumber: number; children?: ReactNode}) {
   const handle = usePageHandle(pageNumber);
-  const scale = useViewerStore((s) => s.scale);
-  const viewRotation = useViewerStore((s) => s.viewRotation);
+  const setPageSize = useViewerStore((s) => s.actions.setPageSize);
 
-  // Off-screen pages skip style, layout and paint. Without this, anything that
-  // resizes the viewer — dragging the Articles or run split — laid out EVERY
-  // page's text layer (hundreds of absolutely positioned spans each) again on
-  // every frame. A skipped page takes its size from `contain-intrinsic-size`,
-  // so that is the size CanvasLayer renders at — its viewport at `scale`,
-  // turned for a quarter view rotation (`displayedSize`) — exact, not a
-  // guess, or scroll-to-page and the page-sync observer (`usePageScrollSync`)
-  // would drift. `auto` keeps the real rendered size once the page has been on
-  // screen; a visible page still sizes to its content, so nothing is ever
-  // clipped.
-  let style: CSSProperties | undefined;
-  if (handle) {
-    const {width, height} = displayedSize(handle.size, viewRotation, scale);
-    style = {contentVisibility: 'auto', containIntrinsicSize: `auto ${width}px auto ${height}px`};
-  }
+  // The layout sizes a page from page 1 until its handle resolves; a landscape
+  // page corrects it here.
+  useEffect(() => {
+    if (handle) setPageSize(pageNumber, handle.size);
+  }, [handle, pageNumber, setPageSize]);
 
   return (
     // bg-white is intentional, not a missed token: a PDF page is a
     // physical sheet of white paper. It must stay white in both light
     // and dark themes so the page contents render with the contrast
     // and colour the document author intended.
-    <div data-page-number={pageNumber} className="relative shadow-md bg-white" style={style}>
+    <div data-page-number={pageNumber} className="relative size-full shadow-md bg-white">
       {children}
     </div>
   );
