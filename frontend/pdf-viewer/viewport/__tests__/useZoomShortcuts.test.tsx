@@ -61,6 +61,18 @@ describe('zoom shortcuts', () => {
     expect(store.getState().zoom).toBe(1.25);
   });
 
+  it('ignores a zoom shortcut while a gesture is under way', async () => {
+    const user = userEvent.setup();
+    const store = renderViewer();
+    await user.hover(screen.getByTestId('viewer-root'));
+    act(() => store.getState().actions.setGesturing(true));
+    await user.keyboard('{Control>}={/Control}');
+    expect(store.getState().zoom).toBe(1);
+    act(() => store.getState().actions.setGesturing(false));
+    await user.keyboard('{Control>}={/Control}');
+    expect(store.getState().zoom).toBe(1.25);
+  });
+
   it('zooms on ctrl/cmd plus without shift (numpad +)', async () => {
     const user = userEvent.setup();
     const store = renderViewer();

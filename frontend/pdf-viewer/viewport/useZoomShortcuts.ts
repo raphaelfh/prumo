@@ -6,6 +6,12 @@
  * Shift (US ⌘⇧=, Brazilian ABNT) the key arrives as `'+'` with
  * `shiftKey: true`; on numpad it arrives as `'+'` with `shiftKey: false`.
  * Both are bound alongside `'='` so the browser never intercepts either.
+ *
+ * A shortcut is a no-op while a pinch or ctrl+wheel gesture is under way
+ * (`isGesturing`): committing a keyboard zoom mid-gesture races the gesture
+ * controller's own commit on `end()` and loses the keypress. The key is
+ * still claimed (`useKeyboardShortcuts` calls `preventDefault` before the
+ * handler runs), so the browser's page zoom doesn't fire either.
  */
 import {useEffect, useState} from 'react';
 import {useKeyboardShortcuts} from '@/hooks/useKeyboardShortcuts';
@@ -15,13 +21,18 @@ import {ZOOM_STEP} from './zoomMath';
 export function useZoomShortcuts(scroller: HTMLElement | null): void {
   const storeApi = useViewerStoreApi();
   const inside = usePointerOrFocusInside(scroller);
+  const zoomUnlessGesturing = (factor: number) => () => {
+    const state = storeApi.getState();
+    if (state.isGesturing) return;
+    state.actions.zoomBy(factor);
+  };
   useKeyboardShortcuts({
     enabled: inside,
     bindings: [
-      {type: 'chord', key: '=', mod: true, handler: () => storeApi.getState().actions.zoomBy(ZOOM_STEP)},
-      {type: 'chord', key: '+', mod: true, shift: true, handler: () => storeApi.getState().actions.zoomBy(ZOOM_STEP)},
-      {type: 'chord', key: '+', mod: true, handler: () => storeApi.getState().actions.zoomBy(ZOOM_STEP)},
-      {type: 'chord', key: '-', mod: true, handler: () => storeApi.getState().actions.zoomBy(1 / ZOOM_STEP)},
+      {type: 'chord', key: '=', mod: true, handler: zoomUnlessGesturing(ZOOM_STEP)},
+      {type: 'chord', key: '+', mod: true, shift: true, handler: zoomUnlessGesturing(ZOOM_STEP)},
+      {type: 'chord', key: '+', mod: true, handler: zoomUnlessGesturing(ZOOM_STEP)},
+      {type: 'chord', key: '-', mod: true, handler: zoomUnlessGesturing(1 / ZOOM_STEP)},
     ],
   });
 }
