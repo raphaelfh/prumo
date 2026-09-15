@@ -1,0 +1,88 @@
+name: Update armed PRs
+
+# `dev` requires a PR to be up to date with its base (strict), and GitHub does
+# not update a PR itself. So when one PR lands, every other PR with auto-merge
+# armed goes BEHIND and its auto-merge never fires until someone clicks
+# Update branch. This job does that after every push to `dev`.
+#
+# A commit made with GITHUB_TOKEN does not trigger `pull_request` workflows, so
+# the update alone would leave the required checks unreported and the PR stuck.
+# `workflow_dispatch` is exempt from that rule: CI is dispatched on the PR's
+# branch, and its checks land on the new head commit the auto-merge waits for.
+# (The dispatched run skips the PR-only diff-coverage step, which already ran
+# on the PR's own run.)
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: update-armed-prs
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update armed PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update BEHIND armed PRs and dispatch CI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Armed, non-draft PRs into dev from this repository (a fork's branch
+          # cannot be dispatched from here).
+          armed=$(gh pr list --repo "$REPO" --base dev --state open \
+            --json number,headRefName,autoMergeRequest,isDraft,isCrossRepository \
+            --jq '.[] | select(.autoMergeRequest != null and (.isDraft | not) and (.isCrossRepository | not)) | "\(.number) \(.headRefName)"')
+          if [ -z "$armed" ]; then
+            echo "No armed PR into dev."
+            exit 0
+          fi
+
+          while read -r number branch; do
+            # GitHub computes the merge state lazily right after a push.
+            state=UNKNOWN
+            for _ in $(seq 1 12); do
+              state=$(gh pr view "$number" --repo "$REPO" --json mergeStateStatus --jq .mergeStateStatus)
+              [ "$state" != "UNKNOWN" ] && break
+              sleep 5
+            done
+            if [ "$state" != "BEHIND" ]; then
+              echo "#$number ($branch): $state — nothing to do."
+              continue
+            fi
+
+            before=$(gh pr view "$number" --repo "$REPO" --json headRefOid --jq .headRefOid)
+            echo "#$number ($branch): BEHIND — updating from dev."
+            if ! gh api -X PUT "repos/$REPO/pulls/$number/update-branch" --silent; then
+              # e.g. a merge conflict, or dev changed a workflow file, which
+              # GITHUB_TOKEN may not write.
+              echo "::warning::#$number could not be updated automatically; run Update branch by hand."
+              continue
+            fi
+
+            # The update is asynchronous: wait for the new head before starting
+            # CI, so the checks attach to the commit auto-merge waits on.
+            after="$before"
+            for _ in $(seq 1 24); do
+              after=$(gh pr view "$number" --repo "$REPO" --json headRefOid --jq .headRefOid)
+              [ "$after" != "$before" ] && break
+              sleep 5
+            done
+            if [ "$after" = "$before" ]; then
+              echo "::warning::#$number head did not move after update-branch; CI not dispatched."
+              continue
+            fi
+
+            gh workflow run ci.yml --repo "$REPO" --ref "$branch"
+            echo "#$number: updated to ${after:0:8}, CI dispatched."
+          done <<< "$armed"
