@@ -62,7 +62,7 @@ Skipping any step is lying, not reviewing.
 | Migration applies cleanly                     | `cd backend && alembic upgrade head` — exit 0      |
 | Migration is reversible                       | `alembic downgrade -1 && alembic upgrade head`     |
 | Bug fixed                                     | New test reproducing the bug now passes            |
-| Endpoint authorized                           | grep for `ensure_project_member` in the endpoint   |
+| Endpoint authorized                           | every client-supplied id maps to its guard (`references/bola-audit.md`); `python scripts/fitness/check_scope_guards.py` exit 0 |
 | No N+1                                        | Run the request with SQL echo, count queries       |
 
 ### Red flags — stop and run something
@@ -83,20 +83,20 @@ Apply to every diff before requesting review and before approving someone else's
 
 ### A. Authorization (OWASP API #1 — BOLA)
 
-- [ ] Every endpoint touching project data calls `ensure_project_member` (or a stricter role check) **before** the data access. Pattern: see `backend/app/api/v1/endpoints/extraction_runs.py:88`.
-- [ ] When the endpoint takes `run_id` / `article_id` / `template_id` but **not** `project_id`, resolve the project and run the membership check. Don't trust the URL.
-- [ ] Manager-only operations call the manager check, not just membership. Re-grep both layers.
+- [ ] Every client-supplied id (path, query, body) is bound by its guard **before** the data access: `require_project_scope` / `ensure_project_*` for a project, `load_run_for_member` for a run, `assert_kickoff_scope` for the AI kickoff coordinate, the named `owned_*` guard for a row in its parent (`.claude/rules/backend.md` § Ownership guards).
+- [ ] No hand-rolled ownership check: a `select` or `db.get` followed by a compare, where a named guard exists, is a second copy. `scripts/fitness/check_scope_guards.py` catches WHERE-clause copies and raw `project_members` SQL, not a fetch-then-compare.
+- [ ] The role matches the operation: reviewer for workflow writes, arbitrator for consensus and finalize, manager for configuration and destructive operations. Membership alone is the floor.
 - [ ] Frontend never controls authorization — server is authoritative. If the client decides who can do what, write it down as a defect.
 
 Why: BOLA is the #1 OWASP API risk and the #1 historical bug class on prumo. Audit playbook: `references/bola-audit.md`.
 
 ### B. RLS + multi-tenancy
 
-- [ ] New tables have RLS enabled and a policy. Check `backend/alembic/versions/0018_*` for the helper pattern (`is_project_reviewer`).
-- [ ] Policies are written in terms of `auth.uid()` and `project_memberships`, not raw user IDs.
+- [ ] New tables have RLS enabled and a policy per command. Shapes: `backend-development/references/rls.md`.
+- [ ] Policies call the `public.is_project_*(project_id, auth.uid())` helpers; never an inline `FROM project_members`.
 - [ ] If the migration relaxes RLS, the PR body explains who gains access and why.
 
-Why: Supabase RLS is our second line of defense. Migration 0018 relaxed reviewer writes for a reason — every RLS relaxation needs the same scrutiny. Full checklist: `references/rls-review.md`.
+Why: Supabase RLS is our second line of defense. The archived migration 0018 relaxed reviewer writes for a reason — every RLS relaxation needs the same scrutiny. Full checklist: `references/rls-review.md`.
 
 ### C. Run-state and concurrency (TOCTOU)
 
@@ -154,7 +154,7 @@ Why: Stale-cache bugs are silent — users see old data and assume their click f
 - [ ] New behavior has a failing test that now passes (TDD or test-with-fix is fine; "I'll add tests later" is not).
 - [ ] Bug fixes include a regression test asserting the original symptom is gone.
 - [ ] No flaky `sleep`-based tests — use deterministic fixtures or `freeze_time`.
-- [ ] Backend test names describe the scenario, not the code path. `test_ensure_project_member_blocks_outsider` > `test_ensure_project_member_3`.
+- [ ] Backend test names describe the scenario, not the code path. `test_create_consensus_rejects_viewer_member` > `test_create_consensus_3`.
 - [ ] Each new assertion can fail: expected values are independent literals, not recomputed from the code under test, and the test asserts its precondition before its outcome (`web-testing` §10).
 
 ### J. Style + meta

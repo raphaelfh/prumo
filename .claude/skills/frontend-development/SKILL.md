@@ -75,3 +75,4 @@ service / store / context shapes with code.
 |---|---|
 | [`references/data-and-state.md`](references/data-and-state.md) | hook/service/store/context shapes, query-key factories, invalidation |
 | [`references/components-and-forms.md`](references/components-and-forms.md) | component shape, react-hook-form + Zod, copy, generated types |
+| [`references/dead-code.md`](references/dead-code.md) | a `knip --production` finding: delete, dedupe, or `@internal` |

@@ -29,7 +29,7 @@ This is the **single contract** between the scanner and everything downstream. E
   "category":          "concept-drift|layered-arch|security|legacy|test-gaps|computational",
   "severity":          "high|medium|low",
   "confidence":        0.85,
-  "file":              "backend/app/services/extraction_form_service.py",
+  "file":              "backend/app/services/extraction_proposal_service.py",
   "line":              142,
   "evidence":          "...≤200 chars, verbatim quote when possible...",
   "suggested_action":  "...≤300 chars...",
@@ -130,7 +130,7 @@ Each Explore subagent receives the SCOPE as `${SCOPE}` and the relevant referenc
 > You are the **test-gaps** scanner. Scope: `${SCOPE}`.
 >
 > For every public function/endpoint/router in scope, find whether at least one integration test (`backend/tests/integration/`) or vitest file in `frontend/test/` covers the **golden path**. Critical paths that must be covered:
-> - HITL session open/close (`hitl_session_service.open_session`, `close_session`)
+> - HITL session open or resume (`hitl_session_service.open_or_resume`)
 > - Run stage transitions (`run_lifecycle_service.advance_stage`)
 > - ProposalRecord → ReviewerDecision → ConsensusDecision → PublishedState flow
 > - RLS policy enforcement on `extraction_*` writes (a test that asserts a non-member is denied)
@@ -152,7 +152,7 @@ jq -s 'sort_by(-.confidence, .severity != "high") | .[0:10]' \
   docs/superpowers/quality-runs/<run-id>/findings.jsonl
 
 # All findings on one file:
-jq 'select(.file == "backend/app/services/extraction_form_service.py")' \
+jq 'select(.file == "backend/app/services/extraction_proposal_service.py")' \
   docs/superpowers/quality-runs/<run-id>/findings.jsonl
 
 # Dropped (below confidence floor) — audit trail:
@@ -161,7 +161,7 @@ jq -s 'length' docs/superpowers/quality-runs/<run-id>/findings_dropped.jsonl
 
 ## Dedupe / aggregation note
 
-The scanner itself does **not** dedupe — that is TRIAGE's job. The scanner writes every row from every subagent + every fitness script verbatim. If two subagents both flag `extraction_form_service.py:142`, both rows appear in `findings.jsonl`; TRIAGE will merge them via the `(file, line, category)` key with `max(severity, confidence)` and `evidence` concatenation.
+The scanner itself does **not** dedupe — that is TRIAGE's job. The scanner writes every row from every subagent + every fitness script verbatim. If two subagents both flag `extraction_proposal_service.py:142`, both rows appear in `findings.jsonl`; TRIAGE will merge them via the `(file, line, category)` key with `max(severity, confidence)` and `evidence` concatenation.
 
 This split keeps the scanner stateless and idempotent: re-running on the same tree produces the same `findings.jsonl`. Reproducibility is the gate property; if you observe non-determinism, that is a bug in a subagent prompt and must be fixed.
 

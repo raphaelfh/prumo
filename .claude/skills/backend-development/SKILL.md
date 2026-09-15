@@ -35,7 +35,8 @@ Out of scope: Node.js, NestJS, Django, Go, Rust, MongoDB, OAuth provider SDKs, D
 backend/app/
   api/v1/endpoints/   # FastAPI routers — thin, validation + service call only
   api/v1/router.py    # aggregates routers under /api/v1
-  api/deps/security.py# ensure_project_member, require_project_manager, ...
+  api/deps/security.py# ensure_project_*, require_project_scope/manager
+  api/deps/scope.py   # load_run_for_member, assert_kickoff_scope
   core/               # config, logging, deps (DbSession), security, middleware
   models/             # SQLAlchemy 2.0 declarative models (Mapped/mapped_column)
   schemas/            # Pydantic v2 request/response DTOs
@@ -55,11 +56,11 @@ Endpoints are thin. Business logic lives in services. SQL lives in services or r
 ## Hard rules (small, with reasoning)
 
 1. **Alembic for app schema, Supabase CLI for `auth`/`storage`.** If you touched a SQLAlchemy model in `backend/app/models/`, you owe an Alembic migration. Storage buckets and `auth.users` triggers belong in `supabase/migrations/` because the Supabase CLI is the only system that can replay them against a hosted project.
-2. **RLS is the source of truth — never bypass it silently.** The API runs as service role and bypasses RLS, so endpoints must enforce membership themselves via `ensure_project_member` / `require_project_scope` / `require_project_manager` from `app/api/deps/security.py`. Those call the same SQL helpers (`is_project_member`, `is_project_manager`, `is_project_reviewer`) the RLS policies use, so the gate stays identical on both sides.
+2. **RLS is the source of truth — never bypass it silently.** The API runs as service role and bypasses RLS, so endpoints bind every client-supplied id themselves: `require_project_scope` / `require_project_manager` / `ensure_project_*` (`app/api/deps/security.py`) for a project, `load_run_for_member` / `assert_kickoff_scope` (`app/api/deps/scope.py`) for a run or the kickoff coordinate, and the named `owned_*` guard for a row in its parent (`.claude/rules/backend.md` § Ownership guards). The project helpers call the same SQL functions (`is_project_member`, `is_project_reviewer`, `is_project_manager`, `is_project_arbitrator`) the RLS policies use, so the gate stays identical on both sides.
 3. **Never trust the client's field set.** Mass-assignment attacks come through Pydantic models with too many fields. Define `*Create` / `*Update` schemas with only the fields a user may set; never reuse the read schema for writes.
 4. **Async all the way.** `AsyncSession`, `await db.execute(select(...))`, async services. Sync calls inside the request loop will starve the event loop.
 5. **One transaction per request, by default.** The `get_db` dependency yields one session — services on a single request share it. Open a nested `async with db.begin_nested()` only for true savepoint semantics.
-6. **Migration numbering is monotonic.** New migrations always extend the head (`0013_*`, `0014_*`, ...). Never rewrite history of pushed migrations. Squash deliberately and document — see `docs/reference/migrations.md`.
+6. **Migration numbering is monotonic.** A new migration takes the next `NNNN_*` after the current head in `backend/alembic/versions/`. Never rewrite history of pushed migrations. Squash deliberately and document — see `docs/reference/migrations.md`.
 
 ## FastAPI endpoint shape
 
@@ -92,8 +93,8 @@ async def open_hitl_session(
 
 Conventions:
 - Use `DbSession` (the `Annotated[AsyncSession, Depends(get_db)]` alias from `app/core/deps.py`), not bare `Depends(get_db)`.
-- Authentication: depend on `get_current_user_sub` (or `CurrentUser` for the full payload). Project access: call `ensure_project_member` *after* dependency resolution, because `project_id` usually comes from the body.
-- All write responses go through `ApiResponse[T]` for a uniform envelope. Read endpoints can return the DTO directly if they're high-traffic — be consistent within a router.
+- Authentication: depend on `get_current_user_sub` (or `CurrentUser` for the full payload). Access: bind every client-supplied id with its guard *after* dependency resolution — `ensure_project_*` for a body `project_id`, `load_run_for_member` for a `run_id`, the named `owned_*` guard for a row in its parent. Which guard for which id: `code-review/references/bola-audit.md`.
+- Every JSON response, reads included, goes through `ApiResponse[T]` with a typed `T` (a file download may return a raw `Response`, as `extraction_export.py` and `articles_export.py` do); errors reach the client as `error.message` (see [`references/fastapi.md`](references/fastapi.md) § Errors).
 - Return real status codes (`201` for create, `204` for delete-with-no-body). Override per-request via `response.status_code` only when create-vs-resume semantics matter; see `endpoints/hitl_sessions.py` for the canonical pattern.
 - Wire new routers into `backend/app/api/v1/router.py`.
 
@@ -198,12 +199,12 @@ Detail: see [`references/alembic.md`](references/alembic.md) for migration anato
 | FastAPI request handler | service role from `DATABASE_URL` | **no — bypasses RLS** |
 | Celery worker | service role | **no — bypasses RLS** |
 
-Because the API and worker bypass RLS, **every endpoint that touches project data must call a membership helper** (`ensure_project_member`, `require_project_scope`, `require_project_manager`). The browser is gated by RLS; the API is gated by code. Both gates evaluate the *same* SQL helpers (`is_project_member`, `is_project_reviewer`, `is_project_manager`), so behavior stays identical.
+Because the API and worker bypass RLS, **every endpoint that touches project data must bind each client-supplied id with its guard** (hard rule 2). The browser is gated by RLS; the API is gated by code. Both gates evaluate the *same* SQL helpers (`is_project_member`, `is_project_reviewer`, `is_project_manager`, `is_project_arbitrator`), so behavior stays identical.
 
 When adding a new table:
 1. Create the model + migration.
 2. In the same migration, `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` and add SELECT/INSERT/UPDATE/DELETE policies that route through the membership helpers.
-3. In the corresponding endpoint, call the matching `require_project_*` helper before any write.
+3. In the corresponding endpoint, call the guard whose role matches the RLS write policy before any write (`ensure_project_reviewer` for a reviewer-write table, `ensure_project_manager` for a manager-only one). An API more permissive than its policy is the #831 bug.
 
 Detail: see [`references/rls.md`](references/rls.md) for the helper inventory, common policy shapes, and the "service role from the API" footgun.
 
@@ -291,14 +292,7 @@ make test-backend       # pytest with the project's defaults
 make lint-backend       # ruff check + format
 ```
 
-Tests live under `backend/tests/`. Use `pytest-asyncio` for async tests. Override `get_db` with a transactional fixture that rolls back per test. Override `get_current_user_sub` with a fixed UUID. Hit endpoints with `httpx.AsyncClient(app=app, base_url=...)`.
-
-Coverage targets, in order of value:
-1. Service unit tests with a real Postgres (Supabase local) — they catch RLS misses and FK mistakes.
-2. Endpoint integration tests with auth + project-member gating.
-3. Migration tests: run `alembic upgrade head` then `downgrade -1` on every PR that adds a migration.
-
-Detail: see [`references/testing.md`](references/testing.md) for the fixture playbook, factories, and Celery task testing in eager mode.
+Tests live under `backend/tests/` (`unit/`, `integration/`, `e2e/`, `fitness/`). The fixtures (`db_client` vs the mocked `client`, `db_session`, the seed graph), authorization tests and RLS tests are owned by the `web-testing` skill: §4 and [`web-testing/references/pytest.md`](../web-testing/references/pytest.md). Celery eager mode: [`references/celery.md`](references/celery.md).
 
 ## Common workflows
 
@@ -332,4 +326,3 @@ These are not optional reading for HITL changes.
 | [`references/celery.md`](references/celery.md) | retries, idempotency, chord/chain, testing |
 | [`references/rls.md`](references/rls.md) | helper functions, policy shapes, API-bypass model |
 | [`references/structlog.md`](references/structlog.md) | context propagation, JSON shape, PII redaction |
-| [`references/testing.md`](references/testing.md) | fixtures, factory patterns, Celery in tests |

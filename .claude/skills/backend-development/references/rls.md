@@ -11,23 +11,24 @@ Prumo has two paths into the database:
 
 So the API and worker run with god-mode permissions. The browser does not. If both code paths need the same security guarantees, both gates have to be enforced — and *they have to enforce the same rule*. Otherwise you have a bypass.
 
-Pattern: each gate calls the *same SQL helpers* (`is_project_member`, `is_project_reviewer`, `is_project_manager`). The RLS policy uses them in its `USING` / `WITH CHECK` clauses; the API calls them via `ensure_project_member` and friends in `app/api/deps/security.py`.
+Pattern: each gate calls the *same SQL helpers* (`is_project_member`, `is_project_reviewer`, `is_project_manager`, `is_project_arbitrator`). The RLS policy uses them in its `USING` / `WITH CHECK` clauses; the API calls them via `ensure_project_member` and friends in `app/api/deps/security.py`.
 
 ## The helper inventory
 
-Defined in `backend/alembic/versions/` (see `0008_function_hardening.py` and friends). All `SECURITY DEFINER`, `STABLE`, language plpgsql. They return `boolean`.
+Defined in `backend/alembic/versions/baseline_v1.sql` (member, reviewer, manager) and `0025_reviewer_scoped_select_rls.py` (arbitrator). All `SECURITY DEFINER`, `STABLE`. They take `(project_id, user_id)` and return `boolean`.
 
 | Helper | Returns true when |
 |---|---|
 | `public.is_project_member(project_id, user_id)` | user has any role in the project |
 | `public.is_project_reviewer(project_id, user_id)` | user is a reviewer, consensus reviewer, or manager |
+| `public.is_project_arbitrator(project_id, user_id)` | user is a consensus reviewer or manager |
 | `public.is_project_manager(project_id, user_id)` | user is a project manager |
 
 These are the only acceptable gates. Don't inline `EXISTS (SELECT ... FROM project_members ...)` in a new policy — it makes refactoring impossible and the linter can't catch drift.
 
 ## API-side enforcement (since RLS is bypassed)
 
-Three helpers in `app/api/deps/security.py`:
+Membership and role checks live in `app/api/deps/security.py` (`ensure_project_member`, `ensure_project_reviewer`, `ensure_project_manager`, `ensure_project_arbitrator`, and the path-parameter dependencies `require_project_scope` / `require_project_manager`). Run resolution and the kickoff coordinate live in `app/api/deps/scope.py`. A row inside a parent needs its named guard (`.claude/rules/backend.md` § Ownership guards); membership does not bind it. The common shapes:
 
 ```python
 # Endpoint with project_id in body:
@@ -50,7 +51,7 @@ async def set_config(
 ): ...
 ```
 
-Forget the gate, and the endpoint is a BOLA (Broken Object Level Authorization) vulnerability — the test suite has a fixture for this; use it.
+Forget the gate, and the endpoint is a BOLA (Broken Object Level Authorization) vulnerability. Test recipe: `web-testing/references/pytest.md` § Authorization tests.
 
 ## Adding a new `public.*` table
 

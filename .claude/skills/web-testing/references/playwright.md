@@ -58,15 +58,17 @@ const test = base.extend<Fixtures>({
 });
 
 test('lists templates in project', async ({ request, authToken, projectId }) => {
-  const body = await expectEnvelopeOk(request, 'get', `/api/v1/projects/${projectId}/templates`, {
-    token: authToken,
-    traceId: 'list-templates',
+  const response = await request.get(`/api/v1/projects/${projectId}/templates`, {
+    headers: authHeaders(authToken, 'list-templates'),
   });
+  expect(response.ok()).toBe(true);
+  const body = await parseEnvelope<{ items: unknown[] }>(response);
+  expect(body.ok).toBe(true);
   expect(body.data).toHaveProperty('items');
 });
 ```
 
-Existing `_fixtures/api.ts` already exposes `expectEnvelopeOk`. Use it; don't roll your own.
+Existing `_fixtures/api.ts` already exposes `authHeaders`, `parseEnvelope` and the `ApiEnvelope<T>` type. Use them; don't roll your own.
 
 ## 4. `expect.poll` over manual retry loops
 
@@ -75,7 +77,8 @@ For eventual consistency (background workers, multi-reviewer consensus, run stag
 ```ts
 await expect.poll(
   async () => {
-    const body = await expectEnvelopeOk<RunDetail>(request, 'get', `/api/v1/runs/${runId}`, opts);
+    const response = await request.get(`/api/v1/runs/${runId}`, { headers });
+    const body = await parseEnvelope<RunDetail>(response);
     return body.data.stage;
   },
   { timeout: 15_000, intervals: [200, 500, 1000, 2000] }
