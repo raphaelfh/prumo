@@ -57,6 +57,10 @@ from app.services.derived_judgment_service import (
     scope_filtered_values,
     warn_dangling_spec_refs,
 )
+from app.services.exports.ai_proposal_projection import (
+    load_evidence_summaries,
+    proposal_model_used,
+)
 from app.services.exports.descriptors import (
     build_entries,
     iter_records,
@@ -71,7 +75,6 @@ from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
 )
-from app.services.exports.run_engine import resolve_model_used
 from app.services.exports.value_envelope import resolve_value
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
@@ -222,7 +225,7 @@ class AIProposalRow:
     evidence_text: str  # joined with ' | ' when multiple
     evidence_pages: str  # joined with ', ' when multiple
     proposed_at: datetime
-    model_used: str  # server-written provenance engine; see resolve_model_used
+    model_used: str  # Immutable proposal engine, empty when unavailable
     reviewer_outcome: str  # accepted | rejected | edited (best-effort) | pending | superseded
     final_value_used: Any  # None when not published
 
@@ -1639,6 +1642,7 @@ class ExtractionExportService(LoggerMixin):
                     ExtractionProposalRecord.confidence_score,
                     ExtractionProposalRecord.rationale,
                     ExtractionProposalRecord.created_at,
+                    ExtractionProposalRecord,
                 )
                 .where(
                     ExtractionProposalRecord.run_id.in_(run_ids),
@@ -1655,47 +1659,11 @@ class ExtractionExportService(LoggerMixin):
 
         # Compute "latest per key" to flag superseded rows.
         latest_id_per_key: dict[tuple[UUID, UUID, UUID], UUID] = {}
-        for pid, rid, iid, fid, _v, _c, _r, _ts in proposal_rows:
+        for pid, rid, iid, fid, *_rest in proposal_rows:
             latest_id_per_key.setdefault((rid, iid, fid), pid)
 
-        proposal_ids = [row[0] for row in proposal_rows]
-
-        # 2. Evidence — load once, group by proposal_record_id.
-        from app.models.extraction import ExtractionEvidence  # local — avoid cycles
-
-        evidence_rows = (
-            await self.db.execute(
-                select(
-                    ExtractionEvidence.proposal_record_id,
-                    ExtractionEvidence.text_content,
-                    ExtractionEvidence.page_number,
-                )
-                .where(ExtractionEvidence.proposal_record_id.in_(proposal_ids))
-                .order_by(
-                    ExtractionEvidence.proposal_record_id,
-                    ExtractionEvidence.page_number.asc().nulls_last(),
-                    ExtractionEvidence.id.asc(),
-                )
-            )
-        ).all()
-        # One ordered, deduped (text, page) list per proposal. Dedupe on the
-        # (text, page) pair; numeric page sort (the DB ORDER BY emits rows in
-        # page order, and we additionally numeric-sort in Python — None pages
-        # last — so ordering is deterministic regardless of driver). Pages are
-        # rendered numerically sorted and deduped independently so "2" < "10".
-        ev_pairs_by_pid: dict[UUID, list[tuple[str | None, int | None]]] = {}
-        seen_pairs: dict[UUID, set[tuple[str | None, int | None]]] = {}
-        for pid, text, page in evidence_rows:
-            pair = (text, page)
-            seen = seen_pairs.setdefault(pid, set())
-            if pair in seen:
-                continue
-            seen.add(pair)
-            ev_pairs_by_pid.setdefault(pid, []).append(pair)
-        for pairs in ev_pairs_by_pid.values():
-            # Stable numeric page sort with None pages last; preserves the
-            # ORDER BY id tiebreak for pairs that share a page.
-            pairs.sort(key=lambda tp: (tp[1] is None, tp[1] if tp[1] is not None else 0))
+        # 2. Evidence — one bulk query, summarized per proposal.
+        evidence_by_pid = await load_evidence_summaries(self.db, [row[0] for row in proposal_rows])
 
         # 3. Reviewer decisions for the same (run, instance, field) — the
         # outcome inference is best-effort because the `edit` decision
@@ -1742,10 +1710,7 @@ class ExtractionExportService(LoggerMixin):
                 for idx, iid in enumerate(ids, start=1):
                     instance_index_by_id[iid] = idx
 
-        # 6. The in-scope runs, carrying both halves of the "Model used"
-        # resolution (``results`` provenance first, ``parameters`` only as the
-        # legacy fallback — see ``resolve_model_used``) plus the ``version_id``
-        # that feeds the label-fallback chain below.
+        # 6. In-scope run versions feed the label-fallback chain below.
         run_stmt = select(ExtractionRun).where(ExtractionRun.id.in_(run_ids))
         run_by_id = {r.id: r for r in (await self.db.execute(run_stmt)).scalars().all()}
 
@@ -1794,7 +1759,17 @@ class ExtractionExportService(LoggerMixin):
 
         # Build the output rows.
         out: list[AIProposalRow] = []
-        for pid, rid, iid, fid, proposed_value, confidence, rationale, ts in proposal_rows:
+        for (
+            pid,
+            rid,
+            iid,
+            fid,
+            proposed_value,
+            confidence,
+            rationale,
+            ts,
+            proposal,
+        ) in proposal_rows:
             article = articles_by_run.get(rid)
             run = run_by_id.get(rid)
             if article is None or run is None:
@@ -1817,6 +1792,7 @@ class ExtractionExportService(LoggerMixin):
                 final_value = value_map.get((rid, iid, fid, None))
             else:
                 final_value = value_map.get((rid, iid, fid))
+            evidence_text, evidence_pages = evidence_by_pid.get(pid, ("", ""))
             row = AIProposalRow(
                 article_label=article.header_label,
                 section_label=section_label,
@@ -1825,17 +1801,10 @@ class ExtractionExportService(LoggerMixin):
                 ai_proposed_value=resolve_value(proposed_value, field=field_desc_by_id.get(fid)),
                 confidence=float(confidence) if confidence is not None else None,
                 rationale=rationale,
-                evidence_text=" | ".join(t for t, _p in ev_pairs_by_pid.get(pid, []) if t),
-                evidence_pages=", ".join(
-                    str(p)
-                    for p in sorted(
-                        {pg for _t, pg in ev_pairs_by_pid.get(pid, []) if pg is not None}
-                    )
-                ),
+                evidence_text=evidence_text,
+                evidence_pages=evidence_pages,
                 proposed_at=ts,
-                model_used=resolve_model_used(
-                    run.parameters, run.results, entity_type_id=instance_etid
-                ),
+                model_used=proposal_model_used(proposal),
                 reviewer_outcome=outcome,
                 final_value_used=final_value,
             )

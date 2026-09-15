@@ -23,6 +23,7 @@
  */
 import {createContext, useContext, type ReactNode} from 'react';
 
+import type {ReviewWorkspace} from '../review/ExtractionReviewTable';
 import type {EntryIdentityChanges} from '@/components/extraction/AddEntryDialog';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import type {
@@ -32,6 +33,8 @@ import type {
 } from '@/types/extraction';
 
 export interface EntryFormContextValue {
+  presentation?: 'review-table' | 'default';
+  review?: ReviewWorkspace;
   projectId: string;
   articleId: string;
   templateId: string;

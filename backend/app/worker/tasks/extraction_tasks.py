@@ -51,6 +51,7 @@ def run_section_extraction_task(
     payload_json: dict[str, Any],
     user_id: str,
     trace_id: str | None = None,
+    attempt_id: str | None = None,
 ) -> dict[str, Any]:
     """Run AI section extraction from a serialised SectionExtractionRequest.
 
@@ -108,13 +109,22 @@ def run_section_extraction_task(
                 # spurious MissingLLMKeyError and a key_scope recorded
                 # against a provider that never ran. The kicker's id decides
                 # whose engine and whose key.
-                engine = await resolve_engine_for_run(
-                    session,
-                    run_id=request.run_id,
-                    project_id=request.project_id,
-                    repin=repin,
-                    user_id=UUID(user_id),
-                )
+                if attempt_id is not None:
+                    from app.services.run_engine_freeze import (
+                        read_attempt_engine,
+                        validate_attempt_engine,
+                    )
+
+                    engine = await read_attempt_engine(session, UUID(attempt_id))
+                    await validate_attempt_engine(session, engine, UUID(user_id))
+                else:
+                    engine = await resolve_engine_for_run(
+                        session,
+                        run_id=request.run_id,
+                        project_id=request.project_id,
+                        repin=repin,
+                        user_id=UUID(user_id),
+                    )
 
                 credentials = await resolve_engine_credentials(
                     session,
@@ -140,6 +150,8 @@ def run_section_extraction_task(
                     # adopting, so the re-key is a no-op on the kickoff path.
                     key_provider=engine.provider,
                     repin=repin,
+                    attempt_id=UUID(attempt_id) if attempt_id else None,
+                    owns_transactions=True,
                 )
 
                 res = await service.run_from_request(request, engine=engine)
@@ -180,10 +192,70 @@ def run_section_extraction_task(
                 await session.rollback()
                 raise
 
+    async def execute() -> dict[str, Any]:
+        if attempt_id is None:
+            # Jobs queued before durable attempts retain their existing contract.
+            return await run()
+        from app.services.extraction_attempt_service import ExtractionAttemptService
+        from app.worker._session import worker_session
+
+        preparation_error: Exception | None = None
+
+        async def operation(attempt: Any) -> dict[str, Any]:
+            if preparation_error is not None:
+                raise preparation_error
+            nonlocal payload_json, user_id
+            payload_json = attempt.request_payload
+            user_id = str(attempt.owner_id)
+            result = await run()
+            result["user_id"] = user_id
+            return result
+
+        from app.models.extraction_attempt import ExtractionAttempt
+        from app.services.llm_engine_service import resolve_engine
+        from app.services.run_engine_freeze import freeze_attempt_engine
+
+        # Never write the attempt through a domain session under ownership.
+        try:
+            async with worker_session() as preparation_db:
+                attempt = await preparation_db.get(ExtractionAttempt, UUID(attempt_id))
+                if attempt is None:
+                    raise ValueError(f"Attempt {attempt_id} not found")
+                if attempt.engine is None and attempt.status not in {
+                    "completed",
+                    "failed",
+                    "cancelled",
+                }:
+                    candidate = await resolve_engine(
+                        preparation_db, attempt.project_id, attempt.owner_id
+                    )
+                    await freeze_attempt_engine(preparation_db, attempt.id, candidate)
+                await preparation_db.commit()
+        except Exception as exc:
+            # Ownership records a terminal error or preserves retryability just
+            # like an error during generation; preparation itself holds no claim.
+            preparation_error = exc
+
+        # Attempt engine preparation belongs BEFORE this ownership session.
+        # Domain writes inside run() use their own independently committed session.
+        async with worker_session() as ownership_db:
+            return await ExtractionAttemptService(ownership_db).execute_attempt(
+                UUID(attempt_id),
+                operation,
+                retryable=lambda exc: (
+                    is_transient_llm_error(exc)
+                    and (self.max_retries is None or self.request.retries < self.max_retries)
+                ),
+            )
+
     try:
-        return run_task(run)
+        return run_task(execute)
     except Exception as exc:
-        if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
+        if isinstance(exc, ExtractionTaskError):
+            raise
+        if is_transient_llm_error(exc) and (
+            self.max_retries is None or self.request.retries < self.max_retries
+        ):
             # Transient and retries remain — back off and retry.
             raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
         # Terminal failure (permanent, or transient with retries exhausted):

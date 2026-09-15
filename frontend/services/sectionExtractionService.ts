@@ -252,16 +252,10 @@ export class SectionExtractionService {
  * Mirrors the SectionExtractionRequest schema fields consumed by the
  * backend endpoint.
  */
-export interface AsyncSectionExtractionParams {
-  projectId: string;
-  articleId: string;
-  templateId: string;
-  runId?: string;
-  entityTypeId?: string;
-  parentInstanceId?: string;
-  skipFieldsWithHumanProposals?: boolean;
-  autoAdvanceToReview?: boolean;
-}
+type GeneratedSectionRequest = components['schemas']['SectionExtractionRequest'];
+export type AsyncSectionExtractionParams = Pick<GeneratedSectionRequest,
+  'projectId' | 'articleId' | 'templateId' | 'runId' | 'entityTypeId' | 'parentInstanceId'
+> & Partial<Pick<GeneratedSectionRequest, 'skipFieldsWithHumanProposals' | 'autoAdvanceToReview' | 'requestId'>>;
 
 /**
  * POST /api/v1/extraction/sections — enqueues a section extraction job.
@@ -282,6 +276,8 @@ export function extractSectionAsync(
         {
           method: 'POST',
           body: {
+            requestId: params.requestId,
+            extractAllSections: false,
             projectId: params.projectId,
             articleId: params.articleId,
             templateId: params.templateId,
@@ -292,7 +288,7 @@ export function extractSectionAsync(
               params.skipFieldsWithHumanProposals ?? true,
             autoAdvanceToReview: params.autoAdvanceToReview ?? false,
             // C1a: no `model` key — the engine is server-owned.
-          },
+          } satisfies GeneratedSectionRequest,
         },
       );
       return { jobId: raw.job_id };

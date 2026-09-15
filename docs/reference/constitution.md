@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-07-02
+last_reviewed: 2026-09-15
 owner: '@raphaelfh'
 ---
 
@@ -149,7 +149,7 @@ All API responses MUST use a uniform envelope format.
 
 Every AI-assisted value MUST be explainable and every human choice MUST be auditable.
 
-- Each AI suggestion records **how it was generated** — a run-level provenance snapshot (ran-by user, provider/model, extraction strategy + the prompt actually sent, sampling params, token usage) stored in `extraction_runs.results['provenance']` and surfaced to the reviewer.
+- Each AI suggestion records **how it was generated** — an immutable per-call generation snapshot on the proposal (`extraction_proposal_records.generation_snapshot`: provider/model, extraction strategy + the prompt actually sent, sampling params, token usage), surfaced to the reviewer. Runner identity comes from the owning extraction attempt (`extraction_attempts.owner_id`) and is revealed only under the per-run reveal rule; proposals that predate attempts name no runner.
 - A **domain "no information" / disposition answer** — that the source does not state the item, or the item is not applicable / not evaluated — is a first-class recorded proposal carrying a coded `absent_reason` (`{"value": null, "absent_reason": <code>}`) with its rationale ([ADR-0016](../adr/0016-typed-absent-reason-marker.md)). A reviewer accepts it like any AI version; it counts as a **resolved** value.
 - A **genuine unresolved state** — no proposal, an unaccepted proposal, or a rejected decision — carries no disposition and is **not** a silent drop: the proposal trail records that the run examined the field.
 - Every human selection of an AI version is **append-only**: the `ExtractionReviewerDecision` trail records who chose which `proposal_record_id` and when; switching versions never rewrites history.
@@ -238,8 +238,16 @@ This constitution is the authoritative reference for all architectural and proce
 - Added complexity beyond what a principle prescribes MUST be justified in the PR description.
 - Use `CLAUDE.md` as the runtime development guidance companion to this constitution.
 
-**Version**: 2.2.1 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-08-17
+**Version**: 2.2.2 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-09-15
 
+> 2.2.2: §IX mechanism bullet re-pointed from the run-level
+> `extraction_runs.results['provenance']` snapshot to the per-call
+> `extraction_proposal_records.generation_snapshot`. The generation facts
+> (provider/model, strategy, prompt sent, sampling params, token usage) are
+> unchanged. Runner identity comes from the owning attempt's `owner_id` behind
+> the per-run reveal, so proposals written before attempts name no runner.
+> This corrects a stale description of the mechanism, so it is a PATCH.
+>
 > 2.2.1: §IV encryption bullet widened from "per-user derived keys" to
 > "per-user or per-row derived keys" — project-shared endpoint secrets
 > (`project_llm_endpoints`) derive per row (`endpoint:{id}`, domain-separated

@@ -103,14 +103,38 @@ class ExtractionProposalRecord(BaseModel):
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Engine identity ONLY — how THIS value was produced (0056). Immutable per
     # row, unlike the run's per-section snapshot, which is last-write-wins.
-    # NEVER holds ``ran_by_user_id``: identity stays run-level, where the
-    # blind-review scrub can reach it. NEVER serialize this straight from the
-    # ORM row — ``AISuggestionItem``/``AISuggestionHistoryItem`` set
+    # NEVER holds ``ran_by_user_id``/``ran_by_name`` (nor does
+    # ``generation_snapshot``): runner identity comes from the owning
+    # ``extraction_attempts.owner_id`` and is attached only by
+    # ``proposal_generation_read.serialize_proposal_generation`` after the
+    # per-run reveal; legacy rows name no runner. NEVER serialize this
+    # straight from the ORM row — ``AISuggestionItem``/``AISuggestionHistoryItem`` set
     # ``from_attributes=True`` and declare a field of the same name, so a future
     # ``model_validate(orm_row)`` would bypass the read-side reveal gate.
     provenance: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    extraction_attempt_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
+    generation_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
     __table_args__ = (
+        # Deferred NO ACTION preserves history on isolated attempt deletion,
+        # while the run cascade can remove proposals and attempts together.
+        ForeignKeyConstraint(
+            ["extraction_attempt_id", "run_id"],
+            ["public.extraction_attempts.id", "public.extraction_attempts.run_id"],
+            name="fk_proposal_attempt_run",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        Index(
+            "uq_proposal_attempt_coordinate",
+            "extraction_attempt_id",
+            "instance_id",
+            "field_id",
+            "source",
+            unique=True,
+            postgresql_where=text("extraction_attempt_id IS NOT NULL"),
+        ),
         Index(
             "idx_extraction_proposal_records_run_item",
             "run_id",

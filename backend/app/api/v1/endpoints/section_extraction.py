@@ -36,7 +36,9 @@ from app.services.coordinate_coherence import (
     CoordinateMismatchError,
     assert_instance_in_coordinate,
 )
+from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.llm_engine_service import resolve_engine
+from app.services.run_lifecycle_service import InvalidStageTransitionError
 from app.services.template_section_service import SectionNotFoundError, owned_section
 from app.utils.rate_limiter import limiter
 from app.worker.celery_app import REDIS_URL
@@ -238,24 +240,51 @@ async def extract_section(
         extract_all_sections=payload.extract_all_sections,
         # The engine RESOLVED at enqueue time, not a record of what ran: the
         # worker re-resolves when it executes the task (and a RETRY there
-        # reuses the run's pin instead). The authoritative record is the run
-        # provenance snapshot the worker writes
-        # (``run_engine_freeze.build_run_provenance``).
+        # reuses the run's pin instead). The authoritative per-proposal record
+        # is each proposal's immutable ``generation_snapshot``; the run-level
+        # snapshot the worker also writes
+        # (``run_engine_freeze.build_run_provenance``) is last-write-wins and
+        # not per-proposal truth.
         engine_at_enqueue=canonical_pair(engine.provider, engine.model),
     )
 
-    task = run_section_extraction_task.delay(
-        payload.model_dump(mode="json"),
-        user.sub,
-        trace_id,
-    )
+    try:
+        attempt = await ExtractionAttemptService(db).prepare_request(
+            payload, current_user_sub, job_id=str(uuid.uuid4())
+        )
+    except InvalidStageTransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    assert attempt.job_id is not None
 
-    _remember_job_owner(task.id, user.sub)
+    try:
+        run_section_extraction_task.apply_async(
+            args=(attempt.request_payload, user.sub, trace_id),
+            kwargs={"attempt_id": str(attempt.id)},
+            task_id=attempt.job_id,
+        )
+    except Exception:
+        # The attempt is committed, so a same-requestId retry replays it; log
+        # identifiers only (never the payload) so the broker fault is visible.
+        logger.exception(
+            "section_extraction_enqueue_failed",
+            trace_id=trace_id,
+            attempt_id=str(attempt.id),
+            job_id=attempt.job_id,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=ApiResponse.failure(
+                code="SERVICE_UNAVAILABLE",
+                message="Background extraction queue is unavailable. Please try again later.",
+                trace_id=trace_id,
+            ).model_dump(),
+        )
+    _remember_job_owner(attempt.job_id, user.sub)
 
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
         content=ApiResponse.success(
-            data=ExtractionJobStartedResponse(job_id=task.id),
+            data=ExtractionJobStartedResponse(job_id=attempt.job_id),
             trace_id=trace_id,
         ).model_dump(),
     )
@@ -316,22 +345,22 @@ async def get_section_extraction_status(
 
     if state == "PENDING":
         return ApiResponse.success(
-            data=ExtractionJobStatusResponse(job_id=job_id, status="pending"),
+            data=ExtractionJobStatusResponse(jobId=job_id, status="pending"),
             trace_id=trace_id,
         )
     if state in ("STARTED", "RETRY"):
         return ApiResponse.success(
-            data=ExtractionJobStatusResponse(job_id=job_id, status="running"),
+            data=ExtractionJobStatusResponse(jobId=job_id, status="running"),
             trace_id=trace_id,
         )
     if state == "FAILURE":
         exc = result.result
         return ApiResponse.success(
             data=ExtractionJobStatusResponse(
-                job_id=job_id,
+                jobId=job_id,
                 status="failed",
                 error=str(exc) if exc else "Task failed.",
-                error_code=_failure_error_code(exc),
+                errorCode=_failure_error_code(exc),
             ),
             trace_id=trace_id,
         )
@@ -349,17 +378,17 @@ async def get_section_extraction_status(
             sections=raw.get("sections"),
         )
         return ApiResponse.success(
-            data=ExtractionJobStatusResponse(job_id=job_id, status="completed", result=job_result),
+            data=ExtractionJobStatusResponse(jobId=job_id, status="completed", result=job_result),
             trace_id=trace_id,
         )
     if state == "REVOKED":
         return ApiResponse.success(
-            data=ExtractionJobStatusResponse(job_id=job_id, status="cancelled"),
+            data=ExtractionJobStatusResponse(jobId=job_id, status="cancelled"),
             trace_id=trace_id,
         )
     return ApiResponse.success(
         data=ExtractionJobStatusResponse(
-            job_id=job_id, status=state.lower() if state else "pending"
+            jobId=job_id, status=state.lower() if state else "pending"
         ),
         trace_id=trace_id,
     )

@@ -1328,7 +1328,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0074_ollama_provider"
+    expected_head = "0075_extraction_attempts"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -1649,3 +1649,40 @@ async def test_migration_0074_adds_ollama_to_both_checks_and_downgrade_removes_i
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
     assert "ollama" in await _conn_check_ids(migration_session, "ck_llm_connections_provider_check")
+
+
+async def test_migration_0075_attempt_schema_roundtrip(migration_db_url, migration_session):
+    async def inspect():
+        row = (
+            await migration_session.execute(
+                text(
+                    "SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('public.extraction_attempts')"
+                )
+            )
+        ).scalar_one_or_none()
+        columns = set(
+            (
+                await migration_session.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns WHERE table_schema='public' "
+                        "AND table_name='extraction_proposal_records'"
+                    )
+                )
+            ).scalars()
+        )
+        await migration_session.rollback()
+        return row, columns
+
+    rls, columns = await inspect()
+    assert rls is True
+    assert {"extraction_attempt_id", "generation_snapshot"} <= columns
+    _run_alembic("downgrade", "0074_ollama_provider", database_url=migration_db_url)
+    try:
+        rls, columns = await inspect()
+        assert rls is None
+        assert not {"extraction_attempt_id", "generation_snapshot"} & columns
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    rls, columns = await inspect()
+    assert rls is True
+    assert {"extraction_attempt_id", "generation_snapshot"} <= columns

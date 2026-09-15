@@ -80,12 +80,23 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_supabase] = override_get_supabase
 
+    async def prepare(payload, owner_id, *, job_id):
+        assert owner_id and job_id
+        return SimpleNamespace(
+            id=uuid4(), job_id="stored-job", request_payload=payload.model_dump(mode="json")
+        )
+
+    attempt_patch = patch.object(
+        se.ExtractionAttemptService, "prepare_request", new=AsyncMock(side_effect=prepare)
+    )
+    attempt_patch.start()
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as ac:
         yield ac
 
+    attempt_patch.stop()
     app.dependency_overrides.clear()
 
 
@@ -110,7 +121,7 @@ class TestExtractSectionDispatch:
     @pytest.mark.asyncio
     async def test_returns_202_and_job_id(self, client: AsyncClient) -> None:
         """Happy path: queue available, membership passes → 202 + job_id."""
-        job_id = str(uuid4())
+        job_id = "stored-job"
         mock_task = MagicMock()
         mock_task.id = job_id
 
@@ -124,7 +135,7 @@ class TestExtractSectionDispatch:
                 new=AsyncMock(),
             ),
             patch(
-                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.delay",
+                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.apply_async",
                 return_value=mock_task,
             ) as mock_delay,
             patch(
@@ -140,7 +151,7 @@ class TestExtractSectionDispatch:
         assert body["data"]["job_id"] == job_id
 
         # Verify .delay was called with the correct positional args
-        args = mock_delay.call_args[0]
+        args = mock_delay.call_args.kwargs["args"]
         payload_arg, user_id_arg = args[0], args[1]
         assert user_id_arg == CALLER_USER_ID
         # model_dump(mode="json") produces snake_case keys from field names
@@ -154,14 +165,14 @@ class TestExtractSectionDispatch:
         """model_dump(mode='json') must produce snake_case keys (not camelCase aliases),
         because the B1 task calls SectionExtractionRequest(**payload_json) which
         accepts both via populate_by_name=True but snake_case is the field name."""
-        job_id = str(uuid4())
+        job_id = "stored-job"
         mock_task = MagicMock()
         mock_task.id = job_id
 
         captured: list[dict] = []
 
-        def capture_delay(payload_dict, user_id, trace_id):  # noqa: ANN001, ARG001
-            captured.append(payload_dict)
+        def capture_delay(*, args, kwargs, task_id):  # noqa: ANN001, ARG001
+            captured.append(args[0])
             return mock_task
 
         with (
@@ -174,7 +185,7 @@ class TestExtractSectionDispatch:
                 new=AsyncMock(),
             ),
             patch(
-                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.delay",
+                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.apply_async",
                 side_effect=capture_delay,
             ),
             patch("app.api.v1.endpoints.section_extraction._remember_job_owner"),
@@ -212,7 +223,7 @@ class TestExtractSectionDispatch:
     @pytest.mark.asyncio
     async def test_owner_is_stored_in_redis(self, client: AsyncClient) -> None:
         """After dispatch, the job owner must be persisted to Redis."""
-        job_id = str(uuid4())
+        job_id = "stored-job"
         mock_task = MagicMock()
         mock_task.id = job_id
         remembered: list[tuple[str, str]] = []
@@ -227,7 +238,7 @@ class TestExtractSectionDispatch:
                 new=AsyncMock(),
             ),
             patch(
-                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.delay",
+                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.apply_async",
                 return_value=mock_task,
             ),
             patch(
@@ -859,3 +870,136 @@ class TestAssertKickoffScope:
             await scope.assert_kickoff_scope(MagicMock(), **self._kwargs(run_id=uuid4()))
         member.assert_awaited_once()
         template.assert_not_awaited()
+
+
+async def test_direct_endpoint_uses_durable_identity_and_reports_enqueue_failure():
+    import json
+
+    from starlette.requests import Request
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [],
+            "client": ("127.0.0.1", 1234),
+        }
+    )
+    payload = SectionExtractionRequest(**_SINGLE_PAYLOAD)
+    attempt = SimpleNamespace(
+        id=uuid4(), job_id="durable-job", request_payload=payload.model_dump(mode="json")
+    )
+    with (
+        patch.object(se, "_check_request_scope", new=AsyncMock()),
+        patch.object(
+            se,
+            "resolve_engine",
+            new=AsyncMock(return_value=SimpleNamespace(provider="openai", model="gpt-4o")),
+        ),
+        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(
+            se.ExtractionAttemptService, "prepare_request", new=AsyncMock(return_value=attempt)
+        ),
+        patch.object(se.run_section_extraction_task, "apply_async") as enqueue,
+        patch.object(se, "_remember_job_owner") as owner,
+    ):
+        response = await se.extract_section.__wrapped__(
+            request, payload, MagicMock(), SimpleNamespace(sub=CALLER_USER_ID), uuid4()
+        )
+        assert response.status_code == 202
+        assert json.loads(response.body)["data"]["job_id"] == "durable-job"
+        assert enqueue.call_args.kwargs["task_id"] == "durable-job"
+        assert enqueue.call_args.kwargs["kwargs"] == {"attempt_id": str(attempt.id)}
+        owner.assert_called_once_with("durable-job", CALLER_USER_ID)
+        enqueue.side_effect = ConnectionError("offline")
+        response = await se.extract_section.__wrapped__(
+            request, payload, MagicMock(), SimpleNamespace(sub=CALLER_USER_ID), uuid4()
+        )
+        assert response.status_code == 503
+        assert json.loads(response.body)["error"]["code"] == "SERVICE_UNAVAILABLE"
+
+
+async def test_direct_endpoint_logs_the_enqueue_failure_without_the_payload():
+    import json
+
+    from starlette.requests import Request
+
+    trace_id = str(uuid4())
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [],
+            "state": {"trace_id": trace_id},
+        }
+    )
+    payload = SectionExtractionRequest(**_SINGLE_PAYLOAD)
+    attempt = SimpleNamespace(
+        id=uuid4(), job_id="durable-job", request_payload=payload.model_dump(mode="json")
+    )
+    with (
+        patch.object(se, "_check_request_scope", new=AsyncMock()),
+        patch.object(
+            se,
+            "resolve_engine",
+            new=AsyncMock(return_value=SimpleNamespace(provider="openai", model="gpt-4o")),
+        ),
+        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(
+            se.ExtractionAttemptService, "prepare_request", new=AsyncMock(return_value=attempt)
+        ),
+        patch.object(
+            se.run_section_extraction_task, "apply_async", side_effect=ConnectionError("offline")
+        ),
+        patch.object(se, "_remember_job_owner") as owner,
+        patch.object(se, "logger") as logger,
+    ):
+        response = await se.extract_section.__wrapped__(
+            request, payload, MagicMock(), SimpleNamespace(sub=CALLER_USER_ID), trace_id
+        )
+
+    assert response.status_code == 503
+    body = json.loads(response.body)
+    assert body["error"]["code"] == "SERVICE_UNAVAILABLE"
+    assert body["trace_id"] == str(trace_id)
+    owner.assert_not_called()
+    logger.exception.assert_called_once()
+    event, *_ = logger.exception.call_args.args
+    context = logger.exception.call_args.kwargs
+    assert event == "section_extraction_enqueue_failed"
+    assert context["trace_id"] == str(trace_id)
+    assert context["attempt_id"] == str(attempt.id)
+    assert context["job_id"] == "durable-job"
+    assert "request_payload" not in context
+    assert "payload" not in context
+
+
+async def test_direct_endpoint_closed_run_is_400():
+    from starlette.requests import Request
+
+    request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
+    with (
+        patch.object(se, "_check_request_scope", new=AsyncMock()),
+        patch.object(
+            se,
+            "resolve_engine",
+            new=AsyncMock(return_value=SimpleNamespace(provider="openai", model="gpt-4o")),
+        ),
+        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(
+            se.ExtractionAttemptService,
+            "prepare_request",
+            new=AsyncMock(side_effect=se.InvalidStageTransitionError("closed")),
+        ),
+        pytest.raises(HTTPException) as error,
+    ):
+        await se.extract_section.__wrapped__(
+            request,
+            SectionExtractionRequest(**_SINGLE_PAYLOAD),
+            MagicMock(),
+            SimpleNamespace(sub=CALLER_USER_ID),
+            uuid4(),
+        )
+    assert error.value.status_code == 400

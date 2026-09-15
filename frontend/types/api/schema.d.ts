@@ -1766,11 +1766,17 @@ export interface components {
             created_at: string;
             /** Evidence */
             evidence: components["schemas"]["EvidenceResponse"][];
+            /** Extraction Attempt Id */
+            extraction_attempt_id?: string | null;
             /**
              * Field Id
              * Format: uuid
              */
             field_id: string;
+            /** Generation Snapshot */
+            generation_snapshot?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Id
              * Format: uuid
@@ -1811,11 +1817,17 @@ export interface components {
             created_at: string;
             /** Evidence */
             evidence: components["schemas"]["EvidenceResponse"][];
+            /** Extraction Attempt Id */
+            extraction_attempt_id?: string | null;
             /**
              * Field Id
              * Format: uuid
              */
             field_id: string;
+            /** Generation Snapshot */
+            generation_snapshot?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Id
              * Format: uuid
@@ -3274,6 +3286,8 @@ export interface components {
         CreateDecisionRequest: {
             /** Decision */
             decision: string;
+            /** Expected Current Decision Id */
+            expected_current_decision_id?: string | null;
             /**
              * Field Id
              * Format: uuid
@@ -4696,11 +4710,17 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Extraction Attempt Id */
+            extraction_attempt_id?: string | null;
             /**
              * Field Id
              * Format: uuid
              */
             field_id: string;
+            /** Generation Snapshot */
+            generation_snapshot?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Id
              * Format: uuid
@@ -4715,6 +4735,10 @@ export interface components {
             proposed_value: {
                 [key: string]: unknown;
             };
+            /** Provenance */
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
             /** Rationale */
             rationale: string | null;
             /**
@@ -5418,6 +5442,8 @@ export interface components {
              * Format: uuid
              */
             projectId: string;
+            /** Requestid */
+            requestId?: string | null;
             /** Runid */
             runId?: string | null;
             /** Sectionids */

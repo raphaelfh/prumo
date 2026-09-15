@@ -30,6 +30,7 @@ import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/run
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
 import {RunEditabilityProvider} from '@/components/runs/RunEditabilityContext';
+import {useIsBelowDesktop} from '@/hooks/use-mobile';
 import {usePdfPanel} from '@/hooks/usePdfPanel';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
@@ -46,10 +47,11 @@ import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
 import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
-import {useAutoSaveProposals} from '@/hooks/runs';
+import {useProposalDecision} from '@/hooks/extraction/useProposalDecision';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {countActionableSuggestions} from '@/lib/ai-extraction/suggestionUtils';
+import {withReviewDecisionStatus} from '@/lib/extraction/proposalDecisionState';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
   useAdvanceRun,
@@ -138,7 +140,12 @@ export default function ExtractionFullScreen() {
   const currentUserId = userId ?? '';
 
   // UI state
+  const belowDesktop = useIsBelowDesktop();
   const pdf = usePdfPanel({ initialOpen: false });
+  const readerDefaultApplied = useRef(false);
+  const closePdfRef = useRef(pdf.close);
+  useEffect(() => {closePdfRef.current = pdf.close;}, [pdf.close]);
+  useEffect(() => {if (belowDesktop) closePdfRef.current();}, [belowDesktop]);
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
 
   // A citation-locate (from an AI-suggestion popover) reveals the document panel
@@ -216,6 +223,7 @@ export default function ExtractionFullScreen() {
     values,
     loadedValues,
     updateValue,
+    reconcileValue,
     loading: valuesLoading,
     initialized: valuesInitialized,
     refresh: refreshValues,
@@ -411,21 +419,8 @@ export default function ExtractionFullScreen() {
     'extraction'
   );
 
-    // Hook for AI suggestions with callbacks to fill/clear field. Declared
-    // BEFORE useAutoSaveProposals: autosave consumes aiLinkByKey (below),
-    // which derives from this hook's sessionAdoption.
-  const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
-      // Fill field automatically when suggestion is accepted.
-      // NOTE: accepting makes NO backend call here. updateValue writes the
-      // value into form state and useAutoSaveProposals persists it as this
-      // reviewer's `edit` decision — carrying proposal_record_id via
-      // linkByKey (D0) so the adoption is traceable in consensus. The
-      // suggestion's status flip is optimistic; on reload the server
-      // re-resolves status from the caller's decisions. (refreshValues is
-      // deliberately avoided; it caused a full-page reload.)
-    updateValue(instanceId, fieldId, value);
-  };
-
+  // Suggestion reads remain shared with QA; editable extraction uses the
+  // confirmed writer below for acceptance and reversal.
   const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
       // Clear the field when a suggestion is rejected. Same as accept: no
       // direct backend call — updateValue writes null into form state and
@@ -438,8 +433,6 @@ export default function ExtractionFullScreen() {
     suggestions: aiSuggestions,
     sessionAdoption,
     suggestionsReady: aiSuggestionsReady,
-    acceptSuggestion,
-    selectSuggestion,
     rejectSuggestion,
     getSuggestionsHistory,
     refresh: refreshAISuggestions,
@@ -451,55 +444,40 @@ export default function ExtractionFullScreen() {
     // (no runId) lookup that immediately gets superseded by the
     // run-scoped one. Pure waste; same UX outcome.
     enabled: !!articleId && !!projectId && !!activeRunId,
-    onSuggestionAccepted: handleAISuggestionAccepted,
     onSuggestionRejected: handleAISuggestionRejected
   });
 
   // D0: coords whose value has a traceable AI basis — see useAiLinkMaps for
   // the layer semantics and the never-from-status invariant.
-  const { aiLinkByKey, persistedAiLinkByKey } = useAiLinkMaps({
+  const { persistedAiLinkByKey } = useAiLinkMaps({
     decisions: runDetail?.decisions,
     currentUserId,
     sessionAdoption,
   });
 
     // Auto-save hook — in the editable `extract` stage this extraction page
-    // writes per-user ``ReviewerDecision`` rows (decision='edit'); it never
-    // writes in `consensus` or any later stage (WRITABLE_STAGES gates it).
-    // Each reviewer's typing lands in their own decision stream and the run
-    // view's ``currentValues`` are resolved per reviewer_id (Layer 2 of the
-    // multi-reviewer blind fix).
-    //
-    // No-op until the session is open and the run is in a writable
-    // stage. The hook flushes pending edits on unmount, on the in-place
-    // run switch (article pager), ``pagehide``, and visibility changes so
-    // navigating mid-debounce never drops a save.
-  const { saveState, lastSavedAt, saveNow } = useAutoSaveProposals({
+    // Reviewer decisions autosave in EXTRACT. Pending edits flush on run
+    // switches and unmount using the outgoing session's authority.
+  const proposalDecisions = useProposalDecision({
+    reviewerId: currentUserId,
+    decisions: runDetail?.decisions,
+    onConfirmed: ({instanceId, fieldId}, value) => reconcileValue(instanceId, fieldId, value),
     runId: activeRunId,
     stage,
     values,
     // Server-loaded values are the baseline — opening a run must not re-POST
     // them as fresh proposals (the re-record-on-mount duplication).
     baselineValues: loadedValues,
-    // D0: stamp edit decisions with the accepted/selected AI proposal id;
-    // the persisted map is the link-side baseline (same-value adoptions
-    // still write — the human selection event is append-only recorded).
-    linkByKey: aiLinkByKey,
+    // Persisted links are the hydration baseline. The workspace writer clears
+    // the link on a manual edit and explicitly persists proposal selections.
     baselineLinkByKey: persistedAiLinkByKey,
     // Only the editable EXTRACT stage accepts autosave writes. Past that
     // (consensus, finalized, pending) the backend rejects writes, which
     // surfaced as a spurious "Error saving data automatically" toast on
     // opening a consolidated run. Mirrors the QA full-screen gate;
     // ``!isFinalized`` alone let ``consensus`` through.
-    // The bootstrap ``loading`` flag is deliberately NOT part of this gate:
-    // it flips on every article change, and the hook's run-switch flush
-    // captures ``enabled`` as of the switch — gating on it dropped the
-    // pending edit whenever the next article's session resolved before its
-    // bootstrap reads. ``activeRunId`` + ``valuesInitialized`` already make
-    // this a no-op until the run is open and first hydrated; on an in-place
-    // run switch the old edit is carried by the hook's run-keyed flush, and
-    // the debounce it transiently arms against the new run is cleared when
-    // ``useExtractedValues`` replaces ``values`` in the next microtask.
+    // Keep bootstrap loading out of this gate: the outgoing run-switch
+    // flush must retain its captured writable state while the next run loads.
     enabled:
       !!activeRunId &&
       valuesInitialized &&
@@ -508,6 +486,23 @@ export default function ExtractionFullScreen() {
       // read-only via forceReadOnly, this is the flush-path belt).
       permissions.userRole !== 'viewer',
   });
+
+  useEffect(() => {
+    if (!runDetail || permissions.loading || readerDefaultApplied.current) return;
+    readerDefaultApplied.current = true;
+    if (!belowDesktop && runDetail.run.kind === 'extraction' && isRunEditable(stage) && permissions.userRole !== 'viewer') pdf.open();
+  }, [runDetail, permissions.loading, permissions.userRole, belowDesktop, stage, pdf]);
+
+  const { saveState, lastSavedAt, saveNow } = proposalDecisions;
+  const selectSuggestion = async (instanceId: string, fieldId: string, id: string, value: unknown) => {
+    const field = entityTypes.flatMap(entity => entity.fields).find(item => item.id === fieldId);
+    await proposalDecisions.toggle({instanceId, fieldId, id, value,
+      allowsNoInformation: field?.allows_no_information !== false});
+  };
+  const acceptSuggestion = async (instanceId: string, fieldId: string) => {
+    const proposal = aiSuggestions[`${instanceId}_${fieldId}`];
+    if (proposal) await selectSuggestion(instanceId, fieldId, proposal.id, proposal.value);
+  };
 
     // "Finish extraction" (reviewer) — flush pending autosave, set the per-reviewer
     // ready flag (advisory; does NOT advance the run), then open the next article
@@ -572,11 +567,10 @@ export default function ExtractionFullScreen() {
 
   // Shared actionable count (ADR-0016 Phase 4): unresolved AI proposals awaiting
   // a human decision — an abstention ("no information") counts, resolved ones
-  // don't. Memoized: this screen re-renders on every field keystroke.
-  const aiPendingCount = useMemo(
-    () => countActionableSuggestions(aiSuggestions),
-    [aiSuggestions],
-  );
+  // don't. In the review table, confirmed decisions resolve them.
+  const reviewTable = runDetail?.run.kind === 'extraction' && isRunEditable(stage) && permissions.userRole !== 'viewer';
+  const pendingSuggestions = reviewTable ? withReviewDecisionStatus(aiSuggestions, proposalDecisions.isAccepted) : aiSuggestions;
+  const aiPendingCount = countActionableSuggestions(pendingSuggestions);
 
   // AI extraction always runs on the OPEN session run (``extractForRun``
   // reuses it, preserving human decisions). The old run-less ``extractFullAI``
@@ -1074,6 +1068,10 @@ export default function ExtractionFullScreen() {
       <ExtractionFormPanel
         viewMode={viewMode}
         formViewProps={{
+          presentation: reviewTable ? 'review-table' : 'default',
+          reviewDecisions: proposalDecisions,
+          reviewProposals: runDetail?.proposals,
+          reviewerId: currentUserId,
           instances,
           values,
           updateValue,
@@ -1193,7 +1191,7 @@ export default function ExtractionFullScreen() {
         onAISuggestionsClick={() => {
           // Header "Review N pending suggestions": select the entries holding the first pending
           // suggestion and commit that render, so the section revealed is the one holding it.
-          const pendingId = firstPendingInstanceId(aiSuggestions);
+          const pendingId = firstPendingInstanceId(pendingSuggestions);
           const instance = instances.find((i) => i.id === pendingId);
           if (!instance) return;
           const slots = entrySlotsShowing(articleId ?? '', instance.id, instances, entityTypes);

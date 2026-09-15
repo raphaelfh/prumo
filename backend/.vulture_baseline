@@ -35,8 +35,6 @@ app/services/exports/extraction/sheet_spec.py:attribute:freeze_panes
 app/services/exports/extraction/sheet_spec.py:attribute:tabColor
 app/services/extraction_export_service.py:variable:ai_proposed_value
 app/services/extraction_export_service.py:variable:article_label
-app/services/extraction_export_service.py:variable:evidence_pages
-app/services/extraction_export_service.py:variable:evidence_text
 app/services/extraction_export_service.py:variable:final_value_used
 app/services/extraction_export_service.py:variable:instance_index
 app/services/extraction_export_service.py:variable:model_used

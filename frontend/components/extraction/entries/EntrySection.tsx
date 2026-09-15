@@ -72,6 +72,8 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
   });
 
   const accordionPlumbing = {
+    presentation: form.presentation,
+    review: form.review,
     values: form.values,
     onValueChange: form.updateValue,
     projectId: form.projectId,
@@ -118,7 +120,7 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
       tabIndex={-1}
       className="scroll-mt-4 outline-hidden"
     >
-      <EntrySelector
+      {!form.review?.navigation.focused && <EntrySelector
         entryLabel={group.entry_label ?? DEFAULT_ENTRY_NOUN}
         title={group.label}
         entries={entryCards}
@@ -135,7 +137,7 @@ export function EntrySection(props: EntrySectionProps): ReactElement {
         extractingAllSections={ai.extractingAllSections}
         extractingAllSectionsForAllEntries={ai.extractingAllSectionsForAllModels}
         readOnly={form.readOnly}
-      />
+      />}
 
       {activeEntryId && (
         <div className="space-y-4 mt-4">

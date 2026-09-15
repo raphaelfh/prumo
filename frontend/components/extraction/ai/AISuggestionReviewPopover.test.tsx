@@ -354,9 +354,12 @@ describe('AISuggestionReviewPopover — verdict chip (Verified mode §5)', () =>
 });
 
 describe('AISuggestionReviewPopover — ran-by run headers (D3)', () => {
+  // Runner identity is attempt-owned: the backend resolves it onto the call's
+  // generation snapshot only after the run reveals peers (spec §12.2). A legacy
+  // attempt-less row never names a runner — not even from stale provenance.
   const historyWithRanBy = [
-    v({ id: 'p1', provenance: { ranByName: 'Carla' } }),
-    v({ id: 'p0', runId: 'run-legacy', timestamp: new Date('2026-04-27T09:00:00Z') }),
+    v({ id: 'p1', extractionAttemptId: 'attempt-1', generationSnapshot: { model: 'm', ranByName: 'Carla' }, provenance: { model: 'm' } }),
+    v({ id: 'p0', runId: 'run-legacy', timestamp: new Date('2026-04-27T09:00:00Z'), provenance: { ranByName: 'Legacy runner' } }),
   ];
 
   it('shows Run by {name} when the provider grants peer identity', async () => {
@@ -374,8 +377,9 @@ describe('AISuggestionReviewPopover — ran-by run headers (D3)', () => {
     );
     await user.click(screen.getByText('open'));
     expect(await screen.findByText(/Run by Carla/)).toBeInTheDocument();
-    // The legacy run group (no provenance) stays timestamp-only.
+    // The legacy run group (no attempt, no snapshot) stays timestamp-only.
     expect(screen.getByText(/04\/27\/2026/)).toBeInTheDocument();
+    expect(screen.queryByText(/Run by Legacy runner/)).not.toBeInTheDocument();
   });
 
   it('stays timestamp-only without the identity grant — including provider-less renders (fail-closed)', async () => {
@@ -393,6 +397,126 @@ describe('AISuggestionReviewPopover — ran-by run headers (D3)', () => {
     await user.click(screen.getByText('open'));
     await screen.findAllByText('Retrospective cohort');
     expect(screen.queryByText(/Run by Carla/)).not.toBeInTheDocument();
+  });
+
+  // Any project member can own an attempt on the same live run, so one run group
+  // can hold versions by different runners. A header naming the newest owner
+  // would attribute the older versions to the wrong person (constitution §IX).
+  const mixedOwnerRun = [
+    v({ id: 'p-bruno', value: 'Cohort B', extractionAttemptId: 'attempt-2', generationSnapshot: { ranByName: 'Bruno' }, timestamp: new Date('2026-04-28T11:00:00Z') }),
+    v({ id: 'p-ana', value: 'Cohort A', extractionAttemptId: 'attempt-1', generationSnapshot: { ranByName: 'Ana' } }),
+    v({ id: 'p-legacy', value: 'Cohort L', timestamp: new Date('2026-04-28T09:00:00Z') }),
+  ];
+
+  /** The nearest ancestor of `el` that holds a version value — its version row. */
+  function versionRowOf(el: HTMLElement): HTMLElement {
+    let node: HTMLElement | null = el;
+    while (node && !/Cohort [ABL]/.test(node.textContent ?? '')) node = node.parentElement;
+    if (!node) throw new Error('label is not inside a version row');
+    return node;
+  }
+
+  it('a mixed-owner run names each version by its own runner, never one header for all', async () => {
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => mixedOwnerRun}
+          selectedProposalId="p-ana"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Cohort A');
+
+    // No run header speaks for the group: a header carries the run timestamp.
+    expect(screen.queryByText(/Run by \w+ · /)).not.toBeInTheDocument();
+
+    const anaRow = versionRowOf(screen.getByText('Run by Ana'));
+    expect(anaRow).toHaveTextContent('Cohort A');
+    expect(anaRow).not.toHaveTextContent(/Cohort [BL]/);
+
+    const brunoRow = versionRowOf(screen.getByText('Run by Bruno'));
+    expect(brunoRow).toHaveTextContent('Cohort B');
+    expect(brunoRow).not.toHaveTextContent(/Cohort [AL]/);
+
+    // The attempt-less version names nobody.
+    expect(screen.getAllByText(/Run by/)).toHaveLength(2);
+  });
+
+  // Display names are not identities: two members may share one. Attribution is
+  // by runner id, so a same-name pair still gets per-version labels.
+  it('two different runners sharing a display name are not merged under one header', async () => {
+    const sameNameRun = [
+      v({ id: 'p-ana-2', value: 'Cohort B', extractionAttemptId: 'attempt-2', generationSnapshot: { ranByUserId: 'u2', ranByName: 'Ana' }, timestamp: new Date('2026-04-28T11:00:00Z') }),
+      v({ id: 'p-ana-1', value: 'Cohort A', extractionAttemptId: 'attempt-1', generationSnapshot: { ranByUserId: 'u1', ranByName: 'Ana' } }),
+    ];
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => sameNameRun}
+          selectedProposalId="p-ana-1"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Cohort A');
+
+    expect(screen.queryByText(/Run by Ana · /)).not.toBeInTheDocument();
+    const labels = screen.getAllByText('Run by Ana');
+    expect(labels).toHaveLength(2);
+    expect(labels.map((label) => versionRowOf(label).textContent)).toEqual([
+      expect.stringContaining('Cohort B'),
+      expect.stringContaining('Cohort A'),
+    ]);
+  });
+
+  it('versions by the same runner id share one named header', async () => {
+    const sameRunner = [
+      v({ id: 'p-2', value: 'Cohort B', extractionAttemptId: 'attempt-2', generationSnapshot: { ranByUserId: 'u1', ranByName: 'Ana' }, timestamp: new Date('2026-04-28T11:00:00Z') }),
+      v({ id: 'p-1', value: 'Cohort A', extractionAttemptId: 'attempt-1', generationSnapshot: { ranByUserId: 'u1', ranByName: 'Ana' } }),
+    ];
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => sameRunner}
+          selectedProposalId="p-1"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Cohort A');
+    expect(screen.getAllByText(/Run by Ana/)).toHaveLength(1);
+    expect(screen.getByText(/Run by Ana · /)).toBeInTheDocument();
+  });
+
+  it('a mixed-owner run names no runner without the identity grant', async () => {
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus">
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => mixedOwnerRun}
+          selectedProposalId="p-ana"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Cohort A');
+    expect(screen.queryByText(/Ana|Bruno/)).not.toBeInTheDocument();
   });
 });
 
@@ -497,13 +621,17 @@ describe('AISuggestionReviewPopover — per-version engine (contract)', () => {
     v({
       id: 'p2',
       value: 412,
-      provenance: {ranByName: 'Carla', model: 'claude-5-opus'},
+      extractionAttemptId: 'attempt-2',
+      generationSnapshot: {ranByName: 'Carla', model: 'claude-5-opus'},
+      provenance: {model: 'claude-5-opus'},
       timestamp: new Date('2026-04-28T11:00:00Z'),
     }),
     v({
       id: 'p1',
       value: 'Retrospective cohort',
-      provenance: {ranByName: 'Carla', model: 'gpt-5.6-luna'},
+      extractionAttemptId: 'attempt-1',
+      generationSnapshot: {ranByName: 'Carla', model: 'gpt-5.6-luna'},
+      provenance: {model: 'gpt-5.6-luna'},
     }),
   ];
 
@@ -531,7 +659,9 @@ describe('AISuggestionReviewPopover — per-version engine (contract)', () => {
     await user.click(screen.getByRole('button', {name: /reviewDetails|details/i}));
     expect(await screen.findByText(/claude-5-opus/)).toBeInTheDocument();
 
-    // Identity stays run-scoped and keeps rendering from the run half.
-    expect(screen.getAllByText(/Run by Carla/).length).toBeGreaterThan(0);
+    // One runner owns both versions: the group header names them once, and no
+    // row repeats it.
+    expect(screen.getAllByText(/Run by Carla/)).toHaveLength(1);
+    expect(screen.getByText(/Run by Carla · /)).toBeInTheDocument();
   });
 });

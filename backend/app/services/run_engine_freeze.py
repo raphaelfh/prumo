@@ -191,3 +191,49 @@ def build_run_provenance(
     if prompt_composition is not None:
         snapshot["prompt_composition"] = prompt_composition.model_dump()
     return snapshot
+
+
+async def freeze_attempt_engine(
+    db: AsyncSession, attempt_id: UUID, candidate: LlmTarget
+) -> LlmTarget:
+    """First writer wins; caller commits this BEFORE execution ownership."""
+    from app.repositories.extraction_attempt_repository import ExtractionAttemptRepository
+
+    attempt = await ExtractionAttemptRepository(db).lock(attempt_id)
+    if attempt is None:
+        raise ValueError(f"Attempt {attempt_id} not found")
+    await db.refresh(attempt)
+    if attempt.engine is None:
+        attempt.engine = candidate.model_dump(mode="json")
+        await db.flush()
+    return LlmTarget.model_validate(attempt.engine)
+
+
+async def read_attempt_engine(db: AsyncSession, attempt_id: UUID) -> LlmTarget:
+    """Read-only under ownership: domain sessions must never update the attempt."""
+    from app.models.extraction_attempt import ExtractionAttempt
+
+    attempt = await db.get(ExtractionAttempt, attempt_id)
+    if attempt is None or attempt.engine is None:
+        raise ValueError(f"Attempt {attempt_id} has no frozen engine")
+    return LlmTarget.model_validate(attempt.engine)
+
+
+async def validate_attempt_engine(db: AsyncSession, target: LlmTarget, owner_id: UUID) -> None:
+    """Retry keeps its target but current catalogue/connection access still applies."""
+    from app.llm.catalog import find_entry
+    from app.models.llm_connection import UserProjectEngine
+    from app.services.llm_engine_service import EngineRetiredError, user_row_is_retired
+
+    if target.connection_id is not None:
+        row = UserProjectEngine(
+            user_id=owner_id,
+            provider=target.provider,
+            model=target.model,
+            connection_id=UUID(target.connection_id),
+        )
+        retired = await user_row_is_retired(db, row)
+    else:
+        retired = find_entry(target.provider, target.model) is None
+    if retired:
+        raise EngineRetiredError("This attempt's engine is no longer available. Pick a new engine.")

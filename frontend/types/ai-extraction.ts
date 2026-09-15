@@ -38,6 +38,9 @@ export interface EvidenceCitation {
  */
 interface PromptCompositionArticleRef {
   fileId?: string | null;
+  /** Mutable source reference; never proof of the historical input. */
+  currentFileId?: string;
+  historicalInputAvailable?: boolean;
   fileName?: string | null;
   truncated?: boolean;
   estTokens?: number | null;
@@ -58,13 +61,10 @@ export interface PromptComposition {
 }
 
 /**
- * How a run's suggestions were generated — a per-section provenance snapshot
- * (`extraction_runs.results['provenance']['sections'][entityTypeId]`, resolved
- * server-side) surfaced for transparency + traceability. The server payload is
- * snake_case with nested `params`/`tokens`/`prompt_composition`;
- * `aiSuggestionService` flattens it to this camelCase shape. The open index
- * signature keeps the disclosure forward-compatible: a new backend field shows
- * up as a generic row without a frontend change.
+ * Generation facts mapped from the server's snake_case payload into the
+ * disclosure's camelCase shape. Proposal generationSnapshot uses only facts
+ * captured for that call; run summaries may use the same presentation type.
+ * The open index signature preserves supported additional generation facts.
  */
 export interface RunProvenance {
   ranByUserId?: string;
@@ -103,6 +103,8 @@ export type VerificationVerdict = 'confirmed' | 'unsupported' | 'uncertain';
 export interface AISuggestion {
   id: string;
   runId: string;
+  extractionAttemptId?: string;
+  generationSnapshot?: RunProvenance;
   value: any; // Extracted and normalized value (not the {value: X} object)
   confidence: number; // 0-1, default 0 when missing
   reasoning: string; // empty string when null
@@ -110,8 +112,7 @@ export interface AISuggestion {
   timestamp: Date; // proposal created_at parsed
   /** Ordered by rank (0 = primary). Empty array when no evidence. */
   evidence?: EvidenceCitation[];
-  /** How this suggestion's run was generated. Undefined for legacy runs that
-   *  predate provenance capture. */
+  /** This proposal's immutable engine projection, when recorded. */
   provenance?: RunProvenance;
   /** Verified-mode verdict for this value (`proposed_value.verification`
    *  sibling). Absent on Fast runs, degraded verify passes, and no-info

@@ -1196,3 +1196,53 @@ async def test_reopen_extraction_qa_kind_manager_ok(
     resp = await db_client.post(f"{API_PREFIX}/{run_id}/reopen-extraction")
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["stage"] == "extract"
+
+
+@pytest.mark.asyncio
+async def test_create_decision_condition_forwarding_and_conflict(
+    db_client: AsyncClient, db_session: AsyncSession, auth_as_profile: UUID
+) -> None:
+    from starlette.requests import Request
+
+    from app.api.v1.endpoints.extraction_runs import create_decision
+    from app.schemas.extraction_run import CreateDecisionRequest
+
+    run_id, instance_id, field_id, _ = await _setup_review_run(db_client, db_session)
+    body = {
+        "instance_id": instance_id,
+        "field_id": field_id,
+        "decision": "edit",
+        "value": {"value": "first"},
+    }
+    request = Request({"type": "http", "headers": []})
+    # Direct coroutine invocation registers handler coverage outside ASGITransport.
+    first = await create_decision(
+        run_id=run_id,
+        body=CreateDecisionRequest(**body),
+        request=request,
+        db=db_session,
+        current_user_sub=auth_as_profile,
+    )
+    second = await create_decision(
+        run_id=run_id,
+        body=CreateDecisionRequest(
+            **{**body, "value": {"value": "second"}}, expected_current_decision_id=first.data.id
+        ),
+        request=request,
+        db=db_session,
+        current_user_sub=auth_as_profile,
+    )
+    assert second.data.id != first.data.id
+    response = await db_client.post(
+        f"{API_PREFIX}/{run_id}/decisions",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "decision": "edit",
+            "value": {"value": "second"},
+            "expected_current_decision_id": str(uuid4()),
+        },
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "DECISION_CONFLICT"

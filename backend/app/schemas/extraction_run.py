@@ -34,6 +34,7 @@ class CreateRunRequest(BaseModel):
 
 
 class CreateDecisionRequest(BaseModel):
+    expected_current_decision_id: UUID | None = None
     instance_id: UUID
     field_id: UUID
     decision: str = Field(pattern="^(accept_proposal|reject|edit)$")
@@ -89,6 +90,10 @@ class ProposalRecordResponse(BaseModel):
     confidence_score: float | None
     rationale: str | None
     created_at: datetime
+
+    provenance: dict[str, Any] | None = None
+    extraction_attempt_id: UUID | None = None
+    generation_snapshot: dict[str, Any] | None = None
 
 
 class ReviewerDecisionResponse(BaseModel):

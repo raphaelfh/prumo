@@ -36,8 +36,8 @@ import {
 import { prepareCleanQaRun } from "../_fixtures/hitl";
 import {
   adminDelete,
+  adminInsert,
   adminSelect,
-  adminUpdate,
   resolveActiveExtractionTemplateId,
   seedProposals,
 } from "../_fixtures/supabase-admin";
@@ -252,32 +252,44 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     test.skip(coords.length < 3, "CHARMS clone exposes fewer than 3 text fields");
     const [coord1, coord2, coord3] = coords;
 
-    // --- Seed AI proposals directly in the table + run provenance so the
-    // popover's ran-by header has an identity to reveal (proposal rows alone
-    // don't write results.provenance).
-    await seedProposals([
+    // --- Seed one owner-run extraction attempt and its AI proposals — the state
+    // a completed section extraction leaves. Runner identity is attempt-owned:
+    // the history read names the attempt owner on each proposal's generation
+    // snapshot only once the run reveals peers (the arbitrator carve-out below),
+    // so the popover's "Run by" header has an identity to reveal. The attempt
+    // cascades with the run the provisioning step deletes on the next run.
+    const attemptId = crypto.randomUUID();
+    await adminInsert("extraction_attempts", [
       {
-        runId,
-        instanceId: coord1.instanceId,
-        fieldId: coord1.fieldId,
-        source: "ai",
-        value: AI_COORD1,
-        confidenceScore: 0.9,
-        rationale: "e2e seeded",
-      },
-      {
-        runId,
-        instanceId: coord2.instanceId,
-        fieldId: coord2.fieldId,
-        source: "ai",
-        value: A_TYPED_COORD2,
-        confidenceScore: 0.9,
-        rationale: "e2e seeded",
+        id: attemptId,
+        request_id: crypto.randomUUID(),
+        owner_id: ownerId,
+        project_id: projectId,
+        article_id: TRACE_ARTICLE_ID,
+        template_id: templateId,
+        run_id: runId,
+        request_payload: {},
+        status: "completed",
       },
     ]);
-    await adminUpdate("extraction_runs", `id=eq.${runId}`, {
-      results: { provenance: { model: "e2e-seed", ran_by_user_id: ownerId } },
-    });
+    await adminInsert(
+      "extraction_proposal_records",
+      [
+        { coord: coord1, value: AI_COORD1 },
+        { coord: coord2, value: A_TYPED_COORD2 },
+      ].map(({ coord, value }) => ({
+        id: crypto.randomUUID(),
+        run_id: runId,
+        instance_id: coord.instanceId,
+        field_id: coord.fieldId,
+        source: "ai",
+        proposed_value: { value },
+        confidence_score: 0.9,
+        rationale: "e2e seeded",
+        extraction_attempt_id: attemptId,
+        generation_snapshot: { model: "e2e-seed", provider: "deterministic-local-fixture" },
+      })),
+    );
 
     // --- Reviewer A (E2E Reviewer Bela) drives the form in her own context.
     const ctxA = await browser.newContext();
@@ -305,14 +317,14 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
       .toBe(A_TYPED_COORD2);
 
     // (2b) Accept the AI suggestion on coord2 — value byte-identical, the
-    // regression the [value, link] fingerprint fixed. (The button reads
-    // "Accept suggestion", or "Suggestion accepted" if a refetch already
-    // mirrored the typed decision's server status; clicking fires either way.)
+    // regression the [value, link] fingerprint fixed. Editable extraction
+    // renders the review table: the row's check reads "Accept extraction"
+    // until a linked decision exists (a typed value alone never shows as
+    // accepted). "Unaccept extraction" would reverse, so match exactly.
     const acceptOn = async (coord: Coord) => {
       await ensureFieldVisible(pageA, coord);
       await fieldRow(pageA, coord)
-        .getByRole("button", { name: /accept suggestion|suggestion accepted/i })
-        .first()
+        .getByRole("button", { name: "Accept extraction", exact: true })
         .click();
     };
     await acceptOn(coord2);

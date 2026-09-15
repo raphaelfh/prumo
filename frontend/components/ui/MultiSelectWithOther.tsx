@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -25,6 +25,10 @@ interface MultiSelectWithOtherProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+  ariaLabel?: string;
+  /** Compact review controls show human labels while retaining code payloads. */
+  showSelectedLabels?: boolean;
+  size?: ComponentProps<typeof Button>['size'];
 }
 
 function normalizeMultiOption(opt: MultiSelectOption): { value: string; label: string } {
@@ -62,7 +66,9 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
         otherPlaceholder,
         disabled,
         placeholder,
-        className
+        className,
+        showSelectedLabels = false,
+        size
     } = props;
     const resolvedOtherLabel = otherLabel ?? t('ui', 'multiSelectOtherLabel');
     const resolvedPlaceholder = placeholder ?? t('ui', 'multiSelectPlaceholder');
@@ -82,7 +88,11 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
     setInternalOthers(others);
   }
 
-  const summaryParts = [...internalSelected];
+  const summaryParts = internalSelected.map((code) => {
+    if (!showSelectedLabels) return code;
+    const option = options.map(normalizeMultiOption).find((item) => item.value === code);
+    return option?.label ?? code;
+  });
   if (allowOther && internalOthers.length > 0) {
     summaryParts.push(...internalOthers.map((txt) => `${resolvedOtherLabel}: ${txt}`));
   }
@@ -117,7 +127,7 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" className={cn('w-full justify-between', className)} disabled={disabled}>
+        <Button aria-label={props.ariaLabel} variant="outline" size={size} className={cn('w-full justify-between', className)} disabled={disabled}>
             <span className="truncate text-left">{summary || resolvedPlaceholder}</span>
           <span className="text-muted-foreground">▾</span>
         </Button>

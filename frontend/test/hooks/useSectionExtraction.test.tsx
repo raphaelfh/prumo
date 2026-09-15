@@ -5,7 +5,7 @@
  *  - POST kicks off the job and stores jobId in state.
  *  - ``onSuccess`` fires with runId + suggestionsCreated when completed.
  *  - Success toast emitted on completion with suggestion count.
- *  - Warning toast when completed with 0 suggestions.
+ *  - Neutral toast when completed with 0 suggestions.
  *  - Error toast + ``error`` state when kickoff fails.
  *  - Error toast + ``error`` state when job reaches ``failed``.
  */
@@ -18,6 +18,8 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
+
+vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'user-a'}})}));
 
 vi.mock('@/integrations/api/client', () => ({
   apiClient: vi.fn(),
@@ -34,7 +36,7 @@ vi.mock('@/integrations/api/client', () => ({
 }));
 
 vi.mock('sonner', () => ({
-  toast: {success: vi.fn(), error: vi.fn(), warning: vi.fn()},
+  toast: {success: vi.fn(), error: vi.fn(), info: vi.fn()},
 }));
 
 vi.mock('@/lib/copy', () => ({
@@ -53,6 +55,7 @@ vi.mock('@/services/extractionRunService', async (importOriginal) => {
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
+import {useSectionExtractionJobs} from '@/stores/sectionExtractionJobs';
 import {apiClient} from '@/integrations/api/client';
 import {getExtractionJobStatus} from '@/services/extractionRunService';
 import {useSectionExtraction} from '@/hooks/extraction/useSectionExtraction';
@@ -93,6 +96,7 @@ const PARAMS = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useSectionExtractionJobs.setState({ownerId: 'user-a', records: {}});
 });
 
 afterEach(() => {
@@ -163,7 +167,7 @@ describe('useSectionExtraction (async job)', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('shows warning toast when completed with 0 suggestions', async () => {
+  it('shows neutral toast when completed with 0 suggestions', async () => {
     apiClientMock.mockResolvedValueOnce({job_id: 'job-sec-1'});
     statusMock.mockResolvedValue({
       ok: true,
@@ -188,7 +192,7 @@ describe('useSectionExtraction (async job)', () => {
     });
 
     await waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(
+      expect(toast.info).toHaveBeenCalledWith(
         'sectionExtractionNoSuggestionsTitle',
         expect.objectContaining({
           description: 'sectionExtractionNoSuggestionsDesc',

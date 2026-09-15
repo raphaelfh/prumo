@@ -148,6 +148,8 @@ function ProvenanceSummaryRow({
 
 interface VersionRowProps {
   version: AISuggestionHistoryItem;
+  /** This version's own runner, when its run group's header cannot name one. */
+  ranByName?: string;
   isSelected: boolean;
   /** Replaces the "Selected" chip text (consensus: "Adopted/Edited by {name}"). */
   selectedChipLabel?: string;
@@ -156,14 +158,14 @@ interface VersionRowProps {
    *  existence was already decided by the caller keying on the append-only link. */
   marks?: PeerAdoptionMark[];
   onUse: () => void;
-  onOpenDetails: (provenance: RunProvenance) => void;
+  onOpenDetails: (provenance: RunProvenance, generationSnapshot?: RunProvenance) => void;
   /** Read-only run: the row is audit-only — no "Use this version" action. */
   readOnly?: boolean;
   fieldType?: string | null;
   allowedValues?: unknown;
 }
 
-function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpenDetails, readOnly, fieldType, allowedValues}: VersionRowProps) {
+function VersionRow({version, ranByName, isSelected, selectedChipLabel, marks, onUse, onOpenDetails, readOnly, fieldType, allowedValues}: VersionRowProps) {
   const fieldContext = {fieldType, allowedValues};
   const [expanded, setExpanded] = useState(false);
   const showDetails = isSelected || expanded;
@@ -215,6 +217,11 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
               title={formatFullSuggestionValue(version.value, fieldContext)}
             >
               {formatFullSuggestionValue(version.value, fieldContext)}
+            </p>
+          )}
+          {ranByName && (
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {t('extraction', 'reviewRunBy').replace('{{name}}', ranByName)}
             </p>
           )}
         </div>
@@ -284,7 +291,7 @@ function VersionRow({version, isSelected, selectedChipLabel, marks, onUse, onOpe
           {version.provenance && (
             <ProvenanceSummaryRow
               provenance={version.provenance}
-              onOpenDetails={() => onOpenDetails(version.provenance!)}
+              onOpenDetails={() => onOpenDetails(version.provenance!, version.generationSnapshot)}
             />
           )}
           {hasReasoning && (
@@ -351,7 +358,7 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
   // Read-only run: the popover stays available as audit trail, but the
   // write actions (Use this version / Clear) hide. An absent onSelect makes
   // the surface read-only regardless of stage (consensus trace — D2).
-  // showPeerIdentity gates the ran-by run headers (D3, fail-closed).
+  // showPeerIdentity gates every "Run by" label, header or row (D3, fail-closed).
   const {readOnly, showPeerIdentity} = useRunEditability();
   const readOnlyEffective = readOnly || !onSelect;
   const [open, setOpen] = useState(false);
@@ -363,13 +370,13 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
   // Optimistic local selection so the highlight follows clicks within a session;
   // seeded from the prop (the active accept_proposal decision / newest).
   const [localSelected, setLocalSelected] = useState<string | undefined>(undefined);
-  // The provenance whose "How this was generated" dialog is open. Opening it
+  // The version whose "How this was generated" dialog is open. Opening it
   // closes the popover (a portal'd dialog would dismiss it anyway — deliberate).
-  const [detailsProvenance, setDetailsProvenance] = useState<RunProvenance | null>(null);
+  const [details, setDetails] = useState<{provenance: RunProvenance; generationSnapshot?: RunProvenance} | null>(null);
 
-  const handleOpenDetails = (provenance: RunProvenance) => {
+  const handleOpenDetails = (provenance: RunProvenance, generationSnapshot?: RunProvenance) => {
     setOpen(false);
-    setDetailsProvenance(provenance);
+    setDetails({provenance, generationSnapshot});
   };
 
   // Reset transient state on close so the next open starts fresh.
@@ -498,8 +505,21 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
               </p>
             )}
             {runOrder.map((runId, runIndex) => {
-              const ranByName = showPeerIdentity
-                ? groupedByRun[runId][0].provenance?.ranByName
+              // Runner identity is attempt-owned: the backend puts it only on the
+              // call's generation snapshot, after the run reveals peers (spec §12.2).
+              // Any member may own an attempt on the same run, so the header names
+              // a runner only when that runner owns every version in the group;
+              // otherwise each version names its own. An attempt-less version
+              // names no runner. Runners are compared by id — a display name is a
+              // label two members may share — falling back to the name only when
+              // no id was served.
+              const runners = groupedByRun[runId].map((item) =>
+                showPeerIdentity ? item.generationSnapshot : undefined,
+              );
+              const versionRunners = runners.map((runner) => runner?.ranByName);
+              const runnerKeys = runners.map((runner) => runner?.ranByUserId ?? runner?.ranByName);
+              const ranByName = runnerKeys.every((key) => key === runnerKeys[0])
+                ? versionRunners[0]
                 : undefined;
               return (
               <div key={runId} className="space-y-1">
@@ -523,10 +543,11 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
                     formatTimestamp(groupedByRun[runId][0].timestamp)
                   )}
                 </div>
-                {groupedByRun[runId].map((version) => (
+                {groupedByRun[runId].map((version, versionIndex) => (
                   <VersionRow
                     key={version.id}
                     version={version}
+                    ranByName={ranByName ? undefined : versionRunners[versionIndex]}
                     isSelected={version.id === effectiveSelected}
                     selectedChipLabel={adoptionChipLabel}
                     marks={adoptionByProposalId?.[version.id]}
@@ -545,14 +566,15 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
         )}
       </AIPopoverShell>
     </Popover>
-    {detailsProvenance && (
+    {details && (
       <Suspense fallback={null}>
         <GenerationDetailsDialog
-          provenance={detailsProvenance}
+          provenance={details.provenance}
+          generationSnapshot={details.generationSnapshot}
           articleId={articleId}
-          open={detailsProvenance !== null}
+          open={details !== null}
           onOpenChange={(next) => {
-            if (!next) setDetailsProvenance(null);
+            if (!next) setDetails(null);
           }}
         />
       </Suspense>

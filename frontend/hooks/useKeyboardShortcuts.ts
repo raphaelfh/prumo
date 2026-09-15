@@ -34,18 +34,18 @@ interface UseKeyboardShortcutsOptions {
 
 const DEFAULT_SEQUENCE_TIMEOUT = 1500;
 
+/** A closed Select/listbox trigger types too: a bare letter is its typeahead. */
 function isTypingTarget(e: KeyboardEvent): boolean {
-  const t = e.target as HTMLElement | null;
-  if (!t) return false;
-  const tag = t.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return true;
-  return false;
+  return e.composedPath().some(target => target instanceof HTMLElement && (
+    target.matches('input, textarea, select, [role="combobox"], [aria-haspopup="listbox"]') || target.isContentEditable ||
+    !!target.closest('[contenteditable]:not([contenteditable="false"])')
+  ));
 }
 
 /** A confirm is a dialog too: Radix AlertDialog renders `role="alertdialog"`. */
 function isDialogOpen(): boolean {
   return !!document.querySelector(
-    ':is([role="dialog"], [role="alertdialog"])[data-state="open"]',
+    'dialog[open], :is([role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]):not([hidden]):not([data-state="closed"])',
   );
 }
 
@@ -113,7 +113,7 @@ export function useKeyboardShortcuts({
     // Radix layer only while it is not defaultPrevented — so bare chords and
     // sequences match in the bubble phase, after it.
     function onKeyDown(e: KeyboardEvent) {
-      if (runChord(e, false)) return;
+      if (e.defaultPrevented || runChord(e, false)) return;
       const key = e.key.toLowerCase();
 
       // Sequence bindings — never inside inputs, never with modifiers.

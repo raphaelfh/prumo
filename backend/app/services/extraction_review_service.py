@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import AppError
 from app.models.extraction import ExtractionField, ExtractionRun, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
@@ -36,6 +37,17 @@ class InvalidDecisionError(Exception):
     """Raised when a reviewer decision violates business rules."""
 
 
+class DecisionConflictError(AppError):
+    """The reviewer coordinate changed since the conditional write was prepared."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="DECISION_CONFLICT",
+            message="The current reviewer decision changed. Refresh before trying again.",
+            status_code=409,
+        )
+
+
 class ExtractionReviewService:
     """Append-only reviewer decisions + materialized ReviewerState upsert."""
 
@@ -56,6 +68,7 @@ class ExtractionReviewService:
         value: dict[str, Any] | None = None,
         rationale: str | None = None,
         enforce_marker_optin: bool = True,
+        expected_current_decision_id: UUID | None = None,
     ) -> ExtractionReviewerDecision:
         """Append one reviewer decision (and re-point the ReviewerState).
 
@@ -171,6 +184,12 @@ class ExtractionReviewService:
         latest = await self._decisions.get_latest_for_coord(
             run_id, reviewer_id, instance_id, field_id
         )
+        # A conditional write must match even when its payload would deduplicate.
+        # The run lock keeps this check and the append in one atomic transaction.
+        if expected_current_decision_id is not None and (
+            latest is None or latest.id != expected_current_decision_id
+        ):
+            raise DecisionConflictError()
         if (
             latest is not None
             and latest.decision == decision_value

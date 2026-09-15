@@ -70,6 +70,10 @@ from app.services.extraction_snapshot import (
     entity_types_for_version,
     general_instructions_for_version,
 )
+from app.services.proposal_generation_read import (
+    proposal_reveal_context,
+    serialize_proposal_generation,
+)
 from app.services.run_prompt_context import read_pinned_review_context
 
 logger = get_logger(__name__)
@@ -213,9 +217,20 @@ async def get_run_with_workflow_history(
         run_summary = run_summary.model_copy(
             update={"results": scrub_results_ranby(run_summary.results)}
         )
+    context = await proposal_reveal_context(
+        db, visible_proposals, revealed_run_ids={run_id} if unblinded else set()
+    )
     return RunDetailResponse(
         run=run_summary,
-        proposals=[ProposalRecordResponse.model_validate(p) for p in visible_proposals],
+        proposals=[
+            ProposalRecordResponse.model_validate(
+                {
+                    **{name: getattr(p, name) for name in ProposalRecordResponse.model_fields},
+                    **serialize_proposal_generation(p, context),
+                }
+            )
+            for p in visible_proposals
+        ],
         decisions=[ReviewerDecisionResponse.model_validate(d) for d in visible_decisions],
         consensus_decisions=[ConsensusDecisionResponse.model_validate(c) for c in consensus],
         published_states=[PublishedStateResponse.model_validate(ps) for ps in published_rows],

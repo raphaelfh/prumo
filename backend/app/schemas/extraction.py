@@ -84,6 +84,8 @@ class EvidencePassage(BaseModel):
 class SectionExtractionRequest(BaseModel):
     """Request for extraction de section."""
 
+    request_id: UUID | None = Field(default=None, alias="requestId")
+
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     template_id: UUID = Field(..., alias="templateId")

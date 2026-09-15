@@ -41,10 +41,10 @@ class AISuggestionItem(BaseModel):
     evidence: list[EvidenceResponse]
     # Caller-scoped: 'accepted' | 'rejected' | 'pending'
     status: str
-    # How this suggestion's run was generated (model/strategy/params/tokens/
-    # ran-by). Run-level snapshot from extraction_runs.results; null for legacy
-    # runs that predate provenance capture.
+    # Immutable per-proposal engine projection; never the current run snapshot.
     provenance: dict[str, Any] | None = None
+    extraction_attempt_id: UUID | None = None
+    generation_snapshot: dict[str, Any] | None = None
 
 
 class AISuggestionsResponse(BaseModel):
@@ -72,3 +72,5 @@ class AISuggestionHistoryItem(BaseModel):
     created_at: datetime
     evidence: list[EvidenceResponse]
     provenance: dict[str, Any] | None = None
+    extraction_attempt_id: UUID | None = None
+    generation_snapshot: dict[str, Any] | None = None

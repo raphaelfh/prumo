@@ -2,11 +2,54 @@
 Extraction Endpoints Integration Tests.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
+
+_SE = "app.api.v1.endpoints.section_extraction"
+_JOB_ID = "durable-job"
+
+
+@contextmanager
+def _kickoff_stubs() -> Iterator[MagicMock]:
+    """Stub the scope gate, the durable attempt and the queue; yield the enqueue.
+
+    The attempt echoes the normalized payload the way ``prepare_request``
+    stores it, so the assertions read what actually reaches the task.
+    """
+    attempt_id = uuid4()
+
+    async def prepare(payload, owner_id, *, job_id):  # noqa: ANN001
+        assert owner_id and job_id
+        return SimpleNamespace(
+            id=attempt_id, job_id=_JOB_ID, request_payload=payload.model_dump(mode="json")
+        )
+
+    with (
+        patch(f"{_SE}._is_queue_available", return_value=True),
+        patch(f"{_SE}._check_request_scope", new=AsyncMock()),
+        patch(
+            f"{_SE}.ExtractionAttemptService.prepare_request", new=AsyncMock(side_effect=prepare)
+        ),
+        patch(f"{_SE}.run_section_extraction_task.apply_async") as enqueue,
+        patch(f"{_SE}._remember_job_owner"),
+    ):
+        enqueue.attempt_id = attempt_id
+        yield enqueue
+
+
+def _assert_enqueued_once(enqueue: MagicMock) -> dict:
+    """One enqueue, keyed by the durable attempt; returns the task payload."""
+    enqueue.assert_called_once()
+    call = enqueue.call_args.kwargs
+    assert call["task_id"] == _JOB_ID
+    assert call["kwargs"] == {"attempt_id": str(enqueue.attempt_id)}
+    return call["args"][0]
 
 
 class TestSectionExtractionEndpoints:
@@ -57,27 +100,9 @@ class TestSectionExtractionEndpoints:
         client: AsyncClient,
     ) -> None:
         """A valid single-section request enqueues the Celery job and returns
-        202 + job_id (the extraction now runs async in the worker)."""
-        job_id = str(uuid4())
-        mock_task = MagicMock()
-        mock_task.id = job_id
-
+        202 + the durable attempt's job_id (the extraction runs in the worker)."""
         trace_id = "test-section-trace-id"
-        with (
-            patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
-                return_value=True,
-            ),
-            patch(
-                "app.api.v1.endpoints.section_extraction._check_request_scope",
-                new=AsyncMock(),
-            ),
-            patch(
-                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.delay",
-                return_value=mock_task,
-            ) as mock_delay,
-            patch("app.api.v1.endpoints.section_extraction._remember_job_owner"),
-        ):
+        with _kickoff_stubs() as enqueue:
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -92,10 +117,9 @@ class TestSectionExtractionEndpoints:
         assert response.status_code == 202, response.text
         data = response.json()
         assert data.get("ok") is True
-        assert data["data"]["job_id"] == job_id
-        mock_delay.assert_called_once()
+        assert data["data"]["job_id"] == _JOB_ID
         # Snake-case payload reaches the task (SectionExtractionRequest accepts it).
-        assert mock_delay.call_args[0][0]["entity_type_id"] is not None
+        assert _assert_enqueued_once(enqueue)["entity_type_id"] is not None
 
     @pytest.mark.asyncio
     async def test_section_extraction_batch_valid_request(
@@ -103,25 +127,7 @@ class TestSectionExtractionEndpoints:
         client: AsyncClient,
     ) -> None:
         """A valid extract-all-sections request enqueues the job and returns 202."""
-        job_id = str(uuid4())
-        mock_task = MagicMock()
-        mock_task.id = job_id
-
-        with (
-            patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
-                return_value=True,
-            ),
-            patch(
-                "app.api.v1.endpoints.section_extraction._check_request_scope",
-                new=AsyncMock(),
-            ),
-            patch(
-                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.delay",
-                return_value=mock_task,
-            ) as mock_delay,
-            patch("app.api.v1.endpoints.section_extraction._remember_job_owner"),
-        ):
+        with _kickoff_stubs() as enqueue:
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -136,8 +142,8 @@ class TestSectionExtractionEndpoints:
         assert response.status_code == 202, response.text
         data = response.json()
         assert data.get("ok") is True
-        assert data["data"]["job_id"] == job_id
-        mock_delay.assert_called_once()
+        assert data["data"]["job_id"] == _JOB_ID
+        assert _assert_enqueued_once(enqueue)["extract_all_sections"] is True
 
     @pytest.mark.asyncio
     async def test_run_path_enqueues_job(
@@ -148,35 +154,18 @@ class TestSectionExtractionEndpoints:
         failed FAILED-status-commit behaviour now lives in the Celery task — see
         tests/unit/test_run_section_extraction_task.py
         ::TestRunSectionExtractionTaskAllFailed."""
-        job_id = str(uuid4())
-        mock_task = MagicMock()
-        mock_task.id = job_id
-
-        with (
-            patch(
-                "app.api.v1.endpoints.section_extraction._is_queue_available",
-                return_value=True,
-            ),
-            patch(
-                "app.api.v1.endpoints.section_extraction._check_request_scope",
-                new=AsyncMock(),
-            ),
-            patch(
-                "app.api.v1.endpoints.section_extraction.run_section_extraction_task.delay",
-                return_value=mock_task,
-            ) as mock_delay,
-            patch("app.api.v1.endpoints.section_extraction._remember_job_owner"),
-        ):
+        run_id = str(uuid4())
+        with _kickoff_stubs() as enqueue:
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
                     "projectId": str(uuid4()),
                     "articleId": str(uuid4()),
                     "templateId": str(uuid4()),
-                    "runId": str(uuid4()),
+                    "runId": run_id,
                 },
             )
 
         assert response.status_code == 202, response.text
-        assert response.json()["data"]["job_id"] == job_id
-        mock_delay.assert_called_once()
+        assert response.json()["data"]["job_id"] == _JOB_ID
+        assert _assert_enqueued_once(enqueue)["run_id"] == run_id
