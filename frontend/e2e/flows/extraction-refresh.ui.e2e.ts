@@ -71,6 +71,7 @@ test.describe("Extraction refresh UX (smooth update after AI)", () => {
     ).toBeLessThanOrEqual(8);
   });
   // The post-refresh "just updated" highlight is retired on the editable review
-  // table (it still lights QA's FieldInput); its key-matching contract is
-  // covered by frontend/test/hooks/useJustUpdatedValue.test.tsx.
+  // table (it still lights FieldInput in ExtractionFullScreen's default
+  // presentation); its key-matching contract is covered by
+  // frontend/test/hooks/useJustUpdatedValue.test.tsx.
 });

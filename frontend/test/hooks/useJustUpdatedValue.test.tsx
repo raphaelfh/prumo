@@ -4,9 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useJustUpdatedValue } from '@/hooks/extraction/useJustUpdatedValue';
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
 
-// The refresh highlight survives on the QA form (FieldInput); the editable
-// extraction review table retired it. A dispatched key must light only its
-// own field — never every subscriber — and only for the highlight window.
+// The refresh highlight survives on FieldInput in ExtractionFullScreen's
+// default presentation; the editable extraction review table retired it. A
+// dispatched key must light only its own field — never every subscriber — and
+// only for the highlight window.
 describe('useJustUpdatedValue', () => {
   afterEach(() => {
     vi.useRealTimers();
