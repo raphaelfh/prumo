@@ -21,7 +21,7 @@ const getHistory = vi.fn(async () => [newer, older]);
 const toggle = vi.fn(async () => true);
 const undo = vi.fn(async () => true);
 const resume = vi.fn(async () => true);
-function Harness({saving = false, conflicted = false, error = null, canUndo = false, externalDecisions, externalValues}: {saving?: boolean; conflicted?: boolean; error?: string | null; canUndo?: boolean; externalDecisions?: ReviewWorkspace['decisions']; externalValues?: Record<string, unknown>}) {
+function Harness({saving = false, conflicted = false, error = null, canUndo = false, externalDecisions, externalValues, latest = newer}: {saving?: boolean; conflicted?: boolean; error?: string | null; canUndo?: boolean; externalDecisions?: ReviewWorkspace['decisions']; externalValues?: Record<string, unknown>; latest?: AISuggestion}) {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const displayedValues = externalValues ?? values;
   const rows = fields.map(field => ({instanceId: 'i', fieldId: field.id, label: field.label, sectionId: 's', pending: !displayedValues[`i_${field.id}`]}));
@@ -34,7 +34,7 @@ function Harness({saving = false, conflicted = false, error = null, canUndo = fa
     setActiveProposal: (instanceId, fieldId, proposal) => setActiveProposal(previous => previous?.proposal === proposal && previous?.fieldId === fieldId ? previous : proposal ? {instanceId, fieldId, proposal} : null),
     decisions: externalDecisions ?? {saving, conflicted, error, canUndo, undoTarget: canUndo ? {instanceId: 'i', fieldId: 'a', id: 'd', expectedId: 'd', predecessorId: null, predecessor: {value: null}} : null, toggle, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => 'old', isAccepted: p => p.id === 'old'},
   };
-  const suggestions = {i_a: newer, i_b: {...newer, id: 'b-new', value: 'B proposal'}};
+  const suggestions = {i_a: latest, i_b: {...newer, id: 'b-new', value: 'B proposal'}};
   return <SectionNavLayout items={[{id: 's', label: 'Study', requiredFilled: 1, requiredTotal: 2, state: 'in_progress', level: 0}]} activeId="s" onSelect={() => {}} guideOpen={guideOpen} onGuideOpenChange={setGuideOpen} toolbar={<ReviewQuickActions review={review} rows={rows} suggestions={suggestions} guideOpen={guideOpen} onToggleGuide={() => setGuideOpen(!guideOpen)}/>}>
     <ExtractionReviewTable instanceId="i" fields={fields} values={displayedValues} onValueChange={(id, value) => {const key = `i_${id}`; setValues(previous => ({...previous, [key]: value}));}} aiSuggestions={suggestions} getSuggestionsHistory={getHistory} review={review}/>
   </SectionNavLayout>;
@@ -191,11 +191,35 @@ import type {components} from '@/types/api/schema';
 vi.mock('@/integrations/supabase/client', () => ({supabase: {auth: {getSession: vi.fn(async () => ({data: {session: {access_token: 'test'}}}))}}}));
 const baseline = {i_a: 'Original A'};
 let savedHistory: ReviewerDecisionResponse[];
-function WriterHarness() {
+function WriterHarness({latest}: {latest?: AISuggestion}) {
   const [values, setValues] = useState<Record<string, unknown>>(baseline);
   const writer = useProposalDecision({runId: 'run', reviewerId: 'me', stage: 'extract', enabled: true, values, baselineValues: baseline, decisions: savedHistory, debounceMs: 60000, onConfirmed: (coordinate, value) => {const key = `${coordinate.instanceId}_${coordinate.fieldId}`; setValues(previous => ({...previous, [key]: value}));}});
-  return <Harness externalDecisions={writer} externalValues={values}/>;
+  return <Harness externalDecisions={writer} externalValues={values} latest={latest}/>;
 }
+it('accepts a served suggestion as its typed value and shows the confirmed acceptance in the row and toolbar', async () => {
+  type Request = components['schemas']['CreateDecisionRequest'];
+  savedHistory = [];
+  const requests: Request[] = [];
+  server.use(
+    http.get('*/api/v1/runs/run/view', () => HttpResponse.json({ok: true, data: {run: {id: 'run', stage: 'extract'}, decisions: savedHistory}})),
+    http.post('*/api/v1/runs/run/decisions', async ({request}) => {
+      const body = await request.json() as Request;
+      requests.push(body);
+      const row = {id: String(savedHistory.length + 1), run_id: 'run', reviewer_id: 'me', rationale: null, created_at: `2026-09-15T00:00:0${savedHistory.length + 1}Z`, ...body} as ReviewerDecisionResponse;
+      savedHistory.push(row);
+      return HttpResponse.json({ok: true, data: row});
+    }),
+  );
+  // The shape aiSuggestionService serves: unwrapped value plus the raw server envelope.
+  const served: AISuggestion = {...newer, proposedValue: {value: newer.value, verification: {verdict: 'confirmed'}}};
+  const user = userEvent.setup();
+  render(<QueryClientProvider client={new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}})}><WriterHarness latest={served}/></QueryClientProvider>);
+  const firstRow = screen.getByRole('rowheader', {name: fields[0].label}).closest('tr')!;
+  await user.click(within(firstRow).getByRole('button', {name: 'Accept extraction'}));
+  await waitFor(() => expect(within(firstRow).getByRole('button', {name: 'Unaccept extraction'})).toBeEnabled());
+  expect(requests).toEqual([expect.objectContaining({field_id: 'a', proposal_record_id: 'new', value: {value: 'New proposal'}})]);
+  expect(within(screen.getByRole('toolbar')).getByRole('button', {name: 'Unaccept extraction'})).toHaveAttribute('aria-pressed', 'true');
+});
 it('accepts A, disables pending saves, navigates to B, retries failed global undo and restores A only', async () => {
   type Request = components['schemas']['CreateDecisionRequest'];
   savedHistory = [{id: '1', run_id: 'run', instance_id: 'i', field_id: 'a', reviewer_id: 'me', decision: 'edit', proposal_record_id: null, value: {value: 'Original A'}, rationale: null, created_at: '2026-09-15T00:00:01Z'}];

@@ -13,9 +13,9 @@ export function ReviewQuickActions({review, rows, suggestions, guideOpen, onTogg
   const current = nav.current;
   const active = current && sameReviewCoordinate(review.activeProposal, current) && sameReviewCoordinate(nav.open, current) ? review.activeProposal?.proposal : undefined;
   const proposal = active ?? (current ? suggestions[`${current.instanceId}_${current.fieldId}`] : undefined);
-  const accepted = !!current && !!proposal && decisions.isAccepted({...current, id: proposal.id, value: proposal.proposedValue ?? proposal.value});
+  const accepted = !!current && !!proposal && decisions.isAccepted({...current, id: proposal.id, value: proposal.value});
   const blocked = decisions.saving || decisions.conflicted;
-  const accept = () => {if (current && proposal && !blocked) void decisions.toggle({...current, id: proposal.id, value: proposal.proposedValue ?? proposal.value, allowsNoInformation: current.allowsNoInformation});};
+  const accept = () => {if (current && proposal && !blocked) void decisions.toggle({...current, id: proposal.id, value: proposal.value, allowsNoInformation: current.allowsNoInformation});};
   useKeyboardShortcuts({enabled: true, bindings: [
     {type: 'chord', key: 'a', handler: accept},
     {type: 'chord', key: 'f', handler: nav.toggleFocus},
