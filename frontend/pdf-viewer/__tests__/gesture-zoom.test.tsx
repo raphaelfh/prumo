@@ -206,3 +206,32 @@ describe('a scrollbar appearing during a gesture', () => {
     expect(store.getState().zoom).toBe(1);
   });
 });
+
+describe('a pointercancel during a gesture', () => {
+  it('restores the committed geometry and scroll position, and drops the pending end timer', () => {
+    const {store, scroller, pages} = renderViewer();
+    const startScrollTop = scroller.scrollTop;
+    const startScrollLeft = scroller.scrollLeft;
+
+    act(() => {
+      scroller.dispatchEvent(ctrlWheel(-100));
+    });
+    expect(store.getState().isGesturing).toBe(true);
+
+    act(() => {
+      const event = typeof PointerEvent === 'function' ? new PointerEvent('pointercancel', {bubbles: true}) : new Event('pointercancel', {bubbles: true});
+      scroller.dispatchEvent(event);
+    });
+
+    expect(store.getState().isGesturing).toBe(false);
+    expect(store.getState().zoom).toBe(1);
+    expect(pages.style.transform).toBe('');
+    expect(scroller.scrollTop).toBe(startScrollTop);
+    expect(scroller.scrollLeft).toBe(startScrollLeft);
+
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    expect(store.getState().zoom).toBe(1);
+  });
+});

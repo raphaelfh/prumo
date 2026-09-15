@@ -68,6 +68,13 @@ describe('zoom shortcuts', () => {
     act(() => store.getState().actions.setGesturing(true));
     await user.keyboard('{Control>}={/Control}');
     expect(store.getState().zoom).toBe(1);
+    let event: KeyboardEvent | undefined;
+    act(() => {
+      event = new KeyboardEvent('keydown', {key: '=', ctrlKey: true, bubbles: true, cancelable: true});
+      window.dispatchEvent(event);
+    });
+    expect(event?.defaultPrevented).toBe(true);
+    expect(store.getState().zoom).toBe(1);
     act(() => store.getState().actions.setGesturing(false));
     await user.keyboard('{Control>}={/Control}');
     expect(store.getState().zoom).toBe(1.25);
