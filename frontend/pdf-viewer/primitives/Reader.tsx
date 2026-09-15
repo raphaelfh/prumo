@@ -20,7 +20,7 @@ import {cn} from '@/lib/utils';
 import {useViewerStore, useViewerStoreApi, useViewerStoreApiOptional} from '../core/context';
 import type {ReaderLocateRequest} from '../core/state';
 import {subscribeReaderLocate} from '../core/subscribeReaderLocate';
-import {usePageScrollSync} from '../hooks/usePageScrollSync';
+import {createDomPageLocator, usePageScrollSync} from '../hooks/usePageScrollSync';
 import {MarkdownContent} from '../markdown/MarkdownContent';
 import {findBlockByIndex, findBlockForQuote} from './readerLocate';
 import './reader.css';
@@ -167,10 +167,12 @@ function ReaderInteractions({
   const activeIndex = useViewerStore((s) => s.search.activeIndex);
 
   const rangesRef = useRef<Range[]>([]);
+  // The reader mounts every page section, so the DOM knows where pages are.
+  const [locator] = useState(() => createDomPageLocator('data-reader-page'));
   const scrollTo = usePageScrollSync({
     rootRef,
     scrollerSelector: '[data-reader-scroll]',
-    pageAttribute: 'data-reader-page',
+    locator,
     pagesKey: blocks,
   });
 

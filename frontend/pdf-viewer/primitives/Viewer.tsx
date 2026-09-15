@@ -1,9 +1,10 @@
-import {useRef, type CSSProperties, type ReactNode} from 'react';
+import {useMemo, useRef, type CSSProperties, type ReactNode} from 'react';
 import {ViewerProvider, useViewerStore} from '../core/context';
 import {useDocumentLoader} from '../hooks/useDocumentLoader';
 import {usePageHandle} from '../hooks/usePageHandle';
 import {usePageScrollSync} from '../hooks/usePageScrollSync';
 import {displayedSize} from '../core/rotation';
+import {layoutPageLocator, usePageLayout} from '../viewport/usePageLayout';
 import type {PDFSource} from '../core/source';
 import type {StoreApi} from 'zustand';
 import type {ViewerState} from '../core/state';
@@ -46,17 +47,13 @@ function RootInner({
 
 function Body({children, className}: {children: ReactNode; className?: string}) {
   const ref = useRef<HTMLDivElement>(null);
-  const numPages = useViewerStore((s) => s.numPages);
+  const layout = usePageLayout();
+  const locator = useMemo(() => layoutPageLocator(layout), [layout]);
 
   // Navigation scrolls to the current page; scrolling publishes the page at
-  // the top of the viewport. The observer re-attaches when numPages changes
-  // (new page elements appear after load).
-  usePageScrollSync({
-    rootRef: ref,
-    scrollerSelector: '[data-pdf-viewer-body]',
-    pageAttribute: 'data-page-number',
-    pagesKey: numPages,
-  });
+  // the top of the viewport. Both read the page layout, so an unmounted page
+  // still has a position.
+  usePageScrollSync({rootRef: ref, scrollerSelector: '[data-pdf-viewer-body]', locator, pagesKey: layout.numPages});
 
   return (
     <div

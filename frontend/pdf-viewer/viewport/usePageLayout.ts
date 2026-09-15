@@ -7,6 +7,7 @@
 import {useMemo} from 'react';
 import {useViewerStore} from '../core/context';
 import type {PageRotation} from '../core/engine';
+import type {PageLocator} from '../hooks/usePageScrollSync';
 import {displayedSize} from '../core/rotation';
 import type {PageSize} from '../core/state';
 
@@ -103,4 +104,16 @@ export function usePageLayout(): PageLayout {
     () => createPageLayout({numPages, pageSizes, viewRotation, zoom}),
     [numPages, pageSizes, viewRotation, zoom],
   );
+}
+
+/** A `PageLocator` that answers from the layout — no DOM query, so it works for pages that are not mounted. */
+export function layoutPageLocator(layout: PageLayout): PageLocator {
+  return {
+    offsetOf: (page) => (page >= 1 && page <= layout.numPages ? layout.offsetOf(page) : null),
+    pageAt: (_root, scroller) => (layout.numPages > 0 ? layout.pageAt(scroller.scrollTop, scroller.clientHeight) : null),
+    onScroll(_root, scroller, listener) {
+      scroller.addEventListener('scroll', listener, {passive: true});
+      return () => scroller.removeEventListener('scroll', listener);
+    },
+  };
 }
