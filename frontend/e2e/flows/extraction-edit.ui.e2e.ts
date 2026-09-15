@@ -87,28 +87,33 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
       `${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`,
     );
 
-    // The form panel renders the section accordions; if no run exists or
-    // there's no active proposal yet, the page won't have inputs to edit.
-    const sectionAccordions = page.locator(
-      "[data-testid^='qa-domain-'], [role='region']",
-    );
-    const accordionCount = await sectionAccordions.count();
+    // The review table attaches its question rows only after the run view and
+    // template structure load. Counting editors before that raced to 0 and
+    // skipped a page that had fields, so wait for the rows first.
+    const rows = page.locator("tr[data-field-row]");
+    await rows
+      .first()
+      .waitFor({ state: "visible", timeout: 30000 })
+      .catch(() => undefined);
     test.skip(
-      accordionCount === 0,
-      "Extraction form has no sections rendered — needs an article with an in-flight extraction run",
+      (await rows.count()) === 0,
+      "Extraction review table has no question rows — needs an article with an in-flight extraction run",
     );
 
-    // Find a select field rendered by FieldInput; use the first available.
-    const selects = page.locator(
-      "form select, [role='combobox'], input[type='text']",
-    );
-    const visibleCount = await selects.count();
-    test.skip(visibleCount === 0, "No editable fields on the page");
+    // The value editors inside the review rows (text inputs, textareas and
+    // select triggers); page chrome such as search boxes is out of scope.
+    const editors = rows
+      .locator(
+        "input[type='text']:not([disabled]), textarea:not([disabled]), [role='combobox']:not([disabled])",
+      )
+      .filter({ visible: true });
+    const editableCount = await editors.count();
+    test.skip(editableCount === 0, "No editable fields on the page");
 
-    const firstField = selects.first();
+    const firstField = editors.first();
     const fieldType = await firstField.evaluate((el) => el.tagName.toLowerCase());
 
-    if (fieldType === "input") {
+    if (fieldType === "input" || fieldType === "textarea") {
       await firstField.fill("e2e-edit-probe");
     } else {
       await firstField.click();

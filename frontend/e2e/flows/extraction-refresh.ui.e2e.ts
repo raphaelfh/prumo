@@ -35,21 +35,6 @@ async function readFormViewportScroll(page: Page): Promise<number> {
   }, FORM_VIEWPORT_SELECTOR);
 }
 
-// Hits the in-app event bus that AI refresh dispatches when a value changes,
-// so the test exercises the highlight + scroll-preservation pipeline without
-// needing a real LLM call.
-async function dispatchValueUpdate(page: Page, key: string): Promise<void> {
-  await page.evaluate(async (entryKey) => {
-    const mod = await import(
-      // @ts-expect-error — runtime browser import served by the Vite dev server
-      // at the repo root; the "@/" alias is build-time only and does not resolve
-      // inside page.evaluate().
-      "/frontend/lib/extraction/valueUpdates.ts"
-    );
-    mod.dispatchValueUpdates([entryKey]);
-  }, key);
-}
-
 test.describe.configure({ mode: "serial" });
 
 test.describe("Extraction refresh UX (smooth update after AI)", () => {
@@ -85,48 +70,7 @@ test.describe("Extraction refresh UX (smooth update after AI)", () => {
       `scroll should be preserved (before=${beforeScroll}, after=${afterScroll})`
     ).toBeLessThanOrEqual(8);
   });
-
-  test("just-updated highlight class reaches the field after a value-update event", async ({
-    page,
-  }) => {
-    const missing = missingEnvKeys(REQUIRED);
-    test.skip(missing.length > 0, `Missing required env: ${missing.join(", ")}`);
-
-    await openExtractionPage(page);
-    await page.waitForTimeout(500);
-
-    // Pick the first rendered field input wrapper; its data-testid is not
-    // present, but the wrapper carries a stable grid class. We use the first
-    // grid div under the form viewport that has the field structure.
-    const firstField = page
-      .locator(`${FORM_VIEWPORT_SELECTOR} div[class*="grid-cols-[30%_1fr]"]`)
-      .first();
-    const fieldVisible = await firstField.isVisible().catch(() => false);
-    test.skip(
-      !fieldVisible,
-      "No extraction field rendered yet — needs a project_template with at least one field."
-    );
-
-    // Read the field's instance + field id pair (the wrapper itself doesn't
-    // expose them, so we ask the page for the first registered key by
-    // walking the dataset of an inner input/select). For this assertion we
-    // dispatch with a wildcard-style sentinel key that exists in the bus
-    // contract: test only verifies the pipeline (subscribe → flip → unflip),
-    // not a specific field.
-    // A data-bearing page can light a legit highlight on mount (initial
-    // refresh fires a real value-update; HIGHLIGHT_DURATION_MS = 1500).
-    // Wait for quiet before dispatching the sentinel, or the leftover
-    // glow makes the absence assertion below flaky.
-    await expect(page.locator(".field-just-updated")).toHaveCount(0, { timeout: 5000 });
-
-    const fakeKey = "00000000-0000-0000-0000-000000000000_00000000-0000-0000-0000-000000000000";
-    await dispatchValueUpdate(page, fakeKey);
-
-    // The bus only fires for fields whose key matches; a non-matching key
-    // must NOT add the highlight class — this guards us against a false
-    // positive where every field ever lights up. So we assert ABSENCE.
-    await page.waitForTimeout(200);
-    const lit = await page.locator(".field-just-updated").count();
-    expect(lit, "no field should match the sentinel key").toBe(0);
-  });
+  // The post-refresh "just updated" highlight is retired on the editable review
+  // table (it still lights QA's FieldInput); its key-matching contract is
+  // covered by frontend/test/hooks/useJustUpdatedValue.test.tsx.
 });
