@@ -30,7 +30,7 @@ objects; repositories never contain business logic.
   is varchar(32); overflow breaks CI and the Railway deploy).
 - `auth`/`storage` schemas = Supabase CLI (`supabase migration new`),
   deployed with `supabase db push` — they are NOT auto-applied on
-  deploy (only Alembic is). Never `mcp__supabase__apply_migration`.
+  deploy (only Alembic is). Never a Supabase MCP `apply_migration`.
 - Migration touching `extraction_*`? Update the migration-head line
   and `last_reviewed` in `docs/reference/extraction-hitl-architecture.md`.
 

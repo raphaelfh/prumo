@@ -8,9 +8,9 @@ allowed-tools:
   - Bash(vercel:*)
   - Bash(railway:*)
   - Bash(git rev-parse:*)
-  - mcp__supabase__get_advisors
-  - mcp__supabase__get_logs
-  - mcp__supabase__list_migrations
+  - mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__get_advisors
+  - mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__query_logs
+  - mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__list_migrations
   - mcp__railway__list_deployments
   - mcp__railway__get_logs
 model: sonnet
@@ -46,8 +46,9 @@ headless / CI / cron run — the historical reason preflight kept RED-halting):
 - **Supabase advisors** → the Management API with a Personal Access Token in
   env `SUPABASE_ACCESS_TOKEN` (`sbp_...`, created at
   <https://supabase.com/dashboard/account/tokens>; store it in a gitignored
-  `.env` or your shell profile — never commit it). The Supabase MCP is only a
-  fallback for interactive sessions. When neither is available the advisor gate
+  `.env` or your shell profile — never commit it). The claude.ai Supabase
+  connector is only a fallback for interactive sessions; the repo declares no
+  Supabase MCP server of its own. When neither is available the advisor gate
   degrades on DB-surface impact (WARN if the promotion touches no
   migrations/models, UNKNOWN if it does) instead of hard-blocking every deploy.
 - **Railway** (worker/Redis) → the `railway` CLI (`railway login`, repo linked
@@ -92,13 +93,14 @@ Regenerate the Supabase advisor baseline for prumo. Steps:
        curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
          "https://api.supabase.com/v1/projects/$REF/advisors/performance"
      (each returns {"lints":[...]}); require HTTP 200 + "lints".
-   - Else ToolSearch "select:mcp__supabase__get_advisors" (max_results 3) and
-     call get_advisors type="security" and type="performance" (the performance
+   - Else the claude.ai Supabase connector: ToolSearch
+     "select:mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__get_advisors" (max_results 3)
+     and call get_advisors project_id=REF type="security" and type="performance" (the performance
      payload may exceed the token cap and be auto-saved to a file — read and
      json.load it; the path is in the error message; MCP shape is
      {"result":{"lints":[...]}}).
    - If neither credential is available, STOP and return
-     "advisor baseline NOT written: no SUPABASE_ACCESS_TOKEN and no Supabase MCP".
+     "advisor baseline NOT written: no SUPABASE_ACCESS_TOKEN and no Supabase connector".
 3. For EVERY advisor in both sets, build fingerprint
    f"{categories[0].lower()}:{cache_key}" using the advisor's first
    category and its cache_key verbatim (keep spaces/commas).
@@ -242,9 +244,10 @@ CREDENTIAL RESOLUTION (stop at the first that works):
   Each returns {"lints":[...]}. Require HTTP 200 + a "lints" key before trusting
   (a 401/403 means the PAT is invalid — treat as "no credential", fall through).
 
-  PATH 2 — interactive fallback. The Supabase MCP. ToolSearch
-  "select:mcp__supabase__get_advisors,mcp__supabase__list_migrations,mcp__supabase__get_logs"
-  (max_results 5). Usable only in a session that authenticated the MCP.
+  PATH 2 — interactive fallback. The claude.ai Supabase connector (the repo
+  declares no Supabase MCP server). ToolSearch
+  "select:mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__get_advisors,mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__list_migrations,mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__query_logs"
+  (max_results 5); pass project_id=REF. Absent in headless sessions.
 
   PATH 3 — no credential. Do NOT crash to a blanket UNKNOWN. The advisor check
   is a DB-regression guard, so degrade on the pending promotion's DB-surface impact:
@@ -258,8 +261,8 @@ CREDENTIAL RESOLUTION (stop at the first that works):
       for full verification." This is non-blocking (GREEN-with-notes).
     - DB_TOUCHED = true → status UNKNOWN, and STOP. Summary: "advisors unverified
       AND dev→main changes DB surface (migrations/models) — set
-      SUPABASE_ACCESS_TOKEN (a Supabase PAT) or authenticate the Supabase MCP
-      before promoting." This blocks (RED).
+      SUPABASE_ACCESS_TOKEN (a Supabase PAT) or run interactively with the
+      claude.ai Supabase connector before promoting." This blocks (RED).
 
 When a credential IS available (PATH 1 or 2), run three checks:
 
@@ -292,7 +295,7 @@ When a credential IS available (PATH 1 or 2), run three checks:
      checked on this path" (does not block). NOTE: Alembic state is checked
      indirectly via the Railway gate (its Dockerfile runs `alembic upgrade head`).
 
-  C. Recent errors (last 5 min, level=error / status>=500). MCP get_logs, or
+  C. Recent errors (last 5 min, level=error / status>=500). MCP query_logs, or
      the Management API logs endpoint. Any errors → WARN; none → PASS. If logs
      are unavailable on the chosen path, note "logs not checked" (does not block).
 
