@@ -8,6 +8,7 @@ from uuid import UUID
 from celery import Task
 
 from app.core.logging import get_logger
+from app.models.extraction_attempt import ExtractionAttempt
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
@@ -15,7 +16,7 @@ from app.worker.tasks.extraction_tasks import run_section_extraction_task
 logger = get_logger(__name__)
 
 
-def enqueue_attempt(attempt: Any, batch_id: UUID) -> None:
+def enqueue_attempt(attempt: ExtractionAttempt, batch_id: UUID) -> None:
     """Queue one article's attempt; its success or FINAL failure re-advances the batch.
 
     ``link_error`` fires once, after retries are exhausted (Celery skips

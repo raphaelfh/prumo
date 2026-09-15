@@ -1,15 +1,26 @@
-"""Dispatcher (spec §8, G6–G12, G16): real session runs and attempts, fake queue."""
+"""Dispatcher (spec §8, G6–G10, G12, G16): real session runs and attempts, fake queue."""
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
 
+from app.core.config import settings
+from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.extraction_batch_dispatcher import ExtractionBatchDispatcher, batch_request_id
 from tests.integration.conftest import SEED
 from tests.integration.helpers.batch_fixtures import make_article, make_batch
@@ -256,3 +267,148 @@ async def test_resume_reenqueues_an_hour_old_pending_attempt(db_session: AsyncSe
 def test_request_id_is_stable_per_item() -> None:
     item = uuid4()
     assert batch_request_id(item) == batch_request_id(item) != batch_request_id(uuid4())
+
+
+# ---------------------------------------------------------------------------
+# Lock lifetime — these two CANNOT use ``db_session``.
+#
+# That fixture pins one connection inside an outer transaction and never
+# releases it, so a lock that dies with its connection still looks alive. The
+# real worker runs on ``worker_session()`` (NullPool), where every commit
+# returns — and therefore CLOSES — the connection, ending the backend session
+# that owns a session-level advisory lock. These tests commit for real, on
+# their own connections, and clean up the rows they create (the local Supabase
+# stack is shared).
+# ---------------------------------------------------------------------------
+
+#: The backend(s) holding the advisory lock for one batch. ``classid``/``objid``
+#: are unsigned ``oid``s carrying the two halves of the 64-bit key, so the key
+#: is masked rather than cast straight to ``int`` (which overflows when
+#: ``hashtextextended`` returns a negative bigint).
+_LOCK_HOLDERS_SQL = """
+SELECT l.pid FROM pg_locks l
+WHERE l.locktype = 'advisory' AND l.granted
+  AND l.classid = ((hashtextextended(:k, 0) >> 32) & 4294967295)::oid
+  AND l.objid   = (hashtextextended(:k, 0) & 4294967295)::oid
+"""
+
+
+async def _lock_holders(engine: AsyncEngine, batch_id: UUID) -> list[int]:
+    """Backend pids holding this batch's lock, read from an INDEPENDENT connection."""
+    async with engine.connect() as probe:
+        return [
+            row[0]
+            for row in (
+                await probe.execute(text(_LOCK_HOLDERS_SQL), {"k": f"extraction_batch:{batch_id}"})
+            ).all()
+        ]
+
+
+@asynccontextmanager
+async def _committed_batch(
+    count: int,
+) -> AsyncIterator[tuple[AsyncEngine, async_sessionmaker[AsyncSession], UUID]]:
+    """A really-committed batch on its own engine, torn down row by row."""
+    engine = create_async_engine(settings.async_database_url, poolclass=NullPool)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    articles: list[UUID] = []
+    batch_id: UUID | None = None
+    try:
+        async with factory() as setup:
+            articles = [
+                await make_article(setup, SEED.primary_project, f"lock-probe-{i}")
+                for i in range(count)
+            ]
+            batch_id = await make_batch(
+                setup,
+                owner_id=SEED.primary_profile,
+                project_id=SEED.primary_project,
+                template_id=SEED.primary_template,
+                article_ids=articles,
+            )
+            await setup.commit()
+        yield engine, factory, batch_id
+    finally:
+        async with factory() as cleanup:
+            params = {"ids": [str(a) for a in articles], "b": str(batch_id)}
+            for statement in (
+                # Runs cascade to their attempts and published states.
+                "DELETE FROM public.extraction_runs WHERE article_id = ANY(CAST(:ids AS uuid[]))",
+                "DELETE FROM public.extraction_instances "
+                "WHERE article_id = ANY(CAST(:ids AS uuid[]))",
+                "DELETE FROM public.extraction_batch_items WHERE batch_id = :b",
+                "DELETE FROM public.extraction_batches WHERE id = :b",
+                "DELETE FROM public.articles WHERE id = ANY(CAST(:ids AS uuid[]))",
+            ):
+                await cleanup.execute(text(statement), params)
+            await cleanup.commit()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_the_batch_lock_survives_every_commit_inside_advance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lock must outlive the commits `advance` makes, on ONE unchanged backend."""
+    async with _committed_batch(3) as (engine, factory, batch_id):
+        holders: list[list[int]] = []
+        original = ExtractionBatchDispatcher._dispatch_one
+
+        async def observing(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN202
+            await original(self, *args, **kwargs)
+            holders.append(await _lock_holders(engine, batch_id))
+
+        monkeypatch.setattr(ExtractionBatchDispatcher, "_dispatch_one", observing)
+
+        async with factory() as db:
+            await ExtractionBatchDispatcher(db, enqueue=FakeQueue()).advance(batch_id)
+
+        assert len(holders) == 2, "expected one observation after each dispatch's commit"
+        assert all(len(h) == 1 for h in holders), f"lock dropped mid-advance: {holders}"
+        assert holders[0] == holders[1], f"lock moved to another backend: {holders}"
+        assert await _lock_holders(engine, batch_id) == [], "lock leaked after advance returned"
+
+
+@pytest.mark.asyncio
+async def test_two_concurrent_advances_cannot_dispatch_the_same_item_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutual exclusion across SEPARATE connections — the real completion-callback race."""
+    async with _committed_batch(1) as (_engine, factory, batch_id):
+        calls: list[UUID] = []
+        original = ExtractionAttemptService.prepare_request
+
+        async def slow_prepare(self, payload, owner_id, *, job_id):  # noqa: ANN001, ANN202
+            attempt = await original(self, payload, owner_id, job_id=job_id)
+            # ``prepare_request`` has COMMITTED by now, which drops the
+            # ``FOR UPDATE SKIP LOCKED`` row lock while the item is STILL
+            # `queued` — the exact window only a per-batch lock can cover.
+            await asyncio.sleep(0.25)
+            return attempt
+
+        monkeypatch.setattr(ExtractionAttemptService, "prepare_request", slow_prepare)
+
+        async def advance_once() -> None:
+            async with factory() as db:
+                dispatcher = ExtractionBatchDispatcher(
+                    db, enqueue=lambda attempt, _b: calls.append(attempt.id)
+                )
+                await dispatcher.advance(batch_id)
+
+        await asyncio.gather(advance_once(), advance_once())
+
+        assert len(calls) == 1, f"the single queued item was dispatched {len(calls)} times"
+        async with factory() as check:
+            attempts = (
+                await check.execute(
+                    text(
+                        "SELECT count(*) FROM public.extraction_attempts a JOIN "
+                        "public.extraction_batch_items i ON i.attempt_id = a.id "
+                        "WHERE i.batch_id=:b"
+                    ),
+                    {"b": str(batch_id)},
+                )
+            ).scalar_one()
+            statuses = [s for s, _, _ in await _items(check, batch_id)]
+        assert attempts == 1
+        assert statuses == ["dispatched"]

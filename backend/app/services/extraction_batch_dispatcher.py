@@ -2,19 +2,39 @@
 
 Called by the ``advance_extraction_batch`` task after a kickoff, after every
 attempt's success or final failure (Celery ``link`` / ``link_error``), and on
-Resume. A session-level advisory lock serializes calls per batch: a second
-call waits, then recounts, so a freed slot is never lost. Every write commits
-before the queue is touched.
+Resume. A per-batch advisory lock serializes calls: a second call waits, then
+recounts, so a freed slot is never lost. Every write commits before the queue
+is touched.
+
+Why the lock lives on a connection of its own
+---------------------------------------------
+``pg_advisory_lock`` is scoped to the Postgres *backend session*, and a
+SQLAlchemy ``Session`` releases its connection at the end of every
+transaction. Under ``worker_session()`` (NullPool) releasing CLOSES the
+connection, so taking the lock on ``self.db`` would drop it at the FIRST
+commit — and ``_advance`` commits repeatedly, because ``prepare_request``
+commits mid-loop. That left the claim/dispatch loop unserialized (two
+completion callbacks could claim and dispatch the same item), made the unlock
+run against a backend that never held the lock, and — on the pooled API
+engine — returned a connection to the pool still holding a lock nothing could
+release.
+
+Restructuring ``advance`` to contain no commit is not available: committing
+before queue IO is the design. So the lock is taken on a DEDICATED connection
+held for the whole call, which decouples its lifetime from the domain
+session's transaction churn. Cost: one extra connection for the duration of an
+advance.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from app.core.error_handler import ConflictError, NotFoundError
 from app.core.logging import get_logger
@@ -41,6 +61,9 @@ EnqueueAttempt = Callable[[ExtractionAttempt, UUID], None]
 
 _REQUEST_NAMESPACE = UUID("6f0d0c1e-7a47-4f5e-9d61-3b1f0f4a9b20")
 
+_LOCK_SQL = "SELECT pg_advisory_lock(hashtextextended(:k, 0))"
+_UNLOCK_SQL = "SELECT pg_advisory_unlock(hashtextextended(:k, 0))"
+
 
 def batch_request_id(item_id: UUID) -> UUID:
     """The attempt request id of a batch item — stable, so Resume is idempotent."""
@@ -66,27 +89,37 @@ class ExtractionBatchDispatcher:
         self.batches = ExtractionBatchRepository(db)
 
     async def advance(self, batch_id: UUID, *, reenqueue_stale: bool = False) -> None:
-        await self._lock(batch_id)
-        try:
-            await self._advance(batch_id, reenqueue_stale=reenqueue_stale)
-        except Exception:
-            await self.db.rollback()
-            raise
-        finally:
-            await self._unlock(batch_id)
+        async with self._batch_lock(batch_id):
+            try:
+                await self._advance(batch_id, reenqueue_stale=reenqueue_stale)
+                await self.db.commit()
+            except Exception:
+                await self.db.rollback()
+                raise
 
-    async def _lock(self, batch_id: UUID) -> None:
-        await self.db.execute(
-            text("SELECT pg_advisory_lock(hashtextextended(:k, 0))"),
-            {"k": f"extraction_batch:{batch_id}"},
-        )
+    def _engine(self) -> AsyncEngine:
+        """The engine behind ``self.db`` — a session may be bound to either."""
+        bind = self.db.bind
+        if isinstance(bind, AsyncConnection):
+            return bind.engine
+        return bind
 
-    async def _unlock(self, batch_id: UUID) -> None:
-        await self.db.execute(
-            text("SELECT pg_advisory_unlock(hashtextextended(:k, 0))"),
-            {"k": f"extraction_batch:{batch_id}"},
-        )
-        await self.db.commit()
+    @asynccontextmanager
+    async def _batch_lock(self, batch_id: UUID) -> AsyncIterator[None]:
+        """Hold this batch's advisory lock for the whole call, on one pinned backend.
+
+        The connection is never committed, so its backend session — and the
+        lock with it — survives every commit ``self.db`` makes. Closing the
+        connection would release the lock on its own; the explicit unlock keeps
+        a POOLED connection from going back to the pool still holding it.
+        """
+        key = {"k": f"extraction_batch:{batch_id}"}
+        async with self._engine().connect() as lock_conn:
+            await lock_conn.execute(text(_LOCK_SQL), key)
+            try:
+                yield
+            finally:
+                await lock_conn.execute(text(_UNLOCK_SQL), key)
 
     async def _advance(self, batch_id: UUID, *, reenqueue_stale: bool) -> None:
         batch = await self.db.get(ExtractionBatch, batch_id)
@@ -115,7 +148,10 @@ class ExtractionBatchDispatcher:
             for attempt in stale:
                 self.enqueue(attempt, batch.id)
 
+        # G6/G7 are constant for the whole advance: same owner, same project,
+        # same tool. Resolve once rather than per item.
         kind = await self._template_kind(batch)
+        is_reviewer = await self._is_reviewer(batch)
         while True:
             live_since = self.now() - self.LIVE_WINDOW
             capacity = self.MAX_IN_FLIGHT - await self.batches.count_in_flight(
@@ -128,7 +164,7 @@ class ExtractionBatchDispatcher:
                 await self.db.commit()
                 return
             for item in claimed:
-                await self._dispatch_one(batch, item, kind)
+                await self._dispatch_one(batch, item, kind, is_reviewer=is_reviewer)
 
     async def _template_kind(self, batch: ExtractionBatch) -> str | None:
         try:
@@ -139,10 +175,26 @@ class ExtractionBatchDispatcher:
             return None
         return str(template.kind) if template.is_active else None
 
+    async def _is_reviewer(self, batch: ExtractionBatch) -> bool:
+        """G6 — the SQL helper the RLS policies call, never a hand-rolled copy."""
+        return bool(
+            (
+                await self.db.execute(
+                    text("SELECT public.is_project_reviewer(:pid, :uid)"),
+                    {"pid": str(batch.project_id), "uid": str(batch.owner_id)},
+                )
+            ).scalar_one()
+        )
+
     async def _dispatch_one(
-        self, batch: ExtractionBatch, item: ExtractionBatchItem, kind: str | None
+        self,
+        batch: ExtractionBatch,
+        item: ExtractionBatchItem,
+        kind: str | None,
+        *,
+        is_reviewer: bool,
     ) -> None:
-        reason = await self._preflight(batch, item, kind)
+        reason = await self._preflight(batch, item, kind, is_reviewer=is_reviewer)
         if reason is not None:
             await self._skip(item, reason)
             return
@@ -195,15 +247,14 @@ class ExtractionBatchDispatcher:
             self.enqueue(attempt, batch.id)
 
     async def _preflight(
-        self, batch: ExtractionBatch, item: ExtractionBatchItem, kind: str | None
+        self,
+        batch: ExtractionBatch,
+        item: ExtractionBatchItem,
+        kind: str | None,
+        *,
+        is_reviewer: bool,
     ) -> str | None:
         """G6 reviewer role, G7 article and tool still there."""
-        is_reviewer = (
-            await self.db.execute(
-                text("SELECT public.is_project_reviewer(:pid, :uid)"),
-                {"pid": str(batch.project_id), "uid": str(batch.owner_id)},
-            )
-        ).scalar_one()
         if not is_reviewer or kind is None:
             return "NO_LONGER_AVAILABLE"
         try:
