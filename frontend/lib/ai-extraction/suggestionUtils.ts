@@ -184,7 +184,7 @@ export function formatFullSuggestionValue(value: any, field?: SuggestionFieldCon
  * An empty STRING is deliberately NEITHER: it is a genuine extracted value and
  * keeps the ordinary loud rendering, so a real value can never masquerade as an
  * abstention. That distinction survives only because
- * `aiSuggestionService.unwrapValue` preserves the bare-null envelope instead of
+ * `valueSemantics.unwrapProposedValue` preserves the bare-null envelope instead of
  * collapsing it to ''; pass this a RAW `proposed_value` and it will not hold.
  */
 export type ValuelessProposal = 'marker' | 'unmarked';

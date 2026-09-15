@@ -37,6 +37,27 @@ export function unwrapValueEnvelope(raw: unknown): unknown {
 }
 
 /**
+ * Decode a stored `proposed_value` into the typed presentation value, PRESERVING
+ * which of the three shapes it was — the discrimination `valuelessProposalKind`
+ * reads. Siblings such as `verification` never reach the typed value.
+ *
+ * ADR-0016 Phase 3: a resolved disposition keeps its full marker envelope so
+ * accept/select propagates the marker into the form value, consistent with how
+ * FieldInput writes it. A markerless `{value: null}` stays NULL rather than
+ * collapsing to '': that collapse made an abstention byte-identical to a
+ * genuine empty-string extraction, so the UI could not render one quietly
+ * without swallowing the other. Both emptiness tokens still write
+ * `{value: null}` on the wire (autosave normalizes '' → null), so this is a
+ * rendering distinction, not a persistence one. A real value collapses to its
+ * scalar as before; a missing envelope reads as "no value".
+ */
+export function unwrapProposedValue(raw: unknown): unknown {
+  const reason = valueAbsentReason(raw);
+  if (reason !== null) return { value: null, absent_reason: reason };
+  return unwrapValueEnvelope(raw) ?? null;
+}
+
+/**
  * The coded disposition carried by `raw`, or `null`. Only a member of the closed
  * vocabulary counts — an absent, empty, or out-of-vocabulary reason yields `null`
  * (so a garbage code is never treated as a resolution).

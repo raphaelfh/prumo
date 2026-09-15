@@ -6,7 +6,7 @@ import {ProposalPreview} from './ProposalPreview';
 import {ProposalDisclosure} from './ProposalDisclosure';
 import {sameReviewCoordinate} from '@/hooks/extraction/useReviewNavigation';
 import {isEmptyValue} from '@/lib/ai-extraction/valueParser';
-import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
+import {unwrapProposedValue, valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
@@ -25,7 +25,7 @@ export function ExtractionReviewRow({instanceId, field, values, onValueChange, a
   const history = review?.proposals.filter(proposal => proposal.source === 'ai' && proposal.instance_id === instanceId && proposal.field_id === field.id) ?? [];
   const acceptedId = review?.decisions.acceptedProposalIdFor(instanceId, field.id);
   const isAccepted = (proposal: AISuggestion) => review?.decisions.isAccepted({...coordinate, id: proposal.id, value: proposal.value}) ?? false;
-  const acceptedOlder = history.find(item => item.id === acceptedId && item.id !== latest?.id && review?.decisions.isAccepted({...coordinate, id: item.id, value: item.proposed_value}));
+  const acceptedOlder = history.find(item => item.id === acceptedId && item.id !== latest?.id && review?.decisions.isAccepted({...coordinate, id: item.id, value: unwrapProposedValue(item.proposed_value)}));
   const toggle = (proposal: AISuggestion) => {void review?.decisions.toggle({...coordinate, id: proposal.id, value: proposal.value, allowsNoInformation: field.allows_no_information !== false});};
   const open = (id?: string) => {
     setVisited(true);

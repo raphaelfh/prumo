@@ -30,9 +30,9 @@ function Harness({saving = false, conflicted = false, error = null, canUndo = fa
   const columns = useResizableTableColumns({columnWidths: widths, setColumnWidths: setWidths, defaultColumnWidths: {question: 270, value: 315}, storageKey: 'test-columns', bounds: {question: {min: 160, max: 1600}, value: {min: 200, max: 1600}}});
   const [activeProposal, setActiveProposal] = useState<ReviewWorkspace['activeProposal']>(null);
   const [guideOpen, setGuideOpen] = useState(true);
-  const review: ReviewWorkspace = {proposals: [newer, older].map(p => ({id: p.id, run_id: 'run', instance_id: 'i', field_id: 'a', source: 'ai', source_user_id: null, proposed_value: {value: p.value}, confidence_score: p.confidence, rationale: p.reasoning, created_at: p.timestamp.toISOString()})), navigation, widths, columns, activeProposal,
+  const review: ReviewWorkspace = {proposals: [newer, older].map(p => ({id: p.id, run_id: 'run', instance_id: 'i', field_id: 'a', source: 'ai', source_user_id: null, proposed_value: {value: p.value, verification: {verdict: 'confirmed'}}, confidence_score: p.confidence, rationale: p.reasoning, created_at: p.timestamp.toISOString()})), navigation, widths, columns, activeProposal,
     setActiveProposal: (instanceId, fieldId, proposal) => setActiveProposal(previous => previous?.proposal === proposal && previous?.fieldId === fieldId ? previous : proposal ? {instanceId, fieldId, proposal} : null),
-    decisions: externalDecisions ?? {saving, conflicted, error, canUndo, undoTarget: canUndo ? {instanceId: 'i', fieldId: 'a', id: 'd', expectedId: 'd', predecessorId: null, predecessor: {value: null}} : null, toggle, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => 'old', isAccepted: p => p.id === 'old'},
+    decisions: externalDecisions ?? {saving, conflicted, error, canUndo, undoTarget: canUndo ? {instanceId: 'i', fieldId: 'a', id: 'd', expectedId: 'd', predecessorId: null, predecessor: {value: null}} : null, toggle, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => 'old', isAccepted: p => p.id === 'old' && p.value === older.value},
   };
   const suggestions = {i_a: latest, i_b: {...newer, id: 'b-new', value: 'B proposal'}};
   return <SectionNavLayout items={[{id: 's', label: 'Study', requiredFilled: 1, requiredTotal: 2, state: 'in_progress', level: 0}]} activeId="s" onSelect={() => {}} guideOpen={guideOpen} onGuideOpenChange={setGuideOpen} toolbar={<ReviewQuickActions review={review} rows={rows} suggestions={suggestions} guideOpen={guideOpen} onToggleGuide={() => setGuideOpen(!guideOpen)}/>}>
@@ -191,11 +191,20 @@ import type {components} from '@/types/api/schema';
 vi.mock('@/integrations/supabase/client', () => ({supabase: {auth: {getSession: vi.fn(async () => ({data: {session: {access_token: 'test'}}}))}}}));
 const baseline = {i_a: 'Original A'};
 let savedHistory: ReviewerDecisionResponse[];
-function WriterHarness({latest}: {latest?: AISuggestion}) {
-  const [values, setValues] = useState<Record<string, unknown>>(baseline);
-  const writer = useProposalDecision({runId: 'run', reviewerId: 'me', stage: 'extract', enabled: true, values, baselineValues: baseline, decisions: savedHistory, debounceMs: 60000, onConfirmed: (coordinate, value) => {const key = `${coordinate.instanceId}_${coordinate.fieldId}`; setValues(previous => ({...previous, [key]: value}));}});
+function WriterHarness({latest, initial = baseline}: {latest?: AISuggestion; initial?: Record<string, unknown>}) {
+  const [values, setValues] = useState<Record<string, unknown>>(initial);
+  const writer = useProposalDecision({runId: 'run', reviewerId: 'me', stage: 'extract', enabled: true, values, baselineValues: initial, decisions: savedHistory, debounceMs: 60000, onConfirmed: (coordinate, value) => {const key = `${coordinate.instanceId}_${coordinate.fieldId}`; setValues(previous => ({...previous, [key]: value}));}});
   return <Harness externalDecisions={writer} externalValues={values} latest={latest}/>;
 }
+it('an older accepted proposal with a verification envelope shows the accepted indicator while the newer pending check stays neutral', async () => {
+  // Real decision logic: the run-detail proposal row carries the stored envelope
+  // ({value, verification}); acceptance compares the TYPED value.
+  savedHistory = [{id: '1', run_id: 'run', instance_id: 'i', field_id: 'a', reviewer_id: 'me', decision: 'edit', proposal_record_id: 'old', value: {value: older.value}, rationale: null, created_at: '2026-09-15T00:00:01Z'}];
+  render(<QueryClientProvider client={new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}})}><WriterHarness initial={{i_a: older.value}}/></QueryClientProvider>);
+  const firstRow = screen.getByRole('rowheader', {name: fields[0].label}).closest('tr')!;
+  expect(within(firstRow).getByRole('button', {name: 'Open accepted extraction'})).toBeVisible();
+  expect(within(firstRow).getByRole('button', {name: 'Accept extraction'})).toHaveAttribute('aria-pressed', 'false');
+});
 it('accepts a served suggestion as its typed value and shows the confirmed acceptance in the row and toolbar', async () => {
   type Request = components['schemas']['CreateDecisionRequest'];
   savedHistory = [];

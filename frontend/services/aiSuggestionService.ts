@@ -24,7 +24,7 @@ import type {
   VerificationVerdict,
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
-import { unwrapValueEnvelope, valueAbsentReason } from '@/lib/extraction/valueSemantics';
+import { unwrapProposedValue } from '@/lib/extraction/valueSemantics';
 import type { components } from '@/types/api/schema';
 
 type AISuggestionItem = components['schemas']['AISuggestionItem'];
@@ -70,26 +70,6 @@ function mapVerification(
     }
   }
   return undefined;
-}
-
-/**
- * Decode `proposed_value` into the presentation value, PRESERVING which of the
- * three shapes it was — the discrimination `valuelessProposalKind` reads.
- *
- * ADR-0016 Phase 3: a resolved disposition keeps its full marker envelope so
- * accept/select propagates the marker into the form value, consistent with how
- * FieldInput writes it. A markerless `{value: null}` stays NULL rather than
- * collapsing to '': that collapse made an abstention byte-identical to a
- * genuine empty-string extraction, so the UI could not render one quietly
- * without swallowing the other. Both emptiness tokens still write
- * `{value: null}` on the wire (autosave normalizes '' → null), so this is a
- * rendering distinction, not a persistence one. A real value collapses to its
- * scalar as before; a missing envelope reads as "no value".
- */
-function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknown {
-  const reason = valueAbsentReason(raw);
-  if (reason !== null) return { value: null, absent_reason: reason };
-  return unwrapValueEnvelope(raw) ?? null;
 }
 
 /**
@@ -170,7 +150,7 @@ function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
     extractionAttemptId: item.extraction_attempt_id ?? undefined,
     generationSnapshot: mapProvenance(item.generation_snapshot),
     proposedValue: item.proposed_value,
-    value: unwrapValue(item.proposed_value as { [key: string]: unknown }),
+    value: unwrapProposedValue(item.proposed_value),
     confidence: item.confidence_score ?? 0,
     reasoning: item.rationale ?? '',
     status: (item.status ?? 'pending') as AISuggestion['status'],
@@ -190,7 +170,7 @@ function mapHistoryItemToSuggestion(
     extractionAttemptId: item.extraction_attempt_id ?? undefined,
     generationSnapshot: mapProvenance(item.generation_snapshot),
     proposedValue: item.proposed_value,
-    value: unwrapValue(item.proposed_value as { [key: string]: unknown }),
+    value: unwrapProposedValue(item.proposed_value),
     confidence: item.confidence_score ?? 0,
     reasoning: item.rationale ?? '',
     // History items have no server-side status (raw proposal trail)
