@@ -371,7 +371,7 @@ export function HITLArticleTable({
   };
 
   const leadingRow = toolbarLeading ? (
-    <div className="flex shrink-0 items-center gap-2">{toolbarLeading}</div>
+    <div className="@container/listbar flex shrink-0 items-center gap-2">{toolbarLeading}</div>
   ) : null;
   const withLeading = (content: ReactNode) =>
     leadingRow ? (
@@ -390,7 +390,7 @@ export function HITLArticleTable({
     return (
       <div className="space-y-3" data-testid={`hitl-${kind}-table-loading`}>
         {(toolbarLeading || toolbarActions) && (
-          <div className="flex items-center gap-2">
+          <div className="@container/listbar flex items-center gap-2">
             {toolbarLeading}
             {toolbarActions && <div className="ml-auto flex items-center gap-2">{toolbarActions}</div>}
           </div>
@@ -446,7 +446,7 @@ export function HITLArticleTable({
         >
           {/* Leading control + search share one row at every width; below
               `md` the filter/display/actions wrap onto the next row. */}
-          <div className="flex min-w-0 basis-full items-center gap-2 md:flex-1">
+          <div className="flex min-w-0 basis-full items-center gap-2 md:min-w-80 md:flex-1">
             {toolbarLeading}
             <ListToolbarSearch
               ref={searchInputRef}

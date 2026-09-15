@@ -63,7 +63,7 @@ export function HITLActiveTemplateBar({ templates, activeTemplate, onSelect }: P
 
   return (
     <div
-      className="flex min-w-0 max-w-[50%] shrink-0 items-center md:max-w-xs"
+      className="flex min-w-0 max-w-[50%] items-center md:max-w-xs"
       data-testid={`${TEST_ID}-bar`}
     >
       {templates.length === 1 ? (
@@ -85,7 +85,7 @@ export function HITLActiveTemplateBar({ templates, activeTemplate, onSelect }: P
                   data-testid={`${TEST_ID}-trigger`}
                 >
                   {content}
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <ChevronDown className="shrink-0" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>

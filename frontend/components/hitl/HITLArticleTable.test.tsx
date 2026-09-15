@@ -195,6 +195,7 @@ describe('HITLArticleTable leading toolbar slot', () => {
     const leading = within(toolbar).getByTestId('leading');
     const search = within(toolbar).getByPlaceholderText(SEARCH);
     expect(leading.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(leading.parentElement).toHaveClass('md:min-w-80');
     // Search shares the row with the slot: its full-width default is replaced.
     const searchWrapper = search.closest('.group');
     expect(searchWrapper).toHaveClass('flex-1', 'min-w-0', 'w-auto');
