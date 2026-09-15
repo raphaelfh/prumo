@@ -202,8 +202,8 @@ export function readDecisionAuthority(runId: string) {
   );
 }
 
-/** Append a complete typed envelope, without rewrapping its unit/disposition. */
-export function appendReviewerDecision(runId: string, body: CreateDecisionRequest) {
+/** Append the typed envelope and optional current-decision condition unchanged. */
+export function appendReviewerDecision(runId: string, body: components['schemas']['CreateDecisionRequest']) {
   return toResult(
     () => apiClient<import('@/hooks/runs/types').ReviewerDecisionResponse>(`/api/v1/runs/${runId}/decisions`, {
       method: 'POST', body, keepalive: true,

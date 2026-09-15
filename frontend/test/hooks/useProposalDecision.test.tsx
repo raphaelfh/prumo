@@ -4,7 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { server } from '@/test/mocks/server';
-import type { CreateDecisionRequest, ReviewerDecisionResponse } from '@/hooks/runs/types';
+import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
+import type { components } from '@/types/api/schema';
+type CreateDecisionRequest = components['schemas']['CreateDecisionRequest'];
 import { useProposalDecision } from '@/hooks/extraction/useProposalDecision';
 
 vi.mock('@/integrations/supabase/client', () => ({supabase: {auth: {getSession: vi.fn(async () => ({data: {session: {access_token: 'test'}}}))}}}));
@@ -27,6 +29,10 @@ beforeEach(() => {
       requests.push(body);
       if (gate) await gate;
       if (fail) return HttpResponse.json({ok: false, error: {code: 'FAILED', message: 'Save failed'}}, {status: 500});
+      const latest = history.filter(item => item.reviewer_id === 'me' && item.instance_id === body.instance_id && item.field_id === body.field_id).at(-1);
+      if (body.expected_current_decision_id && body.expected_current_decision_id !== latest?.id) {
+        return HttpResponse.json({ok: false, error: {code: 'DECISION_CONFLICT', message: 'Decision changed'}}, {status: 409});
+      }
       const decision = {...row(String(Math.max(0, ...history.map(item => Number(item.id))) + 1), body.field_id, body.value!), ...body};
       history.push(decision as ReviewerDecisionResponse);
       return HttpResponse.json({ok: true, data: decision});
@@ -77,9 +83,9 @@ describe('confirmed proposal decisions and local undo', () => {
     await act(async () => {await view.result.current.toggle(proposal);});
     act(() => view.result.current.edit('b', ['A', 'B']));
     await act(async () => {await view.result.current.undoLatestLocalDecision();});
-    expect(requests.at(-1)).toMatchObject({field_id: 'b', value: {value: null}, decision: 'edit', proposal_record_id: null});
+    expect(requests.at(-1)).toMatchObject({field_id: 'b', expected_current_decision_id: '3', value: {value: null}, decision: 'edit', proposal_record_id: null});
     await act(async () => {await view.result.current.undoLatestLocalDecision();});
-    expect(requests.at(-1)).toMatchObject({field_id: 'a', value: {value: {value: 4, unit: 'mg'}}, decision: 'edit', proposal_record_id: null});
+    expect(requests.at(-1)).toMatchObject({field_id: 'a', expected_current_decision_id: '2', value: {value: {value: 4, unit: 'mg'}}, decision: 'edit', proposal_record_id: null});
     expect(view.result.current.values.i_a).toEqual({value: 4, unit: 'mg'});
     expect(view.result.current.canUndo).toBe(false);
   });
@@ -212,4 +218,70 @@ describe('confirmed proposal decisions and local undo', () => {
     expect(requests).toHaveLength(count);
   });
 
+});
+
+describe('atomic undo precondition', () => {
+  it.each([false, true])('freezes a POST conflict after a matching GET and retains the draft and expected id (refresh fails: %s)', async refreshFails => {
+    const view = setup();
+    await act(async () => {expect(await view.result.current.toggle(proposal)).toBe(true);});
+    let refreshed = 0;
+    let postStarted!: () => void;
+    const started = new Promise<void>(resolve => {postStarted = resolve;});
+    let release!: () => void;
+    const responseGate = new Promise<void>(resolve => {release = resolve;});
+    server.use(http.post('*/api/v1/runs/:run/decisions', async ({request}) => {
+      requests.push(await request.json() as CreateDecisionRequest);
+      // The early GET saw d1; the other tab commits d2 before POST checks it.
+      history.push(row('9', 'a', {value: 'external'}));
+      server.use(http.get('*/api/v1/runs/:run/view', () => {
+        refreshed += 1;
+        return refreshFails
+          ? HttpResponse.json({ok: false, error: {code: 'FAILED', message: 'Refresh failed'}}, {status: 500})
+          : HttpResponse.json({ok: true, data: {run: {id: 'run', stage: 'extract'}, decisions: history}});
+      }));
+      postStarted();
+      await responseGate;
+      return HttpResponse.json({ok: false, error: {code: 'DECISION_CONFLICT', message: 'Decision changed'}}, {status: 409});
+    }));
+    let pending!: Promise<boolean>;
+    act(() => {pending = view.result.current.undoLatestLocalDecision();});
+    await started;
+    act(() => view.result.current.edit('a', 'typing during undo'));
+    await act(async () => {release(); expect(await pending).toBe(false);});
+    expect(requests.at(-1)).toMatchObject({expected_current_decision_id: '1', value: {value: null}});
+    expect(refreshed).toBeGreaterThan(0);
+    expect(view.result.current.conflicted).toBe(true);
+    expect(view.result.current.error).toBeTruthy();
+    expect(view.result.current.values.i_a).toBe('typing during undo');
+    expect(view.result.current.undoTarget?.expectedId).toBe('1');
+    expect(view.result.current.canUndo).toBe(true);
+    const count = requests.length;
+    await act(async () => {await expect(view.result.current.saveNow()).rejects.toThrow();});
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(false);});
+    await act(async () => {view.unmount();});
+    expect(requests).toHaveLength(count);
+  });
+});
+
+it('freezes the captured session when undo conflicts after navigation, before its queued lifecycle flush', async () => {
+  const view = setup();
+  await act(async () => {await view.result.current.toggle(proposal);});
+  let started!: () => void;
+  const postStarted = new Promise<void>(resolve => {started = resolve;});
+  let release!: () => void;
+  const responseGate = new Promise<void>(resolve => {release = resolve;});
+  server.use(http.post('*/api/v1/runs/:run/decisions', async ({request}) => {
+    requests.push(await request.json() as CreateDecisionRequest);
+    started();
+    await responseGate;
+    return HttpResponse.json({ok: false, error: {code: 'DECISION_CONFLICT', message: 'Decision changed'}}, {status: 409});
+  }));
+  let pending!: Promise<boolean>;
+  act(() => {pending = view.result.current.undoLatestLocalDecision();});
+  await postStarted;
+  act(() => view.result.current.edit('a', 'retained input'));
+  act(() => view.rerender({user: 'me', run: 'other-run'}));
+  await act(async () => {release(); expect(await pending).toBe(false);});
+  expect(requests).toHaveLength(2);
+  expect(view.result.current.conflicted).toBe(false);
 });

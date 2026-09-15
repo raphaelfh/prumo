@@ -8,6 +8,7 @@ import { currentValuesToValuesMap } from '@/lib/extraction/publishedValues';
 import { toConsensusValueEnvelope, valueAbsentReason } from '@/lib/extraction/valueSemantics';
 import { decisionMatchesVersion, stableStringify } from '@/lib/runs/valueEquality';
 import { t } from '@/lib/copy';
+import { ApiError } from '@/integrations/api/client';
 
 interface Coordinate { instanceId: string; fieldId: string }
 interface Proposal extends Coordinate { id: string; value: unknown; allowsNoInformation?: boolean }
@@ -85,6 +86,7 @@ export function useProposalDecision(props: Props) {
 
   const freezeConflict = () => {
     blockedSessionsRef.current.add(session);
+    if (!isCurrent()) return;
     setState(prev => ({...prev, session, conflicted: true, error: t('extraction', 'reviewDecisionConflict')}));
   };
 
@@ -172,8 +174,16 @@ export function useProposalDecision(props: Props) {
       const result = await appendReviewerDecision(runId!, {
         instance_id: entry.instanceId, field_id: entry.fieldId, decision: 'edit',
         proposal_record_id: null, value: entry.predecessor,
+        expected_current_decision_id: entry.expectedId,
       });
-      if (!result.ok || !isCurrent()) return;
+      if (!result.ok) {
+        if (result.error instanceof ApiError && result.error.status === 409 && result.error.code === 'DECISION_CONFLICT') {
+          freezeConflict();
+          await readHistory(entry);
+        }
+        return;
+      }
+      if (!isCurrent()) return;
       stackRef.current.pop();
       // The compensating edit becomes the expected head for the preceding
       // local action on this coordinate; it is not itself an undoable action.

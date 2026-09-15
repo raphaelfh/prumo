@@ -3286,6 +3286,8 @@ export interface components {
         CreateDecisionRequest: {
             /** Decision */
             decision: string;
+            /** Expected Current Decision Id */
+            expected_current_decision_id?: string | null;
             /**
              * Field Id
              * Format: uuid

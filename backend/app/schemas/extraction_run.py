@@ -34,6 +34,7 @@ class CreateRunRequest(BaseModel):
 
 
 class CreateDecisionRequest(BaseModel):
+    expected_current_decision_id: UUID | None = None
     instance_id: UUID
     field_id: UUID
     decision: str = Field(pattern="^(accept_proposal|reject|edit)$")

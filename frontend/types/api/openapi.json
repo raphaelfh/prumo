@@ -3968,6 +3968,18 @@
             "title": "Decision",
             "type": "string"
           },
+          "expected_current_decision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Current Decision Id"
+          },
           "field_id": {
             "format": "uuid",
             "title": "Field Id",

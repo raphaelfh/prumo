@@ -449,3 +449,165 @@ async def test_reviewer_state_points_at_the_decision_after_record_decision(
     assert state.instance_id == instance_id
     assert state.field_id == field_id
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "condition",
+    ["matching", "missing", "stale", "identical_stale", "omitted", "null", "foreign_reviewer"],
+)
+async def test_decision_current_head_condition(db_session: AsyncSession, condition: str) -> None:
+    from uuid import uuid4
+
+    from app.core.error_handler import AppError
+
+    fx = await _setup_review_run(db_session)
+    assert fx is not None, (
+        "Required integration seed must include project, article, template and coordinate"
+    )
+    run_id, instance_id, field_id, reviewer_id, _, _ = fx
+    service = ExtractionReviewService(db_session)
+    params = {
+        "run_id": run_id,
+        "instance_id": instance_id,
+        "field_id": field_id,
+        "reviewer_id": reviewer_id,
+        "decision": "edit",
+    }
+    first = None
+    if condition != "missing":
+        first = await service.record_decision(**params, value={"value": "first"})
+    if condition == "foreign_reviewer":
+        await service.record_decision(
+            **{**params, "reviewer_id": SEED.reviewer_profile}, value={"value": "foreign"}
+        )
+    expected = first.id if condition in ("matching", "foreign_reviewer") else uuid4()
+    kwargs = (
+        {}
+        if condition == "omitted"
+        else {"expected_current_decision_id": None if condition == "null" else expected}
+    )
+    value = {"value": "first" if condition == "identical_stale" else "second"}
+    if condition in ("missing", "stale", "identical_stale"):
+        with pytest.raises(AppError) as exc:
+            await service.record_decision(**params, value=value, **kwargs)
+        assert (exc.value.status_code, exc.value.code) == (409, "DECISION_CONFLICT")
+        state = await _reviewer_state(
+            db_session,
+            run_id=run_id,
+            reviewer_id=reviewer_id,
+            instance_id=instance_id,
+            field_id=field_id,
+        )
+        assert (state.current_decision_id if state else None) == (first.id if first else None)
+    else:
+        result = await service.record_decision(**params, value=value, **kwargs)
+        assert result.value == value
+        assert result.id != first.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("overlap", [False, True])
+async def test_conditional_undo_checks_committed_head_after_run_lock(
+    _engine, overlap: bool
+) -> None:
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.core.error_handler import AppError
+
+    sessions = async_sessionmaker(_engine, expire_on_commit=False)
+    run_id = None
+    try:
+        async with sessions() as setup:
+            fx = await _setup_review_run(setup)
+            assert fx is not None, (
+                "Required integration seed is missing; run backend integration seed"
+            )
+            run_id, instance_id, field_id, reviewer_id, _, _ = fx
+            params = {
+                "run_id": run_id,
+                "instance_id": instance_id,
+                "field_id": field_id,
+                "reviewer_id": reviewer_id,
+                "decision": "edit",
+            }
+            d1 = await ExtractionReviewService(setup).record_decision(
+                **params, value={"value": "d1"}
+            )
+            await setup.commit()
+        async with sessions() as client_a, sessions() as client_b, sessions() as monitor:
+            observed = await ExtractionReviewService(client_a)._decisions.get_latest_for_coord(
+                run_id, reviewer_id, instance_id, field_id
+            )
+            assert observed.id == d1.id
+            await client_a.commit()
+            d2 = await ExtractionReviewService(client_b).record_decision(
+                **params, value={"value": "d2"}
+            )
+            if not overlap:
+                await client_b.commit()
+            pid_a = (await client_a.execute(text("SELECT pg_backend_pid()"))).scalar_one()
+            attempt = asyncio.create_task(
+                ExtractionReviewService(client_a).record_decision(
+                    **params,
+                    value={"value": "d2"},
+                    expected_current_decision_id=d1.id,
+                )
+            )
+            try:
+                if overlap:
+                    # Observe a real PostgreSQL lock wait before releasing B;
+                    # query awaits provide scheduling, with no timing sleeps.
+                    async with asyncio.timeout(5):
+                        while True:
+                            blocked = (
+                                await monitor.execute(
+                                    text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"),
+                                    {"pid": pid_a},
+                                )
+                            ).scalar_one()
+                            if blocked:
+                                break
+                            if attempt.done():
+                                await attempt
+                                pytest.fail(
+                                    "Conditional undo completed before acquiring B's run lock"
+                                )
+                    await client_b.commit()
+                with pytest.raises(AppError) as exc:
+                    await attempt
+                assert (exc.value.status_code, exc.value.code) == (409, "DECISION_CONFLICT")
+            finally:
+                if not attempt.done():
+                    attempt.cancel()
+                    await asyncio.gather(attempt, return_exceptions=True)
+                await client_a.rollback()
+                await client_b.rollback()
+        async with sessions() as verify:
+            rows = (
+                await verify.execute(
+                    text(
+                        "SELECT id, value FROM public.extraction_reviewer_decisions WHERE run_id = :rid"
+                    ),
+                    {"rid": run_id},
+                )
+            ).all()
+            assert len(rows) == 2
+            assert dict(rows)[d2.id] == {"value": "d2"}
+            state = await _reviewer_state(
+                verify,
+                run_id=run_id,
+                reviewer_id=reviewer_id,
+                instance_id=instance_id,
+                field_id=field_id,
+            )
+            assert state.current_decision_id == d2.id
+    finally:
+        if run_id is not None:
+            async with sessions() as cleanup:
+                await cleanup.execute(
+                    text("DELETE FROM public.extraction_runs WHERE id = :rid"), {"rid": run_id}
+                )
+                await cleanup.commit()
