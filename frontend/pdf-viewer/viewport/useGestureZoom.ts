@@ -1,12 +1,13 @@
+// Adapted from anaralabs/lector (MIT)
 /**
  * Pinch (touch, trackpad) and ctrl/⌘ + wheel zoom on the canvas view.
  *
- * Adapted from anaralabs/lector (MIT): a gesture previews its zoom as a CSS
- * transform on the page column, keeps the content under the pointer in place
- * by writing the scroll position at most once per animation frame, and commits
- * the zoom to the store only when it ends — so pages re-lay out and re-render
- * once, not per event. A zoom that does not come from a gesture (buttons, keys,
- * fit width) is anchored at the top centre of the viewport.
+ * A gesture previews its zoom as a CSS transform on the page column, keeps
+ * the content under the pointer in place by writing the scroll position at
+ * most once per animation frame, and commits the zoom to the store only when
+ * it ends — so pages re-lay out and re-render once, not per event. A zoom
+ * that does not come from a gesture (buttons, keys, fit width) is anchored
+ * at the top centre of the viewport.
  */
 import {usePinch} from '@use-gesture/react';
 import {useEffect, useLayoutEffect, useMemo, useRef} from 'react';
