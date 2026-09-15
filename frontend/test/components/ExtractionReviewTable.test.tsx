@@ -318,7 +318,7 @@ it('a bare review shortcut stays off a focused closed Select trigger, which keep
   const accept = vi.fn(); const onChange = vi.fn();
   function Row() {
     useKeyboardShortcuts({enabled: true, bindings: [{type: 'chord', key: 'a', handler: accept}]});
-    return <FieldValueEditor field={{id: 'population', label: 'Population', field_type: 'select', allow_other: false, allowed_values: [{value: 'adults', label: 'Adults'}, {value: 'children', label: 'Children'}]} as ExtractionField} value="" onChange={onChange} density="compact"/>;
+    return <FieldValueEditor field={{id: 'population', label: 'Population', field_type: 'select', allow_other: false, allowed_values: [{value: 'adults', label: 'Adults'}, {value: 'children', label: 'Children'}]}} value="" onChange={onChange} density="compact"/>;
   }
   const user = userEvent.setup(); render(<Row/>);
   const trigger = screen.getByRole('combobox', {name: 'Population'});
