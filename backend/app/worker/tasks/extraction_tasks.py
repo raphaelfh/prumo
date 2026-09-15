@@ -51,6 +51,7 @@ def run_section_extraction_task(
     payload_json: dict[str, Any],
     user_id: str,
     trace_id: str | None = None,
+    attempt_id: str | None = None,
 ) -> dict[str, Any]:
     """Run AI section extraction from a serialised SectionExtractionRequest.
 
@@ -180,10 +181,41 @@ def run_section_extraction_task(
                 await session.rollback()
                 raise
 
+    async def execute() -> dict[str, Any]:
+        if attempt_id is None:
+            # Jobs queued before durable attempts retain their existing contract.
+            return await run()
+        from app.services.extraction_attempt_service import ExtractionAttemptService
+        from app.worker._session import worker_session
+
+        async def operation(attempt: Any) -> dict[str, Any]:
+            nonlocal payload_json, user_id
+            payload_json = attempt.request_payload
+            user_id = str(attempt.owner_id)
+            result = await run()
+            result["user_id"] = user_id
+            return result
+
+        # Attempt engine preparation belongs BEFORE this ownership session.
+        # Domain writes inside run() use their own independently committed session.
+        async with worker_session() as ownership_db:
+            return await ExtractionAttemptService(ownership_db).execute_attempt(
+                UUID(attempt_id),
+                operation,
+                retryable=lambda exc: (
+                    is_transient_llm_error(exc)
+                    and (self.max_retries is None or self.request.retries < self.max_retries)
+                ),
+            )
+
     try:
-        return run_task(run)
+        return run_task(execute)
     except Exception as exc:
-        if is_transient_llm_error(exc) and self.request.retries < self.max_retries:
+        if isinstance(exc, ExtractionTaskError):
+            raise
+        if is_transient_llm_error(exc) and (
+            self.max_retries is None or self.request.retries < self.max_retries
+        ):
             # Transient and retries remain — back off and retry.
             raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
         # Terminal failure (permanent, or transient with retries exhausted):
