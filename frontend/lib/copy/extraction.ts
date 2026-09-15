@@ -40,6 +40,7 @@ export const extraction = {
     reviewHistoricalInputRecorded: 'Historical input was recorded; its text is not available in this view.',
 
     reviewDecisionConflict: 'Could not save this decision. Refresh the current review state and try again.',
+    reviewDecisionSaveFailed: 'Could not save this decision. Try again.',
     // HeaderPDFControls
     // HeaderNavigation
     back: 'Back',

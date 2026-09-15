@@ -11,6 +11,8 @@ import { t } from '@/lib/copy';
 import { ApiError } from '@/integrations/api/client';
 
 interface Coordinate { instanceId: string; fieldId: string }
+/** `conflict`: the review authority disagrees (409, moved head, run left extract); `failed`: anything else. */
+type Outcome = 'saved' | 'conflict' | 'failed';
 interface Proposal extends Coordinate { id: string; value: unknown; allowsNoInformation?: boolean }
 interface LocalDecision extends Coordinate { id: string; expectedId: string; predecessorId: string | null; predecessor: Record<string, unknown> }
 interface Props extends Omit<UseAutoSaveProposalsProps, 'writeValue' | 'linkByKey'> {
@@ -74,15 +76,17 @@ export function useProposalDecision(props: Props) {
     setState(prev => ({...prev, session, stack: [...stackRef.current]}));
   };
 
-  const readHistory = async (coordinate: Coordinate) => {
-    if (!runId || !reviewerId || !isCurrent()) return null;
+  const readHistory = async (coordinate: Coordinate): Promise<ReviewerDecisionResponse[] | Exclude<Outcome, 'saved'>> => {
+    if (!runId || !reviewerId || !isCurrent()) return 'failed';
     const result = await readDecisionAuthority(runId);
-    if (!result.ok) return null;
-    if (!isCurrent() || result.data.run.id !== runId) return null;
+    if (!result.ok) return 'failed';
+    if (!isCurrent() || result.data.run.id !== runId) return 'conflict';
     setConfirmed({session, rows: result.data.decisions});
-    if (result.data.run.stage !== 'extract') return null;
+    if (result.data.run.stage !== 'extract') return 'conflict';
     return historyFor(result.data.decisions, coordinate);
   };
+  const failureOf = (error: unknown): Exclude<Outcome, 'saved'> =>
+    error instanceof ApiError && error.status === 409 && error.code === 'DECISION_CONFLICT' ? 'conflict' : 'failed';
 
   const freezeConflict = () => {
     blockedSessionsRef.current.add(session);
@@ -118,27 +122,30 @@ export function useProposalDecision(props: Props) {
     if (unchanged) onConfirmed(coordinate, value);
   };
 
-  const transact = (operation: () => Promise<boolean>): Promise<boolean> => {
+  const transact = (operation: () => Promise<Outcome>): Promise<boolean> => {
     if (blockedSessionsRef.current.has(session) || lockRef.current || !runId || !reviewerId || props.enabled === false || props.stage !== 'extract') return Promise.resolve(false);
     lockRef.current = true;
     setState(prev => ({...prev, session, saving: true, error: null}));
-    return operation().catch(() => false).then(async ok => {
+    return operation().catch((): Outcome => 'failed').then(async outcome => {
+      const ok = outcome === 'saved';
       if (!ok && isCurrent()) await queryClient.invalidateQueries({queryKey: runsKeys.detail(runId)});
       if (isCurrent()) {
         lockRef.current = false;
-        setState(prev => ({...prev, session, saving: false, error: ok ? null : t('extraction', 'reviewDecisionConflict')}));
+        const error = outcome === 'conflict' ? t('extraction', 'reviewDecisionConflict') : t('extraction', 'reviewDecisionSaveFailed');
+        setState(prev => ({...prev, session, saving: false, error: ok ? null : error}));
       }
       return ok;
     });
   };
 
   const toggle = (proposal: Proposal): Promise<boolean> => transact(async () => {
-    if (valueAbsentReason(proposal.value) === 'no_information' && proposal.allowsNoInformation === false) return false;
+    if (valueAbsentReason(proposal.value) === 'no_information' && proposal.allowsNoInformation === false) return 'conflict';
     await autosave.saveNow(proposal);
-    let success = false;
+    let outcome: Outcome = 'failed';
     await autosave.runExclusive(async () => {
       const history = await readHistory(proposal);
-      if (!history || !isCurrent()) return;
+      if (typeof history === 'string') { outcome = history; return; }
+      if (!isCurrent()) return;
       const key = `${proposal.instanceId}_${proposal.fieldId}`;
       const draft = valuesRef.current[key];
       const reverse = acceptedProposal(history, draft) === proposal.id &&
@@ -148,25 +155,28 @@ export function useProposalDecision(props: Props) {
         proposal_record_id: reverse ? null : proposal.id,
         value: reverse ? reversalPayload(history) : toConsensusValueEnvelope(proposal.value),
       });
-      if (!result.ok) return;
+      if (!result.ok) { outcome = failureOf(result.error); return; }
       record(result.data, history.at(-1)?.value ?? {value: null}, true, history.at(-1)?.id ?? null);
       reconcile(proposal, result.data, draft);
-      success = true;
+      outcome = 'saved';
     });
-    return success;
+    return outcome;
   });
 
   const undoLatestLocalDecision = (): Promise<boolean> => transact(async () => {
     // Flush all questions before choosing the latest CONFIRMED local write.
     await autosave.saveNow();
-    let success = false;
+    let outcome: Outcome = 'failed';
     await autosave.runExclusive(async () => {
       const entry = stackRef.current.at(-1);
       if (!entry || !isCurrent()) return;
       const history = await readHistory(entry);
-      if (!history || history.at(-1)?.id !== entry.expectedId) {
+      // An unreadable authority is a retryable failure, not an observed conflict.
+      if (history === 'failed') return;
+      if (history === 'conflict' || history.at(-1)?.id !== entry.expectedId) {
         // A known conflict must also stop queued debounce and lifecycle writes:
         // refreshing the history changes links but does not discard the draft.
+        outcome = 'conflict';
         if (isCurrent()) freezeConflict();
         return;
       }
@@ -177,7 +187,8 @@ export function useProposalDecision(props: Props) {
         expected_current_decision_id: entry.expectedId,
       });
       if (!result.ok) {
-        if (result.error instanceof ApiError && result.error.status === 409 && result.error.code === 'DECISION_CONFLICT') {
+        outcome = failureOf(result.error);
+        if (outcome === 'conflict') {
           freezeConflict();
           await readHistory(entry);
         }
@@ -191,9 +202,9 @@ export function useProposalDecision(props: Props) {
       if (previous && previous.expectedId === entry.predecessorId) previous.expectedId = result.data.id;
       record(result.data, entry.predecessor, false);
       reconcile(entry, result.data, draft);
-      success = true;
+      outcome = 'saved';
     });
-    return success;
+    return outcome;
   });
 
   /** Explicitly resume the retained draft after refreshing current authority.

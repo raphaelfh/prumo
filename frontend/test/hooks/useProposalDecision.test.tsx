@@ -8,12 +8,14 @@ import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
 import type { components } from '@/types/api/schema';
 type CreateDecisionRequest = components['schemas']['CreateDecisionRequest'];
 import { useProposalDecision } from '@/hooks/extraction/useProposalDecision';
+import { extraction } from '@/lib/copy/extraction';
 
 vi.mock('@/integrations/supabase/client', () => ({supabase: {auth: {getSession: vi.fn(async () => ({data: {session: {access_token: 'test'}}}))}}}));
 vi.mock('sonner', () => ({toast: {error: vi.fn()}}));
 let history: ReviewerDecisionResponse[];
 let requests: CreateDecisionRequest[];
 let fail: boolean;
+let offline: boolean;
 let gate: Promise<void> | null;
 const proposal = {id: 'p1', instanceId: 'i', fieldId: 'a', value: 'AI'};
 const row = (id: string, field: string, value: Record<string, unknown>): ReviewerDecisionResponse => ({
@@ -21,13 +23,14 @@ const row = (id: string, field: string, value: Record<string, unknown>): Reviewe
   decision: 'edit', proposal_record_id: null, rationale: null, created_at: `2026-09-15T00:00:${id.padStart(2, '0')}Z`,
 });
 beforeEach(() => {
-  history = []; requests = []; fail = false; gate = null;
+  history = []; requests = []; fail = false; offline = false; gate = null;
   server.use(
     http.get('*/api/v1/runs/:run/view', () => HttpResponse.json({ok: true, data: {run: {id: 'run', stage: 'extract'}, decisions: history}})),
     http.post('*/api/v1/runs/:run/decisions', async ({request}) => {
       const body = await request.json() as CreateDecisionRequest;
       requests.push(body);
       if (gate) await gate;
+      if (offline) return HttpResponse.error();
       if (fail) return HttpResponse.json({ok: false, error: {code: 'FAILED', message: 'Save failed'}}, {status: 500});
       const latest = history.filter(item => item.reviewer_id === 'me' && item.instance_id === body.instance_id && item.field_id === body.field_id).at(-1);
       if (body.expected_current_decision_id && body.expected_current_decision_id !== latest?.id) {
@@ -251,7 +254,7 @@ describe('atomic undo precondition', () => {
     expect(requests.at(-1)).toMatchObject({expected_current_decision_id: '1', value: {value: null}});
     expect(refreshed).toBeGreaterThan(0);
     expect(view.result.current.conflicted).toBe(true);
-    expect(view.result.current.error).toBeTruthy();
+    expect(view.result.current.error).toBe(extraction.reviewDecisionConflict);
     expect(view.result.current.values.i_a).toBe('typing during undo');
     expect(view.result.current.undoTarget?.expectedId).toBe('1');
     expect(view.result.current.canUndo).toBe(true);
@@ -284,4 +287,30 @@ it('freezes the captured session when undo conflicts after navigation, before it
   await act(async () => {release(); expect(await pending).toBe(false);});
   expect(requests).toHaveLength(2);
   expect(view.result.current.conflicted).toBe(false);
+});
+
+describe('decision save failures that are not conflicts', () => {
+  it.each([
+    ['a 500', () => {fail = true;}],
+    ['a network error', () => {offline = true;}],
+  ])('an accept that fails with %s shows save-failed copy, does not freeze, and stays retryable', async (_label, failWith) => {
+    const view = setup();
+    failWith();
+    await act(async () => {expect(await view.result.current.toggle(proposal)).toBe(false);});
+    expect(requests).toHaveLength(1);
+    expect(view.result.current.error).toBe(extraction.reviewDecisionSaveFailed);
+    expect(view.result.current.conflicted).toBe(false);
+    fail = false; offline = false;
+    await act(async () => {expect(await view.result.current.toggle(proposal)).toBe(true);});
+    expect(view.result.current.error).toBeNull();
+  });
+  it('an undo that fails with a 500 shows save-failed copy and keeps its entry', async () => {
+    const view = setup();
+    await act(async () => {await view.result.current.toggle(proposal);});
+    fail = true;
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(false);});
+    expect(view.result.current.error).toBe(extraction.reviewDecisionSaveFailed);
+    expect(view.result.current.conflicted).toBe(false);
+    expect(view.result.current.canUndo).toBe(true);
+  });
 });
