@@ -34,6 +34,16 @@ const reviewPane = (page: Page) => page.locator('[data-scroll-container="extract
 const scrollReviewPaneToTop = (page: Page) => reviewPane(page).evaluate(viewport => {viewport.scrollTop = 0;});
 /** Width observed by the table's ResizeObserver — the review pane, not the viewport. */
 const reviewPaneWidth = (page: Page) => page.locator('table').first().locator('xpath=..').evaluate(element => element.getBoundingClientRect().width);
+/** Question rows not hidden by focus mode. */
+const visibleRowCount = (page: Page) => page.locator('tr[data-field-row]:not([hidden])').count();
+/** The section guide's current row must name the section that owns `coordinate`. */
+async function expectGuideOn(page: Page, coordinate: Workspace['coordinates'][number]) {
+  const [section] = await adminSelect<{label: string}>('extraction_entity_types', `id=eq.${coordinate.entity_type_id}&select=label`);
+  if (!section) throw new Error(`Section ${coordinate.entity_type_id} is missing.`);
+  const current = page.getByRole('navigation', {name: 'Section navigation', exact: true}).locator('button[aria-current="true"]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAccessibleName(new RegExp(`^${section.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`));
+}
 
 async function openWorkspace(page: Page, url: string, viewport = {width: 1920, height: 1080}) {
   await page.setViewportSize(viewport);
@@ -183,10 +193,17 @@ test('two generations compare side by side, each source locates, unavailable anc
   await expect(secondDisclosure.getByRole('article').getByText('No information found', {exact: true})).toBeVisible();
   await secondDisclosure.getByRole('button', {name: 'Previous extraction', exact: true}).click();
   await expect(secondDisclosure.getByRole('article').getByText(SECONDARY_VALUE, {exact: true})).toBeVisible();
-  expect(await secondDisclosure.evaluate(root => document.getAnimations().filter(animation => {
-    const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-    return target !== null && root.contains(target);
-  }).length)).toBe(0);
+  // The card declares its reduced-motion override (`motion-reduce:transition-none`): under `reduce`
+  // every mounted card's computed transition must resolve to none (the unstyled default is `all`, so
+  // dropping the override fails here; no mounted card fails too), and nothing inside the disclosure
+  // may be animating.
+  expect(await secondDisclosure.evaluate(root => ({
+    cardTransitions: [...new Set(Array.from(root.querySelectorAll('article')).map(card => getComputedStyle(card).transitionProperty))],
+    running: document.getAnimations().filter(animation => {
+      const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+      return target !== null && root.contains(target);
+    }).length,
+  }))).toEqual({cardTransitions: ['none'], running: 0});
 });
 
 test('keyboard focus never leaves a review control hidden under the sticky toolbar', async ({page, workspace}) => {
@@ -305,22 +322,27 @@ test('shortcuts accept, focus and navigate but never while typing, in an open me
   await editor.click();
   await page.keyboard.type('af');
   await expect(editor).toHaveValue('af');
-  await expect(focusButton).toBeVisible();
-  await expect(rowFor(page, first.label).getByRole('button', {name: 'Accept extraction', exact: true})).toBeVisible();
+  // Typed, not shortcuts: focus mode stays off (every row still renders) and nothing is accepted.
+  // A keyboard event commits synchronously, so a toggled focus would already show here.
+  await expect(focusButton).toHaveAttribute('aria-pressed', 'false');
+  expect(await visibleRowCount(page), 'typing "f" must not enter focus mode').toBeGreaterThan(1);
+  await expect(rowFor(page, first.label).getByRole('button', {name: 'Accept extraction', exact: true})).toHaveAttribute('aria-pressed', 'false');
 
   await page.getByRole('combobox').first().click();
   await expect(page.getByRole('listbox')).toBeVisible();
   await page.keyboard.press('f');
+  expect(await visibleRowCount(page), '"f" inside an open listbox must not enter focus mode').toBeGreaterThan(1);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('listbox')).toHaveCount(0);
-  await expect(focusButton).toBeVisible();
+  await expect(focusButton).toHaveAttribute('aria-pressed', 'false');
 
   await page.getByRole('button', {name: 'Help and shortcuts', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('f');
+  expect(await visibleRowCount(page), '"f" inside an open dialog must not enter focus mode').toBeGreaterThan(1);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(focusButton).toBeVisible();
+  await expect(focusButton).toHaveAttribute('aria-pressed', 'false');
 
   const rowIds = () => page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('tr[data-field-row]')).filter(row => !row.hidden).map(row => row.id));
   const activeRowId = () => page.evaluate(() => document.activeElement?.closest('tr')?.id ?? '');
@@ -336,6 +358,7 @@ test('shortcuts accept, focus and navigate but never while typing, in an open me
 
   // Acceptance is inert while a save runs; let the typed draft persist first.
   await expect.poll(async () => (await decisionsFor(workspace.runId)).at(-1)).toMatchObject({field_id: first.id, value: {value: 'af'}});
+  expect((await decisionsFor(workspace.runId)).filter(decision => decision.proposal_record_id !== null), 'the "a" typed into the editor wrote no acceptance').toEqual([]);
   await activate(page, first.label);
   await expect(bar.getByRole('button', {name: 'Accept extraction', exact: true})).toBeEnabled();
   await page.keyboard.press('a');
@@ -465,6 +488,7 @@ test('design review captures production states without horizontal page overflow'
   await expect(secondDisclosure.getByRole('article')).toHaveCount(1);
   await secondDisclosure.getByRole('button', {name: 'Next extraction', exact: true}).click();
   await expect(secondDisclosure.getByRole('article').getByText('No information found', {exact: true})).toBeVisible();
+  await expectGuideOn(page, second);
   await capture('review-focus-no-information');
 
   await toolbar(page).getByRole('button', {name: 'Leave focus', exact: true}).click();
@@ -472,5 +496,6 @@ test('design review captures production states without horizontal page overflow'
   await toolbar(page).getByRole('button', {name: 'Focus question', exact: true}).click();
   await toolbar(page).getByRole('button', {name: 'Accept extraction', exact: true}).click();
   await expect(toolbar(page).getByRole('button', {name: 'Unaccept extraction', exact: true})).toHaveAttribute('aria-pressed', 'true');
+  await expectGuideOn(page, first);
   await capture('review-active-actions');
 });
