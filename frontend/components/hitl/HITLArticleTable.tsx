@@ -128,6 +128,13 @@ interface Props {
   emptyTitle?: string;
   emptyDescription?: string;
   /**
+   * Rendered at the start of the toolbar, grouped with search so the two
+   * share a row at every width (QA mounts its Active tool control here). It
+   * also renders in the loading, error and empty states: switching tools is
+   * how a user leaves an empty or failing list.
+   */
+  toolbarLeading?: ReactNode;
+  /**
    * Rendered in the toolbar's trailing group, beside the list count — the
    * same prop name and placement ``ArticleExtractionTable`` uses, so a
    * surface mounts the same action on either table.
@@ -143,6 +150,7 @@ export function HITLArticleTable({
   templateSchema,
   emptyTitle,
   emptyDescription,
+  toolbarLeading,
   toolbarActions,
 }: Props) {
   const navigate = useNavigate();
@@ -362,13 +370,31 @@ export function HITLArticleTable({
     }
   };
 
+  const leadingRow = toolbarLeading ? (
+    <div className="@container/listbar flex shrink-0 items-center gap-2">{toolbarLeading}</div>
+  ) : null;
+  const withLeading = (content: ReactNode) =>
+    leadingRow ? (
+      <div className="flex h-full min-h-0 flex-col gap-2">
+        {leadingRow}
+        {content}
+      </div>
+    ) : (
+      content
+    );
+
   const gate = resolveProgressGate(progress, structure); // R19, in the ONE shared order (R37)
-  if (gate.state === "signedOut") return <ErrorState message={t("extraction", "progressUnavailable")} />;
-  if (gate.state === "error") return <ErrorState message={t("extraction", "errorLoadProgress")} onRetry={gate.retry} />;
+  if (gate.state === "signedOut") return withLeading(<ErrorState message={t("extraction", "progressUnavailable")} />);
+  if (gate.state === "error") return withLeading(<ErrorState message={t("extraction", "errorLoadProgress")} onRetry={gate.retry} />);
   if (gate.state !== "ready" || loading) {
     return (
       <div className="space-y-3" data-testid={`hitl-${kind}-table-loading`}>
-        {toolbarActions && <div className="flex justify-end">{toolbarActions}</div>}
+        {(toolbarLeading || toolbarActions) && (
+          <div className="@container/listbar flex items-center gap-2">
+            {toolbarLeading}
+            {toolbarActions && <div className="ml-auto flex items-center gap-2">{toolbarActions}</div>}
+          </div>
+        )}
         <Skeleton className="h-8 w-full max-w-md" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -376,7 +402,7 @@ export function HITLArticleTable({
   }
 
   if (error) {
-    return (
+    return withLeading(
       <div className="rounded-lg border border-destructive bg-destructive/10 p-6">
         <div className="flex items-center gap-3 text-destructive">
           <AlertCircle className="h-5 w-5" />
@@ -387,12 +413,12 @@ export function HITLArticleTable({
             <p className="mt-1 text-sm">{error}</p>
           </div>
         </div>
-      </div>
+      </div>,
     );
   }
 
   if (articles.length === 0) {
-    return (
+    return withLeading(
       <div
         className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/40 bg-muted/10 px-4 py-24"
         data-testid={`hitl-${kind}-table-empty`}
@@ -407,20 +433,29 @@ export function HITLArticleTable({
         <p className="mx-auto max-w-xs text-center text-[13px] text-muted-foreground">
           {emptyDescription ?? t("extraction", "listNoArticlesDesc")}
         </p>
-      </div>
+      </div>,
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2" data-testid={`hitl-${kind}-table`}>
       <div className="flex flex-col gap-2 shrink-0">
-        <div className="flex flex-wrap items-center gap-2 w-full">
-          <ListToolbarSearch
-            ref={searchInputRef}
-            placeholder={t("extraction", "tableSearchPlaceholderShortcut")}
-            value={globalFilter}
-            onChange={setGlobalFilter}
-          />
+        <div
+          data-testid={`hitl-${kind}-toolbar`}
+          className="@container/listbar flex w-full flex-wrap items-center gap-2"
+        >
+          {/* Leading control + search share one row at every width; below
+              `md` the filter/display/actions wrap onto the next row. */}
+          <div className="flex min-w-0 basis-full items-center gap-2 md:min-w-80 md:flex-1">
+            {toolbarLeading}
+            <ListToolbarSearch
+              ref={searchInputRef}
+              className="w-auto min-w-0 flex-1"
+              placeholder={t("extraction", "tableSearchPlaceholderShortcut")}
+              value={globalFilter}
+              onChange={setGlobalFilter}
+            />
+          </div>
           <FilterButtonWithPopover
             open={filterPopoverOpen}
             onOpenChange={setFilterPopoverOpen}

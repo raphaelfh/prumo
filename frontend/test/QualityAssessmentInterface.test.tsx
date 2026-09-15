@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -221,6 +221,18 @@ describe('QualityAssessmentInterface', () => {
     expect(
       await screen.findByText(/A predictive model for X/),
     ).toBeInTheDocument();
+  });
+
+  it('places the active tool in the article table toolbar, left of search', async () => {
+    renderInterface();
+    await screen.findByText(/A predictive model for X/); // past the loading skeleton
+
+    const toolbar = screen.getByTestId('hitl-quality_assessment-toolbar');
+    const bar = within(toolbar).getByTestId('hitl-quality_assessment-active-template-bar');
+    const search = within(toolbar).getByPlaceholderText(t('extraction', 'tableSearchPlaceholderShortcut'));
+    expect(bar.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Exactly one control: the old card row above the table is gone.
+    expect(screen.getAllByTestId('hitl-quality_assessment-active-template-bar')).toHaveLength(1);
   });
 
   it('navigates to the QA fullscreen route when the row Action button is clicked', async () => {

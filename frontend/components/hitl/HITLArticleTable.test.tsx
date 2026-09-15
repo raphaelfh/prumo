@@ -13,9 +13,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { t } from '@/lib/copy';
 
-const { progressById, useAuthMock, structure, values, structureRefetch, valuesRefetch } = vi.hoisted(() => ({
+const { progressById, useAuthMock, structure, values, structureRefetch, valuesRefetch, articleList } = vi.hoisted(() => ({
   progressById: new Map<string, number>(), useAuthMock: vi.fn(), structureRefetch: vi.fn(), valuesRefetch: vi.fn(),
   structure: { isLoading: false, isError: false }, values: { isLoading: false, isError: false },
+  articleList: { empty: false },
 }));
 const AUTH_USER = { user: { id: 'user-1' }, loading: false };
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => useAuthMock() }));
@@ -23,11 +24,13 @@ vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => useAuthMock() }));
 vi.mock('@/services/articlesService', () => ({
   fetchProjectArticles: async () => ({
     ok: true,
-    data: [
-      { id: 'a-new', title: 'Fresh article', authors: [], publication_year: null, created_at: '2026-01-03T00:00:00Z' },
-      { id: 'a-wip', title: 'Half done', authors: ['Doe'], publication_year: 2024, created_at: '2026-01-02T00:00:00Z' },
-      { id: 'a-done', title: 'All done', authors: ['Roe'], publication_year: 2023, created_at: '2026-01-01T00:00:00Z' },
-    ],
+    data: articleList.empty
+      ? []
+      : [
+          { id: 'a-new', title: 'Fresh article', authors: [], publication_year: null, created_at: '2026-01-03T00:00:00Z' },
+          { id: 'a-wip', title: 'Half done', authors: ['Doe'], publication_year: 2024, created_at: '2026-01-02T00:00:00Z' },
+          { id: 'a-done', title: 'All done', authors: ['Roe'], publication_year: 2023, created_at: '2026-01-01T00:00:00Z' },
+        ],
   }),
 }));
 
@@ -57,12 +60,13 @@ function LocationProbe() {
   return <div data-testid="probe-pathname">{useLocation().pathname}</div>;
 }
 
-function renderTable(toolbarActions?: ReactNode) {
+function renderTable(toolbarActions?: ReactNode, toolbarLeading?: ReactNode) {
   const ui = () => (
     <MemoryRouter initialEntries={['/list']}>
       <Routes>
         <Route path="/list" element={<HITLArticleTable kind="quality_assessment" projectId="p1" templateId="t1"
-          rowActionHref={(articleId, templateId) => `/qa/${articleId}/${templateId}`} toolbarActions={toolbarActions} />} />
+          rowActionHref={(articleId, templateId) => `/qa/${articleId}/${templateId}`}
+          toolbarActions={toolbarActions} toolbarLeading={toolbarLeading} />} />
         <Route path="*" element={<LocationProbe />} />
       </Routes>
     </MemoryRouter>
@@ -77,6 +81,7 @@ const openControl = (title: string) =>
 beforeEach(() => {
   vi.clearAllMocks(); useAuthMock.mockReturnValue(AUTH_USER); Object.assign(structure, { isLoading: false, isError: false }); Object.assign(values, { isLoading: false, isError: false });
   progressById.clear();
+  articleList.empty = false;
   progressById.set('a-wip', 40);
   progressById.set('a-done', 100);
 });
@@ -175,5 +180,47 @@ describe('HITLArticleTable progress states', () => {
     renderTable();
     expect(await screen.findByText(t('extraction', 'progressUnavailable'))).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: retryName })).toBeNull();
+  });
+});
+
+describe('HITLArticleTable leading toolbar slot', () => {
+  const LEADING = <span data-testid="leading">tool</span>;
+  const SEARCH = t('extraction', 'tableSearchPlaceholderShortcut');
+
+  it('renders the leading slot in the toolbar row, before search', async () => {
+    renderTable(undefined, LEADING);
+    await openControl('Half done');
+
+    const toolbar = screen.getByTestId('hitl-quality_assessment-toolbar');
+    const leading = within(toolbar).getByTestId('leading');
+    const search = within(toolbar).getByPlaceholderText(SEARCH);
+    expect(leading.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(leading.parentElement).toHaveClass('md:min-w-80');
+    // Search shares the row with the slot: its full-width default is replaced.
+    const searchWrapper = search.closest('.group');
+    expect(searchWrapper).toHaveClass('flex-1', 'min-w-0', 'w-auto');
+    expect(searchWrapper).not.toHaveClass('w-full');
+  });
+
+  it('keeps the leading slot beside the toolbar actions while progress loads', async () => {
+    values.isLoading = true;
+    renderTable(<button type="button">toolbar-action</button>, LEADING);
+    expect(screen.getByTestId('hitl-quality_assessment-table-loading')).toBeInTheDocument();
+    expect(screen.getByTestId('leading')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'toolbar-action' })).toBeInTheDocument();
+  });
+
+  it('keeps the leading slot when progress fails', async () => {
+    values.isError = true;
+    renderTable(undefined, LEADING);
+    expect(await screen.findByText(t('extraction', 'errorLoadProgress'))).toBeInTheDocument();
+    expect(screen.getByTestId('leading')).toBeInTheDocument();
+  });
+
+  it('keeps the leading slot when the project has no articles', async () => {
+    articleList.empty = true;
+    renderTable(undefined, LEADING);
+    expect(await screen.findByTestId('hitl-quality_assessment-table-empty')).toBeInTheDocument();
+    expect(screen.getByTestId('leading')).toBeInTheDocument();
   });
 });
