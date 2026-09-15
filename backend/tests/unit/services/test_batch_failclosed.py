@@ -33,6 +33,8 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     svc._key_provider = None
     # A retry-shaped construction: defer to whatever the run is pinned to.
     svc._repin = False
+    # No durable attempt: the pre-attempt job shape ``__init__`` defaults to.
+    svc.attempt_id = None
     svc.user_id = "u"
 
     run = SimpleNamespace(

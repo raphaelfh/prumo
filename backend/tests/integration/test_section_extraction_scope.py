@@ -19,7 +19,7 @@ cross-tenant write, and another RESTRICT-guarded reference blocking B's
 template deletion.
 
 Proven at the endpoint: the queue seam is the only stub, so a rejected
-request must never reach ``.delay``. The positive controls keep the gates
+request must never reach ``.apply_async``. The positive controls keep the gates
 from over-rejecting legitimate own-coordinate ids.
 """
 
@@ -146,12 +146,16 @@ def _batch_parent_payload(parent_instance_id: UUID) -> dict:
 
 
 def _stub_queue(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """Stub the queue seam only — the gate must run for real."""
+    """Stub the queue seam only — the gate and the durable attempt run for real.
+
+    The endpoint enqueues through ``apply_async`` (keyed by the attempt); a
+    ``delay`` stub would leave every "never enqueued" assertion vacuous.
+    """
     monkeypatch.setattr(se, "_is_queue_available", lambda: True)
-    fake_delay = MagicMock(return_value=MagicMock(id="job-1"))
-    monkeypatch.setattr(se, "run_section_extraction_task", MagicMock(delay=fake_delay))
+    fake_enqueue = MagicMock()
+    monkeypatch.setattr(se, "run_section_extraction_task", MagicMock(apply_async=fake_enqueue))
     monkeypatch.setattr(se, "_remember_job_owner", lambda *_a, **_k: None)
-    return fake_delay
+    return fake_enqueue
 
 
 # ======================================================================
@@ -199,7 +203,7 @@ async def test_out_of_scope_id_is_rejected(
     ``entityTypeId`` routes to ``extract_all_sections``, a different dispatch
     branch behind the same gate.
     """
-    fake_delay = _stub_queue(monkeypatch)
+    fake_enqueue = _stub_queue(monkeypatch)
 
     r = await client_as_manager.post(
         "/api/v1/extraction/sections", json=build_payload(await build_id(db_session))
@@ -209,7 +213,7 @@ async def test_out_of_scope_id_is_rejected(
     body = r.json()
     assert body["ok"] is False
     assert body["error"]["message"] == detail
-    fake_delay.assert_not_called()
+    fake_enqueue.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -223,7 +227,7 @@ async def test_run_continuation_is_gated_too(
     Matching ``runId`` binds project/article/template; the leaf ids are what
     that check never reached.
     """
-    fake_delay = _stub_queue(monkeypatch)
+    fake_enqueue = _stub_queue(monkeypatch)
     run = await engine_setup.run_in_extract(db_session)
     entity_type_id = await _global_entity_type(db_session)
 
@@ -233,7 +237,7 @@ async def test_run_continuation_is_gated_too(
     )
 
     assert r.status_code == 400, r.text
-    fake_delay.assert_not_called()
+    fake_enqueue.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -250,7 +254,7 @@ async def test_cross_tenant_parent_is_rejected_for_a_single_project_member(
     profile manages both seed projects), so a future identity-dependent
     rewrite cannot quietly pass.
     """
-    fake_delay = _stub_queue(monkeypatch)
+    fake_enqueue = _stub_queue(monkeypatch)
     parent_id = await _foreign_project_instance(db_session)
 
     r = await client_as_reviewer.post(
@@ -258,7 +262,7 @@ async def test_cross_tenant_parent_is_rejected_for_a_single_project_member(
     )
 
     assert r.status_code == 400, r.text
-    fake_delay.assert_not_called()
+    fake_enqueue.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -269,14 +273,14 @@ async def test_outsider_gets_403_before_any_leaf_check(
 ) -> None:
     """Membership precedes BOTH gates: a non-member carrying two foreign ids
     learns nothing about either."""
-    fake_delay = _stub_queue(monkeypatch)
+    fake_enqueue = _stub_queue(monkeypatch)
     body = _parent_payload(await _foreign_project_instance(db_session))
     body["entityTypeId"] = str(await _global_entity_type(db_session))
 
     r = await client_as_outsider.post("/api/v1/extraction/sections", json=body)
 
     assert r.status_code == 403, r.text
-    fake_delay.assert_not_called()
+    fake_enqueue.assert_not_called()
 
 
 # ======================================================================
@@ -289,14 +293,14 @@ async def test_own_template_entity_type_still_enqueues(
     client_as_manager: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_delay = _stub_queue(monkeypatch)
+    fake_enqueue = _stub_queue(monkeypatch)
 
     r = await client_as_manager.post(
         "/api/v1/extraction/sections", json=_payload(SEED.primary_entity_type)
     )
 
     assert r.status_code == 202, r.text
-    fake_delay.assert_called_once()
+    fake_enqueue.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -304,14 +308,14 @@ async def test_own_coordinate_parent_instance_still_enqueues(
     client_as_manager: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_delay = _stub_queue(monkeypatch)
+    fake_enqueue = _stub_queue(monkeypatch)
 
     r = await client_as_manager.post(
         "/api/v1/extraction/sections", json=_parent_payload(SEED.primary_instance)
     )
 
     assert r.status_code == 202, r.text
-    fake_delay.assert_called_once()
+    fake_enqueue.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -360,7 +364,7 @@ async def test_foreign_template_is_rejected_without_an_entity_type_oracle(
     The reviewer profile is a member of the primary project only, so this is
     a real tenant boundary rather than a coordinate mismatch.
     """
-    fake_delay = _stub_queue(monkeypatch)
+    fake_enqueue = _stub_queue(monkeypatch)
     _, foreign_template, _ = await fresh_charms(db_session)
     matching_entity_type = await first_entity_type_id(db_session, foreign_template)
 
@@ -374,4 +378,4 @@ async def test_foreign_template_is_rejected_without_an_entity_type_oracle(
     # The pair that used to enqueue, and the pair that used to 400.
     assert await _post(matching_entity_type) == 400
     assert await _post(SEED.primary_entity_type) == 400
-    fake_delay.assert_not_called()
+    fake_enqueue.assert_not_called()
