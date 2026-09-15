@@ -90,6 +90,24 @@ describe('useResizableTableColumns', () => {
         expect(result.current.columnWidths.year).toBe(80);
     });
 
+    it('writes storage once when a drag ends, not on every mousemove', () => {
+        const write = vi.spyOn(localStorage, 'setItem');
+        const {result} = renderHook(() => useHarness());
+
+        act(() => {
+            result.current.startResize('year', 100);
+        });
+        drag(110);
+        drag(120);
+        drag(140);
+        expect(result.current.columnWidths.year).toBe(140);
+        expect(write).not.toHaveBeenCalled();
+
+        release();
+        expect(write).toHaveBeenCalledTimes(1);
+        write.mockRestore();
+    });
+
     it('persists widths to localStorage on mouseup', () => {
         const {result} = renderHook(() => useHarness());
 
@@ -175,6 +193,20 @@ it('ignores corrupt saved JSON and isolates a changed storage key', () => {
     rerender({storageKey: 'second'});
     expect(result.current.columnWidths.title).toBe(420);
     expect(JSON.parse(localStorage.getItem('first')!).title).toBe(700);
+});
+
+it('writes a bounded pointer gesture once when it ends', () => {
+    const {result} = renderHook(useBoundedHarness);
+    const write = vi.spyOn(localStorage, 'setItem');
+    act(() => result.current.getHandleProps('title').onResizeStart(100, 320));
+    act(() => result.current.getHandleProps('title').onResizeMove?.(150));
+    act(() => result.current.getHandleProps('title').onResizeMove?.(200));
+    expect(result.current.columnWidths.title).toBe(420);
+    expect(write).not.toHaveBeenCalled();
+    act(() => result.current.getHandleProps('title').onResizeEnd?.());
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorage.getItem('bounded')!)).toEqual({title: 420});
+    write.mockRestore();
 });
 
 it('starts a drag at the fitted visible width without rewriting the preference until movement', () => {

@@ -41,7 +41,7 @@ export function useResizableTableColumns({
     minWidth = 80, maxWidth = 600, bounds,
 }: UseResizableTableColumnsParams) {
     const [resizingColumn, setResizingColumn] = useState<string | null>(null);
-    const drag = useRef<{column: string; x: number; width: number} | null>(null);
+    const drag = useRef<{column: string; x: number; width: number; moved: boolean} | null>(null);
     const widthsRef = useRef(columnWidths);
     const preferences = useRef<WidthMap>({});
     const loadedKey = useRef<string | null>(null);
@@ -68,24 +68,27 @@ export function useResizableTableColumns({
         setColumnWidths(initial);
     }, [bounds, storageKey, defaultColumnWidths, setColumnWidths, clamp]);
 
-    /** Pointer, mouse and keyboard writes use this same clamp/persistence path. */
-    const setWidth = (column: string, width: number) => {
+    /** Pointer, mouse and keyboard writes share this clamp; a drag persists once, when it ends. */
+    const setWidth = (column: string, width: number, save = true) => {
         const nextWidth = clamp(column, width);
         const next = {...widthsRef.current, [column]: nextWidth};
         widthsRef.current = next;
         preferences.current = {...preferences.current, [column]: nextWidth};
         setColumnWidths(next);
-        persist(storageKey, bounds ? preferences.current : next);
+        if (save) persist(storageKey, bounds ? preferences.current : next);
     };
     const startResize = (column: string, clientX: number, visibleWidth?: number) => {
-        drag.current = {column, x: clientX, width: clamp(column, visibleWidth ?? widthsRef.current[column] ?? defaultColumnWidths[column] ?? minWidth)};
+        drag.current = {column, x: clientX, width: clamp(column, visibleWidth ?? widthsRef.current[column] ?? defaultColumnWidths[column] ?? minWidth), moved: false};
         setResizingColumn(column);
     };
     const moveResize = (clientX: number) => {
         const start = drag.current;
-        if (start) setWidth(start.column, start.width + clientX - start.x);
+        if (!start) return;
+        start.moved = true;
+        setWidth(start.column, start.width + clientX - start.x, false);
     };
     const endResize = () => {
+        if (drag.current?.moved) persist(storageKey, bounds ? preferences.current : widthsRef.current);
         drag.current = null;
         setResizingColumn(null);
     };
