@@ -103,9 +103,12 @@ class ExtractionProposalRecord(BaseModel):
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Engine identity ONLY — how THIS value was produced (0056). Immutable per
     # row, unlike the run's per-section snapshot, which is last-write-wins.
-    # NEVER holds ``ran_by_user_id``: identity stays run-level, where the
-    # blind-review scrub can reach it. NEVER serialize this straight from the
-    # ORM row — ``AISuggestionItem``/``AISuggestionHistoryItem`` set
+    # NEVER holds ``ran_by_user_id``/``ran_by_name`` (nor does
+    # ``generation_snapshot``): runner identity comes from the owning
+    # ``extraction_attempts.owner_id`` and is attached only by
+    # ``proposal_generation_read.serialize_proposal_generation`` after the
+    # per-run reveal; legacy rows name no runner. NEVER serialize this
+    # straight from the ORM row — ``AISuggestionItem``/``AISuggestionHistoryItem`` set
     # ``from_attributes=True`` and declare a field of the same name, so a future
     # ``model_validate(orm_row)`` would bypass the read-side reveal gate.
     provenance: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

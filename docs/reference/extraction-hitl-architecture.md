@@ -247,8 +247,9 @@ last transport outcome was uncertain. After kickoff scope authorization,
 `ExtractionAttemptService.prepare_request` does the following:
 
 1. Uses a server `uuid4()` when the id is absent.
-2. Reuses the run of an attempt the caller already owns, or resolves the live
-   extract run (`resolve_or_create_extract_run`).
+2. Picks the run: a client-sent `run_id` takes precedence; otherwise it reuses
+   the run of an attempt the caller already owns, or resolves the live extract
+   run (`resolve_or_create_extract_run`).
 3. Refuses a run outside the `extract` stage (`InvalidStageTransitionError`,
    400).
 4. Inserts through `ExtractionAttemptRepository.get_or_create`
@@ -322,8 +323,11 @@ Runner identity now comes only from the attempt owner (spec §12.2: identity
 from the attempt owner after reveal; legacy cards invent no runner identity).
 Proposals written before 0075 have no attempt. For them, QA and consensus
 popovers show no "Run by {name}" header, including the arbitrator reveal, and
-generation details show no "Ran by" row. The previous run-level
-`ran_by_user_id` was last-write-wins per run, so it was never a truthful
+generation details show no "Ran by" row. The run row still receives a
+per-section `ran_by_user_id` (`merge_provenance_section` in
+`section_extraction_service.py`) and run reads scrub it
+(`scrub_results_ranby`), but proposal runner identity no longer derives from
+it: that value is last-write-wins per run, so it was never a truthful
 per-proposal attribution. No backfill is planned. When one run holds attempts
 by different owners, the popover names each version by its own runner
 (compared by `ranByUserId`, falling back to the name). It never names one
@@ -358,8 +362,11 @@ runner for the whole run.
   (`useJustUpdatedValue`, `.field-just-updated`) is not rendered on the review
   table, because its editors (`FieldValueEditor`) do not subscribe to the value
   bus. `useExtractedValues` dispatches only on hydration and new coordinates,
-  since section extraction writes proposals, not reviewer values. QA's
-  `FieldInput` still lights.
+  since section extraction writes proposals, not reviewer values.
+  `FieldInput` still lights only where `useExtractedValues` feeds the value
+  bus, i.e. `ExtractionFullScreen`'s default presentation (read-only,
+  consensus). QA's `FieldInput` subscribes, but the QA screen never
+  dispatches, so it does not light.
 
 ### Pre-existing tables — evolved
 
