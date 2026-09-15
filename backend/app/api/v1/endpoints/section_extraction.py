@@ -261,6 +261,14 @@ async def extract_section(
             task_id=attempt.job_id,
         )
     except Exception:
+        # The attempt is committed, so a same-requestId retry replays it; log
+        # identifiers only (never the payload) so the broker fault is visible.
+        logger.exception(
+            "section_extraction_enqueue_failed",
+            trace_id=trace_id,
+            attempt_id=str(attempt.id),
+            job_id=attempt.job_id,
+        )
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=ApiResponse.failure(

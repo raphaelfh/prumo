@@ -920,6 +920,62 @@ async def test_direct_endpoint_uses_durable_identity_and_reports_enqueue_failure
         assert json.loads(response.body)["error"]["code"] == "SERVICE_UNAVAILABLE"
 
 
+async def test_direct_endpoint_logs_the_enqueue_failure_without_the_payload():
+    import json
+
+    from starlette.requests import Request
+
+    trace_id = str(uuid4())
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [],
+            "state": {"trace_id": trace_id},
+        }
+    )
+    payload = SectionExtractionRequest(**_SINGLE_PAYLOAD)
+    attempt = SimpleNamespace(
+        id=uuid4(), job_id="durable-job", request_payload=payload.model_dump(mode="json")
+    )
+    with (
+        patch.object(se, "_check_request_scope", new=AsyncMock()),
+        patch.object(
+            se,
+            "resolve_engine",
+            new=AsyncMock(return_value=SimpleNamespace(provider="openai", model="gpt-4o")),
+        ),
+        patch.object(se, "_is_queue_available", return_value=True),
+        patch.object(
+            se.ExtractionAttemptService, "prepare_request", new=AsyncMock(return_value=attempt)
+        ),
+        patch.object(
+            se.run_section_extraction_task, "apply_async", side_effect=ConnectionError("offline")
+        ),
+        patch.object(se, "_remember_job_owner") as owner,
+        patch.object(se, "logger") as logger,
+    ):
+        response = await se.extract_section.__wrapped__(
+            request, payload, MagicMock(), SimpleNamespace(sub=CALLER_USER_ID), trace_id
+        )
+
+    assert response.status_code == 503
+    body = json.loads(response.body)
+    assert body["error"]["code"] == "SERVICE_UNAVAILABLE"
+    assert body["trace_id"] == str(trace_id)
+    owner.assert_not_called()
+    logger.exception.assert_called_once()
+    event, *_ = logger.exception.call_args.args
+    context = logger.exception.call_args.kwargs
+    assert event == "section_extraction_enqueue_failed"
+    assert context["trace_id"] == str(trace_id)
+    assert context["attempt_id"] == str(attempt.id)
+    assert context["job_id"] == "durable-job"
+    assert "request_payload" not in context
+    assert "payload" not in context
+
+
 async def test_direct_endpoint_closed_run_is_400():
     from starlette.requests import Request
 
