@@ -157,3 +157,19 @@ async def write_candidate(
         extraction_attempt_id=attempt_id,
         generation_snapshot=snapshot,
     )
+
+
+async def locked_result_filter(
+    db: AsyncSession, run_id: UUID, user_id: str, attempt_id: UUID | None
+) -> LlmFieldFilter:
+    """Guard every post-model write; caller holds this lock only through its result transaction."""
+    from app.services._extraction_run_lock import load_run_for_update
+    from app.services.extraction_proposal_service import InvalidProposalError
+
+    run = await load_run_for_update(db, run_id)
+    if run is None:
+        raise InvalidProposalError(f"Run {run_id} not found")
+    await db.refresh(run)
+    if run.stage != "extract":
+        raise InvalidProposalError("AI extraction requires the extract stage")
+    return await current_result_filter(db, run, user_id, attempt_id)

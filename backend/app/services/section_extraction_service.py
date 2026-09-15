@@ -1640,19 +1640,9 @@ class SectionExtractionService(LoggerMixin):
         # No shared run lock is acquired until every external call has finished.
         # A savepoint keeps proposals and evidence atomic even if the caller catches an error.
         async with self.db.begin_nested():
-            from app.services._extraction_run_lock import load_run_for_update
-            from app.services.extraction_generation import current_result_filter
-            from app.services.extraction_proposal_service import InvalidProposalError
+            from app.services.extraction_generation import locked_result_filter
 
-            current_run = await load_run_for_update(self.db, run.id)
-            if current_run is None:
-                raise InvalidProposalError(f"Run {run.id} not found")
-            await self.db.refresh(current_run)
-            if current_run.stage != ExtractionRunStage.EXTRACT.value:
-                raise InvalidProposalError("AI extraction requires the extract stage")
-            field_filter = await current_result_filter(
-                self.db, current_run, self.user_id, attempt_id
-            )
+            field_filter = await locked_result_filter(self.db, run.id, self.user_id, attempt_id)
             if entity_type.name in field_filter.out_of_scope_sections:
                 return 0
             excluded = {

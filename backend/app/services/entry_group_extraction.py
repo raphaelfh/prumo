@@ -35,7 +35,7 @@ from app.llm.prompts import Ancestor, Scope, entry_identification
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.entity_key import existing_keys, key_field_of, resolve_instance
 from app.services.entry_ancestry import ancestry_of, noun_of
-from app.services.extraction_generation import GenerationCallResult
+from app.services.extraction_generation import GenerationCallResult, locked_result_filter
 
 if TYPE_CHECKING:
     from app.models.extraction import ExtractionRun
@@ -165,18 +165,31 @@ async def _extract_entry_group(
     count = 0
     extracted: dict[str, Any] = {}
     for idx, name in enumerate(names):
-        instance, created = await resolve_instance(
-            service.db,
-            project_id=run.project_id,
-            article_id=run.article_id,
-            template_id=run.template_id,
-            entity_type_id=entity_type.id,
-            parent_instance_id=parent_instance_id,
-            key_value=name,
-            sort_order=idx,
-            created_by=UUID(service.user_id),
-            metadata={"ai_extracted": True, "ai_run_id": str(run.id)},
-        )
+        # Identification is external work too: validate before writing any entry.
+        # The worker commits this result transaction before the field-model call.
+        async with service.db.begin_nested():
+            field_filter = await locked_result_filter(
+                service.db, run.id, service.user_id, service.attempt_id
+            )
+            entry_fields = [
+                field
+                for field in fields
+                if (entity_type.name, field.name) not in field_filter.excluded_coordinates
+            ]
+            if entity_type.name in field_filter.out_of_scope_sections or not entry_fields:
+                continue
+            instance, created = await resolve_instance(
+                service.db,
+                project_id=run.project_id,
+                article_id=run.article_id,
+                template_id=run.template_id,
+                entity_type_id=entity_type.id,
+                parent_instance_id=parent_instance_id,
+                key_value=name,
+                sort_order=idx,
+                created_by=UUID(service.user_id),
+                metadata={"ai_extracted": True, "ai_run_id": str(run.id)},
+            )
         service.logger.info(
             "entry_instance_created" if created else "entry_instance_reused",
             trace_id=service.trace_id,
@@ -184,11 +197,10 @@ async def _extract_entry_group(
             entity_type_id=str(entity_type.id),
             key=name,
         )
-        entry_fields = fields
         if skip_fields_with_human_proposals and not created:
             # Same per-field guard as a singleton re-run, per instance: a
             # field the human already settled on THIS entry is not re-asked.
-            entry_fields = await _fields_left_for(service, run, instance.id, fields)
+            entry_fields = await _fields_left_for(service, run, instance.id, entry_fields)
             if not entry_fields:
                 continue
         scope = Scope(
@@ -197,7 +209,6 @@ async def _extract_entry_group(
             key_value=name,
             ancestors=ancestors,
         )
-        field_filter = await service._field_filter(run)
         await service._before_external_work()
         extracted, call_usage = await service._extract_with_llm(
             pdf_text=pdf_text,

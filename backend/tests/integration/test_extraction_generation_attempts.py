@@ -483,3 +483,85 @@ async def test_result_rechecks_current_assessor_exclusions(graph):
         )
         == 0
     )
+
+
+async def test_cancel_during_identification_does_not_commit_instance(graph, _engine, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    import pytest
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.llm.extractor import LlmUsage
+    from app.llm.prompts.entry_identification import EntryIdentificationOutput, IdentifiedEntry
+    from app.models.extraction import ExtractionInstance, ExtractionRun
+    from app.services import entry_group_extraction as pipeline
+    from app.services.extraction_proposal_service import InvalidProposalError
+    from app.services.section_extraction_service import SectionExtractionService
+
+    db, scope, iid, fid = graph
+    etid = (await db.get(ExtractionInstance, iid)).entity_type_id
+    await db.execute(
+        text(
+            "UPDATE extraction_entity_types SET cardinality='many', entry_label='entry' WHERE id=:id"
+        ),
+        {"id": etid},
+    )
+    await db.execute(
+        text("UPDATE extraction_fields SET is_entity_key=true WHERE id=:id"), {"id": fid}
+    )
+    await db.commit()
+    sessions = async_sessionmaker(_engine, expire_on_commit=False)
+
+    async def identify(**_kwargs):
+        async with sessions() as other:
+            await other.execute(
+                text("UPDATE extraction_runs SET stage='cancelled' WHERE id=:id"),
+                {"id": scope.run_id},
+            )
+            await other.commit()
+        return EntryIdentificationOutput(entries=[IdentifiedEntry(name="late-entry")]), LlmUsage()
+
+    monkeypatch.setattr(pipeline, "extract_structured", identify)
+    service = SectionExtractionService(
+        db, str(SEED.primary_profile), MagicMock(), "late-entry", owns_transactions=True
+    )
+    monkeypatch.setattr(service, "_wire_model", lambda: MagicMock())
+    field_call = AsyncMock(
+        return_value=({"value": {"value": "late", "status": "found"}}, LlmUsage())
+    )
+    monkeypatch.setattr(service, "_extract_with_llm", field_call)
+    monkeypatch.setattr(service, "_maybe_verify", AsyncMock(return_value=(None, LlmUsage())))
+    run = await db.get(ExtractionRun, scope.run_id)
+    field = SimpleNamespace(
+        id=fid, name="value", label="Value", is_entity_key=True, allowed_values=None
+    )
+    entity = SimpleNamespace(
+        id=etid, name="study", label="Study", entry_label="entry", description=None, fields=[field]
+    )
+    with pytest.raises(InvalidProposalError, match="extract stage"):
+        await pipeline._extract_entry_group(
+            service,
+            run=run,
+            entity_type=entity,
+            key_field=field,
+            fields=[field],
+            parent_instance_id=None,
+            pdf_text="article",
+            kind="extraction",
+            framework=None,
+            memory_context=None,
+            prompt_context=None,
+            skip_fields_with_human_proposals=False,
+        )
+    await db.rollback()
+    async with sessions() as other:
+        count = await other.scalar(
+            text(
+                "SELECT count(*) FROM extraction_instances WHERE entity_type_id=:id AND label='late-entry'"
+            ),
+            {"id": etid},
+        )
+        assert count == 0
+    field_call.assert_not_awaited()
