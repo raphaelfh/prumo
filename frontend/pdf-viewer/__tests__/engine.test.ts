@@ -96,7 +96,16 @@ describe('intrinsic page rotation', () => {
     // jsdom has no 2d context. The engine sizes the canvas before pdf.js draws,
     // and pdf.js then rejects on the fake context — the size is what this checks.
     canvas.getContext = (() => ({})) as unknown as HTMLCanvasElement['getContext'];
-    await page.render({canvas, scale: 1, rotation: effectiveRotation(page, 0)}).catch(() => undefined);
+    let renderError: unknown;
+    try {
+      await page.render({canvas, scale: 1, rotation: effectiveRotation(page, 0)});
+    } catch (err) {
+      renderError = err;
+    }
+    // The fake context makes pdf.js reject — confirm it rejected for that
+    // reason, not because the render was aborted, before checking the size.
+    expect(renderError).toBeDefined();
+    expect((renderError as {name?: string}).name).not.toBe('AbortError');
     expect([canvas.width, canvas.height]).toEqual([792, 612]);
   });
 });
