@@ -170,9 +170,13 @@
       --accent: 240 4.8% 95.9%;
       --accent-foreground: 240 5.9% 10%;
 
-    --success: 142 71% 45%;
+    /* Success is mostly read as TEXT on its own tint (`bg-success/10
+       text-success` badges, accepted-suggestion rings), so its lightness is
+       set for WCAG AA there: 5.5:1 on the /10 tint, 4.75:1 on the /20 hover
+       tint, 6.4:1 on white. The old 45% measured 2.11:1 on the tint. */
+    --success: 142 71% 25%;
     --success-foreground: 0 0% 100%;
-    
+
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
