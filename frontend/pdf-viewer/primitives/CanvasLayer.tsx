@@ -10,7 +10,7 @@ export interface CanvasLayerProps {
 
 export function CanvasLayer({pageNumber, className}: CanvasLayerProps) {
   const page = usePageHandle(pageNumber);
-  const scale = useViewerStore((s) => s.scale);
+  const zoom = useViewerStore((s) => s.zoom);
   const viewRotation = useViewerStore((s) => s.viewRotation);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -19,12 +19,12 @@ export function CanvasLayer({pageNumber, className}: CanvasLayerProps) {
     if (!page || !canvas) return;
 
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-    const renderScale = scale * dpr;
+    const renderScale = zoom * dpr;
 
     // Display size in CSS pixels, set BEFORE rendering: the engine sizes the
     // DPR-scaled backing store up front, and a canvas without a CSS size lays
     // out at its backing size — DPR× too large until the render resolves.
-    const {width, height} = displayedSize(page.size, viewRotation, scale);
+    const {width, height} = displayedSize(page.size, viewRotation, zoom);
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
 
@@ -38,7 +38,7 @@ export function CanvasLayer({pageNumber, className}: CanvasLayerProps) {
       });
 
     return () => controller.abort();
-  }, [page, scale, viewRotation, pageNumber]);
+  }, [page, zoom, viewRotation, pageNumber]);
 
   return (
     <canvas

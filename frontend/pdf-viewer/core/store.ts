@@ -2,6 +2,7 @@ import {createStore, type StoreApi} from 'zustand';
 import type {PDFDocumentHandle, PageRotation} from './engine';
 import type {PDFSource} from './source';
 import type {LoadStatus, PageSize, SearchState, ViewerActions, ViewerMode, ViewerState} from './state';
+import {clampZoom} from '../viewport/zoomMath';
 
 type ViewerData = Omit<ViewerState, 'actions'>;
 
@@ -35,7 +36,9 @@ const initialData: ViewerData = {
   loadStatus: 'idle',
   error: null,
   currentPage: 1,
-  scale: 1,
+  zoom: 1,
+  fitWidth: false,
+  isGesturing: false,
   viewRotation: 0,
   mode: 'canvas',
   readerLocate: null,
@@ -102,8 +105,16 @@ export function createViewerStore(
         set({currentPage: clamped});
       },
 
-      setScale(scale: number) {
-        set({scale});
+      setZoom(zoom: number, opts?: {fitWidth?: boolean}) {
+        set({zoom: clampZoom(zoom), fitWidth: opts?.fitWidth ?? false});
+      },
+
+      zoomBy(factor: number) {
+        get().actions.setZoom(get().zoom * factor);
+      },
+
+      setGesturing(isGesturing: boolean) {
+        set({isGesturing});
       },
 
       rotateView() {

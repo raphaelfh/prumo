@@ -11,20 +11,21 @@ import {IconButton} from '@/components/patterns/IconButton';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import {useViewerStore} from '../core/context';
+import {MAX_ZOOM, MIN_ZOOM, ZOOM_STEP} from '../viewport/zoomMath';
 
 const PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export function ZoomControls({className}: {className?: string}) {
-  const scale = useViewerStore((s) => s.scale);
-  const setScale = useViewerStore((s) => s.actions.setScale);
+  const zoom = useViewerStore((s) => s.zoom);
+  const actions = useViewerStore((s) => s.actions);
 
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
       <IconButton
         label={t('pdf', 'viewerZoomOut')}
         side="bottom"
-        onClick={() => setScale(Math.max(0.25, scale - 0.25))}
-        disabled={scale <= 0.25}
+        onClick={() => actions.zoomBy(1 / ZOOM_STEP)}
+        disabled={zoom <= MIN_ZOOM}
         data-viewer-step=""
         icon={<ZoomOut strokeWidth={1.5} />}
       />
@@ -33,7 +34,7 @@ export function ZoomControls({className}: {className?: string}) {
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="min-w-12 justify-center px-1.5 tabular-nums">
-                {Math.round(scale * 100)}%
+                {Math.round(zoom * 100)}%
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
@@ -43,7 +44,7 @@ export function ZoomControls({className}: {className?: string}) {
         </Tooltip>
         <DropdownMenuContent align="end">
           {PRESETS.map((p) => (
-            <DropdownMenuItem key={p} onClick={() => setScale(p)} className="text-[13px] tabular-nums">
+            <DropdownMenuItem key={p} onClick={() => actions.setZoom(p)} className="text-[13px] tabular-nums">
               {Math.round(p * 100)}%
             </DropdownMenuItem>
           ))}
@@ -52,8 +53,8 @@ export function ZoomControls({className}: {className?: string}) {
       <IconButton
         label={t('pdf', 'viewerZoomIn')}
         side="bottom"
-        onClick={() => setScale(Math.min(4, scale + 0.25))}
-        disabled={scale >= 4}
+        onClick={() => actions.zoomBy(ZOOM_STEP)}
+        disabled={zoom >= MAX_ZOOM}
         data-viewer-step=""
         icon={<ZoomIn strokeWidth={1.5} />}
       />

@@ -118,7 +118,7 @@ describe('Viewer.Pages virtualization', () => {
     scrollTo(startTop);
     await waitFor(() => expect(mounted()).toContain(10));
 
-    act(() => store.getState().actions.setScale(2));
+    act(() => store.getState().actions.setZoom(2));
 
     // The scroll position (raw px) doesn't move on a zoom, so the page it
     // now lands on (in the rescaled layout) is not page 10 any more — but

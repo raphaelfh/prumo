@@ -11,7 +11,7 @@ export interface TextLayerProps {
 
 export function TextLayer({pageNumber, className}: TextLayerProps) {
   const page = usePageHandle(pageNumber);
-  const scale = useViewerStore((s) => s.scale);
+  const zoom = useViewerStore((s) => s.zoom);
   const viewRotation = useViewerStore((s) => s.viewRotation);
   const containerRef = useRef<HTMLDivElement>(null);
   // The text layer paints asynchronously; the highlights below wait for the
@@ -25,7 +25,7 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
     if (!page || !container) return;
 
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-    const renderScale = scale * dpr;
+    const renderScale = zoom * dpr;
     const ctrl = new AbortController();
     let handle: {cancel(): void} | null = null;
 
@@ -46,7 +46,7 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
       handle?.cancel();
       if (container) container.innerHTML = '';
     };
-  }, [page, scale, viewRotation, pageNumber]);
+  }, [page, zoom, viewRotation, pageNumber]);
 
   // Apply highlight classes for search matches after the text layer renders.
   // Subscribe to the whole search object to avoid creating new filtered arrays
