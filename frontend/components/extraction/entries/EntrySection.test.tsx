@@ -12,12 +12,15 @@ import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {EntryFormProvider, type EntryFormContextValue} from './EntryFormContext';
+import {useSectionExtractionJobs} from '@/stores/sectionExtractionJobs';
 import {EntrySection} from './EntrySection';
 import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/extraction';
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {auth: {getSession: async () => ({data: {session: null}})}},
 }));
+
+vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'reviewer'}})}));
 
 const extractSectionAsync = vi.fn(async () => ({ok: true as const, data: {jobId: 'job-1'}}));
 vi.mock('@/services/sectionExtractionService', async (importOriginal) => ({
@@ -133,6 +136,8 @@ function renderSection(over: Partial<EntryFormContextValue> = {}) {
 }
 
 beforeEach(() => {
+  useSectionExtractionJobs.getState().adoptOwner(null);
+  useSectionExtractionJobs.getState().adoptOwner('reviewer');
   try {
     window.localStorage.clear();
   } catch {

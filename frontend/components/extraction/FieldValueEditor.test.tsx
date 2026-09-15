@@ -112,3 +112,55 @@ describe('FieldValueEditor', () => {
     expect(screen.getByRole('textbox')).toBeDisabled();
   });
 });
+
+describe('compact FieldValueEditor', () => {
+  it('allows a long value on any text field, grows with content, and preserves a manually resized height', () => {
+    const onChange = vi.fn();
+    const {rerender} = render(<FieldValueEditor density="compact" field={base({})} value={'Long answer '.repeat(30)} onChange={onChange} />);
+    const editor = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(editor.tagName).toBe('TEXTAREA');
+    Object.defineProperty(editor, 'scrollHeight', {configurable: true, value: 240});
+    rerender(<FieldValueEditor density="compact" field={base({})} value={'Long answer '.repeat(31)} onChange={onChange} />);
+    expect(editor.style.height).toBe('240px');
+    editor.style.height = '280px'; // Native vertical resize updates inline height.
+    rerender(<FieldValueEditor density="compact" field={base({})} value={'Long answer '.repeat(32)} onChange={onChange} />);
+    expect(editor.style.height).toBe('280px');
+    fireEvent.change(editor, {target: {value: 'Saved long answer'}});
+    expect(onChange).toHaveBeenCalledWith('Saved long answer');
+  });
+  it('bounds automatic content growth at 320px', () => {
+    const {rerender} = render(<FieldValueEditor density="compact" field={base({})} value="" onChange={vi.fn()} />);
+    const editor = screen.getByRole('textbox');
+    Object.defineProperty(editor, 'scrollHeight', {configurable: true, value: 1000});
+    rerender(<FieldValueEditor density="compact" field={base({})} value={'x'.repeat(1000)} onChange={vi.fn()} />);
+    expect(editor.style.height).toBe('320px');
+  });
+  it('offers human multi-select labels while emitting stored codes', async () => {
+    const onChange = vi.fn();
+    render(<FieldValueEditor density="compact" field={base({field_type: 'multiselect', allowed_values: [{value: 'a', label: 'Alpha'}, {value: 'b', label: 'Beta'}]})} value={['a']} onChange={onChange} />);
+    expect(screen.getByRole('button')).toHaveTextContent('Alpha');
+    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(await screen.findByRole('checkbox', {name: 'Beta'}));
+    expect(onChange).toHaveBeenCalledWith(['a', 'b']);
+  });
+  it('retains numeric zero and its unit when editing', () => {
+    const onChange = vi.fn();
+    render(<FieldValueEditor density="compact" field={base({field_type: 'number', allowed_units: ['mg', 'g']})} value={{value: 0, unit: 'g'}} onChange={onChange} />);
+    expect(screen.getByRole('spinbutton')).toHaveValue(0);
+    expect(screen.getByRole('combobox')).toHaveTextContent('g');
+    fireEvent.change(screen.getByRole('spinbutton'), {target: {value: '2'}});
+    expect(onChange).toHaveBeenCalledWith({value: '2', unit: 'g'});
+  });
+  it('emits false from a boolean edit', () => {
+    const onChange = vi.fn();
+    render(<FieldValueEditor density="compact" field={base({field_type: 'boolean'})} value={true} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('switch'));
+    expect(onChange).toHaveBeenCalledWith(false);
+  });
+  it('preserves date values and saves ISO dates', () => {
+    const onChange = vi.fn();
+    render(<FieldValueEditor density="compact" field={base({field_type: 'date'})} value="2026-01-02" onChange={onChange} />);
+    fireEvent.change(screen.getByDisplayValue('2026-01-02'), {target: {value: '2026-02-03'}});
+    expect(onChange).toHaveBeenCalledWith('2026-02-03');
+  });
+});

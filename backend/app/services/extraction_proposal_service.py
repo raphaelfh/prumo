@@ -1,5 +1,6 @@
 """Service: validate + record proposals append-only."""
 
+from dataclasses import dataclass
 from typing import Any, assert_never
 from uuid import UUID
 
@@ -32,6 +33,12 @@ class InvalidProposalError(Exception):
 _EXECUTION_KEYS = ("mode_executed", "passes")
 
 
+@dataclass(frozen=True)
+class ProposalWriteResult:
+    record: ExtractionProposalRecord
+    inserted: bool
+
+
 class ExtractionProposalService:
     """Append-only proposal writes with rule validation."""
 
@@ -52,10 +59,41 @@ class ExtractionProposalService:
         rationale: str | None = None,
         provenance: dict[str, Any] | None = None,
     ) -> ExtractionProposalRecord:
+        """Legacy callers keep value-based deduplication and their return type."""
+        return (
+            await self.record_proposal_result(
+                run_id=run_id,
+                instance_id=instance_id,
+                field_id=field_id,
+                source=source,
+                proposed_value=proposed_value,
+                source_user_id=source_user_id,
+                confidence_score=confidence_score,
+                rationale=rationale,
+                provenance=provenance,
+            )
+        ).record
+
+    async def record_proposal_result(
+        self,
+        *,
+        run_id: UUID,
+        instance_id: UUID,
+        field_id: UUID,
+        source: ExtractionProposalSource,
+        proposed_value: dict[str, Any],
+        source_user_id: UUID | None = None,
+        confidence_score: float | None = None,
+        rationale: str | None = None,
+        provenance: dict[str, Any] | None = None,
+        extraction_attempt_id: UUID | None = None,
+        generation_snapshot: dict[str, Any] | None = None,
+    ) -> ProposalWriteResult:
         run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise InvalidProposalError(f"Run {run_id} not found")
 
+        await self.db.refresh(run)
         source_value = source.value
         # ``human`` proposals are REJECTED outright for BOTH kinds — humans
         # write via /decisions. HUMAN is a domain-legal enum value refused for
@@ -118,6 +156,29 @@ class ExtractionProposalService:
                     allows_no_information=domain.allows_no_information,
                 )
 
+        if extraction_attempt_id is not None:
+            from app.services.extraction_generation import sanitize_generation_snapshot
+
+            existing = await self._repo.get_for_attempt(
+                extraction_attempt_id, instance_id, field_id, source_value
+            )
+            if existing is not None:
+                return ProposalWriteResult(existing, False)
+            record = ExtractionProposalRecord(
+                run_id=run_id,
+                instance_id=instance_id,
+                field_id=field_id,
+                source=source_value,
+                source_user_id=source_user_id,
+                proposed_value=proposed_value,
+                confidence_score=confidence_score,
+                rationale=rationale,
+                provenance=provenance,
+                extraction_attempt_id=extraction_attempt_id,
+                generation_snapshot=sanitize_generation_snapshot(generation_snapshot),
+            )
+            return ProposalWriteResult(await self._repo.add(record), True)
+
         # Idempotent re-record: a client replaying an unchanged value (form
         # remount, debounce double-fire, retry) must not append a duplicate
         # row. The audit trail captures value *changes*, not redundant
@@ -161,7 +222,7 @@ class ExtractionProposalService:
             # corroborating re-run under a DIFFERENT engine is a separate fact,
             # and recording it belongs in a new row with a link, never in a
             # mutated one (append-only audit trail, constitution §IX).
-            return latest
+            return ProposalWriteResult(latest, False)
 
         record = ExtractionProposalRecord(
             run_id=run_id,
@@ -174,7 +235,7 @@ class ExtractionProposalService:
             rationale=rationale,
             provenance=provenance,
         )
-        return await self._repo.add(record)
+        return ProposalWriteResult(await self._repo.add(record), True)
 
     async def list_by_item(
         self,

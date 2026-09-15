@@ -15,7 +15,14 @@
  * has moved into ``ModelSection``.
  */
 
-import type {Ref} from 'react';
+import {useRef, useState, type Ref} from 'react';
+import {useReviewNavigation, type ReviewQuestion} from '@/hooks/extraction/useReviewNavigation';
+import {useResizableTableColumns} from '@/components/shared/list/useResizableTableColumns';
+import {ReviewQuickActions} from './review/ReviewQuickActions';
+import type {ReviewWorkspace} from './review/ExtractionReviewTable';
+import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
+import {resolveEntryGroup} from '@/lib/extraction/entrySlots';
+import {isEmptyValue} from '@/lib/ai-extraction/valueParser';
 import {EntrySection} from './entries/EntrySection';
 import {EntryFormProvider, type EntryFormContextValue} from './entries/EntryFormContext';
 import {SectionAccordion} from './SectionAccordion';
@@ -31,6 +38,10 @@ import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/
 import type {EntryIdentityChanges} from './AddEntryDialog';
 
 export interface ExtractionFormViewProps {
+  presentation?: 'review-table' | 'default';
+  reviewDecisions?: ReviewWorkspace['decisions'];
+  reviewProposals?: ReviewWorkspace['proposals'];
+  reviewerId?: string | null;
   /** Every section of the template. Roots are derived, not passed. */
   entityTypes: ExtractionEntityTypeWithFields[];
   activeEntries: Record<string, string>;
@@ -84,9 +95,61 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
     articleId: props.articleId,
   });
   const sectionIds = sectionRegistry.map((s) => s.id);
-  const { activeId, registerSection, scrollToSection, activateSection } = useActiveSection(sectionIds);
+
+  const reviewEnabled = props.presentation === 'review-table' && !!props.reviewDecisions;
+  const paneRef = useRef<HTMLDivElement>(null);
+  const guideNarrow = useContainerNarrow(paneRef, 600);
+  const [wideGuideOpen, setWideGuideOpen] = useState(true);
+  const [narrowGuideOpen, setNarrowGuideOpen] = useState(false);
+  const guideOpen = guideNarrow ? narrowGuideOpen : wideGuideOpen;
+  const setGuideOpen = guideNarrow ? setNarrowGuideOpen : setWideGuideOpen;
+  const [widths, setWidths] = useState<Record<string, number>>({question: 270, value: 315});
+  const columns = useResizableTableColumns({columnWidths: widths, setColumnWidths: setWidths,
+    defaultColumnWidths: {question: 270, value: 315},
+    storageKey: `prumo:extraction-review:${props.reviewerId ?? ''}:${props.templateId}:columns`,
+    bounds: {question: {min: 160, max: 2400}, value: {min: 200, max: 2400}},
+  });
+  // Question coordinates follow the existing entry tree and registry order;
+  // the section registry remains the owner of section progress and jumps.
+  const questions: ReviewQuestion[] = [];
+  const visited = new Set<string>();
+  const walk = (entity: ExtractionEntityTypeWithFields, parent: string | null) => {
+    if (visited.has(entity.id)) return;
+    visited.add(entity.id);
+    const {entries, activeEntryId} = resolveEntryGroup(props.articleId, entity.id, parent, props.instances, props.activeEntries);
+    const children = props.entityTypes.filter(item => item.parent_entity_type_id === entity.id);
+    const active = entries.find(item => item.id === activeEntryId);
+    const rendered = entity.cardinality === 'many' && children.length ? (active ? [active] : []) : entries;
+    for (const instance of rendered) for (const field of entity.fields) questions.push({instanceId: instance.id, fieldId: field.id, sectionId: entity.id, label: field.label, allowsNoInformation: field.allows_no_information !== false, pending: field.is_required && isEmptyValue(props.values[`${instance.id}_${field.id}`])});
+    if (active) for (const child of children) walk(child, active.id);
+  };
+  for (const root of roots) walk(root, null);
+  const localNavRef = useRef<SectionNavHandle>(null);
+  const navigation = useReviewNavigation({rows: questions, scope: `${props.reviewerId}/${props.runId}/${props.articleId}/${props.templateId}/${reviewEnabled}`,
+    onNavigate: row => {
+      localNavRef.current?.revealSection(row.sectionId, false);
+      requestAnimationFrame(() => {
+        const element = document.getElementById(`review-question-${row.instanceId}_${row.fieldId}`);
+        element?.scrollIntoView({block: 'nearest'});
+        element?.focus({preventScroll: true});
+      });
+    },
+  });
+  // Focus mode shows one question, so the pane bottoms out and the scroll spy
+  // would hand the rail to the last section: the focused question's section owns it.
+  const { activeId, registerSection, scrollToSection, activateSection } = useActiveSection(sectionIds,
+    reviewEnabled && navigation.focused ? navigation.current?.sectionId : undefined);
+  const [activeProposal, setActiveProposal] = useState<ReviewWorkspace['activeProposal']>(null);
+  const review: ReviewWorkspace | undefined = reviewEnabled && props.reviewDecisions ? {
+    proposals: props.reviewProposals ?? [],
+    navigation, decisions: props.reviewDecisions, widths, columns, activeProposal,
+    setActiveProposal: (instanceId, fieldId, proposal) => setActiveProposal(previous =>
+      previous?.instanceId === instanceId && previous.fieldId === fieldId && previous.proposal === proposal ? previous : proposal ? {instanceId, fieldId, proposal} : null),
+  } : undefined;
 
   const form: EntryFormContextValue = {
+    presentation: props.presentation,
+    review,
     projectId: props.projectId,
     articleId: props.articleId,
     templateId: props.templateId,
@@ -114,7 +177,21 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
   };
 
   return (
-    <SectionNavLayout ref={sectionNavRef} items={sectionRegistry} activeId={activeId} onSelect={scrollToSection} onActivate={activateSection}>
+    <div ref={paneRef} className="min-w-0"><SectionNavLayout ref={sectionNavRef} reviewRef={localNavRef} items={sectionRegistry} activeId={activeId}
+      onSelect={scrollToSection}
+      onReviewSectionSelect={id => {
+        if (review) {
+          if (guideNarrow) setNarrowGuideOpen(false);
+          const destination = questions.find(row => row.sectionId === id);
+          if (destination) {
+            navigation.activate(destination);
+            requestAnimationFrame(() => document.getElementById(`review-question-${destination.instanceId}_${destination.fieldId}`)?.focus({preventScroll: true}));
+          }
+        }
+      }} onActivate={activateSection}
+      guideOverlay={review && guideNarrow}
+      guideOpen={review ? guideOpen : undefined} onGuideOpenChange={setGuideOpen}
+      toolbar={review ? <ReviewQuickActions review={review} rows={questions} suggestions={props.aiSuggestions} guideOpen={guideOpen} onToggleGuide={() => setGuideOpen(!guideOpen)}/> : undefined}>
       {/*
         The Provider sits here, and this component is NOT memoized. Inside a
         memo boundary its comparator would gate the whole context: one
@@ -133,6 +210,8 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
                 className="scroll-mt-4 outline-hidden"
               >
                 <SectionAccordion
+                  presentation={props.presentation}
+                  review={review}
                   entityType={entityType}
                   instances={props.instances.filter((i) => i.entity_type_id === entityType.id)}
                   fields={entityType.fields}
@@ -157,7 +236,7 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
           )}
         </div>
       </EntryFormProvider>
-    </SectionNavLayout>
+    </SectionNavLayout></div>
   );
 }
 

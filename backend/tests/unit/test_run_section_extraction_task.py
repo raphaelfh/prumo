@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -51,11 +51,18 @@ def engine_seams(monkeypatch: pytest.MonkeyPatch) -> LlmTarget:
     or ``get``, so the real resolver cannot run here."""
     target = LlmTarget(provider="openai", model="task-resolved-model")
     monkeypatch.setattr(extraction_tasks, "resolve_engine_for_run", AsyncMock(return_value=target))
+    monkeypatch.setattr(
+        "app.services.run_engine_freeze.read_attempt_engine", AsyncMock(return_value=target)
+    )
+    monkeypatch.setattr("app.services.run_engine_freeze.validate_attempt_engine", AsyncMock())
     return target
 
 
 class _FakeSession:
     def __init__(self) -> None:
+        self.get = AsyncMock(
+            return_value=MagicMock(engine={"provider": "openai"}, status="running")
+        )
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
         self.close = AsyncMock()
@@ -559,3 +566,85 @@ class TestHumanKickoffVersusRetry:
         assert service.run_from_request.await_args.kwargs["engine"] == self._PINNED, (
             "the retry abandoned the engine attempt 1 ran"
         )
+
+
+def test_durable_delivery_uses_recorded_owner_payload_and_separate_session():
+    from types import SimpleNamespace
+
+    attempt_id, owner = uuid4(), uuid4()
+    stored = {
+        "projectId": str(uuid4()),
+        "articleId": str(uuid4()),
+        "templateId": str(uuid4()),
+        "runId": str(uuid4()),
+    }
+    sessions = []
+
+    @asynccontextmanager
+    async def session_factory():
+        session = _FakeSession()
+        session.get.return_value = SimpleNamespace(
+            id=attempt_id,
+            engine=None,
+            status="pending",
+            project_id=UUID(stored["projectId"]),
+            owner_id=owner,
+        )
+        sessions.append(session)
+        yield session
+
+    async def execute(aid, operation, **kwargs):
+        assert callable(kwargs["retryable"])
+        assert aid == attempt_id
+        sessions[0].commit.assert_awaited_once()
+        freeze.assert_awaited_once()
+        return await operation(SimpleNamespace(owner_id=owner, request_payload=stored))
+
+    service = MagicMock()
+    service.run_from_request = AsyncMock(return_value=_single_result(stored["runId"], str(uuid4())))
+    with (
+        patch("app.worker._session.worker_session", session_factory),
+        patch("app.services.extraction_attempt_service.ExtractionAttemptService") as attempts,
+        patch(
+            "app.services.section_extraction_service.SectionExtractionService", return_value=service
+        ) as domain,
+        patch("app.core.deps.get_supabase_client"),
+        patch("app.core.factories.create_storage_adapter"),
+        patch("app.services.engine_credentials.resolve_engine_credentials", new=AsyncMock()),
+        patch(
+            "app.services.llm_engine_service.resolve_engine",
+            new=AsyncMock(return_value=_PROJECT_ENGINE),
+        ),
+        patch(
+            "app.services.run_engine_freeze.freeze_attempt_engine",
+            new=AsyncMock(return_value=_PROJECT_ENGINE),
+        ) as freeze,
+    ):
+        attempts.return_value.execute_attempt = AsyncMock(side_effect=execute)
+        result = run_section_extraction_task.apply(
+            kwargs={"payload_json": {}, "user_id": str(uuid4()), "attempt_id": str(attempt_id)}
+        ).get(timeout=5)
+    assert len(sessions) == 3
+    sessions[0].commit.assert_awaited_once()
+    assert attempts.call_args.args[0] is sessions[1]
+    assert domain.call_args.kwargs["db"] is sessions[2]
+    assert domain.call_args.kwargs["attempt_id"] == attempt_id
+    assert domain.call_args.kwargs["owns_transactions"] is True
+    assert domain.call_args.kwargs["user_id"] == str(owner)
+    assert result["user_id"] == str(owner)
+    assert str(service.run_from_request.call_args.args[0].run_id) == stored["runId"]
+
+
+def test_terminal_attempt_replay_preserves_classified_error():
+    with (
+        patch("app.worker._session.worker_session", _session_factory(_FakeSession())),
+        patch("app.services.extraction_attempt_service.ExtractionAttemptService") as attempts,
+        pytest.raises(ExtractionTaskError) as error,
+    ):
+        attempts.return_value.execute_attempt = AsyncMock(
+            side_effect=ExtractionTaskError("PDF_NOT_FOUND", "Missing PDF")
+        )
+        run_section_extraction_task.apply(
+            kwargs={"payload_json": {}, "user_id": str(uuid4()), "attempt_id": str(uuid4())}
+        ).get(timeout=5)
+    assert error.value.error_code == "PDF_NOT_FOUND"

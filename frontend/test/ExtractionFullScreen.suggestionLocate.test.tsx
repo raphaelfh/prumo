@@ -11,7 +11,7 @@
  * QualityAssessmentFullScreen.hydration.test.tsx's header suggestion locate.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -233,9 +233,14 @@ const RUN_VIEW = {
   ],
 };
 
-/** Serves RUN_VIEW with one pending AI suggestion, on `fieldId` of `instanceId`. */
-function mockRun(instanceId: string, fieldId: string) {
-  vi.mocked(apiClient).mockImplementation(async (url: string) => {
+/**
+ * Serves RUN_VIEW with one pending AI suggestion per `[instanceId, fieldId]`
+ * coordinate, in order. Reviewer decisions POSTed to the run are appended to
+ * the view, as the backend's append-only decision log does.
+ */
+function mockRun(...coordinates: Array<[instanceId: string, fieldId: string]>) {
+  const decisions: Array<Record<string, unknown>> = [];
+  vi.mocked(apiClient).mockImplementation(async (url: string, options?: { method?: string; body?: unknown }) => {
     if (url === "/api/v1/hitl/sessions") {
       return {
         run_id: "run-1",
@@ -244,28 +249,39 @@ function mockRun(instanceId: string, fieldId: string) {
         instances_by_entity_type: {},
       };
     }
+    if (url === "/api/v1/runs/run-1/decisions" && options?.method === "POST") {
+      const body = options.body as Record<string, unknown>;
+      const decision = {
+        id: `dec-${decisions.length + 1}`,
+        run_id: "run-1",
+        reviewer_id: "reviewer-1",
+        rationale: null,
+        created_at: new Date(Date.parse(NOW) + decisions.length * 1000).toISOString(),
+        ...body,
+      };
+      decisions.push(decision);
+      return decision;
+    }
     if (url === "/api/v1/runs/run-1/view") {
-      return RUN_VIEW;
+      return { ...RUN_VIEW, decisions: [...decisions] };
     }
     if (url === "/api/v1/articles/a1/instance-ids") {
       return RUN_VIEW.instances.map((i) => i.id);
     }
     if (url.includes("/suggestions") && !url.includes("history")) {
       return {
-        suggestions: [
-          {
-            id: "sug-1",
-            run_id: "run-1",
-            instance_id: instanceId,
-            field_id: fieldId,
-            proposed_value: { value: "AI value" },
-            confidence_score: 0.9,
-            rationale: "",
-            created_at: NOW,
-            evidence: [],
-          },
-        ],
-        count: 1,
+        suggestions: coordinates.map(([instanceId, fieldId], index) => ({
+          id: `sug-${index + 1}`,
+          run_id: "run-1",
+          instance_id: instanceId,
+          field_id: fieldId,
+          proposed_value: { value: `AI value ${index + 1}` },
+          confidence_score: 0.9,
+          rationale: "",
+          created_at: NOW,
+          evidence: [],
+        })),
+        count: coordinates.length,
       };
     }
     if (url.includes("/reviewers")) {
@@ -322,15 +338,20 @@ describe("ExtractionFullScreen — header suggestion locate in an entry group", 
   });
 
   it("selects the entry holding the first pending suggestion and opens its section", async () => {
-    mockRun("d-b", "f-dev");
+    mockRun(["d-b", "f-dev"]);
     renderPage();
 
     // Precondition: the first model is active and the section shows ITS copy.
     expect(await screen.findByDisplayValue("cox-notes")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /cox model/i, selected: true })).toBeInTheDocument();
     // Collapse the section, so an open one afterwards is the locate's doing.
+    // The review table force-mounts a collapsed section's content with `hidden`,
+    // so collapse is the header's expanded state plus a hidden ancestor.
     await userEvent.click(screen.getByRole("button", { name: /model development/i, expanded: true }));
-    await waitFor(() => expect(screen.queryByDisplayValue("cox-notes")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /model development/i, expanded: false })).toBeInTheDocument(),
+    );
+    expect(screen.getByDisplayValue("cox-notes").closest("[hidden]")).not.toBeNull();
 
     await reviewPendingSuggestions();
 
@@ -344,7 +365,7 @@ describe("ExtractionFullScreen — header suggestion locate in an entry group", 
     // until both levels switch: the reveal can only scroll to it after that
     // switch has rendered.
     const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
-    mockRun("pd-b2", "f-detail");
+    mockRun(["pd-b2", "f-detail"]);
     renderPage();
 
     // Precondition: the first model is active and the section is not mounted.
@@ -361,5 +382,47 @@ describe("ExtractionFullScreen — header suggestion locate in an entry group", 
       .closest('[data-section-id="et-detail"]');
     expect(detail).not.toBeNull();
     expect(scrollIntoView.mock.contexts).toContain(detail);
+  });
+});
+
+describe("ExtractionFullScreen — pending suggestions follow the review table's decisions", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("counts and locates only suggestions the reviewer has not accepted, through accept, reversal and undo", async () => {
+    // Accept, reversal and undo append decisions but write no suggestion status,
+    // so a count read from `status` would never move.
+    mockRun(["d-a", "f-dev"], ["d-b", "f-dev"]);
+    renderPage();
+
+    const trigger = await screen.findByTestId("run-ai-actions");
+    await waitFor(() => expect(trigger).toHaveTextContent("2"));
+    // Captured once: accepting replaces the row's value, so it cannot be re-found by it.
+    const row = screen.getByDisplayValue("cox-notes").closest("tr")!;
+    const coxRow = () => row;
+
+    await userEvent.click(within(coxRow()).getByRole("button", { name: "Accept extraction" }));
+    // Precondition: the decision was confirmed, so the row now offers reversal.
+    expect(await within(coxRow()).findByRole("button", { name: "Unaccept extraction" })).toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveTextContent("1"));
+
+    await userEvent.click(within(coxRow()).getByRole("button", { name: "Unaccept extraction" }));
+    expect(await within(coxRow()).findByRole("button", { name: "Accept extraction" })).toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveTextContent("2"));
+
+    await userEvent.click(within(coxRow()).getByRole("button", { name: "Accept extraction" }));
+    await waitFor(() => expect(trigger).toHaveTextContent("1"));
+
+    // The jump skips the accepted suggestion on the first model.
+    await reviewPendingSuggestions();
+    expect(await screen.findByRole("tab", { name: /xgboost/i, selected: true })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo latest local decision" }));
+    await waitFor(() => expect(trigger).toHaveTextContent("2"));
   });
 });

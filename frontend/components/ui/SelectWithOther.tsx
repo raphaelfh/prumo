@@ -21,6 +21,7 @@ interface SelectWithOtherProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+  ariaLabel?: string;
 }
 
 function normalizeOption(opt: SelectOption): { value: string; label: string } {
@@ -87,7 +88,7 @@ export function SelectWithOther(props: SelectWithOtherProps) {
   return (
     <div className={cn('space-y-2', className)}>
       <Select value={(effectiveValue as any) || ''} onValueChange={handleSelect} disabled={disabled}>
-        <SelectTrigger>
+        <SelectTrigger aria-label={props.ariaLabel}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>

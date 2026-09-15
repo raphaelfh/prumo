@@ -1,4 +1,4 @@
-import { entrySlotKey } from '@/lib/extraction/entrySlots';
+import { resolveEntryGroup } from '@/lib/extraction/entrySlots';
 import { computeRequiredFieldProgress } from '@/lib/extraction/progress';
 import type {
   ExtractionEntityTypeWithFields,
@@ -122,14 +122,7 @@ function activeEntryOf(
   groupId: string,
   parentInstanceId: string | null,
 ): string | null {
-  const stored = args.activeEntries[entrySlotKey(args.articleId, groupId, parentInstanceId)];
-  const entries = (byType.get(groupId) ?? []).filter(
-    (i) => (i.parent_instance_id ?? null) === parentInstanceId,
-  );
-  // Mirror the form: a stored id that no longer exists falls back to the
-  // first entry, so the rail never describes a subtree nothing is showing.
-  if (stored && entries.some((e) => e.id === stored)) return stored;
-  return entries[0]?.id ?? null;
+  return resolveEntryGroup(args.articleId, groupId, parentInstanceId, byType.get(groupId) ?? [], args.activeEntries).activeEntryId;
 }
 
 export function buildSectionRegistry(args: BuildSectionRegistryArgs): SectionNavItem[] {

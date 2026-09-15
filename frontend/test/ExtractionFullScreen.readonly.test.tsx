@@ -376,4 +376,43 @@ describe("ExtractionFullScreen — consensus dead affordances (D6)", () => {
       screen.queryByRole("button", { name: /^compare$/i }),
     ).not.toBeInTheDocument();
   });
+
+  // The review-table spec (2026-09-14 §§13/15.1) docks the reader open at
+  // desktop widths for the editable review workspace only. The setup mock
+  // reports every media query unmatched (= below desktop), which would make
+  // a "stays collapsed" assertion vacuous — so these cases report desktop.
+  describe("source panel default at desktop width", () => {
+    beforeEach(() => {
+      vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+        matches: query === "(min-width: 1024px)",
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }));
+    });
+
+    const sourcePanelToggle = () =>
+      screen.findByRole("button", { name: /toggle source panel/i });
+
+    it("extract stage (positive control): the reader opens docked", async () => {
+      mockStageView("extract");
+      renderPage();
+      await waitFor(async () =>
+        expect(await sourcePanelToggle()).toHaveAttribute("aria-pressed", "true"),
+      );
+    });
+
+    it("consensus stage: the reader stays collapsed", async () => {
+      mockStageView("consensus");
+      renderPage();
+      await waitFor(() =>
+        expect(screen.getByTestId("extraction-consensus-area")).toBeInTheDocument(),
+      );
+      expect(await sourcePanelToggle()).toHaveAttribute("aria-pressed", "false");
+    });
+  });
 });

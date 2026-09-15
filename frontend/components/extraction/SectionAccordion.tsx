@@ -11,12 +11,14 @@ import {Accordion, AccordionContent, AccordionItem,} from '@/components/ui/accor
 import {isValueEmpty} from '@/lib/extraction/valueSemantics';
 import {useSectionOpen} from '@/components/runs/SectionOpenContext';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
+import {Tooltip, TooltipTrigger, TooltipContent} from '@/components/ui/tooltip';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {ChevronDown, Plus} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import {useRef} from 'react';
+import {ExtractionReviewTable, type ReviewWorkspace} from './review/ExtractionReviewTable';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {InstanceCard} from './InstanceCard';
 import type {EntryIdentityChanges} from './AddEntryDialog';
@@ -29,6 +31,8 @@ import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/
 // =================== INTERFACES ===================
 
 interface SectionAccordionProps {
+  presentation?: 'review-table' | 'default';
+  review?: ReviewWorkspace;
   entityType: ExtractionEntityType;
   instances: ExtractionInstance[];
   fields: ExtractionField[];
@@ -76,6 +80,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
     templateId
   } = props;
 
+  const compact = props.presentation === 'review-table' && !!props.review;
   const isMultiple = entityType.cardinality === 'many';
   // Read-only run: instance add/remove affordances hide (published view).
   const { readOnly } = useRunEditability();
@@ -119,21 +124,23 @@ export function SectionAccordion(props: SectionAccordionProps) {
       collapsible
       value={open ? entityType.id : ''}
       onValueChange={(value) => setOpen(value === entityType.id)}
-      className="border-b border-border/40 last:border-b-0"
+      className={cn("border-b border-border/40 last:border-b-0", compact && props.review?.navigation.focused && props.review.navigation.current?.sectionId !== entityType.id && "hidden")}
     >
       <AccordionItem value={entityType.id} className="border-none group/accordion-item">
-        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm px-3 py-2 hover:bg-muted/40 transition-colors duration-75">
+        <div className={cn("sticky z-10 hover:bg-muted/40 transition-colors duration-75", compact ? "top-10 bg-background px-2 py-0" : "top-0 bg-background/80 backdrop-blur-sm px-3 py-2")}>
           <div className="flex items-center gap-3">
-            <AccordionPrimitive.Header className="flex flex-1">
+            <AccordionPrimitive.Header className="flex min-w-0 flex-1">
+              <Tooltip><TooltipTrigger asChild>
               <AccordionPrimitive.Trigger
                 ref={triggerRef}
                 className={cn(
-                  "flex flex-1 items-center justify-between py-4 font-medium transition-all hover:no-underline"
+                  "flex flex-1 items-center justify-between font-medium transition-all hover:no-underline", compact ? "py-1.5" : "py-4"
                 )}
               >
                   {/* Title on the left */}
                 <div className="flex items-center gap-3">
-                  <h3 className="font-medium text-[14px]">{entityType.label}</h3>
+                  {compact && <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform", !open && "-rotate-90")} strokeWidth={1.5}/>}
+                  <span className={cn("font-medium", compact ? "text-[13px]" : "text-[14px]")}>{entityType.label}</span>
                   {isMultiple && (
                     <Badge variant="outline" className="text-xs">
                         {t('extraction', 'sectionMultipleBadge').replace(
@@ -146,9 +153,10 @@ export function SectionAccordion(props: SectionAccordionProps) {
                   {/* Progress on the right */}
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
                   <span className="font-medium">{completedRequired}/{totalRequired}</span>
-                  <span>{progressPercentage}%</span>
+                  {!compact && <span>{progressPercentage}%</span>}
                 </div>
               </AccordionPrimitive.Trigger>
+              </TooltipTrigger>{compact && entityType.description && <TooltipContent className="max-w-sm">{entityType.description}</TooltipContent>}</Tooltip>
             </AccordionPrimitive.Header>
               {/* Per-section AI extract — shared component, sibling of the
                   trigger to avoid nested buttons. */}
@@ -164,18 +172,18 @@ export function SectionAccordion(props: SectionAccordionProps) {
               onExtractionComplete={props.onExtractionComplete}
             />
               {/* Chevron manually positioned at the end, after AI button - clickable to open/close accordion */}
-            <button
+            {!compact && <button
               type="button"
               onClick={handleChevronClick}
               className="flex items-center justify-center h-8 w-8 shrink-0 hover:bg-muted rounded-md transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              aria-label="Toggle accordion"
+              aria-label={entityType.label}
             >
               <ChevronDown className="h-4 w-4 transition-transform duration-200 group-data-[state=open]/accordion-item:rotate-180" />
-            </button>
+            </button>}
           </div>
         </div>
 
-        <AccordionContent className="px-3 pb-4">
+        <AccordionContent {...(compact ? {forceMount: true, hidden: !open} : {})} className={compact ? "p-0" : "px-3 pb-4"}>
           <div className="space-y-6">
             {instances.length === 0 ? (
               <div className="text-center py-8">
@@ -196,6 +204,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
                 {instances.map((instance, index) => (
                   <div key={instance.id}>
                     <InstanceCard
+                      presentation={props.presentation}
+                      review={props.review}
                       instance={instance}
                       index={index + 1}
                       fields={fields}
@@ -239,6 +249,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
                   </div>
                 )}
               </>
+            ) : compact ? (
+              <ExtractionReviewTable instanceId={instances[0].id} fields={fields} values={values} onValueChange={(fieldId, value) => onValueChange(instances[0].id, fieldId, value)} aiSuggestions={props.aiSuggestions} getSuggestionsHistory={props.getSuggestionsHistory} review={props.review}/>
             ) : (
                 // Single section: show fields directly
               <div className="divide-y divide-border/40">

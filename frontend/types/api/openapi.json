@@ -27,10 +27,34 @@
             "title": "Evidence",
             "type": "array"
           },
+          "extraction_attempt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Attempt Id"
+          },
           "field_id": {
             "format": "uuid",
             "title": "Field Id",
             "type": "string"
+          },
+          "generation_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Snapshot"
           },
           "id": {
             "format": "uuid",
@@ -116,10 +140,34 @@
             "title": "Evidence",
             "type": "array"
           },
+          "extraction_attempt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Attempt Id"
+          },
           "field_id": {
             "format": "uuid",
             "title": "Field Id",
             "type": "string"
+          },
+          "generation_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Snapshot"
           },
           "id": {
             "format": "uuid",
@@ -3920,6 +3968,18 @@
             "title": "Decision",
             "type": "string"
           },
+          "expected_current_decision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Current Decision Id"
+          },
           "field_id": {
             "format": "uuid",
             "title": "Field Id",
@@ -6903,10 +6963,34 @@
             "title": "Created At",
             "type": "string"
           },
+          "extraction_attempt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Attempt Id"
+          },
           "field_id": {
             "format": "uuid",
             "title": "Field Id",
             "type": "string"
+          },
+          "generation_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Snapshot"
           },
           "id": {
             "format": "uuid",
@@ -6922,6 +7006,18 @@
             "additionalProperties": true,
             "title": "Proposed Value",
             "type": "object"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
           },
           "rationale": {
             "anyOf": [
@@ -8305,6 +8401,18 @@
             "format": "uuid",
             "title": "Projectid",
             "type": "string"
+          },
+          "requestId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestid"
           },
           "runId": {
             "anyOf": [

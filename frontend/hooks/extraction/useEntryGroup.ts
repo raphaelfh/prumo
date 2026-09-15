@@ -21,7 +21,7 @@ import {useMemo} from 'react';
 
 import type {Entry} from '@/components/extraction/entries/types';
 import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
-import {entrySlotKey} from '@/lib/extraction/entrySlots';
+import {entrySlotKey, resolveEntryGroup, writeStoredEntry} from '@/lib/extraction/entrySlots';
 import {
   type ProgressEntityProjection,
   computeRequiredFieldProgress,
@@ -58,24 +58,6 @@ export interface UseEntryGroupReturn {
   activeEntryId: string | null;
   setActiveEntryId: (id: string) => void;
   noun: string;
-}
-
-function readStored(key: string): string | null {
-  // Guarded: a private window or blocked site data throws on ACCESS, and this
-  // hook runs once per rendered group, so an unguarded read throws per node.
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeStored(key: string, value: string): void {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    /* a remembered selection is a convenience, never a correctness input */
-  }
 }
 
 /** Instance ids in one entry's subtree, including the entry itself. */
@@ -118,35 +100,12 @@ export function useEntryGroup(args: UseEntryGroupArgs): UseEntryGroupReturn {
   const {articleId, group, parentInstanceId, instances, values, entityTypes} = args;
   const {activeEntries, setActiveEntry} = args;
 
-  const entries = useMemo(
-    () =>
-      instances
-        .filter(
-          (i) =>
-            i.entity_type_id === group.id &&
-            (i.parent_instance_id ?? null) === parentInstanceId,
-        )
-        .slice()
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
-    [instances, group.id, parentInstanceId],
-  );
-
+  const {entries, activeEntryId} = resolveEntryGroup(articleId, group.id, parentInstanceId, instances, activeEntries);
   const key = entrySlotKey(articleId, group.id, parentInstanceId);
-
-  // The existence check guards the RESTORED id ONLY. Applying it to an
-  // explicit selection would snap a just-created entry back to the first one
-  // until the run-view refetch lands.
-  const activeEntryId =
-    activeEntries[key] ??
-    (() => {
-      const stored = readStored(key);
-      if (stored && entries.some((e) => e.id === stored)) return stored;
-      return entries[0]?.id ?? null;
-    })();
 
   const setActiveEntryId = (id: string) => {
     setActiveEntry(key, id);
-    writeStored(key, id);
+    writeStoredEntry(key, id);
   };
 
   const entryCards = useMemo(

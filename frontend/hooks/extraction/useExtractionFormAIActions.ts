@@ -73,6 +73,7 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
   const sessionRunId = runId ?? undefined;
 
   const {extractSection: identifyEntries, loading: identifying} = useSectionExtraction({
+    params: {projectId, articleId, templateId, runId: sessionRunId, entityTypeId, parentInstanceId: parentInstanceId ?? undefined},
     onSuccess: async () => {
       // Refresh so the identified entries appear immediately. The model
       // path used to chain "extract every section for every model" here,

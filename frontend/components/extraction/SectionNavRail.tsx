@@ -16,6 +16,7 @@ import {
 } from '@/lib/extraction/sectionRegistry';
 
 export interface SectionNavRailProps {
+  presentation?: 'review-table' | 'default';
   items: SectionNavItem[];
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -45,6 +46,7 @@ export default function SectionNavRail({
   onSelect,
   onJumpToNextPending,
   compact = false,
+  presentation = 'default',
 }: SectionNavRailProps) {
   // Read-only run: the "N required left" footer is a fill-completion CTA —
   // noise on a published view. Navigation (dots + labels) stays.
@@ -78,11 +80,11 @@ export default function SectionNavRail({
                 isActive && 'bg-info/10 text-foreground',
               )}
             >
-              <span className={cn('h-[7px] w-[7px] shrink-0 rounded-full', DOT_COLOR[item.state])} aria-hidden="true" />
+              {presentation !== 'review-table' && <span className={cn('h-[7px] w-[7px] shrink-0 rounded-full', DOT_COLOR[item.state])} aria-hidden="true" />}
               {!compact && (
                 <>
                   <span className="truncate">{item.label}</span>
-                  <span className="ml-auto text-[11px] font-medium text-muted-foreground">{count}</span>
+                  <span className={cn("ml-auto text-[11px] font-medium text-muted-foreground", presentation === 'review-table' && (item.state === 'complete' ? 'text-success' : item.state === 'in_progress' ? 'text-info' : 'text-muted-foreground'))}>{count}</span>
                 </>
               )}
             </button>
@@ -117,7 +119,7 @@ export default function SectionNavRail({
           />
         </div>
       )}
-      {!compact && !readOnly && (
+      {!compact && !readOnly && presentation !== 'review-table' && (
         <div className="mt-2 border-t border-border/40 px-2.5 pt-2">
           <Progress value={global.percentage} className="h-1" />
           <p className="mt-1 text-[11px] text-muted-foreground">

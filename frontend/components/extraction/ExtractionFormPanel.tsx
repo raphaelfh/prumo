@@ -44,8 +44,10 @@ export function ExtractionFormPanel({
     // extraction). Pair the marker with the inner radix viewport selector
     // because radix ScrollArea renders the actual scroll node beneath.
     <div data-scroll-container="extraction-form" className="h-full">
-      <ScrollArea className="h-full bg-muted/30">
-        <div className="@container min-w-0 p-4 @md:p-6 @lg:p-8 space-y-4">
+      {/* Review mode pins the toolbar (top-0) and section headers (top-10): the
+          viewport's scroll padding keeps focus scrolling clear of both layers. */}
+      <ScrollArea className={formViewProps?.presentation === 'review-table' && viewMode === 'extract' ? "h-full bg-background [&>[data-radix-scroll-area-viewport]]:scroll-pt-20" : "h-full bg-muted/30"}>
+        <div className={formViewProps?.presentation === 'review-table' && viewMode === 'extract' ? "@container min-h-full min-w-0 p-2" : "@container min-w-0 p-4 @md:p-6 @lg:p-8 space-y-4"}>
           {viewMode === 'extract' && formViewProps ? (
             <ExtractionFormView {...formViewProps} />
           ) : viewMode === 'compare' && compareViewProps ? (

@@ -43,7 +43,13 @@ export interface UseActiveSectionResult {
   activateSection: (id: string) => void;
 }
 
-export function useActiveSection(sectionIds: string[]): UseActiveSectionResult {
+/**
+ * `pinnedId` hands the rail to a caller that already knows the section (review
+ * focus mode shows one question): while set, it is the active section and the
+ * scroll spy is detached — a pane that bottoms out would otherwise hand the rail
+ * to the last section. Without it the spy owns the rail as before.
+ */
+export function useActiveSection(sectionIds: string[], pinnedId?: string): UseActiveSectionResult {
   const [activeId, setActiveId] = useState<string | null>(sectionIds[0] ?? null);
   const refs = useRef(new Map<string, HTMLElement>());
   // A programmatic scroll owns the highlight until it lands: the pane cannot
@@ -91,9 +97,17 @@ export function useActiveSection(sectionIds: string[]): UseActiveSectionResult {
   );
 
   const key = sectionIds.join('|');
+  const pinned = pinnedId !== undefined && sectionIds.includes(pinnedId) ? pinnedId : null;
+  // Set while a pin detaches the spy: releasing it must measure once, because
+  // leaving focus mode moves the form without a scroll event to report it.
+  const wasPinned = useRef(false);
   useEffect(() => {
     const ids = key === '' ? [] : key.split('|');
     if (ids.length === 0) return;
+    if (pinned !== null) {
+      wasPinned.current = true;
+      return;
+    }
     // Resolved on use, not at setup: the pane only overflows once the form has
     // laid out, and a miss here would silently disable the spy for good.
     let scroller: HTMLElement | null = null;
@@ -117,18 +131,22 @@ export function useActiveSection(sectionIds: string[]): UseActiveSectionResult {
     // Capture: a scroll event does not bubble, and the pane that scrolls is a
     // nested one — listening at the document catches it wherever it is.
     document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    if (wasPinned.current) {
+      wasPinned.current = false;
+      onScroll();
+    }
     return () => {
       document.removeEventListener('scroll', onScroll, { capture: true });
       if (frame !== 0) cancelAnimationFrame(frame);
     };
-  }, [key]);
+  }, [key, pinned]);
 
   // `sectionIds` can arrive after mount (an async-loaded form) or drop the
   // current pick (sections removed): fall back to the first id during render
   // rather than storing the fallback in state, which would need a setState
   // call inside the effect above.
   return {
-    activeId: activeId !== null && sectionIds.includes(activeId) ? activeId : (sectionIds[0] ?? null),
+    activeId: pinned ?? (activeId !== null && sectionIds.includes(activeId) ? activeId : (sectionIds[0] ?? null)),
     registerSection,
     scrollToSection,
     activateSection,

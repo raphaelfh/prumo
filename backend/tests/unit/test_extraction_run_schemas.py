@@ -676,3 +676,27 @@ class TestRunReviewersResponse:
     def test_missing_reviewers_rejected(self) -> None:
         with pytest.raises(ValidationError):
             RunReviewersResponse()  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [{}, {"expected_current_decision_id": None}, {"expected_current_decision_id": str(uuid4())}],
+)
+def test_decision_optional_current_head(condition: dict[str, object]) -> None:
+    from uuid import UUID
+
+    request = CreateDecisionRequest(
+        instance_id=uuid4(), field_id=uuid4(), decision="edit", **condition
+    )
+    expected = condition.get("expected_current_decision_id")
+    assert request.expected_current_decision_id == (UUID(expected) if expected else None)
+
+
+def test_decision_rejects_malformed_current_head() -> None:
+    with pytest.raises(ValidationError):
+        CreateDecisionRequest(
+            instance_id=uuid4(),
+            field_id=uuid4(),
+            decision="edit",
+            expected_current_decision_id="invalid",
+        )

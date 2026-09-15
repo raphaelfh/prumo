@@ -85,11 +85,10 @@
   // Invoked via npx inside scripts/generate_api_types.sh — a shell caller
   // knip cannot see.
   "ignoreDependencies": ["openapi-typescript"],
-  // Browser-runtime imports inside page.evaluate(), served by the Vite dev
+  // Browser-runtime import inside page.evaluate(), served by the Vite dev
   // server at the repo root. Build-time resolution is impossible by design;
-  // both modules are also imported statically elsewhere, so they stay live.
+  // the module is also imported statically elsewhere, so it stays live.
   "ignoreUnresolved": [
-    "/frontend/lib/extraction/valueUpdates.ts",
     "/frontend/integrations/supabase/client.ts"
   ]
 }

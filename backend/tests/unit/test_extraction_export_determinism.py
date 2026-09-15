@@ -27,6 +27,7 @@ from app.models.extraction import (
     ExtractionCardinality,
     ExtractionFieldType,
 )
+from app.models.extraction_workflow import ExtractionProposalRecord
 
 # Retargeted off the legacy ``extraction_xlsx_builder`` re-export onto the pure
 # orchestrator package. ``ExportColumnLimitError`` is the package's pre-build
@@ -318,6 +319,7 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
                         0.9,
                         "rationale",
                         ts,
+                        ExtractionProposalRecord(run_id=run_id),
                     )
                 ]
             ),  # proposals

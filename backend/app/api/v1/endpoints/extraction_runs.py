@@ -243,6 +243,7 @@ async def create_decision(
             proposal_record_id=body.proposal_record_id,
             value=body.value,
             rationale=body.rationale,
+            expected_current_decision_id=body.expected_current_decision_id,
         )
     except CoordinateMismatchError as e:
         logger.warning(

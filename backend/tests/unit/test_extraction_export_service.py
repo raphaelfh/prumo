@@ -29,6 +29,7 @@ from app.models.extraction import (
     ExtractionRun,
     ExtractionRunStage,
 )
+from app.models.extraction_workflow import ExtractionProposalRecord
 from app.models.project import ProjectMemberRole
 from app.services.extraction_export_service import (
     ArticleDescriptor,
@@ -74,24 +75,27 @@ def _rows_result(rows: list) -> MagicMock:
     return result
 
 
-def _export_run(
-    run_id: UUID, *, parameters: dict | None = None, results: dict | None = None
-) -> MagicMock:
+def _export_run(run_id: UUID) -> MagicMock:
     """An ExtractionRun-shaped stub for ``_load_ai_proposal_rows``' run query.
 
-    That loader selects whole ``ExtractionRun`` rows and reads three columns:
-    ``parameters`` + ``results`` (the "Model used" resolution, which prefers
-    the server-written ``results["provenance"]`` engine) and ``version_id``
-    (the label-fallback chain). All three must be concrete values — a bare
-    ``MagicMock(spec=...)`` attribute would make the resolution silently
-    ambiguous instead of loudly wrong.
+    That loader selects whole ``ExtractionRun`` rows and reads only
+    ``version_id`` (the label-fallback chain); "Model used" comes from each
+    proposal's own immutable facts, never from the run.
     """
     run = MagicMock(spec=ExtractionRun)
     run.id = run_id
-    run.parameters = parameters if parameters is not None else {}
-    run.results = results if results is not None else {}
     run.version_id = uuid4()
     return run
+
+
+def _proposal_record(run_id: UUID) -> ExtractionProposalRecord:
+    """The whole proposal entity the loader selects as its last column.
+
+    A legacy row: no attempt, no generation snapshot, no engine provenance.
+    """
+    return ExtractionProposalRecord(
+        run_id=run_id, extraction_attempt_id=None, generation_snapshot=None, provenance=None
+    )
 
 
 def _scalar_result(value) -> MagicMock:
@@ -846,6 +850,7 @@ class TestLoadAiProposalRows:
             0.9,
             "Rationale",
             ts,
+            _proposal_record(run_id),
         )
         # evidence rows: (proposal_record_id, text_content, page_number)
         evidence_row = (proposal_id, "Evidence text", 42)
@@ -866,8 +871,7 @@ class TestLoadAiProposalRows:
                 _rows_result([evidence_row]),
                 # 4. decision_rows
                 _rows_result([]),
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. ent_label_rows — entity ids unresolved by the snapshot tier
                 _rows_result([ent_label_row]),
@@ -922,6 +926,7 @@ class TestLoadAiProposalRows:
             0.9,
             None,
             ts,
+            _proposal_record(run_id),
         )
         # evidence rows: (proposal_record_id, text_content, page_number) — out of
         # order, with a duplicate (same text+page) and multi-digit pages.
@@ -939,8 +944,7 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result(evidence_rows),
                 _rows_result([]),  # decisions
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Sec")]),
@@ -990,6 +994,7 @@ class TestLoadAiProposalRows:
             0.95,
             None,
             ts,
+            _proposal_record(run_id),
         )
         reviewer_id = uuid4()
         # decision row: (run_id, instance_id, field_id, reviewer_id, decision, proposal_record_id)
@@ -1005,8 +1010,7 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),  # no evidence
                 _rows_result([decision_row]),
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section Label")]),
@@ -1051,7 +1055,17 @@ class TestLoadAiProposalRows:
             study_instances={entity_type_id: instance_id},
         )
 
-        proposal_row = (proposal_id, run_id, instance_id, field_id, "val", None, None, ts)
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            "val",
+            None,
+            None,
+            ts,
+            _proposal_record(run_id),
+        )
 
         # ALL_USERS value_map has 4-tuple keys (None = consensus sub-column)
         value_map_4tuple = {(run_id, instance_id, field_id, None): "consensus_for_all_users"}
@@ -1065,8 +1079,7 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section")]),
@@ -1110,7 +1123,17 @@ class TestLoadAiProposalRows:
             study_instances={entity_type_id: instance_id},
         )
 
-        proposal_row = (proposal_id, run_id, instance_id, field_id, "pval", None, None, ts)
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            "pval",
+            None,
+            None,
+            ts,
+            _proposal_record(run_id),
+        )
 
         # Only 3-tuple key in value_map
         value_map = {(run_id, instance_id, field_id): "3tuple_value"}
@@ -1122,8 +1145,7 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section")]),
@@ -1175,6 +1197,7 @@ class TestLoadAiProposalRows:
             0.9,
             None,
             ts,
+            _proposal_record(run_id),
         )
         # ONLY the target reviewer's decision is returned, because the loader's
         # decision query is now filtered by target_reviewer_id in SINGLE_USER mode.
@@ -1187,8 +1210,7 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([target_reject]),  # query filtered to target reviewer
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Sec")]),
@@ -1226,7 +1248,17 @@ class TestLoadAiProposalRows:
             study_instances={entity_type_id: instance_id},
         )
 
-        proposal_row = (proposal_id, run_id, instance_id, field_id, "v", None, None, ts)
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            "v",
+            None,
+            None,
+            ts,
+            _proposal_record(run_id),
+        )
 
         svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
@@ -1235,8 +1267,7 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. ent_label_rows provides fallback label
                 _rows_result([(entity_type_id, "Fallback Section Label")]),
@@ -1274,7 +1305,17 @@ class TestLoadAiProposalRows:
             study_instances={entity_type_id: instance_id},
         )
 
-        proposal_row = (proposal_id, run_id, instance_id, field_id, "v", None, None, ts)
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            "v",
+            None,
+            None,
+            ts,
+            _proposal_record(run_id),
+        )
 
         svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
@@ -1283,8 +1324,7 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Section Label")]),
@@ -1337,6 +1377,7 @@ class TestLoadAiProposalRows:
             0.9,
             None,
             ts,
+            _proposal_record(run_id),
         )
         # decision rows now carry reviewer_id:
         # (run_id, instance_id, field_id, reviewer_id, decision, proposal_record_id)
@@ -1350,8 +1391,7 @@ class TestLoadAiProposalRows:
                 _rows_result([proposal_row]),
                 _rows_result([]),  # evidence
                 _rows_result([decision_a, decision_b]),  # decisions (reviewer-tagged)
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Sec")]),
@@ -2474,7 +2514,17 @@ class TestAiProposalRowsModelInstances:
             entries={(entity_type_id, None): (model_instance_id1, model_instance_id2)},
         )
 
-        proposal_row = (proposal_id, run_id, model_instance_id1, field_id, "v", None, None, ts)
+        proposal_row = (
+            proposal_id,
+            run_id,
+            model_instance_id1,
+            field_id,
+            "v",
+            None,
+            None,
+            ts,
+            _proposal_record(run_id),
+        )
 
         svc.db.get = AsyncMock(return_value=None)  # snapshot label tier no-op (B-3a)
         svc.db.execute = AsyncMock(
@@ -2484,8 +2534,7 @@ class TestAiProposalRowsModelInstances:
                 _rows_result([proposal_row]),
                 _rows_result([]),
                 _rows_result([]),
-                # 5. the in-scope ExtractionRun rows (parameters + results
-                #    + version_id)
+                # 5. the in-scope ExtractionRun rows (version_id feeds the label chain)
                 _scalars_result([_export_run(run_id)]),
                 # 6. entity-label fallback
                 _rows_result([(entity_type_id, "Model Section")]),

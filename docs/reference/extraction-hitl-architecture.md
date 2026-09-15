@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-09-14 · Owner: @raphaelfh
+> **Status:** Stable · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -136,7 +136,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0071_registry_providers` (post-squash numbering; run
+`0075_extraction_attempts` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -183,12 +183,190 @@ migration `0039_absent_reason_backfill`. Decision record:
 | --- | --- | --- |
 | `extraction_template_versions` | No (mutable `is_active`) | Immutable schema snapshot of a project template. Unique `(project_template_id, version)`; partial unique index keeps exactly one `is_active` per template. Run references via `version_id`. |
 | `extraction_hitl_configs` | No | HITL config (reviewer count, consensus rule, arbitrator) scoped to `project` or `template`. Resolution: template > project > system default. |
-| `extraction_proposal_records` | **Yes** | One row per proposed value for a `(run, instance, field)` triplet. Source: `ai` / `human` / `system`. CHECK: `human` requires `source_user_id`. Append-only of *changes*: `ExtractionProposalService.record_proposal` no-ops when the value is identical to the latest row for the same coord+source(+user), so a client replaying an unchanged value (form remount, retry) doesn't grow a duplicate. |
-| `extraction_reviewer_decisions` | **Yes** | One row per reviewer decision: `accept_proposal` / `reject` / `edit`. CHECKs enforce that `accept_proposal` carries a `proposal_record_id` and `edit` carries a `value`. Same idempotent-re-record rule as proposals: an unchanged decision replay (same decision+value+proposal) is a no-op. |
+| `extraction_proposal_records` | **Yes** | One row per proposed value for a `(run, instance, field)` triplet. Source: `ai` / `human` / `system`. CHECK: `human` requires `source_user_id`. Append-only of *changes*: `ExtractionProposalService.record_proposal` no-ops when the value is identical to the latest row for the same coord+source(+user), so a client replaying an unchanged value (form remount, retry) doesn't grow a duplicate. **Attempt-owned AI proposals (0075) follow a different rule**: they carry `extraction_attempt_id` + `generation_snapshot`, a fresh attempt appends even when the value equals an earlier one, and a replay of the same attempt and coordinate returns the existing row without appending evidence (see [Extraction attempts](#extraction-attempts-and-per-call-generation-0075)). |
+| `extraction_reviewer_decisions` | **Yes** | One row per reviewer decision: `accept_proposal` / `reject` / `edit`. CHECKs enforce that `accept_proposal` carries a `proposal_record_id` and `edit` carries a `value`. Same idempotent-re-record rule as proposals: an unchanged decision replay (same decision+value+proposal) is a no-op. A reversal or undo appends a new row; earlier rows are never rewritten. `CreateDecisionRequest.expected_current_decision_id` (optional) makes a write conditional: under the run lock, `ExtractionReviewService` compares it with the coordinate's latest decision and refuses a mismatch with `DecisionConflictError` (409 `DECISION_CONFLICT`). Omitted or `null` keeps the unconditional write. |
 | `extraction_reviewer_states` | Materialized | Current `decision_id` per `(run, reviewer, instance, field)`. Upserted alongside each decision so reads are O(1). Unique `(run_id, reviewer_id, instance_id, field_id)`. |
 | `extraction_consensus_decisions` | **Yes** | Conflict resolution: `select_existing` (arbitrator picks a reviewer decision) or `manual_override` (writes a value directly; rationale optional since `0032_optional_rationale`). CHECK `manual_override_complete` requires only `value` for an override. |
 | `extraction_published_states` | Mutable with version | Canonical value per `(run, instance, field)` with optimistic concurrency. Update uses `WHERE version = :expected` so 0 rows = 409 conflict. |
 | `extraction_reviewer_ready` | Upsert | Per-`(run, reviewer)` advisory "I'm done extracting" flag (`is_ready`, `marked_ready_at`). Unique `(run_id, reviewer_id)`. Does **not** gate any stage transition; surfaces the "N/M reviewers ready" hint. Added `0029` (HITL Phase 2). |
+
+### Extraction attempts and per-call generation (0075)
+
+Migration `0075_extraction_attempts` (down revision `0074_ollama_provider`)
+adds one table and two nullable proposal columns. Design:
+`docs/superpowers/specs/2026-09-14-extraction-review-table-workspace-design.md`
+§12.
+
+**`extraction_attempts`** (`ExtractionAttempt`,
+`backend/app/models/extraction_attempt.py`) holds one row per deliberate AI
+extraction request.
+
+| Column | Nullable | Notes |
+| --- | --- | --- |
+| `id` | No | Primary key. `UNIQUE (id, run_id)` (`uq_extraction_attempt_id_run`) is the target of the proposal composite FK. |
+| `request_id` | No | The client `requestId`, unique (`extraction_attempts_request_id_key`). |
+| `owner_id` | No | FK `profiles` `ON DELETE RESTRICT`. The member who started the extraction and the only source of runner identity. |
+| `project_id`, `article_id`, `template_id` | No | FKs `DEFERRABLE INITIALLY DEFERRED`. |
+| `run_id` | No | FK `extraction_runs` `ON DELETE CASCADE`. |
+| `request_payload` | No | JSONB. The normalized request (without `request_id`, with the resolved `run_id`) that a replay is compared against. |
+| `status` | No | Text, default `pending`. CHECK `ck_extraction_attempts_status`: `pending` / `running` / `completed` / `failed` / `cancelled`. |
+| `job_id` | Yes | Queue job id. |
+| `engine` | Yes | JSONB `LlmTarget` frozen for this attempt: provider, model, modes, `connection_id`, `deviation`. No credentials; those are resolved per execution. |
+| `result`, `error`, `error_code` | Yes | Terminal outcome, replayed on duplicate delivery. |
+| `created_at`, `updated_at` | No | `now()` defaults. |
+
+- **No client access.** RLS is enabled and the migration runs `REVOKE ALL ON
+  public.extraction_attempts FROM anon, authenticated`. Only the backend reads
+  or writes attempts.
+- **Immutable scope.** Trigger `trg_extraction_attempt_scope`
+  (`check_extraction_attempt_scope()`) refuses an UPDATE of `id`,
+  `request_id`, `owner_id`, `project_id`, `article_id`, `template_id` or
+  `run_id`, and requires the attempt's project/article/template to match its
+  run.
+- **Proposal columns.** `extraction_proposal_records` gains
+  `extraction_attempt_id UUID NULL` and `generation_snapshot JSONB NULL`;
+  legacy rows keep both `NULL`. The composite FK `fk_proposal_attempt_run`
+  `(extraction_attempt_id, run_id) → extraction_attempts (id, run_id)` is
+  `DEFERRABLE INITIALLY DEFERRED` with no delete action. Deleting an attempt
+  that still has proposals therefore fails, while a run delete cascades to both.
+  The partial unique index `uq_proposal_attempt_coordinate`
+  `(extraction_attempt_id, instance_id, field_id, source) WHERE
+  extraction_attempt_id IS NOT NULL` makes one attempt write a coordinate at
+  most once. Trigger `trg_attempt_proposal_coordinates` checks that the
+  attempt belongs to the proposal's run and that the instance and field belong
+  to the attempt's article and template.
+
+**Kickoff and `requestId`.** `POST /api/v1/extraction/sections` (202) is the
+only AI extraction entry point of the review workspace. It is section-scoped;
+there is **no question-level extraction** action or endpoint.
+`SectionExtractionRequest.request_id` (alias `requestId`) is optional. The
+browser's job store (`useSectionExtractionJobs.begin`,
+`frontend/stores/sectionExtractionJobs.ts`) mints `crypto.randomUUID()` for
+every deliberate kickoff. It reuses the previous id and payload only when the
+last transport outcome was uncertain. After kickoff scope authorization,
+`ExtractionAttemptService.prepare_request` does the following:
+
+1. Uses a server `uuid4()` when the id is absent.
+2. Picks the run: a client-sent `run_id` takes precedence; otherwise it reuses
+   the run of an attempt the caller already owns, or resolves the live extract
+   run (`resolve_or_create_extract_run`).
+3. Refuses a run outside the `extract` stage (`InvalidStageTransitionError`,
+   400).
+4. Inserts through `ExtractionAttemptRepository.get_or_create`
+   (`ON CONFLICT (request_id) DO NOTHING`).
+5. Answers a different owner with 404 and a changed payload with 409
+   (`requestId already belongs to a different extraction request`).
+6. Commits before any queue IO, so an identical replay returns the original
+   attempt and job.
+
+The result:
+
+- **A deliberate kickoff is a new attempt.** A fresh attempt appends proposals
+  and evidence even when the values equal earlier ones.
+- **A technical replay reuses the attempt.** A transport retry with the same
+  `requestId`, a Celery retry or a duplicate delivery returns the existing
+  proposal for the same attempt and coordinate, and appends no evidence.
+
+**Worker execution** (`backend/app/worker/tasks/extraction_tasks.py`):
+
+1. A preparation session freezes the attempt's engine (`freeze_attempt_engine`,
+   first writer wins) **before** execution ownership.
+2. `ExtractionAttemptService.execute_attempt` takes ownership in its own
+   session by locking the attempt row (`ExtractionAttemptRepository.lock`,
+   `SELECT … FOR NO KEY UPDATE`). A duplicate delivery of the same attempt waits,
+   then returns the recorded terminal result or error.
+3. Domain writes use a separate session. Retries read the pinned engine
+   (`read_attempt_engine`) and re-validate access (`validate_attempt_engine`).
+
+No run-row lock spans an LLM call. `locked_result_filter`
+(`extraction_generation.py`) takes `load_run_for_update` only for the result
+transaction. It rechecks the `extract` stage, project membership and template
+exclusions after the model returns. Independent section attempts therefore
+interleave.
+
+**Per-call generation snapshots.** Every singleton or repeating-entry LLM call
+builds its own snapshot (`GenerationCallResult`; entry calls pass
+`call.generation_snapshot` in `entry_group_extraction.py`) and copies it onto
+that call's proposals. Snapshots are never shared across sibling calls, and a
+replay never replaces committed facts. The write-side allowlist is
+`sanitize_generation_snapshot` (`extraction_generation.py`, `_SNAPSHOT_KEYS`
+plus nested `params`, `tokens` and `prompt_composition` allowlists). It is
+applied in `GenerationCallResult.__post_init__` and again in
+`ExtractionProposalService.record_proposal_result`. The engine `provenance`
+column stays for compatible consumers; legacy proposals have only that column.
+
+**Privacy boundary.** Proposal JSON never stores credentials,
+`ran_by_user_id` or `ran_by_name`. `proposal_generation_read.py` is the single
+read boundary, and every reader goes through it:
+
+- `_snapshot` re-applies a typed allowlist. `prompt_composition.article_ref`
+  always reads `file_id: null` and `historical_input_available: false`; the
+  mutable file id moves to `current_file_id`. There is no document versioning,
+  so the original input shows as unavailable.
+- `serialize_proposal_generation` adds `ran_by_user_id` / `ran_by_name` to the
+  snapshot only from a `ProposalRevealContext`. That context comes from
+  `suggestion_reveal_context` (per-run `run_reveals_peers`) or
+  `proposal_reveal_context` (already-revealed run ids). The attempt owner and
+  profile name are looked up only for revealed runs.
+- Readers:
+  - suggestions and history: `load_suggestions` and `get_suggestion_history`
+    in `extraction_suggestion_read_service.py`
+  - run details: `get_run_with_workflow_history` in
+    `extraction_run_read_service.py`; run `results` also pass
+    `scrub_results_ranby`
+  - exports: `exports/ai_proposal_projection.py::proposal_model_used`, which
+    uses an empty reveal context; exports carry no identity column
+
+#### Accepted consequence: legacy proposals name no runner
+
+Runner identity now comes only from the attempt owner (spec §12.2: identity
+from the attempt owner after reveal; legacy cards invent no runner identity).
+Proposals written before 0075 have no attempt. For them, QA and consensus
+popovers show no "Run by {name}" header, including the arbitrator reveal, and
+generation details show no "Ran by" row. The run row still receives a
+per-section `ran_by_user_id` (`merge_provenance_section` in
+`section_extraction_service.py`) and run reads scrub it
+(`scrub_results_ranby`), but proposal runner identity no longer derives from
+it: that value is last-write-wins per run, so it was never a truthful
+per-proposal attribution. No backfill is planned. When one run holds attempts
+by different owners, the popover names each version by its own runner
+(compared by `ranByUserId`, falling back to the name). It never names one
+runner for the whole run.
+
+#### Review workspace (frontend)
+
+- **Where it applies.** The review table renders only for editable data
+  extraction. `ExtractionFullScreen` sets `presentation: 'review-table'` when
+  the run kind is `extraction`, the stage is editable and the caller is not a
+  `viewer`. QA, consensus, read-only and finalized views keep the default
+  presentation.
+- **Components** (`frontend/components/extraction/review/`):
+  - `ExtractionReviewTable` / `ExtractionReviewRow`: question, value and AI
+    proposal columns, in a fixed order with no reordering.
+  - `ProposalPreview`, `ProposalDisclosure` and `ProposalCard`: every proposal
+    as its own card, with compare and per-source locate.
+  - `ReviewQuickActions`: accept (a toggle that reverses an acceptance),
+    focus mode (`F`) and undo.
+- **Acceptance, reversal and undo.** `useProposalDecision` is mounted by the
+  shell, so undo survives question and entry navigation. It records acceptance
+  and reversal as typed reviewer decisions. Undo of the latest confirmed local
+  decision (possibly on another question) sends
+  `expected_current_decision_id`.
+- **Focus mode** hides the other sections; the section rail follows the
+  current navigation section.
+- **Column resize.** The question and value columns resize only when the review
+  pane is at least 900 px wide (`fitReviewColumns`, `ExtractionReviewTable`).
+  Widths persist per reviewer and template under
+  `prumo:extraction-review:{reviewerId}:{templateId}:columns`.
+- **Retired highlight.** The post-refresh "just updated" highlight
+  (`useJustUpdatedValue`, `.field-just-updated`) is not rendered on the review
+  table, because its editors (`FieldValueEditor`) do not subscribe to the value
+  bus. `useExtractedValues` dispatches only on hydration and new coordinates,
+  since section extraction writes proposals, not reviewer values.
+  `FieldInput` still lights only where `useExtractedValues` feeds the value
+  bus, i.e. `ExtractionFullScreen`'s default presentation (read-only,
+  consensus). QA's `FieldInput` subscribes, but the QA screen never
+  dispatches, so it does not light.
 
 ### Pre-existing tables — evolved
 
@@ -517,7 +695,7 @@ Both flows share the **field-level primitives** but diverge above that:
 
 | Layer | Shared? | Where |
 | --- | --- | --- |
-| `FieldInput` (typed input per field) | ✅ Yes | `frontend/components/extraction/FieldInput.tsx`. Consumed by both `SectionAccordion` (extraction) and `QASectionAccordion` (QA). |
+| `FieldInput` (typed input per field) | ✅ Yes | `frontend/components/extraction/FieldInput.tsx`. Consumed by `QASectionAccordion` (QA) and by `SectionAccordion` in its default presentation (read-only extraction). Editable data extraction renders `ExtractionReviewTable` with `FieldValueEditor` instead (see [Review workspace](#review-workspace-frontend)). |
 | `AssessmentShell` (PDF panel + form panel + header) | ✅ Yes (QA today; extraction page predates it) | `frontend/components/assessment/AssessmentShell.tsx`. |
 | `ExtractionValueService` (find run, load/save **own** values) | ✅ Yes | `frontend/services/extractionValueService.ts`. Both flows use it for read/write of the caller's own values. It no longer reads peer values — the bespoke `loadValuesForOthers` dual-read was removed (ADR 0012). |
 | `RunReviewerComparison` (server-blinded reviewer compare view) | ✅ Yes | `frontend/components/runs/RunReviewerComparison.tsx`. Both screens render it for the manager/consensus compare surface, fed by `reviewerSummary.decisionsByCoord` (from `/runs/{id}/view`) — no direct Supabase read, blind callers get no peer columns. Gated by `useComparisonPermissions(projectId, userId, kind)`. |
@@ -579,6 +757,14 @@ publish, AI), keep it in the page-specific component.
 - **Evidence** — Polymorphic — points at a PDF (article_file_id, page,
   position, text_content) and at exactly one of
   `proposal_record_id`/`reviewer_decision_id`/`consensus_decision_id`.
+- **Extraction attempt** — One deliberate AI section extraction
+  (`extraction_attempts`, 0075), keyed by the client `requestId`. It owns its
+  proposals, its frozen engine and the runner identity (its `owner_id`). A
+  technical replay reuses it; a new kickoff creates a new one.
+- **Generation snapshot** — The immutable, identity-free facts of one LLM call
+  (engine, prompt version and composition, params, tokens, modes), stored on
+  each proposal that call produced. Legacy proposals have none and show
+  generation details as unavailable.
 
 ### Configuration
 
@@ -672,6 +858,12 @@ publish, AI), keep it in the page-specific component.
     with precondition matrix; lazy v=1 TemplateVersion creation.
   - `app/services/extraction_proposal_service.py` — append-only proposals
     with stage / coherence checks.
+  - `app/services/extraction_attempt_service.py` — `prepare_request`
+    (`requestId` insert-or-replay) and `execute_attempt` (attempt-row
+    ownership, terminal replay) for AI section extraction.
+  - `app/services/proposal_generation_read.py` — the single safe
+    serialization boundary for proposal generation snapshots and
+    reveal-gated runner identity (suggestions, history, run details, exports).
   - `app/services/extraction_review_service.py` — reviewer decisions
     (the per-user value store now flows through here).
   - `app/services/extraction_consensus_service.py` — consensus resolution

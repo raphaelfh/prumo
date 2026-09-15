@@ -73,6 +73,7 @@ vi.mock('@/services/extractionExportService', () => ({
 import {AuthProvider} from '@/contexts/AuthContext';
 import {ProtectedRoute} from '@/components/ProtectedRoute';
 import {NotificationCenter} from '@/components/navigation/NotificationCenter';
+import {useSectionExtractionJobs} from '@/stores/sectionExtractionJobs';
 import {useBackgroundJobs} from '@/stores/useBackgroundJobs';
 import {createZoteroImportJob} from '@/types/background-jobs';
 
@@ -156,7 +157,24 @@ async function closeBell() {
 }
 
 describe('background jobs are scoped to one identity', () => {
+  it('clears unmounted section jobs on sign-out and account change, but keeps token refresh', async () => {
+    await boot();
+    await signInAs('account-a');
+    const params = {projectId: 'project', articleId: 'article', templateId: 'template', runId: 'run', entityTypeId: 'section'};
+    const first = useSectionExtractionJobs.getState().begin('account-a', params);
+    expect(first).not.toBeNull();
+    await emit('TOKEN_REFRESHED', sessionFor('account-a'));
+    expect(Object.values(useSectionExtractionJobs.getState().records)[0].requestId).toBe(first?.requestId);
+    await emit('SIGNED_OUT', null);
+    expect(useSectionExtractionJobs.getState().records).toEqual({});
+    await signInAs('account-a');
+    expect(useSectionExtractionJobs.getState().begin('account-a', params)).not.toBeNull();
+    await emit('SIGNED_IN', sessionFor('account-b'));
+    expect(useSectionExtractionJobs.getState().records).toEqual({});
+    expect(useSectionExtractionJobs.getState().ownerId).toBe('account-b');
+  });
   beforeEach(() => {
+    useSectionExtractionJobs.setState({ownerId: null, records: {}});
     hoisted.authCallback = null;
     hoisted.storedSession = null;
     localStorage.clear();

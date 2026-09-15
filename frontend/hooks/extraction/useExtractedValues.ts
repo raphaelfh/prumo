@@ -75,6 +75,7 @@ interface UseExtractedValuesReturn {
    */
   loadedValues: Record<string, any>;
   updateValue: (instanceId: string, fieldId: string, value: any) => void;
+  reconcileValue: (instanceId: string, fieldId: string, value: unknown) => void;
   loading: boolean;
   initialized: boolean;
   error: string | null;
@@ -142,6 +143,7 @@ export function useExtractedValues(
   const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hydratedRunIdRef = useRef<string | null>(null);
+  const hydratedReviewerRef = useRef<string | null>(null);
 
   const applyLoadedValues = (valuesMap: Record<string, any>) => {
     // Expose the raw server map as the autosave baseline (see return docs)
@@ -155,7 +157,8 @@ export function useExtractedValues(
       JSON.stringify(prev) === JSON.stringify(valuesMap) ? prev : valuesMap,
     );
     setValues((prev) => {
-      if (hydratedRunIdRef.current !== runId) {
+      if (hydratedRunIdRef.current !== runId || hydratedReviewerRef.current !== currentUserId) {
+        hydratedReviewerRef.current = currentUserId;
         hydratedRunIdRef.current = runId ?? null;
         const addedKeys = Object.keys(valuesMap);
         if (addedKeys.length > 0) {
@@ -270,12 +273,21 @@ export function useExtractedValues(
     }));
   };
 
+  // Explicit workspace decisions reconcile draft and baseline together. The
+  // caller checks the captured user/run and preserves any intervening typing.
+  const reconcileValue = (instanceId: string, fieldId: string, value: unknown) => {
+    const key = `${instanceId}_${fieldId}`;
+    setLoadedValues(prev => ({...prev, [key]: value}));
+    setValues(prev => ({...prev, [key]: value}));
+  };
+
   const refresh = () => loadValues(true);
 
   return {
     values,
     loadedValues,
     updateValue,
+    reconcileValue,
     loading,
     initialized,
     error,

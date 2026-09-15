@@ -22,6 +22,12 @@ vi.mock("@/hooks/useCurrentUser", () => ({
   useCurrentUser: () => ({ userId: "qa-test-reviewer-id" }),
 }));
 
+// SectionAIExtractButton's useSectionExtraction reads the signed-in user from
+// AuthContext; the harness has no real AuthProvider.
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({ user: { id: "qa-test-reviewer-id" }, session: null, loading: false }),
+}));
+
 vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
   useComparisonPermissions: vi.fn(),
 }));

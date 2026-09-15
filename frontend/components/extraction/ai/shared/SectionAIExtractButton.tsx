@@ -10,6 +10,7 @@
 import { Loader2, Sparkles } from "lucide-react";
 
 import { IconButton } from "@/components/patterns/IconButton";
+import { extractionErrorToast } from "@/lib/ai-extraction/extractionErrorToast";
 import { t } from "@/lib/copy";
 import { useRunEditability } from "@/components/runs/RunEditabilityContext";
 import { useSectionExtraction } from "@/hooks/extraction/useSectionExtraction";
@@ -39,7 +40,9 @@ export function SectionAIExtractButton({
   onExtractionComplete,
 }: SectionAIExtractButtonProps) {
   const { readOnly } = useRunEditability();
-  const { extractSection, loading } = useSectionExtraction({
+  const params = {projectId, articleId, templateId, entityTypeId, parentInstanceId, runId: runId ?? undefined};
+  const { extractSection, loading, getSectionState } = useSectionExtraction({
+    params,
     onSuccess: (completedRunId) => {
       // Background refresh; never block the hook's loading reset.
       if (!onExtractionComplete) return;
@@ -58,24 +61,24 @@ export function SectionAIExtractButton({
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // never toggle a wrapping accordion
-    void extractSection({
-      projectId,
-      articleId,
-      templateId,
-      entityTypeId,
-      parentInstanceId,
-      runId: runId ?? undefined,
-    }).catch((error: unknown) => {
+    void extractSection(params).catch((error: unknown) => {
       // Errors already surfaced as a toast by the hook.
       console.error("Section extraction failed:", error);
     });
   };
 
+  const state = getSectionState(params);
+  const failure = state.error;
+  const retryLabel = state.uncertainTransport
+    ? t("extraction", "sectionExtractionRetryTransport")
+    : failure
+      ? t("extraction", "sectionExtractionRetry").replace("{{reason}}", extractionErrorToast(failure.code, failure.message)?.title ?? failure.message)
+      : null;
   const label = disabled
     ? t("extraction", "createInstanceBeforeExtract")
     : loading
       ? t("extraction", "extractingWithAI")
-      : t("extraction", "extractSectionWithAI").replace("{{label}}", entityLabel);
+      : retryLabel ?? t("extraction", "extractSectionWithAI").replace("{{label}}", entityLabel);
 
   return (
     <IconButton

@@ -24,7 +24,7 @@ import type {
   VerificationVerdict,
 } from '@/types/ai-extraction';
 import { getSuggestionKey } from '@/types/ai-extraction';
-import { unwrapValueEnvelope, valueAbsentReason } from '@/lib/extraction/valueSemantics';
+import { unwrapProposedValue } from '@/lib/extraction/valueSemantics';
 import type { components } from '@/types/api/schema';
 
 type AISuggestionItem = components['schemas']['AISuggestionItem'];
@@ -73,27 +73,7 @@ function mapVerification(
 }
 
 /**
- * Decode `proposed_value` into the presentation value, PRESERVING which of the
- * three shapes it was — the discrimination `valuelessProposalKind` reads.
- *
- * ADR-0016 Phase 3: a resolved disposition keeps its full marker envelope so
- * accept/select propagates the marker into the form value, consistent with how
- * FieldInput writes it. A markerless `{value: null}` stays NULL rather than
- * collapsing to '': that collapse made an abstention byte-identical to a
- * genuine empty-string extraction, so the UI could not render one quietly
- * without swallowing the other. Both emptiness tokens still write
- * `{value: null}` on the wire (autosave normalizes '' → null), so this is a
- * rendering distinction, not a persistence one. A real value collapses to its
- * scalar as before; a missing envelope reads as "no value".
- */
-function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknown {
-  const reason = valueAbsentReason(raw);
-  if (reason !== null) return { value: null, absent_reason: reason };
-  return unwrapValueEnvelope(raw) ?? null;
-}
-
-/**
- * Flatten the run-level provenance snapshot (snake_case, with nested
+ * Flatten server generation facts (snake_case, with nested
  * `params`/`tokens`) into the camelCase `RunProvenance` the disclosure renders.
  * Unknown top-level keys pass through verbatim so a future backend field shows
  * up as a generic row without a frontend change; the nested `params`/`tokens`
@@ -151,6 +131,9 @@ function mapPromptComposition(raw: unknown): PromptComposition | undefined {
     sectionInstruction: pc['section_instruction'] as string | undefined,
     articleRef: {
       fileId: ar['file_id'] as string | null | undefined,
+      currentFileId: typeof ar['current_file_id'] === 'string' ? ar['current_file_id'] : undefined,
+      historicalInputAvailable: typeof ar['historical_input_available'] === 'boolean'
+        ? ar['historical_input_available'] : undefined,
       fileName: ar['file_name'] as string | null | undefined,
       truncated: ar['truncated'] as boolean | undefined,
       estTokens: ar['est_tokens'] as number | null | undefined,
@@ -164,7 +147,9 @@ function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
   return {
     id: item.id,
     runId: item.run_id,
-    value: unwrapValue(item.proposed_value as { [key: string]: unknown }),
+    extractionAttemptId: item.extraction_attempt_id ?? undefined,
+    generationSnapshot: mapProvenance(item.generation_snapshot),
+    value: unwrapProposedValue(item.proposed_value),
     confidence: item.confidence_score ?? 0,
     reasoning: item.rationale ?? '',
     status: (item.status ?? 'pending') as AISuggestion['status'],
@@ -181,7 +166,9 @@ function mapHistoryItemToSuggestion(
   return {
     id: item.id,
     runId: item.run_id,
-    value: unwrapValue(item.proposed_value as { [key: string]: unknown }),
+    extractionAttemptId: item.extraction_attempt_id ?? undefined,
+    generationSnapshot: mapProvenance(item.generation_snapshot),
+    value: unwrapProposedValue(item.proposed_value),
     confidence: item.confidence_score ?? 0,
     reasoning: item.rationale ?? '',
     // History items have no server-side status (raw proposal trail)

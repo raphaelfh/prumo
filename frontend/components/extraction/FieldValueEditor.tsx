@@ -17,6 +17,7 @@
  * @component
  */
 
+import {useLayoutEffect, useRef, type ComponentProps} from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -52,6 +53,7 @@ export interface FieldValueEditorProps {
   value: unknown;
   onChange: (value: unknown) => void;
   disabled?: boolean;
+  density?: 'default' | 'compact';
   /** Extra classes on every input variant (e.g. a validation border). */
   inputClassName?: string;
   /** Extra classes on the text/textarea variant only (AI-pending accent parity). */
@@ -75,6 +77,26 @@ function toInputValue(value: unknown): string {
   return String(value);
 }
 
+/** Native resizing writes inline height; stop autosizing once the user changes it. */
+function CompactTextEditor(props: ComponentProps<typeof Textarea>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const automaticHeight = useRef<string | null>(null);
+  const manuallyResized = useRef(false);
+  useLayoutEffect(() => {
+    const editor = ref.current;
+    if (!editor) return;
+    if (automaticHeight.current !== null && editor.style.height !== automaticHeight.current) {
+      manuallyResized.current = true;
+    }
+    if (manuallyResized.current) return;
+    editor.style.height = 'auto';
+    editor.style.height = `${Math.min(320, Math.max(32, editor.scrollHeight))}px`;
+    automaticHeight.current = editor.style.height;
+  }, [props.value]);
+  return <Textarea {...props} ref={ref} rows={1}
+    className={cn('min-h-8 max-h-80 resize-y overflow-y-auto py-1 text-sm', props.className)} />;
+}
+
 export function FieldValueEditor({
   field,
   value,
@@ -82,11 +104,20 @@ export function FieldValueEditor({
   disabled,
   inputClassName,
   textAccentClassName,
+  density = 'default',
 }: FieldValueEditorProps) {
-  const inputHeight = 'h-8';
+  const compact = density === 'compact';
+  const accessibleLabel = compact ? field.label : undefined;
+  const inputHeight = compact ? 'h-8 min-w-0 px-2' : 'h-8';
 
   switch (field.field_type) {
     case 'text': {
+      if (compact) {
+        return <CompactTextEditor aria-label={accessibleLabel} key={field.id} value={toInputValue(value)}
+          onChange={(event) => onChange(event.target.value)} disabled={disabled}
+          placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
+          className={cn(textAccentClassName, inputClassName)} />;
+      }
       // Long description: use textarea (English keywords for label detection)
       const labelLower = field.label.toLowerCase();
       const isLongText =
@@ -108,6 +139,7 @@ export function FieldValueEditor({
       if (isLongText) {
         return (
           <Textarea
+            aria-label={accessibleLabel}
             value={toInputValue(value)}
             onChange={(e) => onChange(e.target.value)}
             placeholder={t('extraction', 'fieldPlaceholderEnter').replace(
@@ -122,6 +154,7 @@ export function FieldValueEditor({
 
       return (
         <Input
+            aria-label={accessibleLabel}
           value={toInputValue(value)}
           onChange={(e) => onChange(e.target.value)}
           placeholder={t('extraction', 'fieldPlaceholderEnter').replace(
@@ -153,8 +186,9 @@ export function FieldValueEditor({
       const hasMultipleUnits = relatedUnits.length > 0;
 
       return (
-        <div className="flex gap-2">
+        <div className={cn("flex gap-2", compact && "min-w-0 gap-1")}>
           <Input
+            aria-label={accessibleLabel}
             type="number"
             value={toInputValue(numValue)}
             onChange={(e) => {
@@ -178,7 +212,7 @@ export function FieldValueEditor({
               }}
               disabled={disabled}
             >
-              <SelectTrigger className="w-32 shrink-0">
+              <SelectTrigger aria-label={accessibleLabel} className={cn("w-32 shrink-0", compact && "h-8 w-auto max-w-24 gap-1 px-2")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -214,6 +248,7 @@ export function FieldValueEditor({
     case 'date':
       return (
         <Input
+            aria-label={accessibleLabel}
           type="date"
           value={toInputValue(value)}
           onChange={(e) => onChange(e.target.value)}
@@ -227,6 +262,7 @@ export function FieldValueEditor({
       if (field.allow_other) {
         return (
           <SelectWithOther
+            ariaLabel={accessibleLabel}
             options={options}
             value={(value as any) || null}
             onChange={onChange}
@@ -238,7 +274,7 @@ export function FieldValueEditor({
               '{{label}}',
               field.label.toLowerCase(),
             )}
-            className={cn(inputClassName)}
+            className={cn(compact && inputHeight, inputClassName)}
           />
         );
       }
@@ -252,7 +288,7 @@ export function FieldValueEditor({
           onValueChange={onChange}
           disabled={disabled}
         >
-          <SelectTrigger className={cn(inputHeight, 'text-sm', inputClassName)}>
+          <SelectTrigger aria-label={accessibleLabel} className={cn(inputHeight, 'text-sm', inputClassName)}>
             <SelectValue
               placeholder={t('extraction', 'selectFieldPlaceholder').replace(
                 '{{label}}',
@@ -278,13 +314,17 @@ export function FieldValueEditor({
 
     case 'multiselect': {
       const mOptions = (field.allowed_values as any[]) || [];
-      if (field.allow_other) {
+      if (field.allow_other || (compact && mOptions.length > 0)) {
         return (
           <MultiSelectWithOther
+            ariaLabel={accessibleLabel}
             options={mOptions}
             value={(value as any) || null}
             onChange={onChange}
-            allowOther={true}
+            allowOther={field.allow_other ?? false}
+            showSelectedLabels={compact}
+            size={compact ? 'sm' : undefined}
+            className={cn(compact && 'min-w-0', inputClassName)}
             otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
             otherPlaceholder={field.other_placeholder || undefined}
             disabled={disabled}
@@ -298,6 +338,7 @@ export function FieldValueEditor({
       // Simple comma-separated fallback
       return (
         <Input
+            aria-label={accessibleLabel}
           value={Array.isArray(value) ? value.join(', ') : toInputValue(value)}
           onChange={(e) => onChange(e.target.value.split(',').map((v) => v.trim()))}
           placeholder={t('extraction', 'valuesCommaSeparated')}
@@ -311,6 +352,7 @@ export function FieldValueEditor({
       return (
         <div className="flex items-center gap-2">
           <Switch
+            aria-label={accessibleLabel}
             checked={(value as boolean) || false}
             onCheckedChange={onChange}
             disabled={disabled}
@@ -324,6 +366,7 @@ export function FieldValueEditor({
     default:
       return (
         <Input
+            aria-label={accessibleLabel}
           value={toInputValue(value)}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}

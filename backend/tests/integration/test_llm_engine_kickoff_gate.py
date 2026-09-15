@@ -103,14 +103,14 @@ async def test_section_continuation_with_run_id_is_gated_too(
     # so the task must never be enqueued at all.
     from app.api.v1.endpoints import section_extraction as se
 
-    fake_delay = MagicMock()
-    monkeypatch.setattr(se, "run_section_extraction_task", MagicMock(delay=fake_delay))
+    fake_enqueue = MagicMock()
+    monkeypatch.setattr(se, "run_section_extraction_task", MagicMock(apply_async=fake_enqueue))
 
     payload = {**_section_payload(), "runId": str(run.id)}
     r = await client_as_manager.post("/api/v1/extraction/sections", json=payload)
     assert r.status_code == 409, r.text
     assert r.json()["error"]["code"] == "LLM_ENGINE_RETIRED"
-    fake_delay.assert_not_called()
+    fake_enqueue.assert_not_called()
 
 
 @pytest.mark.asyncio

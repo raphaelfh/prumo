@@ -534,3 +534,22 @@ describe('finalized stage — published values', () => {
     expect(result.current.values['i1_f9']).toBeUndefined();
   });
 });
+
+describe('confirmed workspace reconciliation', () => {
+  it('reconciles the confirmed draft and baseline together', async () => {
+    const {result} = renderHook(() => useExtractedValues({currentUserId: 'me', runId: 'run', stage: 'extract', currentValues: []}));
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    act(() => result.current.reconcileValue('i', 'f', {value: 4, unit: 'mg'}));
+    expect(result.current.values.i_f).toEqual({value: 4, unit: 'mg'});
+    expect(result.current.loadedValues.i_f).toEqual(result.current.values.i_f);
+  });
+  it('replaces the previous reviewer draft on an identity change in the same run', async () => {
+    const {result, rerender} = renderHook(({user, value}) => useExtractedValues({currentUserId: user, runId: 'run', stage: 'extract',
+      currentValues: [{instance_id: 'i', field_id: 'f', value: {value}, decision: 'edit'}]}),
+      {initialProps: {user: 'me', value: 'first'}});
+    await waitFor(() => expect(result.current.values.i_f).toBe('first'));
+    act(() => result.current.updateValue('i', 'f', 'private draft'));
+    rerender({user: 'other', value: 'second'});
+    await waitFor(() => expect(result.current.values.i_f).toBe('second'));
+  });
+});

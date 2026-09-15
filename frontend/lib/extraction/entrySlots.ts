@@ -44,3 +44,33 @@ export function entrySlotsShowing(
   }
   return slots;
 }
+
+function readStored(key: string): string | null {
+  // Guarded: a private window or blocked site data throws on ACCESS, and this
+  // hook runs once per rendered group, so an unguarded read throws per node.
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function writeStoredEntry(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* a remembered selection is a convenience, never a correctness input */
+  }
+}
+
+/** Canonical rendered selection, including remembered selection and entry order. */
+export function resolveEntryGroup(articleId: string, groupId: string, parentInstanceId: string | null, instances: ExtractionInstance[], activeEntries: Record<string, string>) {
+  const entries = instances.filter(i => i.entity_type_id === groupId && (i.parent_instance_id ?? null) === parentInstanceId)
+    .slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const key = entrySlotKey(articleId, groupId, parentInstanceId);
+  const stored = readStored(key);
+  // Explicit selection may be newly created and awaiting the run-view refetch.
+  // Only a restored id is checked for existence before falling back.
+  const activeEntryId = activeEntries[key] ?? (stored && entries.some(entry => entry.id === stored) ? stored : entries[0]?.id ?? null);
+  return {entries, activeEntryId};
+}

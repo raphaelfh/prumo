@@ -52,6 +52,22 @@ def mock_db():
 
 
 @pytest.fixture
+def result_lock():
+    """Stub the post-model write guard with an unfiltered result.
+
+    ``_create_suggestions`` locks the run row (``SELECT ... FOR UPDATE``) and
+    re-reads its stage before writing, which needs a real row. These tests
+    drive the recording branches on mocks; the lock + stage + attempt filter
+    are covered for real in ``test_extraction_generation_attempts``.
+    """
+    with patch(
+        "app.services.extraction_generation.locked_result_filter",
+        AsyncMock(return_value=LlmFieldFilter()),
+    ) as lock:
+        yield lock
+
+
+@pytest.fixture
 def mock_storage():
     """Mock do StorageAdapter."""
     mock = MagicMock(spec=StorageAdapter)
@@ -240,6 +256,7 @@ class TestSectionExtractionEntityTypes:
         assert result[0].name == "Section 1"
 
 
+@pytest.mark.usefixtures("result_lock")
 class TestSectionExtractionFullFlow:
     """Testes de fluxo completo."""
 
@@ -348,6 +365,7 @@ class TestSectionExtractionFullFlow:
         service._lifecycle.advance_stage.assert_not_awaited()
 
 
+@pytest.mark.usefixtures("result_lock")
 class TestExtractSectionWithExistingRun:
     """``extract_section`` accepts an existing ``run_id`` (extraction-surface
     path) and appends proposals to that run instead of creating a fresh one.
@@ -1159,6 +1177,7 @@ class TestGetChildEntityTypesEdgeCases:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("result_lock")
 class TestCreateSuggestions:
     def _make_run(self):
         run = MagicMock()
@@ -1642,7 +1661,7 @@ class TestCreateSuggestions:
         assert result == 0
 
     @pytest.mark.asyncio
-    async def test_records_proposal_for_plain_value(self, service):
+    async def test_records_proposal_for_plain_value(self, service, result_lock):
         field_id = uuid4()
         field = MagicMock()
         field.id = field_id
@@ -1670,6 +1689,8 @@ class TestCreateSuggestions:
         )
         assert result == 1
         service._proposals.record_proposal.assert_awaited_once()
+        # Written under the run lock; no durable attempt on a direct call.
+        result_lock.assert_awaited_once_with(service.db, run.id, service.user_id, None)
 
     @pytest.mark.asyncio
     async def test_records_proposal_for_enriched_dict_value(self, service):
