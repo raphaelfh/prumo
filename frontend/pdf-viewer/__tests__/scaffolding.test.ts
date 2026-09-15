@@ -23,39 +23,19 @@ vi.mock('@/integrations/supabase/client', () => ({
 const mod = await import('@prumo/pdf-viewer');
 
 describe('@prumo/pdf-viewer public API', () => {
-  it('exports the runtime entry points from the package root', () => {
-    expect(typeof mod.createViewerStore).toBe('function');
-    expect(typeof mod.ViewerProvider).toBe('function');
-    expect(typeof mod.useViewerStore).toBe('function');
-    expect(typeof mod.useViewerStoreApi).toBe('function');
+  it('exports exactly what the app imports', () => {
+    expect(Object.keys(mod).sort()).toEqual([
+      'PrumoPdfViewer',
+      'articleFileSourceFromStorageKey',
+      'createViewerStore',
+      'subscribeReaderLocate',
+    ]);
   });
 
-  it('createViewerStore returns a store with getState/setState/subscribe', () => {
+  it('createViewerStore returns a vanilla Zustand store', () => {
     const store = mod.createViewerStore();
     expect(typeof store.getState).toBe('function');
     expect(typeof store.setState).toBe('function');
     expect(typeof store.subscribe).toBe('function');
-  });
-
-  it('exports Phase 2 public API surface', () => {
-    // Compound primitives
-    expect(typeof mod.Viewer).toBe('object');
-    expect(typeof mod.Viewer.Root).toBe('function');
-    expect(typeof mod.Viewer.Body).toBe('function');
-    expect(typeof mod.Viewer.Pages).toBe('function');
-    expect(typeof mod.Viewer.Page).toBe('function');
-    expect(typeof mod.CanvasLayer).toBe('function');
-    expect(typeof mod.TextLayer).toBe('function');
-    // UI components
-    expect(typeof mod.Toolbar).toBe('function');
-    expect(typeof mod.NavigationControls).toBe('function');
-    expect(typeof mod.ZoomControls).toBe('function');
-    expect(typeof mod.LoadingState).toBe('function');
-    expect(typeof mod.ErrorState).toBe('function');
-    // Hooks
-    expect(typeof mod.useDocumentLoader).toBe('function');
-    expect(typeof mod.usePageHandle).toBe('function');
-    // High-level component
-    expect(typeof mod.PrumoPdfViewer).toBe('function');
   });
 });

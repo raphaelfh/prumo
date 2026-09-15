@@ -1,5 +1,6 @@
 import type {PDFPageProxy} from 'pdfjs-dist';
 import type {
+  PageRotation,
   PDFPageHandle,
   RenderOptions,
   RenderResult,
@@ -15,17 +16,18 @@ export class PdfJsPageHandle implements PDFPageHandle {
 
   constructor(private readonly proxy: PDFPageProxy, public readonly pageNumber: number) {}
 
+  get rotation(): PageRotation {
+    return this.proxy.rotate as PageRotation;
+  }
+
   get size(): {width: number; height: number} {
-    // proxy.view is [x1, y1, x2, y2] in PDF user space
-    const [x1, y1, x2, y2] = this.proxy.view;
-    return {width: x2 - x1, height: y2 - y1};
+    // A viewport without an explicit rotation uses the page's own /Rotate.
+    const {width, height} = this.proxy.getViewport({scale: 1});
+    return {width, height};
   }
 
   async render(opts: RenderOptions): Promise<RenderResult> {
-    const viewport = this.proxy.getViewport({
-      scale: opts.scale,
-      rotation: opts.rotation ?? 0,
-    });
+    const viewport = this.proxy.getViewport({scale: opts.scale, rotation: opts.rotation});
     // Validate 2d context is available before delegating to pdfjs.
     if (!opts.canvas.getContext('2d')) throw new Error('PdfJsPageHandle.render: canvas 2d context unavailable');
 
@@ -86,7 +88,7 @@ export class PdfJsPageHandle implements PDFPageHandle {
   }
 
   async renderTextLayer({container, scale, rotation, signal}: TextLayerRenderOptions): Promise<TextLayerHandle> {
-    const viewport = this.proxy.getViewport({scale, rotation: rotation ?? 0});
+    const viewport = this.proxy.getViewport({scale, rotation});
 
     // Clear previous content (idempotent re-render)
     container.innerHTML = '';

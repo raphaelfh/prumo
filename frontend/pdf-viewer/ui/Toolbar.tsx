@@ -1,5 +1,5 @@
 import type {ReactNode} from 'react';
-import {BookOpenText, Search} from 'lucide-react';
+import {BookOpenText, RotateCw, Search} from 'lucide-react';
 import {IconButton} from '@/components/patterns/IconButton';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
@@ -61,9 +61,19 @@ export function Toolbar({
         </div>
         <div className="flex min-w-0 justify-center">{center}</div>
         <div className="flex items-center justify-end gap-0.5">
-          {/* Zoom scales the PDF canvas; the reader is typography, not a page
-              surface, so there's nothing to zoom there — hide it in reader mode. */}
-          {!isReader && <ZoomControls />}
+          {/* Rotation and zoom act on the PDF canvas; the reader is typography,
+              not a page surface, so both are hidden in reader mode. */}
+          {!isReader && (
+            <>
+              <IconButton
+                label={t('pdf', 'viewerRotateView')}
+                side="bottom"
+                onClick={() => storeApi.getState().actions.rotateView()}
+                icon={<RotateCw strokeWidth={1.5} />}
+              />
+              <ZoomControls />
+            </>
+          )}
           {onSearchToggle && (
             <IconButton
               label={t('pdf', 'viewerSearch')}

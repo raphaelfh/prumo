@@ -33,3 +33,20 @@
 .pdf-viewer-text-layer .highlight.selected {
   background-color: rgba(255, 153, 0, 0.6);
 }
+
+/*
+ * pdf.js's TextLayer lays out spans in unrotated coordinates and only sets
+ * `data-main-rotation` on the container; rotating the container itself is
+ * left to the consuming app's CSS (see pdfjs-dist/web/pdf_viewer.css, the
+ * `[data-main-rotation="…"]` rules under `:root`). Values copied verbatim
+ * from node_modules/pdfjs-dist/web/pdf_viewer.css (search `data-main-rotation`).
+ */
+.pdf-viewer-text-layer[data-main-rotation="90"] {
+  transform: rotate(90deg) translateY(-100%);
+}
+.pdf-viewer-text-layer[data-main-rotation="180"] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+.pdf-viewer-text-layer[data-main-rotation="270"] {
+  transform: rotate(270deg) translateX(-100%);
+}

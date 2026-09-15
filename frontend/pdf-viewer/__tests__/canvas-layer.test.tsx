@@ -6,21 +6,29 @@ import type {PageRotation} from '../core/engine';
 import {createMockEngine} from '../engines/mock';
 import {CanvasLayer} from '../primitives/CanvasLayer';
 
-// The canvas backing store is `scale * devicePixelRatio`; without an explicit
-// CSS size the canvas lays out at that backing size. On a HiDPI screen every
-// page would render at DPR× its size until its (slow) render resolved, then
-// snap back. The CSS size must therefore be in place before rendering starts.
-async function styleAtRenderStart(opts: {scale: number; rotation: PageRotation}) {
-  const seen: {cssWidth: string; cssHeight: string; renderScale: number}[] = [];
+/**
+ * The CSS size and the render options when the first render starts. The canvas
+ * backing store is DPR-scaled; without an explicit CSS size the canvas lays
+ * out at that backing size — DPR× too large until the render resolves — so the CSS
+ * size must be in place before rendering starts.
+ */
+async function atRenderStart(opts: {
+  scale: number;
+  viewRotation: PageRotation;
+  pageRotation?: PageRotation;
+  pageSize?: {width: number; height: number};
+}) {
+  const seen: {cssWidth: string; cssHeight: string; renderScale: number; rotation: PageRotation}[] = [];
   const engine = createMockEngine({
     numPages: 1,
-    pageSize: {width: 600, height: 800},
-    onRender: (_page, {canvas, scale}) => {
+    pageSize: opts.pageSize ?? {width: 600, height: 800},
+    rotation: opts.pageRotation ?? 0,
+    onRender: (_page, {canvas, scale, rotation}) => {
       const {style} = canvas as HTMLCanvasElement;
-      seen.push({cssWidth: style.width, cssHeight: style.height, renderScale: scale});
+      seen.push({cssWidth: style.width, cssHeight: style.height, renderScale: scale, rotation});
     },
   });
-  const store = createViewerStore(opts);
+  const store = createViewerStore({scale: opts.scale, viewRotation: opts.viewRotation});
   store.getState().actions.setDocument(await engine.load({kind: 'url', url: 'mock.pdf'}));
 
   render(
@@ -39,20 +47,24 @@ describe('<CanvasLayer>', () => {
 
   it('sizes the canvas in CSS pixels before the render is invoked on a HiDPI screen', async () => {
     vi.stubGlobal('devicePixelRatio', 2);
-
-    const atStart = await styleAtRenderStart({scale: 1.5, rotation: 0});
-
-    // Precondition: the backing store really is DPR-scaled, so an unset CSS
-    // size would lay the page out at twice its size.
-    expect(atStart.renderScale).toBe(3);
-    expect(atStart).toMatchObject({cssWidth: '900px', cssHeight: '1200px'});
+    const start = await atRenderStart({scale: 1.5, viewRotation: 0});
+    // Precondition: the backing store really is DPR-scaled.
+    expect(start.renderScale).toBe(3);
+    expect(start).toMatchObject({cssWidth: '900px', cssHeight: '1200px', rotation: 0});
   });
 
-  it('swaps the CSS width and height for a quarter-turn rotation', async () => {
-    vi.stubGlobal('devicePixelRatio', 2);
+  it('swaps the CSS width and height for a quarter view rotation', async () => {
+    const start = await atRenderStart({scale: 1.5, viewRotation: 90});
+    expect(start).toMatchObject({cssWidth: '1200px', cssHeight: '900px', rotation: 90});
+  });
 
-    const atStart = await styleAtRenderStart({scale: 1.5, rotation: 90});
+  it('draws a /Rotate 90 page at 90° and landscape with no view rotation', async () => {
+    const start = await atRenderStart({scale: 1.5, viewRotation: 0, pageRotation: 90, pageSize: {width: 800, height: 600}});
+    expect(start).toMatchObject({cssWidth: '1200px', cssHeight: '900px', rotation: 90});
+  });
 
-    expect(atStart).toMatchObject({cssWidth: '1200px', cssHeight: '900px'});
+  it('adds the view rotation to the page’s own rotation', async () => {
+    const start = await atRenderStart({scale: 1.5, viewRotation: 90, pageRotation: 90, pageSize: {width: 800, height: 600}});
+    expect(start).toMatchObject({cssWidth: '900px', cssHeight: '1200px', rotation: 180});
   });
 });

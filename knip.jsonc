@@ -13,15 +13,21 @@
   // Entry points.
   // - scripts/*.mjs: Node scripts invoked from bash (verify_all.sh, CI), not
   //   imported — knip cannot see shell callers.
-  // - frontend/pdf-viewer/index.ts: the `@prumo/pdf-viewer` package boundary
-  //   (aliased in tsconfig.json, tsconfig.app.json, vite.config.ts and
-  //   vitest.config.ts). Its README declares a stable, owned public surface
-  //   (`Viewer`/`CanvasLayer`/`TextLayer`, the UI shell, `useDocumentLoader`,
-  //   `usePageHandle`, `useViewerStore*`) with phases 3b/4/5/6 still pending,
-  //   so those exports are a documented contract, not dead code. The `!`
-  //   suffix keeps it an entry under --production, where the app currently
-  //   imports only 5 of them.
-  "entry": ["scripts/*.mjs", "frontend/pdf-viewer/index.ts!"],
+  // - frontend/pdf-viewer/index.ts is the `@prumo/pdf-viewer` package
+  //   boundary (aliased in tsconfig.json, tsconfig.app.json, vite.config.ts
+  //   and vitest.config.ts) but is deliberately NOT listed here: declaring a
+  //   file both `entry` and reachable from the app's real entry (main.tsx)
+  //   makes knip treat it as a disconnected root — it stops crediting the
+  //   app's `@prumo/pdf-viewer` imports as usage of the underlying
+  //   declarations, so every re-exported symbol (`createViewerStore`,
+  //   `PrumoPdfViewer`, `articleFileSourceFromStorageKey`, ...) falsely
+  //   reports as unused in --production even though RunPdfContent.tsx,
+  //   ExtractionFullScreen.tsx, QualityAssessmentFullScreen.tsx and
+  //   useArticleDocuments.ts import them (verified with
+  //   `knip --trace-export`). Left off `entry`, ordinary reachability from
+  //   the app traces straight through the alias into the viewer, so an
+  //   export the app stops using is still reported — with no exemption.
+  "entry": ["scripts/*.mjs"],
 
   // Project files. The first pattern must mirror the default knip computes:
   // DEFAULT_EXTENSIONS (knip/dist/constants.js) PLUS the extensions its

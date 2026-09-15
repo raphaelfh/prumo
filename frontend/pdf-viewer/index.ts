@@ -1,30 +1,7 @@
-// Core: types, store, context
-export * from './core';
-
-// Compound primitives
-export {Viewer, CanvasLayer, TextLayer, } from './primitives';
-;
-
-// UI shell components
-export {
-  Toolbar,
-  NavigationControls,
-  ZoomControls,
-  LoadingState,
-  ErrorState,
-  
-} from './ui';
-;
-
-// Hooks
-export {useDocumentLoader} from './hooks/useDocumentLoader';
-export {usePageHandle} from './hooks/usePageHandle';
-;
-
-// High-level all-in-one component
+/**
+ * `@prumo/pdf-viewer` — the viewer's public surface: exactly what the app
+ * imports. Modules inside the viewer import each other by path.
+ */
+export {createViewerStore, subscribeReaderLocate, type ViewerState} from './core';
 export {PrumoPdfViewer} from './PrumoPdfViewer';
-;
-
-// Domain adapters (opt-in; consumers can also build their own)
 export {articleFileSourceFromStorageKey} from './adapters/articleFileSource';
-;

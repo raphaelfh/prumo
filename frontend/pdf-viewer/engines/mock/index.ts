@@ -24,28 +24,25 @@
  */
 
 import type {
-  LoadOptions,
+  PageRotation,
   PDFDocumentHandle,
   PDFEngine,
-  PDFMetadata,
   PDFPageHandle,
   RenderOptions,
   RenderResult,
   TextContent,
   TextLayerHandle,
   TextLayerRenderOptions,
-  OutlineNode,
 } from '../../core/engine';
 import type {PDFSource} from '../../core/source';
 
 export interface MockEngineConfig {
   numPages?: number;
-  fingerprint?: string;
   pageSize?: {width: number; height: number};
+  /** Every page's own `/Rotate`; `pageSize` is then the displayed size at it. */
+  rotation?: PageRotation;
   /** One string per page — used by getTextContent and to size text bboxes. */
   text?: readonly string[];
-  metadata?: PDFMetadata;
-  outline?: OutlineNode[];
   /**
    * Hook called every time `render()` is invoked. Tests can use it to
    * assert how many times each page was rendered, or to simulate a
@@ -64,6 +61,7 @@ export interface MockEngineConfig {
 class MockPageHandle implements PDFPageHandle {
   readonly pageNumber: number;
   readonly size: {width: number; height: number};
+  readonly rotation: PageRotation;
   private readonly text: string;
   private readonly cfg: MockEngineConfig;
   private cleaned = false;
@@ -73,6 +71,7 @@ class MockPageHandle implements PDFPageHandle {
     this.text = text;
     this.cfg = cfg;
     this.size = cfg.pageSize ?? {width: 612, height: 792};
+    this.rotation = cfg.rotation ?? 0;
   }
 
   async render(opts: RenderOptions): Promise<RenderResult> {
@@ -80,8 +79,10 @@ class MockPageHandle implements PDFPageHandle {
     if (opts.signal?.aborted) {
       throw new DOMException('aborted', 'AbortError');
     }
-    const w = Math.floor(this.size.width * opts.scale);
-    const h = Math.floor(this.size.height * opts.scale);
+    // The drawn size turns only for the part of the rotation that is not the page's own.
+    const quarterTurn = (opts.rotation - this.rotation) % 180 !== 0;
+    const w = Math.floor((quarterTurn ? this.size.height : this.size.width) * opts.scale);
+    const h = Math.floor((quarterTurn ? this.size.width : this.size.height) * opts.scale);
     if (opts.canvas instanceof HTMLCanvasElement || 'getContext' in opts.canvas) {
       // Best-effort: set size so consumers can read width/height afterwards.
       // OffscreenCanvas exposes width/height, HTMLCanvasElement does too.
@@ -130,22 +131,12 @@ class MockPageHandle implements PDFPageHandle {
 
 class MockDocumentHandle implements PDFDocumentHandle {
   readonly numPages: number;
-  readonly fingerprint: string;
   private readonly cfg: MockEngineConfig;
   private destroyed = false;
 
   constructor(cfg: MockEngineConfig) {
     this.numPages = cfg.numPages ?? 1;
-    this.fingerprint = cfg.fingerprint ?? 'mock-fingerprint';
     this.cfg = cfg;
-  }
-
-  async metadata(): Promise<PDFMetadata> {
-    return this.cfg.metadata ?? {};
-  }
-
-  async outline(): Promise<OutlineNode[]> {
-    return this.cfg.outline ?? [];
   }
 
   async getPage(pageNumber: number): Promise<PDFPageHandle> {
@@ -167,26 +158,14 @@ class MockDocumentHandle implements PDFDocumentHandle {
   }
 }
 
-class MockEngineImpl implements PDFEngine {
-  private readonly cfg: MockEngineConfig;
-
-  constructor(cfg: MockEngineConfig) {
-    this.cfg = cfg;
-  }
-
-  async load(_source: PDFSource, _opts?: LoadOptions): Promise<PDFDocumentHandle> {
-    return new MockDocumentHandle(this.cfg);
-  }
-
-  destroy(): void {
-    // No engine-level resources held by the mock.
-  }
-}
-
 /**
  * Create a configurable mock PDF engine that satisfies `PDFEngine`
  * without invoking pdfjs-dist. See module docstring for usage.
  */
 export function createMockEngine(cfg: MockEngineConfig = {}): PDFEngine {
-  return new MockEngineImpl(cfg);
+  return {
+    async load(_source: PDFSource): Promise<PDFDocumentHandle> {
+      return new MockDocumentHandle(cfg);
+    },
+  };
 }

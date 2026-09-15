@@ -3,6 +3,7 @@ import {ViewerProvider, useViewerStore} from '../core/context';
 import {useDocumentLoader} from '../hooks/useDocumentLoader';
 import {usePageHandle} from '../hooks/usePageHandle';
 import {usePageScrollSync} from '../hooks/usePageScrollSync';
+import {displayedSize} from '../core/rotation';
 import type {PDFSource} from '../core/source';
 import type {StoreApi} from 'zustand';
 import type {ViewerState} from '../core/state';
@@ -90,22 +91,21 @@ function Page({
 }) {
   const handle = usePageHandle(pageNumber);
   const scale = useViewerStore((s) => s.scale);
-  const rotation = useViewerStore((s) => s.rotation);
+  const viewRotation = useViewerStore((s) => s.viewRotation);
 
   // Off-screen pages skip style, layout and paint. Without this, anything that
   // resizes the viewer — dragging the Articles or run split — laid out EVERY
   // page's text layer (hundreds of absolutely positioned spans each) again on
   // every frame. A skipped page takes its size from `contain-intrinsic-size`,
   // so that is the size CanvasLayer renders at — its viewport at `scale`,
-  // turned for a quarter rotation — exact, not a guess, or scroll-to-page and
-  // the page-sync observer (`usePageScrollSync`) would drift. `auto` keeps the
-  // real rendered size once the page has been on screen; a visible page still
-  // sizes to its content, so nothing is ever clipped.
+  // turned for a quarter view rotation (`displayedSize`) — exact, not a
+  // guess, or scroll-to-page and the page-sync observer (`usePageScrollSync`)
+  // would drift. `auto` keeps the real rendered size once the page has been on
+  // screen; a visible page still sizes to its content, so nothing is ever
+  // clipped.
   let style: CSSProperties | undefined;
   if (handle) {
-    const quarterTurn = rotation % 180 !== 0;
-    const width = (quarterTurn ? handle.size.height : handle.size.width) * scale;
-    const height = (quarterTurn ? handle.size.width : handle.size.height) * scale;
+    const {width, height} = displayedSize(handle.size, viewRotation, scale);
     style = {contentVisibility: 'auto', containIntrinsicSize: `auto ${width}px auto ${height}px`};
   }
 
