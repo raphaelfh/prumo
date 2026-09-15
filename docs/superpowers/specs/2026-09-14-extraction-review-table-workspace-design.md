@@ -1,6 +1,6 @@
 ---
 status: approved
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 owner: '@raphaelfh'
 ---
 
@@ -257,6 +257,18 @@ The sticky bar contains, from left to right:
 - reset column widths;
 - undo latest local decision where the existing header does not already expose
   the same action.
+
+Undo covers the latest confirmed local manual edit, acceptance or unacceptance
+within the current user/run session, across question and entry navigation. Its
+local stack resets on reload or user/run change. It awaits pending saves before
+selecting the latest confirmed decision, then appends an auditable edit restoring
+the full typed predecessor (or unresolved empty state), without a proposal link.
+It never deletes decisions. A newer external decision or lost authority produces
+a conflict instead of overwriting; failure preserves the undo entry for retry.
+Successful undo consumes that entry and adds no redo action. The toolbar supplies
+the fallback because the current extraction header has no undo action. Acceptance
+tests cover cross-question targeting, typed restoration, user/run isolation,
+pending-save serialization, failure/retry and stale-decision conflict.
 
 Shortcuts do not fire inside inputs, textareas, selects, contenteditable
 elements, dialogs, or menus. Every shortcut has a tooltip and accessible label.

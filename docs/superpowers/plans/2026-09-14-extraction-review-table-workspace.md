@@ -1,6 +1,6 @@
 ---
 status: approved
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 owner: '@raphaelfh'
 ---
 
@@ -55,7 +55,7 @@ This is one end-to-end delivery, with eleven independently reviewable tasks. Exe
 
 **Seat:** backend. **Files:** Create `backend/app/models/extraction_attempt.py`, `backend/app/repositories/extraction_attempt_repository.py`, `backend/app/schemas/extraction_attempt.py`, `backend/alembic/versions/0075_extraction_attempts.py`, `backend/tests/integration/test_extraction_attempt_repository.py`; modify `backend/app/models/__init__.py`, `backend/app/models/extraction_workflow.py`, `backend/tests/integration/test_migration_roundtrip.py`.
 
-**Interfaces:** `ExtractionAttempt` stores UUID `id`, unique UUID `request_id`, UUID `owner_id`, `project_id`, `article_id`, `template_id`, bound `run_id`, JSONB `request_payload`, nullable string `job_id`, nullable JSONB `engine`, string `status` (`pending/running/completed/failed/cancelled`), nullable JSONB `result`, nullable string `error` and `error_code`, and timestamps. `request_payload` is a canonical typed request without its request id, not arbitrary caller metadata. `ExtractionAttemptRepository.get_or_create(*, request_id, owner_id, scope, request_payload, job_id)` returns `(attempt, inserted: bool)`; `get_owned(request_id, owner_id)` and `lock(attempt_id)` are read/lock primitives. `scope` is a Pydantic `AttemptScope` containing the four coordinate UUIDs. Service code, not the repository, compares payloads and applies authorization.
+**Interfaces:** `ExtractionAttempt` stores UUID `id`, unique UUID `request_id`, UUID `owner_id`, `project_id`, `article_id`, `template_id`, bound `run_id`, JSONB `request_payload`, nullable string `job_id`, nullable JSONB `engine`, string `status` (`pending/running/completed/failed/cancelled`), nullable JSONB `result`, nullable string `error` and `error_code`, and timestamps. `request_payload` is a canonical typed request without its request id, not arbitrary caller metadata. `ExtractionAttemptRepository.get_or_create(*, request_id, owner_id, scope, request_payload, job_id)` returns `(attempt, inserted: bool)`; `get_owned(request_id, owner_id)` and `lock(attempt_id)` are read/lock primitives. Ownership explicitly uses `FOR NO KEY UPDATE`; referenced attempt keys are immutable and coherence checks must not acquire stronger attempt locks. `scope` is a Pydantic `AttemptScope` containing the four coordinate UUIDs. Service code, not the repository, compares payloads and applies authorization.
 
 - [ ] Write real-Postgres tests using the existing `TemplateFactory`, `SEED` and run lifecycle setup pattern. Create a coherent run/instance/field, insert two requests, and exercise the database constraints directly. Assert:
 
@@ -68,9 +68,9 @@ assert legacy_proposal.extraction_attempt_id is None
 assert legacy_proposal.generation_snapshot is None
 ```
 
-  Include concurrent same-request insertion with two sessions; conflicting proposal coordinate/run relationships; unique proposal coordinates within an attempt; anon/authenticated client writes denied; nullable legacy rows readable.
+  Include concurrent same-request insertion with two sessions; conflicting proposal coordinate/run relationships; unique proposal coordinates within an attempt; anon/authenticated direct SELECT and writes denied, including foreign-client reads; nullable legacy rows readable.
 - [ ] Run `cd backend && uv run pytest tests/integration/test_extraction_attempt_repository.py -q`; expect failures because the model/repository does not exist.
-- [ ] Implement models and repository. Add nullable `extraction_attempt_id` FK and nullable JSONB `generation_snapshot` on `ExtractionProposalRecord`. Add partial unique `(extraction_attempt_id, instance_id, field_id, source)` where attempt is not null. Enforce attempt/proposal run consistency in database coherence checks, and attempt scope against run coordinates; restrict deletion as existing workflow history requires. Use insert conflict handling/savepoints so a duplicate request does not abort the caller transaction.
+- [ ] Implement models and repository. Add nullable `extraction_attempt_id` FK and nullable JSONB `generation_snapshot` on `ExtractionProposalRecord`. Add partial unique `(extraction_attempt_id, instance_id, field_id, source)` where attempt is not null. Enforce attempt/proposal run consistency in database coherence checks, and attempt scope against run coordinates; specify and test the FK deletion matrix: project/article whole-graph cascade succeeds, isolated deletion of an attempt referenced by proposal history fails at commit, and legacy null-attempt rows retain existing behavior. Use deferred `NO ACTION` for proposal-to-attempt deletion, not immediate `RESTRICT`, so valid whole-graph deletion completes. Document all cascade/deferred actions. Use insert conflict handling/savepoints so a duplicate request does not abort the caller transaction.
 
 ```python
 class AttemptScope(BaseModel):
@@ -83,7 +83,7 @@ class AttemptScope(BaseModel):
 # ON CONFLICT(request_id) DO NOTHING, then SELECT, returns the stored row.
 ```
 
-- [ ] Add migration from the actual current head (`0074_ollama_provider` at plan creation; reconcile if another migration has landed). Enable RLS and revoke direct application-client writes consistent with workflow tables. Add the new table to metadata imports. Downgrade removes only this additive schema, in FK-safe order; do not seed data. Update `expected_head` and add roundtrip assertions in the existing scratch-database test.
+- [ ] Add migration from the actual current head (`0074_ollama_provider` at plan creation; reconcile if another migration has landed). Enable RLS and revoke direct anon/authenticated SELECT and writes consistent with service-only workflow tables. Only authorized backend services read attempt payload/result data; no project-wide client-read policy. Add the new table to metadata imports. Downgrade removes only this additive schema, in FK-safe order; do not seed data. Update `expected_head` and add roundtrip assertions in the existing scratch-database test.
 - [ ] Run `cd backend && uv run pytest tests/integration/test_extraction_attempt_repository.py tests/integration/test_migration_roundtrip.py -q`. Review generated DDL and commit `feat(extraction): persist durable extraction attempts`.
 
 ## Task 2: Durable kickoff, replay and worker execution ownership
@@ -104,20 +104,20 @@ assert response3.json()["data"]["job_id"] != response1.json()["data"]["job_id"]
 
 - [ ] Run `cd backend && uv run pytest tests/integration/test_extraction_attempt_kickoff.py tests/unit/test_section_extraction_endpoint.py tests/unit/test_run_section_extraction_task.py -q`; capture red evidence.
 - [ ] Keep existing scope helper checks **before** replay. Move new persistence into the service/repository. Bind an absent run once through existing lifecycle services, and normalize the stored payload to that bound run without making a replay's omitted run conflict. Compare original request semantics as well as bound coordinates. Preallocate a Celery task UUID, durably commit the attempt before `apply_async(task_id=stored_job_id)`, and retain existing Redis owner/status behavior. Replayed jobs refresh authorized owner bookkeeping; status still denies nonowners. Queue unavailability retains the existing typed 503 envelope.
-- [ ] Serialize worker execution with an attempt-row lock held by a dedicated execution-ownership session, separate from the session doing short lifecycle/proposal transactions. Duplicate delivery waits and then returns the saved terminal result. If a worker crashes, the DB connection releases its lock; retry resumes the same attempt. Never persist an irreversible running-only claim that can strand an attempt. Terminal result writing uses the ownership transaction; partial proposal commits are safe only through Task 3's idempotency.
+- [ ] Serialize worker execution with an explicit `FOR NO KEY UPDATE` attempt-row lock held by a dedicated execution-ownership session, separate from the session doing short lifecycle/proposal transactions. Duplicate delivery waits and then returns the saved terminal result. If a worker crashes, the DB connection releases its lock; retry resumes the same attempt. Never persist an irreversible running-only claim that can strand an attempt. Terminal result writing uses the ownership transaction; partial proposal commits are safe only through Task 3's idempotency.
 
 ```python
 # Worker ownership, deliberately distinct from domain write transactions:
 async with ownership_db.begin():
-    attempt = await attempts.lock(attempt_id)
+    attempt = await attempts.lock(attempt_id)  # FOR NO KEY UPDATE; keys immutable
     if attempt.status in {"completed", "failed", "cancelled"}:
         return attempt.result
     result = await operation(attempt)
     attempt.status, attempt.result = "completed", result
 ```
 
-  Preserve Celery retry semantics: retryable exceptions do not record terminal failure; exhausted/confirmed failures do. Handle cancellation consistently. The snippet defines ownership, not exception swallowing: errors retain classified codes and propagate to Celery. Do not hold or acquire a shared run lock on the ownership session.
-- [ ] Re-run the focused command. Add a two-worker barrier test showing one logical execution for one attempt and independent execution for different attempts. Commit `feat(extraction): make section kickoff replay-safe`.
+  Preserve Celery retry semantics: retryable exceptions do not record terminal failure; exhausted/confirmed failures do. Handle cancellation consistently. The snippet defines ownership, not exception swallowing: errors retain classified codes and propagate to Celery. Do not hold or acquire a shared run lock on the ownership session. Never mutate referenced attempt keys; proposal FK validation on the domain connection must obtain compatible `KEY SHARE`. PostgreSQL SQLAlchemy `with_for_update(key_share=True)` emits `NO KEY UPDATE`; verify emitted SQL and do not add `read=True`, which would fail to serialize owners.
+- [ ] Re-run the focused command. Add a real-Postgres two-worker barrier test showing one logical execution for one attempt and independent execution for different attempts. While ownership is held, the operation must actually insert and commit a proposal referencing that attempt in a second connection within a bounded timeout. A mock or lock-only probe is insufficient. Assert duplicate ownership waits until terminal commit and referenced keys remain unchanged. Commit `feat(extraction): make section kickoff replay-safe`.
 
 ## Task 3: Attempt engine pin and atomic per-call proposal persistence
 
@@ -197,7 +197,7 @@ expect(getSectionState(sectionB).status).toBe('idle');
 
 ## Task 6: Bounded resize primitive and compact typed editors
 
-**Seat:** frontend. **Files:** Modify `frontend/components/shared/list/useResizableTableColumns.ts`, `frontend/components/shared/list/ColumnResizeHandle.tsx`, `frontend/components/shared/list/useResizableTableColumns.test.ts`, `frontend/components/extraction/FieldValueEditor.tsx`, `frontend/components/extraction/FieldValueEditor.test.tsx`; create `frontend/components/shared/list/ColumnResizeHandle.test.tsx`, `frontend/lib/extraction/reviewColumnWidths.ts`, `frontend/lib/extraction/reviewColumnWidths.test.ts`.
+**Seat:** frontend. **Files:** Modify `frontend/components/shared/list/useResizableTableColumns.ts`, `frontend/components/shared/list/ColumnResizeHandle.tsx`, `frontend/components/shared/list/useResizableTableColumns.test.ts`, `frontend/components/extraction/FieldValueEditor.tsx`, `frontend/components/extraction/FieldValueEditor.test.tsx`; extend `frontend/components/shared/list/__tests__/ColumnResizeHandle.test.tsx`; create `frontend/lib/extraction/reviewColumnWidths.ts`, `frontend/lib/extraction/reviewColumnWidths.test.ts`.
 
 **Interfaces:** Add opt-in `bounds?: Record<string,{min:number;max:number}>` to shared resize hook and reset methods; existing callers retain old defaults. Handle gains optional `onReset`, pointer start/move/end support with capture, and optional coarse-target styling. `fitReviewColumns(paneWidth, preferred)` returns `{question:number,value:number,proposal:number}`; `preferred` stores only question/value. `FieldValueEditor` gains optional `density?: 'default'|'compact'`, preserving all existing value interfaces.
 
@@ -210,7 +210,7 @@ expect(widths.proposal).toBeGreaterThanOrEqual(220);
 expect(widths.question).toBeGreaterThanOrEqual(160);
 ```
 
-- [ ] Run `npm run test:run -- frontend/components/shared/list/useResizableTableColumns.test.ts frontend/components/shared/list/ColumnResizeHandle.test.tsx frontend/lib/extraction/reviewColumnWidths.test.ts`; expect new behavior to fail.
+- [ ] Run `npm run test:run -- frontend/components/shared/list/useResizableTableColumns.test.ts frontend/components/shared/list/__tests__/ColumnResizeHandle.test.tsx frontend/lib/extraction/reviewColumnWidths.test.ts`; expect new behavior to fail.
 - [ ] Implement pointer events without duplicate mouse dispatch. Capture on the handle; lost capture/unmount restores document selection/cursor. Route pointer and keyboard width requests through one clamp/persistence path. Reset clears the relevant preference; toolbar resets both. Pane resizing uses `ResizeObserver` in the eventual owner and the pure fit function, without overwriting a user's preferred width solely because the pane temporarily narrowed.
 - [ ] In compact editors retain current code/label, units, date/boolean and disposition semantics. Long text uses a textarea with content growth, `resize-y`, minimum comfortable height and maximum 320 px before internal scrolling; manual resize is not immediately undone by autosizing. Add value/save tests for multi-select codes, zero, false, date, unit and long text. Do not change default QA/consensus editor density.
 - [ ] Run the resize suite and `npm run test:run -- frontend/components/extraction/FieldValueEditor.test.tsx frontend/components/extraction/FieldValueEditor.falsyValues.test.tsx frontend/components/extraction/DispositionRow.test.tsx`; commit `feat(extraction): support compact editors and bounded column sizing`.
@@ -219,7 +219,7 @@ expect(widths.question).toBeGreaterThanOrEqual(160);
 
 **Seat:** frontend. **Files:** Create `frontend/lib/extraction/proposalDecisionState.ts`, `frontend/lib/extraction/proposalDecisionState.test.ts`, `frontend/hooks/extraction/useProposalDecision.ts`, `frontend/test/hooks/useProposalDecision.test.tsx`; modify `frontend/hooks/runs/useAutoSaveProposals.ts`, `frontend/hooks/extraction/ai/useAISuggestions.ts`, `frontend/services/extractionRunService.ts`, corresponding autosave tests, `frontend/pages/ExtractionFullScreen.tsx`.
 
-**Interfaces:** `reviewerCoordinateHistory(decisions, reviewerId, runId, instanceId, fieldId)` sorts `(created_at,id)` ascending; `reversalPayload(history)` returns the predecessor's full typed value or existing unresolved empty payload. `useProposalDecision` exposes `toggle(proposal)`, `acceptedProposalId`, `saving`, `error`, consuming current decisions, draft value and existing run writer. `useAutoSaveProposals.saveNow` retains its no-argument API and gains optional coordinate scope; it awaits any in-flight save for that coordinate. One mutation queue per run/instance/field serializes autosave and explicit acceptance.
+**Interfaces:** `reviewerCoordinateHistory(decisions, reviewerId, runId, instanceId, fieldId)` sorts `(created_at,id)` ascending; `reversalPayload(history)` returns the predecessor's full typed value or existing unresolved empty payload. `useProposalDecision` exposes `toggle(proposal)`, `acceptedProposalId`, `saving`, `error`, consuming current decisions, draft value and existing run writer. `useAutoSaveProposals.saveNow` retains its no-argument API and gains optional coordinate scope; it awaits any in-flight save for that coordinate. One mutation queue per run/instance/field serializes autosave and explicit acceptance. The shell owns a user/run-scoped in-memory stack of confirmed local decisions across question/entry navigation. Expose `undoLatestLocalDecision`, availability and saving/error state through the same writer. Each entry records its coordinate, confirmed decision id and full typed predecessor. Reload or user/run change clears this local stack.
 
 - [ ] Unit-test history filtering and deterministic ties; A→B→reverse restores A's typed value with no proposal link; first acceptance reversed restores unresolved; absence/unit/multi-select payloads survive. MSW integration tests defer autosave, click accept twice and assert only the valid ordered writes occur. Failed flush must produce no acceptance POST.
 
@@ -233,8 +233,9 @@ expect(reverseRequest.decision).toBe('edit');
 
 - [ ] Run `npm run test:run -- frontend/lib/extraction/proposalDecisionState.test.ts frontend/test/hooks/useProposalDecision.test.tsx`; capture red.
 - [ ] Derive green state from the latest current-reviewer decision's proposal link **and** typed value equality, not `AISuggestion.status` or transient session adoption. Use current value semantics helpers. Manual edits clear the link only on this new editable extraction surface; retain QA/consensus behavior. Before toggling, flush/await draft writes, refresh authoritative decision history if needed, calculate predecessor, then persist via existing typed decision API and reconcile baseline/draft together so autosave cannot duplicate the explicit write.
+- [ ] Implement undo for confirmed local manual edits, acceptance and unacceptance, including a previously visited question. Only successful writes enter the stack. Serialize with pending saves, await completion, then select the latest confirmed entry and refresh authoritative history at its coordinate. A newer external decision or lost authority produces a conflict instead of overwriting. Append an auditable typed `edit` restoring its predecessor (or unresolved empty state), without a proposal link or destructive history deletion. Pop only on confirmation; undo itself adds no undoable entry and no redo feature. Failures preserve the entry for retry. Keep the coordinate explicit through navigation and autosave reconciliation.
 - [ ] Keep the last confirmed visual state until persistence succeeds; disable repeated checks while saving. On failure retain draft/error with retry; on conflict/stale run refresh current authority/history before enabling another mutation. Coordinate switch prevents late responses painting a different question. Existing article-change/unmount autosave still flushes the old coordinate correctly.
-- [ ] Test reload hydration, old accepted proposal with newer pending proposal, no-information schema restrictions, foreign reviewer exclusion, stale coordinate and race cases. Run `npm run typecheck`, the new focused tests and existing autosave tests discovered with `rg --files frontend | rg 'useAutoSaveProposals.*test'`; commit `feat(extraction): make proposal acceptance reversible and durable`.
+- [ ] Test cross-question undo, typed predecessor restoration, user/run isolation/reset, failed-write exclusion, pending-save ordering, failure/retry, external-decision conflict and append-only requests without a proposal link. Test reload hydration, old accepted proposal with newer pending proposal, no-information schema restrictions, foreign reviewer exclusion, stale coordinate and race cases. Run `npm run typecheck`, the new focused tests and existing autosave tests discovered with `rg --files frontend | rg 'useAutoSaveProposals.*test'`; commit `feat(extraction): make proposal acceptance reversible and durable`.
 
 ## Task 8: Inline extraction cards and complete previews
 
@@ -242,7 +243,7 @@ expect(reverseRequest.decision).toBe('edit');
 
 **Interfaces:** `ProposalDisclosure` receives coordinate, existing history loader, `acceptedProposalId`, `saving`, `onToggle(proposal)`, and read-only status. One history item is one card; no grouping/deduplication by run/value. `ProposalPreview` receives latest proposal and count, `expanded`, `onExpand`, and uses complete-value formatting in a bounded tooltip. `GenerationDetailsContent` receives only the card's immutable snapshot and historical-input availability; legacy fallback is explicit.
 
-- [ ] Write RTL/MSW tests for two equal-valued proposals with different models/reasoning/source lists, carousel selection and comparison toggling, each source invoking its own location, initial loading/error versus refresh error, legacy unavailable details and read-only cards. Assert full preview reachable by hover and keyboard, as well as disclosure.
+- [ ] Write RTL/MSW tests for two equal-valued proposals with different models/reasoning/source lists, carousel selection and comparison toggling, each source invoking its own location, initial loading/error versus refresh error, legacy unavailable details and read-only cards. Assert full preview reachable by hover and keyboard, as well as disclosure. Assert count badge absent for one proposal and present for multiple; older accepted/newer pending leaves the row check neutral, and its accepted-version indicator opens the older green-checked card.
 
 ```ts
 await user.click(screen.getByRole('button', {name: /compare extractions/i}));
@@ -274,7 +275,7 @@ expect(screen.getAllByRole('button', {name: /leave focus/i})).toHaveLength(1);
 
 - [ ] Run `npm run test:run -- frontend/test/components/ExtractionReviewTable.test.tsx frontend/test/hooks/useReviewNavigation.test.tsx`; capture red.
 - [ ] Render semantic table rows with expanded disclosure in a full-span associated row; at compact pane widths use accessible stacked rows in Question/value/proposal order. Keep editor labels accessible. Column widths persist under user/template key, use Task 6 fit allocation, hide handles below 900 px and stack below 600 px. Observe **pane** width, including guide/document resize. No page overflow or clipped actions. Continuous background across focused row, cards and empty remainder.
-- [ ] Put section toggle first at far left of sticky quick bar, followed by current question/count, accept/reverse, focus/unfocus, previous, next pending and reset widths. Reuse header undo if present; do not duplicate progress/undo. Use icon hover tooltips, quiet circular borderless active fills/shadows; green only on confirmed acceptance. Focus exists only in quick bar. Reduced-height sticky/collapsible section headers retain extraction action and optional tooltip description.
+- [ ] Put section toggle first at far left of sticky quick bar, followed by current question/count, accept/reverse, focus/unfocus, previous, next pending and reset widths. Bind Task 7's undo to the header if it exposes the same action; otherwise render one icon-only fallback after reset widths (the current header has none). Disable/explain when no confirmed local decision exists or a mutation is pending, and expose target/error accessibly. Do not duplicate progress/undo. Test accepting on A then navigating to B: fallback undo writes only to A and restores A when revisited; test pending-save disabling and failure retry. Use icon hover tooltips, quiet circular borderless active fills/shadows; green only on confirmed acceptance. Focus exists only in quick bar. Reduced-height sticky/collapsible section headers retain extraction action and optional tooltip description.
 - [ ] Implement `A`, `F`, `Shift+ArrowLeft`, `Shift+ArrowRight` through existing keyboard shortcut infrastructure. Guard input/textarea/select/contenteditable, composed-path editable children, open dialogs and menus. Previous walks the previous question; next skips completed questions using existing pending semantics. No wrap beyond boundaries; disabled buttons explain no previous/pending question. Section jumps/explicit navigation focus the destination; opening disclosure and job completion do not steal focus.
 - [ ] Keep article navigation, entry switches, template switches and lifecycle changes clearing invalid current coordinates. Empty template, missing history, refresh errors, forbidden/not-found and finalized/stale runs use the spec states. Read-only extraction uses existing presentation while keeping history/citations readable. Run `npm run typecheck`, new tests and `npm run test:run -- frontend/test/ExtractionFormView.test.tsx frontend/test/ExtractionFullScreen.readonly.test.tsx frontend/test/ExtractionFullScreen.articleSwitch.test.tsx frontend/components/extraction/entries/EntrySection.test.tsx`; commit `feat(extraction): integrate compact review table workspace`.
 
@@ -284,7 +285,7 @@ expect(screen.getAllByRole('button', {name: /leave focus/i})).toHaveLength(1);
 
 **Interfaces:** Use existing `_fixtures/auth.ts:loginViaUi`, HITL/API fixtures and resource cleanup. Production components and real local persisted decisions are under test. LLM transport can be deterministic at its test seam, but never substitute the prototype page for the application.
 
-- [ ] Add browser tests for real reload acceptance/reversal, two proposals/two sources, responsive pane widths, pointer/keyboard reset/persistence, long editor resize, focus/shortcuts, section job independence and QA/consensus unchanged. Use local-hitl single-worker fixture discipline.
+- [ ] Add browser tests for real reload acceptance/reversal, undo a confirmed decision after navigating to another question (verify only the original coordinate changes and history remains append-only), two proposals/two sources, responsive pane widths, pointer/keyboard reset/persistence, long editor resize, focus/shortcuts, section job independence and QA/consensus unchanged. Use local-hitl single-worker fixture discipline. Missing required seed/auth/run/field prerequisites must fail setup with actionable errors, never skip required cases. Require nonzero executed cases and zero skipped required cases in the captured report; a green exit without executed coverage is insufficient.
 
 ```ts
 await expect(page.getByRole('button', {name: /unaccept/i}).first()).toBeVisible();
@@ -315,7 +316,7 @@ cd backend && uv run pytest tests/integration/test_extraction_attempt_repository
 
 ```bash
 npm run typecheck
-npm run test:run -- frontend/test/components/ExtractionReviewTable.test.tsx frontend/test/components/ProposalDisclosure.test.tsx frontend/test/hooks/useProposalDecision.test.tsx frontend/test/hooks/sectionExtractionJobs.test.tsx frontend/test/hooks/useReviewNavigation.test.tsx frontend/components/shared/list/useResizableTableColumns.test.ts frontend/components/shared/list/ColumnResizeHandle.test.tsx frontend/lib/extraction/reviewColumnWidths.test.ts frontend/lib/extraction/proposalDecisionState.test.ts frontend/test/ExtractionFormView.test.tsx frontend/test/ExtractionFullScreen.readonly.test.tsx
+npm run test:run -- frontend/test/components/ExtractionReviewTable.test.tsx frontend/test/components/ProposalDisclosure.test.tsx frontend/test/hooks/useProposalDecision.test.tsx frontend/test/hooks/sectionExtractionJobs.test.tsx frontend/test/hooks/useReviewNavigation.test.tsx frontend/components/shared/list/useResizableTableColumns.test.ts frontend/components/shared/list/__tests__/ColumnResizeHandle.test.tsx frontend/lib/extraction/reviewColumnWidths.test.ts frontend/lib/extraction/proposalDecisionState.test.ts frontend/test/ExtractionFormView.test.tsx frontend/test/ExtractionFullScreen.readonly.test.tsx
 npx knip
 npx knip --production
 git diff --check
@@ -332,6 +333,7 @@ git diff --check
 | §§7.4/9 complete previews, cards, compare, sources | 4, 8, 10 |
 | §§7.5/10 persistent reversible acceptance/save races | 7, 9, 10 |
 | §§8/13 focus, keyboard, responsive accessibility | 6, 9, 10 |
+| §8 latest confirmed local decision undo across navigation | 7, 9, 10 |
 | §§11/14 independent section state and failures | 2, 5, 9 |
 | §12 attempt ownership/idempotency/engine pin | 1–3, 11 |
 | §12 immutable per-call facts, historical source truth, privacy | 3–4, 8, 11 |
