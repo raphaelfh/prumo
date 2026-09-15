@@ -31,7 +31,7 @@ frontend/pdf-viewer/
 ├── core/          store, context, state, engine interface, rotation helpers
 ├── engines/pdfjs/ pdfjs-dist 6: load, page render, text layer
 ├── engines/mock/  in-memory engine for tests
-├── viewport/      usePageLayout (page positions), useVirtualPages (what mounts)
+├── viewport/      usePageLayout, useVirtualPages, zoomMath, useGestureZoom, useZoomShortcuts
 ├── hooks/         useDocumentLoader, usePageHandle, usePageScrollSync (PageLocator)
 ├── primitives/    Viewer, CanvasLayer, TextLayer, Reader and its helpers
 ├── markdown/      the reader's markdown rendering
@@ -57,3 +57,12 @@ size the page displays at, so a landscape table page is landscape. The store's
 `viewRotation` (toolbar: Rotate view) turns every page on top of that. Draw with
 `effectiveRotation(page, viewRotation)` and size boxes with `displayedSize`
 (`core/rotation.ts`).
+
+## Zoom
+
+`zoom` in the store is the committed zoom (`MIN_ZOOM` 0.25 – `MAX_ZOOM` 4,
+`viewport/zoomMath.ts`). A pinch or ctrl/⌘ + wheel previews its zoom as a
+transform on the page column, keeps the content under the pointer in place,
+and commits once the gesture ends (`useGestureZoom`, adapted from Lector). The
+toolbar and ⌘/Ctrl `=`/`+` and `-` step by `ZOOM_STEP`; those shortcuts only
+act while the pointer or focus is inside the viewer.
