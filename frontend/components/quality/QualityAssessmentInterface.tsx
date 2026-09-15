@@ -3,9 +3,10 @@
  *
  * Three tabs synced to ``?qaTab=``:
  *
- * 1. ``assessment``: ``HITLActiveTemplateBar`` (switch between PROBAST /
- *    QUADAS-2 / future tools enabled in Configuration) + ``HITLArticleTable``
- *    showing every article with progress and status against the active tool.
+ * 1. ``assessment``: ``HITLArticleTable`` showing every article with progress
+ *    and status against the active tool; ``HITLActiveTemplateBar`` (switch
+ *    between the tools enabled in Configuration) sits in its toolbar, left
+ *    of search.
  * 2. ``dashboard``: project-level counters for the active tool.
  * 3. ``configuration``: ``QualityAssessmentConfiguration`` lets the user
  *    enable / disable each global QA template independently for the project.
@@ -215,38 +216,36 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="hitl-quality_assessment-interface">
       <div className="flex min-h-0 flex-1 flex-col p-2">
-        <div className="shrink-0">
-          <HITLActiveTemplateBar
-            templates={templates}
-            activeTemplate={activeTemplate}
-            onSelect={selectTemplate}
-          />
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col mt-3">
-          <HITLArticleTable
-            kind="quality_assessment"
-            projectId={projectId}
-            templateId={activeTemplate.id}
-            templateSchema={activeTemplate.schema}
-            rowActionHref={(articleId, templateId) =>
-              `/projects/${projectId}/articles/${articleId}/quality-assessment/${templateId}`
-            }
-            emptyTitle={t("qa", "noArticlesForListTitle")}
-            emptyDescription={t("qa", "noArticlesForListDesc")}
-            toolbarActions={
-              <>
-                <IconButton
-                  label={t("extraction", "exportButton")}
-                  onClick={() => setShowExportDialog(true)}
-                  disabled={worklist.length === 0}
-                  data-testid="qa-export-button"
-                  icon={<FileUp strokeWidth={1.5} />}
-                />
-                <EngineGear projectId={projectId} />
-              </>
-            }
-          />
-        </div>
+        <HITLArticleTable
+          kind="quality_assessment"
+          projectId={projectId}
+          templateId={activeTemplate.id}
+          templateSchema={activeTemplate.schema}
+          rowActionHref={(articleId, templateId) =>
+            `/projects/${projectId}/articles/${articleId}/quality-assessment/${templateId}`
+          }
+          emptyTitle={t("qa", "noArticlesForListTitle")}
+          emptyDescription={t("qa", "noArticlesForListDesc")}
+          toolbarLeading={
+            <HITLActiveTemplateBar
+              templates={templates}
+              activeTemplate={activeTemplate}
+              onSelect={selectTemplate}
+            />
+          }
+          toolbarActions={
+            <>
+              <IconButton
+                label={t("extraction", "exportButton")}
+                onClick={() => setShowExportDialog(true)}
+                disabled={worklist.length === 0}
+                data-testid="qa-export-button"
+                icon={<FileUp strokeWidth={1.5} />}
+              />
+              <EngineGear projectId={projectId} />
+            </>
+          }
+        />
       </div>
 
       {/* The active tool leads the list: it is the dialog's default tick. */}
