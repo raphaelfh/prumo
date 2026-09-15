@@ -149,6 +149,27 @@ describe('useActiveSection', () => {
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 
+  it('a pinned section owns the rail against the at-bottom spy; unpinning hands the rail back', () => {
+    const frames = manualFrames();
+    const { result, rerender } = renderHook(
+      ({ pinned }: { pinned?: string }) => useActiveSection(['s1', 's2', 's3'], pinned),
+      { initialProps: { pinned: 's1' as string | undefined } },
+    );
+    const { pane, sections } = paneWith({ s1: 0, s2: 100, s3: 200 });
+    act(() => sections.forEach(([id, el]) => result.current.registerSection(id, el)));
+    // Focus mode hides the other questions: the pane bottoms out, which alone
+    // would hand the rail to the last section.
+    pane.scrollTop = 2400;
+    pane.dispatchEvent(new Event('scroll'));
+    frames.flush();
+    expect(result.current.activeId).toBe('s1');
+    // Default behavior resumes once nothing is pinned.
+    rerender({ pinned: undefined });
+    pane.dispatchEvent(new Event('scroll'));
+    frames.flush();
+    expect(result.current.activeId).toBe('s3');
+  });
+
   it('keeps the user-picked section active when the id list changes but still contains it', () => {
     const { result, rerender } = renderHook((ids: string[]) => useActiveSection(ids), {
       initialProps: ['s1', 's2', 's3'],

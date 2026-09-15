@@ -127,18 +127,22 @@ import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/e
 vi.mock('@/components/extraction/ai/shared/SectionAIExtractButton', () => ({SectionAIExtractButton: ({entityTypeId}: {entityTypeId: string}) => <button aria-label={`Extract section ${entityTypeId}`}/> }));
 vi.mock('@/hooks/extraction/useExtractionFormAIActions', () => ({useExtractionFormAIActions: () => ({})}));
 const inertDecisions: ReviewWorkspace['decisions'] = {saving: false, conflicted: false, error: null, canUndo: false, undoTarget: null, toggle, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => null, isAccepted: () => false};
-function FormHarness({nested = false, sorted = false}: {nested?: boolean; sorted?: boolean}) {
+function FormHarness({nested = false, sorted = false, twoSections = false}: {nested?: boolean; sorted?: boolean; twoSections?: boolean}) {
   const [activeEntries, setActiveEntries] = useState<Record<string, string>>({});
+  const study = {id: 's', name: 'study', label: 'Study section', description: 'Section description', cardinality: 'one', parent_entity_type_id: null};
   const entityTypes = nested ? [
     {id: 'models', name: 'models', label: 'Models', cardinality: 'many', parent_entity_type_id: null, fields: []},
     {id: 'predictors', name: 'predictors', label: 'Predictors', cardinality: 'many', parent_entity_type_id: 'models', fields: [{...fields[0], id: 'nested', label: 'Nested question'}]},
-  ] : [{id: 's', name: 'study', label: 'Study section', description: 'Section description', cardinality: 'one', parent_entity_type_id: null, fields}];
+  ] : twoSections ? [
+    {...study, fields: [fields[0]]},
+    {id: 't', name: 'outcome', label: 'Outcome section', cardinality: 'one', parent_entity_type_id: null, fields: [fields[1]]},
+  ] : [{...study, fields}];
   const instances = nested ? [
     {id: 'm1', label: 'Model one', entity_type_id: 'models', parent_instance_id: null, sort_order: sorted ? 2 : 0},
     {id: 'm2', label: 'Model two', entity_type_id: 'models', parent_instance_id: null, sort_order: sorted ? 1 : 0},
     {id: 'p1', label: 'Predictor one', entity_type_id: 'predictors', parent_instance_id: 'm1'},
     {id: 'p2', label: 'Predictor two', entity_type_id: 'predictors', parent_instance_id: 'm2'},
-  ] : [{id: 'i', entity_type_id: 's', parent_instance_id: null}];
+  ] : [{id: 'i', entity_type_id: 's', parent_instance_id: null}, ...(twoSections ? [{id: 'j', entity_type_id: 't', parent_instance_id: null}] : [])];
   return <ExtractionFormView presentation="review-table" reviewDecisions={inertDecisions} reviewerId="me" entityTypes={entityTypes as ExtractionEntityTypeWithFields[]} instances={instances as ExtractionInstance[]} activeEntries={activeEntries} setActiveEntry={(slot, id) => setActiveEntries(previous => ({...previous, [slot]: id}))} handleOpenRenameDialog={() => {}} values={{}} updateValue={() => {}} aiSuggestions={{i_a: newer, p1_nested: newer, p2_nested: newer}} acceptSuggestion={async () => {}} selectSuggestion={async () => {}} rejectSuggestion={async () => {}} getSuggestionsHistory={getHistory} onRefreshInstances={async () => {}} handleAddInstance={() => {}} projectId="p" articleId="article" templateId="template" runId="run"/>;
 }
 describe('production form presentation integration', () => {
@@ -152,6 +156,15 @@ describe('production form presentation integration', () => {
     await user.click(screen.getByRole('button', {name: 'New proposal'}));
     expect(await screen.findByText('New rationale')).toBeVisible();
     expect(getHistory).toHaveBeenCalledTimes(1);
+  });
+  it('focus mode keeps the section guide on the focused question section', async () => {
+    const user = userEvent.setup(); render(<FormHarness twoSections/>);
+    const nav = screen.getByRole('navigation');
+    expect(within(nav).getByRole('button', {current: true})).toHaveTextContent('Study section');
+    act(() => screen.getByRole('rowheader', {name: /Question B/}).querySelector<HTMLElement>('[tabindex="0"]')!.focus());
+    expect(within(screen.getByRole('toolbar')).getByText('Question B')).toBeVisible();
+    await user.click(screen.getByRole('button', {name: 'Focus question'}));
+    expect(within(screen.getByRole('navigation')).getByRole('button', {current: true})).toHaveTextContent('Outcome section');
   });
   it('question navigation in the same section keeps the destination instead of reselecting its first field', async () => {
     const user = userEvent.setup(); render(<FormHarness/>);

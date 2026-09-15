@@ -95,7 +95,6 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
     articleId: props.articleId,
   });
   const sectionIds = sectionRegistry.map((s) => s.id);
-  const { activeId, registerSection, scrollToSection, activateSection } = useActiveSection(sectionIds);
 
   const reviewEnabled = props.presentation === 'review-table' && !!props.reviewDecisions;
   const paneRef = useRef<HTMLDivElement>(null);
@@ -136,6 +135,10 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
       });
     },
   });
+  // Focus mode shows one question, so the pane bottoms out and the scroll spy
+  // would hand the rail to the last section: the focused question's section owns it.
+  const { activeId, registerSection, scrollToSection, activateSection } = useActiveSection(sectionIds,
+    reviewEnabled && navigation.focused ? navigation.current?.sectionId : undefined);
   const [activeProposal, setActiveProposal] = useState<ReviewWorkspace['activeProposal']>(null);
   const review: ReviewWorkspace | undefined = reviewEnabled && props.reviewDecisions ? {
     proposals: props.reviewProposals ?? [],
