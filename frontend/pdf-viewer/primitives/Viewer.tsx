@@ -10,6 +10,7 @@ import {usePageScrollSync} from '../hooks/usePageScrollSync';
 import {useGestureZoom} from '../viewport/useGestureZoom';
 import {layoutPageLocator, usePageLayout} from '../viewport/usePageLayout';
 import {useVirtualPages} from '../viewport/useVirtualPages';
+import {useZoomShortcuts} from '../viewport/useZoomShortcuts';
 
 /** The scroll container `Viewer.Body` renders, for the `Viewer.Pages` inside it. */
 const ScrollerContext = createContext<HTMLElement | null>(null);
@@ -55,6 +56,7 @@ function Body({children, className}: {children: ReactNode; className?: string}) 
   // the top of the viewport. Both read the page layout, so an unmounted page
   // still has a position.
   usePageScrollSync({rootRef, scrollerSelector: '[data-pdf-viewer-body]', locator, pagesKey: layout.numPages});
+  useZoomShortcuts(scroller);
 
   return (
     <ScrollerContext.Provider value={scroller}>
