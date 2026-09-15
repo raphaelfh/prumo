@@ -79,7 +79,7 @@ describe('Viewer.Page', () => {
     // Precondition: a square page would make the swap unobservable.
     expect(size.width).not.toBe(size.height);
 
-    const page = await renderFirstPage(createViewerStore({scale: 1.5, rotation: 90}));
+    const page = await renderFirstPage(createViewerStore({scale: 1.5, viewRotation: 90}));
 
     expect(page.style.containIntrinsicSize).toBe(
       `auto ${size.height * 1.5}px auto ${size.width * 1.5}px`,

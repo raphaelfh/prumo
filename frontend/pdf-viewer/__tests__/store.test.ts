@@ -18,8 +18,17 @@ describe('createViewerStore', () => {
     expect(state.error).toBeNull();
     expect(state.currentPage).toBe(1);
     expect(state.scale).toBe(1);
-    expect(state.rotation).toBe(0);
+    expect(state.viewRotation).toBe(0);
     expect(typeof state.actions.goToPage).toBe('function');
+  });
+
+  it('rotateView turns the view 90° clockwise and wraps after 270', () => {
+    const store = createViewerStore();
+    const turns = [1, 2, 3, 4].map(() => {
+      store.getState().actions.rotateView();
+      return store.getState().viewRotation;
+    });
+    expect(turns).toEqual([90, 180, 270, 0]);
   });
 
   it('returns isolated stores — mutating one does not affect another', () => {

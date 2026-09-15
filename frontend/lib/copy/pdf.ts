@@ -15,6 +15,7 @@ export const pdf = {
     viewerZoomOut: 'Zoom out',
     viewerZoomIn: 'Zoom in',
     viewerZoomLevel: 'Zoom level',
+    viewerRotateView: 'Rotate view',
     viewerSearch: 'Search in document',
     viewerSearchHint: '⌘F / Ctrl+F',
     viewerSearchPrevMatch: 'Previous match',
