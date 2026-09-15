@@ -95,8 +95,15 @@ export interface ViewerState {
   currentPage: number;
 
   // Rendering
-  /** Render scale. 1.0 = 100%. */
-  scale: number;
+  /**
+   * Committed zoom: 1 = 100%. A gesture previews its zoom as a transform and
+   * commits it here when it ends.
+   */
+  zoom: number;
+  /** While true, `zoom` follows the viewer's width; any manual zoom turns it off. */
+  fitWidth: boolean;
+  /** True while a pinch or ctrl/⌘ + wheel gesture is under way. */
+  isGesturing: boolean;
   /** The user's rotation of the whole view, clockwise — added to each page's own `/Rotate`. */
   viewRotation: PageRotation;
   /**
@@ -131,7 +138,11 @@ export interface ViewerActions {
   goToPage(page: number): void;
 
   // Rendering
-  setScale(scale: number): void;
+  /** Set the zoom, clamped to the limits. Turns fit width off unless `opts.fitWidth` is true. */
+  setZoom(zoom: number, opts?: {fitWidth?: boolean}): void;
+  /** Multiply the zoom by `factor` (clamped); turns fit width off. */
+  zoomBy(factor: number): void;
+  setGesturing(isGesturing: boolean): void;
   /** Turn the view 90° clockwise. */
   rotateView(): void;
   setMode(mode: ViewerMode): void;

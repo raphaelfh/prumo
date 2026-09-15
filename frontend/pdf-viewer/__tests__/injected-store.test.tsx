@@ -50,7 +50,7 @@ function CurrentPage() {
 }
 
 function CurrentScale() {
-  const scale = useViewerStore((s: ViewerState) => s.scale);
+  const scale = useViewerStore((s: ViewerState) => s.zoom);
   return <span data-testid="scale">{scale.toFixed(2)}</span>;
 }
 
@@ -59,7 +59,7 @@ function CurrentScale() {
 describe('injected store: ViewerProvider + Viewer.Root + PrumoPdfViewer', () => {
   // ── 1. ViewerProvider with an external store ──────────────────────────────
   it('ViewerProvider: external store is used (not replaced by an internal one)', () => {
-    const external = createViewerStore({scale: 2.5});
+    const external = createViewerStore({zoom: 2.5});
     render(
       <ViewerProvider store={external}>
         <CurrentScale />
@@ -70,7 +70,7 @@ describe('injected store: ViewerProvider + Viewer.Root + PrumoPdfViewer', () => 
   });
 
   it('ViewerProvider: action dispatched on external store is reflected inside', async () => {
-    const external = createViewerStore({scale: 1.0});
+    const external = createViewerStore({zoom: 1.0});
     render(
       <ViewerProvider store={external}>
         <CurrentScale />
@@ -79,7 +79,7 @@ describe('injected store: ViewerProvider + Viewer.Root + PrumoPdfViewer', () => 
     expect(screen.getByTestId('scale').textContent).toBe('1.00');
 
     await act(async () => {
-      external.getState().actions.setScale(3.0);
+      external.getState().actions.setZoom(3.0);
     });
 
     expect(screen.getByTestId('scale').textContent).toBe('3.00');
@@ -134,7 +134,7 @@ describe('injected store: ViewerProvider + Viewer.Root + PrumoPdfViewer', () => 
 
   // ── 4. PrumoPdfViewer forwards store end-to-end ───────────────────────────
   it('PrumoPdfViewer: injected store is used (not a fresh internal one)', async () => {
-    const external = createViewerStore({scale: 1.75});
+    const external = createViewerStore({zoom: 1.75});
 
     // We render PrumoPdfViewer with a sibling CurrentScale also wrapped in
     // the same ViewerProvider so both components read from the same store.
@@ -155,7 +155,7 @@ describe('injected store: ViewerProvider + Viewer.Root + PrumoPdfViewer', () => 
 
     // Mutate via the external store; the sibling component must update.
     await act(async () => {
-      external.getState().actions.setScale(2.25);
+      external.getState().actions.setZoom(2.25);
     });
 
     expect(screen.getByTestId('scale').textContent).toBe('2.25');

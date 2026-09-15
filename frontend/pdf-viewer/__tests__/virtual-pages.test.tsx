@@ -118,7 +118,7 @@ describe('Viewer.Pages virtualization', () => {
     scrollTo(startTop);
     await waitFor(() => expect(mounted()).toContain(10));
 
-    act(() => store.getState().actions.setScale(2));
+    act(() => store.getState().actions.setZoom(2));
 
     // The scroll position (raw px) doesn't move on a zoom, so the page it
     // now lands on (in the rescaled layout) is not page 10 any more — but
@@ -126,6 +126,16 @@ describe('Viewer.Pages virtualization', () => {
     const zoomedLayout = createPageLayout({numPages: 18, pageSizes: {1: LETTER}, viewRotation: 0, zoom: 2});
     const expectedPage = zoomedLayout.pageAt(scroller.scrollTop, VIEWPORT);
     await waitFor(() => expect(mounted()).toContain(expectedPage));
+  });
+
+  it('keeps the pages mounted when a gesture began while it runs', async () => {
+    const {store, mounted, scrollTo} = await renderDocument(18);
+    await waitFor(() => expect(mounted()).toEqual([1, 2]));
+    act(() => store.getState().actions.setGesturing(true));
+    scrollTo(layout.offsetOf(10));
+    await waitFor(() => expect(mounted()).toEqual(expect.arrayContaining([1, 2, 9, 10, 11])));
+    act(() => store.getState().actions.setGesturing(false));
+    await waitFor(() => expect(mounted()).toEqual([9, 10, 11]));
   });
 });
 

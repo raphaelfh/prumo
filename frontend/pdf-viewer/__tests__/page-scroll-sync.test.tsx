@@ -172,6 +172,15 @@ describe('Viewer.Body page sync', () => {
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
+  it('publishes nothing during a zoom gesture, then where it left the viewport', () => {
+    const {store, frame} = renderBody({numPages: 14, currentPage: 1});
+    act(() => store.getState().actions.setGesturing(true));
+    frame(pageTop(9));
+    expect(store.getState().currentPage).toBe(1);
+    act(() => store.getState().actions.setGesturing(false));
+    expect(store.getState().currentPage).toBe(9);
+  });
+
   describe('where scrollend is unsupported', () => {
     let onscrollend: PropertyDescriptor | undefined;
 
