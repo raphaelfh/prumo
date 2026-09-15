@@ -510,11 +510,15 @@ export function AISuggestionReviewPopover(props: AISuggestionReviewPopoverProps)
               // Any member may own an attempt on the same run, so the header names
               // a runner only when that runner owns every version in the group;
               // otherwise each version names its own. An attempt-less version
-              // names no runner.
-              const versionRunners = groupedByRun[runId].map((item) =>
-                showPeerIdentity ? item.generationSnapshot?.ranByName : undefined,
+              // names no runner. Runners are compared by id — a display name is a
+              // label two members may share — falling back to the name only when
+              // no id was served.
+              const runners = groupedByRun[runId].map((item) =>
+                showPeerIdentity ? item.generationSnapshot : undefined,
               );
-              const ranByName = versionRunners.every((name) => name === versionRunners[0])
+              const versionRunners = runners.map((runner) => runner?.ranByName);
+              const runnerKeys = runners.map((runner) => runner?.ranByUserId ?? runner?.ranByName);
+              const ranByName = runnerKeys.every((key) => key === runnerKeys[0])
                 ? versionRunners[0]
                 : undefined;
               return (

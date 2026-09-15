@@ -447,6 +447,60 @@ describe('AISuggestionReviewPopover — ran-by run headers (D3)', () => {
     expect(screen.getAllByText(/Run by/)).toHaveLength(2);
   });
 
+  // Display names are not identities: two members may share one. Attribution is
+  // by runner id, so a same-name pair still gets per-version labels.
+  it('two different runners sharing a display name are not merged under one header', async () => {
+    const sameNameRun = [
+      v({ id: 'p-ana-2', value: 'Cohort B', extractionAttemptId: 'attempt-2', generationSnapshot: { ranByUserId: 'u2', ranByName: 'Ana' }, timestamp: new Date('2026-04-28T11:00:00Z') }),
+      v({ id: 'p-ana-1', value: 'Cohort A', extractionAttemptId: 'attempt-1', generationSnapshot: { ranByUserId: 'u1', ranByName: 'Ana' } }),
+    ];
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => sameNameRun}
+          selectedProposalId="p-ana-1"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Cohort A');
+
+    expect(screen.queryByText(/Run by Ana · /)).not.toBeInTheDocument();
+    const labels = screen.getAllByText('Run by Ana');
+    expect(labels).toHaveLength(2);
+    expect(labels.map((label) => versionRowOf(label).textContent)).toEqual([
+      expect.stringContaining('Cohort B'),
+      expect.stringContaining('Cohort A'),
+    ]);
+  });
+
+  it('versions by the same runner id share one named header', async () => {
+    const sameRunner = [
+      v({ id: 'p-2', value: 'Cohort B', extractionAttemptId: 'attempt-2', generationSnapshot: { ranByUserId: 'u1', ranByName: 'Ana' }, timestamp: new Date('2026-04-28T11:00:00Z') }),
+      v({ id: 'p-1', value: 'Cohort A', extractionAttemptId: 'attempt-1', generationSnapshot: { ranByUserId: 'u1', ranByName: 'Ana' } }),
+    ];
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => sameRunner}
+          selectedProposalId="p-1"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Cohort A');
+    expect(screen.getAllByText(/Run by Ana/)).toHaveLength(1);
+    expect(screen.getByText(/Run by Ana · /)).toBeInTheDocument();
+  });
+
   it('a mixed-owner run names no runner without the identity grant', async () => {
     const user = userEvent.setup();
     render(
