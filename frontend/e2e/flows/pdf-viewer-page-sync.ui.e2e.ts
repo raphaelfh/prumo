@@ -37,8 +37,10 @@ test.describe("PDF viewer — page and scroll stay in sync", () => {
       el.scrollTop = el.scrollHeight;
     });
     await waitForScrollIdle(body);
-    // Seven A4 pages away: a smooth scroll that outlasts half a second.
-    expect(await pageTopOffset(body, 7)).toBeLessThan(-5000);
+    // Seven A4 pages away: page 7 is not even mounted, and the smooth scroll
+    // back outlasts half a second.
+    await expect(body.locator('[data-page-number="7"]')).toHaveCount(0);
+    expect(await body.evaluate((el) => el.scrollTop)).toBeGreaterThan(5000);
 
     await pageInput.fill("7");
     await pageInput.press("Enter");
@@ -103,9 +105,8 @@ async function openLongDocument(page: Page): Promise<{ body: Locator; pageInput:
   );
 
   const body = page.locator("[data-pdf-viewer-body]");
-  await expect(page.getByRole("img", { name: /^PDF page \d+$/ })).toHaveCount(PAGE_COUNT, {
-    timeout: 30_000,
-  });
+  // Only the pages near the viewport mount, so wait for the first one.
+  await expect(page.getByRole("img", { name: "PDF page 1" })).toBeVisible({ timeout: 30_000 });
   // Each page takes its final height once its canvas is painted.
   await expect
     .poll(() => body.evaluate((el) => [...el.querySelectorAll("canvas")].every((c) => c.style.height !== "")))

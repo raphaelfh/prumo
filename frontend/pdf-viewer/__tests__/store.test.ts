@@ -103,6 +103,22 @@ describe('createViewerStore', () => {
     expect(store.getState().document).toBeNull();
   });
 
+  it('setPageSize records a page size and keeps the object when unchanged', () => {
+    const store = createViewerStore();
+    store.getState().actions.setPageSize(2, {width: 792, height: 612});
+    const recorded = store.getState().pageSizes;
+    expect(recorded[2]).toEqual({width: 792, height: 612});
+    store.getState().actions.setPageSize(2, {width: 792, height: 612});
+    expect(store.getState().pageSizes).toBe(recorded);
+  });
+
+  it('setDocument forgets the previous document’s page sizes', () => {
+    const store = createViewerStore();
+    store.getState().actions.setPageSize(1, {width: 612, height: 792});
+    store.getState().actions.setDocument(stubDocument(3));
+    expect(store.getState().pageSizes).toEqual({});
+  });
+
   it('accepts initial overrides', () => {
     const store = createViewerStore({scale: 1.5, currentPage: 7});
     expect(store.getState().scale).toBe(1.5);

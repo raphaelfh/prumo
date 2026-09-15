@@ -1,4 +1,4 @@
-import {useEffect, useRef} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {usePageHandle} from '../hooks/usePageHandle';
 import {useViewerStore} from '../core/context';
 import {effectiveRotation} from '../core/rotation';
@@ -14,6 +14,10 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
   const scale = useViewerStore((s) => s.scale);
   const viewRotation = useViewerStore((s) => s.viewRotation);
   const containerRef = useRef<HTMLDivElement>(null);
+  // The text layer paints asynchronously; the highlights below wait for the
+  // spans it paints. A page mounted by search navigation paints after its
+  // match is already active.
+  const [painted, setPainted] = useState<object | null>(null);
 
   // Render the text layer when page/scale/rotation changes.
   useEffect(() => {
@@ -29,6 +33,7 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
       .renderTextLayer({container, scale: renderScale, rotation: effectiveRotation(page, viewRotation), signal: ctrl.signal})
       .then((h) => {
         handle = h;
+        if (!ctrl.signal.aborted) setPainted(h);
       })
       .catch((err) => {
         if ((err as DOMException).name !== 'AbortError') {
@@ -52,7 +57,7 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || !painted) return;
 
     const spans = Array.from(container.querySelectorAll<HTMLElement>('span'));
     if (spans.length === 0) return;
@@ -96,7 +101,7 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
         firstActive.scrollIntoView({block: 'center', behavior: 'smooth'});
       }
     }
-  }, [matchesOnPage, activeIndex, searchMatches, pageNumber]);
+  }, [matchesOnPage, activeIndex, searchMatches, pageNumber, painted]);
 
   return (
     <div

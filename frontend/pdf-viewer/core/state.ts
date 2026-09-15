@@ -70,11 +70,23 @@ export interface ReaderLocateRequest {
   nonce: number;
 }
 
+/** A page's displayed size in PDF points, at its own rotation (`PDFPageHandle.size`). */
+export interface PageSize {
+  width: number;
+  height: number;
+}
+
 export interface ViewerState {
   // Document
   source: PDFSource | null;
   document: PDFDocumentHandle | null;
   numPages: number;
+  /**
+   * Sizes of the pages whose handle has resolved, keyed by page number. Page 1
+   * is known before `loadStatus` turns `ready`; the layout estimates the rest
+   * from it until they mount.
+   */
+  pageSizes: Readonly<Record<number, PageSize>>;
   loadStatus: LoadStatus;
   error: Error | null;
 
@@ -112,6 +124,8 @@ export interface ViewerActions {
   setSource(source: PDFSource | null): void;
   setDocument(doc: PDFDocumentHandle | null): void;
   setLoadStatus(status: LoadStatus, error?: Error | null): void;
+  /** Record a page's displayed size; a no-op when unchanged. */
+  setPageSize(pageNumber: number, size: PageSize): void;
 
   // Navigation
   goToPage(page: number): void;

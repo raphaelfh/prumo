@@ -31,7 +31,8 @@ frontend/pdf-viewer/
 ├── core/          store, context, state, engine interface, rotation helpers
 ├── engines/pdfjs/ pdfjs-dist 6: load, page render, text layer
 ├── engines/mock/  in-memory engine for tests
-├── hooks/         useDocumentLoader, usePageHandle, usePageScrollSync
+├── viewport/      usePageLayout (page positions), useVirtualPages (what mounts)
+├── hooks/         useDocumentLoader, usePageHandle, usePageScrollSync (PageLocator)
 ├── primitives/    Viewer, CanvasLayer, TextLayer, Reader and its helpers
 ├── markdown/      the reader's markdown rendering
 ├── services/      searchService (canvas find-in-document)
@@ -39,6 +40,15 @@ frontend/pdf-viewer/
 ├── ui/            Toolbar, NavigationControls, ZoomControls, SearchBar, states
 └── index.ts       the public API above
 ```
+
+## Pages and scrolling
+
+`viewport/usePageLayout.ts` computes every page's position from page sizes
+alone. Page 1 is read at load; the rest are estimated from it until they mount.
+`Viewer.Pages` mounts only the pages in and next to the viewport
+(`@tanstack/react-virtual`). The page ⇄ scroll sync asks a `PageLocator`
+where pages are — the layout for canvas pages, the DOM for the reader — so
+navigating to a page that is not mounted still scrolls there.
 
 ## Rotation
 

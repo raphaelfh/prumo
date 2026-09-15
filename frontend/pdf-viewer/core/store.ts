@@ -1,7 +1,7 @@
 import {createStore, type StoreApi} from 'zustand';
 import type {PDFDocumentHandle, PageRotation} from './engine';
 import type {PDFSource} from './source';
-import type {LoadStatus, SearchState, ViewerActions, ViewerMode, ViewerState} from './state';
+import type {LoadStatus, PageSize, SearchState, ViewerActions, ViewerMode, ViewerState} from './state';
 
 type ViewerData = Omit<ViewerState, 'actions'>;
 
@@ -31,6 +31,7 @@ const initialData: ViewerData = {
   source: null,
   document: null,
   numPages: 0,
+  pageSizes: {},
   loadStatus: 'idle',
   error: null,
   currentPage: 1,
@@ -76,6 +77,7 @@ export function createViewerStore(
         set({
           document: doc,
           numPages: doc?.numPages ?? 0,
+          pageSizes: {},
         });
       },
 
@@ -84,6 +86,12 @@ export function createViewerStore(
           loadStatus: status,
           error: status === 'error' ? (error ?? null) : null,
         });
+      },
+
+      setPageSize(pageNumber: number, size: PageSize) {
+        const known = get().pageSizes[pageNumber];
+        if (known?.width === size.width && known?.height === size.height) return;
+        set({pageSizes: {...get().pageSizes, [pageNumber]: {width: size.width, height: size.height}}});
       },
 
       goToPage(page: number) {
