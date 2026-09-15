@@ -68,8 +68,11 @@ export const extraction = {
     errors_advanceFailed: 'Could not advance the extraction stage',
     errors_markReadyFailed: 'Could not update your ready signal',
     // useSectionExtraction toasts
+    sectionExtractionAccessDenied: 'Access to this extraction is no longer available.',
+    sectionExtractionRetry: 'Retry extraction — {{reason}}',
+    sectionExtractionRetryTransport: 'Check this extraction again — the request may already be running.',
     sectionExtractionNoSuggestionsTitle: 'Extraction completed with no suggestions',
-    sectionExtractionNoSuggestionsDesc: 'Extraction finished but no suggestions were created. Check that field names match exactly or that the PDF contains the expected data.',
+    sectionExtractionNoSuggestionsDesc: 'No new suggestions were found for this section. Your current values are unchanged.',
     sectionExtractionSuccessTitle: 'Extraction completed! {{n}} suggestion(s) created for this section.',
     sectionExtractionErrorTitle: 'Extraction error',
     sectionExtractionErrorAuth: 'Authentication error',

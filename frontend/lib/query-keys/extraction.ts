@@ -5,6 +5,8 @@
 export const extractionKeys = {
   all: ['extraction'] as const,
   // Runs
+  runsForProjectRoot: (projectId: string) =>
+    [...extractionKeys.all, 'runs', projectId] as const,
   runsForProject: (projectId: string, filters?: Record<string, unknown>) =>
     [...extractionKeys.all, 'runs', projectId, filters ?? null] as const,
   runDetail: (runId: string) =>
@@ -52,6 +54,8 @@ export const templateEntityTypesKeys = {
  */
 export const articleExtractionValuesKeys = {
   all: ['article-extraction-values'] as const,
+  byCaller: (projectId: string, templateId: string, userId: string) =>
+    ['article-extraction-values', projectId, templateId, userId] as const,
   byTemplate: (
     projectId: string,
     templateId: string,

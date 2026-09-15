@@ -5,6 +5,7 @@ import {supabase} from "@/integrations/supabase/client";
 import {IS_LOCAL_SUPABASE, SUPABASE_ENV, SUPABASE_EXPECTED_ISSUER, SUPABASE_STORAGE_KEY,} from "@/config/supabase-env";
 import {useNavigate} from "react-router";
 import {RESET_PASSWORD_PATH} from "@/lib/routes";
+import {useSectionExtractionJobs} from "@/stores/sectionExtractionJobs";
 import {useBackgroundJobs} from "@/stores/useBackgroundJobs";
 
 const ALLOWED_ALGS = IS_LOCAL_SUPABASE
@@ -120,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const adoptIdentity = (userId: string | null) => {
       // Compares against its own persisted record; see above.
       useBackgroundJobs.getState().adoptOwner(userId);
+      useSectionExtractionJobs.getState().adoptOwner(userId);
 
       const previous = cachedIdentity.current;
       cachedIdentity.current = userId;
