@@ -21,6 +21,10 @@ export const pdf = {
     viewerSearchPrevMatch: 'Previous match',
     viewerSearchNextMatch: 'Next match',
     viewerSearchClose: 'Close search',
+    viewerSearchPlaceholder: 'Find in document',
+    viewerSearchQueryLabel: 'Search query',
+    viewerSearchSearching: 'Searching…',
+    viewerSearchNoResults: 'No results',
     readerEmpty:
       'The parsed text is not ready yet. Parsing usually finishes shortly after upload — try again in a minute, or switch back to the original file.',
     readerLoading: 'Loading parsed text…',
