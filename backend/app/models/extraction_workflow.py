@@ -110,7 +110,28 @@ class ExtractionProposalRecord(BaseModel):
     # ``model_validate(orm_row)`` would bypass the read-side reveal gate.
     provenance: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    extraction_attempt_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True))
+    generation_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
     __table_args__ = (
+        # Deferred NO ACTION preserves history on isolated attempt deletion,
+        # while the run cascade can remove proposals and attempts together.
+        ForeignKeyConstraint(
+            ["extraction_attempt_id", "run_id"],
+            ["public.extraction_attempts.id", "public.extraction_attempts.run_id"],
+            name="fk_proposal_attempt_run",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        Index(
+            "uq_proposal_attempt_coordinate",
+            "extraction_attempt_id",
+            "instance_id",
+            "field_id",
+            "source",
+            unique=True,
+            postgresql_where=text("extraction_attempt_id IS NOT NULL"),
+        ),
         Index(
             "idx_extraction_proposal_records_run_item",
             "run_id",
