@@ -45,9 +45,12 @@ vi.mock('@/hooks/extraction/useBatchSectionExtractionChunked', () => ({
 vi.mock('@/hooks/extraction/useBatchAllModelsSectionsExtraction', () => ({
   useBatchAllModelsSectionsExtraction: () => ({ extractAllSectionsForAllModels: vi.fn(), loading: false, progress: null }),
 }));
-vi.mock('@/hooks/extraction/useSectionExtraction', () => ({
-  useSectionExtraction: () => ({ extractSection: vi.fn(), loading: false, error: null }),
-}));
+vi.mock('@/hooks/extraction/useSectionExtraction', async () => {
+  const { idleSectionJob } = await import('@/stores/sectionExtractionJobs');
+  return {
+    useSectionExtraction: () => ({ extractSection: vi.fn(), getSectionState: () => idleSectionJob, loading: false, error: null }),
+  };
+});
 
 // Services the tree imports at module load. Stubbed so nothing hits the network
 // (and so the Supabase client doesn't throw on missing env vars).

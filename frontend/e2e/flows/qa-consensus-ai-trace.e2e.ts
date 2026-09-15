@@ -305,14 +305,14 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
       .toBe(A_TYPED_COORD2);
 
     // (2b) Accept the AI suggestion on coord2 — value byte-identical, the
-    // regression the [value, link] fingerprint fixed. (The button reads
-    // "Accept suggestion", or "Suggestion accepted" if a refetch already
-    // mirrored the typed decision's server status; clicking fires either way.)
+    // regression the [value, link] fingerprint fixed. Editable extraction
+    // renders the review table: the row's check reads "Accept extraction"
+    // until a linked decision exists (a typed value alone never shows as
+    // accepted). "Unaccept extraction" would reverse, so match exactly.
     const acceptOn = async (coord: Coord) => {
       await ensureFieldVisible(pageA, coord);
       await fieldRow(pageA, coord)
-        .getByRole("button", { name: /accept suggestion|suggestion accepted/i })
-        .first()
+        .getByRole("button", { name: "Accept extraction", exact: true })
         .click();
     };
     await acceptOn(coord2);
