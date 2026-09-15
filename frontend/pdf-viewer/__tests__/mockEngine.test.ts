@@ -19,7 +19,7 @@ describe('createMockEngine', () => {
     const doc = await engine.load({kind: 'url', url: 'mock.pdf'});
     const page = await doc.getPage(2);
     const canvas = {width: 0, height: 0, getContext: () => null} as unknown as HTMLCanvasElement;
-    const result = await page.render({canvas, scale: 1.5});
+    const result = await page.render({canvas, scale: 1.5, rotation: 0});
     expect(onRender).toHaveBeenCalledOnce();
     expect(result.width).toBe(150);
     expect(result.height).toBe(300);
@@ -49,7 +49,7 @@ describe('createMockEngine', () => {
     const doc = await engine.load({kind: 'url', url: 'mock.pdf'});
     const page = await doc.getPage(1);
     const container = document.createElement('div');
-    await page.renderTextLayer({container, scale: 1});
+    await page.renderTextLayer({container, scale: 1, rotation: 0});
     expect(container.querySelector('span')?.textContent).toBe('hi');
     expect(container.querySelector<HTMLElement>('span')?.dataset.mockPage).toBe('1');
   });
@@ -62,7 +62,7 @@ describe('createMockEngine', () => {
     controller.abort();
     const canvas = {width: 0, height: 0} as HTMLCanvasElement;
     await expect(
-      page.render({canvas, scale: 1, signal: controller.signal}),
+      page.render({canvas, scale: 1, rotation: 0, signal: controller.signal}),
     ).rejects.toThrow('aborted');
   });
 });

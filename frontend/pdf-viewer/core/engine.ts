@@ -24,7 +24,9 @@ export interface PDFDocumentHandle {
 
 export interface PDFPageHandle {
   readonly pageNumber: number;
-  /** Page size in PDF user space points (origin bottom-left). */
+  /** The page's own `/Rotate`, clockwise. */
+  readonly rotation: PageRotation;
+  /** Displayed size in PDF points at `rotation`: width and height are swapped for 90/270. */
   readonly size: {width: number; height: number};
   render(opts: RenderOptions): Promise<RenderResult>;
   getTextContent(): Promise<TextContent>;
@@ -40,7 +42,8 @@ export interface PDFPageHandle {
 export interface TextLayerRenderOptions {
   container: HTMLElement;
   scale: number;
-  rotation?: PageRotation;
+  /** Absolute rotation to draw at: `effectiveRotation(page, viewRotation)`. */
+  rotation: PageRotation;
   signal?: AbortSignal;
 }
 
@@ -52,7 +55,8 @@ export interface TextLayerHandle {
 export interface RenderOptions {
   canvas: HTMLCanvasElement | OffscreenCanvas;
   scale: number;
-  rotation?: PageRotation;
+  /** Absolute rotation to draw at: `effectiveRotation(page, viewRotation)`. */
+  rotation: PageRotation;
   signal?: AbortSignal;
 }
 
