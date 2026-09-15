@@ -105,8 +105,6 @@ export interface AISuggestion {
   runId: string;
   extractionAttemptId?: string;
   generationSnapshot?: RunProvenance;
-  /** Complete server envelope for typed acceptance/restoration. */
-  proposedValue?: Record<string, unknown>;
   value: any; // Extracted and normalized value (not the {value: X} object)
   confidence: number; // 0-1, default 0 when missing
   reasoning: string; // empty string when null

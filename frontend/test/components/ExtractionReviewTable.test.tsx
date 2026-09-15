@@ -232,10 +232,9 @@ it('accepts a served suggestion as its typed value and shows the confirmed accep
       return HttpResponse.json({ok: true, data: row});
     }),
   );
-  // The shape aiSuggestionService serves: unwrapped value plus the raw server envelope.
-  const served: AISuggestion = {...newer, proposedValue: {value: newer.value, verification: {verdict: 'confirmed'}}};
+  // aiSuggestionService serves the unwrapped typed value; acceptance must send exactly it.
   const user = userEvent.setup();
-  render(<QueryClientProvider client={new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}})}><WriterHarness latest={served}/></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}})}><WriterHarness latest={newer}/></QueryClientProvider>);
   const firstRow = screen.getByRole('rowheader', {name: fields[0].label}).closest('tr')!;
   await user.click(within(firstRow).getByRole('button', {name: 'Accept extraction'}));
   await waitFor(() => expect(within(firstRow).getByRole('button', {name: 'Unaccept extraction'})).toBeEnabled());

@@ -638,15 +638,4 @@ describe('immutable proposal generation mapping', () => {
     expect(history[2].generationSnapshot).toBeUndefined();
     expect(history[2].extractionAttemptId).toBeUndefined();
   });
-
-  it('keeps complete typed envelopes alongside presentation values', async () => {
-    const envelopes = [
-      { value: 2.5, unit: 'mg' },
-      { value: ['a', 'b'], selected_option_codes: ['a', 'b'] },
-      { value: null, absent_reason: 'not_reported' },
-    ];
-    vi.mocked(apiClient).mockResolvedValueOnce(envelopes.map(proposed_value => makeItem({ proposed_value })));
-    const history = await AISuggestionService.getHistory('article', 'instance', 'field');
-    expect(history.map(item => item.proposedValue)).toEqual(envelopes);
-  });
 });
