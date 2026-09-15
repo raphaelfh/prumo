@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalSource,
+    ExtractionReviewerDecision,
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
@@ -379,74 +380,95 @@ async def test_second_decision_replaces_reviewer_state(
 
 
 @pytest.mark.asyncio
-async def test_reversal_appends_without_rewriting_earlier_decisions(
-    db_session: AsyncSession,
-) -> None:
-    """Accept, edit, then restore: three audit rows, and no earlier row changes."""
-    fx = await _setup_review_run(db_session)
-    assert fx is not None, (
-        "Required integration seed must include project, article, template and coordinate"
-    )
-    run_id, instance_id, field_id, profile_id, proposal_id, _ = fx
-    service = ExtractionReviewService(db_session)
-    coordinate = {
-        "run_id": run_id,
-        "instance_id": instance_id,
-        "field_id": field_id,
-        "reviewer_id": profile_id,
-    }
+async def test_reversal_appends_without_rewriting_earlier_decisions(_engine) -> None:
+    """Accept, edit, then restore: three audit rows, and no earlier row changes.
+
+    Each decision commits on its own, as each HTTP request does. Inside one
+    transaction ``now()`` ties every ``created_at``, so the latest decision
+    would fall to the random id tiebreak.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    sessions = async_sessionmaker(_engine, expire_on_commit=False)
+    run_id = None
 
     async def stored() -> dict[UUID, tuple[object, ...]]:
-        rows = await db_session.execute(
-            text(
-                "SELECT id, decision, proposal_record_id, value, rationale, created_at "
-                "FROM public.extraction_reviewer_decisions "
-                "WHERE run_id = :run AND reviewer_id = :reviewer "
-                "AND instance_id = :instance AND field_id = :field"
-            ),
-            {"run": run_id, "reviewer": profile_id, "instance": instance_id, "field": field_id},
+        async with sessions() as read:
+            rows = await read.execute(
+                text(
+                    "SELECT id, decision, proposal_record_id, value, rationale, created_at "
+                    "FROM public.extraction_reviewer_decisions WHERE run_id = :run"
+                ),
+                {"run": run_id},
+            )
+            return {row[0]: tuple(row[1:]) for row in rows}
+
+    try:
+        async with sessions() as setup:
+            fx = await _setup_review_run(setup)
+            assert fx is not None, (
+                "Required integration seed is missing; run backend integration seed"
+            )
+            await setup.commit()
+        run_id, instance_id, field_id, profile_id, proposal_id, _ = fx
+        coordinate = {
+            "run_id": run_id,
+            "instance_id": instance_id,
+            "field_id": field_id,
+            "reviewer_id": profile_id,
+        }
+
+        async def decide(**kwargs: object) -> ExtractionReviewerDecision:
+            async with sessions() as request:
+                decision = await ExtractionReviewService(request).record_decision(
+                    **coordinate, **kwargs
+                )
+                await request.commit()
+                return decision
+
+        accepted = await decide(
+            decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
+            proposal_record_id=proposal_id,
         )
-        return {row[0]: tuple(row[1:]) for row in rows}
+        after_accept = await stored()
+        edited = await decide(
+            decision=ExtractionReviewerDecisionType.EDIT,
+            value={"text": "edited"},
+            rationale="changed my mind",
+            expected_current_decision_id=accepted.id,
+        )
+        after_edit = await stored()
+        restored = await decide(
+            decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
+            proposal_record_id=proposal_id,
+            expected_current_decision_id=edited.id,
+        )
+        history = await stored()
 
-    accepted = await service.record_decision(
-        **coordinate,
-        decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
-        proposal_record_id=proposal_id,
-    )
-    after_accept = await stored()
-    edited = await service.record_decision(
-        **coordinate,
-        decision=ExtractionReviewerDecisionType.EDIT,
-        value={"text": "edited"},
-        rationale="changed my mind",
-        expected_current_decision_id=accepted.id,
-    )
-    after_edit = await stored()
-    restored = await service.record_decision(
-        **coordinate,
-        decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
-        proposal_record_id=proposal_id,
-        expected_current_decision_id=edited.id,
-    )
-    history = await stored()
-
-    # Precondition: the raw read sees each flushed append.
-    assert list(after_accept) == [accepted.id]
-    assert set(after_edit) == {accepted.id, edited.id}
-    assert set(history) == {accepted.id, edited.id, restored.id}
-    assert history[accepted.id] == after_accept[accepted.id]
-    assert history[edited.id] == after_edit[edited.id]
-    assert history[restored.id][:2] == ("accept_proposal", proposal_id)
-    state = await _reviewer_state(
-        db_session,
-        run_id=run_id,
-        reviewer_id=profile_id,
-        instance_id=instance_id,
-        field_id=field_id,
-    )
-    assert state is not None
-    assert state.current_decision_id == restored.id
-    await db_session.rollback()
+        # Precondition: the committed read sees each append.
+        assert list(after_accept) == [accepted.id]
+        assert set(after_edit) == {accepted.id, edited.id}
+        assert set(history) == {accepted.id, edited.id, restored.id}
+        assert history[accepted.id] == after_accept[accepted.id]
+        assert history[edited.id] == after_edit[edited.id]
+        assert history[restored.id][:2] == ("accept_proposal", proposal_id)
+        async with sessions() as verify:
+            state = await _reviewer_state(
+                verify,
+                run_id=run_id,
+                reviewer_id=profile_id,
+                instance_id=instance_id,
+                field_id=field_id,
+            )
+        assert state is not None
+        assert state.current_decision_id == restored.id
+    finally:
+        if run_id is not None:
+            async with sessions() as cleanup:
+                await cleanup.execute(
+                    text("DELETE FROM public.extraction_runs WHERE id = :rid"), {"rid": run_id}
+                )
+                await cleanup.commit()
 
 
 @pytest.mark.asyncio
