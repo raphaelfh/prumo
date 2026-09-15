@@ -240,9 +240,11 @@ async def extract_section(
         extract_all_sections=payload.extract_all_sections,
         # The engine RESOLVED at enqueue time, not a record of what ran: the
         # worker re-resolves when it executes the task (and a RETRY there
-        # reuses the run's pin instead). The authoritative record is the run
-        # provenance snapshot the worker writes
-        # (``run_engine_freeze.build_run_provenance``).
+        # reuses the run's pin instead). The authoritative per-proposal record
+        # is each proposal's immutable ``generation_snapshot``; the run-level
+        # snapshot the worker also writes
+        # (``run_engine_freeze.build_run_provenance``) is last-write-wins and
+        # not per-proposal truth.
         engine_at_enqueue=canonical_pair(engine.provider, engine.model),
     )
 

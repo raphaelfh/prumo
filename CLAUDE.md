@@ -37,7 +37,7 @@ These bias toward caution over speed. For trivial changes, use judgment.
   Evidence before "done" — run the command and read the output, never assert
   (`code-review` Iron Law; `verification-before-completion`).
 - **Transparency & traceability of AI-assisted decisions.** Every AI suggestion
-  records how it was generated (run provenance) and every human selection is
+  records how it was generated (a per-call generation snapshot on the proposal; runner identity from the attempt owner) and every human selection is
   append-only (who chose which version, when); a "no information" outcome is a
   recorded proposal, not a silent drop (constitution §IX).
 
