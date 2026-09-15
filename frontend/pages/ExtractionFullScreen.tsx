@@ -51,6 +51,7 @@ import {useProposalDecision} from '@/hooks/extraction/useProposalDecision';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {countActionableSuggestions} from '@/lib/ai-extraction/suggestionUtils';
+import {withReviewDecisionStatus} from '@/lib/extraction/proposalDecisionState';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
   useAdvanceRun,
@@ -566,11 +567,10 @@ export default function ExtractionFullScreen() {
 
   // Shared actionable count (ADR-0016 Phase 4): unresolved AI proposals awaiting
   // a human decision — an abstention ("no information") counts, resolved ones
-  // don't. Memoized: this screen re-renders on every field keystroke.
-  const aiPendingCount = useMemo(
-    () => countActionableSuggestions(aiSuggestions),
-    [aiSuggestions],
-  );
+  // don't. In the review table, confirmed decisions resolve them.
+  const reviewTable = runDetail?.run.kind === 'extraction' && isRunEditable(stage) && permissions.userRole !== 'viewer';
+  const pendingSuggestions = reviewTable ? withReviewDecisionStatus(aiSuggestions, proposalDecisions.isAccepted) : aiSuggestions;
+  const aiPendingCount = countActionableSuggestions(pendingSuggestions);
 
   // AI extraction always runs on the OPEN session run (``extractForRun``
   // reuses it, preserving human decisions). The old run-less ``extractFullAI``
@@ -1068,7 +1068,7 @@ export default function ExtractionFullScreen() {
       <ExtractionFormPanel
         viewMode={viewMode}
         formViewProps={{
-          presentation: runDetail?.run.kind === 'extraction' && isRunEditable(stage) && permissions.userRole !== 'viewer' ? 'review-table' : 'default',
+          presentation: reviewTable ? 'review-table' : 'default',
           reviewDecisions: proposalDecisions,
           reviewProposals: runDetail?.proposals,
           reviewerId: currentUserId,
@@ -1191,7 +1191,7 @@ export default function ExtractionFullScreen() {
         onAISuggestionsClick={() => {
           // Header "Review N pending suggestions": select the entries holding the first pending
           // suggestion and commit that render, so the section revealed is the one holding it.
-          const pendingId = firstPendingInstanceId(aiSuggestions);
+          const pendingId = firstPendingInstanceId(pendingSuggestions);
           const instance = instances.find((i) => i.id === pendingId);
           if (!instance) return;
           const slots = entrySlotsShowing(articleId ?? '', instance.id, instances, entityTypes);

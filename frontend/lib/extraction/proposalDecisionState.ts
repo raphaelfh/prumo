@@ -1,5 +1,25 @@
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
 import { decisionMatchesVersion } from '@/lib/runs/valueEquality';
+import type { AISuggestion } from '@/types/ai-extraction';
+
+interface DecidedProposal { instanceId: string; fieldId: string; id: string; value: unknown }
+
+/**
+ * The review table's accept, reversal and undo append decisions but write no
+ * suggestion status, and the server's caller-scoped status cannot express a
+ * reversal. Its confirmed decisions therefore own which suggestion is pending;
+ * an explicit rejection stays resolved.
+ */
+export function withReviewDecisionStatus(
+  suggestions: Record<string, AISuggestion>, isAccepted: (proposal: DecidedProposal) => boolean,
+): Record<string, AISuggestion> {
+  return Object.fromEntries(Object.entries(suggestions).map(([key, suggestion]) => {
+    if (suggestion.status === 'rejected') return [key, suggestion];
+    const [instanceId, fieldId] = key.split('_');
+    const accepted = isAccepted({instanceId, fieldId, id: suggestion.id, value: suggestion.value});
+    return [key, {...suggestion, status: accepted ? 'accepted' : 'pending'}];
+  }));
+}
 
 /** Ascending audit order, scoped to the authenticated reviewer and coordinate. */
 export function reviewerCoordinateHistory(

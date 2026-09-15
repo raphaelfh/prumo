@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
-import { reviewerCoordinateHistory, reversalPayload, acceptedProposal } from './proposalDecisionState';
+import type { AISuggestion } from '@/types/ai-extraction';
+import { reviewerCoordinateHistory, reversalPayload, acceptedProposal, withReviewDecisionStatus } from './proposalDecisionState';
+
+describe('review decision status', () => {
+  const suggestion = (id: string, status: AISuggestion['status']) => ({id, status, value: id}) as AISuggestion;
+  it('derives accepted/pending from decisions, overriding a stale server status, and keeps rejections', () => {
+    const accepted = new Set(['s-accepted']);
+    const result = withReviewDecisionStatus({
+      'i1_f1': suggestion('s-accepted', 'pending'),
+      'i1_f2': suggestion('s-reversed', 'accepted'),
+      'i2_f1': suggestion('s-rejected', 'rejected'),
+    }, proposal => accepted.has(proposal.id) && proposal.instanceId === 'i1' && proposal.fieldId === 'f1');
+    expect(Object.fromEntries(Object.entries(result).map(([key, s]) => [key, s.status])))
+      .toEqual({'i1_f1': 'accepted', 'i1_f2': 'pending', 'i2_f1': 'rejected'});
+  });
+});
 
 const row = (id: string, value: Record<string, unknown>, extra = {}): ReviewerDecisionResponse => ({
   id, value, run_id: 'run', instance_id: 'instance', field_id: 'field', reviewer_id: 'me',
