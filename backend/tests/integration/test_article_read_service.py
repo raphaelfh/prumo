@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.article_read_service import ArticleNotFoundError, owned_article
+from app.services.article_read_service import ArticleNotFoundError, owned_article, owned_articles
 from tests.integration.conftest import SEED
 
 
@@ -63,3 +63,50 @@ async def test_a_foreign_article_is_refused_like_a_missing_one(db_session: Async
     )
     # The owning project never leaks.
     assert str(SEED.secondary_project) not in str(foreign_exc.value)
+
+
+async def _second_article(db: AsyncSession):
+    article_id = uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, 'owned_articles test', 1)"
+        ),
+        {"id": str(article_id), "pid": str(SEED.primary_project)},
+    )
+    return article_id
+
+
+@pytest.mark.asyncio
+async def test_owned_articles_returns_deduplicated_ids_in_order(db_session: AsyncSession) -> None:
+    second = await _second_article(db_session)
+
+    got = await owned_articles(
+        db_session,
+        project_id=SEED.primary_project,
+        article_ids=[second, SEED.primary_article, second],
+    )
+    assert got == [second, SEED.primary_article]
+
+
+@pytest.mark.asyncio
+async def test_owned_articles_refuses_a_foreign_or_missing_id(db_session: AsyncSession) -> None:
+
+    with pytest.raises(ArticleNotFoundError):
+        await owned_articles(
+            db_session, project_id=SEED.secondary_project, article_ids=[SEED.primary_article]
+        )
+    with pytest.raises(ArticleNotFoundError):
+        await owned_articles(
+            db_session, project_id=SEED.primary_project, article_ids=[SEED.primary_article, uuid4()]
+        )
+
+
+@pytest.mark.asyncio
+async def test_owned_article_still_answers_one_id(db_session: AsyncSession) -> None:
+    assert (
+        await owned_article(
+            db_session, project_id=SEED.primary_project, article_id=SEED.primary_article
+        )
+        == SEED.primary_article
+    )
