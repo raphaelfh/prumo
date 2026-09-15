@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 last_reviewed: 2026-09-15
 owner: '@raphaelfh'
 ---
@@ -7,7 +7,7 @@ owner: '@raphaelfh'
 # AI Batch Runs for QA and Extraction Lists — Design Spec
 
 **Date:** 2026-09-15
-**Status:** Design approved in chat, section by section; written spec awaiting review
+**Status:** Approved (design approved section by section in chat; written spec reviewed)
 
 ## 1. Decision summary
 
