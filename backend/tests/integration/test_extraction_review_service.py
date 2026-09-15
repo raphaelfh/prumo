@@ -379,6 +379,77 @@ async def test_second_decision_replaces_reviewer_state(
 
 
 @pytest.mark.asyncio
+async def test_reversal_appends_without_rewriting_earlier_decisions(
+    db_session: AsyncSession,
+) -> None:
+    """Accept, edit, then restore: three audit rows, and no earlier row changes."""
+    fx = await _setup_review_run(db_session)
+    assert fx is not None, (
+        "Required integration seed must include project, article, template and coordinate"
+    )
+    run_id, instance_id, field_id, profile_id, proposal_id, _ = fx
+    service = ExtractionReviewService(db_session)
+    coordinate = {
+        "run_id": run_id,
+        "instance_id": instance_id,
+        "field_id": field_id,
+        "reviewer_id": profile_id,
+    }
+
+    async def stored() -> dict[UUID, tuple[object, ...]]:
+        rows = await db_session.execute(
+            text(
+                "SELECT id, decision, proposal_record_id, value, rationale, created_at "
+                "FROM public.extraction_reviewer_decisions "
+                "WHERE run_id = :run AND reviewer_id = :reviewer "
+                "AND instance_id = :instance AND field_id = :field"
+            ),
+            {"run": run_id, "reviewer": profile_id, "instance": instance_id, "field": field_id},
+        )
+        return {row[0]: tuple(row[1:]) for row in rows}
+
+    accepted = await service.record_decision(
+        **coordinate,
+        decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
+        proposal_record_id=proposal_id,
+    )
+    after_accept = await stored()
+    edited = await service.record_decision(
+        **coordinate,
+        decision=ExtractionReviewerDecisionType.EDIT,
+        value={"text": "edited"},
+        rationale="changed my mind",
+        expected_current_decision_id=accepted.id,
+    )
+    after_edit = await stored()
+    restored = await service.record_decision(
+        **coordinate,
+        decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
+        proposal_record_id=proposal_id,
+        expected_current_decision_id=edited.id,
+    )
+    history = await stored()
+
+    # Precondition: the raw read sees each flushed append.
+    assert list(after_accept) == [accepted.id]
+    assert set(after_edit) == {accepted.id, edited.id}
+    assert set(history) == {accepted.id, edited.id, restored.id}
+    assert history[accepted.id] == after_accept[accepted.id]
+    assert history[edited.id] == after_edit[edited.id]
+    assert history[restored.id][:2] == ("accept_proposal", proposal_id)
+    state = await _reviewer_state(
+        db_session,
+        run_id=run_id,
+        reviewer_id=profile_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert state is not None
+    assert state.current_decision_id == restored.id
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
 async def test_reviewer_state_is_none_for_unknown_coordinates(
     db_session: AsyncSession,
 ) -> None:
