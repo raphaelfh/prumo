@@ -1,17 +1,39 @@
 """AI batch runs over many articles (spec 2026-09-15 §7). snake_case on the wire."""
 
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
 MAX_ARTICLES_PER_BATCH = 100
 
+#: An attempt failing with one of these stops the whole batch (G12).
+ENGINE_STOP_CODES = frozenset({"MISSING_API_KEY", "ENGINE_RETIRED", "LLM_ENDPOINT_UNAVAILABLE"})
+ATTEMPT_LIVE = frozenset({"pending", "running"})
+
 BatchState = Literal["active", "finished", "stopped", "cancelled"]
 ItemOutcome = Literal[
     "queued", "running", "done", "done_with_issues", "needs_attention", "skipped", "not_run"
 ]
+
+
+@dataclass(frozen=True)
+class ItemRow:
+    """One batch item joined with its (optional) attempt — the repository's read shape."""
+
+    article_id: UUID
+    title: str
+    status: str
+    reason_code: str | None
+    updated_at: datetime
+    attempt_id: UUID | None
+    attempt_status: str | None
+    attempt_result: dict[str, Any] | None
+    attempt_error_code: str | None
+    attempt_error: str | None
+    attempt_updated_at: datetime | None
 
 
 class CreateExtractionBatchRequest(BaseModel):

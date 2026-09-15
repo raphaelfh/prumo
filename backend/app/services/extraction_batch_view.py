@@ -5,36 +5,29 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
-from uuid import UUID
 
 from app.schemas.extraction_batch import (
+    ATTEMPT_LIVE,
+    ENGINE_STOP_CODES,
     BatchState,
     ExtractionBatchCounts,
     ExtractionBatchItemView,
     ItemOutcome,
+    ItemRow,
 )
 
-#: An attempt failing with one of these stops the whole batch (G12).
-ENGINE_STOP_CODES = frozenset({"MISSING_API_KEY", "ENGINE_RETIRED", "LLM_ENDPOINT_UNAVAILABLE"})
-ATTEMPT_LIVE = frozenset({"pending", "running"})
+__all__ = [
+    "ATTEMPT_LIVE",
+    "ENGINE_STOP_CODES",
+    "STALL_AFTER",
+    "ItemRow",
+    "BatchDerivation",
+    "item_outcome",
+    "derive_batch",
+]
+
 STALL_AFTER = timedelta(minutes=15)
 NO_LONGER_AVAILABLE = "NO_LONGER_AVAILABLE"
-
-
-@dataclass(frozen=True)
-class ItemRow:
-    article_id: UUID
-    title: str
-    status: str
-    reason_code: str | None
-    updated_at: datetime
-    attempt_id: UUID | None
-    attempt_status: str | None
-    attempt_result: dict[str, Any] | None
-    attempt_error_code: str | None
-    attempt_error: str | None
-    attempt_updated_at: datetime | None
 
 
 @dataclass(frozen=True)
