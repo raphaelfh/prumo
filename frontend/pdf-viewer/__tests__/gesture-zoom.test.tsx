@@ -117,3 +117,92 @@ describe('a zoom that is not a gesture', () => {
     expect(scroller.scrollLeft).toBe(322 * 2 - 400);
   });
 });
+
+/** A controllable ResizeObserver stub: captures the callback and `observe`
+ * options, and lets a test fire a resize entry with a given border-box size. */
+class ControllableResizeObserver {
+  static instances: ControllableResizeObserver[] = [];
+  callback: ResizeObserverCallback;
+  options: ResizeObserverOptions | undefined;
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    ControllableResizeObserver.instances.push(this);
+  }
+
+  observe(_target: Element, options?: ResizeObserverOptions) {
+    this.options = options;
+  }
+
+  unobserve() {}
+  disconnect() {}
+
+  fire(size: {width: number; height: number}) {
+    const entry = {
+      target: document.createElement('div'),
+      borderBoxSize: [{inlineSize: size.width, blockSize: size.height}],
+    } as unknown as ResizeObserverEntry;
+    this.callback([entry], this as unknown as ResizeObserver);
+  }
+}
+
+describe('a scrollbar appearing during a gesture', () => {
+  let originalResizeObserver: typeof ResizeObserver;
+
+  beforeEach(() => {
+    originalResizeObserver = global.ResizeObserver;
+    ControllableResizeObserver.instances = [];
+    global.ResizeObserver = ControllableResizeObserver as unknown as typeof ResizeObserver;
+  });
+
+  afterEach(() => {
+    global.ResizeObserver = originalResizeObserver;
+  });
+
+  it('observes the scroller with the border-box box option', () => {
+    renderViewer();
+    const observer = ControllableResizeObserver.instances.at(-1)!;
+    expect(observer.options).toEqual({box: 'border-box'});
+  });
+
+  it('keeps a gesture alive when only the content box shrinks (scrollbar appears)', () => {
+    const {store, scroller, pages} = renderViewer();
+    const observer = ControllableResizeObserver.instances.at(-1)!;
+    act(() => observer.fire({width: 785, height: 725}));
+
+    act(() => {
+      scroller.dispatchEvent(ctrlWheel(-100)); // 1 -> 1.25
+    });
+    expect(store.getState().isGesturing).toBe(true);
+    expect(pages.style.transform).toBe('scale(1.25)');
+
+    // Border-box size unchanged (a scrollbar only shrinks the content box).
+    act(() => observer.fire({width: 785, height: 725}));
+    expect(store.getState().isGesturing).toBe(true);
+    expect(pages.style.transform).toBe('scale(1.25)');
+
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    expect(store.getState().zoom).toBe(1.25);
+  });
+
+  it('cancels a gesture when the viewer itself resizes (border box changes)', () => {
+    const {store, scroller, pages} = renderViewer();
+    const observer = ControllableResizeObserver.instances.at(-1)!;
+    act(() => observer.fire({width: 785, height: 725}));
+    const startScrollTop = scroller.scrollTop;
+
+    act(() => {
+      scroller.dispatchEvent(ctrlWheel(-100));
+    });
+    expect(store.getState().isGesturing).toBe(true);
+
+    act(() => observer.fire({width: 785, height: 710}));
+
+    expect(store.getState().isGesturing).toBe(false);
+    expect(pages.style.transform).toBe('');
+    expect(scroller.scrollTop).toBe(startScrollTop);
+    expect(store.getState().zoom).toBe(1);
+  });
+});

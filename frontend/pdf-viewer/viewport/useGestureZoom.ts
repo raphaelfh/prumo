@@ -44,6 +44,19 @@ function clearPreviewTransform(pages: HTMLElement) {
   pages.style.transform = '';
 }
 
+/**
+ * The scroller's last-seen border-box size. Classic scrollbars shrink the
+ * content box (not the border box) when a wide zoom adds one, so an observer
+ * watching the content box fires spuriously mid-gesture; comparing border-box
+ * dimensions ignores that and only fires on a real viewer resize.
+ */
+function borderBoxSize(entry: ResizeObserverEntry): {width: number; height: number} {
+  const box = entry.borderBoxSize?.[0];
+  if (box) return {width: box.inlineSize, height: box.blockSize};
+  const rect = entry.target.getBoundingClientRect();
+  return {width: rect.width, height: rect.height};
+}
+
 function anchorNonGestureZoom({scroller, pages}: {scroller: HTMLElement; pages: HTMLElement}, layout: PageLayout, fromZoom: number) {
   clearPreviewTransform(pages);
   const scroll = anchoredScroll({
@@ -209,14 +222,23 @@ export function useGestureZoom({
     // Safari turns a trackpad pinch into gesture events and zooms the whole page on them.
     const preventPageZoom = (event: Event) => event.preventDefault();
     const cancel = () => controller.cancel();
-    const resizes = new ResizeObserver(cancel);
+    let lastSize: {width: number; height: number} | null = null;
+    const resizes = new ResizeObserver((entries) => {
+      const next = borderBoxSize(entries[0]);
+      const previous = lastSize;
+      lastSize = next;
+      if (!previous) return; // the initial callback on observe() only records the size
+      if (Math.abs(next.width - previous.width) >= 1 || Math.abs(next.height - previous.height) >= 1) {
+        cancel();
+      }
+    });
 
     scroller.addEventListener('wheel', onWheel, {passive: false});
     scroller.addEventListener('gesturestart', preventPageZoom);
     scroller.addEventListener('gesturechange', preventPageZoom);
     // Capture: a cancelled touch restores before the pinch handler could commit.
     scroller.addEventListener('pointercancel', cancel, {capture: true});
-    resizes.observe(scroller);
+    resizes.observe(scroller, {box: 'border-box'});
     return () => {
       clearTimeout(endTimer);
       controller.cancel();
