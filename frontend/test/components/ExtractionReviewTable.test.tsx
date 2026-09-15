@@ -127,19 +127,19 @@ import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/e
 vi.mock('@/components/extraction/ai/shared/SectionAIExtractButton', () => ({SectionAIExtractButton: ({entityTypeId}: {entityTypeId: string}) => <button aria-label={`Extract section ${entityTypeId}`}/> }));
 vi.mock('@/hooks/extraction/useExtractionFormAIActions', () => ({useExtractionFormAIActions: () => ({})}));
 const inertDecisions: ReviewWorkspace['decisions'] = {saving: false, conflicted: false, error: null, canUndo: false, undoTarget: null, toggle, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => null, isAccepted: () => false};
-function FormHarness({nested = false}: {nested?: boolean}) {
+function FormHarness({nested = false, sorted = false}: {nested?: boolean; sorted?: boolean}) {
   const [activeEntries, setActiveEntries] = useState<Record<string, string>>({});
   const entityTypes = nested ? [
     {id: 'models', name: 'models', label: 'Models', cardinality: 'many', parent_entity_type_id: null, fields: []},
     {id: 'predictors', name: 'predictors', label: 'Predictors', cardinality: 'many', parent_entity_type_id: 'models', fields: [{...fields[0], id: 'nested', label: 'Nested question'}]},
   ] : [{id: 's', name: 'study', label: 'Study section', description: 'Section description', cardinality: 'one', parent_entity_type_id: null, fields}];
   const instances = nested ? [
-    {id: 'm1', label: 'Model one', entity_type_id: 'models', parent_instance_id: null},
-    {id: 'm2', label: 'Model two', entity_type_id: 'models', parent_instance_id: null},
+    {id: 'm1', label: 'Model one', entity_type_id: 'models', parent_instance_id: null, sort_order: sorted ? 2 : 0},
+    {id: 'm2', label: 'Model two', entity_type_id: 'models', parent_instance_id: null, sort_order: sorted ? 1 : 0},
     {id: 'p1', label: 'Predictor one', entity_type_id: 'predictors', parent_instance_id: 'm1'},
     {id: 'p2', label: 'Predictor two', entity_type_id: 'predictors', parent_instance_id: 'm2'},
   ] : [{id: 'i', entity_type_id: 's', parent_instance_id: null}];
-  return <ExtractionFormView presentation="review-table" reviewDecisions={inertDecisions} reviewerId="me" entityTypes={entityTypes as ExtractionEntityTypeWithFields[]} instances={instances as ExtractionInstance[]} activeEntries={activeEntries} setActiveEntry={(slot, id) => setActiveEntries(previous => ({...previous, [slot]: id}))} handleOpenRenameDialog={() => {}} values={{}} updateValue={() => {}} aiSuggestions={{i_a: newer}} acceptSuggestion={async () => {}} selectSuggestion={async () => {}} rejectSuggestion={async () => {}} getSuggestionsHistory={getHistory} onRefreshInstances={async () => {}} handleAddInstance={() => {}} projectId="p" articleId="article" templateId="template" runId="run"/>;
+  return <ExtractionFormView presentation="review-table" reviewDecisions={inertDecisions} reviewerId="me" entityTypes={entityTypes as ExtractionEntityTypeWithFields[]} instances={instances as ExtractionInstance[]} activeEntries={activeEntries} setActiveEntry={(slot, id) => setActiveEntries(previous => ({...previous, [slot]: id}))} handleOpenRenameDialog={() => {}} values={{}} updateValue={() => {}} aiSuggestions={{i_a: newer, p1_nested: newer, p2_nested: newer}} acceptSuggestion={async () => {}} selectSuggestion={async () => {}} rejectSuggestion={async () => {}} getSuggestionsHistory={getHistory} onRefreshInstances={async () => {}} handleAddInstance={() => {}} projectId="p" articleId="article" templateId="template" runId="run"/>;
 }
 describe('production form presentation integration', () => {
   it('does not prefetch histories for the table and keeps section extraction available collapsed', async () => {
@@ -247,4 +247,23 @@ it('accepts A, disables pending saves, navigates to B, retries failed global und
   expect(document.getElementById('review-question-p2_nested')).toBeInTheDocument();
   expect(document.getElementById('review-question-p1_nested')).not.toBeInTheDocument();
   expect(screen.getByRole('textbox', {name: 'Nested question'})).toBeEnabled();
+});
+
+describe('restored entry review navigation', () => {
+  it.each([
+    ['persisted selection', 'm2', false],
+    ['sorted fallback', null, true],
+    ['invalid restored selection', 'deleted', true],
+  ] as const)('keeps focus and toolbar on the rendered entry after %s', async (_case, stored, sorted) => {
+    if (stored) localStorage.setItem('active-entry-article-models-root', stored);
+    const user = userEvent.setup();
+    const view = render(<FormHarness nested sorted={sorted}/>);
+    view.unmount();
+    render(<FormHarness nested sorted={sorted}/>);
+    expect(document.getElementById('review-question-p2_nested')).toBeVisible();
+    await user.click(screen.getByRole('button', {name: 'Focus question'}));
+    expect(document.getElementById('review-question-p2_nested')).toBeVisible();
+    await user.click(within(screen.getByRole('toolbar')).getByRole('button', {name: 'Accept extraction'}));
+    expect(toggle).toHaveBeenLastCalledWith(expect.objectContaining({instanceId: 'p2', fieldId: 'nested', id: 'new'}));
+  });
 });

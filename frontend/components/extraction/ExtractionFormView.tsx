@@ -21,7 +21,7 @@ import {useResizableTableColumns} from '@/components/shared/list/useResizableTab
 import {ReviewQuickActions} from './review/ReviewQuickActions';
 import type {ReviewWorkspace} from './review/ExtractionReviewTable';
 import {useContainerNarrow} from '@/hooks/shared/useContainerNarrow';
-import {entrySlotKey} from '@/lib/extraction/entrySlots';
+import {resolveEntryGroup} from '@/lib/extraction/entrySlots';
 import {isEmptyValue} from '@/lib/ai-extraction/valueParser';
 import {EntrySection} from './entries/EntrySection';
 import {EntryFormProvider, type EntryFormContextValue} from './entries/EntryFormContext';
@@ -117,10 +117,9 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
   const walk = (entity: ExtractionEntityTypeWithFields, parent: string | null) => {
     if (visited.has(entity.id)) return;
     visited.add(entity.id);
-    const entries = props.instances.filter(item => item.entity_type_id === entity.id && (item.parent_instance_id ?? null) === parent);
+    const {entries, activeEntryId} = resolveEntryGroup(props.articleId, entity.id, parent, props.instances, props.activeEntries);
     const children = props.entityTypes.filter(item => item.parent_entity_type_id === entity.id);
-    const selected = props.activeEntries[entrySlotKey(props.articleId, entity.id, parent)];
-    const active = entries.find(item => item.id === selected) ?? entries[0];
+    const active = entries.find(item => item.id === activeEntryId);
     const rendered = entity.cardinality === 'many' && children.length ? (active ? [active] : []) : entries;
     for (const instance of rendered) for (const field of entity.fields) questions.push({instanceId: instance.id, fieldId: field.id, sectionId: entity.id, label: field.label, allowsNoInformation: field.allows_no_information !== false, pending: field.is_required && isEmptyValue(props.values[`${instance.id}_${field.id}`])});
     if (active) for (const child of children) walk(child, active.id);
