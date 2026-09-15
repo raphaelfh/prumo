@@ -27,6 +27,7 @@ owner: '@raphaelfh'
 - Every call owns immutable generation facts. Store no credentials, `ran_by_user_id` or `ran_by_name` in proposal JSON. Runner identity is resolved from the attempt owner only after `run_reveals_peers` authorization.
 - Preserve one-live-run lifecycle, coordinate ownership, schema exclusions, assessor-owned field exclusions, and append-only reviewer decisions. Recheck authority after external work and before result writes.
 - No shared run-row lock spans an LLM call. Independent section attempts must interleave while duplicate delivery of one attempt is serialized.
+- Undo must enforce its expected current decision atomically in the backend (Task 7a); a client GET comparison is only an early conflict check. Omitted/null preconditions retain existing unconditional writes.
 - QA, consensus and exports retain their existing behavior and presentation; all consumers use safe provenance serialization. New table presentation is enabled only for editable data extraction.
 - Every model change includes its additive Alembic migration, RLS/client-write restrictions, real database tests and migration roundtrip head-pin update in the same task.
 - Question and value columns resize only when the **review pane** is at least 900 px wide. Fixed column order; no reordering. Preserve Articles' default growing-table behavior.
@@ -35,7 +36,7 @@ owner: '@raphaelfh'
 
 ## Boundaries and execution order
 
-This is one end-to-end delivery, with eleven independently reviewable tasks. Execute in order; Tasks 5–6 have no backend code dependency but still consume the contracts below. Do not ship an intermediate table with fabricated provenance or ephemeral accepted state.
+This is one end-to-end delivery, with eleven numbered tasks and bounded follow-on Task 7a. Execute in order; Tasks 5–6 have no backend code dependency but still consume the contracts below. Do not ship an intermediate table with fabricated provenance or ephemeral accepted state.
 
 | Task | Owned boundary | Dependency |
 | --- | --- | --- |
@@ -46,7 +47,8 @@ This is one end-to-end delivery, with eleven independently reviewable tasks. Exe
 | 5 | Independent section job state | 2 |
 | 6 | Shared bounded column resize and compact editors | None |
 | 7 | Persistent reversible acceptance and autosave serialization | 4 |
-| 8 | Inline cards and complete previews | 4, 7 |
+| 7a | Atomic conditional undo write | 7 |
+| 8 | Inline cards and complete previews | 4, 7, 7a |
 | 9 | Table, sections, focus and keyboard integration | 5–8 |
 | 10 | Production browser coverage and visual review | 9 |
 | 11 | Cross-layer audit, documentation and final regression | 10 |
@@ -237,6 +239,20 @@ expect(reverseRequest.decision).toBe('edit');
 - [ ] Keep the last confirmed visual state until persistence succeeds; disable repeated checks while saving. On failure retain draft/error with retry; on conflict/stale run refresh current authority/history before enabling another mutation. Coordinate switch prevents late responses painting a different question. Existing article-change/unmount autosave still flushes the old coordinate correctly.
 - [ ] Test cross-question undo, typed predecessor restoration, user/run isolation/reset, failed-write exclusion, pending-save ordering, failure/retry, external-decision conflict and append-only requests without a proposal link. Test reload hydration, old accepted proposal with newer pending proposal, no-information schema restrictions, foreign reviewer exclusion, stale coordinate and race cases. Run `npm run typecheck`, the new focused tests and existing autosave tests discovered with `rg --files frontend | rg 'useAutoSaveProposals.*test'`; commit `feat(extraction): make proposal acceptance reversible and durable`.
 
+## Task 7a: Atomic current-decision condition for undo
+
+**Seat:** backend, followed by a bounded frontend integration in this same task. **Dependency:** completed Task 7; finish before Task 8. This clarifies the already-approved external-decision conflict requirement; all other H scope remains unchanged.
+
+**Files:** Modify `backend/app/schemas/extraction_run.py`, `backend/app/api/v1/endpoints/extraction_runs.py`, `backend/app/services/extraction_review_service.py`, `backend/tests/unit/test_extraction_run_schemas.py`, `backend/tests/integration/test_extraction_review_service.py`, `backend/tests/integration/test_extraction_runs_endpoints.py`, `frontend/services/extractionRunService.ts`, `frontend/hooks/extraction/useProposalDecision.ts`, `frontend/test/hooks/useProposalDecision.test.tsx`; regenerate `frontend/types/api/openapi.json` and `frontend/types/api/schema.d.ts`. Reuse `ExtractionReviewerDecisionRepository.get_latest_for_coord` and the existing run lock; no repository or model change or migration is needed.
+
+**Interfaces:** Add `expected_current_decision_id: UUID | None = None` to `CreateDecisionRequest` and the keyword-only `ExtractionReviewService.record_decision` signature; `create_decision` forwards it. Omitted and explicit null mean unconditional legacy behavior, not "expect empty". A non-null UUID must equal the latest decision id for `(run_id, authenticated reviewer_id, instance_id, field_id)`; missing latest also conflicts. Define `DecisionConflictError` in the service using existing `AppError`, status 409, code `DECISION_CONFLICT`; let the global handler serialize the existing envelope. Do not turn it into `InvalidDecisionError`/400. Thread the optional field through the frontend service request; only undo supplies it initially, using its stored expected head (Task 7's successful undo may advance that head for an earlier local entry at the same coordinate).
+
+- [ ] Write schema tests for omitted/null/UUID/malformed UUID and endpoint coverage for successful forwarding and typed 409. Write real PostgreSQL tests using separate sessions and committed fixture setup: client A observes d1, same-reviewer client B commits d2, A attempts undo with d1; require conflict, no new decision row and reviewer-state pointer/value still d2. Also overlap B holding the run lock with A's conditional call, commit B, and prove A checks the new head after waiting. Use explicit synchronization, not sleeps; clean committed fixtures. Required missing seed prerequisites fail clearly, never skip.
+- [ ] Cover matching-head success, missing latest, stale condition with a payload identical to the latest decision (must conflict before deduplication), unchanged omitted/null behavior and a different reviewer's write at the same coordinate (must not invalidate A). Capture red using `cd backend && .venv/bin/python -m pytest tests/unit/test_extraction_run_schemas.py tests/integration/test_extraction_review_service.py tests/integration/test_extraction_runs_endpoints.py -q` against local PostgreSQL.
+- [ ] Under the existing `load_run_for_update` lock, after existing authorization/coherence/stage/payload validation and latest-coordinate lookup, compare the non-null condition before the existing equality-dedup return and any append/state upsert. Raise the typed conflict without writes. Keep existing locks, scope guards and authority checks; never span separate HTTP requests with a lock.
+- [ ] In undo, send the stored expected current id even after its early authoritative history refresh. Add MSW race coverage where GET returns d1, another client changes the head, and POST returns typed 409. Keep draft, undo entry and confirmed local state intact; show the conflict and refresh authority/history before further mutation. Refresh failure must remain visible. Do not swallow 409, pop the entry, automatically resubmit, or retarget its expected id to the external decision. A successful undo alone consumes the entry and reconciles the draft/baseline. Verify cross-question targeting and successful consecutive local undo still work.
+- [ ] Run the backend tests above, `npm run generate:api-types`, `npm run typecheck`, and `npm run test:run -- frontend/lib/extraction/proposalDecisionState.test.ts frontend/test/hooks/useProposalDecision.test.tsx`; run the existing autosave tests discovered in Task 7. Inspect the generated schema diff for this optional property and retain other tasks' generated fields. Record actual executed race cases and results; commit only owned files as `fix(extraction): enforce atomic undo decision precondition`.
+
 ## Task 8: Inline extraction cards and complete previews
 
 **Seat:** frontend. **Files:** Create `frontend/components/extraction/review/ProposalDisclosure.tsx`, `frontend/components/extraction/review/ProposalCard.tsx`, `frontend/components/extraction/review/ProposalPreview.tsx`, `frontend/test/components/ProposalDisclosure.test.tsx`; modify `frontend/components/extraction/ai/shared/GenerationDetailsDialog.tsx` to extract reusable content into `GenerationDetailsContent.tsx`, `frontend/components/extraction/ai/AISuggestionEvidence.tsx`, `frontend/lib/copy/extraction.ts`.
@@ -333,7 +349,7 @@ git diff --check
 | §§7.4/9 complete previews, cards, compare, sources | 4, 8, 10 |
 | §§7.5/10 persistent reversible acceptance/save races | 7, 9, 10 |
 | §§8/13 focus, keyboard, responsive accessibility | 6, 9, 10 |
-| §8 latest confirmed local decision undo across navigation | 7, 9, 10 |
+| §8 latest confirmed local decision undo across navigation | 7, 7a, 9, 10 |
 | §§11/14 independent section state and failures | 2, 5, 9 |
 | §12 attempt ownership/idempotency/engine pin | 1–3, 11 |
 | §12 immutable per-call facts, historical source truth, privacy | 3–4, 8, 11 |

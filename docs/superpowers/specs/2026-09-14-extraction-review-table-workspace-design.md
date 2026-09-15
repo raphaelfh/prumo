@@ -265,6 +265,19 @@ selecting the latest confirmed decision, then appends an auditable edit restorin
 the full typed predecessor (or unresolved empty state), without a proposal link.
 It never deletes decisions. A newer external decision or lost authority produces
 a conflict instead of overwriting; failure preserves the undo entry for retry.
+This conflict requirement is atomic: undo sends an
+`expected_current_decision_id` UUID, and the decision writer checks the latest
+decision for the authenticated reviewer/run/instance/field under its existing
+run write lock, before deduplication or append. A missing or different latest
+id returns HTTP 409 with typed `DECISION_CONFLICT` in the existing error envelope,
+without appending or changing reviewer state. Refreshing history before POST
+alone is insufficient. Omission or explicit null keeps existing unconditional
+API behavior; null does not mean "expect no decision". Only undo initially uses
+the condition, so autosave, acceptance, QA and consensus keep their contracts.
+On conflict, retain the local draft and undo entry, display the error and refresh
+authoritative history/authority; never replace the expected id with an external
+decision just to retry. A successful prior local undo may advance the expected
+id of the next local undo at that coordinate. This adds no schema migration.
 Successful undo consumes that entry and adds no redo action. The toolbar supplies
 the fallback because the current extraction header has no undo action. Acceptance
 tests cover cross-question targeting, typed restoration, user/run isolation,
