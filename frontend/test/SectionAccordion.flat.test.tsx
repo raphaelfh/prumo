@@ -7,6 +7,11 @@ import { SectionAccordion } from '@/components/extraction/SectionAccordion';
 
 vi.mock('@/integrations/supabase/client', () => ({ supabase: {} }));
 vi.mock('@/lib/copy', () => ({ t: (_ns: string, key: string) => key }));
+// useSectionExtraction reads the signed-in user from AuthContext; the harness
+// has no real AuthProvider.
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 'reviewer-1' }, session: null, loading: false }),
+}));
 
 // SectionAccordion → useSectionExtraction now consumes a QueryClient (async
 // extraction-job polling), so the render needs a provider.

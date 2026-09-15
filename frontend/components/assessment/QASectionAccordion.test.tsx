@@ -3,10 +3,20 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 // The shared button's hook talks to TanStack; stub it so this stays a pure
-// render test (no QueryClient needed).
-vi.mock("@/hooks/extraction/useSectionExtraction", () => ({
-  useSectionExtraction: () => ({ extractSection: vi.fn(), loading: false, error: null }),
-}));
+// render test (no QueryClient needed). getSectionState returns the job store's
+// real idle state, as the independent section jobs contract does for a
+// coordinate with no job.
+vi.mock("@/hooks/extraction/useSectionExtraction", async () => {
+  const { idleSectionJob } = await import("@/stores/sectionExtractionJobs");
+  return {
+    useSectionExtraction: () => ({
+      extractSection: vi.fn(),
+      getSectionState: () => idleSectionJob,
+      loading: false,
+      error: null,
+    }),
+  };
+});
 vi.mock("@/lib/copy", () => ({ t: (_ns: string, key: string) => key }));
 
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";

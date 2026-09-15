@@ -329,8 +329,13 @@ describe("ExtractionFullScreen — header suggestion locate in an entry group", 
     expect(await screen.findByDisplayValue("cox-notes")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /cox model/i, selected: true })).toBeInTheDocument();
     // Collapse the section, so an open one afterwards is the locate's doing.
+    // The review table force-mounts a collapsed section's content with `hidden`,
+    // so collapse is the header's expanded state plus a hidden ancestor.
     await userEvent.click(screen.getByRole("button", { name: /model development/i, expanded: true }));
-    await waitFor(() => expect(screen.queryByDisplayValue("cox-notes")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /model development/i, expanded: false })).toBeInTheDocument(),
+    );
+    expect(screen.getByDisplayValue("cox-notes").closest("[hidden]")).not.toBeNull();
 
     await reviewPendingSuggestions();
 
