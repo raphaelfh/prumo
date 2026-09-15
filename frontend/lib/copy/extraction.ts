@@ -2,6 +2,24 @@
  * UI copy for extraction area. English only.
  */
 export const extraction = {
+    reviewCompareExtractions: 'Compare extractions',
+    reviewSingleExtraction: 'Show one extraction',
+    reviewPreviousExtraction: 'Previous extraction',
+    reviewNextExtraction: 'Next extraction',
+    reviewExtractionOrdinal: 'Extraction {{n}}',
+    reviewLatestExtraction: 'Latest',
+    reviewSourcesCount: '{{n}} sources',
+    reviewAcceptExtraction: 'Accept extraction',
+    reviewUnacceptExtraction: 'Unaccept extraction',
+    reviewOpenAccepted: 'Open accepted extraction',
+    reviewLoadingExtractions: 'Loading extractions…',
+    reviewRefreshExtractions: 'Refresh extractions',
+    reviewLoadError: 'Could not load extractions. Try again.',
+    reviewRefreshError: 'Could not refresh extractions. Previously loaded extractions remain available.',
+    reviewGenerationUnavailable: 'Generation details were not recorded for this extraction.',
+    reviewHistoricalInputUnavailable: 'Original input text is unavailable for this extraction.',
+    reviewHistoricalInputRecorded: 'Historical input was recorded; its text is not available in this view.',
+
     reviewDecisionConflict: 'Could not save this decision. Refresh the current review state and try again.',
     // HeaderPDFControls
     // HeaderNavigation

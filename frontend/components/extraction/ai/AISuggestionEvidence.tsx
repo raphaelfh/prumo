@@ -60,6 +60,8 @@ interface AISuggestionEvidenceProps {
    * passage gets a persistent active ring. The popover keeps it across clicks.
    */
   activeRank?: number | null;
+  /** Review table: all ranked sources, one icon-only locate action per source. */
+  presentation?: 'default' | 'review';
 }
 
 // =================== CITATION ROW ===================
@@ -70,9 +72,10 @@ interface CitationRowProps {
   onLocate?: (rank: number) => void;
   isPrimary?: boolean;
   isActive?: boolean;
+  minimal?: boolean;
 }
 
-function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: CitationRowProps) {
+function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive, minimal}: CitationRowProps) {
   const {copied, copy} = useCopyToClipboard();
 
   const label = citation.attributionLabel;
@@ -89,9 +92,9 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
   const badgeTooltip = attribution ? t('extraction', attribution.tooltip) : null;
 
   const borderClass = isEntailed
-    ? 'border-l-green-500'
+    ? 'border-l-success'
     : isAmber
-      ? 'border-l-amber-500'
+      ? 'border-l-warning'
       : 'border-l-primary/20';
 
   return (
@@ -117,8 +120,8 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
                     'px-2 py-0.5 rounded text-xs font-medium shrink-0 cursor-help',
                     'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
                     isEntailed
-                      ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300'
-                      : 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
+                      ? 'bg-success/10 text-success'
+                      : 'bg-warning/10 text-warning',
                   )}
                 >
                   {badgeCopy}
@@ -134,6 +137,7 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
+          {minimal && onLocate && <IconButton label={t('extraction', 'evidenceLocate')} icon={<MapPin />} aria-pressed={isActive} onClick={() => onLocate(citation.rank)} />}
           {showCopyButton && (
             <IconButton
               className="shrink-0"
@@ -155,7 +159,7 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
       {/* Cited passage — the jump target when locate is available. Clicking it
           locates the passage in the reader; the popover stays open and the
           located citation keeps an active ring. */}
-      {onLocate ? (
+      {onLocate && !minimal ? (
         <button
           type="button"
           data-active-citation={isActive ? 'true' : undefined}
@@ -196,10 +200,14 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive}: 
 // =================== COMPONENT ===================
 
 export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
-  const {evidence, className, showCopyButton = true, onLocate, activeRank} = props;
+  const {evidence, className, showCopyButton = true, onLocate, activeRank, presentation = 'default'} = props;
   const [expanded, setExpanded] = useState(false);
 
   if (evidence.length === 0) return null;
+
+  if (presentation === 'review') return <div className={cn('space-y-3', className)}>
+    {[...evidence].sort((a, b) => a.rank - b.rank).map(citation => <CitationRow key={citation.rank} citation={citation} showCopyButton={false} onLocate={onLocate} isActive={activeRank === citation.rank} minimal />)}
+  </div>;
 
   const [primary, ...rest] = evidence;
   const hasExtra = rest.length > 0;
