@@ -7,6 +7,10 @@ on:
   # feature branch) previously got zero CI and merged unverified.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  # Dispatched by update-armed-prs.yml on an armed PR's branch after it brings
+  # the branch up to date: that update is made with GITHUB_TOKEN, which does
+  # not trigger `pull_request`, so without this the required checks never run.
+  workflow_dispatch:
 
 # Agent sessions push fixups minutes apart; cancel superseded PR runs.
 # Push runs (deploy-gating on main) are never cancelled.

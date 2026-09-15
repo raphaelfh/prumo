@@ -185,6 +185,9 @@ branch. Fix throughput without weakening the gate:
 - **Unstick a `BEHIND` PR with Update-branch, never a hand rebase:**
   `gh api -X PUT .../pulls/<n>/update-branch`. Never `@dependabot
   rebase` a grouped PR — it closes and recreates it under a new number.
+  An *armed* PR is updated for you: `.github/workflows/update-armed-prs.yml`
+  runs Update-branch on it after every push to `dev` and dispatches CI on
+  its branch, so its auto-merge fires once the checks pass again.
 - **Scope agents to non-overlapping paths/worktrees** so concurrent PRs
   rarely conflict. **Remove a worktree once its PR merges**
   (`git worktree remove` + `git branch -d`, from the main checkout): it is

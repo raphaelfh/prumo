@@ -72,3 +72,17 @@ describe('<Toolbar> zoom visibility', () => {
     expect(screen.getByLabelText('Previous page')).toBeInTheDocument();
   });
 });
+
+describe('<Toolbar> rotate view', () => {
+  it('turns the view 90° clockwise per click', async () => {
+    const user = userEvent.setup();
+    const store = renderToolbar('canvas');
+    await user.click(screen.getByLabelText('Rotate view'));
+    expect(store.getState().viewRotation).toBe(90);
+  });
+
+  it('is hidden in reader mode (no page surface to rotate)', () => {
+    renderToolbar('reader');
+    expect(screen.queryByLabelText('Rotate view')).not.toBeInTheDocument();
+  });
+});

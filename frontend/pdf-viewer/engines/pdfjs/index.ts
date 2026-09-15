@@ -1,5 +1,5 @@
 import * as pdfjs from 'pdfjs-dist';
-import type {LoadOptions, PDFDocumentHandle, PDFEngine} from '../../core/engine';
+import type {PDFDocumentHandle, PDFEngine} from '../../core/engine';
 import type {PDFSource} from '../../core/source';
 import {PdfJsDocumentHandle} from './document';
 import {sourceToGetDocumentParams} from './source';
@@ -13,27 +13,10 @@ if (typeof pdfjs !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
 }
 
-class PdfJsEngineImpl implements PDFEngine {
-  async load(source: PDFSource, opts?: LoadOptions): Promise<PDFDocumentHandle> {
-    const params = await sourceToGetDocumentParams(source, opts);
-    const task = pdfjs.getDocument(params);
-    if (opts?.onProgress) {
-      task.onProgress = (p: {loaded: number; total: number}) =>
-        opts.onProgress?.(p.loaded, p.total);
-    }
-    const proxy = await task.promise;
+/** The PDF.js engine. Stateless: every resource belongs to a document handle. */
+export const pdfJsEngine: PDFEngine = {
+  async load(source: PDFSource): Promise<PDFDocumentHandle> {
+    const proxy = await pdfjs.getDocument(await sourceToGetDocumentParams(source)).promise;
     return new PdfJsDocumentHandle(proxy);
-  }
-
-  destroy(): void {
-    // No engine-level resources held outside document handles in this implementation.
-    // Reserved for future per-engine worker pool cleanup.
-  }
-}
-
-/** The default PDF.js engine instance. Stateless. */
-export const pdfJsEngine: PDFEngine = new PdfJsEngineImpl();
-
-// Re-export the handle classes so consumers can identify them in tests.
-;
-;
+  },
+};

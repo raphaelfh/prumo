@@ -85,7 +85,8 @@ export interface ViewerState {
   // Rendering
   /** Render scale. 1.0 = 100%. */
   scale: number;
-  rotation: PageRotation;
+  /** The user's rotation of the whole view, clockwise — added to each page's own `/Rotate`. */
+  viewRotation: PageRotation;
   /**
    * Display mode. `canvas` (default) renders pages via the engine; `reader`
    * renders structured text blocks (typography-first, screen-reader friendly,
@@ -117,7 +118,8 @@ export interface ViewerActions {
 
   // Rendering
   setScale(scale: number): void;
-  setRotation(rotation: PageRotation): void;
+  /** Turn the view 90° clockwise. */
+  rotateView(): void;
   setMode(mode: ViewerMode): void;
 
   // Reader-locate (markdown-first citation locating)

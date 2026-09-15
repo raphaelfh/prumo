@@ -35,7 +35,7 @@ const initialData: ViewerData = {
   error: null,
   currentPage: 1,
   scale: 1,
-  rotation: 0,
+  viewRotation: 0,
   mode: 'canvas',
   readerLocate: null,
   search: initialSearch,
@@ -98,8 +98,8 @@ export function createViewerStore(
         set({scale});
       },
 
-      setRotation(rotation: PageRotation) {
-        set({rotation});
+      rotateView() {
+        set({viewRotation: ((get().viewRotation + 90) % 360) as PageRotation});
       },
 
       setMode(mode: ViewerMode) {
