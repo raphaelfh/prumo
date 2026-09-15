@@ -27,7 +27,7 @@ beforeEach(() => {
       requests.push(body);
       if (gate) await gate;
       if (fail) return HttpResponse.json({ok: false, error: {code: 'FAILED', message: 'Save failed'}}, {status: 500});
-      const decision = {...row(String(history.length + 1), body.field_id, body.value!), ...body};
+      const decision = {...row(String(Math.max(0, ...history.map(item => Number(item.id))) + 1), body.field_id, body.value!), ...body};
       history.push(decision as ReviewerDecisionResponse);
       return HttpResponse.json({ok: true, data: decision});
     }),
@@ -159,6 +159,57 @@ describe('confirmed proposal decisions and local undo', () => {
     await act(async () => {release(); await pending;});
     expect(view.result.current.canUndo).toBe(false);
     expect(view.result.current.values.i_a).toBeUndefined();
+  });
+
+  it('freezes saveNow and unmount flush after an observed conflict while retaining the draft and undo target', async () => {
+    const view = setup();
+    await act(async () => {await view.result.current.toggle(proposal);});
+    history.push(row('9', 'a', {value: 'external'}));
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(false);});
+    const count = requests.length;
+    await act(async () => {await expect(view.result.current.saveNow()).rejects.toThrow();});
+    expect(requests).toHaveLength(count);
+    expect(view.result.current.values.i_a).toBe('AI');
+    expect(view.result.current.canUndo).toBe(true);
+    expect(view.result.current.undoTarget?.expectedId).toBe('1');
+    await act(async () => {view.unmount();});
+    expect(requests).toHaveLength(count);
+    expect(history.at(-1)?.value).toEqual({value: 'external'});
+  });
+
+  it('requires explicit fresh-authority recovery and never rebases the blocked undo target', async () => {
+    const view = setup();
+    await act(async () => {await view.result.current.toggle(proposal);});
+    history.push(row('9', 'a', {value: 'external'}));
+    await act(async () => {await view.result.current.undoLatestLocalDecision();});
+    const count = requests.length;
+    await act(async () => {expect(await view.result.current.toggle({...proposal, id: 'p2'})).toBe(false);});
+    expect(requests).toHaveLength(count);
+    server.use(http.get('*/api/v1/runs/:run/view', () => HttpResponse.json({ok: true, data: {run: {id: 'run', stage: 'finalized'}, decisions: history}})));
+    await act(async () => {expect(await view.result.current.resumeDraftAfterConflict()).toBe(false);});
+    expect(view.result.current.conflicted).toBe(true);
+    server.use(http.get('*/api/v1/runs/:run/view', () => HttpResponse.json({ok: true, data: {run: {id: 'run', stage: 'extract'}, decisions: history}})));
+    await act(async () => {expect(await view.result.current.resumeDraftAfterConflict()).toBe(true);});
+    expect(view.result.current.undoTarget?.expectedId).toBe('1');
+    expect(view.result.current.values.i_a).toBe('AI');
+    await act(async () => {await view.result.current.saveNow();});
+    expect(requests).toHaveLength(count + 1);
+    expect(requests.at(-1)).toMatchObject({value: {value: 'AI'}, proposal_record_id: null});
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(history.at(-1)?.value).toEqual({value: 'external'});
+    expect(view.result.current.undoTarget?.expectedId).toBe('1');
+    const restoredCount = requests.length;
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(false);});
+    expect(requests).toHaveLength(restoredCount);
+  });
+  it('keeps the outgoing conflicted session frozen during run navigation', async () => {
+    const view = setup();
+    await act(async () => {await view.result.current.toggle(proposal);});
+    history.push(row('9', 'a', {value: 'external'}));
+    await act(async () => {await view.result.current.undoLatestLocalDecision();});
+    const count = requests.length;
+    await act(async () => {view.rerender({user: 'me', run: 'other-run'}); view.unmount();});
+    expect(requests).toHaveLength(count);
   });
 
 });
