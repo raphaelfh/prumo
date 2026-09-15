@@ -25,12 +25,18 @@ export function useDocumentLoader({source, engine = pdfJsEngine}: UseDocumentLoa
 
     engine
       .load(source)
-      .then((doc) => {
+      .then(async (doc) => {
+        // Page 1's size is the layout's estimate for every page not yet
+        // mounted, so it is known before the pages render.
+        const first = await doc.getPage(1);
+        const size = first.size;
+        first.cleanup();
         if (cancelled) {
           doc.destroy();
           return;
         }
         actions.setDocument(doc);
+        actions.setPageSize(1, size);
         actions.setLoadStatus('ready');
       })
       .catch((err: unknown) => {
