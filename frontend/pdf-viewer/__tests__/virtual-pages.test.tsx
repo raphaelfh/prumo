@@ -92,4 +92,38 @@ describe('Viewer.Pages virtualization', () => {
 
     expect(scroller.scrollTop).toBe(layout.offsetOf(10) - (LETTER.height - LANDSCAPE.height));
   });
+
+  it('mounts a page navigated to via the store that is not currently mounted', async () => {
+    const {store, scroller, mounted} = await renderDocument(18);
+    await waitFor(() => expect(mounted()).toEqual([1, 2]));
+
+    Object.defineProperty(scroller, 'clientHeight', {configurable: true, value: VIEWPORT});
+    Object.defineProperty(scroller, 'scrollHeight', {configurable: true, value: layout.totalHeight});
+    // The browser: a programmatic scroll lands and comes to rest.
+    scroller.scrollTo = (({top}: ScrollToOptions) => {
+      scroller.scrollTop = top ?? 0;
+      scroller.dispatchEvent(new Event('scroll'));
+      scroller.dispatchEvent(new Event('scrollend'));
+    }) as HTMLElement['scrollTo'];
+
+    act(() => store.getState().actions.goToPage(12));
+
+    await waitFor(() => expect(mounted()).toContain(12));
+  });
+
+  it('keeps the page under the scroll position mounted after zooming 2x', async () => {
+    const {store, scroller, mounted, scrollTo} = await renderDocument(18);
+    const startTop = layout.offsetOf(10);
+    scrollTo(startTop);
+    await waitFor(() => expect(mounted()).toContain(10));
+
+    act(() => store.getState().actions.setScale(2));
+
+    // The scroll position (raw px) doesn't move on a zoom, so the page it
+    // now lands on (in the rescaled layout) is not page 10 any more — but
+    // whichever page that is must be the one the virtualizer keeps mounted.
+    const zoomedLayout = createPageLayout({numPages: 18, pageSizes: {1: LETTER}, viewRotation: 0, zoom: 2});
+    const expectedPage = zoomedLayout.pageAt(scroller.scrollTop, VIEWPORT);
+    await waitFor(() => expect(mounted()).toContain(expectedPage));
+  });
 });

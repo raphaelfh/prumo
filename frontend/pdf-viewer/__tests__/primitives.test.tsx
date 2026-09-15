@@ -16,6 +16,7 @@ const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
 
 // Import AFTER the mock is registered so components see the shim.
 const {PrumoPdfViewer} = await import('../PrumoPdfViewer');
+const {createViewerStore} = await import('../core/store');
 
 // Override workerSrc AFTER engine import — the engine module unconditionally
 // writes a Vite-bundled URL that doesn't exist in Node.
@@ -83,8 +84,9 @@ describe('<PrumoPdfViewer> smoke tests', () => {
         kind: 'data' as const,
         data: fixtureBytes,
       };
+      const store = createViewerStore();
 
-      const {container} = render(<PrumoPdfViewer source={source} />);
+      const {container} = render(<PrumoPdfViewer source={source} store={store} />);
       await waitFor(
         () => {
           const nums = [...container.querySelectorAll('div[data-page-number]')].map((p) =>
@@ -94,6 +96,11 @@ describe('<PrumoPdfViewer> smoke tests', () => {
         },
         {timeout: 10000},
       );
+      // Precondition this test's overscan-1 mounting depends on: the stubbed
+      // 300px viewport (offsetHeight above) is shorter than the fixture's
+      // first page, so only the pages next to it mount, not the whole
+      // document.
+      expect(store.getState().pageSizes[1]?.height).toBeGreaterThan(300);
     },
     15000, // pdfjs worker startup + load can exceed 5 s
   );
