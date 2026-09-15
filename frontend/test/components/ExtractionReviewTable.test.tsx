@@ -7,6 +7,7 @@ import {ReviewQuickActions} from '@/components/extraction/review/ReviewQuickActi
 import {useReviewNavigation} from '@/hooks/extraction/useReviewNavigation';
 import {useResizableTableColumns} from '@/components/shared/list/useResizableTableColumns';
 import {SectionNavLayout} from '@/components/runs/SectionNavLayout';
+import {useKeyboardShortcuts} from '@/hooks/useKeyboardShortcuts';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion} from '@/types/ai-extraction';
 
@@ -311,4 +312,21 @@ describe('restored entry review navigation', () => {
     await user.click(within(screen.getByRole('toolbar')).getByRole('button', {name: 'Accept extraction'}));
     expect(toggle).toHaveBeenLastCalledWith(expect.objectContaining({instanceId: 'p2', fieldId: 'nested', id: 'new'}));
   });
+});
+
+it('a bare review shortcut stays off a focused closed Select trigger, which keeps its typeahead', async () => {
+  const accept = vi.fn(); const onChange = vi.fn();
+  function Row() {
+    useKeyboardShortcuts({enabled: true, bindings: [{type: 'chord', key: 'a', handler: accept}]});
+    return <FieldValueEditor field={{id: 'population', label: 'Population', field_type: 'select', allow_other: false, allowed_values: [{value: 'adults', label: 'Adults'}, {value: 'children', label: 'Children'}]} as ExtractionField} value="" onChange={onChange} density="compact"/>;
+  }
+  const user = userEvent.setup(); render(<Row/>);
+  const trigger = screen.getByRole('combobox', {name: 'Population'});
+  act(() => trigger.focus());
+  await user.keyboard('a');
+  expect(onChange).toHaveBeenCalledWith('adults');
+  expect(accept).not.toHaveBeenCalled();
+  act(() => trigger.blur());
+  await user.keyboard('a');
+  expect(accept).toHaveBeenCalledTimes(1);
 });

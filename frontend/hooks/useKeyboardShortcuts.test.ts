@@ -64,6 +64,34 @@ describe('useKeyboardShortcuts', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['role="combobox"', 'role', 'combobox'],
+    ['aria-haspopup="listbox"', 'aria-haspopup', 'listbox'],
+  ])('leaves a bare key to a focused %s trigger (its typeahead) but keeps mod chords and other targets', (_label, name, value) => {
+    const bare = vi.fn();
+    const mod = vi.fn();
+    const bindings: Binding[] = [
+      {type: 'chord', key: 'a', handler: bare},
+      {type: 'chord', key: 'b', mod: true, handler: mod},
+    ];
+    renderHook(() => useKeyboardShortcuts({bindings, enabled: true}));
+    const trigger = document.createElement('button');
+    trigger.setAttribute(name, value);
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    expect(fireKeydown('a', {target: trigger}).defaultPrevented).toBe(false);
+    expect(bare).not.toHaveBeenCalled();
+    fireKeydown('b', {meta: true, target: trigger});
+    expect(mod).toHaveBeenCalledTimes(1);
+
+    const plain = document.createElement('button');
+    document.body.appendChild(plain);
+    plain.focus();
+    fireKeydown('a', {target: plain});
+    expect(bare).toHaveBeenCalledTimes(1);
+  });
+
   it('does not trigger when disabled', () => {
     const handler = vi.fn();
     const bindings: Binding[] = [{type: 'chord', key: 'b', mod: true, handler}];

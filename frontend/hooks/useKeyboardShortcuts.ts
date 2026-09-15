@@ -34,9 +34,10 @@ interface UseKeyboardShortcutsOptions {
 
 const DEFAULT_SEQUENCE_TIMEOUT = 1500;
 
+/** A closed Select/listbox trigger types too: a bare letter is its typeahead. */
 function isTypingTarget(e: KeyboardEvent): boolean {
   return e.composedPath().some(target => target instanceof HTMLElement && (
-    target.matches('input, textarea, select') || target.isContentEditable ||
+    target.matches('input, textarea, select, [role="combobox"], [aria-haspopup="listbox"]') || target.isContentEditable ||
     !!target.closest('[contenteditable]:not([contenteditable="false"])')
   ));
 }
