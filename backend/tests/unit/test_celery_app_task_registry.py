@@ -27,6 +27,7 @@ from app.worker.celery_app import celery_app
 # concrete symbol that breaks when the module is missing.
 EXPECTED_TASK_MODULES = (
     ("app.worker.tasks.extraction_tasks", "run_section_extraction_task"),
+    ("app.worker.tasks.extraction_batch_tasks", "advance_extraction_batch"),
     ("app.worker.tasks.import_tasks", "import_zotero_collection_task"),
     ("app.worker.tasks.export_tasks", "export_articles_task"),
     ("app.worker.tasks.extraction_export_tasks", "export_extraction_task"),
