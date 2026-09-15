@@ -25,6 +25,7 @@ interface MultiSelectWithOtherProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+  ariaLabel?: string;
   /** Compact review controls show human labels while retaining code payloads. */
   showSelectedLabels?: boolean;
   size?: ComponentProps<typeof Button>['size'];
@@ -126,7 +127,7 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size={size} className={cn('w-full justify-between', className)} disabled={disabled}>
+        <Button aria-label={props.ariaLabel} variant="outline" size={size} className={cn('w-full justify-between', className)} disabled={disabled}>
             <span className="truncate text-left">{summary || resolvedPlaceholder}</span>
           <span className="text-muted-foreground">▾</span>
         </Button>

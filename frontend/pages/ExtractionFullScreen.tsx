@@ -30,6 +30,7 @@ import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/run
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
 import {RunEditabilityProvider} from '@/components/runs/RunEditabilityContext';
+import {useIsBelowDesktop} from '@/hooks/use-mobile';
 import {usePdfPanel} from '@/hooks/usePdfPanel';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
@@ -138,7 +139,12 @@ export default function ExtractionFullScreen() {
   const currentUserId = userId ?? '';
 
   // UI state
+  const belowDesktop = useIsBelowDesktop();
   const pdf = usePdfPanel({ initialOpen: false });
+  const readerDefaultApplied = useRef(false);
+  const closePdfRef = useRef(pdf.close);
+  useEffect(() => {closePdfRef.current = pdf.close;}, [pdf.close]);
+  useEffect(() => {if (belowDesktop) closePdfRef.current();}, [belowDesktop]);
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
 
   // A citation-locate (from an AI-suggestion popover) reveals the document panel
@@ -449,16 +455,8 @@ export default function ExtractionFullScreen() {
   });
 
     // Auto-save hook — in the editable `extract` stage this extraction page
-    // writes per-user ``ReviewerDecision`` rows (decision='edit'); it never
-    // writes in `consensus` or any later stage (WRITABLE_STAGES gates it).
-    // Each reviewer's typing lands in their own decision stream and the run
-    // view's ``currentValues`` are resolved per reviewer_id (Layer 2 of the
-    // multi-reviewer blind fix).
-    //
-    // No-op until the session is open and the run is in a writable
-    // stage. The hook flushes pending edits on unmount, on the in-place
-    // run switch (article pager), ``pagehide``, and visibility changes so
-    // navigating mid-debounce never drops a save.
+    // Reviewer decisions autosave in EXTRACT. Pending edits flush on run
+    // switches and unmount using the outgoing session's authority.
   const proposalDecisions = useProposalDecision({
     reviewerId: currentUserId,
     decisions: runDetail?.decisions,
@@ -477,15 +475,8 @@ export default function ExtractionFullScreen() {
     // surfaced as a spurious "Error saving data automatically" toast on
     // opening a consolidated run. Mirrors the QA full-screen gate;
     // ``!isFinalized`` alone let ``consensus`` through.
-    // The bootstrap ``loading`` flag is deliberately NOT part of this gate:
-    // it flips on every article change, and the hook's run-switch flush
-    // captures ``enabled`` as of the switch — gating on it dropped the
-    // pending edit whenever the next article's session resolved before its
-    // bootstrap reads. ``activeRunId`` + ``valuesInitialized`` already make
-    // this a no-op until the run is open and first hydrated; on an in-place
-    // run switch the old edit is carried by the hook's run-keyed flush, and
-    // the debounce it transiently arms against the new run is cleared when
-    // ``useExtractedValues`` replaces ``values`` in the next microtask.
+    // Keep bootstrap loading out of this gate: the outgoing run-switch
+    // flush must retain its captured writable state while the next run loads.
     enabled:
       !!activeRunId &&
       valuesInitialized &&
@@ -494,6 +485,12 @@ export default function ExtractionFullScreen() {
       // read-only via forceReadOnly, this is the flush-path belt).
       permissions.userRole !== 'viewer',
   });
+
+  useEffect(() => {
+    if (!runDetail || permissions.loading || readerDefaultApplied.current) return;
+    readerDefaultApplied.current = true;
+    if (!belowDesktop && runDetail.run.kind === 'extraction' && isRunEditable(stage) && permissions.userRole !== 'viewer') pdf.open();
+  }, [runDetail, permissions.loading, permissions.userRole, belowDesktop, stage, pdf]);
 
   const { saveState, lastSavedAt, saveNow } = proposalDecisions;
   const selectSuggestion = async (instanceId: string, fieldId: string, id: string, value: unknown) => {
@@ -1071,6 +1068,10 @@ export default function ExtractionFullScreen() {
       <ExtractionFormPanel
         viewMode={viewMode}
         formViewProps={{
+          presentation: runDetail?.run.kind === 'extraction' && isRunEditable(stage) && permissions.userRole !== 'viewer' ? 'review-table' : 'default',
+          reviewDecisions: proposalDecisions,
+          reviewProposals: runDetail?.proposals,
+          reviewerId: currentUserId,
           instances,
           values,
           updateValue,

@@ -277,7 +277,7 @@ describe("ExtractionFullScreen — paging to the next article", () => {
 
   it("shows the loader — not the previous run's form — while the new article's session opens", async () => {
     renderPage();
-    expect(await screen.findByText("First article field")).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", {name: "First article field"})).toBeInTheDocument();
 
     // "]" — the worklist pager. Same route element, new :articleId.
     await userEvent.keyboard("]");
@@ -292,12 +292,12 @@ describe("ExtractionFullScreen — paging to the next article", () => {
     // reviewer sees.
     await flush();
 
-    expect(screen.queryByText("First article field")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", {name: "First article field"})).not.toBeInTheDocument();
     expect(screen.getByText(pages.extractionScreenLoading)).toBeInTheDocument();
 
     // Once the session for a2 lands, the new article's own form takes over.
     releaseSessionA2?.();
-    expect(await screen.findByText("Second article field")).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", {name: "Second article field"})).toBeInTheDocument();
   });
 
   it("surfaces the run error — not the previous run's form — when the new article's session open FAILS", async () => {
@@ -308,7 +308,7 @@ describe("ExtractionFullScreen — paging to the next article", () => {
     // AND swallowed the session error entirely — no message, no retry.
     sessionA2Mode = "reject";
     renderPage();
-    expect(await screen.findByText("First article field")).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", {name: "First article field"})).toBeInTheDocument();
 
     await userEvent.keyboard("]");
     await waitFor(() =>
@@ -320,7 +320,7 @@ describe("ExtractionFullScreen — paging to the next article", () => {
 
     // The previous article's form must be gone, and the failure must be
     // visible with a retry rather than silently masked.
-    expect(screen.queryByText("First article field")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", {name: "First article field"})).not.toBeInTheDocument();
     expect(
       screen.getByText(pages.extractionScreenRunErrorTitle),
     ).toBeInTheDocument();
@@ -333,9 +333,14 @@ describe("ExtractionFullScreen — paging to the next article", () => {
     // if it instead bailed on the null run, a mid-debounce edit would be lost.
     // Deliberately no wait for the 600ms debounce: only the flush can save it.
     renderPage();
-    expect(await screen.findByText("First article field")).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", {name: "First article field"})).toBeInTheDocument();
 
-    await userEvent.type(screen.getAllByRole("textbox")[0], "pending edit");
+    const editor = screen.getByRole("textbox", {name: "First article field"});
+    // jsdom reports every panel at (0,0); the split pane pointer handler
+    // mistakes a synthetic click for its separator. Focus the real editor.
+    act(() => editor.focus());
+    await userEvent.type(editor, "pending edit", {skipClick: true});
+    expect(screen.getByRole("textbox", {name: "First article field"})).toHaveValue("pending edit");
     await userEvent.keyboard("]");
 
     await waitFor(() =>

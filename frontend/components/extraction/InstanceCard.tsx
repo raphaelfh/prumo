@@ -24,6 +24,7 @@ import {Pencil, Trash2} from 'lucide-react';
 import {t} from '@/lib/copy';
 import {DEFAULT_ENTRY_NOUN, displayEntryKey} from '@/lib/extraction/entryKey';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
+import {ExtractionReviewTable, type ReviewWorkspace} from './review/ExtractionReviewTable';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {RenameEntryDialog, type EntryIdentityChanges} from './AddEntryDialog';
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
@@ -32,6 +33,8 @@ import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/
 // =================== INTERFACES ===================
 
 interface InstanceCardProps {
+  presentation?: 'review-table' | 'default';
+  review?: ReviewWorkspace;
   instance: ExtractionInstance;
   index: number;
   fields: ExtractionField[];
@@ -88,9 +91,9 @@ export function InstanceCard(props: InstanceCardProps) {
   );
 
   return (
-    <div className="bg-muted/30 rounded-lg border border-border/60 shadow-elev-card">
+    <div hidden={props.review?.navigation.focused && props.review.navigation.current?.instanceId !== instance.id} className={props.presentation === 'review-table' ? "bg-background" : "bg-muted/30 rounded-lg border border-border/60 shadow-elev-card"}>
         {/* Instance header */}
-      <div className="px-8 py-5 border-b border-border/40">
+      <div className={props.presentation === 'review-table' ? "px-2 py-1 border-b border-border/40" : "px-8 py-5 border-b border-border/40"}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1 min-w-0">
               {/* Number badge */}
@@ -140,28 +143,12 @@ export function InstanceCard(props: InstanceCardProps) {
       )}
 
         {/* Instance fields */}
-      <div className="bg-card rounded-b-lg px-2">
+      <div className={props.presentation === 'review-table' ? "bg-background" : "bg-card rounded-b-lg px-2"}>
+        {props.presentation === 'review-table' && props.review ? <ExtractionReviewTable instanceId={instance.id} fields={fields} values={values} onValueChange={props.onValueChange} aiSuggestions={props.aiSuggestions} getSuggestionsHistory={props.getSuggestionsHistory} review={props.review}/> : <>
         {fields.map(field => {
           const key = `${instance.id}_${field.id}`;
           const suggestion = props.aiSuggestions?.[key];
 
-            // Debug: log when suggestion is not found but should exist
-          if (process.env.NODE_ENV === 'development' && !suggestion) {
-              // Check if there are suggestions for other instances of the same field
-            const hasSuggestionsForField = Object.keys(props.aiSuggestions || {}).some(
-              k => k.endsWith(`_${field.id}`)
-            );
-            if (hasSuggestionsForField) {
-                console.warn(`[InstanceCard] Suggestion not found for ${key}, but there are suggestions for field ${field.id} in other instances`, {
-                instanceId: instance.id,
-                fieldId: field.id,
-                fieldName: field.name,
-                fieldLabel: field.label,
-                availableKeys: Object.keys(props.aiSuggestions || {}).filter(k => k.endsWith(`_${field.id}`))
-              });
-            }
-          }
-          
           return (
             <MemoizedFieldInput
               key={field.id}
@@ -191,6 +178,7 @@ export function InstanceCard(props: InstanceCardProps) {
             />
           );
         })}
+        </>}
       </div>
     </div>
   );

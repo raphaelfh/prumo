@@ -2,6 +2,24 @@
  * UI copy for extraction area. English only.
  */
 export const extraction = {
+    reviewQuestionColumn: 'Question',
+    reviewValueColumn: 'Extracted value',
+    reviewProposalColumn: 'AI proposal',
+    reviewFocusQuestion: 'Focus question',
+    reviewLeaveFocus: 'Leave focus',
+    reviewPreviousQuestion: 'Previous question',
+    reviewNextPendingQuestion: 'Next pending question',
+    reviewNoPreviousQuestion: 'There is no previous question.',
+    reviewNoPendingQuestion: 'There is no pending question ahead.',
+    reviewResetWidths: 'Reset column widths',
+    reviewUndoDecision: 'Undo latest local decision',
+    reviewNoUndoDecision: 'No confirmed local decision to undo.',
+    reviewSavingDecision: 'Wait for the current save to finish.',
+    reviewUndoTarget: 'Undo applies to {{question}}.',
+    reviewResumeDraft: 'Resume my retained draft',
+    reviewConflictContext: 'The review changed elsewhere. Your draft is retained and saving is paused. Resume only after reviewing the current state.',
+    reviewQuestionCount: '{{count}} questions',
+
     reviewCompareExtractions: 'Compare extractions',
     reviewSingleExtraction: 'Show one extraction',
     reviewPreviousExtraction: 'Previous extraction',

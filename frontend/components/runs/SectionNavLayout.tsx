@@ -48,7 +48,7 @@ function writeStoredOpen(open: boolean): void {
 /** For a caller outside the layout: the header's "Review N pending suggestions". */
 export interface SectionNavHandle {
   /** Opens a section and scrolls to it, exactly as picking it in the rail does. */
-  revealSection: (id: string) => void;
+  revealSection: (id: string, focusQuestion?: boolean) => void;
 }
 
 export interface SectionNavLayoutProps {
@@ -60,11 +60,20 @@ export interface SectionNavLayoutProps {
   /** The form. Its column is the only region the jump walks. */
   children: ReactNode;
   ref?: Ref<SectionNavHandle>;
+  reviewRef?: Ref<SectionNavHandle>;
+  guideOpen?: boolean;
+  guideOverlay?: boolean;
+  onGuideOpenChange?: (open: boolean) => void;
+  toolbar?: ReactNode;
+  onReviewSectionSelect?: (id: string) => void;
 }
 
-export function SectionNavLayout({ items, activeId, onSelect, onActivate, children, ref }: SectionNavLayoutProps) {
-  const [railOpen, setRailOpen] = useState(readStoredOpen);
+export function SectionNavLayout({ items, activeId, onSelect, onActivate, children, ref, reviewRef, guideOpen, guideOverlay, onGuideOpenChange, toolbar, onReviewSectionSelect }: SectionNavLayoutProps) {
+  const [storedRailOpen, setRailOpen] = useState(readStoredOpen);
+  const railOpen = guideOpen ?? storedRailOpen;
+  const review = guideOpen !== undefined;
   const toggleRail = () => {
+    if (review) {onGuideOpenChange?.(!railOpen); return;}
     writeStoredOpen(!railOpen);
     setRailOpen(!railOpen);
   };
@@ -74,12 +83,14 @@ export function SectionNavLayout({ items, activeId, onSelect, onActivate, childr
     isOpen: (id, byDefault) => openById[id] ?? byDefault,
     setOpen: (id, open) => setOpenById((prev) => ({ ...prev, [id]: open })),
   };
-  const revealSection = (id: string) => {
+  const revealSection = (id: string, focusQuestion = true) => {
     onActivate?.(id);
     sectionOpen.setOpen(id, true);
     onSelect(id);
+    if (focusQuestion) onReviewSectionSelect?.(id);
   };
   useImperativeHandle(ref, () => ({ revealSection }));
+  useImperativeHandle(reviewRef, () => ({ revealSection }));
 
   const { readOnly } = useRunEditability();
   const formColumnRef = useRef<HTMLDivElement>(null);
@@ -110,15 +121,17 @@ export function SectionNavLayout({ items, activeId, onSelect, onActivate, childr
 
   return (
     <SectionOpenContext.Provider value={sectionOpen}>
-      <div className={cn('flex', railOpen ? 'gap-4' : 'gap-1.5')}>
+      <div className={cn('relative flex min-w-0', railOpen && !guideOverlay ? (review ? 'gap-2' : 'gap-4') : review ? 'gap-0' : 'gap-1.5')}>
         {/* One toggle element in both states, so keyboard focus survives the switch. */}
-        <div
+        {(!review || railOpen) && <div
           className={cn(
-            'sticky top-0 flex flex-col self-start border-r border-border/40',
-            railOpen ? 'w-[184px] bg-muted/30 py-2' : 'w-8 items-center py-1',
+            'flex flex-col self-start border-r border-border/40',
+            review && 'shrink-0',
+            guideOverlay ? 'absolute left-0 top-10 z-30 max-h-[70vh] overflow-y-auto bg-background shadow-elev-header' : 'sticky top-0',
+            railOpen ? (review ? 'w-[160px] py-2' : 'w-[184px] bg-muted/30 py-2') : 'w-8 items-center py-1',
           )}
         >
-          <div className={cn(railOpen ? 'px-1.5 pb-1' : 'pb-0.5')}>
+          {!review && <div className={cn(railOpen ? 'px-1.5 pb-1' : 'pb-0.5')}>
             <IconButton
               label={toggleLabel}
               shortcut={TOGGLE_KEYS}
@@ -128,16 +141,18 @@ export function SectionNavLayout({ items, activeId, onSelect, onActivate, childr
               className={cn(railOpen && 'text-foreground')}
               icon={<ListTree strokeWidth={1.5} />}
             />
-          </div>
+          </div>}
           <SectionNavRail
+            presentation={review ? 'review-table' : 'default'}
             compact={!railOpen}
             items={items}
             activeId={activeId}
-            onSelect={revealSection}
+            onSelect={id => revealSection(id)}
             onJumpToNextPending={jumpToNextPending}
           />
-        </div>
+        </div>}
         <div ref={formColumnRef} className="min-w-0 flex-1">
+          {toolbar}
           {children}
         </div>
       </div>
