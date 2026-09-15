@@ -8,6 +8,7 @@ from app.models.extraction import ExtractionEvidence
 from app.models.extraction_attempt import ExtractionAttempt
 from app.models.extraction_workflow import ExtractionProposalRecord
 from tests.integration.conftest import SEED
+from tests.integration.test_extraction_attempt_repository import create as create_attempt
 from tests.integration.test_extraction_attempt_repository import graph as attempt_graph
 from tests.integration.test_section_extraction_evidence import _build_run_in_extract, _make_service
 
@@ -303,6 +304,146 @@ async def test_lifecycle_closure_during_llm_prevents_results(graph, _engine, mon
             )
         ).all()
     )
+
+
+async def _attempt_extraction_with_llm_side_effect(graph, _engine, monkeypatch, side_effect):
+    """Run one attempt-owned section extraction; ``side_effect`` commits in another
+    session while the model call is in flight. Returns the outcome and the counts."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from sqlalchemy import func, text
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.llm.extractor import LlmUsage
+    from app.models.extraction import ExtractionInstance
+    from app.schemas.llm_target import LlmTarget
+    from app.services import section_extraction_service as ses
+    from app.services.run_engine_freeze import freeze_attempt_engine
+
+    db, scope, iid, _ = graph
+    entity_id = (await db.get(ExtractionInstance, iid)).entity_type_id
+    attempt, _ = await create_attempt(db, scope)
+    await freeze_attempt_engine(db, attempt.id, LlmTarget(provider="openai", model="gpt-5.6-luna"))
+    await db.commit()
+    member_query = text("SELECT public.is_project_member(:pid, :uid)")
+    member_args = {"pid": scope.project_id, "uid": SEED.primary_profile}
+    assert await db.scalar(member_query, member_args)  # precondition: a member at kickoff
+    sessions = async_sessionmaker(_engine, expire_on_commit=False)
+    llm_calls = 0
+
+    async def extract(**_kwargs):
+        nonlocal llm_calls
+        llm_calls += 1
+        async with sessions() as other:
+            await side_effect(other, scope)
+            await other.commit()
+        return MagicMock(), LlmUsage()
+
+    monkeypatch.setattr(ses, "build_model", lambda *_a, **_kw: MagicMock())
+    monkeypatch.setattr(ses, "extract_structured", extract)
+    monkeypatch.setattr(
+        ses,
+        "dump_extraction",
+        lambda _: {
+            "value": {
+                "value": "late",
+                "status": "found",
+                "evidence": [{"text": "late citation", "page_number": 1}],
+            }
+        },
+    )
+    monkeypatch.setattr(
+        ses.SectionExtractionService, "_assemble_prompt_text", AsyncMock(return_value="article")
+    )
+    service = ses.SectionExtractionService(
+        db,
+        str(SEED.primary_profile),
+        MagicMock(),
+        "authority-recheck",
+        attempt_id=attempt.id,
+        owns_transactions=True,
+    )
+    try:
+        outcome = await service.extract_section(
+            project_id=scope.project_id,
+            article_id=scope.article_id,
+            template_id=scope.template_id,
+            entity_type_id=entity_id,
+            run_id=scope.run_id,
+        )
+    except Exception as exc:  # the caller asserts the exact error
+        outcome = exc
+    await db.rollback()
+    assert llm_calls == 1  # the side effect really landed mid-call, after kickoff
+
+    async def count(model, *where):
+        return await db.scalar(select(func.count()).select_from(model).where(*where))
+
+    return outcome, {
+        "proposals": await count(
+            ExtractionProposalRecord, ExtractionProposalRecord.run_id == scope.run_id
+        ),
+        "evidence": await count(ExtractionEvidence, ExtractionEvidence.run_id == scope.run_id),
+        "instances": await count(
+            ExtractionInstance, ExtractionInstance.entity_type_id == entity_id
+        ),
+    }
+
+
+async def test_attempt_result_is_written_when_authority_holds(graph, _engine, monkeypatch):
+    async def nothing(_other, _scope):
+        return None
+
+    outcome, counts = await _attempt_extraction_with_llm_side_effect(
+        graph, _engine, monkeypatch, nothing
+    )
+    assert outcome.suggestions_created == 1
+    assert counts == {"proposals": 1, "evidence": 1, "instances": 1}
+
+
+async def test_membership_revoked_during_llm_prevents_results(graph, _engine, monkeypatch):
+    from sqlalchemy import text
+
+    from app.core.error_handler import AuthorizationError
+
+    async def revoke(other, scope):
+        # A project must retain a manager, so another one takes over first.
+        await other.execute(
+            text(
+                "INSERT INTO project_members(project_id,user_id,role) VALUES (:pid,:uid,'manager')"
+            ),
+            {"pid": scope.project_id, "uid": SEED.outsider_profile},
+        )
+        await other.execute(
+            text("DELETE FROM project_members WHERE project_id=:pid AND user_id=:uid"),
+            {"pid": scope.project_id, "uid": SEED.primary_profile},
+        )
+
+    outcome, counts = await _attempt_extraction_with_llm_side_effect(
+        graph, _engine, monkeypatch, revoke
+    )
+    assert isinstance(outcome, AuthorizationError), outcome
+    assert "Project membership is required" in str(outcome)
+    assert counts == {"proposals": 0, "evidence": 0, "instances": 1}
+
+
+async def test_run_deleted_during_llm_prevents_results(graph, _engine, monkeypatch):
+    from sqlalchemy import text
+
+    from app.models.extraction import ExtractionRun
+    from app.services.extraction_proposal_service import InvalidProposalError
+
+    async def delete_run(other, scope):
+        await other.execute(text("DELETE FROM extraction_runs WHERE id=:id"), {"id": scope.run_id})
+
+    outcome, counts = await _attempt_extraction_with_llm_side_effect(
+        graph, _engine, monkeypatch, delete_run
+    )
+    db, scope, _, _ = graph
+    assert isinstance(outcome, InvalidProposalError), outcome
+    assert f"Run {scope.run_id} not found" in str(outcome)
+    assert await db.get(ExtractionRun, scope.run_id) is None
+    assert counts == {"proposals": 0, "evidence": 0, "instances": 1}
 
 
 async def test_synchronous_generation_preserves_caller_rollback(graph, monkeypatch):
