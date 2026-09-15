@@ -7,40 +7,16 @@ import type {PDFSource} from './source';
 export type PageRotation = 0 | 90 | 180 | 270;
 
 /**
- * The PDF engine — abstracts the underlying rendering library.
- *
- * Phase 1b implements this against pdfjs-dist (v6). A future plan may
- * implement it against PDFium-WASM (EmbedPDF or similar). Consumers
- * never see the underlying library directly.
+ * The PDF engine — abstracts the rendering library. The app ships one
+ * implementation, pdfjs-dist (`engines/pdfjs`); `engines/mock` drives tests.
  */
 export interface PDFEngine {
-  /**
-   * Load a PDF document. Returns a handle whose lifecycle is owned by
-   * the caller — call `destroy()` on the handle when no longer needed.
-   */
-  load(source: PDFSource, opts?: LoadOptions): Promise<PDFDocumentHandle>;
-
-  /**
-   * Release engine-level resources (e.g., PDF.js worker threads).
-   * Outstanding document handles are NOT destroyed implicitly — the
-   * caller is responsible for destroying handles before destroying
-   * the engine. Idempotent.
-   */
-  destroy(): void;
-}
-
-export interface LoadOptions {
-  withCredentials?: boolean;
-  httpHeaders?: Record<string, string>;
-  onProgress?: (loaded: number, total: number) => void;
+  /** Load a PDF document. The caller owns the handle and calls `destroy()` on it. */
+  load(source: PDFSource): Promise<PDFDocumentHandle>;
 }
 
 export interface PDFDocumentHandle {
   readonly numPages: number;
-  /** Stable identifier from the PDF — useful for cache keys. */
-  readonly fingerprint: string;
-  metadata(): Promise<PDFMetadata>;
-  outline(): Promise<OutlineNode[]>;
   getPage(pageNumber: number): Promise<PDFPageHandle>;
   /** Release engine resources. Idempotent. */
   destroy(): void;
@@ -85,24 +61,6 @@ export interface RenderResult {
   width: number;
   /** Rendered pixel height. */
   height: number;
-}
-
-export interface PDFMetadata {
-  title?: string;
-  author?: string;
-  subject?: string;
-  keywords?: string;
-  creator?: string;
-  producer?: string;
-  creationDate?: Date;
-  modificationDate?: Date;
-}
-
-export interface OutlineNode {
-  title: string;
-  /** Target page (1-indexed) or null if the entry has no destination. */
-  page: number | null;
-  children: OutlineNode[];
 }
 
 export interface TextContent {

@@ -32,26 +32,11 @@ describe('pdfJsEngine.load', () => {
   let doc: PDFDocumentHandle;
 
   beforeAll(async () => {
-    doc = await pdfJsEngine.load({kind: 'data', data: fixtureBytes});
+    doc = await pdfJsEngine.load({kind: 'data', data: fixtureBytes.slice()});
   });
 
   it('reports the correct number of pages', () => {
     expect(doc.numPages).toBe(3);
-  });
-
-  it('exposes a non-empty fingerprint', () => {
-    expect(doc.fingerprint.length).toBeGreaterThan(0);
-  });
-
-  it('returns metadata (may be empty for synthetic PDFs)', async () => {
-    const meta = await doc.metadata();
-    expect(meta).toBeTypeOf('object');
-  });
-
-  it('returns an empty outline for a PDF with no bookmarks', async () => {
-    const outline = await doc.outline();
-    expect(Array.isArray(outline)).toBe(true);
-    expect(outline).toHaveLength(0);
   });
 
   it('getPage returns a handle with size in PDF user space', async () => {
@@ -70,6 +55,15 @@ describe('pdfJsEngine.load', () => {
     // The first item's text should mention 'Page 1' since we drew that
     const allText = tc.items.map((i) => i.text).join('');
     expect(allText).toMatch(/Page 1/);
+  });
+
+  it('resolves a lazy source before loading', async () => {
+    const lazy = await pdfJsEngine.load({
+      kind: 'lazy',
+      load: async () => ({kind: 'data', data: fixtureBytes.slice()}),
+    });
+    expect(lazy.numPages).toBe(3);
+    lazy.destroy();
   });
 });
 
