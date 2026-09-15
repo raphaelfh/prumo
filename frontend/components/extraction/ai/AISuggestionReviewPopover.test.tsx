@@ -398,6 +398,72 @@ describe('AISuggestionReviewPopover — ran-by run headers (D3)', () => {
     await screen.findAllByText('Retrospective cohort');
     expect(screen.queryByText(/Run by Carla/)).not.toBeInTheDocument();
   });
+
+  // Any project member can own an attempt on the same live run, so one run group
+  // can hold versions by different runners. A header naming the newest owner
+  // would attribute the older versions to the wrong person (constitution §IX).
+  const mixedOwnerRun = [
+    v({ id: 'p-bruno', value: 'Cohort B', extractionAttemptId: 'attempt-2', generationSnapshot: { ranByName: 'Bruno' }, timestamp: new Date('2026-04-28T11:00:00Z') }),
+    v({ id: 'p-ana', value: 'Cohort A', extractionAttemptId: 'attempt-1', generationSnapshot: { ranByName: 'Ana' } }),
+    v({ id: 'p-legacy', value: 'Cohort L', timestamp: new Date('2026-04-28T09:00:00Z') }),
+  ];
+
+  /** The nearest ancestor of `el` that holds a version value — its version row. */
+  function versionRowOf(el: HTMLElement): HTMLElement {
+    let node: HTMLElement | null = el;
+    while (node && !/Cohort [ABL]/.test(node.textContent ?? '')) node = node.parentElement;
+    if (!node) throw new Error('label is not inside a version row');
+    return node;
+  }
+
+  it('a mixed-owner run names each version by its own runner, never one header for all', async () => {
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => mixedOwnerRun}
+          selectedProposalId="p-ana"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Cohort A');
+
+    // No run header speaks for the group: a header carries the run timestamp.
+    expect(screen.queryByText(/Run by \w+ · /)).not.toBeInTheDocument();
+
+    const anaRow = versionRowOf(screen.getByText('Run by Ana'));
+    expect(anaRow).toHaveTextContent('Cohort A');
+    expect(anaRow).not.toHaveTextContent(/Cohort [BL]/);
+
+    const brunoRow = versionRowOf(screen.getByText('Run by Bruno'));
+    expect(brunoRow).toHaveTextContent('Cohort B');
+    expect(brunoRow).not.toHaveTextContent(/Cohort [AL]/);
+
+    // The attempt-less version names nobody.
+    expect(screen.getAllByText(/Run by/)).toHaveLength(2);
+  });
+
+  it('a mixed-owner run names no runner without the identity grant', async () => {
+    const user = userEvent.setup();
+    render(
+      <RunEditabilityProvider stage="consensus">
+        <AISuggestionReviewPopover
+          instanceId="i"
+          fieldId="f"
+          getHistory={async () => mixedOwnerRun}
+          selectedProposalId="p-ana"
+          trigger={<button>open</button>}
+        />
+      </RunEditabilityProvider>,
+    );
+    await user.click(screen.getByText('open'));
+    await screen.findByText('Cohort A');
+    expect(screen.queryByText(/Ana|Bruno/)).not.toBeInTheDocument();
+  });
 });
 
 describe('AISuggestionReviewPopover — pin not in loaded history (D5)', () => {
@@ -539,7 +605,9 @@ describe('AISuggestionReviewPopover — per-version engine (contract)', () => {
     await user.click(screen.getByRole('button', {name: /reviewDetails|details/i}));
     expect(await screen.findByText(/claude-5-opus/)).toBeInTheDocument();
 
-    // The group header names the runner from the attempt-owned snapshot.
-    expect(screen.getAllByText(/Run by Carla/).length).toBeGreaterThan(0);
+    // One runner owns both versions: the group header names them once, and no
+    // row repeats it.
+    expect(screen.getAllByText(/Run by Carla/)).toHaveLength(1);
+    expect(screen.getByText(/Run by Carla · /)).toBeInTheDocument();
   });
 });
