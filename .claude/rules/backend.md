@@ -20,7 +20,10 @@ service, or the entity has several distinct query shapes. Otherwise inline
 
 `api → services → repositories → models`. Endpoints never touch the
 DB or return ORM objects; services never import api or return HTTP
-objects; repositories never contain business logic.
+objects; repositories never contain business logic. Support packages
+(`core`, `utils`, `domain`, `schemas`, `llm`, `infrastructure`) never
+import a layer — a schema re-exporting a model launders `api → models`.
+A new top-level `app/` package must be classified in the gate, or it fails.
 
 ## Migrations
 
