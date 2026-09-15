@@ -15,12 +15,15 @@ interface ProposalCardProps extends SuggestionFieldContext {
   ordinal: number;
   latest: boolean;
   accepted: boolean;
+  /** Any decision or save is in flight: the check ignores clicks but is never swapped to `disabled`. */
   saving: boolean;
+  /** This proposal is the in-flight decision. */
+  pending?: boolean;
   readOnly?: boolean;
   onToggle: (proposal: AISuggestion) => void;
 }
 
-export function ProposalCard({proposal, ordinal, latest, accepted, saving, readOnly, onToggle, ...field}: ProposalCardProps) {
+export function ProposalCard({proposal, ordinal, latest, accepted, saving, pending, readOnly, onToggle, ...field}: ProposalCardProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [activeRank, setActiveRank] = useState<number | null>(null);
   const {locate, isAvailable} = useReaderLocate();
@@ -36,7 +39,7 @@ export function ProposalCard({proposal, ordinal, latest, accepted, saving, readO
         {snapshot?.model && <span className="break-all">{snapshot.model}</span>}
         <time dateTime={Number.isNaN(proposal.timestamp.getTime()) ? undefined : proposal.timestamp.toISOString()}>{Number.isNaN(proposal.timestamp.getTime()) ? t('extraction', 'historyInvalidDate') : proposal.timestamp.toLocaleString()}</time>
       </div>
-      {!readOnly && <IconButton icon={<Check />} label={t('extraction', accepted ? 'reviewUnacceptExtraction' : 'reviewAcceptExtraction')} aria-pressed={accepted} disabled={saving} onClick={() => onToggle(proposal)} className={cn('rounded-full', accepted && 'bg-success/10 text-success shadow-sm hover:text-success')}/>}
+      {!readOnly && <IconButton icon={<Check />} label={t('extraction', accepted ? 'reviewUnacceptExtraction' : 'reviewAcceptExtraction')} aria-pressed={accepted} aria-disabled={saving || undefined} aria-busy={pending || undefined} onClick={() => {if (!saving) onToggle(proposal);}} className={cn('rounded-full', accepted && 'bg-success/10 text-success shadow-sm hover:text-success', pending && 'animate-pulse ring-1 ring-success/60 motion-reduce:animate-none')}/>}
     </header>
     <p className="whitespace-pre-wrap break-words font-medium">{kind ? t('extraction', kind === 'marker' ? 'reviewNoInformation' : 'reviewNoValue') : formatFullSuggestionValue(proposal.value, field)}</p>
     {proposal.reasoning && <section className="space-y-1"><h3 className="text-xs text-muted-foreground">{t('extraction', 'aiRationaleLabel')}</h3><p className="whitespace-pre-wrap break-words">{proposal.reasoning}</p></section>}
