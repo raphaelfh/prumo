@@ -2,6 +2,7 @@
  * UI copy for extraction area. English only.
  */
 export const extraction = {
+    reviewDecisionConflict: 'Could not save this decision. Refresh the current review state and try again.',
     // HeaderPDFControls
     // HeaderNavigation
     back: 'Back',

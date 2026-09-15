@@ -45,7 +45,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { writeRunFieldValue } from '@/services/extractionRunService';
+import { writeRunFieldValue, type WriteProposalParams } from '@/services/extractionRunService';
 import { t } from '@/lib/copy';
 import { extractValueForSave } from '@/lib/validations/selectOther';
 import { fingerprintCoord, selectDirtyEntries } from '@/lib/extraction/autosaveDirty';
@@ -89,6 +89,10 @@ export interface UseAutoSaveProposalsProps {
    * selection event is recorded.
    */
   baselineLinkByKey?: Record<string, string>;
+  /** Extraction workspace writer; QA retains the default writer. */
+  writeValue?: (params: WriteProposalParams) => Promise<void>;
+  /** Optional authenticated workspace lifetime; never sent to the API. */
+  scopeKey?: object;
 }
 
 export interface UseAutoSaveProposalsReturn {
@@ -97,7 +101,10 @@ export interface UseAutoSaveProposalsReturn {
   error: string | null;
   hasUnsavedChanges: boolean;
   /** Cancel any pending debounce and POST every dirty coord immediately. */
-  saveNow: () => Promise<void>;
+  saveNow: (scope?: { instanceId: string; fieldId: string }) => Promise<void>;
+  /** Explicit decisions share autosave's queue, including lifecycle flushes. */
+  runExclusive: (operation: () => Promise<void>) => Promise<void>;
+  acknowledge: (key: string, value: unknown, link?: string | null) => void;
 }
 
 /**
@@ -122,6 +129,7 @@ function isWritableStage(stage?: string | null): boolean {
  * in place rather than remounting this hook.
  */
 interface AckCache {
+  scopeKey?: object;
   runId: string | null | undefined;
   byKey: Record<string, string>;
 }
@@ -145,6 +153,7 @@ export function useAutoSaveProposals(
   // read the current commit's values.
   const valuesRef = useRef(values);
   const runIdRef = useRef(runId);
+  const scopeKeyRef = useRef(props.scopeKey);
   const enabledRef = useRef(enabled);
   const stageRef = useRef(stage);
   // Server-persisted baseline (see prop docs). Mirrored in a ref so the
@@ -155,6 +164,7 @@ export function useAutoSaveProposals(
   useEffect(() => {
     valuesRef.current = values;
     runIdRef.current = runId;
+    scopeKeyRef.current = props.scopeKey;
     enabledRef.current = enabled;
     stageRef.current = stage;
     baselineRef.current = baselineValues ?? {};
@@ -162,14 +172,16 @@ export function useAutoSaveProposals(
     baselineLinkRef.current = baselineLinkByKey ?? {};
   });
 
+  const revisionsRef = useRef<Record<string, number>>({});
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Stringified last successful write per `${instanceId}_${fieldId}`, tagged
   // with the run it describes — the diff check against the current values
   // map. The ref is the live cache updated per write; the state mirror below
   // lets render-phase consumers (dirty badge, hasUnsavedChanges) recompute
   // without reading a ref during render.
-  const ackRef = useRef<AckCache>({ runId, byKey: {} });
-  const [ackState, setAckState] = useState<AckCache>({ runId, byKey: {} });
+  const ackRef = useRef<AckCache>({ runId, scopeKey: props.scopeKey, byKey: {} });
+  const [ackState, setAckState] = useState<AckCache>({ runId, scopeKey: props.scopeKey, byKey: {} });
   // React state is async, so ``saveState === 'saving'`` cannot be used
   // as a synchronous lock across overlapping ``performSave`` invocations.
   const activeSavePromiseRef = useRef<Promise<boolean> | null>(null);
@@ -182,7 +194,9 @@ export function useAutoSaveProposals(
   // during render (refs must not be written there) — the render path reads
   // ``acks`` below.
   const acksFor = (forRunId: string | null | undefined): Record<string, string> => {
-    if (ackRef.current.runId !== forRunId) ackRef.current = { runId: forRunId, byKey: {} };
+    if (ackRef.current.runId !== forRunId || ackRef.current.scopeKey !== scopeKeyRef.current) {
+      ackRef.current = { runId: forRunId, scopeKey: scopeKeyRef.current, byKey: {} };
+    }
     return ackRef.current.byKey;
   };
 
@@ -195,7 +209,8 @@ export function useAutoSaveProposals(
       baselineLinkRef.current,
     );
 
-  const performSave = (): Promise<boolean> => {
+  const performSave = (scope?: { instanceId: string; fieldId: string }): Promise<boolean> => {
+    const revisions = { ...revisionsRef.current };
     // Capture the save context SYNCHRONOUSLY at invocation. The run-switch
     // flush below runs in an effect cleanup; by the time the deferred
     // microtask executes, the ref-sync effect has already re-pointed the
@@ -204,6 +219,8 @@ export function useAutoSaveProposals(
     // itself is still computed after any in-flight batch settles, against
     // ``runAcks`` below.
     const currentRunId = runIdRef.current;
+    const currentScopeKey = scopeKeyRef.current;
+    const isCurrent = () => runIdRef.current === currentRunId && scopeKeyRef.current === currentScopeKey;
     const currentEnabled = enabledRef.current;
     const currentStage = stageRef.current;
     const currentValues = valuesRef.current;
@@ -241,16 +258,21 @@ export function useAutoSaveProposals(
         currentLinkByKey,
         currentBaselineLink,
       );
-      if (dirty.length === 0) return true;
+      const scopedDirty = dirty.filter(([key]) =>
+        (!scope || key === `${scope.instanceId}_${scope.fieldId}`) &&
+        (revisions[key] ?? 0) === (revisionsRef.current[key] ?? 0));
+      if (scopedDirty.length === 0) return true;
 
-      setSaveState('saving');
-      setError(null);
+      if (isCurrent()) {
+        setSaveState('saving');
+        setError(null);
+      }
 
       // ``Promise.allSettled`` so a single failed write does not abort the
       // others mid-flight; otherwise their ``runAcks`` updates race the
       // error path and leave the diff map inconsistent.
       const batchPromise = Promise.allSettled(
-        dirty.map(([key, valueData]) => {
+        scopedDirty.map(([key, valueData]) => {
           const [instanceId, fieldId] = key.split('_');
           const {
             value: actualValue,
@@ -269,7 +291,7 @@ export function useAutoSaveProposals(
           // run kinds — the run view's reviewer-scoped read
           // (``current_values``) holds on extraction AND QA. The stage gate
           // lives in ``isWritableStage`` above.
-          return writeRunFieldValue({
+          return (props.writeValue ?? writeRunFieldValue)({
             runId: currentRunId,
             instanceId,
             fieldId,
@@ -290,7 +312,7 @@ export function useAutoSaveProposals(
         // ref even when some writes failed. Tagged with the run these writes
         // addressed, so a straggler from the outgoing run cannot make the
         // badge vouch for the new one (the render view filters on it).
-        setAckState({ runId: currentRunId, byKey: { ...runAcks } });
+        if (isCurrent()) setAckState({ runId: currentRunId, scopeKey: currentScopeKey, byKey: { ...runAcks } });
 
         // Any acknowledged write moved the server, so the save clock advances
         // even when a sibling failed: server-DERIVED reads key off it (the QA
@@ -299,7 +321,7 @@ export function useAutoSaveProposals(
         // up in the computed overall. The error surface is untouched —
         // SaveStatusBadge returns on `saveState === 'error'` before it reads
         // the timestamp.
-        if (results.some((r) => r.status === 'fulfilled')) setLastSavedAt(new Date());
+        if (isCurrent() && results.some((r) => r.status === 'fulfilled')) setLastSavedAt(new Date());
 
         const failures = results.filter(
           (r): r is PromiseRejectedResult => r.status === 'rejected',
@@ -311,7 +333,7 @@ export function useAutoSaveProposals(
           throw new Error(message);
         }
 
-        setSaveState('saved');
+        if (isCurrent()) setSaveState('saved');
       });
 
       return batchPromise.then(
@@ -322,9 +344,11 @@ export function useAutoSaveProposals(
               ? err.message
               : t('extraction', 'errors_autoSaveFailed');
           console.error('Auto-save error:', err);
-          setError(message);
-          setSaveState('error');
-          toast.error(t('extraction', 'errors_autoSaveFailed'));
+          if (isCurrent()) {
+            setError(message);
+            setSaveState('error');
+            toast.error(t('extraction', 'errors_autoSaveFailed'));
+          }
           // Resolve to `false` (not reject) so fire-and-forget callers
           // (debounce / unmount / pagehide) never raise an unhandled
           // rejection; `saveNow` reads this flag and rejects for callers that
@@ -359,7 +383,7 @@ export function useAutoSaveProposals(
   // reads empty, so the badge never vouches for this run using the previous
   // one's writes. Derived, so it is already correct in the render that swaps
   // the run — no reset commit, no window where ref and state disagree.
-  const acks = ackState.runId === runId ? ackState.byKey : NO_ACKS;
+  const acks = ackState.runId === runId && ackState.scopeKey === props.scopeKey ? ackState.byKey : NO_ACKS;
   if (valuesKey !== prevValuesKey) {
     setPrevValuesKey(valuesKey);
     if (
@@ -417,7 +441,7 @@ export function useAutoSaveProposals(
     return () => {
       void performSave();
     };
-  }, [performSave, runId]);
+  }, [performSave, runId, props.scopeKey]);
 
   // (3) Survive tab close + mobile background. ``pagehide`` is the
   // cross-platform unload signal; ``beforeunload`` is unreliable on
@@ -438,12 +462,12 @@ export function useAutoSaveProposals(
     };
   }, [performSave]);
 
-  const saveNow = async (): Promise<void> => {
+  const saveNow = async (scope?: { instanceId: string; fieldId: string }): Promise<void> => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = undefined;
     }
-    const ok = await performSave();
+    const ok = await performSave(scope);
     if (!ok) {
       // Reject so callers that gate a run-stage advance on a successful flush
       // (onMarkReady / onOpenConsensus `.catch(() => false)`) actually block
@@ -464,5 +488,28 @@ export function useAutoSaveProposals(
       baselineLinkByKey ?? {},
     ).length > 0;
 
-  return { saveState, lastSavedAt, error, hasUnsavedChanges, saveNow };
+  const acknowledge = (key: string, value: unknown, link?: string | null) => {
+    revisionsRef.current[key] = (revisionsRef.current[key] ?? 0) + 1;
+    const byKey = acksFor(runId);
+    byKey[key] = fingerprintCoord(value, link);
+    valuesRef.current = { ...valuesRef.current, [key]: value };
+    linkByKeyRef.current = { ...linkByKeyRef.current };
+    if (link) linkByKeyRef.current[key] = link;
+    else delete linkByKeyRef.current[key];
+    setAckState({runId, scopeKey: props.scopeKey, byKey: {...byKey}});
+    setLastSavedAt(new Date());
+  };
+
+  const runExclusive = (operation: () => Promise<void>): Promise<void> => {
+    const pending = activeSavePromiseRef.current ?? Promise.resolve(true);
+    const result = pending.then(ok => ok ? operation() : Promise.reject(new Error('autosave failed')));
+    const tracked = result.then(() => true, () => false);
+    activeSavePromiseRef.current = tracked;
+    void tracked.then(() => {
+      if (activeSavePromiseRef.current === tracked) activeSavePromiseRef.current = null;
+    });
+    return result;
+  };
+
+  return { saveState, lastSavedAt, error, hasUnsavedChanges, saveNow, acknowledge, runExclusive };
 }

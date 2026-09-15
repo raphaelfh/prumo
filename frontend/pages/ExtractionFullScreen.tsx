@@ -46,7 +46,7 @@ import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
 import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
-import {useAutoSaveProposals} from '@/hooks/runs';
+import {useProposalDecision} from '@/hooks/extraction/useProposalDecision';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {countActionableSuggestions} from '@/lib/ai-extraction/suggestionUtils';
@@ -216,6 +216,7 @@ export default function ExtractionFullScreen() {
     values,
     loadedValues,
     updateValue,
+    reconcileValue,
     loading: valuesLoading,
     initialized: valuesInitialized,
     refresh: refreshValues,
@@ -411,21 +412,8 @@ export default function ExtractionFullScreen() {
     'extraction'
   );
 
-    // Hook for AI suggestions with callbacks to fill/clear field. Declared
-    // BEFORE useAutoSaveProposals: autosave consumes aiLinkByKey (below),
-    // which derives from this hook's sessionAdoption.
-  const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
-      // Fill field automatically when suggestion is accepted.
-      // NOTE: accepting makes NO backend call here. updateValue writes the
-      // value into form state and useAutoSaveProposals persists it as this
-      // reviewer's `edit` decision — carrying proposal_record_id via
-      // linkByKey (D0) so the adoption is traceable in consensus. The
-      // suggestion's status flip is optimistic; on reload the server
-      // re-resolves status from the caller's decisions. (refreshValues is
-      // deliberately avoided; it caused a full-page reload.)
-    updateValue(instanceId, fieldId, value);
-  };
-
+  // Suggestion reads remain shared with QA; editable extraction uses the
+  // confirmed writer below for acceptance and reversal.
   const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
       // Clear the field when a suggestion is rejected. Same as accept: no
       // direct backend call — updateValue writes null into form state and
@@ -438,8 +426,6 @@ export default function ExtractionFullScreen() {
     suggestions: aiSuggestions,
     sessionAdoption,
     suggestionsReady: aiSuggestionsReady,
-    acceptSuggestion,
-    selectSuggestion,
     rejectSuggestion,
     getSuggestionsHistory,
     refresh: refreshAISuggestions,
@@ -451,13 +437,12 @@ export default function ExtractionFullScreen() {
     // (no runId) lookup that immediately gets superseded by the
     // run-scoped one. Pure waste; same UX outcome.
     enabled: !!articleId && !!projectId && !!activeRunId,
-    onSuggestionAccepted: handleAISuggestionAccepted,
     onSuggestionRejected: handleAISuggestionRejected
   });
 
   // D0: coords whose value has a traceable AI basis — see useAiLinkMaps for
   // the layer semantics and the never-from-status invariant.
-  const { aiLinkByKey, persistedAiLinkByKey } = useAiLinkMaps({
+  const { persistedAiLinkByKey } = useAiLinkMaps({
     decisions: runDetail?.decisions,
     currentUserId,
     sessionAdoption,
@@ -474,17 +459,18 @@ export default function ExtractionFullScreen() {
     // stage. The hook flushes pending edits on unmount, on the in-place
     // run switch (article pager), ``pagehide``, and visibility changes so
     // navigating mid-debounce never drops a save.
-  const { saveState, lastSavedAt, saveNow } = useAutoSaveProposals({
+  const proposalDecisions = useProposalDecision({
+    reviewerId: currentUserId,
+    decisions: runDetail?.decisions,
+    onConfirmed: ({instanceId, fieldId}, value) => reconcileValue(instanceId, fieldId, value),
     runId: activeRunId,
     stage,
     values,
     // Server-loaded values are the baseline — opening a run must not re-POST
     // them as fresh proposals (the re-record-on-mount duplication).
     baselineValues: loadedValues,
-    // D0: stamp edit decisions with the accepted/selected AI proposal id;
-    // the persisted map is the link-side baseline (same-value adoptions
-    // still write — the human selection event is append-only recorded).
-    linkByKey: aiLinkByKey,
+    // Persisted links are the hydration baseline. The workspace writer clears
+    // the link on a manual edit and explicitly persists proposal selections.
     baselineLinkByKey: persistedAiLinkByKey,
     // Only the editable EXTRACT stage accepts autosave writes. Past that
     // (consensus, finalized, pending) the backend rejects writes, which
@@ -508,6 +494,17 @@ export default function ExtractionFullScreen() {
       // read-only via forceReadOnly, this is the flush-path belt).
       permissions.userRole !== 'viewer',
   });
+
+  const { saveState, lastSavedAt, saveNow } = proposalDecisions;
+  const selectSuggestion = async (instanceId: string, fieldId: string, id: string, value: unknown) => {
+    const field = entityTypes.flatMap(entity => entity.fields).find(item => item.id === fieldId);
+    await proposalDecisions.toggle({instanceId, fieldId, id, value,
+      allowsNoInformation: field?.allows_no_information !== false});
+  };
+  const acceptSuggestion = async (instanceId: string, fieldId: string) => {
+    const proposal = aiSuggestions[`${instanceId}_${fieldId}`];
+    if (proposal) await selectSuggestion(instanceId, fieldId, proposal.id, proposal.value);
+  };
 
     // "Finish extraction" (reviewer) — flush pending autosave, set the per-reviewer
     // ready flag (advisory; does NOT advance the run), then open the next article
