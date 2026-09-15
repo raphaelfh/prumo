@@ -19,7 +19,6 @@ const structured: RunProvenance = {
   tokensPrompt: 23710,
   tokensCompletion: 970,
   tokensTotal: 24680,
-  ranByName: 'raphael',
   promptVersion: '0b5b7ef9ab73',
   promptComposition: {
     sectionName: 'Source of Data',
@@ -30,6 +29,8 @@ const structured: RunProvenance = {
     llmCalls: 2,
   },
 };
+/** Runner identity is attempt-owned: it rides only the call's generation snapshot (spec §12.2). */
+const snapshot: RunProvenance = {model: 'gpt-4o-mini', ranByName: 'raphael'};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -44,12 +45,13 @@ describe('GenerationDetailsDialog', () => {
       // need the peer-identity grant (D3, fail-closed) — see the dedicated
       // case below for the provider-less behavior.
       <RunEditabilityProvider stage="extract" showPeerIdentity>
-        <GenerationDetailsDialog provenance={structured} open onOpenChange={() => {}} />
+        <GenerationDetailsDialog provenance={structured} generationSnapshot={snapshot} open onOpenChange={() => {}} />
       </RunEditabilityProvider>,
     );
     // Title + context
     expect(screen.getByText('How this was generated')).toBeInTheDocument();
     expect(screen.getByText(/Source of Data · raphael/)).toBeInTheDocument();
+    expect(screen.getByText('Ran by')).toBeInTheDocument();
     // Params
     expect(screen.getByText('Model')).toBeInTheDocument();
     expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument();
@@ -166,10 +168,21 @@ describe('GenerationDetailsDialog', () => {
   it('hides the Ran-by surfaces without the peer-identity grant (fail-closed)', () => {
     // Provider-less render = no grant: the runner's name must not appear in
     // the context pill nor as a "Ran by" params row (D3 display consistency).
-    render(<GenerationDetailsDialog provenance={structured} open onOpenChange={() => {}} />);
+    render(<GenerationDetailsDialog provenance={structured} generationSnapshot={snapshot} open onOpenChange={() => {}} />);
     expect(screen.queryByText(/raphael/)).not.toBeInTheDocument();
     expect(screen.queryByText('Ran by')).not.toBeInTheDocument();
     // Everything non-identity still renders.
+    expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument();
+  });
+
+  it('names no runner for a legacy attempt-less proposal, even from stale provenance identity', () => {
+    render(
+      <RunEditabilityProvider stage="consensus" showPeerIdentity>
+        <GenerationDetailsDialog provenance={{...structured, ranByName: 'stale runner'}} open onOpenChange={() => {}} />
+      </RunEditabilityProvider>,
+    );
+    expect(screen.queryByText(/stale runner/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Ran by')).not.toBeInTheDocument();
     expect(screen.getByText('gpt-4o-mini')).toBeInTheDocument();
   });
 });

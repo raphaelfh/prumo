@@ -99,6 +99,9 @@ function ArticleTextExpand({articleId}: {articleId: string}) {
 
 interface GenerationDetailsDialogProps {
   provenance: RunProvenance;
+  /** The call's immutable facts. Runner identity rides only here: the backend
+   *  resolves it from the attempt owner after the run reveals peers (spec §12.2). */
+  generationSnapshot?: RunProvenance;
   /** Threaded so a follow-up can lazily fetch the stored markdown. */
   articleId?: string;
   open: boolean;
@@ -107,6 +110,7 @@ interface GenerationDetailsDialogProps {
 
 export function GenerationDetailsDialog({
   provenance,
+  generationSnapshot,
   articleId,
   open,
   onOpenChange,
@@ -119,7 +123,7 @@ export function GenerationDetailsDialog({
   const composition = provenance.promptComposition;
   const contextParts = [
     composition?.sectionName,
-    showPeerIdentity ? provenance.ranByName : undefined,
+    showPeerIdentity ? generationSnapshot?.ranByName : undefined,
   ].filter(Boolean) as string[];
 
   return (
@@ -137,7 +141,8 @@ export function GenerationDetailsDialog({
         </DialogHeader>
 
         <DialogBody className="space-y-5">
-          <GenerationDetailsContent provenance={provenance} articleText={articleId ? <ArticleTextExpand articleId={articleId} /> : undefined} />
+          {/* The "Ran by" row names the snapshot's runner or none — never a provenance identity. */}
+          <GenerationDetailsContent provenance={{...provenance, ranByName: generationSnapshot?.ranByName}} articleText={articleId ? <ArticleTextExpand articleId={articleId} /> : undefined} />
         </DialogBody>
       </DialogContent>
     </Dialog>

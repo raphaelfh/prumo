@@ -354,9 +354,12 @@ describe('AISuggestionReviewPopover — verdict chip (Verified mode §5)', () =>
 });
 
 describe('AISuggestionReviewPopover — ran-by run headers (D3)', () => {
+  // Runner identity is attempt-owned: the backend resolves it onto the call's
+  // generation snapshot only after the run reveals peers (spec §12.2). A legacy
+  // attempt-less row never names a runner — not even from stale provenance.
   const historyWithRanBy = [
-    v({ id: 'p1', provenance: { ranByName: 'Carla' } }),
-    v({ id: 'p0', runId: 'run-legacy', timestamp: new Date('2026-04-27T09:00:00Z') }),
+    v({ id: 'p1', extractionAttemptId: 'attempt-1', generationSnapshot: { model: 'm', ranByName: 'Carla' }, provenance: { model: 'm' } }),
+    v({ id: 'p0', runId: 'run-legacy', timestamp: new Date('2026-04-27T09:00:00Z'), provenance: { ranByName: 'Legacy runner' } }),
   ];
 
   it('shows Run by {name} when the provider grants peer identity', async () => {
@@ -374,8 +377,9 @@ describe('AISuggestionReviewPopover — ran-by run headers (D3)', () => {
     );
     await user.click(screen.getByText('open'));
     expect(await screen.findByText(/Run by Carla/)).toBeInTheDocument();
-    // The legacy run group (no provenance) stays timestamp-only.
+    // The legacy run group (no attempt, no snapshot) stays timestamp-only.
     expect(screen.getByText(/04\/27\/2026/)).toBeInTheDocument();
+    expect(screen.queryByText(/Run by Legacy runner/)).not.toBeInTheDocument();
   });
 
   it('stays timestamp-only without the identity grant — including provider-less renders (fail-closed)', async () => {
@@ -497,13 +501,17 @@ describe('AISuggestionReviewPopover — per-version engine (contract)', () => {
     v({
       id: 'p2',
       value: 412,
-      provenance: {ranByName: 'Carla', model: 'claude-5-opus'},
+      extractionAttemptId: 'attempt-2',
+      generationSnapshot: {ranByName: 'Carla', model: 'claude-5-opus'},
+      provenance: {model: 'claude-5-opus'},
       timestamp: new Date('2026-04-28T11:00:00Z'),
     }),
     v({
       id: 'p1',
       value: 'Retrospective cohort',
-      provenance: {ranByName: 'Carla', model: 'gpt-5.6-luna'},
+      extractionAttemptId: 'attempt-1',
+      generationSnapshot: {ranByName: 'Carla', model: 'gpt-5.6-luna'},
+      provenance: {model: 'gpt-5.6-luna'},
     }),
   ];
 
@@ -531,7 +539,7 @@ describe('AISuggestionReviewPopover — per-version engine (contract)', () => {
     await user.click(screen.getByRole('button', {name: /reviewDetails|details/i}));
     expect(await screen.findByText(/claude-5-opus/)).toBeInTheDocument();
 
-    // Identity stays run-scoped and keeps rendering from the run half.
+    // The group header names the runner from the attempt-owned snapshot.
     expect(screen.getAllByText(/Run by Carla/).length).toBeGreaterThan(0);
   });
 });
