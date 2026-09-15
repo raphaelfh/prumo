@@ -194,7 +194,6 @@ export function QualityAssessmentInterface({ projectId }: Props) {
         <div className="flex min-h-0 flex-1 flex-col p-2">
           <div className="space-y-3">
             <HITLActiveTemplateBar
-              kind="quality_assessment"
               templates={templates}
               activeTemplate={null}
               onSelect={selectTemplate}
@@ -218,7 +217,6 @@ export function QualityAssessmentInterface({ projectId }: Props) {
       <div className="flex min-h-0 flex-1 flex-col p-2">
         <div className="shrink-0">
           <HITLActiveTemplateBar
-            kind="quality_assessment"
             templates={templates}
             activeTemplate={activeTemplate}
             onSelect={selectTemplate}
