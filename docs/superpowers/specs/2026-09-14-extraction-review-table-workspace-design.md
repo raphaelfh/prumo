@@ -41,8 +41,8 @@ creates three costs:
 - the relationship between a proposal, its reasoning, its citations, and the
   extraction that produced them is difficult to scan.
 
-The H prototype resolved the interaction direction, but production has one data
-contract mismatch. `ExtractionProposalService.record_proposal` currently treats
+The H prototype resolved the interaction direction, but production has data
+contract mismatches. `ExtractionProposalService.record_proposal` currently treats
 an equal value as an idempotent replay. A deliberate re-extraction can therefore
 reuse the old proposal while new evidence rows are attached to it, even if the
 new model, rationale, or citations differ. That cannot represent the card model
@@ -83,7 +83,7 @@ approved here.
 | Split workspace and right document pane | current extraction full-screen shell and `RunPdfContent` | Preserve the document on the right by default at desktop widths. |
 | Section extraction | `POST /api/v1/extraction/sections`, `SectionExtractionService`, Celery status polling | Reuse as the only AI kickoff scope. |
 | Typed field editors | `FieldValueEditor`, `DispositionRow` | Reuse inside table cells and focus mode. |
-| Column resizing | `useResizableTableColumns`, `ColumnResizeHandle` | Reuse the Articles interaction and persistence behavior. |
+| Column resizing | `useResizableTableColumns`, `ColumnResizeHandle` | Extend bounded sizing opt-in; preserve Articles defaults. |
 | Proposal history | `AISuggestionReviewPopover`, suggestion-history read service | Replace the popover presentation; retain and adapt its data loading. |
 | Per-proposal rationale and provenance | `extraction_proposal_records.rationale` and `.provenance` | Render on the owning extraction card. |
 | Multiple citations | `ExtractionEvidence`, capped at three, with rank and position | Render every stored citation with its own locate action. |
@@ -181,8 +181,11 @@ Column reordering is deliberately unavailable. The Question and Extracted value
 columns are resizable when the review pane is at least 900 px wide. The AI
 proposal column receives the remaining width.
 
-Use `useResizableTableColumns` and `ColumnResizeHandle`, including their pointer
-capture and keyboard behavior, rather than a prototype-specific drag handler.
+Use `useResizableTableColumns` and `ColumnResizeHandle`. Their current behavior
+is mouse dragging and keyboard arrows/Home/End. Pointer capture, per-column
+bounds, fit-to-pane allocation, coarse-pointer targets and double-click reset
+are new opt-in capabilities; preserve Articles default growing-table behavior
+and cover that consumer with regression tests.
 Persist widths under an extraction-workspace key scoped by user and template.
 Clamp each adjustable column to a useful minimum and to a maximum that leaves
 the proposal column operable. Double-clicking a handle resets that
@@ -228,8 +231,13 @@ horizontal overflow.
 ### 7.5 Action placement
 
 - AI kickoff exists only in the section header.
-- Proposal acceptance stays on the owning proposal card and in the quick-action
-  bar. Focus exists only in the quick-action bar.
+- Keep one-click acceptance in the AI proposal cell, even when collapsed. It
+  targets the displayed latest proposal. Each card also has its own check; the
+  quick bar targets the active carousel card (latest when none is selected).
+  Focus exists only in the quick-action bar.
+- When an older proposal is accepted and a newer one is pending, the row check
+  remains neutral; a quiet accepted-version indicator opens the older card,
+  whose check remains green.
 - There is no dedicated Actions column.
 - Icons have tooltips with a concise label and shortcut where applicable.
 - Selected actions use a subtle circular shadow with no border. Accepted uses a
@@ -273,7 +281,8 @@ Each card contains:
 - **Why this suggestion** for that extraction;
 - all citations stored for that proposal, ordered by rank;
 - one minimal icon-only **Locate in document** action per citation;
-- collapsible generation details sourced from that proposal's provenance;
+- collapsible immutable generation details captured for that proposal's own
+  generation call, never the latest section snapshot;
 - its own accept/unaccept check.
 
 The default view shows one card at a time with previous/next controls and an
@@ -296,17 +305,21 @@ Acceptance remains an append-only reviewer decision linked through
   coordinate links to that proposal and the displayed value still matches it.
 - The card and quick-bar check stay green after refresh because this state is
   derived from `RunDetailResponse.decisions`, not transient component state.
-- Clicking the green check again appends an `edit` decision restoring the
-  current reviewer's last decision before that acceptance. If none exists, it
-  appends an unresolved null value. It clears the AI link on the new decision.
-- A manual edit after acceptance naturally clears the accepted visual state
-  because the latest decision no longer represents adoption of that card.
-- There is no separate Dismiss action.
+- Clicking the green check again appends an `edit` restoring the immediately
+  preceding reviewer decision's complete typed payload, including disposition,
+  absence reason, units and multi-select codes. With no predecessor, use the
+  existing unresolved empty representation. Clear the new decision's AI link.
+- A manual edit clears accepted state; there is no separate Dismiss action.
 
-The client derives the restoration candidate from the ordered decisions already
-returned in run detail and passes it through the existing autosave decision
-path. The backend remains the source of truth and retains both the acceptance
-and its reversal in the audit trail.
+Derive restoration from run-detail decisions filtered to the current reviewer
+and `(run_id, instance_id, field_id)`, ordered by `(created_at, id)` ascending,
+matching deterministic backend latest-decision ordering. Flush and await pending
+autosave for that coordinate before accept/reverse; serialize its mutations.
+Failed autosave blocks acceptance and preserves the draft for retry. Disable
+repeat checks while saving; failed saves restore the previous confirmed visual
+state and expose retry. Refresh history after a stale-cache/conflict response.
+Accept A, then B, then reverse B restores A's typed value as an edit without an
+AI link, rather than silently re-accepting A. All decisions remain auditable.
 
 ## 11. Section AI extraction contract
 
@@ -335,12 +348,16 @@ The response and polling contract remain unchanged: `202 {job_id}` followed by
 The frontend tracks jobs by section key:
 
 ```text
-section:{entityTypeId}:{parentInstanceId?}
+{projectId}:{articleId}:{templateId}:{runId}:section:{entityTypeId}:{parentInstanceId?}
 ```
 
 Loading one section does not disable extraction actions for other sections.
 The active section's action remains disabled until its job reaches a terminal
-state.
+state. Coordinate-scoped state survives navigation and remount within the
+session. Article/template/run changes never display an old job on new coordinates.
+Unmount stops polling subscriptions, not the server job; returning resumes the
+known job. Completion invalidates only owning query-key-factory keys and never
+steals focus.
 
 The initiating icon becomes a spinner in place. Completion refreshes proposals
 without moving focus or opening the disclosure. Failure changes the same action
@@ -350,38 +367,83 @@ one after a confirmed terminal failure.
 
 ## 12. Extraction-attempt identity and persistence
 
-Add nullable `extraction_attempt_id UUID` to
-`extraction_proposal_records`. Existing rows remain null. Every new proposal
-created by section extraction must carry the request's `requestId`.
+### 12.1 Durable attempt and execution ownership (new)
 
-Add a partial unique index over:
+Add an `extraction_attempts` table through SQLAlchemy/repository/service and an
+Alembic migration. It holds a server-owned id, unique request UUID, authenticated
+owner, project/article/template/run scope, normalized section/parent or existing
+batch scope, existing Celery job id, frozen effective engine JSON (no credential),
+creation time, and terminal/result bookkeeping using the existing job result and
+error shape. A request UUID is not authority: revalidate membership, editability
+and coordinates before replay; mismatched owner/scope cannot retrieve a request.
+A changed payload with the same UUID is a typed conflict. Bind an absent run once
+through the existing one-live-run service. Foreign keys/coherence checks reject
+cross-run/article associations. RLS/revoked client writes match workflow tables.
 
-```text
-(extraction_attempt_id, instance_id, field_id, source)
-WHERE extraction_attempt_id IS NOT NULL
-```
+Create the attempt durably before enqueue with a preallocated job id. Identical
+transport replay returns that job id. Failed/uncertain enqueue may re-enqueue the
+same job identity; serialize worker execution on the attempt row and return its
+recorded terminal result for duplicate deliveries. Queue/DB handoff ambiguity
+cannot create a second logical extraction. Retain existing job-owner authorization
+and status envelope; do not introduce a queue framework.
 
-Change proposal idempotency for these paths:
+At first execution, freeze the effective engine once on the attempt in a short
+transaction before the LLM call, then resolve credentials for that exact target.
+All retries use this attempt pin, not the mutable run pin; retirement and access
+checks still apply. Record execution outcome separately from requested mode.
+Run summaries remain compatible but cannot choose retries or historical card
+facts. Do not hold a shared run-row lock across the LLM call: independent sections
+must interleave. Recheck lifecycle/coordinate authority before persisting results
+after a concurrent stage change.
 
-- same attempt + same coordinate returns the existing proposal and does not add
-  evidence again;
-- different attempt appends a new proposal even when the normalized value is
-  identical;
-- rationale, provenance, and evidence never move from one attempt to another;
-- retries may update only the existing server-owned verification annotation
-  under the current verified-mode rules.
+A confirmed failed-job retry gets a new request; uncertain transport retry reuses
+the original. Existing batch/QA callers retain APIs and behavior; generate attempt
+identity at their kickoff boundary and propagate it through retries. Section and
+repeating-entry loops share request ownership but never a sibling call snapshot.
+Synchronous internal callers may have no job id and retain transaction ownership.
 
-The proposal creation result must tell the caller whether it inserted or reused
-the record. Evidence rows are written only for an inserted proposal, or upserted
-by `(proposal_record_id, rank)` if retry recovery requires it. A same-value new
-attempt therefore produces a distinct card with truthful model, timestamp,
-reasoning, citations, and generation details.
+### 12.2 Proposal identity and immutable call details (new)
 
-The suggestion-history read contract adds `extractionAttemptId` but continues to
-return proposal id, created time, rationale, evidence, and provenance per item.
-The frontend treats each proposal history item as one card; it does not group by
-the HITL run id because repeated section actions intentionally share the one live
-run.
+Add nullable `extraction_attempt_id UUID` referencing the attempt and nullable
+`generation_snapshot JSONB` to `extraction_proposal_records`. Legacy rows stay
+null. Add a partial unique index on
+`(extraction_attempt_id, instance_id, field_id, source)` where attempt is non-null.
+Retain existing proposal engine `provenance` for compatible consumers.
+
+Every singleton or repeating-entry LLM call builds its own post-verification
+snapshot using the current builder: model/engine, prompt version/composition,
+parameters, token usage, requested/executed mode and passes. Historical input
+links may open only the exact retained source revision used for that call; a
+mutable current source must be labeled current and cannot stand in for original
+input. If no exact snapshot/revision exists, show historical input unavailable.
+Preserve prompt composition content already captured by the current builder;
+this delivery does not add document versioning. Copy that call's
+identity-free immutable snapshot onto its proposals. Never reuse the last entry's
+snapshot for all entries. Store no credentials, `ran_by_user_id` or `ran_by_name`
+in proposal JSON; use explicit allowlists at write/read boundaries. Runner
+identity comes from the attempt owner only through the existing per-run
+`run_reveals_peers` policy, with name lookup after reveal authorization. QA,
+consensus and export readers use the same safe serialization boundary.
+
+- Same attempt and coordinate returns its existing proposal/evidence unchanged.
+- A new attempt appends even when normalized values are equal.
+- Insert proposal, snapshot and evidence atomically; return inserted/reused so
+  replay cannot append evidence onto an existing card.
+- Existing server-owned verified annotations may change under current rules;
+  immutable generation facts cannot. A replay reuses committed facts, never
+  substitutes retry token usage for the original call's usage.
+- Different entry calls carry different snapshots within one section attempt.
+
+Typed suggestion history adds `extractionAttemptId` and optional immutable
+snapshot. New cards never merge a latest run/section snapshot into their details.
+Legacy cards keep truthful per-row engine/rationale/evidence and show `Generation
+details unavailable for this extraction`; do not invent historical prompts,
+tokens or runner identity. One proposal history item remains one card.
+
+This chooses a small durable attempt record and snapshots on existing proposals
+over a new generation-event graph. UUID alone cannot freeze engine selection or
+historical details; a separate call table adds joins with no independent UI
+lifecycle. Migration roundtrip tests and head pin move with the additive schema.
 
 ## 13. Accessibility and responsive behavior
 
@@ -411,8 +473,19 @@ run.
 - Proposal refresh failure: preserve the existing cards and expose retry.
 - Extraction failure: retain field values and existing proposals; show the
   classified failure on the initiating action.
-- Partial section completion: refresh successful questions, mark the section
-  action with a partial-result state, and expose failed-question count plus retry.
+- Completed section: use existing `suggestionsCreated`; zero means `No new
+  proposals returned`, not failed questions. Missing proposals never imply
+  failure. Existing batch callers retain typed `failedSections`; add no
+  failed-question count or field-specific retry.
+- Initial history error has inline retry distinct from empty history. Refresh
+  error preserves previous cards.
+- No sections/eligible fields uses the existing empty-template state; disable
+  inapplicable extraction/navigation actions.
+- Unauthorized/not-found uses existing access/not-found states and clears stale
+  coordinate data without exposing cached peer details or mutation actions.
+- Stale/deleted/finalized run stops mutations and refreshes authoritative state;
+  preserve unsaved drafts for recovery. In-flight writes must recheck authority.
+- Legacy provenance and busy/failed decision saves use §§10/12 states.
 - Read-only stages: hide extraction and decision actions; keep proposal cards,
   provenance, citations, and locate actions readable.
 
@@ -445,6 +518,8 @@ run.
 14. `A`, `F`, `Shift+Left`, and `Shift+Right` work outside editable controls and
     are disclosed in tooltips.
 15. Read-only runs expose the audit trail without editable or AI kickoff actions.
+16. New table/disclosure presentation applies only to editable data extraction.
+    Shared editors and contracts preserve QA/consensus presentation and policies.
 
 ## 16. Verification boundaries
 
@@ -466,3 +541,29 @@ Production verification must cover:
 
 The throwaway H fixtures and their simulated 650 ms extraction are design
 evidence only. They are not accepted as production verification.
+
+## 17. Requirement-to-test matrix and planning constraints
+
+All writes use backend API/services/repositories; frontend uses `apiClient` and
+query-key factories. Build from current dev; never merge the prototype branch.
+Bound tasks as attempt persistence/read, execution propagation, table/editors,
+inline review/decisions, navigation/responsiveness and final verification; each
+can have a brief under 300 lines. Fixtures are not production verification.
+
+| Requirement | Acceptance test / layer |
+| --- | --- |
+| §6 shell/guide/headers | Browser: default right viewer, guide toggles reclaim width, counts, sticky collapse retains kickoff, no duplicate header. |
+| §§7.1/13 resizing | Component/browser: pointer capture, keyboard arrows/Home/End, double-click/toolbar reset, scoped persistence, clamp after pane change, coarse target; Articles default behavior regression. |
+| §§7.2/7.4 content | Component/browser: wrapping question, description hover/focus and focused inline, full proposal tooltip, downward disclosure. |
+| §7.3 editors | Component: units, codes/labels, multiple choice, boolean/date, dispositions and long text resize/save/reload. |
+| §§7.5/10 decisions | Integration: collapsed latest check, older accepted/new pending, correct toolbar/card target, green after reload, typed reversal, A→B→reverse, equal-time id ordering. |
+| §10 save races | Integration: pending draft flush, failed flush blocks accept, serialized repeat clicks, failed save retains confirmed state, foreign reviewer/coordinate excluded. |
+| §§8/13 navigation | Browser: toolbar-only focus, continuous background, previous/next pending, shortcut typing/menu/dialog guards, tooltips/aria, no focus steal, reduced motion. |
+| §9 cards/sources | Component/browser: carousel selection restored, side-by-side responsive wrap, each generation's details, each source's location, unavailable anchor preserves card. |
+| §§11/12 scope/replay | Backend integration: foreign scope/owner denied, altered UUID payload conflict, same request/job/proposal/evidence, enqueue response-loss replay, duplicate delivery, fresh equal-value request appends. |
+| §12 engine/call isolation | Backend integration: interleaved section engines and retries retain target/key; no shared run lock across LLM calls; entry-specific prompt/usage; batch/QA compatibility. |
+| §12 historical privacy | Backend integration: two different prompts/tokens/models remain immutable, legacy unavailable facts, blind identity scrub and authorized reveal across history/hot reads/QA/consensus/export. |
+| §§11/14 job state | Component/integration: independent loading, full coordinate keys, remount resumes, unmount leaves job, terminal vs uncertain retry, zero result and existing batch failure contract. |
+| §14 state coverage | Component/integration: empty template/fields/history, initial/refresh failure, no-information, access/not-found/stale run, busy/failed decisions, no sensitive cached-state leak. |
+| §§13/15.16 responsive/scope | Browser/design review: wide, compressed >=900 and <900 pane, stacked narrow rows, no page overflow, QA/consensus/read-only regressions. |
+| §12 schema | Alembic integration: upgrade/downgrade/head pin, nullable legacy rows, concurrent unique coordinates, foreign-key/coherence guards, no client writes. |
