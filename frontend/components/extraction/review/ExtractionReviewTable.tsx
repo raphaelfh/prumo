@@ -13,7 +13,7 @@ import {ExtractionReviewRow} from './ExtractionReviewRow';
 export interface ReviewWorkspace {
   proposals: RunDetailResponse['proposals'];
   navigation: ReturnType<typeof useReviewNavigation>;
-  decisions: Pick<ReturnType<typeof useProposalDecision>, 'isAccepted' | 'acceptedProposalIdFor' | 'toggle' | 'saving' | 'error' | 'canUndo' | 'undoTarget' | 'undoLatestLocalDecision' | 'conflicted' | 'resumeDraftAfterConflict'>;
+  decisions: Pick<ReturnType<typeof useProposalDecision>, 'isAccepted' | 'acceptedProposalIdFor' | 'toggle' | 'saving' | 'pendingDecision' | 'error' | 'canUndo' | 'undoTarget' | 'undoLatestLocalDecision' | 'canRedo' | 'redoTarget' | 'redoLatestLocalDecision' | 'conflicted' | 'resumeDraftAfterConflict'>;
   widths: Record<string, number>;
   columns: ReturnType<typeof useResizableTableColumns>;
   activeProposal: {instanceId: string; fieldId: string; proposal: AISuggestion} | null;

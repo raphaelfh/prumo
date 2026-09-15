@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { server } from '@/test/mocks/server';
-import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
+import { runsKeys, type ReviewerDecisionResponse } from '@/hooks/runs/types';
 import type { components } from '@/types/api/schema';
 type CreateDecisionRequest = components['schemas']['CreateDecisionRequest'];
 import { useProposalDecision } from '@/hooks/extraction/useProposalDecision';
@@ -17,15 +17,16 @@ let requests: CreateDecisionRequest[];
 let fail: boolean;
 let offline: boolean;
 let gate: Promise<void> | null;
+let views: number;
 const proposal = {id: 'p1', instanceId: 'i', fieldId: 'a', value: 'AI'};
 const row = (id: string, field: string, value: Record<string, unknown>): ReviewerDecisionResponse => ({
   id, run_id: 'run', instance_id: 'i', field_id: field, reviewer_id: 'me', value,
   decision: 'edit', proposal_record_id: null, rationale: null, created_at: `2026-09-15T00:00:${id.padStart(2, '0')}Z`,
 });
 beforeEach(() => {
-  history = []; requests = []; fail = false; offline = false; gate = null;
+  history = []; requests = []; fail = false; offline = false; gate = null; views = 0;
   server.use(
-    http.get('*/api/v1/runs/:run/view', () => HttpResponse.json({ok: true, data: {run: {id: 'run', stage: 'extract'}, decisions: history}})),
+    http.get('*/api/v1/runs/:run/view', () => {views += 1; return HttpResponse.json({ok: true, data: {run: {id: 'run', stage: 'extract'}, decisions: history}});}),
     http.post('*/api/v1/runs/:run/decisions', async ({request}) => {
       const body = await request.json() as CreateDecisionRequest;
       requests.push(body);
@@ -45,14 +46,14 @@ beforeEach(() => {
 function setup(initial: Record<string, unknown> = {}, baseline = initial) {
   const queryClient = new QueryClient({defaultOptions: {queries: {retry: false, gcTime: 0}}});
   const wrapper = ({children}: {children: ReactNode}) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
-  return renderHook(({user, run}) => {
+  return Object.assign(renderHook(({user, run}) => {
     const [values, setValues] = useState(initial);
     const writer = useProposalDecision({runId: run, reviewerId: user, stage: 'extract', enabled: true,
       values, baselineValues: baseline, decisions: history, debounceMs: 60000,
       onConfirmed: (coordinate, value) => setValues(prev => ({...prev, [`${coordinate.instanceId}_${coordinate.fieldId}`]: value})),
     });
     return {...writer, values, edit: (field: string, value: unknown) => setValues(prev => ({...prev, [`i_${field}`]: value}))};
-  }, {wrapper, initialProps: {user: 'me', run: 'run'}});
+  }, {wrapper, initialProps: {user: 'me', run: 'run'}}), {queryClient});
 }
 describe('confirmed proposal decisions and local undo', () => {
   it('waits for pending autosave, ignores repeated checks, and does not autosave the accepted value twice', async () => {
@@ -102,7 +103,10 @@ describe('confirmed proposal decisions and local undo', () => {
     history.push(row('9', 'a', {value: 'external'}));
     const count = requests.length;
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(false);});
-    expect(requests).toHaveLength(count);
+    // The server guard is the check: the guarded POST is sent, 409s, and appends nothing.
+    expect(requests).toHaveLength(count + 1);
+    expect(requests.at(-1)).toMatchObject({expected_current_decision_id: '1'});
+    expect(history.at(-1)?.id).toBe('9');
     expect(view.result.current.error).toBeTruthy();
   });
   it('resets undo on user/run change and suppresses late confirmed repaint', async () => {
@@ -131,6 +135,34 @@ describe('confirmed proposal decisions and local undo', () => {
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
     expect(view.result.current.values.i_a).toBeNull();
     expect(view.result.current.canUndo).toBe(false);
+  });
+  it('redo re-applies an undone acceptance with its link, guarded on the compensating head, and can be undone again', async () => {
+    const view = setup();
+    await act(async () => {await view.result.current.toggle(proposal);});
+    await act(async () => {await view.result.current.undoLatestLocalDecision();});
+    expect(view.result.current.canRedo).toBe(true);
+    await act(async () => {expect(await view.result.current.redoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)).toMatchObject({field_id: 'a', expected_current_decision_id: '2', value: {value: 'AI'}, proposal_record_id: 'p1'});
+    expect(view.result.current.values.i_a).toBe('AI');
+    expect(view.result.current.acceptedProposalIdFor('i', 'a')).toBe('p1');
+    expect(view.result.current.canRedo).toBe(false);
+    await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
+    expect(requests.at(-1)).toMatchObject({expected_current_decision_id: '3', proposal_record_id: null});
+    expect(view.result.current.values.i_a).toBeNull();
+  });
+  it('a new decision clears redo, and an external head refuses it', async () => {
+    const view = setup();
+    await act(async () => {await view.result.current.toggle(proposal);});
+    await act(async () => {await view.result.current.undoLatestLocalDecision();});
+    await act(async () => {await view.result.current.toggle({...proposal, id: 'p2', value: 'Other'});});
+    expect(view.result.current.canRedo).toBe(false);
+    await act(async () => {await view.result.current.undoLatestLocalDecision();});
+    history.push(row('9', 'a', {value: 'external'}));
+    const count = requests.length;
+    await act(async () => {expect(await view.result.current.redoLatestLocalDecision()).toBe(false);});
+    expect(requests).toHaveLength(count + 1);
+    expect(history.at(-1)?.id).toBe('9');
+    expect(view.result.current.conflicted).toBe(true);
   });
   it('preserves typing during acceptance and writes it once after the confirmation', async () => {
     const view = setup(); let release!: () => void;
@@ -207,9 +239,10 @@ describe('confirmed proposal decisions and local undo', () => {
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(true);});
     expect(history.at(-1)?.value).toEqual({value: 'external'});
     expect(view.result.current.undoTarget?.expectedId).toBe('1');
-    const restoredCount = requests.length;
+    const restoredCount = history.length;
     await act(async () => {expect(await view.result.current.undoLatestLocalDecision()).toBe(false);});
-    expect(requests).toHaveLength(restoredCount);
+    expect(requests.at(-1)).toMatchObject({expected_current_decision_id: '1'});
+    expect(history).toHaveLength(restoredCount);
   });
   it('keeps the outgoing conflicted session frozen during run navigation', async () => {
     const view = setup();
@@ -287,6 +320,80 @@ it('freezes the captured session when undo conflicts after navigation, before it
   await act(async () => {release(); expect(await pending).toBe(false);});
   expect(requests).toHaveLength(2);
   expect(view.result.current.conflicted).toBe(false);
+});
+
+describe('writes guard on the local head instead of re-reading the run view', () => {
+  it('an accept reads no view and sends the local head as its expected id', async () => {
+    history = [row('1', 'a', {value: 'kept'})];
+    const view = setup({'i_a': 'kept'});
+    await act(async () => {expect(await view.result.current.toggle(proposal)).toBe(true);});
+    expect(views).toBe(0);
+    expect(requests).toEqual([expect.objectContaining({proposal_record_id: 'p1', expected_current_decision_id: '1'})]);
+  });
+  it('an accept with no local head stays unconditional', async () => {
+    const view = setup();
+    await act(async () => {expect(await view.result.current.toggle(proposal)).toBe(true);});
+    expect(views).toBe(0);
+    expect(requests[0]).not.toHaveProperty('expected_current_decision_id');
+  });
+  it('an autosave write reads no view and guards on the local head', async () => {
+    history = [row('1', 'a', {value: 'kept'})];
+    const view = setup({'i_a': 'kept'});
+    act(() => view.result.current.edit('a', 'typed'));
+    await act(async () => {await view.result.current.saveNow();});
+    expect(views).toBe(0);
+    expect(requests).toEqual([expect.objectContaining({value: {value: 'typed'}, expected_current_decision_id: '1'})]);
+    expect(view.result.current.canUndo).toBe(true);
+  });
+  it('a 409 on accept freezes the session, keeps the draft, and refreshes history', async () => {
+    const view = setup({'i_a': 'draft'});
+    server.use(http.post('*/api/v1/runs/:run/decisions', async ({request}) => {
+      requests.push(await request.json() as CreateDecisionRequest);
+      return HttpResponse.json({ok: false, error: {code: 'DECISION_CONFLICT', message: 'Decision changed'}}, {status: 409});
+    }));
+    await act(async () => {expect(await view.result.current.toggle(proposal)).toBe(false);});
+    expect(requests).toHaveLength(1);
+    expect(views).toBe(1);
+    expect(view.result.current.conflicted).toBe(true);
+    expect(view.result.current.error).toBe(extraction.reviewDecisionConflict);
+    expect(view.result.current.values.i_a).toBe('draft');
+  });
+  it.each([['finalized', 'conflict'], ['extract', 'failed']] as const)('a 400 while the run is %s classifies as %s', async (stage, outcome) => {
+    const view = setup();
+    server.use(
+      http.post('*/api/v1/runs/:run/decisions', () => HttpResponse.json({ok: false, error: {code: 'VALIDATION_ERROR', message: 'Rejected'}}, {status: 400})),
+      http.get('*/api/v1/runs/:run/view', () => {views += 1; return HttpResponse.json({ok: true, data: {run: {id: 'run', stage}, decisions: history}});}),
+    );
+    await act(async () => {expect(await view.result.current.toggle(proposal)).toBe(false);});
+    expect(views).toBe(1);
+    expect(view.result.current.conflicted).toBe(outcome === 'conflict');
+    expect(view.result.current.error).toBe(outcome === 'conflict' ? extraction.reviewDecisionConflict : extraction.reviewDecisionSaveFailed);
+  });
+  it('a confirmed decision does not invalidate run detail; a failed one does', async () => {
+    const view = setup();
+    const invalidate = vi.spyOn(view.queryClient, 'invalidateQueries');
+    await act(async () => {expect(await view.result.current.toggle(proposal)).toBe(true);});
+    expect(invalidate).not.toHaveBeenCalled();
+    fail = true;
+    await act(async () => {expect(await view.result.current.toggle({...proposal, id: 'p2', value: 'Other'})).toBe(false);});
+    expect(invalidate).toHaveBeenCalledWith({queryKey: runsKeys.detail('run')});
+  });
+  it('exposes the in-flight decision target only while it is pending', async () => {
+    const view = setup(); let release!: () => void;
+    gate = new Promise(resolve => {release = resolve;});
+    let pending!: Promise<boolean>;
+    act(() => {pending = view.result.current.toggle(proposal);});
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(view.result.current.pendingDecision).toEqual({instanceId: 'i', fieldId: 'a', proposalId: 'p1'});
+    await act(async () => {release(); await pending;});
+    expect(view.result.current.pendingDecision).toBeNull();
+    gate = new Promise(resolve => {release = resolve;});
+    act(() => {pending = view.result.current.undoLatestLocalDecision();});
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(view.result.current.pendingDecision).toEqual({instanceId: 'i', fieldId: 'a', proposalId: null});
+    await act(async () => {release(); await pending;});
+    expect(view.result.current.pendingDecision).toBeNull();
+  });
 });
 
 describe('decision save failures that are not conflicts', () => {

@@ -39,10 +39,10 @@ export function ExtractionFormPanel({
   }
 
   return (
-    // data-scroll-container is consumed by usePreserveScroll so the form
-    // keeps its scroll position around async refreshes (e.g. after AI
-    // extraction). Pair the marker with the inner radix viewport selector
-    // because radix ScrollArea renders the actual scroll node beneath.
+    // data-scroll-container locates the form's scroll node (the page's guide
+    // jump and e2e scroll probes). Pair the marker with the inner radix
+    // viewport selector because radix ScrollArea renders the actual scroll
+    // node beneath.
     <div data-scroll-container="extraction-form" className="h-full">
       {/* Review mode pins the toolbar (top-0) and section headers (top-10): the
           viewport's scroll padding keeps focus scrolling clear of both layers. */}
