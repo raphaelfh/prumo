@@ -48,8 +48,9 @@ Include the IDs, the URL, the stage, the user role. If you can't write the sympt
 
 What is the *last* piece of code that produced the wrong value? For UI: which component renders the value? For a 500: the line that raised.
 
+The component, hook and file names in this walkthrough and in the worked examples below are illustrative, not files in the repo.
+
 ```ts
-// frontend/components/ExtractionRunProgressBadge.tsx
 const { data: progress } = useRunProgress(runId);
 return <span>{progress?.percentage ?? 0}%</span>;
 ```
@@ -59,7 +60,6 @@ OK — the rendering is correct *given the data*. Move up.
 ### 3. Ask "what called this with the bad value?"
 
 ```ts
-// frontend/hooks/extraction/useExtractionProgress.ts
 export function useRunProgress(runId: string) {
   return useQuery({
     queryKey: ['run-progress'], // <-- smell: no runId in key
@@ -225,4 +225,4 @@ This produces a fix that holds even after the next refactor.
 ## Stack-trace tips (prumo)
 
 - In pytest, capture stacks with `pytest --tb=long`. For async, `pytest -p asyncio --tb=long`.
-- Always log the IDs (`run_id`, `project_id`, `user_id`, `template_version_id`) — a trace without IDs is a chair without legs.
+- Always log the IDs (`run_id`, `project_id`, `user_id`, `template_id`) — a trace without IDs is a chair without legs.

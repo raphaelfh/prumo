@@ -117,7 +117,7 @@ Diff rewrites docstring without adding a fitness rule or regression test, and co
 
 ```
 INTRODUCES_REGRESSION
-Diff touches backend/app/api/v1/endpoints/runs.py despite finding scoped to backend/app/services/extraction_form_service.py; cross-file edit not justified by suggested_action.
+Diff touches backend/app/api/v1/endpoints/runs.py despite finding scoped to backend/app/services/extraction_proposal_service.py; cross-file edit not justified by suggested_action.
 ```
 
 ## Why a fresh context

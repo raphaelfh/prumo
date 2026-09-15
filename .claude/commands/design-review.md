@@ -24,8 +24,7 @@ User-supplied arguments: `$ARGUMENTS`
 You are running prumo's **design-review loop** against the live frontend. The
 governing process is the `design-review` skill — invoke it and follow it. The
 target language is the `frontend-ux` skill; class mechanics come from
-`ui-styling`. Reproduce the **Plane/Linear** language; do not invent a new one
-(`frontend-ux` outranks the `frontend-design` plugin on core product UI).
+`ui-styling`. Reproduce the **Plane/Linear** language; do not invent a new one.
 
 > Iron law (from `verification-before-completion`): no "looks good" without a
 > fresh screenshot you actually captured and compared. A described screen is not

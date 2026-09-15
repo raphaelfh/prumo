@@ -29,8 +29,7 @@ Prefer `Annotated[T, Depends(...)]` over bare `Depends(...)`. It plays nicely wi
 
 ```python
 from typing import Annotated
-from app.core.deps import DbSession        # Annotated[AsyncSession, Depends(get_db)]
-from app.core.security import CurrentUser  # Annotated[TokenPayload, Depends(get_current_user)]
+from app.core.deps import CurrentUser, DbSession  # Annotated aliases over get_current_user / get_db
 
 async def endpoint(
     body: SomeRequest,
@@ -39,11 +38,11 @@ async def endpoint(
 ) -> ApiResponse[SomeResponse]: ...
 ```
 
-If a dependency needs parameters (e.g. a project-scoped check), keep it as a free async function called from the body — see `ensure_project_member` in `app/api/deps/security.py`. FastAPI dependencies can't take a body-derived path arg cleanly, so manual call-after-resolution is the pragmatic move.
+If a dependency needs parameters (e.g. a project-scoped check), keep it as a free async function called from the body — see `ensure_project_member` in `app/api/deps/security.py`. FastAPI dependencies can't take a body-derived path arg cleanly, so manual call-after-resolution is the pragmatic move. Which guard binds which id: `code-review/references/bola-audit.md`.
 
 ## Response envelope
 
-All write endpoints return `ApiResponse[T]` from `app/schemas/common.py` for client-side uniformity. Read endpoints can return the DTO directly when high-traffic. Don't mix conventions within a single router.
+Every JSON response is an `ApiResponse[T]` from `app/schemas/common.py`, reads included, with a typed `T`. The exception is a file download, which may return a raw `Response` (`endpoints/extraction_export.py`, `endpoints/articles_export.py` annotate `Response | ApiResponse[...]`). `ApiResponse[dict[str, Any]]` fails `scripts/fitness/check_api_response_envelope.py`.
 
 ```python
 return ApiResponse(data=OpenHITLSessionResponse.model_validate(result, from_attributes=True))
@@ -61,17 +60,24 @@ return ApiResponse(data=OpenHITLSessionResponse.model_validate(result, from_attr
 
 For 200-vs-201 in idempotent POSTs, see `endpoints/hitl_sessions.py` for the canonical override pattern.
 
-## Error handlers
+## Errors
 
-Register once in `register_exception_handlers` (`app/core/error_handler.py`). Domain exceptions get translated to `HTTPException` with structured detail. The translation lives at the boundary, never deep inside services.
+Errors reach the client as the envelope `{ok: false, error: {code, message, details?}, trace_id}`, never FastAPI's default `{"detail": ...}`. `register_exception_handlers` (`app/core/error_handler.py`) produces it for:
+
+- every `HTTPException` (`code: "HTTP_ERROR"`, `message: str(exc.detail)`),
+- every `AppError` subclass (`NotFoundError`, `ConflictError`, … — each carries its own `code`, `message`, `status_code`),
+- request-validation errors (`request_validation_error_handler`).
+
+So raise; never build the error response yourself:
 
 ```python
-@app.exception_handler(HITLSessionInputError)
-async def hitl_input_error_handler(_: Request, exc: HITLSessionInputError):
-    return JSONResponse(status_code=400, content={"detail": str(exc)})
+try:
+    result = await service.open_or_resume(...)
+except HITLSessionInputError as e:
+    raise HTTPException(status_code=400, detail=str(e)) from e
 ```
 
-Validation errors from Pydantic are intercepted by `RequestValidationError`. Customize the response shape there if the frontend needs a specific format — keep it stable across versions.
+A service's domain exception is caught at the endpoint and re-raised as an `HTTPException` or an `AppError` subclass (`endpoints/hitl_sessions.py` does this for `HITLSessionInputError`). Passing `detail=` to `HTTPException` is fine: the handler moves it into `error.message`.
 
 ## Rate limiting
 
@@ -106,17 +112,7 @@ Tags map to OpenAPI groups in the docs.
 
 ## Dependency overrides in tests
 
-```python
-@pytest.fixture
-async def client(test_db_session):
-    app.dependency_overrides[get_db] = lambda: test_db_session
-    app.dependency_overrides[get_current_user_sub] = lambda: TEST_USER_ID
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
-```
-
-Override only what the test needs. Resetting `dependency_overrides` between tests prevents bleed.
+The test clients live in `backend/tests/conftest.py`: `db_client` (real Postgres, auth overridden) and `client` (mocked DB). Tests override `get_current_user` (`app.core.security`), not `get_current_user_sub`, and talk to the app through `AsyncClient(transport=ASGITransport(app=app), base_url="http://test")`. Override only what the test needs, and clear `app.dependency_overrides` in teardown. Recipes: `web-testing/references/pytest.md`.
 
 ## CORS and middleware
 
