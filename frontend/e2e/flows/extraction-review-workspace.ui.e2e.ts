@@ -496,7 +496,8 @@ test('design review captures production states without horizontal page overflow'
   await activate(page, first.label);
   await toolbar(page).getByRole('button', {name: 'Focus question', exact: true}).click();
   await page.keyboard.press('a');
-  await expect(rowFor(page, first.label).getByRole('button', {name: 'Unaccept extraction', exact: true})).toHaveAttribute('aria-pressed', 'true');
+  // Focus mode adds the description to the rowheader's name, so the exact-label row locator cannot match here.
+  await expect(page.locator(`#review-question-${first.instanceId}_${first.id}`).getByRole('button', {name: 'Unaccept extraction', exact: true})).toHaveAttribute('aria-pressed', 'true');
   await expectGuideOn(page, first);
   await capture('review-active-actions');
 });
