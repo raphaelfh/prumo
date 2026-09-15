@@ -35,6 +35,7 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.models.extraction_attempt import ExtractionAttempt  # noqa: F401
+from app.models.extraction_batch import ExtractionBatch, ExtractionBatchItem  # noqa: F401
 from app.models.extraction_versioning import (
     ConsensusRule,
     ExtractionHitlConfig,
