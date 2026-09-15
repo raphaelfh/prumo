@@ -98,9 +98,16 @@ export function useActiveSection(sectionIds: string[], pinnedId?: string): UseAc
 
   const key = sectionIds.join('|');
   const pinned = pinnedId !== undefined && sectionIds.includes(pinnedId) ? pinnedId : null;
+  // Set while a pin detaches the spy: releasing it must measure once, because
+  // leaving focus mode moves the form without a scroll event to report it.
+  const wasPinned = useRef(false);
   useEffect(() => {
     const ids = key === '' ? [] : key.split('|');
-    if (ids.length === 0 || pinned !== null) return;
+    if (ids.length === 0) return;
+    if (pinned !== null) {
+      wasPinned.current = true;
+      return;
+    }
     // Resolved on use, not at setup: the pane only overflows once the form has
     // laid out, and a miss here would silently disable the spy for good.
     let scroller: HTMLElement | null = null;
@@ -124,6 +131,10 @@ export function useActiveSection(sectionIds: string[], pinnedId?: string): UseAc
     // Capture: a scroll event does not bubble, and the pane that scrolls is a
     // nested one — listening at the document catches it wherever it is.
     document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    if (wasPinned.current) {
+      wasPinned.current = false;
+      onScroll();
+    }
     return () => {
       document.removeEventListener('scroll', onScroll, { capture: true });
       if (frame !== 0) cancelAnimationFrame(frame);
