@@ -1,7 +1,8 @@
+// Adapted from anaralabs/lector (MIT)
 /**
  * The pages to mount: those in the scroller's viewport plus one on each side.
- * Adapted from anaralabs/lector (MIT): overscan 1, never trusting `scrollend`
- * alone, and a size correction above the viewport keeps the reading position.
+ * Overscan 1, never trusting `scrollend` alone, and a size correction above
+ * the viewport keeps the reading position.
  */
 import {useVirtualizer, type PartialKeys, type VirtualItem, type VirtualizerOptions} from '@tanstack/react-virtual';
 import {useLayoutEffect, useMemo, useRef} from 'react';

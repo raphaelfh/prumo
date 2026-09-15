@@ -28,4 +28,20 @@ describe('useDocumentLoader', () => {
     await waitFor(() => expect(store.getState().loadStatus).toBe('ready'));
     expect(sizesWhenReady).toEqual([{width: 500, height: 700}]);
   });
+
+  it('destroys the document when getPage(1) fails after load', async () => {
+    const store = createViewerStore();
+    const engine = createMockEngine({numPages: 3, pageSize: {width: 500, height: 700}});
+    const loaded = await engine.load({kind: 'url', url: 'mock.pdf'});
+    const destroySpy = vi.spyOn(loaded, 'destroy');
+    vi.spyOn(loaded, 'getPage').mockRejectedValue(new Error('boom'));
+    const failingEngine = {load: vi.fn().mockResolvedValue(loaded)};
+    const source = {kind: 'url' as const, url: 'mock.pdf'};
+    const wrapper = ({children}: {children: ReactNode}) => <ViewerProvider store={store}>{children}</ViewerProvider>;
+
+    renderHook(() => useDocumentLoader({source, engine: failingEngine}), {wrapper});
+
+    await waitFor(() => expect(store.getState().loadStatus).toBe('error'));
+    expect(destroySpy).toHaveBeenCalled();
+  });
 });
