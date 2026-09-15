@@ -32,7 +32,7 @@ export function ProposalCard({proposal, ordinal, latest, accepted, saving, readO
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
         <span className="font-medium text-foreground">{t('extraction', 'reviewExtractionOrdinal').replace('{{n}}', String(ordinal))}</span>
         {latest && <span>{t('extraction', 'reviewLatestExtraction')}</span>}
-        <span>{t('extraction', 'reviewSourcesCount').replace('{{n}}', String(evidence.length))}</span>
+        <span>{t('extraction', evidence.length === 1 ? 'reviewSourcesCountOne' : 'reviewSourcesCountOther').replace('{{n}}', String(evidence.length))}</span>
         {snapshot?.model && <span className="break-all">{snapshot.model}</span>}
         <time dateTime={Number.isNaN(proposal.timestamp.getTime()) ? undefined : proposal.timestamp.toISOString()}>{Number.isNaN(proposal.timestamp.getTime()) ? t('extraction', 'historyInvalidDate') : proposal.timestamp.toLocaleString()}</time>
       </div>
