@@ -119,9 +119,11 @@ function CitationRow({citation, showCopyButton, onLocate, isPrimary, isActive, m
                   className={cn(
                     'px-2 py-0.5 rounded text-xs font-medium shrink-0 cursor-help',
                     'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
+                    // The tone text fails AA on its own tint (2.11:1); the review
+                    // table keeps the tint and the border, with body-contrast text.
                     isEntailed
-                      ? 'bg-success/10 text-success'
-                      : 'bg-warning/10 text-warning',
+                      ? cn('bg-success/10', minimal ? 'text-foreground' : 'text-success')
+                      : cn('bg-warning/10', minimal ? 'text-foreground' : 'text-warning'),
                   )}
                 >
                   {badgeCopy}

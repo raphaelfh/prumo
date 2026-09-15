@@ -200,6 +200,28 @@ describe('AISuggestionEvidence', () => {
     });
   });
 
+  describe('(e3) review presentation keeps attribution badge text at body contrast', () => {
+    const graded: EvidenceCitation[] = [
+      {text: 'verified', pageNumber: 1, blockIds: [1], attributionLabel: 'entailed', rank: 0},
+      {text: 'unverifiable', pageNumber: null, blockIds: [], attributionLabel: 'ungroundable', rank: 1},
+    ];
+
+    it('renders tinted badges with foreground text instead of the low-contrast tone text', () => {
+      render(<AISuggestionEvidence evidence={graded} presentation="review" onLocate={vi.fn()} />, {wrapper: Wrapper});
+      const verified = screen.getByText('attributionEntailed');
+      const unverifiable = screen.getByText('attributionUngroundable');
+      expect(verified).toHaveClass('bg-success/10', 'text-foreground');
+      expect(verified).not.toHaveClass('text-success');
+      expect(unverifiable).toHaveClass('bg-warning/10', 'text-foreground');
+      expect(unverifiable).not.toHaveClass('text-warning');
+    });
+
+    it('leaves the default presentation tone unchanged', () => {
+      render(<AISuggestionEvidence evidence={graded} />, {wrapper: Wrapper});
+      expect(screen.getByText('attributionEntailed')).toHaveClass('bg-success/10', 'text-success');
+    });
+  });
+
   describe('(f) legacy — length-1 list with null attributionLabel', () => {
     it('renders the single citation without any "also cited" toggle', () => {
       render(<AISuggestionEvidence evidence={singleCitation} />, {wrapper: Wrapper});
