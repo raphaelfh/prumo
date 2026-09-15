@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import LoggerMixin
+from app.infrastructure.parsing.base import ParsedBlock
 from app.infrastructure.storage import StorageAdapter
 from app.llm.claim_value import value_str_for_claim
 from app.llm.entailment import GateSpec, run_entailment_gate
@@ -54,6 +55,7 @@ from app.schemas.run_prompt_context import RunPromptContext
 from app.services.engine_credentials import EngineCredentials, rekey_for_adopted_engine
 from app.services.entry_group_extraction import extract_into_instances
 from app.services.evidence_anchor_service import build_anchor
+from app.services.extraction_generation import ProposalCandidate, write_candidate
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_snapshot import entity_types_for_version
@@ -140,6 +142,8 @@ class SectionExtractionService(LoggerMixin):
         key_provider: str | None = None,
         *,
         repin: bool = False,
+        attempt_id: UUID | None = None,
+        owns_transactions: bool = False,
     ):
         """Initialize service instance.
 
@@ -163,6 +167,8 @@ class SectionExtractionService(LoggerMixin):
         self._credentials = llm_credentials or EngineCredentials(None, None, None, None)
         self._key_provider = key_provider
         self._repin = repin
+        self.attempt_id = attempt_id
+        self._owns_transactions = owns_transactions
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -176,7 +182,7 @@ class SectionExtractionService(LoggerMixin):
         self._proposals = ExtractionProposalService(db)
         # Run-scoped anchor stash: populated once per run by build_prompt_input,
         # reused by _create_suggestions for evidence anchoring (no second fetch).
-        self._run_anchor_blocks: list = []
+        self._run_anchor_blocks: list[ParsedBlock] = []
         self._run_anchor_file_id: UUID | None = None
         # Assembly info from the last prompt build (truncation, token estimate,
         # source file) — feeds the per-section prompt_composition provenance.
@@ -210,7 +216,13 @@ class SectionExtractionService(LoggerMixin):
         no-op — which closes the standalone (``run_id=None``) hole, where the
         reused run's stale pin overrode the engine the caller keyed for.
         """
-        self._engine = await freeze_run_engine(self._runs, run_id, candidate, repin=self._repin)
+        if self.attempt_id is not None:
+            from app.services.run_engine_freeze import read_attempt_engine
+
+            self._engine = await read_attempt_engine(self.db, self.attempt_id)
+            await freeze_run_engine(self._runs, run_id, self._engine, repin=True)
+        else:
+            self._engine = await freeze_run_engine(self._runs, run_id, candidate, repin=self._repin)
         rekeyed = await rekey_for_adopted_engine(
             self.db,
             user_id=self.user_id,
@@ -230,6 +242,11 @@ class SectionExtractionService(LoggerMixin):
                 key_scope=rekeyed.key_scope.value if rekeyed.key_scope is not None else None,
             )
         return self._engine.model
+
+    async def _before_external_work(self) -> None:
+        """Only worker-owned sessions finish transactions across external calls."""
+        if self._owns_transactions:
+            await self.db.commit()
 
     def _wire_model(self) -> Any:
         """The model client for the frozen engine on the resolved
@@ -296,16 +313,7 @@ class SectionExtractionService(LoggerMixin):
         if engine is None:
             engine = self._engine
 
-        # When the caller passes a ``run_id`` (extraction surface via the
-        # HITL session service), append proposals to that run and skip the
-        # lifecycle bookkeeping the standalone path needs. The session
-        # owns ``start_run`` / ``complete_run`` / ``fail_run`` and the
-        # stage advance — calling them here would close the run after one
-        # section, breaking subsequent section-by-section AI clicks.
-        # Without a ``run_id`` the resolve-or-create gate applies (one-live-run
-        # invariant, index 0045): the coordinate's live run is reused when one
-        # exists — an unconditional create would 23505 — so ``manage_lifecycle``
-        # follows CREATION, not the run_id parameter.
+        # Existing sessions own lifecycle; standalone calls bind the live coordinate.
         if run_id is not None:
             existing_run = await self.db.get(ExtractionRun, run_id)
             if existing_run is None:
@@ -1391,7 +1399,11 @@ class SectionExtractionService(LoggerMixin):
             logger=self.logger,
         )
         if snapshot is not None:
-            self._run_provenance = snapshot
+            self._run_provenance = {
+                **snapshot,
+                "connection_id": self._engine.connection_id,
+                "deviation": self._engine.deviation,
+            }
         return verdicts, usage
 
     async def _create_suggestions(
@@ -1404,6 +1416,8 @@ class SectionExtractionService(LoggerMixin):
         run: ExtractionRun,
         verdicts: dict[str, VerifyVerdict] | None = None,
         instance: ExtractionInstance | None = None,
+        generation_snapshot: dict[str, Any] | None = None,
+        attempt_id: UUID | None = None,
     ) -> int:
         """Create extraction suggestions in database via repository.
 
@@ -1455,17 +1469,13 @@ class SectionExtractionService(LoggerMixin):
         for _vk in set(verdicts or ()) - set(field_map):
             self.logger.warning("verify_verdict_unmatched", trace_id=self.trace_id, field=_vk)
 
-        if instance is None:
-            instance = await self._singleton_instance(
-                project_id, article_id, entity_type_id, entity_type, parent_instance_id, run
-            )
-
         # Blocks were fetched once per run by _assemble_prompt_text; reuse them here
         # to ground each evidence quote to a PositionV1 anchor (empty → position={}).
         _anchor_blocks = self._run_anchor_blocks
         _anchor_file_id = self._run_anchor_file_id
 
         # Per-field gate queues: specs for the helper, rows to assign labels back.
+        candidates: list[ProposalCandidate] = []
         _gate_specs: list[GateSpec] = []
         _gate_rows: list[ExtractionEvidence] = []
 
@@ -1560,26 +1570,20 @@ class SectionExtractionService(LoggerMixin):
                 # (§IX) — the ``absent_reason`` sibling-key precedent. Found
                 # fields only; the glue never verifies a no-info proposal.
                 proposed_value["verification"] = VerificationAnnotation(
-                    verdict=verdicts[field_name]  # type: ignore[arg-type]
+                    verdict=verdicts[field_name]
                 ).model_dump()
 
-            proposal = await self._proposals.record_proposal(
-                run_id=run.id,
-                instance_id=instance.id,
-                field_id=field_id,
-                source=ExtractionProposalSource.AI,
-                proposed_value=proposed_value,
-                confidence_score=confidence_score,
-                rationale=reasoning,
-                provenance=build_proposal_engine(self._run_provenance, self._engine),
-            )
+            candidate = ProposalCandidate(field_id, proposed_value, confidence_score, reasoning, [])
+            candidates.append(candidate)
 
             for rank, item in enumerate(evidence_items):
                 quote = item["text"]
                 pos = build_anchor(quote, _anchor_blocks) if _anchor_blocks and quote else None
                 if pos is not None:
-                    position: dict = pos.model_dump(by_alias=True, mode="json")
-                    page_num = pos.anchor.range.page
+                    position: dict[str, Any] = pos.model_dump(by_alias=True, mode="json")
+                    page_num: int | None = (
+                        pos.anchor.page if pos.anchor.kind == "region" else pos.anchor.range.page
+                    )
                 else:
                     position = {}
                     page_num = item.get("page_number")
@@ -1588,14 +1592,14 @@ class SectionExtractionService(LoggerMixin):
                     article_id=article_id,
                     article_file_id=_anchor_file_id if pos is not None else None,
                     run_id=run.id,
-                    proposal_record_id=proposal.id,
+                    proposal_record_id=None,
                     page_number=page_num,
                     text_content=quote,
                     position=position,
                     rank=rank,
                     created_by=UUID(self.user_id),
                 )
-                self.db.add(ev_row)
+                candidate.evidence.append(ev_row)
 
                 # Queue for entailment gate: found fields with ANCHORED evidence only.
                 if isinstance(value, dict) and value.get("status") == "found" and quote:
@@ -1624,34 +1628,75 @@ class SectionExtractionService(LoggerMixin):
                         # verification instead of judging an unanchored quote.
                         ev_row.attribution_label = "ungroundable"
 
-            count += 1
-
         # Run the entailment gate; premise-building + fan-out live in the helper.
         if _gate_specs:
+            await self._before_external_work()
             _judge_model = self._wire_model()
             labels = await run_entailment_gate(_gate_specs, _judge_model, self.logger)
             for row, label in zip(_gate_rows, labels, strict=True):
                 if label is not None:
                     row.attribution_label = label
 
-        await self.db.flush()
+        # No shared run lock is acquired until every external call has finished.
+        # A savepoint keeps proposals and evidence atomic even if the caller catches an error.
+        async with self.db.begin_nested():
+            from app.services._extraction_run_lock import load_run_for_update
+            from app.services.extraction_generation import current_result_filter
+            from app.services.extraction_proposal_service import InvalidProposalError
 
-        self.logger.info(
-            "proposals_recorded",
-            trace_id=self.trace_id,
-            count=count,
-            instance_id=str(instance.id),
-            run_id=str(run.id),
-        )
-
-        # Single choke-point for per-section provenance: persist HOW this
-        # section's suggestions were generated, keyed by entity_type_id, wherever
-        # proposals are recorded — so no extraction path can silently omit it and
-        # concurrent sections on one run don't clobber each other. The snapshot
-        # (tokens + prompt composition + mode/passes) was built section-scoped,
-        # post-verify, in _maybe_verify. Skipped when no LLM ran (None).
-        if count and self._run_provenance is not None:
-            await self._runs.merge_provenance_section(run.id, entity_type_id, self._run_provenance)
+            current_run = await load_run_for_update(self.db, run.id)
+            if current_run is None:
+                raise InvalidProposalError(f"Run {run.id} not found")
+            await self.db.refresh(current_run)
+            if current_run.stage != ExtractionRunStage.EXTRACT.value:
+                raise InvalidProposalError("AI extraction requires the extract stage")
+            field_filter = await current_result_filter(
+                self.db, current_run, self.user_id, attempt_id
+            )
+            if entity_type.name in field_filter.out_of_scope_sections:
+                return 0
+            excluded = {
+                field_map[name]
+                for section, name in field_filter.excluded_coordinates
+                if section == entity_type.name and name in field_map
+            }
+            candidates = [
+                candidate for candidate in candidates if candidate.field_id not in excluded
+            ]
+            if not candidates:
+                return 0
+            if instance is None:
+                instance = await self._singleton_instance(
+                    project_id, article_id, entity_type_id, entity_type, parent_instance_id, run
+                )
+            for candidate in candidates:
+                written = await write_candidate(
+                    self._proposals,
+                    candidate,
+                    run_id=run.id,
+                    instance_id=instance.id,
+                    attempt_id=attempt_id,
+                    snapshot=generation_snapshot,
+                    provenance=build_proposal_engine(
+                        generation_snapshot
+                        if attempt_id
+                        else generation_snapshot or self._run_provenance,
+                        self._engine,
+                    ),
+                )
+                if written.inserted:
+                    for evidence in candidate.evidence:
+                        evidence.proposal_record_id = written.record.id
+                        self.db.add(evidence)
+                    count += 1
+            await self.db.flush()
+            snapshot = generation_snapshot if attempt_id is not None else self._run_provenance
+            if count and snapshot is not None:
+                await self._runs.merge_provenance_section(
+                    run.id, entity_type_id, {**snapshot, "ran_by_user_id": self.user_id}
+                )
+        if self._owns_transactions:
+            await self.db.commit()
 
         return count
 

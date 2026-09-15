@@ -78,3 +78,17 @@ class ExtractionProposalRepository:
             .limit(1)
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_for_attempt(
+        self, attempt_id: UUID, instance_id: UUID, field_id: UUID, source: str
+    ) -> ExtractionProposalRecord | None:
+        return (
+            await self.db.execute(
+                select(ExtractionProposalRecord).where(
+                    ExtractionProposalRecord.extraction_attempt_id == attempt_id,
+                    ExtractionProposalRecord.instance_id == instance_id,
+                    ExtractionProposalRecord.field_id == field_id,
+                    ExtractionProposalRecord.source == source,
+                )
+            )
+        ).scalar_one_or_none()

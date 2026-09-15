@@ -35,6 +35,7 @@ from app.llm.prompts import Ancestor, Scope, entry_identification
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.entity_key import existing_keys, key_field_of, resolve_instance
 from app.services.entry_ancestry import ancestry_of, noun_of
+from app.services.extraction_generation import GenerationCallResult
 
 if TYPE_CHECKING:
     from app.models.extraction import ExtractionRun
@@ -89,6 +90,7 @@ async def _identify_entries(
         ).keys()
     )
     context = prompt_context or RunPromptContext()
+    await service._before_external_work()
     output, usage = await extract_structured(
         output_model=entry_identification.EntryIdentificationOutput,
         system_prompt=entry_identification.system_prompt(entry_label),
@@ -195,6 +197,8 @@ async def _extract_entry_group(
             key_value=name,
             ancestors=ancestors,
         )
+        field_filter = await service._field_filter(run)
+        await service._before_external_work()
         extracted, call_usage = await service._extract_with_llm(
             pdf_text=pdf_text,
             entity_type=entity_type,
@@ -203,20 +207,23 @@ async def _extract_entry_group(
             fields_override=entry_fields,
             memory_context=memory_context,
             prompt_context=prompt_context,
-            field_filter=await service._field_filter(run),
+            field_filter=field_filter,
             entry_scope=scope,
         )
         verdicts, call_usage = await service._maybe_verify(
             run.id, entity_type.id, run.kind, pdf_text, extracted, call_usage
         )
+        call = GenerationCallResult(extracted, verdicts, service._run_provenance)
         count += await service._create_suggestions(
             project_id=run.project_id,
             article_id=run.article_id,
             entity_type_id=entity_type.id,
             parent_instance_id=parent_instance_id,
-            extracted_data=extracted,
+            extracted_data=call.extracted_data,
             run=run,
-            verdicts=verdicts,
+            verdicts=call.verdicts,
+            generation_snapshot=call.generation_snapshot,
+            attempt_id=service.attempt_id,
             instance=instance,
         )
         usage = usage + call_usage
@@ -271,6 +278,8 @@ async def _extract_singleton(
     # the LLM call; empty at the root, where there is nothing to scope to.
     ancestors = await ancestry_of(service, run, parent_instance_id)
     scope = Scope(entry_label=ancestors[-1].noun, ancestors=ancestors) if ancestors else None
+    field_filter = await service._field_filter(run)
+    await service._before_external_work()
     extracted_data, usage = await service._extract_with_llm(
         pdf_text=pdf_text,
         entity_type=entity_type,
@@ -279,20 +288,23 @@ async def _extract_singleton(
         fields_override=fields,
         memory_context=memory_context,
         prompt_context=prompt_context,
-        field_filter=await service._field_filter(run),
+        field_filter=field_filter,
         entry_scope=scope,
     )
     verdicts, usage = await service._maybe_verify(
         run.id, entity_type.id, run.kind, pdf_text, extracted_data, usage
     )
+    call = GenerationCallResult(extracted_data, verdicts, service._run_provenance)
     count = await service._create_suggestions(
         project_id=run.project_id,
         article_id=run.article_id,
         entity_type_id=entity_type.id,
         parent_instance_id=parent_instance_id,
-        extracted_data=extracted_data,
+        extracted_data=call.extracted_data,
         run=run,
-        verdicts=verdicts,
+        verdicts=call.verdicts,
+        generation_snapshot=call.generation_snapshot,
+        attempt_id=service.attempt_id,
     )
     return SectionOutcome(suggestions_created=count, usage=usage, extracted_data=extracted_data)
 
