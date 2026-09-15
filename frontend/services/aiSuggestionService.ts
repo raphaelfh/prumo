@@ -93,7 +93,7 @@ function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknow
 }
 
 /**
- * Flatten the run-level provenance snapshot (snake_case, with nested
+ * Flatten server generation facts (snake_case, with nested
  * `params`/`tokens`) into the camelCase `RunProvenance` the disclosure renders.
  * Unknown top-level keys pass through verbatim so a future backend field shows
  * up as a generic row without a frontend change; the nested `params`/`tokens`
@@ -151,6 +151,9 @@ function mapPromptComposition(raw: unknown): PromptComposition | undefined {
     sectionInstruction: pc['section_instruction'] as string | undefined,
     articleRef: {
       fileId: ar['file_id'] as string | null | undefined,
+      currentFileId: typeof ar['current_file_id'] === 'string' ? ar['current_file_id'] : undefined,
+      historicalInputAvailable: typeof ar['historical_input_available'] === 'boolean'
+        ? ar['historical_input_available'] : undefined,
       fileName: ar['file_name'] as string | null | undefined,
       truncated: ar['truncated'] as boolean | undefined,
       estTokens: ar['est_tokens'] as number | null | undefined,
@@ -164,6 +167,9 @@ function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
   return {
     id: item.id,
     runId: item.run_id,
+    extractionAttemptId: item.extraction_attempt_id ?? undefined,
+    generationSnapshot: mapProvenance(item.generation_snapshot),
+    proposedValue: item.proposed_value,
     value: unwrapValue(item.proposed_value as { [key: string]: unknown }),
     confidence: item.confidence_score ?? 0,
     reasoning: item.rationale ?? '',
@@ -181,6 +187,9 @@ function mapHistoryItemToSuggestion(
   return {
     id: item.id,
     runId: item.run_id,
+    extractionAttemptId: item.extraction_attempt_id ?? undefined,
+    generationSnapshot: mapProvenance(item.generation_snapshot),
+    proposedValue: item.proposed_value,
     value: unwrapValue(item.proposed_value as { [key: string]: unknown }),
     confidence: item.confidence_score ?? 0,
     reasoning: item.rationale ?? '',

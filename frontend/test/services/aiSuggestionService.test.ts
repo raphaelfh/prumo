@@ -614,3 +614,39 @@ describe('AISuggestionService.getArticleInstanceIds', () => {
     ).rejects.toThrow(/instance fail/);
   });
 });
+
+describe('immutable proposal generation mapping', () => {
+  it('keeps equal-valued attempts separate and legacy generation unavailable', async () => {
+    vi.mocked(apiClient).mockResolvedValueOnce([
+      makeItem({ id: 'first', extraction_attempt_id: 'attempt-1', generation_snapshot: {
+        model: 'model-1', tokens: { total: 41 }, prompt_composition: {
+          article_ref: { file_id: null, current_file_id: 'mutable-file', historical_input_available: false },
+        },
+      }}),
+      makeItem({ id: 'second', extraction_attempt_id: 'attempt-2', generation_snapshot: { model: 'model-2' } }),
+      makeItem({ id: 'legacy', extraction_attempt_id: null, generation_snapshot: null, provenance: { model: 'legacy-model' } }),
+    ]);
+    const history = await AISuggestionService.getHistory('article', 'instance', 'field');
+    expect(history.map(item => item.id)).toEqual(['first', 'second', 'legacy']);
+    expect(history.map(item => item.value)).toEqual(['X', 'X', 'X']);
+    expect(history[0].extractionAttemptId).toBe('attempt-1');
+    expect(history[0].generationSnapshot?.tokensTotal).toBe(41);
+    expect(history[0].generationSnapshot?.promptComposition?.articleRef).toMatchObject({
+      fileId: null, currentFileId: 'mutable-file', historicalInputAvailable: false,
+    });
+    expect(history[1].generationSnapshot?.model).toBe('model-2');
+    expect(history[2].generationSnapshot).toBeUndefined();
+    expect(history[2].extractionAttemptId).toBeUndefined();
+  });
+
+  it('keeps complete typed envelopes alongside presentation values', async () => {
+    const envelopes = [
+      { value: 2.5, unit: 'mg' },
+      { value: ['a', 'b'], selected_option_codes: ['a', 'b'] },
+      { value: null, absent_reason: 'not_reported' },
+    ];
+    vi.mocked(apiClient).mockResolvedValueOnce(envelopes.map(proposed_value => makeItem({ proposed_value })));
+    const history = await AISuggestionService.getHistory('article', 'instance', 'field');
+    expect(history.map(item => item.proposedValue)).toEqual(envelopes);
+  });
+});

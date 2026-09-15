@@ -71,8 +71,11 @@ from app.services.exports.extraction_snapshot_reader import (
     AllowedValue,
     load_export_sections,
 )
-from app.services.exports.run_engine import resolve_model_used
 from app.services.exports.value_envelope import resolve_value
+from app.services.proposal_generation_read import (
+    ProposalRevealContext,
+    serialize_proposal_generation,
+)
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
@@ -222,7 +225,7 @@ class AIProposalRow:
     evidence_text: str  # joined with ' | ' when multiple
     evidence_pages: str  # joined with ', ' when multiple
     proposed_at: datetime
-    model_used: str  # server-written provenance engine; see resolve_model_used
+    model_used: str  # Immutable proposal engine, empty when unavailable
     reviewer_outcome: str  # accepted | rejected | edited (best-effort) | pending | superseded
     final_value_used: Any  # None when not published
 
@@ -1639,6 +1642,7 @@ class ExtractionExportService(LoggerMixin):
                     ExtractionProposalRecord.confidence_score,
                     ExtractionProposalRecord.rationale,
                     ExtractionProposalRecord.created_at,
+                    ExtractionProposalRecord,
                 )
                 .where(
                     ExtractionProposalRecord.run_id.in_(run_ids),
@@ -1655,7 +1659,7 @@ class ExtractionExportService(LoggerMixin):
 
         # Compute "latest per key" to flag superseded rows.
         latest_id_per_key: dict[tuple[UUID, UUID, UUID], UUID] = {}
-        for pid, rid, iid, fid, _v, _c, _r, _ts in proposal_rows:
+        for pid, rid, iid, fid, *_rest in proposal_rows:
             latest_id_per_key.setdefault((rid, iid, fid), pid)
 
         proposal_ids = [row[0] for row in proposal_rows]
@@ -1742,10 +1746,7 @@ class ExtractionExportService(LoggerMixin):
                 for idx, iid in enumerate(ids, start=1):
                     instance_index_by_id[iid] = idx
 
-        # 6. The in-scope runs, carrying both halves of the "Model used"
-        # resolution (``results`` provenance first, ``parameters`` only as the
-        # legacy fallback — see ``resolve_model_used``) plus the ``version_id``
-        # that feeds the label-fallback chain below.
+        # 6. In-scope run versions feed the label-fallback chain below.
         run_stmt = select(ExtractionRun).where(ExtractionRun.id.in_(run_ids))
         run_by_id = {r.id: r for r in (await self.db.execute(run_stmt)).scalars().all()}
 
@@ -1794,7 +1795,17 @@ class ExtractionExportService(LoggerMixin):
 
         # Build the output rows.
         out: list[AIProposalRow] = []
-        for pid, rid, iid, fid, proposed_value, confidence, rationale, ts in proposal_rows:
+        for (
+            pid,
+            rid,
+            iid,
+            fid,
+            proposed_value,
+            confidence,
+            rationale,
+            ts,
+            proposal,
+        ) in proposal_rows:
             article = articles_by_run.get(rid)
             run = run_by_id.get(rid)
             if article is None or run is None:
@@ -1817,6 +1828,9 @@ class ExtractionExportService(LoggerMixin):
                 final_value = value_map.get((rid, iid, fid, None))
             else:
                 final_value = value_map.get((rid, iid, fid))
+            generation = serialize_proposal_generation(proposal, ProposalRevealContext({}))
+            facts = generation["generation_snapshot"] or generation["provenance"] or {}
+            model = facts.get("model")
             row = AIProposalRow(
                 article_label=article.header_label,
                 section_label=section_label,
@@ -1833,9 +1847,7 @@ class ExtractionExportService(LoggerMixin):
                     )
                 ),
                 proposed_at=ts,
-                model_used=resolve_model_used(
-                    run.parameters, run.results, entity_type_id=instance_etid
-                ),
+                model_used=model if isinstance(model, str) else "",
                 reviewer_outcome=outcome,
                 final_value_used=final_value,
             )

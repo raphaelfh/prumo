@@ -90,6 +90,10 @@ class ProposalRecordResponse(BaseModel):
     rationale: str | None
     created_at: datetime
 
+    provenance: dict[str, Any] | None = None
+    extraction_attempt_id: UUID | None = None
+    generation_snapshot: dict[str, Any] | None = None
+
 
 class ReviewerDecisionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

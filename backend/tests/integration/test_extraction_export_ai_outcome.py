@@ -18,14 +18,8 @@ Phase S2:
   reports ``"not selected"``, never ``"pending"``.
 * **A5** — evidence renders numeric-sorted, deduped pages (so ``"2"`` <
   ``"10"``) and a deduped, page-ordered ``evidence_text``.
-* **A7** — the ``Model used`` column names the engine that actually ran,
-  read from the server-written ``results["provenance"]`` snapshot. It is
-  emphatically NOT read from ``run.parameters["model"]``: ``POST
-  /api/v1/runs`` accepts an arbitrary ``parameters`` JSONB bag behind
-  ``ensure_project_reviewer`` and stores it verbatim, so trusting that key
-  would let an ordinary reviewer hand-write the engine name that ships in a
-  published export. ``parameters`` survives only as the legacy fallback for
-  runs recorded before provenance existed.
+* **A7** — Only immutable proposal facts may supply the exported model.
+  Legacy rows never borrow mutable run metadata or request parameters.
 
 The sibling file ``test_extraction_export_ai_outcome_ordering.py`` (the
 A6 ``id``-tiebreak determinism guard) ships separately on PR #291; this
@@ -651,19 +645,10 @@ async def _ai_metadata_rows(
     )
 
 
-async def test_model_used_reports_provenance_not_the_forgeable_parameters_bag(
+async def test_model_used_ignores_mutable_run_provenance_and_forgeable_parameters(
     db_session: AsyncSession,
 ) -> None:
-    """A7 — a reviewer-planted ``parameters["model"]`` must never be reported.
-
-    The run below carries the two values in open disagreement: a forged
-    ``parameters["model"]`` of the kind any project reviewer can POST, and a
-    provenance snapshot naming the engine that genuinely ran. The export must
-    report the provenance engine, and the forged string must not survive
-    anywhere in the column — not as the value, not joined alongside the real
-    one. If this assertion ever flips, a reviewer can attribute their export
-    to a model that never touched the article.
-    """
+    """Legacy proposal engine remains unavailable despite mutable run metadata."""
     coord = await _coord(db_session)
     if coord is None:
         pytest.skip("dev DB not seeded with an extraction instance")
@@ -701,22 +686,14 @@ async def test_model_used_reports_provenance_not_the_forgeable_parameters_bag(
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].model_used == "gpt-5-mini-real"
+    assert rows[0].model_used == ""
     assert "FORGED" not in rows[0].model_used
 
 
-async def test_model_used_filled_from_provenance_for_a_hitl_opened_run(
+async def test_model_used_unavailable_without_per_proposal_facts_for_hitl_run(
     db_session: AsyncSession,
 ) -> None:
-    """A7a — the normal path stops reporting a blank engine.
-
-    ``HITLSessionService.open_or_resume`` creates the run with
-    ``{"opened_via": "hitl_session", "kind": ...}`` and no ``model`` key at
-    all — which is why the column shipped silently empty for essentially
-    every real run while the review UI, reading provenance, displayed the
-    engine. The precondition is asserted rather than assumed, so this test
-    fails loudly if that parameter shape ever changes.
-    """
+    """Legacy proposal engine remains unavailable despite mutable run metadata."""
     coord = await _coord(db_session)
     if coord is None:
         pytest.skip("dev DB not seeded with an extraction instance")
@@ -754,20 +731,13 @@ async def test_model_used_filled_from_provenance_for_a_hitl_opened_run(
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].model_used == "gpt-5-mini-real"
+    assert rows[0].model_used == ""
 
 
-async def test_model_used_joins_every_candidate_when_the_section_is_unattributable(
+async def test_model_used_never_guesses_from_sibling_section_candidates(
     db_session: AsyncSession,
 ) -> None:
-    """A7b — an unattributable proposal reports ALL candidates, never one.
-
-    The run recorded two sections that ran different engines, and the
-    proposal's own section has no snapshot, so nothing on the row can say
-    which of the two produced it. Naming either one would be a guess printed
-    as a fact, so the column names both, joined and sorted for a stable,
-    diff-able cell. The reader sees the ambiguity instead of a plausible lie.
-    """
+    """Legacy proposal engine remains unavailable despite mutable run metadata."""
     coord = await _coord(db_session)
     if coord is None:
         pytest.skip("dev DB not seeded with an extraction instance")
@@ -806,18 +776,13 @@ async def test_model_used_joins_every_candidate_when_the_section_is_unattributab
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].model_used == "a-engine | z-engine"
+    assert rows[0].model_used == ""
 
 
-async def test_model_used_reads_the_flat_snapshot_of_a_pre_sections_run(
+async def test_model_used_never_borrows_flat_run_snapshot(
     db_session: AsyncSession,
 ) -> None:
-    """A7c — legacy runs stored provenance flat, with no ``sections`` map.
-
-    Those runs predate per-section extraction but still hold a truthful,
-    server-written engine at ``provenance["model"]``. It outranks
-    ``parameters`` for the same reason the per-section snapshot does.
-    """
+    """Legacy proposal engine remains unavailable despite mutable run metadata."""
     coord = await _coord(db_session)
     if coord is None:
         pytest.skip("dev DB not seeded with an extraction instance")
@@ -855,20 +820,13 @@ async def test_model_used_reads_the_flat_snapshot_of_a_pre_sections_run(
         field_id=field_id,
     )
     assert len(rows) == 1
-    assert rows[0].model_used == "legacy-flat-engine"
+    assert rows[0].model_used == ""
 
 
-async def test_model_used_falls_back_to_parameters_only_without_any_provenance(
+async def test_model_used_never_falls_back_to_parameters_for_legacy_rows(
     db_session: AsyncSession,
 ) -> None:
-    """A7d — ``parameters["model"]`` still answers for pre-provenance runs.
-
-    For a run with no provenance at all the client-supplied bag is the only
-    record that exists, so reporting it beats reporting nothing; the forgery
-    risk is bounded to runs the server never annotated. Two such runs, each
-    with one proposal, also pin per-run isolation: neither row may borrow the
-    other run's engine.
-    """
+    """Legacy proposal engine remains unavailable despite mutable run metadata."""
     coord = await _coord(db_session)
     if coord is None:
         pytest.skip("dev DB not seeded with an extraction instance")
@@ -945,7 +903,7 @@ async def test_model_used_falls_back_to_parameters_only_without_any_provenance(
         field_id=field_id,
     )
     assert len(rows_a) == 1
-    assert rows_a[0].model_used == "gpt-4o-mini"
+    assert rows_a[0].model_used == ""
 
     rows_b = await _ai_metadata_rows(
         db_session,
@@ -957,7 +915,7 @@ async def test_model_used_falls_back_to_parameters_only_without_any_provenance(
         field_id=field_id,
     )
     assert len(rows_b) == 1
-    assert rows_b[0].model_used == "gpt-4o"
+    assert rows_b[0].model_used == ""
 
     await db_session.rollback()
 
