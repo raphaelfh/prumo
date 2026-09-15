@@ -41,7 +41,24 @@ async def test_create_run(db_client: AsyncClient, db_session: AsyncSession) -> N
     assert row.scalar() == "PENDING"
 ```
 
-Auth is still mocked (returns `test-user-id` with `role=authenticated`). If your test needs a specific role or `is_project_reviewer` to return true, build the row directly via SQL or seed via the service layer.
+Auth is still mocked (returns `test-user-id` with `role=authenticated`). That subject is not a real profile, so it is a member of nothing; any test that crosses a membership or role guard needs the next section.
+
+### Authorization tests (the BOLA fence)
+
+Point the auth override at a seeded profile: the `auth_as_profile` fixture (the seed manager, `SEED.primary_profile`), then switch identity mid-test with `_auth_as(SEED.reviewer_profile)` or `_auth_as(SEED.outsider_profile)`. Both are defined per file today; copy them from `backend/tests/integration/test_extraction_runs_endpoints.py`.
+
+```python
+async def test_create_consensus_rejects_non_arbitrator_reviewer(
+    db_client: AsyncClient, db_session: AsyncSession, auth_as_profile: UUID
+) -> None:
+    run_id, instance_id, field_id, decision_id = await _setup_consensus_run(db_client, db_session)
+    _auth_as(SEED.reviewer_profile)  # a project reviewer, NOT an arbitrator
+    response = await db_client.post(f"{API_PREFIX}/{run_id}/consensus", json={...})
+    assert response.status_code == 403, response.text
+    assert "manager or consensus role required" in response.json()["error"]["message"].lower()
+```
+
+Every endpoint that takes a client-supplied id gets one refusal test per guard it depends on: a non-member (403), a member with the wrong role (403), and a foreign row id (404, with a message that names nothing of the foreign row). Keep a control case where the authorized caller succeeds on the same setup, or a refusal can pass for the wrong reason: a 404 from a wrong route reads as a pass. Service-level guards test the same way without HTTP: `test_foreign_owner_cannot_retrieve_job` (`test_extraction_attempt_kickoff.py`) asserts `NotFoundError` and that the message leaks nothing.
 
 ## 3. Builder fixtures (lightweight factory pattern)
 
@@ -166,7 +183,7 @@ The `db_client` fixture's mocked user is `role=authenticated` with `sub=test-use
 
 Test the policy directly against `db_session` with raw SQL — `app.dependency_overrides` doesn't run RLS unless the connection uses an anon/auth role. By default test connections use the service role, which bypasses RLS.
 
-To test RLS for real, you need to run queries with `SET ROLE authenticated` and `SET LOCAL request.jwt.claims` inside a transaction. See `backend/tests/integration/test_run_reviewers_endpoint.py` for an existing pattern.
+To test RLS for real, run the queries inside a transaction after `SELECT set_config('request.jwt.claims', :claims, true)` and `SET LOCAL ROLE authenticated`. See `backend/tests/integration/test_llm_connection_rls.py` for an existing pattern.
 
 ## 11. Common failure modes
 

@@ -12,7 +12,7 @@ shadow that resolved to `none`, a dark-mode foreground that vanished). The check
 that closes the loop is visual.
 
 - `frontend-ux` → *what it should look like* (the Plane/Linear/WorkOS language).
-- `ui-styling` → *how to wire it* (Tailwind v3 + shadcn + Radix mechanics).
+- `ui-styling` → *how to wire it* (Tailwind v4 + shadcn + Radix mechanics).
 - **this skill** → *what you actually rendered, and how to walk it to the target.*
 
 Read `frontend-ux` first to know the target; run this loop to verify you hit it.
@@ -157,22 +157,6 @@ Use them to answer "does this *feel* like the same family of tool?"
 | `rounded-2xl` on everything | `rounded-md` (8px) per the menu/dropdown spec |
 | Emoji as icons, mismatched icon sizes | `lucide` `h-4 w-4` `strokeWidth={1.5}` |
 | No hover affordance on rows/actions | `group-hover` reveal + `hover:bg-muted/50` |
-
-## Precedence: `frontend-ux` wins; `frontend-design` is greenfield-only
-
-The enabled `frontend-design@claude-plugins-official` plugin optimises for
-*distinctive novelty* — it pushes bold, one-of-a-kind directions and bans common
-defaults (e.g. Inter / system fonts). That is **the wrong objective for a fixed
-Plane/Linear benchmark**: it pulls core product UI *away* from the consistent
-language we are matching. So:
-
-- **Core product UI** (extraction, HITL, runs, settings, layout) → this loop +
-  `frontend-ux` + `ui-styling` govern. Reproduce the existing language; do not
-  invent a new one.
-- **Greenfield / marketing / illustrative** surfaces with no existing pattern to
-  match → `frontend-design` is fair game for exploration.
-
-When the two conflict on a core screen, `frontend-ux` is authoritative.
 
 ## Recording a regression baseline (optional)
 

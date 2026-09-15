@@ -78,9 +78,9 @@ If `onError` is empty, you have a bug-in-waiting. Either implement rollback or r
 
 ## Autosave + invalidate interaction
 
-See `frontend/hooks/extraction/useExtractionAutoSave.ts:20` — the comment there is load-bearing:
+See the header comment of `frontend/hooks/runs/useAutoSaveProposals.ts` — it is load-bearing:
 
-> autosave intentionally **does not** invalidate the run detail key, to avoid a refetch storm on every keystroke.
+> autosave writes through `apiClient` rather than a TanStack mutation, so it **does not** invalidate the run detail key; invalidating on every debounced tick would trigger a `GET /runs/{id}` per save.
 
 That is a deliberate exception. The downside: the run-detail view can be slightly stale during typing. That's a UX tradeoff documented at the source. Don't replicate the pattern elsewhere without the same comment.
 

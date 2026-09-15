@@ -45,9 +45,9 @@ These bias toward caution over speed. For trivial changes, use judgment.
 
 Load the skill before non-trivial work in its area. The four domain
 skills (`backend-development`, `frontend-development`, `ui-styling`,
-`web-testing`) also auto-load by `paths:` when a matching file is
-touched; the rest are on-demand — naming them here is what makes them
-load reliably.
+`web-testing`) join the skill list once a matching file is touched
+(`paths:`), but their bodies never auto-load — invoke them. Naming a
+skill here is what makes it load reliably.
 
 - Backend (FastAPI/SQLAlchemy/Alembic/Celery/RLS) → `backend-development`
 - Frontend structure/data/state (components/hooks/services/stores) → `frontend-development`
@@ -151,7 +151,8 @@ Design rationale (the *why*):
   `npx knip --production` (only production code does; catches a feature
   orphaned behind a still-green test). Legitimate exceptions go in
   `knip.jsonc`, each with a reason. A `--production` finding is not
-  automatically "delete it" — triage per `.claude/rules/frontend.md`.
+  automatically "delete it" — triage per
+  `.claude/skills/frontend-development/references/dead-code.md`.
   UI copy: `scripts/fitness/check_copy_keys.py` shrink-only ratchet —
   knip cannot see unused *members* of an exported object literal, so a
   `frontend/lib/copy/*.ts` key with no reference fails the fitness gate.

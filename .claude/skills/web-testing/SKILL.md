@@ -4,10 +4,9 @@ description: Use whenever writing, debugging, or designing tests for prumo — P
 paths:
   - "backend/tests/**"
   - "frontend/test/**"
-  - "e2e/**"
+  - "frontend/e2e/**"
   - "**/*.test.ts"
   - "**/*.test.tsx"
-  - "**/*.spec.ts"
 ---
 
 # Web Testing — prumo
@@ -167,7 +166,7 @@ vi.mock('@/lib/copy', async (importOriginal) => {
 
 ### 5.5 TanStack Query test wrapper
 
-Always wrap with a fresh `QueryClient` per test, retries off, gcTime 0. There's likely a shared `renderWithProviders` helper — search `frontend/test/` before rolling your own.
+Always wrap with a fresh `QueryClient` per test, retries off, gcTime 0. There is no shared render helper: each test file builds its own wrapper (recipe in `references/vitest.md` §2), and screen-level helpers live in `frontend/test/helpers/`.
 
 Deeper patterns: [`references/vitest.md`](references/vitest.md) and [`references/msw.md`](references/msw.md).
 
@@ -184,14 +183,16 @@ Don't reinvent them. Existing helpers:
 
 | File                      | Purpose                                       |
 |---------------------------|-----------------------------------------------|
-| `auth.ts`                 | `resolveAuthToken(page)`, `loginViaUi(page)`  |
-| `api.ts`                  | `expectEnvelopeOk`, `authHeaders`, envelope types |
-| `hitl.ts`                 | HITL session/run helpers                       |
+| `auth.ts`                 | `resolveAuthToken(page)`, `loginViaUi(page)`, `loginViaUiAs` |
+| `api.ts`                  | `authHeaders`, `parseEnvelope`, `ApiEnvelope<T>` |
+| `hitl.ts`, `hitl-finalize.ts` | HITL session/run helpers (`prepareCleanQaRun`, …) |
 | `supabase-admin.ts`       | Service-role client for admin DB ops          |
-| `storage.ts`              | Storage bucket setup/teardown                 |
-| `console-errors.ts`       | Fail tests on stray console errors            |
+| `console-errors.ts`       | `watchConsoleErrors`: fail tests on stray console errors |
 | `env.ts`                  | E2E env var loading                            |
 | `registry.ts`             | Cross-test resource registry                   |
+| `ensure-fixtures.ts`, `fixture-ids.ts` | Self-provisioned fixtures and their ids |
+
+Also there: `article-pdf.ts`, `extraction-review-workspace.ts`, `global-setup.ts`, `global-teardown.ts`.
 
 Use them. New helpers go here, not inline.
 
@@ -291,7 +292,7 @@ If a test is flaky, identify which lever isn't pinned **before** adding retries.
 GitHub Actions runs pytest then Playwright. Gates:
 
 1. Lint (`make lint-backend`, `npm run lint`)
-2. Unit (`make test-backend`, `npm test`)
+2. Unit (`make test-backend`, `npm run test:run`; plain `npm test` is watch mode and hangs agent sessions)
 3. E2E (`npx playwright test`)
 
 A failure in any earlier gate cancels later ones. Playwright artifacts (traces, screenshots, HTML report) upload on failure — pull them before guessing.
