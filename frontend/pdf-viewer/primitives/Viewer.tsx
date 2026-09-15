@@ -7,6 +7,7 @@ import type {createViewerStore} from '../core/store';
 import {useDocumentLoader} from '../hooks/useDocumentLoader';
 import {usePageHandle} from '../hooks/usePageHandle';
 import {usePageScrollSync} from '../hooks/usePageScrollSync';
+import {useGestureZoom} from '../viewport/useGestureZoom';
 import {layoutPageLocator, usePageLayout} from '../viewport/usePageLayout';
 import {useVirtualPages} from '../viewport/useVirtualPages';
 
@@ -57,7 +58,13 @@ function Body({children, className}: {children: ReactNode; className?: string}) 
 
   return (
     <ScrollerContext.Provider value={scroller}>
-      <div ref={attach} className={className} data-pdf-viewer-body="" style={{overflow: 'auto', position: 'relative', height: '100%'}}>
+      {/* pan-x pan-y: one finger still scrolls; the browser's own pinch-zoom is off so the pinch reaches useGestureZoom. */}
+      <div
+        ref={attach}
+        className={className}
+        data-pdf-viewer-body=""
+        style={{overflow: 'auto', position: 'relative', height: '100%', touchAction: 'pan-x pan-y'}}
+      >
         {children}
       </div>
     </ScrollerContext.Provider>
@@ -66,28 +73,40 @@ function Body({children, className}: {children: ReactNode; className?: string}) 
 
 /**
  * Mounts only the pages near the viewport, each in a slot the page layout
- * positions. The column is as tall as the whole document, so the scrollbar
- * and page navigation work before any other page has rendered.
+ * positions. The column is as tall as the whole document, so the scrollbar and
+ * page navigation work before any other page has rendered. A zoom gesture
+ * resizes the sizer and scales the column inside it (`useGestureZoom`).
  */
 function Pages({children}: {children: (page: {number: number}) => ReactNode}) {
   const scroller = useContext(ScrollerContext);
   const layout = usePageLayout();
-  const items = useVirtualPages({scroller, layout});
+  const isGesturing = useViewerStore((s) => s.isGesturing);
+  const items = useVirtualPages({scroller, layout, isGesturing});
+  const [sizer, setSizer] = useState<HTMLDivElement | null>(null);
+  const [pages, setPages] = useState<HTMLDivElement | null>(null);
+  useGestureZoom({scroller, sizer, pages, layout});
+
   if (layout.numPages === 0) return null;
   return (
-    <div data-pdf-viewer-pages="" style={{position: 'relative', margin: '0 auto', width: layout.width, height: layout.totalHeight}}>
-      {items.map((item) => {
-        const page = item.index + 1;
-        const {width, height} = layout.sizeOf(page);
-        return (
-          <div
-            key={item.key}
-            style={{position: 'absolute', top: layout.offsetOf(page), left: (layout.width - width) / 2, width, height}}
-          >
-            {children({number: page})}
-          </div>
-        );
-      })}
+    <div ref={setSizer} data-pdf-viewer-sizer="" style={{margin: '0 auto', width: layout.width, height: layout.totalHeight}}>
+      <div
+        ref={setPages}
+        data-pdf-viewer-pages=""
+        style={{position: 'relative', width: layout.width, height: layout.totalHeight, transformOrigin: '0 0'}}
+      >
+        {items.map((item) => {
+          const page = item.index + 1;
+          const {width, height} = layout.sizeOf(page);
+          return (
+            <div
+              key={item.key}
+              style={{position: 'absolute', top: layout.offsetOf(page), left: (layout.width - width) / 2, width, height}}
+            >
+              {children({number: page})}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

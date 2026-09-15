@@ -127,6 +127,16 @@ describe('Viewer.Pages virtualization', () => {
     const expectedPage = zoomedLayout.pageAt(scroller.scrollTop, VIEWPORT);
     await waitFor(() => expect(mounted()).toContain(expectedPage));
   });
+
+  it('keeps the pages mounted when a gesture began while it runs', async () => {
+    const {store, mounted, scrollTo} = await renderDocument(18);
+    await waitFor(() => expect(mounted()).toEqual([1, 2]));
+    act(() => store.getState().actions.setGesturing(true));
+    scrollTo(layout.offsetOf(10));
+    await waitFor(() => expect(mounted()).toEqual(expect.arrayContaining([1, 2, 9, 10, 11])));
+    act(() => store.getState().actions.setGesturing(false));
+    await waitFor(() => expect(mounted()).toEqual([9, 10, 11]));
+  });
 });
 
 describe.each([

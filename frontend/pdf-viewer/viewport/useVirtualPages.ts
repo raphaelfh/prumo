@@ -2,18 +2,22 @@
 /**
  * The pages to mount: those in the scroller's viewport plus one on each side.
  * Overscan 1, never trusting `scrollend` alone, and a size correction above
- * the viewport keeps the reading position.
+ * the viewport keeps the reading position. During a pinch it keeps the pages
+ * mounted when the gesture began, adding any it reveals.
  */
 import {useVirtualizer, type PartialKeys, type VirtualItem, type VirtualizerOptions} from '@tanstack/react-virtual';
-import {useLayoutEffect, useMemo, useRef} from 'react';
+import {useLayoutEffect, useMemo, useRef, useState} from 'react';
 import type {PageLayout} from './usePageLayout';
 
 export function useVirtualPages({
   scroller,
   layout,
+  isGesturing,
 }: {
   scroller: HTMLElement | null;
   layout: PageLayout;
+  /** While true the mounted set only grows: the virtualizer sees scroll offsets at the preview's scale. */
+  isGesturing: boolean;
 }): VirtualItem[] {
   // kept: babel-plugin-react-compiler hard-codes `@tanstack/react-virtual`'s
   // `useVirtualizer()` as a known-incompatible library (IncompatibleLibrary
@@ -61,5 +65,12 @@ export function useVirtualPages({
     }
   }, [layout, virtualizer]);
 
-  return virtualizer.getVirtualItems();
+  const items = virtualizer.getVirtualItems();
+  // The pages mounted when the gesture began, kept until it ends.
+  const [held, setHeld] = useState<{isGesturing: boolean; items: VirtualItem[]}>({isGesturing: false, items: []});
+  if (held.isGesturing !== isGesturing) setHeld({isGesturing, items: isGesturing ? items : []});
+  if (!isGesturing) return items;
+  const byIndex = new Map(items.map((item) => [item.index, item]));
+  for (const item of held.items) byIndex.set(item.index, item);
+  return [...byIndex.values()].sort((a, b) => a.index - b.index);
 }
