@@ -21,6 +21,19 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null }, error: null }) } },
 }));
 
+// NotificationCenter (mounted via Utility) calls these for AI-batch sync and
+// cancel/details; they need a QueryClientProvider this test doesn't set up,
+// and they're not what's under test here — stub them, same convention as
+// NotificationCenter's own test.
+vi.mock('@/hooks/useAiBatchJobSync', () => ({ useAiBatchJobSync: vi.fn() }));
+vi.mock('@/hooks/extraction/useExtractionBatches', () => ({
+  useCancelBatch: () => ({ mutate: vi.fn(), isPending: false }),
+  useBatchDetail: () => ({ data: undefined }),
+}));
+vi.mock('@/components/extraction/batch/BatchDetailsSheet', () => ({
+  BatchDetailsSheet: () => null,
+}));
+
 // ---- Test 1: ExtractionHeader threads canReveal/onReveal to the popover ----
 
 import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';

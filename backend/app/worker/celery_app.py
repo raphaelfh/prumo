@@ -19,6 +19,7 @@ celery_app = Celery(
     backend=REDIS_URL,
     include=[
         "app.worker.tasks.extraction_tasks",
+        "app.worker.tasks.extraction_batch_tasks",
         "app.worker.tasks.import_tasks",
         "app.worker.tasks.export_tasks",
         "app.worker.tasks.extraction_export_tasks",
@@ -66,6 +67,9 @@ celery_app.conf.update(
     # queue named here is in the worker ``--queues=...`` list.
     task_routes={
         "app.worker.tasks.extraction_tasks.*": {"queue": "extractions"},
+        # AI batch dispatcher: no LLM work, but it hands jobs to the
+        # extraction queue, so it lives beside them.
+        "app.worker.tasks.extraction_batch_tasks.*": {"queue": "extractions"},
         "app.worker.tasks.import_tasks.*": {"queue": "imports"},
         # Keep CPU-bound XLSX builds off the LLM-heavy `extractions` queue
         # so a long-running extraction can't starve a user-initiated export.

@@ -7,23 +7,17 @@ paths:
 # Backend conventions (prumo)
 
 For any non-trivial backend change, load the `backend-development` skill
-before writing code (deep dives also in `docs/reference/`). This file is the
-always-true core.
+before writing code. This file is the always-true core.
 
-## Repository vs service SQL
+## Layering and SQL
 
-Use a repository (`backend/app/repositories/`) when a query is reused by >1
-service, or the entity has several distinct query shapes. Otherwise inline
-`select()` in the owning service. Repositories call `flush()`, never `commit()`.
-
-## Layering (CI-enforced by `scripts/fitness/check_layered_arch.py`)
-
-`api → services → repositories → models`. Endpoints never touch the
-DB or return ORM objects; services never import api or return HTTP
-objects; repositories never contain business logic. Support packages
-(`core`, `utils`, `domain`, `schemas`, `llm`, `infrastructure`) never
-import a layer — a schema re-exporting a model launders `api → models`.
-A new top-level `app/` package must be classified in the gate, or it fails.
+- `api → services → repositories → models`, gated by
+  `scripts/fitness/check_layered_arch.py`. Endpoints never touch the DB or
+  return ORM objects.
+- Use a repository (`backend/app/repositories/`) when a query is reused by
+  >1 service, or the entity has several distinct query shapes. Otherwise
+  inline `select()` in the owning service. Repositories call `flush()`,
+  never `commit()`.
 
 ## Migrations
 
@@ -39,9 +33,11 @@ A new top-level `app/` package must be classified in the gate, or it fails.
 
 ## API contract
 
-- Responses use the `ApiResponse` envelope; errors expose
-  `error.message` (not FastAPI's default `detail`). New endpoints get
-  a typed Pydantic response model — never `ApiResponse[dict[str, Any]]`.
+- Responses use the `ApiResponse` envelope with a typed model
+  (`ApiResponse[dict[str, Any]]` fails `check_api_response_envelope.py`).
+  Errors reach the client as `error.message`, not FastAPI's default
+  `detail`: raise `HTTPException` or an `AppError` subclass and let
+  `app/core/error_handler.py` wrap it.
 
 ## Ownership guards (BOLA)
 
@@ -55,16 +51,19 @@ guard that drifted or was never made.
   those helpers are what the RLS policies call, so a copy lets the API
   and the database disagree. Services cannot import `api.deps`, so a
   service calls the DB function directly (`SELECT public.is_project_member(...)`).
-  The CI gate has **no exempt module** — `security.py` included. It used to
-  exempt itself, on the theory that the module the policies agree with may
-  know the table; that hid two hand-rolled predicates inside the very file
-  whose job is to prevent them (`require_project_scope`,
-  `require_project_manager`). A dependency that reads a PATH parameter still
-  delegates to the imperative helper rather than re-typing its EXISTS.
+  A dependency that reads a PATH parameter delegates to the imperative
+  helper; the CI gate exempts no module, `security.py` included.
+- **A run by id** → `api/deps/scope.load_run_for_member`. It resolves the
+  run, then checks membership on the run's own project, so there is no
+  second client id to compare. It answers 404 missing / 403 non-member:
+  the one accepted existence signal, because run ids are random uuid4
+  (`assert_kickoff_scope` docstring).
 - **Row-in-parent** → the named guard for that pair:
   `project_template_active_service.owned_template`,
   `template_section_service.owned_section`,
-  `article_read_service.owned_article`,
+  `article_read_service.owned_articles` (and `owned_article`, which delegates),
+  `extraction_batch_service.owned_batch` (a batch in its owner, who is still
+  a project member),
   `ExtractionInstanceRepository.get_in_coordinate`,
   `llm_connection_service.owned_user_connection` (a user-scope connection
   in its owner), `llm_connection_service.owned_project_connection` (a
@@ -79,8 +78,9 @@ guard that drifted or was never made.
 - **Scope goes in the WHERE clause**, never a compare after `db.get` /
   `get_by_id`. A scoped SELECT never locks a foreign row, and makes
   "missing" and "foreign" indistinguishable — no existence oracle.
-- One error for both cases, 404-class, and the message names no field of
-  the foreign row (not even its editor's name).
+- A row-in-parent guard gives one error for missing and foreign alike,
+  404-class, and the message names no field of the foreign row (not even
+  its editor's name).
 - Endpoints may not reach a repository, so an api-layer guard calls the
   service wrapper (`assert_instance_in_coordinate`), not the repo.
 
@@ -90,15 +90,14 @@ line with a reason in the same PR; the baseline only shrinks.
 
 ## Dead code
 
-- CI runs a vulture **shrink-only ratchet** (config in `[tool.vulture]`,
-  baseline in `backend/.vulture_baseline`, gate in
-  `scripts/vulture_baseline.py` — also a `verify_all.sh` gate). A new
-  finding fails CI: delete the dead symbol, or — only if it is genuinely
-  framework-consumed (Starlette `dispatch`, Celery `on_failure`) —
-  baseline it with `--exec --update` in the same PR and say why in the
-  PR body. After deleting dead code, tighten the baseline the same way.
-  Pydantic/SQLAlchemy field declarations under `app/schemas` and
-  `app/models` are excluded by design; don't move dead logic there.
+- CI runs a vulture **shrink-only ratchet** (`scripts/vulture_baseline.py`,
+  baseline `backend/.vulture_baseline`, config `[tool.vulture]`). A new
+  finding fails CI: delete the dead symbol. Only a genuinely
+  framework-consumed one (Starlette `dispatch`, Celery `on_failure`) is
+  baselined, with `--exec --update` in the same PR and the reason in the
+  PR body; tighten the baseline the same way after deleting dead code.
+  Field declarations under `app/schemas` and `app/models` are excluded by
+  design; don't move dead logic there.
 
 ## Tests
 
@@ -108,4 +107,5 @@ line with a reason in the same PR; the baseline only shrinks.
 - Integration setup helpers must scope article/template queries by
   `project_id`.
 - Run with `make test-backend`; seed graph is auto-created by the
-  autouse `SEED` fixture in `tests/integration/conftest.py`.
+  autouse `SEED` fixture in `tests/integration/conftest.py`. Fixture and
+  authorization-test recipes: the `web-testing` skill.

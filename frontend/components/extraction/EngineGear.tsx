@@ -58,7 +58,7 @@ function writeFailed(error: unknown): void {
     toast.error(t('llmConnections', (code && ERROR_COPY[code]) || 'pickError'));
 }
 
-function engineLabel(read: LlmEngineRead): string {
+export function engineLabel(read: LlmEngineRead): string {
     const {effective} = read;
     const entry = read.catalog.find((e) => e.provider === effective.provider && e.model === effective.model);
     if (entry) return entry.label;

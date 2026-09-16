@@ -1,7 +1,7 @@
 import type {ComponentProps} from 'react';
 import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 
 import {Toolbar} from '../Toolbar';
 import {ViewerProvider} from '../../core/context';
@@ -70,5 +70,106 @@ describe('<Toolbar> zoom visibility', () => {
     renderToolbar('reader');
     expect(screen.getByLabelText('Next page')).toBeInTheDocument();
     expect(screen.getByLabelText('Previous page')).toBeInTheDocument();
+  });
+});
+
+describe('<Toolbar> ☰ menu — rotate view', () => {
+  it('turns the view 90° clockwise per click', async () => {
+    const user = userEvent.setup();
+    const store = renderToolbar('canvas');
+    await user.click(screen.getByLabelText('More options'));
+    await user.click(await screen.findByRole('menuitem', {name: /Rotate view/}));
+    expect(store.getState().viewRotation).toBe(90);
+  });
+
+  it('is hidden in reader mode (no page surface to rotate)', async () => {
+    const user = userEvent.setup();
+    renderToolbar('reader', {
+      externalLink: {label: 'Open article page', href: 'https://doi.org/10.1234/abcd'},
+    });
+    await user.click(screen.getByLabelText('More options'));
+    expect(screen.queryByRole('menuitem', {name: /Rotate view/})).not.toBeInTheDocument();
+  });
+});
+
+describe('<Toolbar> ☰ trigger visibility', () => {
+  it('shows the trigger in canvas mode with no externalLink (Rotate view lives there)', () => {
+    renderToolbar('canvas');
+    expect(screen.getByLabelText('More options')).toBeInTheDocument();
+  });
+
+  it('hides the trigger in reader mode with no externalLink (menu would be empty)', () => {
+    renderToolbar('reader');
+    expect(screen.queryByLabelText('More options')).not.toBeInTheDocument();
+  });
+
+  it('shows only Open article page in reader mode with an externalLink', async () => {
+    const user = userEvent.setup();
+    renderToolbar('reader', {
+      externalLink: {label: 'Open article page', href: 'https://doi.org/10.1234/abcd'},
+    });
+    const trigger = screen.getByLabelText('More options');
+    expect(trigger).toBeInTheDocument();
+    await user.click(trigger);
+    expect(await screen.findByRole('menuitem', {name: 'Open article page'})).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', {name: /Rotate view/})).not.toBeInTheDocument();
+  });
+});
+
+describe('<Toolbar> ☰ menu — open article page', () => {
+  it('is absent without an externalLink', async () => {
+    const user = userEvent.setup();
+    renderToolbar('canvas');
+    await user.click(screen.getByLabelText('More options'));
+    expect(screen.queryByRole('menuitem', {name: 'Open article page'})).not.toBeInTheDocument();
+  });
+
+  it('is present with an externalLink and points at its href', async () => {
+    const user = userEvent.setup();
+    renderToolbar('canvas', {
+      externalLink: {label: 'Open article page', href: 'https://doi.org/10.1234/abcd'},
+    });
+    await user.click(screen.getByLabelText('More options'));
+    const item = await screen.findByRole('menuitem', {name: 'Open article page'});
+    expect(item).toHaveAttribute('href', 'https://doi.org/10.1234/abcd');
+  });
+});
+
+describe('<Toolbar> expand control', () => {
+  it('is absent when the caller owns no expand state', () => {
+    renderToolbar('canvas');
+    expect(screen.queryByLabelText('Expand')).not.toBeInTheDocument();
+  });
+
+  it('sits immediately left of the ☰ trigger', () => {
+    renderToolbar('canvas', {expanded: false, onToggleExpand: () => {}});
+    expect(follows(screen.getByLabelText('Search in document'), screen.getByLabelText('Expand'))).toBe(true);
+    expect(follows(screen.getByLabelText('Expand'), screen.getByLabelText('More options'))).toBe(true);
+  });
+
+  it('reports presses to the caller and advertises its chord', async () => {
+    const user = userEvent.setup();
+    const onToggleExpand = vi.fn();
+    renderToolbar('canvas', {expanded: false, onToggleExpand});
+    const button = screen.getByLabelText('Expand');
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    expect(button).toHaveAttribute('aria-keyshortcuts');
+    await user.click(button);
+    expect(onToggleExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it('names its next action while expanded', async () => {
+    const user = userEvent.setup();
+    renderToolbar('canvas', {expanded: true, onToggleExpand: () => {}});
+    const button = screen.getByLabelText('Expand');
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    await user.hover(button);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Restore split view');
+  });
+
+  /** The reader is still a document to focus on, so expanding is not canvas-only. */
+  it('is available in reader mode too', () => {
+    renderToolbar('reader', {expanded: false, onToggleExpand: () => {}});
+    expect(screen.getByLabelText('Expand')).toBeInTheDocument();
   });
 });

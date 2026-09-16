@@ -1,6 +1,11 @@
 import {describe, expect, it} from 'vitest';
 import {createViewerStore} from '../core/store';
 import {subscribeReaderLocate} from '../core/subscribeReaderLocate';
+import type {PDFDocumentHandle} from '../core/engine';
+
+function stubDocument(numPages: number, onDestroy: () => void = () => {}): PDFDocumentHandle {
+  return {numPages, getPage: async () => {throw new Error('stub');}, destroy: onDestroy};
+}
 
 describe('createViewerStore', () => {
   it('returns a store with the expected initial state', () => {
@@ -12,23 +17,50 @@ describe('createViewerStore', () => {
     expect(state.loadStatus).toBe('idle');
     expect(state.error).toBeNull();
     expect(state.currentPage).toBe(1);
-    expect(state.scale).toBe(1);
-    expect(state.rotation).toBe(0);
+    expect(state.zoom).toBe(1);
+    expect(state.fitWidth).toBe(true);
+    expect(state.isGesturing).toBe(false);
+    expect(state.viewRotation).toBe(0);
     expect(typeof state.actions.goToPage).toBe('function');
+  });
+
+  it('rotateView turns the view 90° clockwise and wraps after 270', () => {
+    const store = createViewerStore();
+    const turns = [1, 2, 3, 4].map(() => {
+      store.getState().actions.rotateView();
+      return store.getState().viewRotation;
+    });
+    expect(turns).toEqual([90, 180, 270, 0]);
+  });
+
+  it('rotateView(-1) turns the view counter-clockwise and wraps below 0', () => {
+    const store = createViewerStore();
+    const turns = [1, 2, 3, 4].map(() => {
+      store.getState().actions.rotateView(-1);
+      return store.getState().viewRotation;
+    });
+    expect(turns).toEqual([270, 180, 90, 0]);
+  });
+
+  it('rotateView directions cancel out', () => {
+    const store = createViewerStore();
+    store.getState().actions.rotateView();
+    store.getState().actions.rotateView(-1);
+    expect(store.getState().viewRotation).toBe(0);
   });
 
   it('returns isolated stores — mutating one does not affect another', () => {
     const a = createViewerStore();
     const b = createViewerStore();
-    a.getState().actions.setScale(2);
-    expect(a.getState().scale).toBe(2);
-    expect(b.getState().scale).toBe(1);
+    a.getState().actions.setZoom(2);
+    expect(a.getState().zoom).toBe(2);
+    expect(b.getState().zoom).toBe(1);
   });
 
   it('actions namespace has a stable reference across state updates', () => {
     const store = createViewerStore();
     const actionsBefore = store.getState().actions;
-    store.getState().actions.setScale(1.5);
+    store.getState().actions.setZoom(1.5);
     const actionsAfter = store.getState().actions;
     expect(actionsAfter).toBe(actionsBefore);
   });
@@ -63,15 +95,7 @@ describe('createViewerStore', () => {
 
   it('goToPage clamps above numPages to numPages (when known)', () => {
     const store = createViewerStore();
-    const stubDoc = {
-      numPages: 10,
-      fingerprint: 'stub',
-      metadata: async () => ({}),
-      outline: async () => [],
-      getPage: async () => {throw new Error('stub');},
-      destroy: () => {},
-    };
-    store.getState().actions.setDocument(stubDoc);
+    store.getState().actions.setDocument(stubDocument(10));
     expect(store.getState().numPages).toBe(10);
     store.getState().actions.goToPage(99);
     expect(store.getState().currentPage).toBe(10);
@@ -79,11 +103,11 @@ describe('createViewerStore', () => {
 
   it('reset returns to initial state', () => {
     const store = createViewerStore();
-    store.getState().actions.setScale(2);
+    store.getState().actions.setZoom(2);
     store.getState().actions.goToPage(5);
     store.getState().actions.reset();
     const s = store.getState();
-    expect(s.scale).toBe(1);
+    expect(s.zoom).toBe(1);
     expect(s.currentPage).toBe(1);
     expect(s.loadStatus).toBe('idle');
   });
@@ -91,23 +115,31 @@ describe('createViewerStore', () => {
   it('reset calls document.destroy() if a document was loaded', () => {
     const store = createViewerStore();
     let destroyed = false;
-    const stubDoc = {
-      numPages: 3,
-      fingerprint: 'x',
-      metadata: async () => ({}),
-      outline: async () => [],
-      getPage: async () => {throw new Error('stub');},
-      destroy: () => {destroyed = true;},
-    };
-    store.getState().actions.setDocument(stubDoc);
+    store.getState().actions.setDocument(stubDocument(3, () => {destroyed = true;}));
     store.getState().actions.reset();
     expect(destroyed).toBe(true);
     expect(store.getState().document).toBeNull();
   });
 
+  it('setPageSize records a page size and keeps the object when unchanged', () => {
+    const store = createViewerStore();
+    store.getState().actions.setPageSize(2, {width: 792, height: 612});
+    const recorded = store.getState().pageSizes;
+    expect(recorded[2]).toEqual({width: 792, height: 612});
+    store.getState().actions.setPageSize(2, {width: 792, height: 612});
+    expect(store.getState().pageSizes).toBe(recorded);
+  });
+
+  it('setDocument forgets the previous document’s page sizes', () => {
+    const store = createViewerStore();
+    store.getState().actions.setPageSize(1, {width: 612, height: 792});
+    store.getState().actions.setDocument(stubDocument(3));
+    expect(store.getState().pageSizes).toEqual({});
+  });
+
   it('accepts initial overrides', () => {
-    const store = createViewerStore({scale: 1.5, currentPage: 7});
-    expect(store.getState().scale).toBe(1.5);
+    const store = createViewerStore({zoom: 1.5, currentPage: 7});
+    expect(store.getState().zoom).toBe(1.5);
     expect(store.getState().currentPage).toBe(7);
   });
 
@@ -119,12 +151,42 @@ describe('createViewerStore', () => {
   });
 
   it('reset restores initial overrides supplied at factory time', () => {
-    const store = createViewerStore({scale: 1.5, currentPage: 7});
-    store.getState().actions.setScale(2);
+    const store = createViewerStore({zoom: 1.5, currentPage: 7});
+    store.getState().actions.setZoom(2);
     store.getState().actions.goToPage(3);
     store.getState().actions.reset();
-    expect(store.getState().scale).toBe(1.5);
+    expect(store.getState().zoom).toBe(1.5);
     expect(store.getState().currentPage).toBe(7);
+  });
+
+  it('setZoom clamps to the zoom limits', () => {
+    const store = createViewerStore();
+    store.getState().actions.setZoom(10);
+    expect(store.getState().zoom).toBe(4);
+    store.getState().actions.setZoom(0.01);
+    expect(store.getState().zoom).toBe(0.25);
+  });
+
+  it('zoomBy multiplies the zoom and clamps', () => {
+    const store = createViewerStore({zoom: 2});
+    store.getState().actions.zoomBy(1.25);
+    expect(store.getState().zoom).toBe(2.5);
+    store.getState().actions.zoomBy(10);
+    expect(store.getState().zoom).toBe(4);
+  });
+
+  it('a manual zoom turns fit width off unless asked to keep it', () => {
+    const store = createViewerStore({fitWidth: true});
+    store.getState().actions.setZoom(1.5, {fitWidth: true});
+    expect(store.getState().fitWidth).toBe(true);
+    store.getState().actions.zoomBy(1.25);
+    expect(store.getState().fitWidth).toBe(false);
+  });
+
+  it('setGesturing records a gesture under way', () => {
+    const store = createViewerStore();
+    store.getState().actions.setGesturing(true);
+    expect(store.getState().isGesturing).toBe(true);
   });
 });
 
@@ -177,14 +239,7 @@ describe('search actions', () => {
   it('goToNextMatch wraps around and calls goToPage', () => {
     const store = createViewerStore();
     const {actions} = store.getState();
-    actions.setDocument({
-      numPages: 5,
-      fingerprint: 'x',
-      metadata: async () => ({}),
-      outline: async () => [],
-      getPage: async () => {throw new Error('stub');},
-      destroy: () => {},
-    });
+    actions.setDocument(stubDocument(5));
     actions.setSearchMatches([
       {pageNumber: 1, charStart: 0, charEnd: 4, context: 'a'},
       {pageNumber: 3, charStart: 5, charEnd: 9, context: 'b'},
@@ -202,14 +257,7 @@ describe('search actions', () => {
   it('goToPrevMatch wraps around', () => {
     const store = createViewerStore();
     const {actions} = store.getState();
-    actions.setDocument({
-      numPages: 5,
-      fingerprint: 'x',
-      metadata: async () => ({}),
-      outline: async () => [],
-      getPage: async () => {throw new Error('stub');},
-      destroy: () => {},
-    });
+    actions.setDocument(stubDocument(5));
     actions.setSearchMatches([
       {pageNumber: 1, charStart: 0, charEnd: 4, context: 'a'},
       {pageNumber: 2, charStart: 5, charEnd: 9, context: 'b'},

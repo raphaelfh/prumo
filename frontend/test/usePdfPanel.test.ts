@@ -40,4 +40,53 @@ describe("usePdfPanel", () => {
     act(() => result.current.close());
     expect(result.current.isOpen).toBe(false);
   });
+
+  describe("expanded (PDF maximized over the form pane)", () => {
+    it("starts collapsed", () => {
+      const { result } = renderHook(() => usePdfPanel({ initialOpen: true }));
+      expect(result.current.isExpanded).toBe(false);
+    });
+
+    it("toggleExpanded flips state", () => {
+      const { result } = renderHook(() => usePdfPanel({ initialOpen: true }));
+      act(() => result.current.toggleExpanded());
+      expect(result.current.isExpanded).toBe(true);
+      act(() => result.current.toggleExpanded());
+      expect(result.current.isExpanded).toBe(false);
+    });
+
+    /** Expanding is also a way to open: maximizing a hidden panel must show it. */
+    it("expanding a closed panel opens it", () => {
+      const { result } = renderHook(() => usePdfPanel({ initialOpen: false }));
+      act(() => result.current.toggleExpanded());
+      expect(result.current.isExpanded).toBe(true);
+      expect(result.current.isOpen).toBe(true);
+    });
+
+    /** Otherwise ⌘⇧B would hide a maximized pane and leave `expanded` stranded. */
+    it("closing the panel also collapses it", () => {
+      const { result } = renderHook(() => usePdfPanel({ initialOpen: true }));
+      act(() => result.current.toggleExpanded());
+      act(() => result.current.close());
+      expect(result.current.isOpen).toBe(false);
+      expect(result.current.isExpanded).toBe(false);
+    });
+
+    it("toggling the panel shut while expanded collapses it too", () => {
+      const { result } = renderHook(() => usePdfPanel({ initialOpen: true }));
+      act(() => result.current.toggleExpanded());
+      act(() => result.current.toggle());
+      expect(result.current.isOpen).toBe(false);
+      expect(result.current.isExpanded).toBe(false);
+    });
+
+    it("collapse is idempotent and leaves the panel open", () => {
+      const { result } = renderHook(() => usePdfPanel({ initialOpen: true }));
+      act(() => result.current.toggleExpanded());
+      act(() => result.current.collapse());
+      act(() => result.current.collapse());
+      expect(result.current.isExpanded).toBe(false);
+      expect(result.current.isOpen).toBe(true);
+    });
+  });
 });

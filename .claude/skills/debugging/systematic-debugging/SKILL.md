@@ -73,7 +73,7 @@ If the exception lands inside `extraction_consensus_service.py` but the bad inpu
 - For async bugs: grep the suspect function for `async def`, then for every `await`. A missing `await` returns a coroutine that looks truthy — and tests pass.
 - For SQLAlchemy bugs: was the session committed? Is the object detached? Did you use `await session.refresh(obj)` after an update? `select ... for update` for the TOCTOU candidates?
 - For Celery bugs: is the task acking before or after the DB write? Look at `acks_late`, `retry`, `autoretry_for`.
-- For TanStack bugs: what's the *full* query key? Does it include `run_id` *and* `template_version_id`? Is there an `invalidateQueries` somewhere that's too broad or too narrow?
+- For TanStack bugs: what's the *full* query key? Does it come from a `frontend/lib/query-keys/` factory and carry every scoping id (`projectId`, `runId`, `templateId`)? Is there an `invalidateQueries` somewhere that's too broad or too narrow?
 
 ## Phase 2 delta — prumo's siblings and canon
 

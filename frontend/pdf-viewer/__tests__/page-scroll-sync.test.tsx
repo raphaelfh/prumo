@@ -1,20 +1,19 @@
 /**
- * Page ⇄ scroll sync for the canvas body (`Viewer.Body`) and the markdown
- * reader (`<Reader>`): navigation scrolls to a page, scrolling publishes the
- * page back to `currentPage`, and neither may undo the other.
+ * Page ⇄ scroll sync for the canvas body (`Viewer.Body`, located by the page
+ * layout) and the markdown reader (`<Reader>`, located in the DOM): navigation
+ * scrolls to a page, scrolling publishes the page back to `currentPage`, and
+ * neither may undo the other.
  *
- * jsdom has no layout and no IntersectionObserver, so these tests play the
- * browser: the geometry measured on the real Articles document view, a fake
- * observer the test fires itself, and a `scrollTo` that records a smooth
- * scroll without moving — the test then walks `scrollTop` frame by frame and
- * ends the scroll with `scrollend`. The real-browser check is
- * `frontend/e2e/flows/pdf-viewer-page-sync.ui.e2e.ts`.
+ * jsdom has no layout, no smooth scrolling and no IntersectionObserver, so
+ * these tests play the browser: the geometry measured on the real Articles
+ * document view, a `scrollTo` that records a smooth scroll without moving, and
+ * (for the reader) a fake observer the test fires itself. The real-browser
+ * check is `frontend/e2e/flows/pdf-viewer-page-sync.ui.e2e.ts`.
  */
 import {act, render} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
-// Viewer.tsx loads the pdf.js engine, whose browser build needs DOMMatrix;
-// shim it with the Node-compatible legacy build (as primitives.test.tsx does).
+// Viewer.tsx loads the pdf.js engine, whose browser build needs DOMMatrix.
 import * as legacyPdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 vi.mock('pdfjs-dist', () => legacyPdfjs);
 
@@ -25,8 +24,9 @@ import {Reader, type ReaderTextBlock} from '../primitives/Reader';
 const {Viewer} = await import('../primitives/Viewer');
 
 // Measured in headless Chromium on the Articles document view: A4 pages at
-// 100%, 16px apart, in a 725px-tall scroller (scrollHeight 12028 for 14 pages).
-const PAGE_HEIGHT = 842;
+// 100%, 16px apart, in a 725px-tall scroller.
+const A4 = {width: 595, height: 842};
+const PAGE_HEIGHT = A4.height;
 const PAGE_GAP = 16;
 const PAGE_PITCH = PAGE_HEIGHT + PAGE_GAP;
 const VIEWPORT = 725;
@@ -60,41 +60,20 @@ const elapse = (ms: number) =>
     vi.advanceTimersByTime(ms);
   });
 
-/**
- * Give `scroller` and its pages the measured geometry, the scroller's top edge
- * `scrollerTop` px below the top of the window; return the browser's moves.
- */
-function playBrowser(scroller: HTMLElement, pageSelector: string, scrollerTop = 0) {
-  const pages = [...scroller.querySelectorAll<HTMLElement>(pageSelector)];
+/** The scroller's size, a recording `scrollTo`, and the browser's moves. */
+function playScroller(scroller: HTMLElement, pages: number) {
   Object.defineProperty(scroller, 'clientHeight', {configurable: true, value: VIEWPORT});
-  Object.defineProperty(scroller, 'scrollHeight', {
-    configurable: true,
-    value: PAGE_GAP + pages.length * PAGE_PITCH,
-  });
-  scroller.getBoundingClientRect = () => box(scrollerTop, VIEWPORT);
-  pages.forEach((page, i) => {
-    page.getBoundingClientRect = () => box(scrollerTop + pageTop(i + 1) - scroller.scrollTop, PAGE_HEIGHT);
-  });
-  // The observer's root is the scroller's top half (rootMargin -50%).
-  const rootBounds = box(scrollerTop, VIEWPORT / 2);
+  Object.defineProperty(scroller, 'scrollHeight', {configurable: true, value: PAGE_GAP + pages * PAGE_PITCH});
   const scrollTo = vi.fn();
   scroller.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
-
   return {
     scrollTo,
-    /** One animation frame: the scroller moves, then the observer reports. */
-    frame(top: number) {
+    /** One animation frame: the scroller moves. */
+    move(top: number) {
       scroller.scrollTop = top;
-      scroller.dispatchEvent(new Event('scroll'));
-      // As in the browser, every entry rect is in window coordinates.
-      const entries = pages.map((page) => {
-        const rect = page.getBoundingClientRect();
-        const isIntersecting = rect.top < rootBounds.bottom && rect.bottom > rootBounds.top;
-        return {target: page, isIntersecting, boundingClientRect: rect, rootBounds} as unknown as IntersectionObserverEntry;
+      act(() => {
+        scroller.dispatchEvent(new Event('scroll'));
       });
-      const observer = observers.at(-1);
-      if (!observer) throw new Error('no IntersectionObserver is attached to the pages');
-      act(() => observer.callback(entries, observer as unknown as IntersectionObserver));
     },
     /** The scroll comes to rest. */
     end() {
@@ -109,8 +88,8 @@ beforeEach(() => {
   observers = [];
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
   vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
-  // jsdom has no Element.scrollTo. A no-op keeps a scroll requested before
-  // playBrowser() installs its spy from crashing the render.
+  // jsdom has no Element.scrollTo; a no-op keeps a scroll requested before
+  // the test installs its spy from crashing the render.
   HTMLElement.prototype.scrollTo = () => undefined;
 });
 
@@ -122,20 +101,25 @@ afterEach(() => {
 });
 
 describe('Viewer.Body page sync', () => {
-  function renderBody(initial: {numPages: number; currentPage: number}, scrollerTop = 0) {
-    const store = createViewerStore(initial);
+  function renderBody(initial: {numPages: number; currentPage: number}, pages = true) {
+    const store = createViewerStore({...initial, pageSizes: {1: A4}});
     const {container} = render(
       <ViewerProvider store={store}>
-        <Viewer.Body>
-          <Viewer.Pages>{({number}) => <Viewer.Page pageNumber={number} />}</Viewer.Pages>
-        </Viewer.Body>
+        <Viewer.Body>{pages && <Viewer.Pages>{({number}) => <Viewer.Page pageNumber={number} />}</Viewer.Pages>}</Viewer.Body>
       </ViewerProvider>,
     );
     const scroller = container.querySelector<HTMLElement>('[data-pdf-viewer-body]')!;
-    const browser = playBrowser(scroller, '[data-page-number]', scrollerTop);
+    const browser = playScroller(scroller, initial.numPages);
     elapse(1000); // nothing the mount started is still pending
-    return {store, scroller, ...browser};
+    return {store, scroller, frame: browser.move, ...browser};
   }
+
+  it('scrolls to a page that has no element on screen', () => {
+    // The layout knows every page's position; nothing is queried from the DOM.
+    const {store, scrollTo} = renderBody({numPages: 14, currentPage: 1}, false);
+    act(() => store.getState().actions.goToPage(12));
+    expect(scrollTo).toHaveBeenLastCalledWith({top: pageTop(12), behavior: 'smooth'});
+  });
 
   it('holds the requested page while a long smooth scroll is still travelling', () => {
     const {store, scroller, scrollTo, frame, end} = renderBody({numPages: 14, currentPage: 14});
@@ -145,18 +129,16 @@ describe('Viewer.Body page sync', () => {
     expect(scrollTo).toHaveBeenCalledTimes(1);
     expect(scrollTo).toHaveBeenLastCalledWith({top: pageTop(7), behavior: 'smooth'});
 
-    // Past half a second the animation is still two pages short: page 9 is
-    // the page nearest the top edge.
+    // Past half a second the animation is still two pages short.
     elapse(600);
     frame(pageTop(9) - 154);
     expect(store.getState().currentPage).toBe(7);
-    expect(scrollTo).toHaveBeenCalledTimes(1);
 
     frame(pageTop(7));
     end();
     expect(store.getState().currentPage).toBe(7);
 
-    // Settled, the observer is followed again — it was live all along.
+    // Settled, scrolling is followed again.
     frame(pageTop(9));
     expect(store.getState().currentPage).toBe(9);
     expect(scrollTo).toHaveBeenCalledTimes(1);
@@ -164,49 +146,39 @@ describe('Viewer.Body page sync', () => {
 
   it('follows a user scroll without scrolling back to the page top', () => {
     const {store, scrollTo, frame, end} = renderBody({numPages: 14, currentPage: 1});
-
     frame(pageTop(2) + PAGE_HEIGHT / 2);
     end();
-
     expect(store.getState().currentPage).toBe(2);
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
-  it('measures the page nearest the top edge from the scroller, not the window', () => {
-    // Where the Articles document panel puts the scroller: ~175px down the window.
-    const {store, frame} = renderBody({numPages: 14, currentPage: 1}, 175);
-
-    // Page 3's top is 300px below the scroller's top edge and page 2's is 558px
-    // above it, so page 3 is nearer. Measured from the window's top instead
-    // (475px against 383px), page 2 would win.
-    frame(pageTop(3) - 300);
-
-    expect(store.getState().currentPage).toBe(3);
-  });
-
   it('publishes the page the user stopped on when they take over a navigation', () => {
     const {store, scrollTo, frame, end} = renderBody({numPages: 14, currentPage: 1});
-
     act(() => store.getState().actions.goToPage(7));
     frame(1200); // our smooth scroll has started…
     frame(pageTop(11) + 100); // …and the user flings past its target
     end();
-
     expect(store.getState().currentPage).toBe(11);
     expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 
   it('does not hold the page sync for a navigation that needs no scroll', () => {
-    // Already at page 14's top with a stale counter: a scroll to where the
-    // scroller already is fires no scrollend, so a hold would never lift.
+    // A scroll to where the scroller already is fires no scrollend, so a hold would never lift.
     const {store, scroller, scrollTo, frame} = renderBody({numPages: 14, currentPage: 13});
     scroller.scrollTop = pageTop(14);
-
     act(() => store.getState().actions.goToPage(14));
     frame(pageTop(12));
-
     expect(store.getState().currentPage).toBe(12);
     expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('publishes nothing during a zoom gesture, then where it left the viewport', () => {
+    const {store, frame} = renderBody({numPages: 14, currentPage: 1});
+    act(() => store.getState().actions.setGesturing(true));
+    frame(pageTop(9));
+    expect(store.getState().currentPage).toBe(1);
+    act(() => store.getState().actions.setGesturing(false));
+    expect(store.getState().currentPage).toBe(9);
   });
 
   describe('where scrollend is unsupported', () => {
@@ -227,7 +199,6 @@ describe('Viewer.Body page sync', () => {
       scroller.scrollTop = maxScrollTop(14);
 
       act(() => store.getState().actions.goToPage(7));
-      // A janky animation: a frame every 100ms for 800ms.
       for (const top of [10900, 10000, 8800, 7600, 6726, 5900, 5400, pageTop(7)]) {
         elapse(100);
         frame(top);
@@ -251,7 +222,7 @@ describe('<Reader> page sync', () => {
     blockType: 'paragraph',
   }));
 
-  function renderReader(currentPage: number) {
+  function renderReader(currentPage: number, scrollerTop = 0) {
     const intoView = vi.spyOn(Element.prototype, 'scrollIntoView');
     const store = createViewerStore({mode: 'reader', numPages: blocks.length, currentPage});
     const {container} = render(
@@ -262,12 +233,35 @@ describe('<Reader> page sync', () => {
       </ViewerProvider>,
     );
     const scroller = container.querySelector<HTMLElement>('[data-reader-scroll]')!;
-    const browser = playBrowser(scroller, '[data-reader-page]');
+    const pages = [...scroller.querySelectorAll<HTMLElement>('[data-reader-page]')];
+    const browser = playScroller(scroller, pages.length);
+    scroller.getBoundingClientRect = () => box(scrollerTop, VIEWPORT);
+    pages.forEach((page, i) => {
+      page.getBoundingClientRect = () => box(scrollerTop + pageTop(i + 1) - scroller.scrollTop, PAGE_HEIGHT);
+    });
+    // The observer's root is the scroller's top half (rootMargin -50%).
+    const rootBounds = box(scrollerTop, VIEWPORT / 2);
     elapse(1000); // nothing the mount started is still pending
     intoView.mockClear();
-    // Either API moves the scroller, so a stray scroll cannot hide behind the other.
-    const scrollRequests = () => browser.scrollTo.mock.calls.length + intoView.mock.calls.length;
-    return {store, scroller, scrollRequests, ...browser};
+    return {
+      store,
+      scroller,
+      end: browser.end,
+      // Either API moves the scroller, so a stray scroll cannot hide behind the other.
+      scrollRequests: () => browser.scrollTo.mock.calls.length + intoView.mock.calls.length,
+      /** One animation frame: the scroller moves, then the observer reports. */
+      frame(top: number) {
+        browser.move(top);
+        const entries = pages.map((page) => {
+          const rect = page.getBoundingClientRect();
+          const isIntersecting = rect.top < rootBounds.bottom && rect.bottom > rootBounds.top;
+          return {target: page, isIntersecting, boundingClientRect: rect, rootBounds} as unknown as IntersectionObserverEntry;
+        });
+        const observer = observers.at(-1);
+        if (!observer) throw new Error('no IntersectionObserver is attached to the pages');
+        act(() => observer.callback(entries, observer as unknown as IntersectionObserver));
+      },
+    };
   }
 
   it('holds the requested page while a long smooth scroll is still travelling', () => {
@@ -290,11 +284,19 @@ describe('<Reader> page sync', () => {
 
   it('follows a user scroll without jumping to the page header', () => {
     const {store, scrollRequests, frame, end} = renderReader(1);
-
     frame(pageTop(2) + PAGE_HEIGHT / 2);
     end();
-
     expect(store.getState().currentPage).toBe(2);
     expect(scrollRequests()).toBe(0);
+  });
+
+  it('measures the page nearest the top edge from the scroller, not the window', () => {
+    // Where the Articles document panel puts the scroller: ~175px down the window.
+    const {store, frame} = renderReader(1, 175);
+    // Page 3's top is 300px below the scroller's top edge and page 2's is 558px
+    // above it, so page 3 is nearer. Measured from the window's top instead
+    // (475px against 383px), page 2 would win.
+    frame(pageTop(3) - 300);
+    expect(store.getState().currentPage).toBe(3);
   });
 });

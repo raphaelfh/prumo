@@ -14,8 +14,8 @@ Two tiers:
 |---|---|---|---|---|
 | 1 | `ai_suggestions` SQL identifier (`FROM/JOIN/INTO/TABLE/UPDATE/DELETE FROM ai_suggestions`) | `public.ai_suggestions` table | migration `20260428_0019` (archived) | `extraction_proposal_records` with `source='ai'`. `aiSuggestionService.ts` (camelCase frontend service) remains legitimate and aggregates over the proposal-records table. |
 | 2 | `extracted_values` SQL identifier (same shapes) | `public.extracted_values` table | migration `0002_drop_extracted_values` | `extraction_reviewer_decisions` (per-user in-flight) + `extraction_published_states` (canonical post-consensus). Frontend `ExtractionValueService` is the single entry point. |
-| 4 (py) | `name == 'prediction_models'` equality check in Python | `backend/app/services/*.py` historic | migration `20260418_0016` + 2026-05-19 cleanup wave | `extraction_entity_role` enum (`study_section`/`model_container`/`model_section`). Backend: `ExtractionEntityTypeRepository.get_by_role()`. Frontend: `partitionEntityTypes` in `frontend/lib/extraction/entityTypeRoles.ts`. |
-| 4 (ts) | `name === 'prediction_models'` equality check in TypeScript | `frontend/components/extraction/*` historic | migration 0016 + 2026-05-19 cleanup | same — see partitionEntityTypes. |
+| 4 (py) | `name == 'prediction_models'` equality check in Python | `backend/app/services/*.py` historic | migration `20260418_0016` + 2026-05-19 cleanup wave | First the `extraction_entity_role` enum; that `role` column is now gone too. Structure is read from `parent_entity_type_id` + `cardinality` (`backend/app/services/entry_hierarchy_service.py`). |
+| 4 (ts) | `name === 'prediction_models'` equality check in TypeScript | `frontend/components/extraction/*` historic | migration 0016 + 2026-05-19 cleanup | same — structure from `parent_entity_type_id` + `cardinality`. |
 
 ## Warn tier — reported, does not block
 

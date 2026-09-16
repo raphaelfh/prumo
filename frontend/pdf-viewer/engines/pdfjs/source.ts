@@ -1,28 +1,9 @@
 import type {PDFSource} from '../../core/source';
-import type {LoadOptions} from '../../core/engine';
 
-export type PdfJsLoadParams = {
-  url?: string;
-  data?: Uint8Array | ArrayBuffer;
-  withCredentials?: boolean;
-  httpHeaders?: Record<string, string>;
-};
-
+/** Resolve a source — running a lazy source's loader — to pdf.js `getDocument` params. */
 export async function sourceToGetDocumentParams(
   source: PDFSource,
-  opts?: LoadOptions,
-): Promise<PdfJsLoadParams> {
+): Promise<{url: string} | {data: Uint8Array | ArrayBuffer}> {
   const resolved = source.kind === 'lazy' ? await source.load() : source;
-  const headers = {...resolved.kind === 'url' ? resolved.httpHeaders : undefined, ...opts?.httpHeaders};
-  const withCredentials = (resolved.kind === 'url' && resolved.withCredentials) ?? opts?.withCredentials;
-
-  if (resolved.kind === 'url') {
-    return {
-      url: resolved.url,
-      withCredentials,
-      httpHeaders: Object.keys(headers).length > 0 ? headers : undefined,
-    };
-  }
-  // kind === 'data'
-  return {data: resolved.data};
+  return resolved.kind === 'url' ? {url: resolved.url} : {data: resolved.data};
 }

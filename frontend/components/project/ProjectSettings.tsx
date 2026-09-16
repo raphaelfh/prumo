@@ -117,16 +117,19 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
   return (
     <div className="h-full flex flex-col bg-background">
-        {hasUnsavedChanges && (
-            <PageHeader
-                actions={
+        {/* Always mounted, like UserSettings: the row is reserved from the first paint, so the
+            first edit only fills the actions slot instead of pushing the page down. */}
+        <PageHeader
+            className="px-4 lg:px-6"
+            actions={
+                hasUnsavedChanges && (
                     <Button onClick={saveProject} disabled={loading} size="sm" className="text-[13px]">
                         <Save className="mr-2 h-4 w-4" strokeWidth={1.5}/>
                         {loading ? t('project', 'settingsSaving') : t('project', 'settingsSaveChanges')}
                     </Button>
-                }
-            />
-        )}
+                )
+            }
+        />
 
       <div className="flex-1 flex overflow-hidden">
           <aside className="w-56 shrink-0 overflow-y-auto border-r border-border/40">

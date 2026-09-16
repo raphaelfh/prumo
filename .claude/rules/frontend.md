@@ -11,30 +11,21 @@ For any non-trivial frontend change, load the `frontend-development` skill
 (structure/data/state) before writing code. Visual language → `frontend-ux`;
 Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
 
-## Structure
+## Data path
 
-- Data flows `component → hook (TanStack Query) → service (apiClient) →
-  backend`. Components never call `fetch()` or `supabase.from(...)` directly
-  (`fetch()` is a convention enforced at review; `supabase.from(` and
-  `import.meta.env.VITE_API_URL` are CI-enforced by
-  `scripts/fitness/check_frontend_data_path.py`).
+- `component → hook (TanStack Query) → service → apiClient`
+  (`frontend/integrations/api/client.ts`). Components, hooks and services
+  never call `fetch()` (enforced at review). No `supabase.from(...)` read
+  or `import.meta.env.VITE_API_URL` outside the integration layer (CI:
+  `scripts/fitness/check_frontend_data_path.py`). The dual read path is the
+  root cause of the slow-load / status-drift / blind-leak incident class.
 - `frontend/services/*Service.ts` functions return `ErrorResult<T>`
   (`frontend/lib/error-utils.ts:toResult`); they never throw across the
   boundary and never toast.
-
-## Data access
-
-- Backend calls go through the typed client at
-  `frontend/integrations/api/client.ts`. Do not read
-  `import.meta.env.VITE_API_URL` or call `fetch()` directly in
-  services; do not add new `supabase.from(...)` reads outside the
-  integration layer (the dual read path is the root cause of the
-  slow-load / status-drift / blind-leak incident class — full
-  consolidation is in progress).
-- TanStack Query keys come from the key factories (CI-enforced by
-  `scripts/fitness/check_react_query_keys.py`). Mutations invalidate
-  the owning key family — stale-cache bugs are a recurring incident
-  class.
+- TanStack Query keys come from the key factories (CI:
+  `scripts/fitness/check_react_query_keys.py`). Mutations invalidate the
+  owning key family — no gate checks this, and stale-cache bugs are a
+  recurring incident class.
 
 ## UI & copy
 
@@ -45,8 +36,8 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
 - **Every icon-only control is `IconButton`** (`components/patterns/IconButton.tsx`):
   its required `label`, routed through `lib/copy/`, is the accessible name
   and the tooltip. Text buttons get a tooltip only when it adds information.
-  A bare icon or terse label must never leave the user guessing what it does.
-  Gated by `scripts/fitness/check_ui_primitives.py`.
+  `scripts/fitness/check_ui_primitives.py` catches only a `<Button>` with
+  `size="icon"` or `size="icon-xs"`.
 - **A label that folds on a narrow bar folds to `sr-only`, never to
   `hidden`.** The idiom is `sr-only @[<w>]/<container>:not-sr-only` (see
   `TemplateConfigEditor`, `TemplateConfigPublishControls`,
@@ -54,29 +45,14 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   accessibility tree, so the control's accessible name silently loses the
   word it was collapsing — and an `aria-label` "fix" for that is worse: it
   REPLACES the composed name and erases any sibling chip or badge inside
-  the button. `TemplateInstructionControl` (✨) is this pattern's live
-  example: on QA it toggles an inline instruction editor on the tool row;
-  on extraction, the same control on the config bar reveals the template's
-  instruction in the grid inspector. Verified live: the QA surface's
-  AI-instruction trigger must read "General AI instruction1 to customize".
+  the button.
 - Visual language is authoritative in `frontend-ux` (it outranks the
   `frontend-design` plugin on core product UI — that plugin is for
   greenfield only). After a non-trivial UI change, verify with your
-  eyes, not the diff: run the `design-review` loop
-  (`/design-review <route>`) — render, screenshot, compare to the
-  Plane/Linear target, fix, re-screenshot.
-- **Space belongs to content — keep to the edge budget** (`frontend-ux` §6).
-  Page gutter `p-2`, owned by the view (the Articles pattern); one hairline per boundary,
-  drawn by the region that owns it; no card nested inside an already-bordered
-  pane; no doubled padding. Compact rows (rail, menu, list) sit at `px-2 py-1`
-  with `space-y-0.5` — tighter and they read as one glued block. Space
-  reclaimed from the outside gets spent on the inside, not banked. A
-  **resizable** pane clamps three things — its own min, its own max, and a
-  live floor under the pane it steals from (`template-config/PaneResizer.tsx`).
-- **Selection and focus never share a vocabulary** (`frontend-ux` §4.6). Focus
-  owns `outline-2 outline-ring`; selection owns a tint plus a weight/colour
-  shift. An element painting both draws two concentric rules whenever it is
-  selected *and* focused.
+  eyes, not the diff: `/design-review <route>`.
+- Space belongs to content — keep to the edge budget, and selection and
+  focus never share a vocabulary
+  (`.claude/skills/frontend-ux/SKILL.md` §6 and §4.6).
 
 ## Dead code
 
@@ -84,35 +60,16 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   from the repo root and both also `verify_all.sh` gates:
   `npx knip --no-tag-hints` (tests count as consumers) and
   `npx knip --production --no-tag-hints` (only production code does).
-  Unused files, exports, types and dependencies fail the build — delete
-  them, don't export "just in case". Legitimate exceptions (generated
-  files, shell-invoked scripts, browser-runtime imports) live in
-  `knip.jsonc`, each with a comment explaining why; extend that file only
-  with a reason a reviewer can check. Generated files
-  (`frontend/types/api/schema.d.ts`,
-  `frontend/integrations/supabase/types.ts`) are knip-ignored — never
-  hand-edit them to silence a finding.
-- **UI copy has its own gate**, because knip cannot see it: a copy key is a
-  *member* of an exported object literal, not an export, so an orphaned one is
-  invisible to both knip modes. `scripts/fitness/check_copy_keys.py` fails on
-  any `frontend/lib/copy/*.ts` key with no reference in
-  `frontend/**/*.{ts,tsx}` (shrink-only baseline). Clearing a baseline entry
-  DELETES user-facing copy — `t()` returns `''` for a missing key, so a wrong
-  deletion ships as a blank string, not an error. Run `npm run typecheck` AND
-  `npm run test:run`: typecheck catches the three reference forms, but only the
-  suite catches the tests that assert a key's *presence* at runtime.
-- **A production-mode finding is not automatically "delete it."** It means
-  no production file imports the export; the code behind it may still be
-  live. Check, in order: (1) is the symbol called inside its own module?
-  then it is live and only the `export` faces the test — `knip.jsonc` sets
-  `ignoreExportsUsedInFile` so this should not reach you; (2) is it a
-  *duplicate* of a type/function that lives closer to its real caller?
-  delete this copy and point the tests at the canonical one (that is how
-  the stale `FieldValidationResult` and `ArticleListItem` copies were
-  found); (3) is it genuinely orphaned — no caller anywhere but its own
-  test? delete the code *and* the test; (4) is it a seam a test must reach
-  and production deliberately cannot? mark it `@internal` at the
-  declaration with a reason. Never silence one by widening `ignore`.
+  Delete what they flag. A legitimate exception goes in `knip.jsonc` with a
+  reason a reviewer can check; never hand-edit a generated file
+  (`frontend/types/api/schema.d.ts`, `frontend/integrations/supabase/types.ts`)
+  to silence one. A production-mode finding is not automatically "delete
+  it": triage it with `.claude/skills/frontend-development/references/dead-code.md`.
+- **UI copy has its own gate**, because knip cannot see an object-literal
+  member: `scripts/fitness/check_copy_keys.py` (shrink-only baseline).
+  Clearing a baseline entry DELETES user-facing copy — `t()` returns `''`
+  for a missing key, so a wrong deletion ships as a blank string, not an
+  error. Run `npm run typecheck` AND `npm run test:run`.
 
 ## Tests
 
@@ -129,10 +86,9 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   job) fails any PR where the committed output doesn't match the
   backend — so after changing an endpoint or Pydantic schema, rerun
   the generator and commit the diff.
-- New frontend code should import response/request shapes from
-  `frontend/types/api/schema.d.ts` instead of hand-mirroring backend
-  enums/models (hand-mirrored types are the documented root cause of
-  the envelope-drift incident class).
+- Import response/request shapes from `schema.d.ts` instead of
+  hand-mirroring backend enums/models (hand-mirrored types are the
+  documented root cause of the envelope-drift incident class).
 
 ## React Compiler
 
@@ -140,20 +96,13 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
   'all_errors'` (`vite.shared-plugins.ts`): a component or hook the
   compiler cannot compile fails the build and vitest. Don't write
   `try/finally` (or `throw` inside `try`) in component/hook bodies —
-  move IO into a `frontend/services/` function returning
-  `ErrorResult<T>` (`frontend/lib/error-utils.ts:toResult`); exported
-  service functions never throw across the boundary and never toast.
+  move IO into a `frontend/services/` function returning `ErrorResult<T>`.
 - Last-resort opt-out for a file the compiler genuinely cannot handle:
   `'use no memo'` directive plus a `// kept:` comment with the reason.
-- `scripts/enumerate_compiler_bailouts.mjs` lists every non-compiling
-  file in one pass (useful before compiler upgrades).
-- **The silent hazard: subscriptions registered on a parent.** The rules
-  above cover the *loud* failure (build stops). The quiet one has no build
-  error, no type error and no lint: the compiler memoizes a parent's JSX, so
-  a child that depends on the parent re-rendering never updates. Read a
-  subscription **where you consume it**, not off a value handed down from the
-  component that opened it. Concretely: `useFormState({name})`, never
-  `useFormContext().formState`. This class shipped once already — every
-  inline form validation message in the app rendered nothing while blocking
-  submits correctly. Worked example and mutation-checked guard:
+  `scripts/enumerate_compiler_bailouts.mjs` lists every non-compiling file.
+- **The silent hazard: subscriptions registered on a parent.** No build,
+  type or lint error: the compiler memoizes a parent's JSX, so a child
+  that depends on the parent re-rendering never updates. Read a
+  subscription **where you consume it**: `useFormState({name})`, never
+  `useFormContext().formState`. Worked example and mutation-checked guard:
   `frontend/components/ui/form.validation.test.tsx`.

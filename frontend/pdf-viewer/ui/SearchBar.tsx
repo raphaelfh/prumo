@@ -100,9 +100,9 @@ export function SearchBar({open, onClose}: SearchBarProps) {
   const positionLabel =
     matchCount === 0
       ? search.searching
-        ? 'Searching…'
+        ? t('pdf', 'viewerSearchSearching')
         : search.query
-          ? 'No results'
+          ? t('pdf', 'viewerSearchNoResults')
           : ''
       : `${search.activeIndex + 1} / ${matchCount}`;
 
@@ -118,9 +118,9 @@ export function SearchBar({open, onClose}: SearchBarProps) {
         value={search.query}
         onChange={(e) => actions.setSearchQuery(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Find in document"
+        placeholder={t('pdf', 'viewerSearchPlaceholder')}
         className="h-8 w-full min-w-0 max-w-64 text-sm"
-        aria-label="Search query"
+        aria-label={t('pdf', 'viewerSearchQueryLabel')}
       />
       <span
         role="status"

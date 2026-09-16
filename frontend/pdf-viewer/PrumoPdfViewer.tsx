@@ -37,6 +37,14 @@ export interface PrumoPdfViewerProps {
    * unchanged.
    */
   store?: StoreApi<ViewerState>;
+  /** A caller-owned link (e.g. the source article page) shown in the toolbar's ☰ menu. */
+  externalLink?: {label: string; href: string};
+  /** Caller-owned entries for the toolbar's ☰ menu (e.g. a re-parse control). */
+  toolbarMenuItems?: ReactNode;
+  /** True while the viewer is maximized over its sibling pane. */
+  expanded?: boolean;
+  /** Maximize / restore. The surrounding layout is the caller's to change. */
+  onToggleExpand?: () => void;
 }
 
 /**
@@ -56,6 +64,10 @@ export function PrumoPdfViewer({
   readerBlocks,
   readerLoading,
   store,
+  externalLink,
+  toolbarMenuItems,
+  expanded,
+  onToggleExpand,
 }: PrumoPdfViewerProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -85,6 +97,10 @@ export function PrumoPdfViewer({
             leading={toolbarLeading}
             center={toolbarCenter}
             onSearchToggle={() => setSearchOpen((v) => !v)}
+            externalLink={externalLink}
+            menuItems={toolbarMenuItems}
+            expanded={expanded}
+            onToggleExpand={onToggleExpand}
           />
         )}
         <SearchBar open={searchOpen} onClose={() => setSearchOpen(false)} />

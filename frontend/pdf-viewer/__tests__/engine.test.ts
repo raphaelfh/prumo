@@ -12,6 +12,7 @@ vi.mock('pdfjs-dist', () => legacyPdfjs);
 // Import AFTER the mock is registered so the engine sees the shim.
 const {pdfJsEngine} = await import('../engines/pdfjs');
 import type {PDFDocumentHandle} from '../core/engine';
+import {effectiveRotation} from '../core/rotation';
 
 // Set up the worker for the legacy pdfjs using a file:// URL (required by Node ESM loader).
 import {createRequire} from 'node:module';
@@ -21,37 +22,25 @@ legacyPdfjs.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturePath = resolve(__dirname, '../__fixtures__/three-page.pdf');
+const rotatedFixturePath = resolve(__dirname, '../__fixtures__/rotated-page.pdf');
 
 let fixtureBytes: Uint8Array;
+let rotatedBytes: Uint8Array;
 
 beforeAll(() => {
   fixtureBytes = new Uint8Array(readFileSync(fixturePath));
+  rotatedBytes = new Uint8Array(readFileSync(rotatedFixturePath));
 });
 
 describe('pdfJsEngine.load', () => {
   let doc: PDFDocumentHandle;
 
   beforeAll(async () => {
-    doc = await pdfJsEngine.load({kind: 'data', data: fixtureBytes});
+    doc = await pdfJsEngine.load({kind: 'data', data: fixtureBytes.slice()});
   });
 
   it('reports the correct number of pages', () => {
     expect(doc.numPages).toBe(3);
-  });
-
-  it('exposes a non-empty fingerprint', () => {
-    expect(doc.fingerprint.length).toBeGreaterThan(0);
-  });
-
-  it('returns metadata (may be empty for synthetic PDFs)', async () => {
-    const meta = await doc.metadata();
-    expect(meta).toBeTypeOf('object');
-  });
-
-  it('returns an empty outline for a PDF with no bookmarks', async () => {
-    const outline = await doc.outline();
-    expect(Array.isArray(outline)).toBe(true);
-    expect(outline).toHaveLength(0);
   });
 
   it('getPage returns a handle with size in PDF user space', async () => {
@@ -70,6 +59,54 @@ describe('pdfJsEngine.load', () => {
     // The first item's text should mention 'Page 1' since we drew that
     const allText = tc.items.map((i) => i.text).join('');
     expect(allText).toMatch(/Page 1/);
+  });
+
+  it('resolves a lazy source before loading', async () => {
+    const lazy = await pdfJsEngine.load({
+      kind: 'lazy',
+      load: async () => ({kind: 'data', data: fixtureBytes.slice()}),
+    });
+    expect(lazy.numPages).toBe(3);
+    lazy.destroy();
+  });
+});
+
+describe('intrinsic page rotation', () => {
+  let doc: PDFDocumentHandle;
+
+  beforeAll(async () => {
+    doc = await pdfJsEngine.load({kind: 'data', data: rotatedBytes.slice()});
+  });
+
+  it('reports a portrait page unrotated', async () => {
+    const page = await doc.getPage(1);
+    expect(page.rotation).toBe(0);
+    expect(page.size).toEqual({width: 612, height: 792});
+  });
+
+  it('reports a /Rotate 90 page at its displayed, landscape size', async () => {
+    const page = await doc.getPage(2);
+    expect(page.rotation).toBe(90);
+    expect(page.size).toEqual({width: 792, height: 612});
+  });
+
+  it('draws a /Rotate 90 page landscape when the view is not rotated', async () => {
+    const page = await doc.getPage(2);
+    const canvas = document.createElement('canvas');
+    // jsdom has no 2d context. The engine sizes the canvas before pdf.js draws,
+    // and pdf.js then rejects on the fake context — the size is what this checks.
+    canvas.getContext = (() => ({})) as unknown as HTMLCanvasElement['getContext'];
+    let renderError: unknown;
+    try {
+      await page.render({canvas, scale: 1, rotation: effectiveRotation(page, 0)});
+    } catch (err) {
+      renderError = err;
+    }
+    // The fake context makes pdf.js reject — confirm it rejected for that
+    // reason, not because the render was aborted, before checking the size.
+    expect(renderError).toBeDefined();
+    expect((renderError as {name?: string}).name).not.toBe('AbortError');
+    expect([canvas.width, canvas.height]).toEqual([792, 612]);
   });
 });
 

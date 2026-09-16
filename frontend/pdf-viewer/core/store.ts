@@ -1,7 +1,8 @@
 import {createStore, type StoreApi} from 'zustand';
 import type {PDFDocumentHandle, PageRotation} from './engine';
 import type {PDFSource} from './source';
-import type {LoadStatus, SearchState, ViewerActions, ViewerMode, ViewerState} from './state';
+import type {LoadStatus, PageSize, SearchState, ViewerActions, ViewerMode, ViewerState} from './state';
+import {clampZoom} from '../viewport/zoomMath';
 
 type ViewerData = Omit<ViewerState, 'actions'>;
 
@@ -31,11 +32,15 @@ const initialData: ViewerData = {
   source: null,
   document: null,
   numPages: 0,
+  pageSizes: {},
   loadStatus: 'idle',
   error: null,
   currentPage: 1,
-  scale: 1,
-  rotation: 0,
+  zoom: 1,
+  // Every document opens at fit width.
+  fitWidth: true,
+  isGesturing: false,
+  viewRotation: 0,
   mode: 'canvas',
   readerLocate: null,
   search: initialSearch,
@@ -76,6 +81,8 @@ export function createViewerStore(
         set({
           document: doc,
           numPages: doc?.numPages ?? 0,
+          pageSizes: {},
+          fitWidth: true,
         });
       },
 
@@ -86,6 +93,12 @@ export function createViewerStore(
         });
       },
 
+      setPageSize(pageNumber: number, size: PageSize) {
+        const known = get().pageSizes[pageNumber];
+        if (known?.width === size.width && known?.height === size.height) return;
+        set({pageSizes: {...get().pageSizes, [pageNumber]: {width: size.width, height: size.height}}});
+      },
+
       goToPage(page: number) {
         const {numPages} = get();
         const clamped = numPages > 0
@@ -94,12 +107,22 @@ export function createViewerStore(
         set({currentPage: clamped});
       },
 
-      setScale(scale: number) {
-        set({scale});
+      setZoom(zoom: number, opts?: {fitWidth?: boolean}) {
+        set({zoom: clampZoom(zoom), fitWidth: opts?.fitWidth ?? false});
       },
 
-      setRotation(rotation: PageRotation) {
-        set({rotation});
+      zoomBy(factor: number) {
+        get().actions.setZoom(get().zoom * factor);
+      },
+
+      setGesturing(isGesturing: boolean) {
+        set({isGesturing});
+      },
+
+      rotateView(direction: 1 | -1 = 1) {
+        // + 360 before the modulo: a counter-clockwise turn from 0 would
+        // otherwise land on a negative remainder, which is not a PageRotation.
+        set({viewRotation: ((get().viewRotation + 360 + 90 * direction) % 360) as PageRotation});
       },
 
       setMode(mode: ViewerMode) {

@@ -28,7 +28,10 @@ export default defineConfig({
       'dist/**',
       'build/**',
       'coverage/**',
+      // Both worktree roots: a worktree's specs resolve `@/` to THIS checkout's
+      // source, so a stale copy runs its old tests against current code.
       '.claude/worktrees/**',
+      '.worktrees/**',
       // Excluir testes de Edge Functions (Deno) - devem ser executados com deno test
       'supabase/functions/**/*.test.ts',
       'supabase/functions/**/*.spec.ts',

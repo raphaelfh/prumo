@@ -70,11 +70,23 @@ export interface ReaderLocateRequest {
   nonce: number;
 }
 
+/** A page's displayed size in PDF points, at its own rotation (`PDFPageHandle.size`). */
+export interface PageSize {
+  width: number;
+  height: number;
+}
+
 export interface ViewerState {
   // Document
   source: PDFSource | null;
   document: PDFDocumentHandle | null;
   numPages: number;
+  /**
+   * Sizes of the pages whose handle has resolved, keyed by page number. Page 1
+   * is known before `loadStatus` turns `ready`; the layout estimates the rest
+   * from it until they mount.
+   */
+  pageSizes: Readonly<Record<number, PageSize>>;
   loadStatus: LoadStatus;
   error: Error | null;
 
@@ -83,9 +95,17 @@ export interface ViewerState {
   currentPage: number;
 
   // Rendering
-  /** Render scale. 1.0 = 100%. */
-  scale: number;
-  rotation: PageRotation;
+  /**
+   * Committed zoom: 1 = 100%. A gesture previews its zoom as a transform and
+   * commits it here when it ends.
+   */
+  zoom: number;
+  /** While true, `zoom` follows the viewer's width; any manual zoom turns it off. */
+  fitWidth: boolean;
+  /** True while a pinch or ctrl/⌘ + wheel gesture is under way. */
+  isGesturing: boolean;
+  /** The user's rotation of the whole view, clockwise — added to each page's own `/Rotate`. */
+  viewRotation: PageRotation;
   /**
    * Display mode. `canvas` (default) renders pages via the engine; `reader`
    * renders structured text blocks (typography-first, screen-reader friendly,
@@ -111,13 +131,20 @@ export interface ViewerActions {
   setSource(source: PDFSource | null): void;
   setDocument(doc: PDFDocumentHandle | null): void;
   setLoadStatus(status: LoadStatus, error?: Error | null): void;
+  /** Record a page's displayed size; a no-op when unchanged. */
+  setPageSize(pageNumber: number, size: PageSize): void;
 
   // Navigation
   goToPage(page: number): void;
 
   // Rendering
-  setScale(scale: number): void;
-  setRotation(rotation: PageRotation): void;
+  /** Set the zoom, clamped to the limits. Turns fit width off unless `opts.fitWidth` is true. */
+  setZoom(zoom: number, opts?: {fitWidth?: boolean}): void;
+  /** Multiply the zoom by `factor` (clamped); turns fit width off. */
+  zoomBy(factor: number): void;
+  setGesturing(isGesturing: boolean): void;
+  /** Turn the view 90°: clockwise by default, counter-clockwise with `-1`. */
+  rotateView(direction?: 1 | -1): void;
   setMode(mode: ViewerMode): void;
 
   // Reader-locate (markdown-first citation locating)
