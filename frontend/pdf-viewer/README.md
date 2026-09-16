@@ -28,14 +28,14 @@ that owns the store without importing pdf.js.
 
 ```text
 frontend/pdf-viewer/
-├── core/          store, context, state, engine interface, rotation helpers
+├── core/          store, context, state, engine interface, rotation helpers, pageText
 ├── engines/pdfjs/ pdfjs-dist 6: load, page render, text layer
 ├── engines/mock/  in-memory engine for tests
 ├── viewport/      usePageLayout, useVirtualPages, zoomMath, useGestureZoom, useZoomShortcuts, useFitWidth
 ├── hooks/         useDocumentLoader, usePageHandle, usePageScrollSync (PageLocator)
 ├── primitives/    Viewer, CanvasLayer, TextLayer, Reader and its helpers
 ├── markdown/      the reader's markdown rendering
-├── services/      searchService (canvas find-in-document)
+├── services/      searchService (canvas find-in-document, over core/pageText)
 ├── adapters/      articleFileSource
 ├── ui/            Toolbar (rotate view), ZoomControls (fit width), NavigationControls, SearchBar, states
 └── index.ts       the public API above
