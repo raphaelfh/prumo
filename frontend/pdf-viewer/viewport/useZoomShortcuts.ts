@@ -1,6 +1,7 @@
 /**
- * ⌘/Ctrl `=` and `-` zoom the canvas while the pointer or focus is inside the
- * viewer; everywhere else the browser keeps its own page zoom.
+ * ⌘/Ctrl `=` and `-` zoom the canvas and ⌘/Ctrl `0` fits its width, while the
+ * pointer or focus is inside the viewer; everywhere else the browser keeps
+ * its own page zoom.
  *
  * Browsers also treat ⌘/Ctrl `+` as zoom-in: on layouts where `+` needs
  * Shift (US ⌘⇧=, Brazilian ABNT) the key arrives as `'+'` with
@@ -33,6 +34,15 @@ export function useZoomShortcuts(scroller: HTMLElement | null): void {
       {type: 'chord', key: '+', mod: true, shift: true, handler: zoomUnlessGesturing(ZOOM_STEP)},
       {type: 'chord', key: '+', mod: true, handler: zoomUnlessGesturing(ZOOM_STEP)},
       {type: 'chord', key: '-', mod: true, handler: zoomUnlessGesturing(1 / ZOOM_STEP)},
+      {
+        type: 'chord',
+        key: '0',
+        mod: true,
+        handler: () => {
+          const {zoom, actions} = storeApi.getState();
+          actions.setZoom(zoom, {fitWidth: true});
+        },
+      },
     ],
   });
 }

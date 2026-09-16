@@ -31,13 +31,13 @@ frontend/pdf-viewer/
 ├── core/          store, context, state, engine interface, rotation helpers
 ├── engines/pdfjs/ pdfjs-dist 6: load, page render, text layer
 ├── engines/mock/  in-memory engine for tests
-├── viewport/      usePageLayout, useVirtualPages, zoomMath, useGestureZoom, useZoomShortcuts
+├── viewport/      usePageLayout, useVirtualPages, zoomMath, useGestureZoom, useZoomShortcuts, useFitWidth
 ├── hooks/         useDocumentLoader, usePageHandle, usePageScrollSync (PageLocator)
 ├── primitives/    Viewer, CanvasLayer, TextLayer, Reader and its helpers
 ├── markdown/      the reader's markdown rendering
 ├── services/      searchService (canvas find-in-document)
 ├── adapters/      articleFileSource
-├── ui/            Toolbar, NavigationControls, ZoomControls, SearchBar, states
+├── ui/            Toolbar (rotate view), ZoomControls (fit width), NavigationControls, SearchBar, states
 └── index.ts       the public API above
 ```
 
@@ -66,3 +66,7 @@ transform on the page column, keeps the content under the pointer in place,
 and commits once the gesture ends (`useGestureZoom`, adapted from Lector). The
 toolbar and ⌘/Ctrl `=`/`+` and `-` step by `ZOOM_STEP`; those shortcuts only
 act while the pointer or focus is inside the viewer.
+
+Every document opens at fit width (`useFitWidth`): the widest page fills the
+viewer and keeps filling it as the viewer resizes, until a manual zoom. The
+zoom toolbar's Fit width button and ⌘/Ctrl `0` turn it back on.

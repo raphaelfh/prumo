@@ -7,7 +7,7 @@ import {createViewerStore} from '../../core/store';
 import {ZoomControls} from '../ZoomControls';
 
 function renderControls(zoom: number) {
-  const store = createViewerStore({zoom});
+  const store = createViewerStore({zoom, fitWidth: false});
   render(
     <ViewerProvider store={store}>
       <ZoomControls />
@@ -31,8 +31,11 @@ describe('<ZoomControls>', () => {
     expect(screen.getByLabelText('Zoom in')).toBeDisabled();
   });
 
-  it('shows the zoom as a percentage', () => {
-    renderControls(1.5);
-    expect(screen.getByRole('button', {name: '150%'})).toBeInTheDocument();
+  it('offers fit width', async () => {
+    const user = userEvent.setup();
+    const store = renderControls(2);
+    await user.click(screen.getByLabelText('Fit width'));
+    expect(store.getState().fitWidth).toBe(true);
+    expect(screen.getByLabelText('Fit width')).toHaveAttribute('aria-pressed', 'true');
   });
 });

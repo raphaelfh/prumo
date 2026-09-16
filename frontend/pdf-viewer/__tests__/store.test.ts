@@ -18,7 +18,7 @@ describe('createViewerStore', () => {
     expect(state.error).toBeNull();
     expect(state.currentPage).toBe(1);
     expect(state.zoom).toBe(1);
-    expect(state.fitWidth).toBe(false);
+    expect(state.fitWidth).toBe(true);
     expect(state.isGesturing).toBe(false);
     expect(state.viewRotation).toBe(0);
     expect(typeof state.actions.goToPage).toBe('function');

@@ -93,4 +93,12 @@ describe('zoom shortcuts', () => {
     expect(dispatched).toBe(false);
     expect(store.getState().zoom).toBe(1.25);
   });
+
+  it('fits the width on ⌘/Ctrl 0', async () => {
+    const user = userEvent.setup();
+    const store = renderViewer();
+    await user.hover(screen.getByTestId('viewer-root'));
+    await user.keyboard('{Control>}0{/Control}');
+    expect(store.getState().fitWidth).toBe(true);
+  });
 });

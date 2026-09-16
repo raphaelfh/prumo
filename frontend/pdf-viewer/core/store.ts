@@ -37,7 +37,8 @@ const initialData: ViewerData = {
   error: null,
   currentPage: 1,
   zoom: 1,
-  fitWidth: false,
+  // Every document opens at fit width.
+  fitWidth: true,
   isGesturing: false,
   viewRotation: 0,
   mode: 'canvas',
@@ -81,6 +82,7 @@ export function createViewerStore(
           document: doc,
           numPages: doc?.numPages ?? 0,
           pageSizes: {},
+          fitWidth: true,
         });
       },
 
