@@ -61,7 +61,9 @@ guard that drifted or was never made.
 - **Row-in-parent** → the named guard for that pair:
   `project_template_active_service.owned_template`,
   `template_section_service.owned_section`,
-  `article_read_service.owned_article`,
+  `article_read_service.owned_articles` (and `owned_article`, which delegates),
+  `extraction_batch_service.owned_batch` (a batch in its owner, who is still
+  a project member),
   `ExtractionInstanceRepository.get_in_coordinate`,
   `llm_connection_service.owned_user_connection` (a user-scope connection
   in its owner), `llm_connection_service.owned_project_connection` (a

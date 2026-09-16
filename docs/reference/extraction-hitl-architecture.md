@@ -136,7 +136,7 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0075_extraction_attempts` (post-squash numbering; run
+`0076_extraction_batches` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
 
@@ -367,6 +367,33 @@ runner for the whole run.
   bus, i.e. `ExtractionFullScreen`'s default presentation (read-only,
   consensus). QA's `FieldInput` subscribes, but the QA screen never
   dispatches, so it does not light.
+
+### AI batch runs (0076)
+
+Migration `0076_extraction_batches` (down revision `0075_extraction_attempts`).
+Design: `docs/superpowers/specs/2026-09-15-ai-batch-runs-design.md`.
+
+- **`extraction_batches`** (`ExtractionBatch`) — a reviewer's AI batch over
+  articles of one project tool: `owner_id`, `project_id`, `template_id` (all
+  `ON DELETE CASCADE`), `skip_articles_with_ai_suggestions`, `cancelled_at`,
+  `stop_code`/`stop_message`. No status column: state (`active` / `finished` /
+  `stopped` / `cancelled`, plus `stalled` after 15 min without progress) is
+  derived in `extraction_batch_view.derive_batch`.
+- **`extraction_batch_items`** (`ExtractionBatchItem`) — one row per article,
+  `UNIQUE (batch_id, article_id)`; `status` `queued` / `dispatched` /
+  `skipped` / `failed` / `cancelled`, `reason_code`, `attempt_id`
+  (`ON DELETE SET NULL`). A dispatched item's outcome is its attempt's.
+- Backend-only: RLS enabled, `anon`/`authenticated` revoked.
+- Execution: `advance_extraction_batch` (queue `extractions`) keeps at most 2
+  articles in flight, opens the owner's session run
+  (`HITLSessionService.open_or_resume`), creates the attempt with request id
+  `uuid5(item.id)`, and enqueues `run_section_extraction_task` with
+  `link`/`link_error` back to itself. Extraction templates run the full pass
+  (`run_id` + `extract_all_sections` → `extract_full_pass`); QA runs
+  `extract_for_run`. An attempt failing with `MISSING_API_KEY`,
+  `ENGINE_RETIRED` or `LLM_ENDPOINT_UNAVAILABLE` stops the batch.
+- API: `/api/v1/extraction/batches` (`POST`, `GET`, `GET /{id}`,
+  `POST /{id}/cancel`, `POST /{id}/resume`); guard `owned_batch`.
 
 ### Pre-existing tables — evolved
 
