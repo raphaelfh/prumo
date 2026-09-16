@@ -64,7 +64,7 @@ async def test_start_returns_202_detail_and_kicks_the_dispatcher(
     data = response.json()["data"]
     assert data["state"] == "active" and data["counts"]["total"] == 1
     assert data["items"][0]["title"] == "Alpha"
-    queue.delay.assert_called_once_with(data["id"])
+    queue.delay.assert_called_once_with(data["id"], False)
 
 
 @pytest.mark.asyncio

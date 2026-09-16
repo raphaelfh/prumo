@@ -20,6 +20,14 @@ def _member(owner_id: UUID) -> ColumnElement[bool]:
     return func.public.is_project_member(ExtractionBatch.project_id, owner_id)
 
 
+def _live_dispatched() -> tuple[ColumnElement[bool], ...]:
+    """One spelling of "in flight": dispatched, with an attempt still live."""
+    return (
+        ExtractionBatchItem.status == "dispatched",
+        ExtractionAttempt.status.in_(ATTEMPT_LIVE),
+    )
+
+
 class ExtractionBatchRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -113,8 +121,7 @@ class ExtractionBatchRepository:
             .join(ExtractionAttempt, ExtractionAttempt.id == ExtractionBatchItem.attempt_id)
             .where(
                 ExtractionBatchItem.batch_id == ExtractionBatch.id,
-                ExtractionBatchItem.status == "dispatched",
-                ExtractionAttempt.status.in_(ATTEMPT_LIVE),
+                *_live_dispatched(),
             )
             .exists()
         )
@@ -147,8 +154,7 @@ class ExtractionBatchRepository:
                 .join(ExtractionAttempt, ExtractionAttempt.id == ExtractionBatchItem.attempt_id)
                 .where(
                     ExtractionBatchItem.batch_id == batch_id,
-                    ExtractionBatchItem.status == "dispatched",
-                    ExtractionAttempt.status.in_(ATTEMPT_LIVE),
+                    *_live_dispatched(),
                     ExtractionAttempt.updated_at >= since,
                 )
             )

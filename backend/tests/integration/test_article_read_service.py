@@ -65,21 +65,9 @@ async def test_a_foreign_article_is_refused_like_a_missing_one(db_session: Async
     assert str(SEED.secondary_project) not in str(foreign_exc.value)
 
 
-async def _second_article(db: AsyncSession):
-    article_id = uuid4()
-    await db.execute(
-        text(
-            "INSERT INTO public.articles (id, project_id, title, row_version) "
-            "VALUES (:id, :pid, 'owned_articles test', 1)"
-        ),
-        {"id": str(article_id), "pid": str(SEED.primary_project)},
-    )
-    return article_id
-
-
 @pytest.mark.asyncio
 async def test_owned_articles_returns_deduplicated_ids_in_order(db_session: AsyncSession) -> None:
-    second = await _second_article(db_session)
+    second = await _article_in(db_session, SEED.primary_project, "owned_articles test")
 
     got = await owned_articles(
         db_session,

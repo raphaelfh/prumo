@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 
 from app.schemas.extraction_batch import (
     ATTEMPT_LIVE,
-    ENGINE_STOP_CODES,
     BatchState,
     ExtractionBatchCounts,
     ExtractionBatchItemView,
@@ -18,7 +17,6 @@ from app.schemas.extraction_batch import (
 
 __all__ = [
     "ATTEMPT_LIVE",
-    "ENGINE_STOP_CODES",
     "STALL_AFTER",
     "ItemRow",
     "BatchDerivation",

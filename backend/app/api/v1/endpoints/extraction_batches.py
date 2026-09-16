@@ -53,10 +53,7 @@ def _queue_unavailable(trace_id: str) -> JSONResponse:
 
 def _kick(batch_id: UUID, *, reenqueue_stale: bool = False) -> None:
     try:
-        if reenqueue_stale:
-            advance_extraction_batch.delay(str(batch_id), True)
-        else:
-            advance_extraction_batch.delay(str(batch_id))
+        advance_extraction_batch.delay(str(batch_id), reenqueue_stale)
     except Exception:
         # The rows are committed: the batch reads stalled and Resume recovers it.
         logger.exception("extraction_batch.kick_failed", batch_id=str(batch_id))

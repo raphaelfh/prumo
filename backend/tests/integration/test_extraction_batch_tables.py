@@ -10,19 +10,8 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.conftest import SEED
+from tests.integration.helpers.batch_fixtures import make_article
 from tests.integration.helpers.template_fixtures import fresh_charms
-
-
-async def _article(db: AsyncSession, project_id: UUID) -> UUID:
-    article_id = uuid4()
-    await db.execute(
-        text(
-            "INSERT INTO public.articles (id, project_id, title, row_version) "
-            "VALUES (:id, :pid, 'batch table test', 1)"
-        ),
-        {"id": str(article_id), "pid": str(project_id)},
-    )
-    return article_id
 
 
 async def _batch_with_item(
@@ -59,7 +48,7 @@ async def _exists(db: AsyncSession, table: str, row_id: UUID) -> bool:
 
 @pytest.mark.asyncio
 async def test_item_status_defaults_to_queued_and_is_checked(db_session: AsyncSession) -> None:
-    article_id = await _article(db_session, SEED.primary_project)
+    article_id = await make_article(db_session, SEED.primary_project)
     _, item_id = await _batch_with_item(
         db_session,
         project_id=SEED.primary_project,
@@ -83,7 +72,7 @@ async def test_item_status_defaults_to_queued_and_is_checked(db_session: AsyncSe
 
 @pytest.mark.asyncio
 async def test_one_item_per_article_per_batch(db_session: AsyncSession) -> None:
-    article_id = await _article(db_session, SEED.primary_project)
+    article_id = await make_article(db_session, SEED.primary_project)
     batch_id, _ = await _batch_with_item(
         db_session,
         project_id=SEED.primary_project,
@@ -102,7 +91,7 @@ async def test_one_item_per_article_per_batch(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_deleting_the_article_removes_its_item(db_session: AsyncSession) -> None:
-    article_id = await _article(db_session, SEED.primary_project)
+    article_id = await make_article(db_session, SEED.primary_project)
     batch_id, item_id = await _batch_with_item(
         db_session,
         project_id=SEED.primary_project,
@@ -119,7 +108,7 @@ async def test_deleting_the_article_removes_its_item(db_session: AsyncSession) -
 @pytest.mark.asyncio
 async def test_deleting_the_project_removes_the_batch(db_session: AsyncSession) -> None:
     project_id, template_id, _ = await fresh_charms(db_session)
-    article_id = await _article(db_session, project_id)
+    article_id = await make_article(db_session, project_id)
     batch_id, item_id = await _batch_with_item(
         db_session, project_id=project_id, template_id=template_id, article_id=article_id
     )
