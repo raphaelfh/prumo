@@ -34,6 +34,7 @@ export const extraction = {
     reviewAcceptExtraction: 'Accept extraction',
     reviewUnacceptExtraction: 'Unaccept extraction',
     reviewOpenAccepted: 'Open accepted extraction',
+    reviewAcceptedEarlier: 'An earlier extraction is accepted',
     reviewLoadingExtractions: 'Loading extractions…',
     reviewLoadError: 'Could not load extractions. Try again.',
     reviewRefreshError: 'Could not refresh extractions. Previously loaded extractions remain available.',

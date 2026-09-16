@@ -1,13 +1,11 @@
 import {useState} from 'react';
-import {Check} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {IconButton} from '@/components/patterns/IconButton';
+import {AcceptCheck} from './AcceptCheck';
 import {AISuggestionEvidence} from '../ai/AISuggestionEvidence';
 import {GenerationDetailsContent} from '../ai/shared/GenerationDetailsContent';
 import {useReaderLocate} from '@/hooks/extraction/useReaderLocate';
 import {formatFullSuggestionValue, valuelessProposalKind, type SuggestionFieldContext} from '@/lib/ai-extraction/suggestionUtils';
 import {t} from '@/lib/copy';
-import {cn} from '@/lib/utils';
 import type {AISuggestion} from '@/types/ai-extraction';
 
 interface ProposalCardProps extends SuggestionFieldContext {
@@ -39,7 +37,7 @@ export function ProposalCard({proposal, ordinal, latest, accepted, saving, pendi
         {snapshot?.model && <span className="break-all">{snapshot.model}</span>}
         <time dateTime={Number.isNaN(proposal.timestamp.getTime()) ? undefined : proposal.timestamp.toISOString()}>{Number.isNaN(proposal.timestamp.getTime()) ? t('extraction', 'historyInvalidDate') : proposal.timestamp.toLocaleString()}</time>
       </div>
-      {!readOnly && <IconButton icon={<Check />} label={t('extraction', accepted ? 'reviewUnacceptExtraction' : 'reviewAcceptExtraction')} aria-pressed={accepted} aria-disabled={saving || undefined} aria-busy={pending || undefined} onClick={() => {if (!saving) onToggle(proposal);}} className={cn('rounded-full', accepted && 'bg-success/10 text-success shadow-sm hover:text-success', pending && 'animate-pulse ring-1 ring-success/60 motion-reduce:animate-none')}/>}
+      {!readOnly && <AcceptCheck accepted={accepted} saving={saving} pending={pending} onToggle={() => onToggle(proposal)}/>}
     </header>
     <p className="whitespace-pre-wrap break-words font-medium">{kind ? t('extraction', kind === 'marker' ? 'reviewNoInformation' : 'reviewNoValue') : formatFullSuggestionValue(proposal.value, field)}</p>
     {proposal.reasoning && <section className="space-y-1"><h3 className="text-xs text-muted-foreground">{t('extraction', 'aiRationaleLabel')}</h3><p className="whitespace-pre-wrap break-words">{proposal.reasoning}</p></section>}
