@@ -13,15 +13,32 @@ describe('AcceptCheck busy affordance', () => {
   it('reads as busy, never as forbidden, while a decision is in flight', async () => {
     const onToggle = vi.fn();
     render(<AcceptCheck accepted={false} saving pending onToggle={onToggle}/>);
-    const check = screen.getByRole('button', {name: 'Accept extraction'});
+    // Optimistic: mid-flight the check already reads as the accepted state.
+    const check = screen.getByRole('button', {name: 'Unaccept extraction'});
     // The click guard stays: `aria-disabled` is honest about ignoring clicks.
     expect(check).toHaveAttribute('aria-disabled', 'true');
     expect(check).toHaveAttribute('aria-busy', 'true');
     // jsdom computes no Tailwind, so the cursor is asserted as the class that
     // overrides the global `[aria-disabled="true"] {cursor: not-allowed}` rule.
     expect(check.className).toContain('cursor-wait');
+    expect(check.className).not.toContain('animate-pulse');
     await userEvent.click(check);
     expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it('flips on click and snaps back when the decision fails', () => {
+    // The shown state is DERIVED from `pending`, so the revert is automatic:
+    // no rollback path, no window where a failed write reads as accepted.
+    const view = render(<AcceptCheck accepted={false} saving pending onToggle={vi.fn()}/>);
+    expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'true');
+    view.rerender(<AcceptCheck accepted={false} saving={false} onToggle={vi.fn()}/>);
+    expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', {name: 'Accept extraction'})).toBeInTheDocument();
+  });
+
+  it('stops pointing at an earlier version while this one is being accepted', () => {
+    render(<AcceptCheck accepted={false} saving pending acceptedElsewhere onToggle={vi.fn()}/>);
+    expect(screen.getByRole('button').className).not.toContain('ring-success/40');
   });
 
   it('carries no busy cursor once settled', () => {
