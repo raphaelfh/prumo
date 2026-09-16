@@ -6,11 +6,11 @@
  * trigger is borderless chrome rather than a form field. Selecting a document
  * is the caller's concern (it also clears the viewer's locate highlight,
  * search, and page to avoid cross-document leak).
- * `ParseStatusControl` is an icon button beside the viewer's mode toggle: its
- * tooltip states the parse status and what re-parsing does, with a confirm
- * dialog for already-parsed files and the error detail for parse failures.
+ * The re-parse control lives in the viewer's ☰ menu (`useParseStatus` +
+ * `ParseStatusMenuItem` + `ParseStatusOverlay`), so it costs no toolbar width;
+ * the status it used to show stays visible on this switcher's trigger dot.
  */
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { cva } from 'class-variance-authority';
 import { Loader2, RotateCw } from 'lucide-react';
 
@@ -29,9 +29,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { IconButton } from '@/components/patterns/IconButton';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { FILE_ROLE_LABELS, type FileRole } from '@/lib/file-constants';
 import { t } from '@/lib/copy';
 import { cn } from '@/lib/utils';
@@ -124,91 +123,136 @@ function DocumentSwitcherComponent({
 export const DocumentSwitcher = memo(DocumentSwitcherComponent);
 DocumentSwitcher.displayName = 'DocumentSwitcher';
 
-export interface ParseStatusControlProps {
-  articleId: string;
-  file: ArticleFileListItem;
+export interface ParseStatusControl {
+  status: ParseStatus;
+  /** False when there is no file, or its status is unrecognised — nothing to render. */
+  isAvailable: boolean;
+  /** Plain-language status: Ready / Processing / Failed. */
+  label: string;
+  /** What selecting the item will do. */
+  hint: string;
+  /** The parser's error, on a failure only. */
+  errorDetail: string | null;
+  isPending: boolean;
+  confirmOpen: boolean;
+  setConfirmOpen: (open: boolean) => void;
+  /** Re-parse, or ask first when the file is already parsed. */
+  select: () => void;
+  /** Re-parse now (the confirm's CTA). */
+  confirm: () => void;
 }
 
 /**
- * Icon-only re-parse control; the status lives in its tooltip (and in the
- * switcher's dot), announced to assistive tech through a polite live region.
- * - `pending`     → spinner; click retries
- * - `parsed`      → re-parse icon behind an AlertDialog confirm
- * - `parse_failed`→ destructive re-parse icon; tooltip carries the error
+ * Parse status + the re-parse mutation for one file.
+ *
+ * Split from its rendering because the two halves cannot live in the same
+ * place: the menu item belongs inside the ☰ menu, while the confirm dialog and
+ * the live region must sit OUTSIDE it — `DropdownMenuContent` unmounts its
+ * children when the menu closes, which would tear the dialog down as it opens
+ * and silence the status the moment the menu shuts.
  */
-export function ParseStatusControl({ articleId, file }: ParseStatusControlProps) {
-  const status = toStatus(file.extractionStatus);
+export function useParseStatus(
+  articleId: string,
+  file: ArticleFileListItem | null,
+): ParseStatusControl {
+  // Takes a nullable file rather than being called conditionally: no document
+  // is selected until the file list resolves, and hooks cannot be skipped.
+  const status = file ? toStatus(file.extractionStatus) : 'unknown';
   const reparse = useReparseArticleFile(articleId);
-  const fire = () => reparse.mutate(file.id);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const fire = () => {
+    if (file) reparse.mutate(file.id);
+  };
 
-  if (status === 'unknown') {
+  return {
+    status,
+    isAvailable: status !== 'unknown',
+    label:
+      status === 'parsed' ? t('pdf', 'docStatusReady')
+      : status === 'pending' ? t('pdf', 'docStatusPending')
+      : t('pdf', 'docStatusFailed'),
+    hint:
+      status === 'parsed' ? t('pdf', 'docReparseHint')
+      : status === 'pending' ? t('pdf', 'docReparsePendingHint')
+      : t('pdf', 'docReparseRetryHint'),
+    errorDetail:
+      status === 'parse_failed'
+        ? file?.extractionError
+          ? `${t('pdf', 'docParseErrorLabel')}: ${file.extractionError}`
+          : t('pdf', 'docParseErrorUnknown')
+        : null,
+    isPending: reparse.isPending,
+    confirmOpen,
+    setConfirmOpen,
+    // An already-parsed file asks first: re-parsing discards the current text.
+    select: () => (status === 'parsed' ? setConfirmOpen(true) : fire()),
+    confirm: fire,
+  };
+}
+
+/**
+ * The re-parse entry in the viewer's ☰ menu. It states the status and what
+ * re-parsing does on its own second line, so the explanation needs no hover —
+ * a tooltip nested in a menu item would fight the menu's own hover and focus
+ * handling.
+ */
+export function ParseStatusMenuItem({ control }: { control: ParseStatusControl }) {
+  if (control.status === 'unknown') {
     return null;
   }
-
-  const label =
-    status === 'parsed' ? t('pdf', 'docStatusReady')
-    : status === 'pending' ? t('pdf', 'docStatusPending')
-    : t('pdf', 'docStatusFailed');
-
-  const hint =
-    status === 'parsed' ? t('pdf', 'docReparseHint')
-    : status === 'pending' ? t('pdf', 'docReparsePendingHint')
-    : t('pdf', 'docReparseRetryHint');
-
-  const tooltipContent = (
-    <>
-      <span className="block font-medium">{label}</span>
-      {status === 'parse_failed' && (
-        <span className="block break-words text-background/70">
-          {file.extractionError
-            ? `${t('pdf', 'docParseErrorLabel')}: ${file.extractionError}`
-            : t('pdf', 'docParseErrorUnknown')}
-        </span>
+  return (
+    <DropdownMenuItem
+      disabled={control.isPending}
+      // Let the menu close: the confirm dialog and the live region render
+      // outside it (see `ParseStatusOverlay`), so nothing here unmounts them.
+      onSelect={control.select}
+    >
+      {control.status === 'pending' ? (
+        <Loader2 className="mr-2 size-4 shrink-0 animate-spin" strokeWidth={1.5} aria-hidden />
+      ) : (
+        <RotateCw
+          className={cn('mr-2 size-4 shrink-0', control.status === 'parse_failed' && 'text-destructive')}
+          strokeWidth={1.5}
+          aria-hidden
+        />
       )}
-      <span className="block text-background/70">{hint}</span>
-    </>
+      <span className="flex min-w-0 flex-col">
+        <span>{t('pdf', 'docReparse')}</span>
+        <span className="text-xs text-muted-foreground">{control.label} · {control.hint}</span>
+        {control.errorDetail && (
+          <span className="break-words text-xs text-destructive">{control.errorDetail}</span>
+        )}
+      </span>
+    </DropdownMenuItem>
   );
+}
 
-  const button = (
-    <IconButton
-      label={t('pdf', 'docReparse')}
-      tooltip={tooltipContent}
-      side="bottom"
-      className={cn(status === 'parse_failed' && 'text-destructive hover:text-destructive')}
-      disabled={reparse.isPending}
-      onClick={status === 'parsed' ? undefined : fire}
-      icon={
-        status === 'pending' ? (
-          <Loader2 className="animate-spin" strokeWidth={1.5} aria-hidden />
-        ) : (
-          <RotateCw strokeWidth={1.5} aria-hidden />
-        )
-      }
-    />
-  );
-
+/**
+ * The half of the re-parse control that must stay mounted while the ☰ menu
+ * opens and closes: the confirm dialog, and the live region that announces the
+ * parse status now that no toolbar button shows it.
+ */
+export function ParseStatusOverlay({ control }: { control: ParseStatusControl }) {
+  if (control.status === 'unknown') {
+    return null;
+  }
   return (
     <>
-      <span role="status" className="sr-only">{label}</span>
-      {status === 'parsed' ? (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>{button}</AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('pdf', 'docReparseConfirmTitle')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('pdf', 'docReparseConfirmBody')}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={fire} aria-label={t('pdf', 'docReparseConfirmCta')}>
-                {t('pdf', 'docReparseConfirmCta')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      ) : (
-        button
-      )}
+      <span role="status" className="sr-only">{control.label}</span>
+      <AlertDialog open={control.confirmOpen} onOpenChange={control.setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('pdf', 'docReparseConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('pdf', 'docReparseConfirmBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={control.confirm} aria-label={t('pdf', 'docReparseConfirmCta')}>
+              {t('pdf', 'docReparseConfirmCta')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

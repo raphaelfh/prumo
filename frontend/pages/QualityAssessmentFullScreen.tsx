@@ -795,7 +795,13 @@ export default function QualityAssessmentFullScreen() {
   );
 
   const pdfPanel = (
-    <RunPdfContent articleId={articleId} projectId={projectId} store={viewerStore} />
+    <RunPdfContent
+      articleId={articleId}
+      projectId={projectId}
+      store={viewerStore}
+      expanded={pdfPanelState.isExpanded}
+      onToggleExpand={pdfPanelState.toggleExpanded}
+    />
   );
 
   // Single source for the form-panel stage gates (avoids repeating the same

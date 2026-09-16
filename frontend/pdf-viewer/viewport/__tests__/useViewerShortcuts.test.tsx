@@ -121,3 +121,71 @@ describe('zoom shortcuts', () => {
     expect(store.getState().fitWidth).toBe(true);
   });
 });
+
+describe('rotate shortcuts', () => {
+  it('rotates clockwise on R while the pointer is over the viewer', async () => {
+    const user = userEvent.setup();
+    const store = renderViewer();
+    await user.hover(screen.getByTestId('viewer-root'));
+    await user.keyboard('r');
+    expect(store.getState().viewRotation).toBe(90);
+    await user.keyboard('r');
+    expect(store.getState().viewRotation).toBe(180);
+  });
+
+  it('rotates counter-clockwise on Shift+R', async () => {
+    const user = userEvent.setup();
+    const store = renderViewer();
+    await user.hover(screen.getByTestId('viewer-root'));
+    await user.keyboard('{Shift>}R{/Shift}');
+    expect(store.getState().viewRotation).toBe(270);
+  });
+
+  it('stays inert while the viewer has neither pointer nor focus', async () => {
+    const user = userEvent.setup();
+    const store = renderViewer();
+    await user.hover(screen.getByRole('button', {name: 'Outside the viewer'}));
+    await user.keyboard('r');
+    expect(store.getState().viewRotation).toBe(0);
+  });
+
+  /**
+   * The guard that matters on the extraction screen: the form is full of text
+   * fields, and the pointer often rests over the PDF while the reviewer types.
+   */
+  it('does not rotate while typing in a field, even with the pointer over the viewer', async () => {
+    const user = userEvent.setup();
+    const store = createViewerStore({fitWidth: false});
+    render(
+      <ViewerProvider store={store}>
+        <input aria-label="Study setting" />
+        <div data-pdf-viewer-root="" data-testid="viewer-root">
+          <Viewer.Body>{null}</Viewer.Body>
+        </div>
+      </ViewerProvider>,
+    );
+    await user.hover(screen.getByTestId('viewer-root'));
+    const field = screen.getByLabelText('Study setting');
+    field.focus();
+    await user.keyboard('recruitment');
+    expect(store.getState().viewRotation).toBe(0);
+    expect((field as HTMLInputElement).value).toBe('recruitment');
+  });
+
+  it('does not rotate with a modifier held, leaving ⌘R (reload) alone', async () => {
+    const user = userEvent.setup();
+    const store = renderViewer();
+    await user.hover(screen.getByTestId('viewer-root'));
+    await user.keyboard('{Control>}r{/Control}');
+    expect(store.getState().viewRotation).toBe(0);
+  });
+
+  it('does not rotate in reader mode, where there is no page surface to turn', async () => {
+    const user = userEvent.setup();
+    const store = renderViewer();
+    act(() => store.getState().actions.setMode('reader'));
+    await user.hover(screen.getByTestId('viewer-root'));
+    await user.keyboard('r');
+    expect(store.getState().viewRotation).toBe(0);
+  });
+});
