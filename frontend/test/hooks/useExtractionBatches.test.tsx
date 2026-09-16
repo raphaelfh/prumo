@@ -96,4 +96,55 @@ describe('useBatchDetail', () => {
       }),
     );
   });
+
+  it('does not carry the done count across a batch switch', async () => {
+    const baseDetail = {
+      id: 'b1',
+      project_id: 'p1',
+      project_name: 'P',
+      template_id: 't1',
+      template_name: 'T',
+      kind: 'extraction',
+      state: 'active' as const,
+      stalled: false,
+      stop_code: null,
+      stop_message: null,
+      created_at: '2026-09-15T00:00:00Z',
+      finished_at: null,
+      counts: {...counts, queued: 0, running: 0, done: 3},
+      items: [],
+    };
+    vi.mocked(getExtractionBatch).mockResolvedValueOnce(baseDetail);
+    const {client, wrapper} = makeWrapper();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    const {rerender} = renderHook(({id}: {id: string}) => useBatchDetail(id), {
+      wrapper,
+      initialProps: {id: 'b1'},
+    });
+    await waitFor(() => expect(getExtractionBatch).toHaveBeenCalledWith('b1'));
+
+    invalidate.mockClear();
+    vi.mocked(getExtractionBatch).mockResolvedValueOnce({
+      ...baseDetail,
+      id: 'b2',
+      counts: {...counts, queued: 1, running: 0, done: 0},
+    });
+    rerender({id: 'b2'});
+    await waitFor(() => expect(getExtractionBatch).toHaveBeenCalledWith('b2'));
+
+    invalidate.mockClear();
+    vi.mocked(getExtractionBatch).mockResolvedValue({
+      ...baseDetail,
+      id: 'b2',
+      counts: {...counts, queued: 0, running: 1, done: 1},
+    });
+    await client.invalidateQueries();
+    rerender({id: 'b2'});
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: articleExtractionValuesKeys.all,
+      }),
+    );
+  });
 });

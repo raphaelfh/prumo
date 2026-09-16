@@ -55,16 +55,26 @@ export function useBatchDetail(batchId: string | null) {
     refetchOnWindowFocus: true,
   });
 
-  // §11.4: when an article finishes, the list rings are stale.
-  const lastDoneRef = useRef(0);
+  // §11.4: when an article finishes, the list rings are stale. Keyed by
+  // batchId so switching to a different batch never compares its fresh
+  // done count against a stale count left over from the previous batch.
+  const lastDoneRef = useRef<{batchId: string | null; done: number}>({
+    batchId: null,
+    done: 0,
+  });
   const counts = query.data?.counts;
   const done = counts ? counts.done + counts.done_with_issues : 0;
   useEffect(() => {
-    if (done > lastDoneRef.current) {
-      lastDoneRef.current = done;
+    const last = lastDoneRef.current;
+    if (last.batchId !== batchId) {
+      lastDoneRef.current = {batchId, done: 0};
+      return;
+    }
+    if (done > last.done) {
+      lastDoneRef.current = {batchId, done};
       void queryClient.invalidateQueries({queryKey: articleExtractionValuesKeys.all});
     }
-  }, [done, queryClient]);
+  }, [batchId, done, queryClient]);
 
   return query;
 }
