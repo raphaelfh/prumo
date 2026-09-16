@@ -56,7 +56,6 @@ import {
   ResponsiveList,
   SortIconHeader,
   StatusRing,
-  type FilterFieldConfig,
   type FilterValues,
 } from "@/components/shared/list";
 import { BatchDetailsSheet } from "@/components/extraction/batch/BatchDetailsSheet";
@@ -73,78 +72,16 @@ import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
 import { useActiveTemplateStructure } from "@/hooks/extraction/useActiveTemplateStructure";
 import { resolveProgressGate, useCallerArticleProgress } from "@/hooks/extraction/useCallerArticleProgress";
 import { scopedRowProgress } from "@/lib/qa/scopedProgress";
-
-// Header checkbox with indeterminate support, mirrored from
-// ArticleExtractionTable's HeaderCheckbox.
-function HeaderCheckbox({
-  checked,
-  indeterminate,
-  onCheckedChange,
-  ...props
-}: {
-  checked: boolean;
-  indeterminate: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  "aria-label"?: string;
-}) {
-  return (
-    <Checkbox
-      checked={indeterminate ? false : checked}
-      onCheckedChange={onCheckedChange}
-      className={indeterminate ? "data-[state=checked]:bg-primary/50" : ""}
-      {...props}
-    />
-  );
-}
+import {
+  FILTER_FIELDS,
+  INITIAL_FILTERS,
+  type SortDirection,
+  type SortField,
+} from "./HITLArticleFilters";
+import { HITLHeaderCheckbox } from "./HITLHeaderCheckbox";
 
 type Article = ArticleListItem;
 
-type SortField =
-  | "title"
-  | "publication_year"
-  | "progress"
-  | "created_at";
-type SortDirection = "asc" | "desc";
-
-const FILTER_FIELDS: FilterFieldConfig[] = [
-  {
-    id: "status",
-    label: t("extraction", "tableColumnStatus"),
-    type: "categorical",
-    options: [
-      { value: "not_started", label: t("extraction", "listStatusNotStarted") },
-      { value: "in_progress", label: t("extraction", "listStatusInProgress") },
-      { value: "complete", label: t("extraction", "listStatusComplete") },
-    ],
-  },
-  {
-    id: "publication_year",
-    label: t("extraction", "tableColumnYear"),
-    type: "numericRange",
-    minBound: 1990,
-    maxBound: new Date().getFullYear(),
-    step: 1,
-  },
-  {
-    id: "title",
-    label: t("extraction", "tableColumnTitle"),
-    type: "text",
-    placeholder: t("extraction", "tableSearchTitle"),
-  },
-  {
-    id: "authors",
-    label: t("extraction", "tableColumnAuthors"),
-    type: "text",
-    placeholder: t("extraction", "tableSearchAuthor"),
-  },
-];
-
-const INITIAL_FILTERS: FilterValues = {
-  status: [],
-  publication_year: {},
-  title: "",
-  authors: "",
-};
 
 interface Props {
   kind: HITLKind;
@@ -590,7 +527,7 @@ export function HITLArticleTable({
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div className="flex items-center">
-                          <HeaderCheckbox
+                          <HITLHeaderCheckbox
                             checked={isAllSelected}
                             indeterminate={isIndeterminate}
                             onCheckedChange={(checked) => {
