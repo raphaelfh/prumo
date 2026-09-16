@@ -51,6 +51,7 @@ skill here is what makes it load reliably.
 
 - Backend (FastAPI/SQLAlchemy/Alembic/Celery/RLS) → `backend-development`
 - Frontend structure/data/state (components/hooks/services/stores) → `frontend-development`
+- PDF canvas/text-layer, selection, zoom/dpr scale → `pdf-viewer`
 - Frontend visual language (density/layout/empty states) → `frontend-ux`
 - Tailwind/shadcn class mechanics → `ui-styling`
 - Before "done" / PR / review → `code-review`
