@@ -13,7 +13,12 @@ import {PrumoPdfViewer} from '@prumo/pdf-viewer';
 import type {ViewerState} from '@prumo/pdf-viewer';
 import {useArticleDocuments} from '@/hooks/extraction/useArticleDocuments';
 import {useArticleDetail} from '@/hooks/extraction/useArticleDetail';
-import {DocumentSwitcher, ParseStatusControl} from '@/components/extraction/DocumentSwitcher';
+import {
+  DocumentSwitcher,
+  ParseStatusMenuItem,
+  ParseStatusOverlay,
+  useParseStatus,
+} from '@/components/extraction/DocumentSwitcher';
 import {doiUrl} from '@/lib/doi';
 import {t} from '@/lib/copy';
 
@@ -25,9 +30,13 @@ export interface RunPdfContentProps {
    *  click-evidence → highlight flow where the form panel must reach the
    *  same store instance. */
   store?: StoreApi<ViewerState>;
+  /** True while the PDF is maximized over the form pane. */
+  expanded?: boolean;
+  /** Maximize / restore. Omit where there is no split to expand (e.g. the article side panel). */
+  onToggleExpand?: () => void;
 }
 
-function RunPdfContentComponent({articleId, store}: RunPdfContentProps) {
+function RunPdfContentComponent({articleId, store, expanded, onToggleExpand}: RunPdfContentProps) {
   const {
     files,
     selectedFileId,
@@ -56,23 +65,30 @@ function RunPdfContentComponent({articleId, store}: RunPdfContentProps) {
     setSelectedFileId(id);
   };
 
-  // One bar: the switcher and the re-parse control live INSIDE the viewer
-  // toolbar (centre / beside the mode toggle), not in a second strip above it.
+  const parse = useParseStatus(articleId, selectedFile ?? null);
+
+  // One bar: the switcher sits in the viewer toolbar's centre and re-parse in
+  // its ☰ menu, not in a second strip above it. The confirm dialog and the
+  // status live region render OUTSIDE the viewer, so closing the menu cannot
+  // unmount them mid-confirm or silence the announcement.
   return (
+    <>
     <PrumoPdfViewer
       source={source}
       store={store}
       readerBlocks={readerBlocks}
       readerLoading={readerLoading}
       externalLink={externalLink}
+      expanded={expanded}
+      onToggleExpand={onToggleExpand}
       className="h-full"
-      toolbarLeading={
-        selectedFile && <ParseStatusControl articleId={articleId} file={selectedFile} />
-      }
+      toolbarMenuItems={parse.isAvailable ? <ParseStatusMenuItem control={parse} /> : undefined}
       toolbarCenter={
         <DocumentSwitcher files={files} selectedFileId={selectedFileId} onSelect={handleSelect} />
       }
     />
+    <ParseStatusOverlay control={parse} />
+    </>
   );
 }
 
@@ -82,7 +98,12 @@ export const RunPdfContent = memo(
   (prev, next) =>
     prev.articleId === next.articleId &&
     prev.projectId === next.projectId &&
-    prev.store === next.store,
+    prev.store === next.store &&
+    // Without these the memo would freeze the expand button: the toolbar would
+    // keep rendering the stale `expanded`, so the icon and aria-pressed would
+    // not follow the layout it controls.
+    prev.expanded === next.expanded &&
+    prev.onToggleExpand === next.onToggleExpand,
 );
 
 RunPdfContent.displayName = 'RunPdfContent';

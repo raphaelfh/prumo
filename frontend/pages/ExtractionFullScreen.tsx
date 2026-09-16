@@ -1024,6 +1024,8 @@ export default function ExtractionFullScreen() {
             articleId={articleId || ''}
             projectId={projectId || ''}
             store={viewerStore}
+            expanded={pdf.isExpanded}
+            onToggleExpand={pdf.toggleExpanded}
           />
         }
         header={

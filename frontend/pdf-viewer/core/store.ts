@@ -119,8 +119,10 @@ export function createViewerStore(
         set({isGesturing});
       },
 
-      rotateView() {
-        set({viewRotation: ((get().viewRotation + 90) % 360) as PageRotation});
+      rotateView(direction: 1 | -1 = 1) {
+        // + 360 before the modulo: a counter-clockwise turn from 0 would
+        // otherwise land on a negative remainder, which is not a PageRotation.
+        set({viewRotation: ((get().viewRotation + 360 + 90 * direction) % 360) as PageRotation});
       },
 
       setMode(mode: ViewerMode) {

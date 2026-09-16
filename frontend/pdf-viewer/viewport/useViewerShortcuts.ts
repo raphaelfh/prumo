@@ -1,7 +1,14 @@
 /**
- * ⌘/Ctrl `=` and `-` zoom the canvas and ⌘/Ctrl `0` fits its width, while the
- * pointer or focus is inside the viewer; everywhere else the browser keeps
- * its own page zoom.
+ * The viewer's own keys, live while the pointer or focus is inside it and
+ * inert everywhere else — so the browser keeps its page zoom, and the run
+ * screen's own bindings keep their keys.
+ *
+ * ⌘/Ctrl `=` and `-` zoom the canvas and ⌘/Ctrl `0` fits its width. `R` and
+ * `⇧R` turn the view clockwise and counter-clockwise (pdf.js's keys), in
+ * canvas mode only — the reader is typography, not a page surface. Those two
+ * are bare chords, so `useKeyboardShortcuts` keeps them out of text fields:
+ * the extraction form is full of them and the pointer often rests over the
+ * PDF while a reviewer types.
  *
  * Browsers also treat ⌘/Ctrl `+` as zoom-in: on layouts where `+` needs
  * Shift (US ⌘⇧=, Brazilian ABNT) the key arrives as `'+'` with
@@ -19,9 +26,14 @@ import {useKeyboardShortcuts} from '@/hooks/useKeyboardShortcuts';
 import {useViewerStoreApi} from '../core/context';
 import {ZOOM_STEP} from './zoomMath';
 
-export function useZoomShortcuts(scroller: HTMLElement | null): void {
+export function useViewerShortcuts(scroller: HTMLElement | null): void {
   const storeApi = useViewerStoreApi();
   const inside = usePointerOrFocusInside(scroller);
+  const rotate = (direction: 1 | -1) => () => {
+    const state = storeApi.getState();
+    if (state.mode !== 'canvas') return;
+    state.actions.rotateView(direction);
+  };
   const unlessGesturing = (run: (state: ReturnType<typeof storeApi.getState>) => void) => () => {
     const state = storeApi.getState();
     if (state.isGesturing) return;
@@ -41,6 +53,8 @@ export function useZoomShortcuts(scroller: HTMLElement | null): void {
         mod: true,
         handler: unlessGesturing((state) => state.actions.setZoom(state.zoom, {fitWidth: true})),
       },
+      {type: 'chord', key: 'r', handler: rotate(1)},
+      {type: 'chord', key: 'r', shift: true, handler: rotate(-1)},
     ],
   });
 }
