@@ -80,7 +80,6 @@ import {
 } from '@/components/extraction/AddEntryDialog';
 import {ReopenExtractionDialog} from '@/components/extraction/dialogs/ReopenExtractionDialog';
 import {deriveCanReopenExtraction} from '@/lib/extraction/reopenExtraction';
-import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtractionProgress';
 
 // Additional hooks
 import {useAddEntry} from '@/hooks/extraction/useAddEntry';
@@ -153,13 +152,6 @@ export default function ExtractionFullScreen() {
   // The form's section layout: the header's suggestion locate opens a section through it.
   const sectionNavRef = useRef<SectionNavHandle>(null);
 
-    // AI extraction progress state
-  const [aiExtractionState, setAiExtractionState] = useState<{
-    loading: boolean;
-    progress: any;
-  } | null>(null);
-  const [isProgressMinimized, setIsProgressMinimized] = useState(false);
-  
   // Hierarchy state
   const [modelToRemove, setModelToRemove] = useState<{
     id: string; 
@@ -915,23 +907,6 @@ export default function ExtractionFullScreen() {
   const canReopenExtraction = deriveCanReopenExtraction(permissions.canResolveConflicts, stage);
   const reopenResolvedCount = resolvedCoordKeys.size;
 
-  // AI extraction progress overlay (fixed-position; DOM placement irrelevant).
-  const aiProgressOverlay =
-    (aiExtractionState?.loading && aiExtractionState?.progress) ||
-    isProgressMinimized ? (
-      <div className="fixed bottom-6 right-6 z-[9999] w-96 max-w-[calc(100vw-3rem)]">
-        <FullAIExtractionProgress
-          progress={aiExtractionState?.progress ?? { stage: 'extracting_models' }}
-          onClose={() => {
-            setAiExtractionState(null);
-            setIsProgressMinimized(false);
-          }}
-          onMinimize={() => {
-            setIsProgressMinimized(true);
-          }}
-        />
-      </div>
-    ) : null;
 
   // Published/revision banner between header and panels (shared component,
   // spec 2026-07-02 D4) — the header-menu Reopen item stays.
@@ -1039,7 +1014,6 @@ export default function ExtractionFullScreen() {
 
   return (
     <div className="h-full bg-background">
-      {aiProgressOverlay}
       <RunSplitShell
         pdfState={pdf}
         viewerStore={viewerStore}

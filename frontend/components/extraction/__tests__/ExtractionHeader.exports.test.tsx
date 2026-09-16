@@ -5,9 +5,6 @@ import { MemoryRouter } from 'react-router';
 import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';
 
 vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }));
-vi.mock('@/hooks/extraction/useFullAIExtraction', () => ({
-  useFullAIExtraction: () => ({ extractFullAI: vi.fn(), loading: false, progress: null }),
-}));
 vi.mock('@/hooks/extraction/ai/useRunAIExtraction', () => ({
   useRunAIExtraction: () => ({ extractForRun: vi.fn(), loading: false }),
 }));

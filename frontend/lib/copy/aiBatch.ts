@@ -24,7 +24,6 @@ export const aiBatch = {
   startEngineAction: 'Choose engine',
   startQueueDownTitle: 'The AI queue is unavailable',
   startQueueDownDescription: 'Nothing was queued. Please try again.',
-  startTryAgain: 'Try again',
   startAlreadyActiveTitle: 'An AI batch is already running for this tool',
   startFailedTitle: 'Could not start the AI batch',
 

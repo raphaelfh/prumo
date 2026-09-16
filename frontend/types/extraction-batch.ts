@@ -13,7 +13,6 @@ export type CreateExtractionBatchRequest =
   components['schemas']['CreateExtractionBatchRequest'];
 
 export type BatchState = ExtractionBatchSummary['state'];
-export type BatchOutcome = ExtractionBatchItem['outcome'];
 
 /** A batch the dispatcher may still advance. */
 export function isBatchActive(batch: {state: BatchState}): boolean {
