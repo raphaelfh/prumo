@@ -307,6 +307,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/extraction/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Extraction Batches */
+        get: operations["list_extraction_batches_api_v1_extraction_batches_get"];
+        put?: never;
+        /** Start Extraction Batch */
+        post: operations["start_extraction_batch_api_v1_extraction_batches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/extraction/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extraction Batch */
+        get: operations["get_extraction_batch_api_v1_extraction_batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/extraction/batches/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Extraction Batch */
+        post: operations["cancel_extraction_batch_api_v1_extraction_batches__batch_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/extraction/batches/{batch_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Extraction Batch */
+        post: operations["resume_extraction_batch_api_v1_extraction_batches__batch_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/extraction/instances": {
         parameters: {
             query?: never;
@@ -2103,6 +2172,23 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[ExtractionBatchDetail] */
+        ApiResponse_ExtractionBatchDetail_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ExtractionBatchDetail"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[ExtractionExportCancelResponse] */
         ApiResponse_ExtractionExportCancelResponse_: {
             /** @description Dados da resposta */
@@ -2846,6 +2932,26 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[list[ExtractionBatchSummary]] */
+        ApiResponse_list_ExtractionBatchSummary__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["ExtractionBatchSummary"][] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[list[GlobalTemplateSummaryRead]] */
         ApiResponse_list_GlobalTemplateSummaryRead__: {
             /**
@@ -3307,6 +3413,26 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** CreateExtractionBatchRequest */
+        CreateExtractionBatchRequest: {
+            /** Article Ids */
+            article_ids: string[];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Skip Articles With Ai Suggestions
+             * @default true
+             */
+            skip_articles_with_ai_suggestions: boolean;
+            /**
+             * Template Id
+             * Format: uuid
+             */
+            template_id: string;
+        };
         /**
          * CreateProjectTemplateRequest
          * @description Name a template that starts with no sections; the tree is built after.
@@ -3671,6 +3797,136 @@ export interface components {
          * @enum {string}
          */
         ExtractionArticleScope: "current_list" | "selected_only";
+        /** ExtractionBatchCounts */
+        ExtractionBatchCounts: {
+            /** Done */
+            done: number;
+            /** Done With Issues */
+            done_with_issues: number;
+            /** Needs Attention */
+            needs_attention: number;
+            /** Not Run */
+            not_run: number;
+            /** Queued */
+            queued: number;
+            /** Running */
+            running: number;
+            /** Skipped */
+            skipped: number;
+            /** Total */
+            total: number;
+        };
+        /** ExtractionBatchDetail */
+        ExtractionBatchDetail: {
+            counts: components["schemas"]["ExtractionBatchCounts"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Items */
+            items: components["schemas"]["ExtractionBatchItemView"][];
+            /** Kind */
+            kind: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Name */
+            project_name: string;
+            /** Stalled */
+            stalled: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "active" | "finished" | "stopped" | "cancelled";
+            /** Stop Code */
+            stop_code: string | null;
+            /** Stop Message */
+            stop_message: string | null;
+            /**
+             * Template Id
+             * Format: uuid
+             */
+            template_id: string;
+            /** Template Name */
+            template_name: string;
+        };
+        /** ExtractionBatchItemView */
+        ExtractionBatchItemView: {
+            /**
+             * Article Id
+             * Format: uuid
+             */
+            article_id: string;
+            /** Failed Sections */
+            failed_sections: number | null;
+            /** Message */
+            message: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "queued" | "running" | "done" | "done_with_issues" | "needs_attention" | "skipped" | "not_run";
+            /** Reason Code */
+            reason_code: string | null;
+            /** Title */
+            title: string;
+            /** Total Sections */
+            total_sections: number | null;
+        };
+        /** ExtractionBatchSummary */
+        ExtractionBatchSummary: {
+            counts: components["schemas"]["ExtractionBatchCounts"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Name */
+            project_name: string;
+            /** Stalled */
+            stalled: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "active" | "finished" | "stopped" | "cancelled";
+            /** Stop Code */
+            stop_code: string | null;
+            /** Stop Message */
+            stop_message: string | null;
+            /**
+             * Template Id
+             * Format: uuid
+             */
+            template_id: string;
+            /** Template Name */
+            template_name: string;
+        };
         /**
          * ExtractionErrorCode
          * @description Stable code for a terminal extraction failure, or for a typed
@@ -7003,6 +7259,164 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_list_AISuggestionHistoryItem__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_extraction_batches_api_v1_extraction_batches_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+                active?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_ExtractionBatchSummary__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_extraction_batch_api_v1_extraction_batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExtractionBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ExtractionBatchDetail_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extraction_batch_api_v1_extraction_batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ExtractionBatchDetail_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_extraction_batch_api_v1_extraction_batches__batch_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ExtractionBatchDetail_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_extraction_batch_api_v1_extraction_batches__batch_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ExtractionBatchDetail_"];
                 };
             };
             /** @description Validation Error */

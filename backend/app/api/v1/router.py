@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     article_text_blocks,
     articles,
     articles_export,
+    extraction_batches,
     extraction_export,
     extraction_instances,
     extraction_runs,
@@ -47,6 +48,12 @@ api_router.include_router(
     section_extraction.router,
     prefix="/extraction/sections",
     tags=["Section Extraction"],
+)
+
+api_router.include_router(
+    extraction_batches.router,
+    prefix="/extraction/batches",
+    tags=["extraction-batches"],
 )
 
 api_router.include_router(

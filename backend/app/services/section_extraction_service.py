@@ -30,6 +30,7 @@ from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
 from app.llm.verify import VerificationAnnotation, VerifyVerdict
 from app.models.extraction import (
+    ExtractionEntityType,
     ExtractionEvidence,
     ExtractionInstance,
     ExtractionRun,
@@ -841,6 +842,87 @@ class SectionExtractionService(LoggerMixin):
             ExtractionReviewerDecisionType.ACCEPT_PROPOSAL.value,
         }
         return {field_id for field_id, decision in rows if decision in settled}
+
+    async def extract_full_pass(
+        self,
+        *,
+        run_id: UUID,
+        skip_fields_with_human_proposals: bool,
+        engine: LlmTarget,
+    ) -> BatchExtractionResult:
+        """Everything a reviewer's Run AI covers, in one job (spec 2026-09-15 §7.3).
+
+        ``extract_for_run`` fills the top-level sections and identifies the
+        entries of every root repeating group; each entry's child sections
+        then run through ``extract_all_sections`` on the SAME run. An entry
+        whose child sections all fail counts as one failed section — the
+        article still completes with issues rather than failing whole.
+        """
+        top = await self.extract_for_run(
+            run_id=run_id,
+            skip_fields_with_human_proposals=skip_fields_with_human_proposals,
+            engine=engine,
+        )
+        run = await self.db.get(ExtractionRun, run_id)
+        if run is None:
+            raise ValueError(f"Run {run_id} not found")
+
+        total, successful, failed = top.total_sections, top.successful_sections, top.failed_sections
+        suggestions = top.total_suggestions_created
+        sections = list(top.sections)
+        for entry_id in await self._root_entry_instance_ids(run):
+            try:
+                child = await self.extract_all_sections(
+                    project_id=run.project_id,
+                    article_id=run.article_id,
+                    template_id=run.template_id,
+                    parent_instance_id=entry_id,
+                    engine=engine,
+                    run_id=run.id,
+                )
+            except BatchAllSectionsFailed as exc:
+                total += 1
+                failed += 1
+                sections.append(
+                    {"entity_type_id": str(entry_id), "success": False, "error": str(exc)}
+                )
+                continue
+            total += child.total_sections
+            successful += child.successful_sections
+            failed += child.failed_sections
+            suggestions += child.total_suggestions_created
+            sections.extend(child.sections)
+
+        return BatchExtractionResult(
+            extraction_run_id=str(run.id),
+            total_sections=total,
+            successful_sections=successful,
+            failed_sections=failed,
+            total_suggestions_created=suggestions,
+            sections=sections,
+        )
+
+    async def _root_entry_instance_ids(self, run: Any) -> list[UUID]:
+        """Entries of the run's root repeating groups, in template then entry order."""
+        stmt = (
+            select(ExtractionInstance.id)
+            .join(
+                ExtractionEntityType, ExtractionEntityType.id == ExtractionInstance.entity_type_id
+            )
+            .where(
+                ExtractionInstance.article_id == run.article_id,
+                ExtractionInstance.template_id == run.template_id,
+                ExtractionInstance.parent_instance_id.is_(None),
+                ExtractionEntityType.parent_entity_type_id.is_(None),
+                ExtractionEntityType.cardinality == "many",
+            )
+            .order_by(
+                ExtractionEntityType.sort_order,
+                ExtractionInstance.sort_order,
+                ExtractionInstance.id,
+            )
+        )
+        return list((await self.db.execute(stmt)).scalars())
 
     async def extract_all_sections(
         self,
@@ -1761,7 +1843,9 @@ class SectionExtractionService(LoggerMixin):
            request that now carries the session ``run_id`` (to REUSE it, not
            fork a shadow run) still routes here — the full-run sweep below has
            no ``parent_instance_id``.
-        3. ``run_id`` set (no ``entity_type_id``/``parent_instance_id``) →
+        3. ``run_id`` + ``extract_all_sections`` → ``extract_full_pass``
+           (extraction batches, spec §7.3).
+        4. ``run_id`` set (no ``entity_type_id``/``parent_instance_id``) →
            ``extract_for_run`` iterates every top-level entity_type of that
            run's template (QA / full-run surface).
         """
@@ -1791,6 +1875,13 @@ class SectionExtractionService(LoggerMixin):
                 pdf_text=payload.pdf_text,
                 engine=engine,
                 run_id=payload.run_id,
+            )
+
+        if payload.run_id is not None and payload.extract_all_sections:
+            return await self.extract_full_pass(
+                run_id=payload.run_id,
+                skip_fields_with_human_proposals=payload.skip_fields_with_human_proposals,
+                engine=engine,
             )
 
         if payload.run_id is not None:
