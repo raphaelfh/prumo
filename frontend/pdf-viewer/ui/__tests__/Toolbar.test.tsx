@@ -84,8 +84,34 @@ describe('<Toolbar> ☰ menu — rotate view', () => {
 
   it('is hidden in reader mode (no page surface to rotate)', async () => {
     const user = userEvent.setup();
-    renderToolbar('reader');
+    renderToolbar('reader', {
+      externalLink: {label: 'Open article page', href: 'https://doi.org/10.1234/abcd'},
+    });
     await user.click(screen.getByLabelText('More options'));
+    expect(screen.queryByRole('menuitem', {name: 'Rotate view'})).not.toBeInTheDocument();
+  });
+});
+
+describe('<Toolbar> ☰ trigger visibility', () => {
+  it('shows the trigger in canvas mode with no externalLink (Rotate view lives there)', () => {
+    renderToolbar('canvas');
+    expect(screen.getByLabelText('More options')).toBeInTheDocument();
+  });
+
+  it('hides the trigger in reader mode with no externalLink (menu would be empty)', () => {
+    renderToolbar('reader');
+    expect(screen.queryByLabelText('More options')).not.toBeInTheDocument();
+  });
+
+  it('shows only Open article page in reader mode with an externalLink', async () => {
+    const user = userEvent.setup();
+    renderToolbar('reader', {
+      externalLink: {label: 'Open article page', href: 'https://doi.org/10.1234/abcd'},
+    });
+    const trigger = screen.getByLabelText('More options');
+    expect(trigger).toBeInTheDocument();
+    await user.click(trigger);
+    expect(await screen.findByRole('menuitem', {name: 'Open article page'})).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', {name: 'Rotate view'})).not.toBeInTheDocument();
   });
 });

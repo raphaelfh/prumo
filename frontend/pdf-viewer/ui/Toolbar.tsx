@@ -17,7 +17,7 @@ import {ZoomControls} from './ZoomControls';
  * The viewer's single bar: view mode + page navigation on the left, a
  * caller-owned `center` (the document switcher) in the middle, zoom + search
  * on the right. Below 32rem of its own width the step buttons (prev/next page,
- * zoom ±) fold away — the page input and zoom-level menu stay.
+ * zoom ±) fold away — `[− Fit width +]`, search and the ☰ menu stay.
  */
 export function Toolbar({
   className,
@@ -82,31 +82,33 @@ export function Toolbar({
               icon={<Search strokeWidth={1.5} />}
             />
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <IconButton
-                label={t('pdf', 'viewerMoreOptions')}
-                side="bottom"
-                icon={<Menu strokeWidth={1.5} />}
-              />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {!isReader && (
-                <DropdownMenuItem onSelect={() => storeApi.getState().actions.rotateView()}>
-                  <RotateCw strokeWidth={1.5} className="mr-2 size-4" />
-                  {t('pdf', 'viewerRotateView')}
-                </DropdownMenuItem>
-              )}
-              {externalLink && (
-                <DropdownMenuItem asChild>
-                  <a href={externalLink.href} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink strokeWidth={1.5} className="mr-2 size-4" />
-                    {externalLink.label}
-                  </a>
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {(!isReader || externalLink) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <IconButton
+                  label={t('pdf', 'viewerMoreOptions')}
+                  side="bottom"
+                  icon={<Menu strokeWidth={1.5} />}
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {!isReader && (
+                  <DropdownMenuItem onSelect={() => storeApi.getState().actions.rotateView()}>
+                    <RotateCw strokeWidth={1.5} className="mr-2 size-4" />
+                    {t('pdf', 'viewerRotateView')}
+                  </DropdownMenuItem>
+                )}
+                {externalLink && (
+                  <DropdownMenuItem asChild>
+                    <a href={externalLink.href} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink strokeWidth={1.5} className="mr-2 size-4" />
+                      {externalLink.label}
+                    </a>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           {trailing}
         </div>
       </div>
