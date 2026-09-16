@@ -13,7 +13,7 @@ import {CanvasLayer} from '../primitives/CanvasLayer';
  * size must be in place before rendering starts.
  */
 async function atRenderStart(opts: {
-  scale: number;
+  zoom: number;
   viewRotation: PageRotation;
   pageRotation?: PageRotation;
   pageSize?: {width: number; height: number};
@@ -28,7 +28,7 @@ async function atRenderStart(opts: {
       seen.push({cssWidth: style.width, cssHeight: style.height, renderScale: scale, rotation});
     },
   });
-  const store = createViewerStore({scale: opts.scale, viewRotation: opts.viewRotation});
+  const store = createViewerStore({zoom: opts.zoom, viewRotation: opts.viewRotation});
   store.getState().actions.setDocument(await engine.load({kind: 'url', url: 'mock.pdf'}));
 
   render(
@@ -47,24 +47,24 @@ describe('<CanvasLayer>', () => {
 
   it('sizes the canvas in CSS pixels before the render is invoked on a HiDPI screen', async () => {
     vi.stubGlobal('devicePixelRatio', 2);
-    const start = await atRenderStart({scale: 1.5, viewRotation: 0});
+    const start = await atRenderStart({zoom: 1.5, viewRotation: 0});
     // Precondition: the backing store really is DPR-scaled.
     expect(start.renderScale).toBe(3);
     expect(start).toMatchObject({cssWidth: '900px', cssHeight: '1200px', rotation: 0});
   });
 
   it('swaps the CSS width and height for a quarter view rotation', async () => {
-    const start = await atRenderStart({scale: 1.5, viewRotation: 90});
+    const start = await atRenderStart({zoom: 1.5, viewRotation: 90});
     expect(start).toMatchObject({cssWidth: '1200px', cssHeight: '900px', rotation: 90});
   });
 
   it('draws a /Rotate 90 page at 90° and landscape with no view rotation', async () => {
-    const start = await atRenderStart({scale: 1.5, viewRotation: 0, pageRotation: 90, pageSize: {width: 800, height: 600}});
+    const start = await atRenderStart({zoom: 1.5, viewRotation: 0, pageRotation: 90, pageSize: {width: 800, height: 600}});
     expect(start).toMatchObject({cssWidth: '1200px', cssHeight: '900px', rotation: 90});
   });
 
   it('adds the view rotation to the page’s own rotation', async () => {
-    const start = await atRenderStart({scale: 1.5, viewRotation: 90, pageRotation: 90, pageSize: {width: 800, height: 600}});
+    const start = await atRenderStart({zoom: 1.5, viewRotation: 90, pageRotation: 90, pageSize: {width: 800, height: 600}});
     expect(start).toMatchObject({cssWidth: '900px', cssHeight: '1200px', rotation: 180});
   });
 });

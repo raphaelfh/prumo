@@ -99,7 +99,7 @@ export function usePageLayout(): PageLayout {
   const numPages = useViewerStore((s) => s.numPages);
   const pageSizes = useViewerStore((s) => s.pageSizes);
   const viewRotation = useViewerStore((s) => s.viewRotation);
-  const zoom = useViewerStore((s) => s.scale);
+  const zoom = useViewerStore((s) => s.zoom);
   return useMemo(
     () => createPageLayout({numPages, pageSizes, viewRotation, zoom}),
     [numPages, pageSizes, viewRotation, zoom],

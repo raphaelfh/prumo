@@ -5,14 +5,14 @@ import {createViewerStore} from '../core/store';
 import type {ViewerState} from '../core/state';
 
 function CurrentScale() {
-  const scale = useViewerStore((s: ViewerState) => s.scale);
+  const scale = useViewerStore((s: ViewerState) => s.zoom);
   return <span data-testid="scale">{scale.toFixed(2)}</span>;
 }
 
 function ScaleSetter({to}: {to: number}) {
-  const setScale = useViewerStore((s: ViewerState) => s.actions.setScale);
+  const setZoom = useViewerStore((s: ViewerState) => s.actions.setZoom);
   return (
-    <button data-testid="set-scale" onClick={() => setScale(to)}>
+    <button data-testid="set-scale" onClick={() => setZoom(to)}>
       set
     </button>
   );
@@ -43,7 +43,7 @@ describe('<ViewerProvider> + useViewerStore', () => {
 
   it('throws when useViewerStore is called outside a ViewerProvider', () => {
     function Orphan() {
-      useViewerStore((s: ViewerState) => s.scale);
+      useViewerStore((s: ViewerState) => s.zoom);
       return null;
     }
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -64,7 +64,7 @@ describe('<ViewerProvider> + useViewerStore', () => {
   });
 
   it('accepts an externally created store via the `store` prop', () => {
-    const external = createViewerStore({scale: 0.75});
+    const external = createViewerStore({zoom: 0.75});
     render(
       <ViewerProvider store={external}>
         <CurrentScale />
@@ -75,7 +75,7 @@ describe('<ViewerProvider> + useViewerStore', () => {
 
   it('accepts initial state via the `initial` prop when no store is passed', () => {
     render(
-      <ViewerProvider initial={{scale: 1.5}}>
+      <ViewerProvider initial={{zoom: 1.5}}>
         <CurrentScale />
       </ViewerProvider>,
     );

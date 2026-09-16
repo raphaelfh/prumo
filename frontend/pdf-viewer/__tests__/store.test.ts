@@ -17,7 +17,9 @@ describe('createViewerStore', () => {
     expect(state.loadStatus).toBe('idle');
     expect(state.error).toBeNull();
     expect(state.currentPage).toBe(1);
-    expect(state.scale).toBe(1);
+    expect(state.zoom).toBe(1);
+    expect(state.fitWidth).toBe(true);
+    expect(state.isGesturing).toBe(false);
     expect(state.viewRotation).toBe(0);
     expect(typeof state.actions.goToPage).toBe('function');
   });
@@ -34,15 +36,15 @@ describe('createViewerStore', () => {
   it('returns isolated stores — mutating one does not affect another', () => {
     const a = createViewerStore();
     const b = createViewerStore();
-    a.getState().actions.setScale(2);
-    expect(a.getState().scale).toBe(2);
-    expect(b.getState().scale).toBe(1);
+    a.getState().actions.setZoom(2);
+    expect(a.getState().zoom).toBe(2);
+    expect(b.getState().zoom).toBe(1);
   });
 
   it('actions namespace has a stable reference across state updates', () => {
     const store = createViewerStore();
     const actionsBefore = store.getState().actions;
-    store.getState().actions.setScale(1.5);
+    store.getState().actions.setZoom(1.5);
     const actionsAfter = store.getState().actions;
     expect(actionsAfter).toBe(actionsBefore);
   });
@@ -85,11 +87,11 @@ describe('createViewerStore', () => {
 
   it('reset returns to initial state', () => {
     const store = createViewerStore();
-    store.getState().actions.setScale(2);
+    store.getState().actions.setZoom(2);
     store.getState().actions.goToPage(5);
     store.getState().actions.reset();
     const s = store.getState();
-    expect(s.scale).toBe(1);
+    expect(s.zoom).toBe(1);
     expect(s.currentPage).toBe(1);
     expect(s.loadStatus).toBe('idle');
   });
@@ -120,8 +122,8 @@ describe('createViewerStore', () => {
   });
 
   it('accepts initial overrides', () => {
-    const store = createViewerStore({scale: 1.5, currentPage: 7});
-    expect(store.getState().scale).toBe(1.5);
+    const store = createViewerStore({zoom: 1.5, currentPage: 7});
+    expect(store.getState().zoom).toBe(1.5);
     expect(store.getState().currentPage).toBe(7);
   });
 
@@ -133,12 +135,42 @@ describe('createViewerStore', () => {
   });
 
   it('reset restores initial overrides supplied at factory time', () => {
-    const store = createViewerStore({scale: 1.5, currentPage: 7});
-    store.getState().actions.setScale(2);
+    const store = createViewerStore({zoom: 1.5, currentPage: 7});
+    store.getState().actions.setZoom(2);
     store.getState().actions.goToPage(3);
     store.getState().actions.reset();
-    expect(store.getState().scale).toBe(1.5);
+    expect(store.getState().zoom).toBe(1.5);
     expect(store.getState().currentPage).toBe(7);
+  });
+
+  it('setZoom clamps to the zoom limits', () => {
+    const store = createViewerStore();
+    store.getState().actions.setZoom(10);
+    expect(store.getState().zoom).toBe(4);
+    store.getState().actions.setZoom(0.01);
+    expect(store.getState().zoom).toBe(0.25);
+  });
+
+  it('zoomBy multiplies the zoom and clamps', () => {
+    const store = createViewerStore({zoom: 2});
+    store.getState().actions.zoomBy(1.25);
+    expect(store.getState().zoom).toBe(2.5);
+    store.getState().actions.zoomBy(10);
+    expect(store.getState().zoom).toBe(4);
+  });
+
+  it('a manual zoom turns fit width off unless asked to keep it', () => {
+    const store = createViewerStore({fitWidth: true});
+    store.getState().actions.setZoom(1.5, {fitWidth: true});
+    expect(store.getState().fitWidth).toBe(true);
+    store.getState().actions.zoomBy(1.25);
+    expect(store.getState().fitWidth).toBe(false);
+  });
+
+  it('setGesturing records a gesture under way', () => {
+    const store = createViewerStore();
+    store.getState().actions.setGesturing(true);
+    expect(store.getState().isGesturing).toBe(true);
   });
 });
 

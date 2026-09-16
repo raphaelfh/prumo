@@ -146,9 +146,13 @@ function createPageScrollSync(storeApi: StoreApi<ViewerState>) {
       locate = next;
     },
 
-    /** The scroll position may have moved: publish its page, unless a programmatic scroll is travelling. */
+    /**
+     * The scroll position may have moved: publish its page, unless a
+     * programmatic scroll is travelling or a zoom gesture is previewing (its
+     * scroll positions are at the preview's scale).
+     */
     onScroll() {
-      if (!unsettled) publishLocatedPage();
+      if (!unsettled && !storeApi.getState().isGesturing) publishLocatedPage();
     },
 
     /** True when `page` is the page last published from the scroll position; consumes it. */
@@ -204,6 +208,7 @@ export function usePageScrollSync({
 }): (scroller: HTMLElement, top: number) => void {
   const storeApi = useViewerStoreApi();
   const currentPage = useViewerStore((s) => s.currentPage);
+  const isGesturing = useViewerStore((s) => s.isGesturing);
   // A ViewerProvider's store never changes, so one sync serves the mount.
   const [sync] = useState(() => createPageScrollSync(storeApi));
 
@@ -239,6 +244,14 @@ export function usePageScrollSync({
   }, [pagesKey, rootRef, scrollerSelector, sync]);
 
   useEffect(() => () => sync.dispose(), [sync]);
+
+  // A gesture's scroll events were not published; publish where it left the
+  // viewport once it commits (the locator above already has the new layout).
+  const wasGesturing = useRef(false);
+  useEffect(() => {
+    if (wasGesturing.current && !isGesturing) sync.onScroll();
+    wasGesturing.current = isGesturing;
+  }, [isGesturing, sync]);
 
   return sync.scrollTo;
 }

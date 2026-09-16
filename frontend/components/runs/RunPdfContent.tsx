@@ -12,7 +12,10 @@ import type {StoreApi} from 'zustand';
 import {PrumoPdfViewer} from '@prumo/pdf-viewer';
 import type {ViewerState} from '@prumo/pdf-viewer';
 import {useArticleDocuments} from '@/hooks/extraction/useArticleDocuments';
+import {useArticleDetail} from '@/hooks/extraction/useArticleDetail';
 import {DocumentSwitcher, ParseStatusControl} from '@/components/extraction/DocumentSwitcher';
+import {doiUrl} from '@/lib/doi';
+import {t} from '@/lib/copy';
 
 export interface RunPdfContentProps {
   articleId: string;
@@ -35,6 +38,11 @@ function RunPdfContentComponent({articleId, store}: RunPdfContentProps) {
     readerLoading,
   } = useArticleDocuments(articleId);
 
+  const {data: article} = useArticleDetail(articleId);
+  const doi = typeof article?.doi === 'string' ? article.doi : null;
+  const href = doiUrl(doi);
+  const externalLink = href ? {label: t('pdf', 'viewerOpenArticlePage'), href} : undefined;
+
   const handleSelect = (id: string) => {
     if (id === selectedFileId) {
       return;
@@ -56,6 +64,7 @@ function RunPdfContentComponent({articleId, store}: RunPdfContentProps) {
       store={store}
       readerBlocks={readerBlocks}
       readerLoading={readerLoading}
+      externalLink={externalLink}
       className="h-full"
       toolbarLeading={
         selectedFile && <ParseStatusControl articleId={articleId} file={selectedFile} />
