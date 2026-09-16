@@ -344,13 +344,22 @@ Acceptance remains an append-only reviewer decision linked through
 
 - A card is accepted when the current reviewer's latest decision for that
   coordinate links to that proposal and the displayed value still matches it.
-- The card and row check stay green after refresh because this state is
-  derived from `RunDetailResponse.decisions` merged with this session's
-  confirmed decisions, not optimistic component state. A successful decision
-  does not refetch the run view (the workspace autosave never did); a failed or
-  conflicting one does.
-- When an older extraction is the accepted one, the row shows a success-tinted
-  history action that opens it, distinct from the latest extraction's check.
+- The card and row check stay green after refresh because the AUTHORITATIVE
+  state is derived from `RunDetailResponse.decisions` merged with this session's
+  confirmed decisions. A successful decision does not refetch the run view (the
+  workspace autosave never did); a failed or conflicting one does.
+- While a decision is in flight the check paints its OUTCOME optimistically:
+  `toggle` either accepts that version or reverses it, so the result is known
+  before the server answers. The painted state is derived from the pending
+  decision rather than stored, so a failure needs no rollback — the check snaps
+  back to the authoritative value and `ReviewQuickActions` renders the error.
+  This supersedes the earlier "no optimistic acceptance" rule, whose pulsing
+  wait indicator contradicted the same revision's no-blinking goal and made a
+  toggle queued behind an autosave batch read as a dead click.
+- When an older extraction is the accepted one, the row's check itself carries a
+  success ring (no fill) and hints that an earlier extraction is accepted; the
+  history action beside it opens that version. Binding the check to the latest
+  proposal alone made a decided coordinate look undecided.
 - Clicking the green check again appends an `edit` restoring the immediately
   preceding reviewer decision's complete typed payload, including disposition,
   absence reason, units and multi-select codes. With no predecessor, use the

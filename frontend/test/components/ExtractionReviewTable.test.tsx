@@ -111,7 +111,9 @@ describe('ExtractionReviewTable', () => {
     await user.keyboard('{Control>}z{/Control}');
     expect(undo).toHaveBeenCalledOnce();
   });
-  it('marks only the clicked check pending, never swaps checks to disabled, and paints no optimistic acceptance', async () => {
+  // Optimism is scoped to the CLICKED coordinate: the pending checks paint the
+  // decision they are making, an untouched row keeps its authoritative state.
+  it('marks only the clicked check pending and optimistic, and never swaps checks to disabled', async () => {
     const user = userEvent.setup();
     const view = render(<Harness/>);
     await user.click(screen.getByRole('button', {name: 'New proposal'}));
@@ -125,8 +127,10 @@ describe('ExtractionReviewTable', () => {
       expect(check).toBeInTheDocument();
       expect(check).not.toBeDisabled();
       expect(check).toHaveAttribute('aria-disabled', 'true');
-      expect(check).toHaveAttribute('aria-pressed', 'false');
     }
+    expect(rowCheck).toHaveAttribute('aria-pressed', 'true');
+    expect(cardCheck).toHaveAttribute('aria-pressed', 'true');
+    expect(otherCheck).toHaveAttribute('aria-pressed', 'false');
     expect(rowCheck).toHaveAttribute('aria-busy', 'true');
     expect(cardCheck).toHaveAttribute('aria-busy', 'true');
     expect(otherCheck).not.toHaveAttribute('aria-busy');
