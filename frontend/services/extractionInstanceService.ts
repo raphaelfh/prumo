@@ -10,7 +10,6 @@
  * @module services/extractionInstanceService
  */
 
-import {supabase} from '@/integrations/supabase/client';
 import {extractionLogger, performanceTracker} from '@/lib/extraction/observability';
 import {deleteOne, SupabaseRepositoryError} from '@/lib/supabase/baseRepository';
 
@@ -72,45 +71,8 @@ export const extractionInstanceService = new ExtractionInstanceService();
 
 // =================== MODULE-LEVEL HELPERS ===================
 
-import type {ErrorResult} from '@/lib/error-utils';
-import {toResult} from '@/lib/error-utils';
-
 // Renaming an instance goes through the typed endpoint now
 // (`useUpdateInstanceIdentity` → PATCH /extraction/instances/{id}): the
 // rename dialog also re-keys, and the identity history has to be written
 // by the server with the caller's identity.
-
-// ---------------------------------------------------------------------------
-// useFullAIExtraction — fetch extracted model instances by entity type role
-// ---------------------------------------------------------------------------
-
-export interface ExtractedModelRef {
-  instanceId: string;
-  entryName: string;
-}
-
-/**
- * Fetch all extraction_instances for a given entity type, ordered by
- * sort_order. Used by useFullAIExtraction to discover which models to
- * process after Phase 1 model extraction.
- */
-export function loadExtractedModels(
-  articleId: string,
-  modelParentEntityTypeId: string,
-): Promise<ErrorResult<ExtractedModelRef[]>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('extraction_instances')
-      .select('id, label')
-      .eq('article_id', articleId)
-      .eq('entity_type_id', modelParentEntityTypeId)
-      .order('sort_order', {ascending: true});
-
-    if (error) throw error;
-    return (data ?? []).map((i) => ({
-      instanceId: i.id,
-      entryName: i.label ?? 'Unnamed model',
-    }));
-  }, 'loadExtractedModels');
-}
 

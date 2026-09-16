@@ -32,6 +32,7 @@ import { toast } from "sonner";
 
 import { IconButton } from "@/components/patterns/IconButton";
 import { ErrorState } from "@/components/patterns/ErrorState";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -50,12 +51,19 @@ import {
   ListCount,
   ListDisplaySortPopover,
   ListFilterPanel,
+  ListRowCard,
   ListToolbarSearch,
+  ResponsiveList,
   SortIconHeader,
   StatusRing,
-  type FilterFieldConfig,
   type FilterValues,
 } from "@/components/shared/list";
+import { BatchDetailsSheet } from "@/components/extraction/batch/BatchDetailsSheet";
+import { BatchRowStatus } from "@/components/extraction/batch/BatchRowStatus";
+import { BatchSelectionBar } from "@/components/extraction/batch/BatchSelectionBar";
+import { useBatchRowStatus } from "@/components/extraction/batch/useBatchRowStatus";
+import { useArticleSelection } from "@/hooks/extraction/useArticleSelection";
+import { useIsNarrow } from "@/hooks/use-mobile";
 import { useListKeyboardShortcuts } from "@/hooks/useListKeyboardShortcuts";
 import { fetchProjectArticles, type ArticleListItem } from "@/services/articlesService";
 import { t } from "@/lib/copy";
@@ -64,55 +72,16 @@ import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
 import { useActiveTemplateStructure } from "@/hooks/extraction/useActiveTemplateStructure";
 import { resolveProgressGate, useCallerArticleProgress } from "@/hooks/extraction/useCallerArticleProgress";
 import { scopedRowProgress } from "@/lib/qa/scopedProgress";
+import {
+  FILTER_FIELDS,
+  INITIAL_FILTERS,
+  type SortDirection,
+  type SortField,
+} from "./HITLArticleFilters";
+import { HITLHeaderCheckbox } from "./HITLHeaderCheckbox";
 
 type Article = ArticleListItem;
 
-type SortField =
-  | "title"
-  | "publication_year"
-  | "progress"
-  | "created_at";
-type SortDirection = "asc" | "desc";
-
-const FILTER_FIELDS: FilterFieldConfig[] = [
-  {
-    id: "status",
-    label: t("extraction", "tableColumnStatus"),
-    type: "categorical",
-    options: [
-      { value: "not_started", label: t("extraction", "listStatusNotStarted") },
-      { value: "in_progress", label: t("extraction", "listStatusInProgress") },
-      { value: "complete", label: t("extraction", "listStatusComplete") },
-    ],
-  },
-  {
-    id: "publication_year",
-    label: t("extraction", "tableColumnYear"),
-    type: "numericRange",
-    minBound: 1990,
-    maxBound: new Date().getFullYear(),
-    step: 1,
-  },
-  {
-    id: "title",
-    label: t("extraction", "tableColumnTitle"),
-    type: "text",
-    placeholder: t("extraction", "tableSearchTitle"),
-  },
-  {
-    id: "authors",
-    label: t("extraction", "tableColumnAuthors"),
-    type: "text",
-    placeholder: t("extraction", "tableSearchAuthor"),
-  },
-];
-
-const INITIAL_FILTERS: FilterValues = {
-  status: [],
-  publication_year: {},
-  title: "",
-  authors: "",
-};
 
 interface Props {
   kind: HITLKind;
@@ -154,6 +123,7 @@ export function HITLArticleTable({
   toolbarActions,
 }: Props) {
   const navigate = useNavigate();
+  const isNarrow = useIsNarrow();
   const openRowLabel =
     kind === "quality_assessment"
       ? t("qa", "tableOpenRowAria")
@@ -162,6 +132,8 @@ export function HITLArticleTable({
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [batchIdForSheet, setBatchIdForSheet] = useState<string | null>(null);
+  const { activeBatch, rowStatus } = useBatchRowStatus(projectId, templateId);
 
   const [globalFilter, setGlobalFilter] = useState("");
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
@@ -318,6 +290,22 @@ export function HITLArticleTable({
     return visible;
   })();
 
+  const {
+    selectedIds,
+    isAllSelected,
+    isIndeterminate,
+    selectedCount,
+    toggleArticle,
+    selectAll,
+    selectFiltered,
+    deselectAll,
+    isSelected,
+    hasActiveFilters: selectionHasActiveFilters,
+  } = useArticleSelection({
+    allArticleIds: articles.map((a) => a.id),
+    visibleArticleIds: filteredAndSorted.map((a) => a.id),
+  });
+
   const activeFiltersCount = (() => {
     let n = globalFilter.trim() ? 1 : 0;
     FILTER_FIELDS.forEach((f) => {
@@ -354,11 +342,11 @@ export function HITLArticleTable({
     searchInputRef,
     setFilterPopoverOpen,
     filterPopoverOpen,
-    deselectAll: () => undefined,
-    selectedCount: 0,
+    deselectAll,
+    selectedCount,
     hasActiveFilters: activeFiltersCount > 0,
-    selectAll: () => undefined,
-    selectFiltered: () => undefined,
+    selectAll,
+    selectFiltered,
   });
 
   const handleSort = (field: SortField) => {
@@ -496,11 +484,22 @@ export function HITLArticleTable({
           />
           {toolbarActions}
           <div className="flex items-center gap-2 shrink-0 ml-auto">
-            <ListCount
-              visible={filteredAndSorted.length}
-              total={articles.length}
-              label={t("extraction", "tableArticlesCount")}
-            />
+            {selectedCount > 0 ? (
+              <BatchSelectionBar
+                projectId={projectId}
+                templateId={templateId}
+                selectedIds={selectedIds}
+                onClear={deselectAll}
+                activeBatch={activeBatch}
+                onViewBatch={setBatchIdForSheet}
+              />
+            ) : (
+              <ListCount
+                visible={filteredAndSorted.length}
+                total={articles.length}
+                label={t("extraction", "tableArticlesCount")}
+              />
+            )}
           </div>
         </div>
         <ActiveFilterChips
@@ -515,143 +514,270 @@ export function HITLArticleTable({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-border/40">
-        <Table containerClassName="overflow-visible" className="table-fixed w-max min-w-full">
-          <TableHeader className="sticky top-0 z-10 bg-background">
-            <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
-              <TableHead className={`${TABLE_CELL_CLASS} w-[46%]`}>
-                <SortIconHeader
-                  label={t("extraction", "tableColumnTitle")}
-                  direction={sortField === "title" ? sortDirection : null}
-                  onSort={() => handleSort("title")}
-                />
-              </TableHead>
-              <TableHead className={`${TABLE_CELL_CLASS} hidden md:table-cell w-[20%]`}>
-                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                  {t("extraction", "tableColumnAuthors")}
-                </span>
-              </TableHead>
-              <TableHead className={`${TABLE_CELL_CLASS} hidden md:table-cell w-[10%]`}>
-                <SortIconHeader
-                  label={t("extraction", "tableColumnYear")}
-                  direction={
-                    sortField === "publication_year" ? sortDirection : null
-                  }
-                  onSort={() => handleSort("publication_year")}
-                />
-              </TableHead>
-              <TableHead className={`${TABLE_CELL_CLASS} w-[18%] text-center`}>
-                <SortIconHeader
-                  label={t("extraction", "tableColumnStatus")}
-                  direction={sortField === "progress" ? sortDirection : null}
-                  onSort={() => handleSort("progress")}
-                  containerClassName="flex items-center justify-center gap-1"
-                />
-              </TableHead>
-              <TableHead className={`${TABLE_CELL_CLASS} w-[6%] text-center`}>
-                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                  {t("extraction", "tableActions")}
-                </span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredAndSorted.map((article) => {
-              const progress = getProgress(article);
-              const isComplete = progress >= 100;
-              const hasInstances =
-                (valuesByArticle.get(article.id)?.instances.length ?? 0) > 0;
-              const title = article.title ?? t("qa", "untitledArticle");
-              const openRow = () =>
-                navigate(rowActionHref(article.id, templateId));
-
-              return (
-                <TableRow
-                  key={article.id}
-                  data-testid={`hitl-${kind}-row-${article.id}`}
-                  className="relative border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8"
-                >
-                  <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`}>
-                    {/* The row is not a control (it holds the action button);
-                        this button is, stretched over the row by its ::after. */}
-                    <button
-                      type="button"
-                      onClick={openRow}
-                      aria-label={openRowLabel.replace("{{title}}", title)}
-                      className="line-clamp-1 w-full text-left leading-tight text-foreground font-medium focus-visible:outline-hidden after:absolute after:inset-0 focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
-                    >
-                      {title}
-                    </button>
-                  </TableCell>
-                  <TableCell
-                    className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
-                  >
-                    {article.authors && article.authors.length > 0 ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="relative z-10 flex items-center gap-1 cursor-help">
-                            <User className="h-3 w-3 text-muted-foreground shrink-0" />
-                            <span className="truncate block min-w-0">
-                              {article.authors.slice(0, 1).join(", ")}
-                              {article.authors.length > 1 &&
-                                ` +${article.authors.length - 1}`}
-                            </span>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-xs">
-                          <p className="text-xs">{article.authors.join(", ")}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell
-                    className={`hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px]`}
-                  >
-                    <div className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3 text-muted-foreground" />
-                      {article.publication_year ?? "—"}
-                    </div>
-                  </TableCell>
-                  <TableCell className={`${TABLE_CELL_CLASS} text-center`}>
-                    <StatusRing progress={progress} />
-                  </TableCell>
-                  <TableCell className={`${TABLE_CELL_CLASS} text-center`}>
-                    {/* relative z-10: above the row's stretched open control. */}
-                    {!hasInstances ? (
-                      <IconButton
-                        onClick={openRow}
-                        variant="outline"
-                        label={t("extraction", "tableStart")}
-                        className="relative z-10 rounded-full border-border/60 bg-background shadow-none"
-                        data-testid={`hitl-${kind}-row-action-${article.id}`}
-                        icon={<PlayCircle />}
-                      />
-                    ) : (
-                      <IconButton
-                        onClick={openRow}
-                        variant="outline"
-                        label={
-                          isComplete
-                            ? t("extraction", "tableView")
-                            : t("extraction", "tableContinue")
-                        }
-                        className={`relative z-10 rounded-full shadow-none ${
-                          isComplete
-                            ? "border-border/60 bg-background"
-                            : "border-info/30 bg-info/10 text-info hover:bg-info/20"
-                        }`}
-                        data-testid={`hitl-${kind}-row-action-${article.id}`}
-                        icon={isComplete ? <CheckCircle /> : <Edit />}
-                      />
-                    )}
-                  </TableCell>
+        <ResponsiveList
+          isNarrow={isNarrow}
+          tableContent={
+            <Table containerClassName="overflow-visible" className="table-fixed w-max min-w-full">
+              <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
+                  {/* Fixed-width 40px checkbox column takes the remaining
+                      ~6% under `table-fixed`; the five percentage columns
+                      below intentionally total 94, not 100. */}
+                  <TableHead className={`w-[40px] min-w-[40px] ${TABLE_CELL_CLASS} text-left align-middle`}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center">
+                          <HITLHeaderCheckbox
+                            checked={isAllSelected}
+                            indeterminate={isIndeterminate}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                if (selectionHasActiveFilters) {
+                                  selectFiltered();
+                                } else {
+                                  selectAll();
+                                }
+                              } else {
+                                deselectAll();
+                              }
+                            }}
+                            aria-label={
+                              selectionHasActiveFilters
+                                ? t("extraction", "tableSelectFiltered")
+                                : t("extraction", "tableSelectAll")
+                            }
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          {selectionHasActiveFilters
+                            ? t("extraction", "tableSelectFiltered")
+                            : t("extraction", "tableSelectAll")}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TableHead>
+                  <TableHead className={`${TABLE_CELL_CLASS} w-[42%]`}>
+                    <SortIconHeader
+                      label={t("extraction", "tableColumnTitle")}
+                      direction={sortField === "title" ? sortDirection : null}
+                      onSort={() => handleSort("title")}
+                    />
+                  </TableHead>
+                  <TableHead className={`${TABLE_CELL_CLASS} hidden md:table-cell w-[18%]`}>
+                    <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      {t("extraction", "tableColumnAuthors")}
+                    </span>
+                  </TableHead>
+                  <TableHead className={`${TABLE_CELL_CLASS} hidden md:table-cell w-[10%]`}>
+                    <SortIconHeader
+                      label={t("extraction", "tableColumnYear")}
+                      direction={
+                        sortField === "publication_year" ? sortDirection : null
+                      }
+                      onSort={() => handleSort("publication_year")}
+                    />
+                  </TableHead>
+                  <TableHead className={`${TABLE_CELL_CLASS} w-[18%] text-center`}>
+                    <SortIconHeader
+                      label={t("extraction", "tableColumnStatus")}
+                      direction={sortField === "progress" ? sortDirection : null}
+                      onSort={() => handleSort("progress")}
+                      containerClassName="flex items-center justify-center gap-1"
+                    />
+                  </TableHead>
+                  <TableHead className={`${TABLE_CELL_CLASS} w-[6%] text-center`}>
+                    <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      {t("extraction", "tableActions")}
+                    </span>
+                  </TableHead>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredAndSorted.map((article) => {
+                  const progress = getProgress(article);
+                  const isComplete = progress >= 100;
+                  const hasInstances =
+                    (valuesByArticle.get(article.id)?.instances.length ?? 0) > 0;
+                  const title = article.title ?? t("qa", "untitledArticle");
+                  const openRow = () =>
+                    navigate(rowActionHref(article.id, templateId));
+
+                  return (
+                    <TableRow
+                      key={article.id}
+                      data-testid={`hitl-${kind}-row-${article.id}`}
+                      className="relative border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8"
+                    >
+                      <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`}>
+                        <Checkbox
+                          className="relative z-10"
+                          checked={isSelected(article.id)}
+                          onCheckedChange={() => toggleArticle(article.id)}
+                          aria-label={t("extraction", "tableSelectArticleAria").replace("{{title}}", title)}
+                        />
+                      </TableCell>
+                      <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`}>
+                        {/* The row is not a control (it holds the checkbox and action button);
+                            this button is, stretched over the row by its ::after. */}
+                        <button
+                          type="button"
+                          onClick={openRow}
+                          aria-label={openRowLabel.replace("{{title}}", title)}
+                          className="line-clamp-1 w-full text-left leading-tight text-foreground font-medium focus-visible:outline-hidden after:absolute after:inset-0 focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+                        >
+                          {title}
+                        </button>
+                      </TableCell>
+                      <TableCell
+                        className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
+                      >
+                        {article.authors && article.authors.length > 0 ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="relative z-10 flex items-center gap-1 cursor-help">
+                                <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                                <span className="truncate block min-w-0">
+                                  {article.authors.slice(0, 1).join(", ")}
+                                  {article.authors.length > 1 &&
+                                    ` +${article.authors.length - 1}`}
+                                </span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p className="text-xs">{article.authors.join(", ")}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell
+                        className={`hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px]`}
+                      >
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3 text-muted-foreground" />
+                          {article.publication_year ?? "—"}
+                        </div>
+                      </TableCell>
+                      <TableCell className={`${TABLE_CELL_CLASS} text-center`}>
+                        <div className="flex items-center justify-center gap-1">
+                          <StatusRing progress={progress} />
+                          <BatchRowStatus status={rowStatus.get(article.id)} />
+                        </div>
+                      </TableCell>
+                      <TableCell className={`${TABLE_CELL_CLASS} text-center`}>
+                        {/* relative z-10: above the row's stretched open control. */}
+                        {!hasInstances ? (
+                          <IconButton
+                            onClick={openRow}
+                            variant="outline"
+                            label={t("extraction", "tableStart")}
+                            className="relative z-10 rounded-full border-border/60 bg-background shadow-none"
+                            data-testid={`hitl-${kind}-row-action-${article.id}`}
+                            icon={<PlayCircle />}
+                          />
+                        ) : (
+                          <IconButton
+                            onClick={openRow}
+                            variant="outline"
+                            label={
+                              isComplete
+                                ? t("extraction", "tableView")
+                                : t("extraction", "tableContinue")
+                            }
+                            className={`relative z-10 rounded-full shadow-none ${
+                              isComplete
+                                ? "border-border/60 bg-background"
+                                : "border-info/30 bg-info/10 text-info hover:bg-info/20"
+                            }`}
+                            data-testid={`hitl-${kind}-row-action-${article.id}`}
+                            icon={isComplete ? <CheckCircle /> : <Edit />}
+                          />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          }
+          cardContent={
+            <>
+              {filteredAndSorted.map((article) => {
+                const progress = getProgress(article);
+                const isComplete = progress >= 100;
+                const hasInstances =
+                  (valuesByArticle.get(article.id)?.instances.length ?? 0) > 0;
+                const title = article.title ?? t("qa", "untitledArticle");
+                const openRow = () =>
+                  navigate(rowActionHref(article.id, templateId));
+
+                return (
+                  <ListRowCard
+                    key={article.id}
+                    leading={
+                      <Checkbox
+                        checked={isSelected(article.id)}
+                        onCheckedChange={() => toggleArticle(article.id)}
+                        aria-label={t("extraction", "tableSelectArticleAria").replace("{{title}}", title)}
+                      />
+                    }
+                    title={title}
+                    subtitle={article.authors?.slice(0, 2).join(", ") || undefined}
+                    meta={
+                      <>
+                        {article.publication_year != null && <span>{article.publication_year}</span>}
+                        <StatusRing progress={progress} />
+                        <BatchRowStatus status={rowStatus.get(article.id)} />
+                      </>
+                    }
+                    primaryAction={
+                      !hasInstances ? (
+                        <IconButton
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openRow();
+                          }}
+                          variant="outline"
+                          label={t("extraction", "tableStart")}
+                          className="rounded-full border-border/60 bg-background shadow-none"
+                          icon={<PlayCircle />}
+                        />
+                      ) : (
+                        <IconButton
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openRow();
+                          }}
+                          variant="outline"
+                          label={
+                            isComplete
+                              ? t("extraction", "tableView")
+                              : t("extraction", "tableContinue")
+                          }
+                          className={`rounded-full shadow-none ${
+                            isComplete
+                              ? "border-border/60 bg-background"
+                              : "border-info/30 bg-info/10 text-info hover:bg-info/20"
+                          }`}
+                          icon={isComplete ? <CheckCircle /> : <Edit />}
+                        />
+                      )
+                    }
+                    onClick={openRow}
+                  />
+                );
+              })}
+            </>
+          }
+        />
       </div>
+      <BatchDetailsSheet
+        batchId={batchIdForSheet}
+        onOpenChange={(open) => !open && setBatchIdForSheet(null)}
+      />
     </div>
   );
 }

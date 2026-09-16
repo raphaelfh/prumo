@@ -1,0 +1,151 @@
+/**
+ * useAiBatchJobSync (spec 2026-09-15 §11.5): mirrors the caller's recent
+ * batches (active AND terminal, from `useRecentBatches`) into the
+ * background-jobs store, one job per batch, `completedAt` stamped once.
+ *
+ * These tests exercise the REAL `useRecentBatches`/`useActiveBatches` query
+ * hooks (only the service is mocked) so they can prove the query the sync
+ * hook drives is one the server can actually answer — a batch that finished
+ * is terminal and would be silently dropped by `useActiveBatches`.
+ */
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
+import {render, waitFor} from '@testing-library/react';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import type {ReactNode} from 'react';
+
+vi.mock('@/services/extractionBatchService', () => ({
+  listExtractionBatches: vi.fn(),
+  getExtractionBatch: vi.fn(),
+  startExtractionBatch: vi.fn(),
+  cancelExtractionBatch: vi.fn(),
+  resumeExtractionBatch: vi.fn(),
+}));
+
+import {listExtractionBatches} from '@/services/extractionBatchService';
+import {extractionBatchKeys} from '@/lib/query-keys/extractionBatch';
+import {useAiBatchJobSync} from '@/hooks/useAiBatchJobSync';
+import {useBackgroundJobs} from '@/stores/useBackgroundJobs';
+
+function summary(state: 'active' | 'finished', overrides: Partial<ReturnType<typeof baseCounts>> = {}) {
+  return {
+    id: 'b1',
+    kind: 'extraction',
+    project_id: 'p1',
+    project_name: 'Project 1',
+    template_id: 't1',
+    template_name: 'Template 1',
+    state,
+    stalled: false,
+    stop_code: null,
+    stop_message: null,
+    created_at: '2026-09-15T00:00:00Z',
+    finished_at: null,
+    counts: {...baseCounts(), ...overrides},
+  };
+}
+
+function baseCounts() {
+  return {
+    done: 1,
+    done_with_issues: 0,
+    needs_attention: 0,
+    not_run: 0,
+    queued: 0,
+    running: 1,
+    skipped: 0,
+    total: 2,
+  };
+}
+
+function Harness() {
+  useAiBatchJobSync();
+  return null;
+}
+
+function renderWithClient() {
+  const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+  const Wrapper = ({children}: {children: ReactNode}) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const result = render(<Harness />, {wrapper: Wrapper});
+  return {client, ...result};
+}
+
+describe('useAiBatchJobSync', () => {
+  beforeEach(() => {
+    useBackgroundJobs.setState({jobs: [], lastReadAt: Date.now(), ownerId: null});
+    vi.mocked(listExtractionBatches).mockReset();
+  });
+
+  it('fetches the caller\'s recent batches with no project filter', async () => {
+    vi.mocked(listExtractionBatches).mockResolvedValue([summary('active')]);
+    renderWithClient();
+
+    await waitFor(() => expect(listExtractionBatches).toHaveBeenCalled());
+    expect(listExtractionBatches).toHaveBeenCalledWith({});
+  });
+
+  it('adds a running job for an active batch', async () => {
+    vi.mocked(listExtractionBatches).mockResolvedValue([summary('active')]);
+    renderWithClient();
+
+    await waitFor(() => expect(useBackgroundJobs.getState().getJob('ai-batch-b1')).toBeDefined());
+    const job = useBackgroundJobs.getState().getJob('ai-batch-b1');
+    expect(job?.type).toBe('ai-batch');
+    expect(job?.status).toBe('running');
+    expect(job?.completedAt).toBeUndefined();
+  });
+
+  it('observes a batch that finished — through the real list response, not a hand-fed summary', async () => {
+    vi.useFakeTimers({shouldAdvanceTime: true});
+    try {
+      vi.mocked(listExtractionBatches).mockResolvedValueOnce([summary('active')]);
+      renderWithClient();
+
+      await waitFor(() =>
+        expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.status).toBe('running'),
+      );
+
+      vi.mocked(listExtractionBatches).mockResolvedValue([summary('finished')]);
+      // Force the poll: refetchInterval only fires while a batch is active,
+      // which is true right now, so advancing past ACTIVE_BATCH_POLL_MS
+      // triggers the next fetch of the real query.
+      await vi.advanceTimersByTimeAsync(5100);
+      await waitFor(() =>
+        expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.status).toBe('completed'),
+      );
+
+      const job = useBackgroundJobs.getState().getJob('ai-batch-b1');
+      expect(job?.completedAt).toBeTypeOf('number');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not restamp completedAt on a further observation of an already-finished batch', async () => {
+    const nowSpy = vi.spyOn(Date, 'now');
+    nowSpy.mockReturnValue(2000);
+    vi.mocked(listExtractionBatches).mockResolvedValueOnce([summary('finished')]);
+    const {client} = renderWithClient();
+
+    await waitFor(() =>
+      expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.status).toBe('completed'),
+    );
+    const firstCompletedAt = useBackgroundJobs.getState().getJob('ai-batch-b1')?.completedAt;
+    expect(firstCompletedAt).toBe(2000);
+
+    // A later observation of the SAME terminal batch (e.g. a refetch on
+    // window focus) arrives with a different counts snapshot but is still
+    // terminal — completedAt must not move even though `Date.now()` has.
+    nowSpy.mockReturnValue(3000);
+    vi.mocked(listExtractionBatches).mockResolvedValue([summary('finished', {done: 2})]);
+    await client.invalidateQueries({queryKey: extractionBatchKeys.all});
+    await waitFor(() =>
+      expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.progress?.current).toBe(2),
+    );
+
+    const secondCompletedAt = useBackgroundJobs.getState().getJob('ai-batch-b1')?.completedAt;
+    expect(secondCompletedAt).toBe(firstCompletedAt);
+    nowSpy.mockRestore();
+  });
+});

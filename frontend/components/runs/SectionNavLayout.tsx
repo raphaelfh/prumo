@@ -119,41 +119,56 @@ export function SectionNavLayout({ items, activeId, onSelect, onActivate, childr
 
   const toggleLabel = t('runs', railOpen ? 'sectionNavHide' : 'sectionNavShow');
 
+  const rail = (!review || railOpen) && (
+    <div
+      className={cn(
+        'flex flex-col self-start border-r border-border/40',
+        review && 'shrink-0',
+        guideOverlay
+          ? 'absolute left-0 top-0 max-h-[70vh] overflow-y-auto bg-background shadow-elev-header'
+          // The toolbar, when there is one, owns the first 40px of the scrollport.
+          : review ? 'sticky top-10' : 'sticky top-0',
+        railOpen ? (review ? 'w-[160px] py-2' : 'w-[184px] bg-muted/30 py-2') : 'w-8 items-center py-1',
+      )}
+    >
+      {!review && <div className={cn(railOpen ? 'px-1.5 pb-1' : 'pb-0.5')}>
+        <IconButton
+          label={toggleLabel}
+          shortcut={TOGGLE_KEYS}
+          side="right"
+          onClick={toggleRail}
+          aria-expanded={railOpen}
+          className={cn(railOpen && 'text-foreground')}
+          icon={<ListTree strokeWidth={1.5} />}
+        />
+      </div>}
+      <SectionNavRail
+        presentation={review ? 'review-table' : 'default'}
+        compact={!railOpen}
+        items={items}
+        activeId={activeId}
+        onSelect={id => revealSection(id)}
+        onJumpToNextPending={jumpToNextPending}
+      />
+    </div>
+  );
+
   return (
     <SectionOpenContext.Provider value={sectionOpen}>
-      <div className={cn('relative flex min-w-0', railOpen && !guideOverlay ? (review ? 'gap-2' : 'gap-4') : review ? 'gap-0' : 'gap-1.5')}>
-        {/* One toggle element in both states, so keyboard focus survives the switch. */}
-        {(!review || railOpen) && <div
-          className={cn(
-            'flex flex-col self-start border-r border-border/40',
-            review && 'shrink-0',
-            guideOverlay ? 'absolute left-0 top-10 z-30 max-h-[70vh] overflow-y-auto bg-background shadow-elev-header' : 'sticky top-0',
-            railOpen ? (review ? 'w-[160px] py-2' : 'w-[184px] bg-muted/30 py-2') : 'w-8 items-center py-1',
-          )}
-        >
-          {!review && <div className={cn(railOpen ? 'px-1.5 pb-1' : 'pb-0.5')}>
-            <IconButton
-              label={toggleLabel}
-              shortcut={TOGGLE_KEYS}
-              side="right"
-              onClick={toggleRail}
-              aria-expanded={railOpen}
-              className={cn(railOpen && 'text-foreground')}
-              icon={<ListTree strokeWidth={1.5} />}
-            />
-          </div>}
-          <SectionNavRail
-            presentation={review ? 'review-table' : 'default'}
-            compact={!railOpen}
-            items={items}
-            activeId={activeId}
-            onSelect={id => revealSection(id)}
-            onJumpToNextPending={jumpToNextPending}
-          />
-        </div>}
-        <div ref={formColumnRef} className="min-w-0 flex-1">
-          {toolbar}
-          {children}
+      {/* The toolbar spans the full width above the rail, so its first control —
+          the rail toggle — keeps the same left edge whether the rail is open or
+          shut. It is sticky, so the overlay rail below hangs off a sticky
+          zero-size anchor rather than the top of the (very tall) form. */}
+      <div className="relative min-w-0">
+        {toolbar}
+        <div className={cn('flex min-w-0', railOpen && !guideOverlay ? (review ? 'gap-2' : 'gap-4') : review ? 'gap-0' : 'gap-1.5')}>
+          {/* One toggle element in both states, so keyboard focus survives the switch. */}
+          {guideOverlay && rail
+            ? <div className="sticky top-10 z-30 h-0 w-0">{rail}</div>
+            : rail}
+          <div ref={formColumnRef} className="min-w-0 flex-1">
+            {children}
+          </div>
         </div>
       </div>
     </SectionOpenContext.Provider>
