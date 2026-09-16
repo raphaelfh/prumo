@@ -117,11 +117,15 @@ describe('useBatchDetail', () => {
     vi.mocked(getExtractionBatch).mockResolvedValueOnce(baseDetail);
     const {client, wrapper} = makeWrapper();
     const invalidate = vi.spyOn(client, 'invalidateQueries');
-    const {rerender} = renderHook(({id}: {id: string}) => useBatchDetail(id), {
+    const {result, rerender} = renderHook(({id}: {id: string}) => useBatchDetail(id), {
       wrapper,
       initialProps: {id: 'b1'},
     });
-    await waitFor(() => expect(getExtractionBatch).toHaveBeenCalledWith('b1'));
+    // Wait for the RENDERED data, not just the mock call: the effect only
+    // sees `done` once the query has resolved and the hook has re-rendered
+    // with it, so this is what proves batch A's done=3 was actually
+    // observed before the switch.
+    await waitFor(() => expect(result.current.data?.counts.done).toBe(3));
 
     invalidate.mockClear();
     vi.mocked(getExtractionBatch).mockResolvedValueOnce({
@@ -130,7 +134,7 @@ describe('useBatchDetail', () => {
       counts: {...counts, queued: 1, running: 0, done: 0},
     });
     rerender({id: 'b2'});
-    await waitFor(() => expect(getExtractionBatch).toHaveBeenCalledWith('b2'));
+    await waitFor(() => expect(result.current.data?.id).toBe('b2'));
 
     invalidate.mockClear();
     vi.mocked(getExtractionBatch).mockResolvedValue({
