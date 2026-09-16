@@ -18,14 +18,19 @@ describe('ProposalCard source count', () => {
 });
 
 describe('ProposalCard pending check', () => {
-  it('keeps the same enabled node while pending, ignores clicks, and shows no acceptance until confirmed', async () => {
+  // #925 asserted "no acceptance until confirmed" and signalled the wait with a
+  // pulse. The pulse contradicted that same PR's "no control remounts or blinks"
+  // goal, and waiting on a toggle whose outcome is already known read as a dead
+  // click. The check is optimistic now; `AcceptCheck.test.tsx` covers the
+  // automatic snap-back, which needs no rollback because the state is derived.
+  it('keeps the same enabled node while pending, ignores clicks, and shows the click optimistically', async () => {
     const onToggle = vi.fn(); const user = userEvent.setup();
     const view = render(<ProposalCard proposal={proposal(1)} ordinal={1} latest accepted={false} saving pending onToggle={onToggle}/>);
-    const check = screen.getByRole('button', {name: 'Accept extraction'});
+    const check = screen.getByRole('button', {name: 'Unaccept extraction'});
     expect(check).not.toBeDisabled();
     expect(check).toHaveAttribute('aria-disabled', 'true');
     expect(check).toHaveAttribute('aria-busy', 'true');
-    expect(check).toHaveAttribute('aria-pressed', 'false');
+    expect(check).toHaveAttribute('aria-pressed', 'true');
     await user.click(check);
     expect(onToggle).not.toHaveBeenCalled();
     view.rerender(<ProposalCard proposal={proposal(1)} ordinal={1} latest accepted saving={false} onToggle={onToggle}/>);

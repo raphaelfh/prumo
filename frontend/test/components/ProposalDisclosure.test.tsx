@@ -53,15 +53,17 @@ describe('inline proposal history', () => {
     expect(screen.getByText('First call reasoning')).toBeVisible();
     expect(screen.getByRole('button', {name: 'Unaccept extraction'})).toHaveAttribute('aria-pressed', 'true');
   });
-  it('blocks every acceptance action during a save without disabling it or painting optimistic acceptance', async () => {
+  // The check paints the click optimistically now (see AcceptCheck): the block
+  // on further clicks is what this covers, not the absence of a painted state.
+  it('blocks every acceptance action during a save without disabling it', async () => {
     const user = userEvent.setup();
     render(<ProposalDisclosure {...base} saving pendingProposalId="new" isAccepted={() => false}/>);
     await screen.findByRole('article');
-    const check = screen.getByRole('button', {name: 'Accept extraction'});
+    const check = screen.getByRole('button', {name: 'Unaccept extraction'});
     expect(check).not.toBeDisabled();
     expect(check).toHaveAttribute('aria-disabled', 'true');
     expect(check).toHaveAttribute('aria-busy', 'true');
-    expect(check).toHaveAttribute('aria-pressed', 'false');
+    expect(check).toHaveAttribute('aria-pressed', 'true');
     await user.click(check);
     expect(onToggle).not.toHaveBeenCalled();
   });
