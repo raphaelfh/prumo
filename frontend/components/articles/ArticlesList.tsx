@@ -25,6 +25,7 @@ import {
     fetchArticlePdfSignedUrl,
 } from "@/services/articlesService";
 import {t} from "@/lib/copy";
+import {doiUrl} from "@/lib/doi";
 import {TABLE_CELL_CLASS} from "@/lib/table-constants";
 import {useListKeyboardShortcuts} from "@/hooks/useListKeyboardShortcuts";
 import type {FilterFieldConfig, FilterValues} from "@/components/shared/list";
@@ -950,11 +951,10 @@ export function ArticlesList({
                                                               className="max-w-full text-left text-[12px] font-medium text-primary underline-offset-2 hover:underline line-clamp-2"
                                                               onClick={(e) => {
                                                                   e.stopPropagation();
-                                                                  const raw = article.doi!.trim();
-                                                                  const path = raw
-                                                                      .replace(/^https?:\/\/(dx\.)?doi\.org\//i, '')
-                                                                      .replace(/^doi:\s*/i, '');
-                                                                  window.open(`https://doi.org/${path}`, '_blank', 'noopener,noreferrer');
+                                                                  const href = doiUrl(article.doi);
+                                                                  if (href) {
+                                                                      window.open(href, '_blank', 'noopener,noreferrer');
+                                                                  }
                                                               }}
                                                           >
                                                               {article.doi.trim()}

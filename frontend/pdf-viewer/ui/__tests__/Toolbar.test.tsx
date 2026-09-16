@@ -73,16 +73,38 @@ describe('<Toolbar> zoom visibility', () => {
   });
 });
 
-describe('<Toolbar> rotate view', () => {
+describe('<Toolbar> ☰ menu — rotate view', () => {
   it('turns the view 90° clockwise per click', async () => {
     const user = userEvent.setup();
     const store = renderToolbar('canvas');
-    await user.click(screen.getByLabelText('Rotate view'));
+    await user.click(screen.getByLabelText('More options'));
+    await user.click(await screen.findByRole('menuitem', {name: 'Rotate view'}));
     expect(store.getState().viewRotation).toBe(90);
   });
 
-  it('is hidden in reader mode (no page surface to rotate)', () => {
+  it('is hidden in reader mode (no page surface to rotate)', async () => {
+    const user = userEvent.setup();
     renderToolbar('reader');
-    expect(screen.queryByLabelText('Rotate view')).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText('More options'));
+    expect(screen.queryByRole('menuitem', {name: 'Rotate view'})).not.toBeInTheDocument();
+  });
+});
+
+describe('<Toolbar> ☰ menu — open article page', () => {
+  it('is absent without an externalLink', async () => {
+    const user = userEvent.setup();
+    renderToolbar('canvas');
+    await user.click(screen.getByLabelText('More options'));
+    expect(screen.queryByRole('menuitem', {name: 'Open article page'})).not.toBeInTheDocument();
+  });
+
+  it('is present with an externalLink and points at its href', async () => {
+    const user = userEvent.setup();
+    renderToolbar('canvas', {
+      externalLink: {label: 'Open article page', href: 'https://doi.org/10.1234/abcd'},
+    });
+    await user.click(screen.getByLabelText('More options'));
+    const item = await screen.findByRole('menuitem', {name: 'Open article page'});
+    expect(item).toHaveAttribute('href', 'https://doi.org/10.1234/abcd');
   });
 });

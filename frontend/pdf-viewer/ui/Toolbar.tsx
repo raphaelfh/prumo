@@ -1,6 +1,12 @@
 import type {ReactNode} from 'react';
-import {BookOpenText, RotateCw, Search} from 'lucide-react';
+import {BookOpenText, ExternalLink, Menu, RotateCw, Search} from 'lucide-react';
 import {IconButton} from '@/components/patterns/IconButton';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import {useViewerStore, useViewerStoreApi} from '../core/context';
@@ -20,6 +26,7 @@ export function Toolbar({
   trailing,
   onSearchToggle,
   modeToggle = true,
+  externalLink,
 }: {
   className?: string;
   /** Rendered right after the mode toggle (e.g. a parse-status control). */
@@ -31,6 +38,8 @@ export function Toolbar({
   onSearchToggle?: () => void;
   /** Show the original/parsed-text mode toggle in the leading controls. */
   modeToggle?: boolean;
+  /** A caller-owned link (e.g. the source article page) shown in the ☰ menu. */
+  externalLink?: {label: string; href: string};
 }) {
   const mode = useViewerStore((s) => s.mode);
   const storeApi = useViewerStoreApi();
@@ -61,19 +70,9 @@ export function Toolbar({
         </div>
         <div className="flex min-w-0 justify-center">{center}</div>
         <div className="flex items-center justify-end gap-0.5">
-          {/* Rotation and zoom act on the PDF canvas; the reader is typography,
-              not a page surface, so both are hidden in reader mode. */}
-          {!isReader && (
-            <>
-              <IconButton
-                label={t('pdf', 'viewerRotateView')}
-                side="bottom"
-                onClick={() => storeApi.getState().actions.rotateView()}
-                icon={<RotateCw strokeWidth={1.5} />}
-              />
-              <ZoomControls />
-            </>
-          )}
+          {/* Zoom acts on the PDF canvas; the reader is typography, not a
+              page surface, so it is hidden in reader mode. */}
+          {!isReader && <ZoomControls />}
           {onSearchToggle && (
             <IconButton
               label={t('pdf', 'viewerSearch')}
@@ -83,6 +82,31 @@ export function Toolbar({
               icon={<Search strokeWidth={1.5} />}
             />
           )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton
+                label={t('pdf', 'viewerMoreOptions')}
+                side="bottom"
+                icon={<Menu strokeWidth={1.5} />}
+              />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {!isReader && (
+                <DropdownMenuItem onSelect={() => storeApi.getState().actions.rotateView()}>
+                  <RotateCw strokeWidth={1.5} className="mr-2 size-4" />
+                  {t('pdf', 'viewerRotateView')}
+                </DropdownMenuItem>
+              )}
+              {externalLink && (
+                <DropdownMenuItem asChild>
+                  <a href={externalLink.href} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink strokeWidth={1.5} className="mr-2 size-4" />
+                    {externalLink.label}
+                  </a>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {trailing}
         </div>
       </div>

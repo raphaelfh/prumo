@@ -16,6 +16,8 @@ export const pdf = {
     viewerZoomIn: 'Zoom in',
     viewerFitWidth: 'Fit width',
     viewerRotateView: 'Rotate view',
+    viewerMoreOptions: 'More options',
+    viewerOpenArticlePage: 'Open article page',
     viewerSearch: 'Search in document',
     viewerSearchHint: '⌘F / Ctrl+F',
     viewerSearchPrevMatch: 'Previous match',

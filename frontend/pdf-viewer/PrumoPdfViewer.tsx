@@ -37,6 +37,8 @@ export interface PrumoPdfViewerProps {
    * unchanged.
    */
   store?: StoreApi<ViewerState>;
+  /** A caller-owned link (e.g. the source article page) shown in the toolbar's ☰ menu. */
+  externalLink?: {label: string; href: string};
 }
 
 /**
@@ -56,6 +58,7 @@ export function PrumoPdfViewer({
   readerBlocks,
   readerLoading,
   store,
+  externalLink,
 }: PrumoPdfViewerProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -85,6 +88,7 @@ export function PrumoPdfViewer({
             leading={toolbarLeading}
             center={toolbarCenter}
             onSearchToggle={() => setSearchOpen((v) => !v)}
+            externalLink={externalLink}
           />
         )}
         <SearchBar open={searchOpen} onClose={() => setSearchOpen(false)} />
