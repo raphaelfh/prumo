@@ -23,28 +23,20 @@ import {
     FileText,
     Info,
     Loader2,
-    MoreHorizontal,
     PlayCircle,
     Search,
-    Sparkles,
     User
 } from 'lucide-react';
 import {toast} from 'sonner';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
 import {Skeleton} from "@/components/ui/skeleton";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {Checkbox} from "@/components/ui/checkbox";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {useArticleSelection} from "@/hooks/extraction/useArticleSelection";
-import {useFullAIExtraction} from "@/hooks/extraction/useFullAIExtraction";
 import {useListKeyboardShortcuts} from "@/hooks/useListKeyboardShortcuts";
+import {BatchRowStatus} from '@/components/extraction/batch/BatchRowStatus';
+import {BatchSelectionBar} from '@/components/extraction/batch/BatchSelectionBar';
+import {useBatchRowStatus} from '@/components/extraction/batch/useBatchRowStatus';
 import {t} from '@/lib/copy';
 import {TABLE_CELL_CLASS} from '@/lib/table-constants';
 import type {FilterFieldConfig, FilterValues} from '@/components/shared/list';
@@ -215,15 +207,11 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
   const lastPathRef = useRef<string>('');
   const loadArticlesRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
-    // Hook for batch AI extraction
-  const { extractFullAI, loading: isExtracting } = useFullAIExtraction({
-    onSuccess: async () => {
-        // Refresh only — useFullAIExtraction owns every user-facing toast
-        // (success / no-models warning / partial-failure), so firing one here
-        // produced a false-success toast on the failure and no-models paths.
-      await loadArticles();
-    },
-  });
+  // Batch-run state: the caller's active batch for this tool + per-row
+  // queued/running status (server batch, spec 2026-09-15 §11).
+  const [batchIdForSheet, setBatchIdForSheet] = useState<string | null>(null);
+  void batchIdForSheet; // Task 7 mounts the details sheet reading this state.
+  const {activeBatch, rowStatus} = useBatchRowStatus(projectId, templateId);
 
     // Declare loadArticles before any use to avoid TDZ
   const loadArticles = async () => {
@@ -452,42 +440,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     visibleArticleIds,
   });
 
-    // Batch AI extraction handler
-  const handleBatchAIExtraction = async () => {
-    if (selectedIds.size === 0) {
-        toast.error(t('extraction', 'tableSelectAtLeastOne'));
-      return;
-    }
-
-    const selectedArticles = filteredAndSortedArticles.filter(a => selectedIds.has(a.id));
-
-      toast.info(t('extraction', 'tableBatchAIStarting').replace('{{count}}', String(selectedArticles.length)), {
-          description: t('extraction', 'extractionMayTakeMinutes'),
-    });
-
-      // Process articles sequentially; abort on first failure
-    let failed = false;
-    for (let i = 0; i < selectedArticles.length; i++) {
-      if (failed) break;
-      const article = selectedArticles[i];
-        toast.info(t('extraction', 'processingArticle').replace('{{current}}', String(i + 1)).replace('{{total}}', String(selectedArticles.length)).replace('{{title}}', article.title || ''));
-
-      await extractFullAI({
-        projectId,
-        articleId: article.id,
-        templateId,
-      }).catch((error: unknown) => {
-        failed = true;
-          console.error('Error in batch AI extraction:', error);
-          toast.error(t('extraction', 'tableErrorProcessAI'), {
-              description: error instanceof Error ? error.message : t('extraction', 'tableErrorUnknown'),
-          });
-      });
-    }
-
-    if (!failed) deselectAll();
-  };
-
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -705,30 +657,14 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                               label={t('extraction', 'tableArticlesCount')}
                           />
                       ) : (
-                          <div className="flex items-center gap-2 animate-in fade-in duration-200">
-                              <span className="text-[11px] font-medium text-foreground tabular-nums">
-                                  {t('extraction', 'tableSelectedCount').replace('{{n}}', String(selectedCount))}
-                              </span>
-                              <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="sm" className="gap-1.5 text-[12px]"
-                                              disabled={isExtracting}>
-                                          <MoreHorizontal className="h-4 w-4"/>
-                                          {t('extraction', 'tableActions')}
-                                      </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end"
-                                                       className="w-56 border-border/50 shadow-elev-popover">
-                                      <DropdownMenuLabel>{t('extraction', 'tableBatchActionsLabel')}</DropdownMenuLabel>
-                                      <DropdownMenuSeparator/>
-                                      <DropdownMenuItem onClick={handleBatchAIExtraction} disabled={isExtracting}
-                                                        className="gap-2">
-                                          <Sparkles className="h-4 w-4"/>
-                                          <span className="text-[13px]">{t('extraction', 'tableAIExtraction')}</span>
-                                      </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                              </DropdownMenu>
-                          </div>
+                          <BatchSelectionBar
+                              projectId={projectId}
+                              templateId={templateId}
+                              selectedIds={selectedIds}
+                              onClear={deselectAll}
+                              activeBatch={activeBatch}
+                              onViewBatch={setBatchIdForSheet}
+                          />
                       )}
                   </div>
               </div>
@@ -917,7 +853,10 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                     </div>
                   </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
-                    <StatusRing progress={getProgress(article)} />
+                    <div className="flex items-center justify-center gap-1.5">
+                      <StatusRing progress={getProgress(article)} />
+                      <BatchRowStatus status={rowStatus.get(article.id)} />
+                    </div>
                   </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}>
                     {!hasInstances ? (
@@ -979,6 +918,7 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
                                       <>
                                           {article.publication_year != null && <span>{article.publication_year}</span>}
                                           <StatusRing progress={progress} />
+                                          <BatchRowStatus status={rowStatus.get(article.id)} />
                                       </>
                                   }
                                   primaryAction={

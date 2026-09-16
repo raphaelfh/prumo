@@ -54,8 +54,21 @@ vi.mock('@/hooks/extraction/useArticleExtractionValues', () => ({
   useArticleExtractionValues: () => ({ valuesByArticle: new Map(), isUnavailable: false, refetch: valuesRefetch, ...values }),
 }));
 
-vi.mock('@/hooks/extraction/useFullAIExtraction', () => ({
-  useFullAIExtraction: () => ({ extractFullAI: vi.fn(), loading: false }),
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: { auth: { getSession: async () => ({ data: { session: null } }) } },
+}));
+
+const startBatchMutate = vi.fn();
+vi.mock('@/hooks/extraction/useExtractionBatches', () => ({
+  useActiveBatches: () => ({ data: undefined }),
+  useBatchDetail: () => ({ data: undefined }),
+  useStartBatch: () => ({ mutate: startBatchMutate, isPending: false }),
+}));
+vi.mock('@/hooks/extraction/useLlmEngine', () => ({
+  useLlmEngine: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
+vi.mock('@/hooks/useProjectMemberRole', () => ({
+  useProjectMemberRole: () => ({ role: 'manager', isManager: true, loading: false }),
 }));
 
 import { ArticleExtractionTable } from '@/components/extraction/ArticleExtractionTable';
@@ -159,5 +172,46 @@ describe('ArticleExtractionTable → progress states', () => {
     expect(await screen.findByText('progressUnavailable')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'errorTryAgain' })).toBeNull();
     expect(loadSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('ArticleExtractionTable → batch AI run', () => {
+  beforeEach(() => {
+    structure.isLoading = false;
+    loadSpy.mockResolvedValue({
+      ok: true,
+      data: [
+        { id: 'a1', title: 'Article One', authors: ['Doe'], publication_year: 2020, created_at: '2020-01-01T00:00:00Z' },
+        { id: 'a2', title: 'Article Two', authors: ['Roe'], publication_year: 2021, created_at: '2021-01-01T00:00:00Z' },
+      ],
+    });
+  });
+
+  it('selecting rows shows the shared Run AI button and no Actions menu', async () => {
+    const user = userEvent.setup();
+    renderTable();
+    const row = await screen.findByTestId('extraction-row-a1');
+    await user.click(within(row).getByRole('checkbox', { name: 'tableSelectArticleAria' }));
+
+    expect(await screen.findByRole('button', { name: 'runAI' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'tableActions' })).toBeNull();
+  });
+
+  it('confirming the dialog starts ONE batch with every selected article id', async () => {
+    const user = userEvent.setup();
+    renderTable();
+    const row1 = await screen.findByTestId('extraction-row-a1');
+    const row2 = await screen.findByTestId('extraction-row-a2');
+    await user.click(within(row1).getByRole('checkbox', { name: 'tableSelectArticleAria' }));
+    await user.click(within(row2).getByRole('checkbox', { name: 'tableSelectArticleAria' }));
+
+    await user.click(await screen.findByRole('button', { name: 'runAI' }));
+    await user.click(await screen.findByRole('button', { name: 'confirmRun' }));
+
+    expect(startBatchMutate).toHaveBeenCalledTimes(1);
+    expect(startBatchMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ article_ids: ['a1', 'a2'] }),
+      expect.any(Object),
+    );
   });
 });
