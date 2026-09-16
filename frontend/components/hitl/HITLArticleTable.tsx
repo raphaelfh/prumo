@@ -583,6 +583,9 @@ export function HITLArticleTable({
             <Table containerClassName="overflow-visible" className="table-fixed w-max min-w-full">
               <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
+                  {/* Fixed-width 40px checkbox column takes the remaining
+                      ~6% under `table-fixed`; the five percentage columns
+                      below intentionally total 94, not 100. */}
                   <TableHead className={`w-[40px] min-w-[40px] ${TABLE_CELL_CLASS} text-left align-middle`}>
                     <Tooltip>
                       <TooltipTrigger asChild>
