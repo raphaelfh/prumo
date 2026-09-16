@@ -101,4 +101,23 @@ describe('zoom shortcuts', () => {
     await user.keyboard('{Control>}0{/Control}');
     expect(store.getState().fitWidth).toBe(true);
   });
+
+  it('ignores the fit-width shortcut while a gesture is under way', async () => {
+    const user = userEvent.setup();
+    const store = renderViewer();
+    await user.hover(screen.getByTestId('viewer-root'));
+    act(() => store.getState().actions.setGesturing(true));
+    await user.keyboard('{Control>}0{/Control}');
+    expect(store.getState().fitWidth).toBe(false);
+    expect(store.getState().zoom).toBe(1);
+    let event: KeyboardEvent | undefined;
+    act(() => {
+      event = new KeyboardEvent('keydown', {key: '0', ctrlKey: true, bubbles: true, cancelable: true});
+      window.dispatchEvent(event);
+    });
+    expect(event?.defaultPrevented).toBe(true);
+    act(() => store.getState().actions.setGesturing(false));
+    await user.keyboard('{Control>}0{/Control}');
+    expect(store.getState().fitWidth).toBe(true);
+  });
 });

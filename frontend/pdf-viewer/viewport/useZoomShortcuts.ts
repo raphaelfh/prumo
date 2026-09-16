@@ -22,11 +22,12 @@ import {ZOOM_STEP} from './zoomMath';
 export function useZoomShortcuts(scroller: HTMLElement | null): void {
   const storeApi = useViewerStoreApi();
   const inside = usePointerOrFocusInside(scroller);
-  const zoomUnlessGesturing = (factor: number) => () => {
+  const unlessGesturing = (run: (state: ReturnType<typeof storeApi.getState>) => void) => () => {
     const state = storeApi.getState();
     if (state.isGesturing) return;
-    state.actions.zoomBy(factor);
+    run(state);
   };
+  const zoomUnlessGesturing = (factor: number) => unlessGesturing((state) => state.actions.zoomBy(factor));
   useKeyboardShortcuts({
     enabled: inside,
     bindings: [
@@ -38,10 +39,7 @@ export function useZoomShortcuts(scroller: HTMLElement | null): void {
         type: 'chord',
         key: '0',
         mod: true,
-        handler: () => {
-          const {zoom, actions} = storeApi.getState();
-          actions.setZoom(zoom, {fitWidth: true});
-        },
+        handler: unlessGesturing((state) => state.actions.setZoom(state.zoom, {fitWidth: true})),
       },
     ],
   });
