@@ -10,12 +10,23 @@ import * as legacyPdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 vi.mock('pdfjs-dist', () => legacyPdfjs);
 
 import {ViewerProvider} from '../core/context';
+import {PDF_SEARCH_ACTIVE_HIGHLIGHT} from '../primitives/searchHighlight';
 import {createViewerStore} from '../core/store';
 import {createMockEngine} from '../engines/mock';
 import {createPageLayout} from '../viewport/usePageLayout';
 
 const {Viewer} = await import('../primitives/Viewer');
 const {TextLayer} = await import('../primitives/TextLayer');
+
+/** jsdom has no CSS Custom Highlight API; this is the registry the layer writes to. */
+class FakeHighlight {
+  ranges: Range[];
+  priority = 0;
+  constructor(...ranges: Range[]) {
+    this.ranges = ranges;
+  }
+}
+const highlights = new Map<string, FakeHighlight>();
 
 const VIEWPORT = 725;
 const LETTER = {width: 612, height: 792};
@@ -25,9 +36,13 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(VIEWPORT);
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(900);
   Element.prototype.scrollIntoView = vi.fn();
+  highlights.clear();
+  vi.stubGlobal('Highlight', FakeHighlight);
+  vi.stubGlobal('CSS', {...(globalThis.CSS ?? {}), highlights});
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   delete (Element.prototype as {scrollIntoView?: unknown}).scrollIntoView;
 });
@@ -71,8 +86,10 @@ describe('search on a page that is not mounted', () => {
     });
 
     expect(scroller.scrollTop).toBe(layout.offsetOf(12));
-    await waitFor(() =>
-      expect(container.querySelector('[data-page-number="12"] [data-mock-page="12"].highlight.selected')).not.toBeNull(),
-    );
+    // The active match is highlighted over exactly the matched characters —
+    // not over the whole span the text layer painted for the line.
+    await waitFor(() => expect(highlights.has(PDF_SEARCH_ACTIVE_HIGHLIGHT)).toBe(true));
+    const active = highlights.get(PDF_SEARCH_ACTIVE_HIGHLIGHT)!;
+    expect(active.ranges.map((r) => r.toString())).toEqual(['needle']);
   });
 });

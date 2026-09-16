@@ -50,6 +50,14 @@ export interface TextLayerRenderOptions {
 export interface TextLayerHandle {
   /** Cancel rendering and detach resources. Idempotent. */
   cancel(): void;
+  /**
+   * The span painted for each text item, in the same order and length as
+   * `getTextContent().items` — pdf.js's own `textDivs` contract. Search
+   * highlighting maps item indices straight onto these, rather than
+   * re-deriving offsets from the container's DOM (which also holds the
+   * marked-content wrapper spans pdf.js nests them in).
+   */
+  readonly textDivs: readonly HTMLElement[];
 }
 
 export interface RenderOptions {
@@ -75,8 +83,6 @@ export interface TextItem {
   text: string;
   /** Bounding box in PDF user space. */
   bbox: PDFRect;
-  /** Offset of the first character within the page's concatenated text. */
-  charStart: number;
-  /** Offset of the character after the last character (exclusive). */
-  charEnd: number;
+  /** pdf.js marks the item that ends a line; the break is not in `text`. */
+  hasEOL: boolean;
 }

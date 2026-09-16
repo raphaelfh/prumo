@@ -61,14 +61,16 @@ export class PdfJsPageHandle implements PDFPageHandle {
   }
 
   async getTextContent(): Promise<TextContent> {
-    const raw = await this.proxy.getTextContent();
+    // `disableNormalization` must match the TextLayer's option below: the two
+    // item streams are index-aligned (item `i` ↔ `textDivs[i]`), and pdf.js's
+    // normalization rewrites `str`. Folding is `core/pageText`'s job instead,
+    // where it stays reversible through the offset map.
+    const raw = await this.proxy.getTextContent({disableNormalization: true});
     const items: TextItem[] = [];
-    let charOffset = 0;
     for (const item of raw.items) {
-      // raw.items can include both TextItem and TextMarkedContent — keep only text items
+      // raw.items can include both TextItem and TextMarkedContent — keep only
+      // text items, exactly as pdf.js's TextLayer does when it builds textDivs.
       if (!('str' in item)) continue;
-      const text = item.str ?? '';
-      if (!text) continue;
 
       // PDF.js item has transform [a, b, c, d, e, f] where (e, f) is origin in PDF user space.
       // width/height come from item.width and item.height (in user space units when scale=1).
@@ -79,10 +81,9 @@ export class PdfJsPageHandle implements PDFPageHandle {
         width: item.width,
         height: item.height,
       };
-      const charStart = charOffset;
-      const charEnd = charOffset + text.length;
-      items.push({text, bbox, charStart, charEnd});
-      charOffset = charEnd;
+      // An empty item still gets a div from the TextLayer, so it is kept here:
+      // dropping it would shift every later index against the painted spans.
+      items.push({text: item.str ?? '', bbox, hasEOL: item.hasEOL ?? false});
     }
     return {items};
   }
@@ -120,7 +121,10 @@ export class PdfJsPageHandle implements PDFPageHandle {
       await renderPromise;
     }
 
-    return {cancel: () => textLayer.cancel()};
+    return {
+      cancel: () => textLayer.cancel(),
+      textDivs: textLayer.textDivs as readonly HTMLElement[],
+    };
   }
 
   cleanup(): void {

@@ -98,8 +98,7 @@ class MockPageHandle implements PDFPageHandle {
         {
           text: this.text,
           bbox: {x: 0, y: 0, width: this.size.width, height: this.size.height},
-          charStart: 0,
-          charEnd: this.text.length,
+          hasEOL: false,
         },
       ],
     };
@@ -117,7 +116,8 @@ class MockPageHandle implements PDFPageHandle {
     span.textContent = this.text;
     span.dataset.mockPage = String(this.pageNumber);
     opts.container.appendChild(span);
-    return {cancel: () => {}};
+    // One div per text item, mirroring pdf.js's `textDivs` contract.
+    return {cancel: () => {}, textDivs: [span]};
   }
 
   cleanup(): void {
@@ -133,6 +133,12 @@ class MockDocumentHandle implements PDFDocumentHandle {
   readonly numPages: number;
   private readonly cfg: MockEngineConfig;
   private destroyed = false;
+  /**
+   * One handle per page, as pdf.js caches its PDFPageProxy per index: every
+   * caller for a page shares it, so whoever calls `cleanup()` on it does so
+   * for all of them. Handing out a fresh handle each call would hide that.
+   */
+  private readonly pages = new Map<number, MockPageHandle>();
 
   constructor(cfg: MockEngineConfig) {
     this.numPages = cfg.numPages ?? 1;
@@ -145,8 +151,12 @@ class MockDocumentHandle implements PDFDocumentHandle {
         `MockDocumentHandle.getPage: pageNumber ${pageNumber} out of range [1, ${this.numPages}]`,
       );
     }
+    const cached = this.pages.get(pageNumber);
+    if (cached) return cached;
     const text = this.cfg.text?.[pageNumber - 1] ?? `Page ${pageNumber}`;
-    return new MockPageHandle(pageNumber, text, this.cfg);
+    const page = new MockPageHandle(pageNumber, text, this.cfg);
+    this.pages.set(pageNumber, page);
+    return page;
   }
 
   destroy(): void {

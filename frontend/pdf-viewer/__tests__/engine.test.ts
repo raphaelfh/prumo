@@ -50,15 +50,23 @@ describe('pdfJsEngine.load', () => {
     expect(page.size.height).toBe(600);
   });
 
-  it('page text content has items with char offsets', async () => {
+  it('page text content items are the raw pdf.js stream, line breaks included', async () => {
     const page = await doc.getPage(1);
     const tc = await page.getTextContent();
     expect(tc.items.length).toBeGreaterThan(0);
-    expect(tc.items[0].charStart).toBe(0);
-    expect(tc.items[0].charEnd).toBeGreaterThan(0);
     // The first item's text should mention 'Page 1' since we drew that
     const allText = tc.items.map((i) => i.text).join('');
     expect(allText).toMatch(/Page 1/);
+
+    // Search maps a char offset onto `textDivs[itemIndex]`, so the items must
+    // be the raw pdf.js stream: every text item kept (an empty one still gets a
+    // div) and the line breaks carried on `hasEOL`, not folded into the text.
+    // That the two arrays really line up cannot be asserted here — pdf.js's
+    // TextLayer needs a canvas 2D context, which jsdom has not. It rests on the
+    // two streams being the same item sequence, which is why `getTextContent`
+    // and the TextLayer below must keep passing the same `disableNormalization`.
+    // (The fixture is one short line per page, so it carries no EOL of its own.)
+    expect(tc.items.every((i) => typeof i.hasEOL === 'boolean')).toBe(true);
   });
 
   it('resolves a lazy source before loading', async () => {
