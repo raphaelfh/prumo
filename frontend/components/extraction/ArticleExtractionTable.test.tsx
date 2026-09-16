@@ -63,6 +63,8 @@ vi.mock('@/hooks/extraction/useExtractionBatches', () => ({
   useActiveBatches: () => ({ data: undefined }),
   useBatchDetail: () => ({ data: undefined }),
   useStartBatch: () => ({ mutate: startBatchMutate, isPending: false }),
+  useCancelBatch: () => ({ mutate: vi.fn(), isPending: false }),
+  useResumeBatch: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock('@/hooks/extraction/useLlmEngine', () => ({
   useLlmEngine: () => ({ data: undefined, isLoading: false, isError: false }),

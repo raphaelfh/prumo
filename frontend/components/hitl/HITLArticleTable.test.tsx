@@ -70,6 +70,8 @@ vi.mock('@/hooks/extraction/useExtractionBatches', () => ({
   useActiveBatches: () => ({ data: activeBatches.data }),
   useBatchDetail: () => ({ data: batchDetail.data }),
   useStartBatch: () => ({ mutate: vi.fn(), isPending: false }),
+  useCancelBatch: () => ({ mutate: vi.fn(), isPending: false }),
+  useResumeBatch: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock('@/hooks/extraction/useLlmEngine', () => ({
   useLlmEngine: () => ({ data: undefined, isLoading: false, isError: false }),
@@ -301,6 +303,7 @@ describe('HITLArticleTable selection', () => {
     batchDetail.data = {
       id: 'batch-1',
       state: 'active',
+      counts: { total: 1, queued: 0, running: 1, done: 0, done_with_issues: 0, failed: 0 },
       items: [{ article_id: 'a-wip', outcome: 'running' }],
     };
     renderTable();
