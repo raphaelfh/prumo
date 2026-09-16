@@ -23,6 +23,8 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:baseline": "playwright test frontend/e2e/extraction-observability.e2e.ts --reporter=list",
     "test:e2e:local": "playwright test --project=local-api --project=local-ui --project=local-hitl",
+    "test:e2e:local:core": "playwright test --project=local-api --project=local-ui",
+    "test:e2e:local:hitl": "playwright test --project=local-hitl",
     "generate:api-types": "bash scripts/generate_api_types.sh"
   },
   "dependencies": {

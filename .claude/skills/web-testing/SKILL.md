@@ -48,6 +48,8 @@ Is the bug a race / timing / fixture leak?          -> read references/flakiness
 | One Vitest file                                   | `npx vitest run frontend/test/ConsensusPanel.test.tsx -t "renders"`                    |
 | Vitest watch (TDD)                                | `npx vitest frontend/test/...`                                                         |
 | Playwright (all projects)                         | `npx playwright test`                                                                  |
+| Playwright local (no HITL)                        | `npm run test:e2e:local:core`                                                          |
+| Playwright HITL (extraction pipeline)             | `npm run test:e2e:local:hitl`                                                          |
 | Playwright UI mode (local dev)                    | `npx playwright test --ui`                                                             |
 | Playwright single flow                            | `npx playwright test frontend/e2e/flows/extraction.e2e.ts --project=local-api`         |
 | Playwright with trace viewer after a failure      | `npx playwright show-trace test-results/.../trace.zip`                                 |
