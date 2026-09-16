@@ -69,17 +69,22 @@ describe('useAiBatchJobSync', () => {
   });
 
   it('does not restamp completedAt on a further re-render of a finished batch', () => {
+    const nowSpy = vi.spyOn(Date, 'now');
     useActiveBatchesMock.mockReturnValue({data: [summary('active')]});
     const {rerender} = renderHook(() => useAiBatchJobSync());
 
+    nowSpy.mockReturnValueOnce(2000);
     useActiveBatchesMock.mockReturnValue({data: [summary('finished')]});
     rerender();
     const firstCompletedAt = useBackgroundJobs.getState().getJob('ai-batch-b1')?.completedAt;
+    expect(firstCompletedAt).toBe(2000);
 
+    nowSpy.mockReturnValueOnce(3000);
     useActiveBatchesMock.mockReturnValue({data: [{...summary('finished'), counts: {...summary('finished').counts, done: 2}}]});
     rerender();
     const secondCompletedAt = useBackgroundJobs.getState().getJob('ai-batch-b1')?.completedAt;
 
     expect(secondCompletedAt).toBe(firstCompletedAt);
+    nowSpy.mockRestore();
   });
 });
