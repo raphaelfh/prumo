@@ -38,6 +38,13 @@ export function getPageText(doc: PDFDocumentHandle, pageNumber: number): Promise
     // cleans a page up when it unmounts.
     return buildPageText(items);
   })();
+  // A rejection must not be cached: pdf.js page reads fail transiently (an
+  // aborted stream, a worker that was torn down mid-render), and a cached
+  // rejection would make that page permanently unsearchable for the life of
+  // the document. Drop the entry so the next caller retries.
+  pending.catch(() => {
+    if (cache.get(pageNumber) === pending) cache.delete(pageNumber);
+  });
   cache.set(pageNumber, pending);
   return pending;
 }

@@ -1,8 +1,14 @@
 /**
- * Search quality against a real, multi-line PDF — the regression that made
+ * Search quality against a wrapped, multi-line PDF — the regression that made
  * find-in-document unusable: pdf.js hands out text as fragments with the line
  * break carried on `hasEOL`, so the old `items.join('')` glued the last word of
  * every line onto the first word of the next.
+ *
+ * `__fixtures__/wrapped-text.pdf` is a hand-authored one-page PDF that draws
+ * one line per `Tj`, which is what makes pdf.js set `hasEOL`. Joining its
+ * fragments naively produces exactly the three defects asserted below —
+ * `clinicalmachine`, `ontemporally`, `journalhttps` — plus a hyphenated word
+ * split across a line break.
  */
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
@@ -23,8 +29,7 @@ legacyPdfjs.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
 import type {PDFDocumentHandle} from '../core/engine';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// A real-world typeset paper: wrapped paragraphs, running heads, hyperlinks.
-const fixturePath = resolve(__dirname, '../../../test_files/machine_learnig _pdf_file_for_testing.pdf');
+const fixturePath = resolve(__dirname, '../__fixtures__/wrapped-text.pdf');
 
 let doc: PDFDocumentHandle;
 
@@ -32,10 +37,19 @@ beforeAll(async () => {
   doc = await pdfJsEngine.load({kind: 'data', data: new Uint8Array(readFileSync(fixturePath))});
 });
 
-describe('page text of a real PDF', () => {
+describe('page text of a wrapped PDF', () => {
+  it('guards the precondition: pdf.js really does stream this page as EOL fragments', async () => {
+    // If this ever fails, the fixture stopped exercising the bug and every
+    // assertion below would pass vacuously.
+    const page = await doc.getPage(1);
+    const {items} = await page.getTextContent();
+    expect(items.length).toBeGreaterThan(1);
+    expect(items.some((i) => i.hasEOL)).toBe(true);
+    expect(items.map((i) => i.text).join('')).toContain('clinicalmachine');
+  });
+
   it('separates the words a line break falls between', async () => {
     const {text} = await getPageText(doc, 1);
-    // The title wraps mid-phrase; joining the fragments glued it together.
     expect(text).toContain('clinical machine learning models locally on temporally stamped data');
     expect(text).not.toContain('clinicalmachine');
     expect(text).not.toContain('ontemporally');
@@ -44,11 +58,18 @@ describe('page text of a real PDF', () => {
   it('does not invent a word across a line break', async () => {
     const {text} = await getPageText(doc, 1);
     expect(text).not.toContain('journalhttps');
+    expect(text).toContain('journal https://example.org/preprint');
+  });
+
+  it('rejoins a word hyphenated across a line break', async () => {
+    const {text} = await getPageText(doc, 1);
+    expect(text).toContain('hyperparameter sweep');
+    expect(text).not.toContain('hyper- parameter');
   });
 
   it('maps every character of the page back to a text item', async () => {
     const {text, sources} = await getPageText(doc, 1);
-    expect(text.length).toBeGreaterThan(500);
+    expect(text.length).toBeGreaterThan(150);
     expect(sources).toHaveLength(text.length);
     expect(sources.every((s) => s.itemIndex >= 0 && s.offset >= 0)).toBe(true);
   });

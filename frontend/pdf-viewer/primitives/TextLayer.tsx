@@ -110,6 +110,16 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
       // canvas, so that lands on the right place on the page.
       const first = active[0]?.startContainer.parentElement;
       first?.scrollIntoView({block: 'center', behavior: 'smooth'});
+    }).catch((error: unknown) => {
+      // Page text can fail to extract (aborted stream, torn-down worker).
+      // Leaving this uncaught surfaces as an unhandled rejection and the page
+      // keeps whatever highlights it had, which would then be stale. Clear
+      // them so the page shows no highlight rather than a wrong one, and say
+      // why in the console — `getPageText` no longer caches the failure, so a
+      // later search of this page retries.
+      if (cancelled) return;
+      clearPageSearchHighlights(container);
+      console.warn(`pdf-viewer: could not read text of page ${pageNumber} for search`, error);
     });
 
     return () => {

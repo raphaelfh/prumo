@@ -1,6 +1,12 @@
-import {describe, expect, it} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {buildPageText} from '../core/pageText';
-import {buildMatchRanges} from '../primitives/searchHighlight';
+import {
+  buildMatchRanges,
+  clearPageSearchHighlights,
+  PDF_SEARCH_ACTIVE_HIGHLIGHT,
+  PDF_SEARCH_HIGHLIGHT,
+  setPageSearchHighlights,
+} from '../primitives/searchHighlight';
 
 /** A stand-in for the spans pdf.js paints: one div per text item, in order. */
 function paint(items: readonly {text: string; hasEOL?: boolean}[]): HTMLElement[] {
@@ -57,5 +63,97 @@ describe('buildMatchRanges', () => {
     const pageText = buildPageText(items);
     // 'alpha beta' — the space is attributed one past 'alpha' s last character.
     expect(() => buildMatchRanges(pageText, paint(items), 0, pageText.text.length)).not.toThrow();
+  });
+});
+
+describe('the document-wide highlight registry', () => {
+  // `CSS.highlights` is one registry for the whole document, so every mounted
+  // page publishes into the same two entries. `byContainer` exists so two
+  // viewers on screen cannot clobber each other — this is the test for that
+  // invariant. jsdom implements neither `Highlight` nor `CSS.highlights`.
+  let highlights: Map<string, {ranges: Range[]; priority?: number}>;
+
+  beforeEach(() => {
+    highlights = new Map();
+    vi.stubGlobal(
+      'Highlight',
+      class {
+        ranges: Range[];
+        priority?: number;
+        constructor(...ranges: Range[]) {
+          this.ranges = ranges;
+        }
+      },
+    );
+    vi.stubGlobal('CSS', {highlights});
+  });
+
+  // `byContainer` is module state that outlives a test, so every container a
+  // test registers is unregistered again here.
+  const registered: HTMLElement[] = [];
+
+  afterEach(() => {
+    for (const container of registered.splice(0)) {
+      clearPageSearchHighlights(container);
+      container.remove();
+    }
+    vi.unstubAllGlobals();
+  });
+
+  const rangeIn = (text: string): {container: HTMLElement; range: Range} => {
+    const container = document.createElement('div');
+    container.textContent = text;
+    document.body.append(container);
+    registered.push(container);
+    const range = document.createRange();
+    range.selectNodeContents(container);
+    return {container, range};
+  };
+
+  it('merges both pages rather than letting the second replace the first', () => {
+    const a = rangeIn('page one');
+    const b = rangeIn('page two');
+
+    setPageSearchHighlights(a.container, [a.range], []);
+    setPageSearchHighlights(b.container, [b.range], []);
+
+    expect(highlights.get(PDF_SEARCH_HIGHLIGHT)?.ranges).toHaveLength(2);
+  });
+
+  it('clearing one page leaves the other page painted', () => {
+    const a = rangeIn('page one');
+    const b = rangeIn('page two');
+    setPageSearchHighlights(a.container, [a.range], []);
+    setPageSearchHighlights(b.container, [b.range], []);
+
+    clearPageSearchHighlights(a.container);
+
+    const left = highlights.get(PDF_SEARCH_HIGHLIGHT)?.ranges;
+    expect(left).toHaveLength(1);
+    expect(left?.[0]).toBe(b.range);
+  });
+
+  it('removes the entry entirely once the last page clears', () => {
+    const a = rangeIn('page one');
+    setPageSearchHighlights(a.container, [a.range], []);
+    clearPageSearchHighlights(a.container);
+
+    expect(highlights.has(PDF_SEARCH_HIGHLIGHT)).toBe(false);
+  });
+
+  it('paints the active match over the others', () => {
+    const a = rangeIn('page one');
+    setPageSearchHighlights(a.container, [a.range], [a.range]);
+
+    expect(highlights.get(PDF_SEARCH_ACTIVE_HIGHLIGHT)?.priority).toBe(1);
+  });
+
+  it('does not throw when the browser has no Highlight API', () => {
+    vi.stubGlobal('CSS', undefined);
+    vi.stubGlobal('Highlight', undefined);
+    const a = rangeIn('page one');
+
+    expect(() => setPageSearchHighlights(a.container, [a.range], [])).not.toThrow();
+    expect(() => clearPageSearchHighlights(a.container)).not.toThrow();
   });
 });
