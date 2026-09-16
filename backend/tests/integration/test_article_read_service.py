@@ -91,6 +91,16 @@ async def test_owned_articles_refuses_a_foreign_or_missing_id(db_session: AsyncS
 
 
 @pytest.mark.asyncio
+async def test_owned_articles_accepts_a_str_id(db_session: AsyncSession) -> None:
+    # Celery payloads carry ids as strings; the guard must not refuse its own project's article.
+    assert await owned_articles(
+        db_session,
+        project_id=SEED.primary_project,
+        article_ids=[str(SEED.primary_article)],  # type: ignore[list-item]
+    ) == [SEED.primary_article]
+
+
+@pytest.mark.asyncio
 async def test_owned_article_still_answers_one_id(db_session: AsyncSession) -> None:
     assert (
         await owned_article(

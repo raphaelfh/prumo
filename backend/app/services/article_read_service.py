@@ -44,7 +44,9 @@ async def owned_articles(
     same error with the same message shape, so no caller can leak which
     articles exist in projects the caller cannot see.
     """
-    wanted = list(dict.fromkeys(article_ids))
+    # Coerce first: the driver accepts a str id in the WHERE clause, so the
+    # Python-side membership check below must compare like for like.
+    wanted = list(dict.fromkeys(UUID(str(article_id)) for article_id in article_ids))
     found = set(
         (
             await db.execute(
