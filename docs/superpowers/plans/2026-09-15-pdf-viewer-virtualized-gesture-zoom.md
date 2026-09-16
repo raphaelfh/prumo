@@ -4247,6 +4247,8 @@ Branch: `feat/pdf-viewer-phase4-fit-width` from `origin/dev`, after the Phase 3 
 
 ### Task 18: Documents open at fit width and stay fitted while the viewer resizes
 
+**Amended 2026-09-15 after Phase 2** (see the spec's R18 amendment): this dispatch covers fit width only — replacing the zoom percentage menu with a Fit width toolbar button. The `☰` menu (rotate view, article link), `externalLink` prop, `RunPdfContent` DOI wiring and `frontend/lib/doi.ts` are a separate dispatch and are not built here.
+
 **Files:**
 - Create: `frontend/pdf-viewer/viewport/useFitWidth.ts`
 - Modify: `frontend/pdf-viewer/core/store.ts`, `primitives/Viewer.tsx` (`Pages`), `ui/ZoomControls.tsx`, `viewport/useZoomShortcuts.ts`, `frontend/lib/copy/pdf.ts`, `frontend/pdf-viewer/README.md`
@@ -4376,13 +4378,13 @@ describe('fit width', () => {
   it('offers fit width', async () => {
     const user = userEvent.setup();
     const store = renderControls(2);
-    await user.click(screen.getByRole('button', {name: '200%'}));
-    await user.click(await screen.findByRole('menuitem', {name: 'Fit width'}));
+    await user.click(screen.getByLabelText('Fit width'));
     expect(store.getState().fitWidth).toBe(true);
+    expect(screen.getByLabelText('Fit width')).toHaveAttribute('aria-pressed', 'true');
   });
 ```
 
-Change `renderControls` to build `createViewerStore({zoom, fitWidth: false})`.
+Change `renderControls` to build `createViewerStore({zoom, fitWidth: false})`. Drop the "shows the zoom as a percentage" test (the percentage label is removed); keep the `Zoom in`/`Zoom out` limit tests.
 
 `useZoomShortcuts.test.tsx`: append inside the `describe`:
 
@@ -4459,23 +4461,22 @@ In `primitives/Viewer.tsx` `Pages`:
 - Add `useFitWidth({scroller, layout});` right after `useGestureZoom(...)`.
 - Import it from `../viewport/useFitWidth`.
 
-- [ ] **Step 5: Fit width in the menu and on ⌘/Ctrl 0**
+- [ ] **Step 5: Fit width is a toolbar button, on ⌘/Ctrl 0**
 
-`frontend/lib/copy/pdf.ts`: after `viewerZoomLevel`, add:
+`frontend/lib/copy/pdf.ts`: add `viewerFitWidth: 'Fit width'`; delete `viewerZoomLevel` once nothing references it (the copy-key gate is shrink-only, so removing an unused key is fine).
 
-```ts
-    viewerFitWidth: 'Fit width',
-```
-
-`ui/ZoomControls.tsx`:
-- Add `DropdownMenuSeparator` to the dropdown-menu import.
-- Make these the first children of `<DropdownMenuContent align="end">`:
+`ui/ZoomControls.tsx` becomes `[−] [Fit width] [+]`:
+- Delete `PRESETS`, the `DropdownMenu`/`DropdownMenuContent`/`DropdownMenuItem`/`DropdownMenuSeparator` imports and usage, the percentage `Button` and its tooltip.
+- Add a Fit width `IconButton` between Zoom out and Zoom in:
 
 ```tsx
-          <DropdownMenuItem onClick={() => actions.setZoom(zoom, {fitWidth: true})} className="text-[13px]">
-            {t('pdf', 'viewerFitWidth')}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
+          <IconButton
+            aria-label={t('pdf', 'viewerFitWidth')}
+            aria-pressed={fitWidth}
+            onClick={() => actions.setZoom(zoom, {fitWidth: true})}
+          >
+            <FitWidthIcon />
+          </IconButton>
 ```
 
 `viewport/useZoomShortcuts.ts`:

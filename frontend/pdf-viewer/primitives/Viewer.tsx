@@ -7,6 +7,7 @@ import type {createViewerStore} from '../core/store';
 import {useDocumentLoader} from '../hooks/useDocumentLoader';
 import {usePageHandle} from '../hooks/usePageHandle';
 import {usePageScrollSync} from '../hooks/usePageScrollSync';
+import {useFitWidth} from '../viewport/useFitWidth';
 import {useGestureZoom} from '../viewport/useGestureZoom';
 import {layoutPageLocator, usePageLayout} from '../viewport/usePageLayout';
 import {useVirtualPages} from '../viewport/useVirtualPages';
@@ -87,6 +88,7 @@ function Pages({children}: {children: (page: {number: number}) => ReactNode}) {
   const [sizer, setSizer] = useState<HTMLDivElement | null>(null);
   const [pages, setPages] = useState<HTMLDivElement | null>(null);
   useGestureZoom({scroller, sizer, pages, layout});
+  useFitWidth({scroller, layout});
 
   if (layout.numPages === 0) return null;
   return (

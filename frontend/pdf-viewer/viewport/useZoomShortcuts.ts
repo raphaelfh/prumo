@@ -1,6 +1,7 @@
 /**
- * ⌘/Ctrl `=` and `-` zoom the canvas while the pointer or focus is inside the
- * viewer; everywhere else the browser keeps its own page zoom.
+ * ⌘/Ctrl `=` and `-` zoom the canvas and ⌘/Ctrl `0` fits its width, while the
+ * pointer or focus is inside the viewer; everywhere else the browser keeps
+ * its own page zoom.
  *
  * Browsers also treat ⌘/Ctrl `+` as zoom-in: on layouts where `+` needs
  * Shift (US ⌘⇧=, Brazilian ABNT) the key arrives as `'+'` with
@@ -21,11 +22,12 @@ import {ZOOM_STEP} from './zoomMath';
 export function useZoomShortcuts(scroller: HTMLElement | null): void {
   const storeApi = useViewerStoreApi();
   const inside = usePointerOrFocusInside(scroller);
-  const zoomUnlessGesturing = (factor: number) => () => {
+  const unlessGesturing = (run: (state: ReturnType<typeof storeApi.getState>) => void) => () => {
     const state = storeApi.getState();
     if (state.isGesturing) return;
-    state.actions.zoomBy(factor);
+    run(state);
   };
+  const zoomUnlessGesturing = (factor: number) => unlessGesturing((state) => state.actions.zoomBy(factor));
   useKeyboardShortcuts({
     enabled: inside,
     bindings: [
@@ -33,6 +35,12 @@ export function useZoomShortcuts(scroller: HTMLElement | null): void {
       {type: 'chord', key: '+', mod: true, shift: true, handler: zoomUnlessGesturing(ZOOM_STEP)},
       {type: 'chord', key: '+', mod: true, handler: zoomUnlessGesturing(ZOOM_STEP)},
       {type: 'chord', key: '-', mod: true, handler: zoomUnlessGesturing(1 / ZOOM_STEP)},
+      {
+        type: 'chord',
+        key: '0',
+        mod: true,
+        handler: unlessGesturing((state) => state.actions.setZoom(state.zoom, {fitWidth: true})),
+      },
     ],
   });
 }
