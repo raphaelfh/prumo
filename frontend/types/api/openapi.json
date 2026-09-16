@@ -12245,7 +12245,9 @@
           "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExtractionBatchDetail_"
+                }
               }
             },
             "description": "Successful Response"
@@ -12387,7 +12389,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExtractionBatchDetail_"
+                }
               }
             },
             "description": "Successful Response"

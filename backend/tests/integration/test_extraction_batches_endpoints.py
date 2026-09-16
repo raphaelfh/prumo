@@ -193,3 +193,26 @@ async def test_list_detail_cancel_and_resume(
     resumed = await client_as_manager.post(f"{URL}/{batch_id}/resume")
     assert resumed.status_code == 200
     queue.delay.assert_called_once_with(batch_id, True)
+
+
+def test_create_and_resume_declare_a_typed_response_model() -> None:
+    """Pins the OpenAPI contract: create's 202 and resume's 200 must carry a
+    real ``ApiResponse[ExtractionBatchDetail]`` schema, not ``{}``. Both
+    routes return a bare ``JSONResponse`` (so the 202 status survives), which
+    only works with a typed wire contract if ``response_model`` is declared
+    explicitly alongside it — ``response_model=None`` would satisfy FastAPI
+    but erase T from the generated OpenAPI schema.
+    """
+    from app.schemas.common import ApiResponse
+    from app.schemas.extraction_batch import ExtractionBatchDetail
+
+    expected = ApiResponse[ExtractionBatchDetail]
+    routes = {
+        (route.path, tuple(route.methods)): route  # type: ignore[attr-defined]
+        for route in ep.router.routes
+    }
+
+    create_route = routes[("", ("POST",))]
+    resume_route = routes[("/{batch_id}/resume", ("POST",))]
+    assert create_route.response_model == expected
+    assert resume_route.response_model == expected

@@ -69,7 +69,11 @@ async def _detail(db: DbSession, owner_id: UUID, batch_id: UUID) -> ExtractionBa
         raise HTTPException(status_code=404, detail="Batch not found") from exc
 
 
-@router.post("", response_model=None, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "",
+    response_model=ApiResponse[ExtractionBatchDetail],
+    status_code=status.HTTP_202_ACCEPTED,
+)
 @limiter.limit("5/minute")
 async def start_extraction_batch(
     request: Request,
@@ -139,7 +143,7 @@ async def cancel_extraction_batch(
     )
 
 
-@router.post("/{batch_id}/resume", response_model=None)
+@router.post("/{batch_id}/resume", response_model=ApiResponse[ExtractionBatchDetail])
 @limiter.limit("20/minute")
 async def resume_extraction_batch(
     request: Request,
