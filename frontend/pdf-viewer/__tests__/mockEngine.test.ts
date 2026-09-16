@@ -40,8 +40,7 @@ describe('createMockEngine', () => {
     const content = await page.getTextContent();
     expect(content.items).toHaveLength(1);
     expect(content.items[0].text).toBe('hello');
-    expect(content.items[0].charStart).toBe(0);
-    expect(content.items[0].charEnd).toBe(5);
+    expect(content.items[0].hasEOL).toBe(false);
   });
 
   it('renderTextLayer paints a span carrying the page text', async () => {

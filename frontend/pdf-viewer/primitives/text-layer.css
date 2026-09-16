@@ -25,12 +25,17 @@
   background: rgba(0, 0, 255, 0.3);
 }
 
-.pdf-viewer-text-layer .highlight {
+/*
+ * Search matches are painted with the CSS Custom Highlight API over character
+ * Ranges (see primitives/searchHighlight.ts), not by classing whole spans — a
+ * pdf.js text item is usually a whole line, so a span-level highlight lit up
+ * the entire line around the hit.
+ */
+::highlight(pdf-search) {
   background-color: rgba(255, 222, 0, 0.4);
-  border-radius: 2px;
 }
 
-.pdf-viewer-text-layer .highlight.selected {
+::highlight(pdf-search-active) {
   background-color: rgba(255, 153, 0, 0.6);
 }
 

@@ -2,6 +2,13 @@ import {useEffect, useRef, useState} from 'react';
 import {usePageHandle} from '../hooks/usePageHandle';
 import {useViewerStore} from '../core/context';
 import {effectiveRotation} from '../core/rotation';
+import type {TextLayerHandle} from '../core/engine';
+import {getPageText} from '../services/searchService';
+import {
+  buildMatchRanges,
+  clearPageSearchHighlights,
+  setPageSearchHighlights,
+} from './searchHighlight';
 import './text-layer.css';
 
 /** A zoom or rotation change re-renders the text layer this long after the last one. */
@@ -21,7 +28,7 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
   // The text layer paints asynchronously; the highlights below wait for the
   // spans it paints. A page mounted by search navigation paints after its
   // match is already active.
-  const [painted, setPainted] = useState<object | null>(null);
+  const [painted, setPainted] = useState<TextLayerHandle | null>(null);
   const renderedRef = useRef<object | null>(null);
 
   // Render the text layer when page/zoom/rotation changes. During a gesture the
@@ -59,60 +66,57 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
     };
   }, [page, zoom, viewRotation, isGesturing, pageNumber]);
 
-  // Apply highlight classes for search matches after the text layer renders.
-  // Subscribe to the whole search object to avoid creating new filtered arrays
-  // in the selector (which would cause render loops).
+  // Paint the search matches for this page as character-precise DOM Ranges.
+  // `searchMatches` is the whole (stable) store array rather than a filtered
+  // copy: a new array every render would re-run this effect every render.
+  const doc = useViewerStore((s) => s.document);
   const searchMatches = useViewerStore((s) => s.search.matches);
   const activeIndex = useViewerStore((s) => s.search.activeIndex);
-  const matchesOnPage = searchMatches.filter((m) => m.pageNumber === pageNumber);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !painted) return;
-
-    const spans = Array.from(container.querySelectorAll<HTMLElement>('span'));
-    if (spans.length === 0) return;
-
-    // Build a flat character offset map: for each span, its start offset
-    // within the page's concatenated text.
-    const charOffsets: number[] = [];
-    let acc = 0;
-    for (const span of spans) {
-      charOffsets.push(acc);
-      acc += span.textContent?.length ?? 0;
+    if (!container) return;
+    if (!painted || !doc) {
+      clearPageSearchHighlights(container);
+      return;
     }
 
-    // Clear previous highlight classes.
-    for (const span of spans) {
-      span.classList.remove('highlight', 'selected');
+    const onPage = searchMatches.filter((m) => m.pageNumber === pageNumber);
+    if (onPage.length === 0) {
+      clearPageSearchHighlights(container);
+      return;
     }
 
-    const activeMatch = searchMatches[activeIndex];
+    let cancelled = false;
+    void getPageText(doc, pageNumber).then((pageText) => {
+      if (cancelled) return;
+      const activeMatch = searchMatches[activeIndex];
+      const matches: Range[] = [];
+      const active: Range[] = [];
 
-    for (const match of matchesOnPage) {
-      const isActive =
-        activeMatch?.pageNumber === pageNumber &&
-        activeMatch?.charStart === match.charStart &&
-        activeMatch?.charEnd === match.charEnd;
-
-      for (let i = 0; i < spans.length; i++) {
-        const spanStart = charOffsets[i];
-        const spanEnd = spanStart + (spans[i].textContent?.length ?? 0);
-        if (spanStart < match.charEnd && spanEnd > match.charStart) {
-          spans[i].classList.add('highlight');
-          if (isActive) spans[i].classList.add('selected');
-        }
+      for (const match of onPage) {
+        const ranges = buildMatchRanges(pageText, painted.textDivs, match.charStart, match.charEnd);
+        const isActive =
+          activeMatch?.pageNumber === pageNumber &&
+          activeMatch.charStart === match.charStart &&
+          activeMatch.charEnd === match.charEnd;
+        (isActive ? active : matches).push(...ranges);
       }
-    }
 
-    // Scroll active match into view.
-    if (activeMatch?.pageNumber === pageNumber) {
-      const firstActive = container.querySelector<HTMLElement>('.highlight.selected');
-      if (firstActive) {
-        firstActive.scrollIntoView({block: 'center', behavior: 'smooth'});
-      }
-    }
-  }, [matchesOnPage, activeIndex, searchMatches, pageNumber, painted]);
+      setPageSearchHighlights(container, matches, active);
+
+      // Reveal the active match. A Range has no scrollIntoView, so scroll the
+      // span it starts in — the text layer is absolutely positioned over the
+      // canvas, so that lands on the right place on the page.
+      const first = active[0]?.startContainer.parentElement;
+      first?.scrollIntoView({block: 'center', behavior: 'smooth'});
+    });
+
+    return () => {
+      cancelled = true;
+      clearPageSearchHighlights(container);
+    };
+  }, [doc, searchMatches, activeIndex, pageNumber, painted]);
 
   return (
     <div
