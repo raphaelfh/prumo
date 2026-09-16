@@ -194,8 +194,6 @@ export function HITLArticleTable({
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Task 7 mounts the batch details sheet at this seam; this task only
-  // records which batch to open.
   const [batchIdForSheet, setBatchIdForSheet] = useState<string | null>(null);
   void batchIdForSheet; // Task 7 mounts the details sheet reading this state.
   const { activeBatch, rowStatus } = useBatchRowStatus(projectId, templateId);
