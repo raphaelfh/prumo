@@ -4,6 +4,9 @@ import {useViewerStore} from '../core/context';
 import {effectiveRotation} from '../core/rotation';
 import './text-layer.css';
 
+/** A zoom or rotation change re-renders the text layer this long after the last one. */
+const RERENDER_DELAY_MS = 100;
+
 export interface TextLayerProps {
   pageNumber: number;
   className?: string;
@@ -13,40 +16,48 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
   const page = usePageHandle(pageNumber);
   const zoom = useViewerStore((s) => s.zoom);
   const viewRotation = useViewerStore((s) => s.viewRotation);
+  const isGesturing = useViewerStore((s) => s.isGesturing);
   const containerRef = useRef<HTMLDivElement>(null);
   // The text layer paints asynchronously; the highlights below wait for the
   // spans it paints. A page mounted by search navigation paints after its
   // match is already active.
   const [painted, setPainted] = useState<object | null>(null);
+  const renderedRef = useRef<object | null>(null);
 
-  // Render the text layer when page/scale/rotation changes.
+  // Render the text layer when page/zoom/rotation changes. During a gesture the
+  // layer stays empty — its spans would sit at the pre-gesture scale.
   useEffect(() => {
     const container = containerRef.current;
-    if (!page || !container) return;
+    if (!page || !container || isGesturing) return;
 
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     const renderScale = zoom * dpr;
     const ctrl = new AbortController();
     let handle: {cancel(): void} | null = null;
 
-    page
-      .renderTextLayer({container, scale: renderScale, rotation: effectiveRotation(page, viewRotation), signal: ctrl.signal})
-      .then((h) => {
-        handle = h;
-        if (!ctrl.signal.aborted) setPainted(h);
-      })
-      .catch((err) => {
-        if ((err as DOMException).name !== 'AbortError') {
-          console.warn(`TextLayer page ${pageNumber} render failed:`, err);
-        }
-      });
+    const paint = () => {
+      renderedRef.current = page;
+      page
+        .renderTextLayer({container, scale: renderScale, rotation: effectiveRotation(page, viewRotation), signal: ctrl.signal})
+        .then((h) => {
+          handle = h;
+          if (!ctrl.signal.aborted) setPainted(h);
+        })
+        .catch((err) => {
+          if ((err as DOMException).name !== 'AbortError') {
+            console.warn(`TextLayer page ${pageNumber} render failed:`, err);
+          }
+        });
+    };
+    const timer = setTimeout(paint, renderedRef.current === page ? RERENDER_DELAY_MS : 0);
 
     return () => {
+      clearTimeout(timer);
       ctrl.abort();
       handle?.cancel();
-      if (container) container.innerHTML = '';
+      container.innerHTML = '';
     };
-  }, [page, zoom, viewRotation, pageNumber]);
+  }, [page, zoom, viewRotation, isGesturing, pageNumber]);
 
   // Apply highlight classes for search matches after the text layer renders.
   // Subscribe to the whole search object to avoid creating new filtered arrays
