@@ -19,6 +19,7 @@ frontend/e2e/
 The four-project split exists because:
 - `local-api` and `local-ui` are stateless and parallelize cleanly.
 - `local-hitl` shares a fixed (project, article, template) triple — running >1 worker causes runs to step on each other. Don't fight this; add new HITL-stateful tests under matching glob patterns.
+- CI runs `local-hitl` only when `scripts/ci/extraction_pipeline_touched.py` sees extraction/HITL paths in the PR/push range. `npm run test:e2e:local` still runs all three projects locally. Do not put extraction-pipeline coverage in `local-api`/`local-ui` to dodge that gate.
 - There is no prod-facing project: production is verified by the post-deploy smoke workflow (reachability + deployed-commit), never by a suite that writes to prod.
 
 ## 2. Choosing your project

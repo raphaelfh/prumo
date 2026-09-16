@@ -604,11 +604,11 @@ jobs:
   # =================== FRONTEND E2E (EPHEMERAL STACK) ===================
   # Boots the full stack inside the runner — Supabase (CLI/Docker) +
   # Alembic migrations + seed + FastAPI + built frontend — and runs the
-  # local Playwright projects (60 tests) on every PR. Replaces the
-  # secret-gated job that silently skipped on 30/30 runs: fixtures
-  # self-provision (frontend/e2e/_fixtures/ensure-fixtures.ts), so no
-  # pinned external environment is needed. Orchestration was validated
-  # end-to-end locally before this job was written (2026-06-11).
+  # Playwright `local-api` + `local-ui` projects on every PR. The serial
+  # `local-hitl` project (extraction/QA run mutations) runs only when
+  # scripts/ci/extraction_pipeline_touched.py sees extraction-pipeline
+  # paths in the range — it is not a default tax on viewer/docs/CI-chore
+  # PRs. LLM extraction stays opt-in via E2E_RUN_LLM_TESTS.
   frontend-e2e-ephemeral:
     name: Frontend E2E (ephemeral stack)
     runs-on: ubuntu-latest
@@ -622,6 +622,9 @@ jobs:
       DEBUG: "true"
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Path filter needs origin/<base>…HEAD (or before…HEAD on push).
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
@@ -697,6 +700,17 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      - name: Detect extraction-pipeline changes
+        id: extraction
+        run: |
+          if python3 scripts/ci/extraction_pipeline_touched.py; then
+            echo "hitl=true" >> "$GITHUB_OUTPUT"
+            echo "HITL e2e: on (extraction/HITL pipeline paths changed)"
+          else
+            echo "hitl=false" >> "$GITHUB_OUTPUT"
+            echo "HITL e2e: skipped (no extraction-pipeline paths in this range)"
+          fi
+
       - name: Run local E2E projects
         env:
           E2E_FRONTEND_URL: http://127.0.0.1:8080
@@ -704,7 +718,11 @@ jobs:
           E2E_SUPABASE_URL: http://127.0.0.1:54321
           E2E_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
           E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
-        run: npm run test:e2e:local
+        run: |
+          npm run test:e2e:local:core
+          if [ "${{ steps.extraction.outputs.hitl }}" = "true" ]; then
+            npm run test:e2e:local:hitl
+          fi
 
       - name: Tail service logs on failure
         if: failure()
