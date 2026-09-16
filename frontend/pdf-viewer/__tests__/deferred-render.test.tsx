@@ -22,12 +22,16 @@ afterEach(() => {
 async function renderPage(zoom = 1) {
   const renders: RenderOptions[] = [];
   const textLayers: number[] = [];
+  const textScales: number[] = [];
   const engine = createMockEngine({
     numPages: 1,
     pageSize: LETTER,
     text: ['page one'],
     onRender: (_page, opts) => renders.push(opts),
-    onRenderTextLayer: (page) => textLayers.push(page),
+    onRenderTextLayer: (page, opts) => {
+      textLayers.push(page);
+      textScales.push(opts.scale);
+    },
   });
   const store = createViewerStore({zoom, fitWidth: false});
   store.getState().actions.setDocument(await engine.load({kind: 'url', url: 'mock.pdf'}));
@@ -44,7 +48,7 @@ async function renderPage(zoom = 1) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  return {store, container, renders, textLayers};
+  return {store, container, renders, textLayers, textScales};
 }
 
 describe('deferred page rendering', () => {
@@ -101,5 +105,12 @@ describe('deferred page rendering', () => {
     expect(scale).toBeGreaterThan(4);
     // At the cap the product equals the budget up to float rounding.
     expect(LETTER.width * scale * LETTER.height * scale).toBeLessThanOrEqual(16_777_216 + 1);
+  });
+
+  it('paints the text layer at CSS zoom, not zoom × devicePixelRatio', async () => {
+    vi.stubGlobal('devicePixelRatio', 2);
+    const {renders, textScales} = await renderPage(1.5);
+    expect(renders[0].scale).toBe(3);
+    expect(textScales[0]).toBe(1.5);
   });
 });

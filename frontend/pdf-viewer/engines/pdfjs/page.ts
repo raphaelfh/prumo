@@ -93,6 +93,8 @@ export class PdfJsPageHandle implements PDFPageHandle {
 
     // Clear previous content (idempotent re-render)
     container.innerHTML = '';
+    // CSS zoom only. pdf.js TextLayer multiplies OutputScale.pixelRatio for
+    // measureText; this property drives font-size via --text-scale-factor.
     container.style.setProperty('--total-scale-factor', String(scale));
 
     const pdfjs = await import('pdfjs-dist');

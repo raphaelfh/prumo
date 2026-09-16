@@ -37,8 +37,11 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
     const container = containerRef.current;
     if (!page || !container || isGesturing) return;
 
-    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-    const renderScale = zoom * dpr;
+    // pdf.js TextLayer viewport.scale is CSS zoom. It multiplies
+    // OutputScale.pixelRatio itself for measureText. Passing zoom*dpr made
+    // --total-scale-factor (and font-size) dpr× too large: spans covered the
+    // next line and native selection returned a prefix of the word.
+    const renderScale = zoom;
     const ctrl = new AbortController();
     let handle: {cancel(): void} | null = null;
 
