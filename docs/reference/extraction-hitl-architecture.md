@@ -394,6 +394,21 @@ Design: `docs/superpowers/specs/2026-09-15-ai-batch-runs-design.md`.
   `ENGINE_RETIRED` or `LLM_ENDPOINT_UNAVAILABLE` stops the batch.
 - API: `/api/v1/extraction/batches` (`POST`, `GET`, `GET /{id}`,
   `POST /{id}/cancel`, `POST /{id}/resume`); guard `owned_batch`.
+- **The per-batch advisory lock is taken on a dedicated connection**, not
+  `self.db`. `advance` commits mid-loop (`prepare_request` commits before
+  queue IO), and under `worker_session()`'s `NullPool` a commit closes the
+  session's connection — which would drop a `pg_advisory_lock` taken on it
+  at the very first commit and break the claim/dispatch loop's serialization. Undoing
+  this (moving the lock back onto the domain session) reopens the double-claim
+  race and can return a pooled connection to the API engine still holding a
+  lock nothing releases.
+- **`advance_extraction_batch`'s `rate_limit` is cleared after `Task.bind()`**,
+  not via the `@celery_app.task(...)` decorator. `Task.bind()` treats a
+  decorator `rate_limit=None` as "unset" and fills it from
+  `task_default_rate_limit` ("10/m"), so clearing it only after binding is
+  what actually removes the cap. Skipping this silently reintroduces a
+  10/minute ceiling on advances, which stalls a batch whose completion
+  callbacks arrive faster than that.
 
 ### Pre-existing tables — evolved
 
