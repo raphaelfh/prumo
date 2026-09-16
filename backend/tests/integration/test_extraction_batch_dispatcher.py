@@ -22,6 +22,7 @@ from sqlalchemy.pool import NullPool
 from app.core.config import settings
 from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.extraction_batch_dispatcher import ExtractionBatchDispatcher, batch_request_id
+from app.services.hitl_session_service import HITLSessionInputError, HITLSessionService
 from tests.integration.conftest import SEED
 from tests.integration.helpers.batch_fixtures import make_article, make_batch
 
@@ -198,11 +199,10 @@ async def test_disabled_tool_skips(db_session: AsyncSession) -> None:
 async def test_run_stage_reasons(db_session: AsyncSession) -> None:
     dispatcher = ExtractionBatchDispatcher(db_session, enqueue=FakeQueue())
     batch = SimpleNamespace(owner_id=SEED.primary_profile, skip_articles_with_ai_suggestions=False)
-    item = SimpleNamespace(id=uuid4())
 
-    assert await dispatcher._run_reason(batch, item, uuid4(), "finalized") == "RUN_FINALIZED"
-    assert await dispatcher._run_reason(batch, item, uuid4(), "consensus") == "RUN_NOT_EDITABLE"
-    assert await dispatcher._run_reason(batch, item, uuid4(), "extract") is None
+    assert await dispatcher._run_reason(batch, uuid4(), uuid4(), "finalized") == "RUN_FINALIZED"
+    assert await dispatcher._run_reason(batch, uuid4(), uuid4(), "consensus") == "RUN_NOT_EDITABLE"
+    assert await dispatcher._run_reason(batch, uuid4(), uuid4(), "extract") is None
 
 
 @pytest.mark.asyncio
@@ -270,7 +270,7 @@ def test_request_id_is_stable_per_item() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Lock lifetime — these two CANNOT use ``db_session``.
+# Lock lifetime — these CANNOT use ``db_session``.
 #
 # That fixture pins one connection inside an outer transaction and never
 # releases it, so a lock that dies with its connection still looks alive. The
@@ -291,6 +291,9 @@ WHERE l.locktype = 'advisory' AND l.granted
   AND l.classid = ((hashtextextended(:k, 0) >> 32) & 4294967295)::oid
   AND l.objid   = (hashtextextended(:k, 0) & 4294967295)::oid
 """
+
+_LOCK_SQL = "SELECT pg_advisory_lock(hashtextextended(:k, 0))"
+_UNLOCK_SQL = "SELECT pg_advisory_unlock(hashtextextended(:k, 0))"
 
 
 async def _lock_holders(engine: AsyncEngine, batch_id: UUID) -> list[int]:
@@ -412,3 +415,70 @@ async def test_two_concurrent_advances_cannot_dispatch_the_same_item_twice(
             statuses = [s for s, _, _ in await _items(check, batch_id)]
         assert attempts == 1
         assert statuses == ["dispatched"]
+
+
+@pytest.mark.asyncio
+async def test_advance_gives_up_instead_of_waiting_forever_for_the_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A contended advance must fail fast, not occupy a worker slot indefinitely.
+
+    The holder recounts before it finishes, so giving up is semantically
+    correct: there is nothing for this advance to do. ``asyncio.wait_for``
+    keeps an unbounded wait from hanging the suite.
+    """
+    async with _committed_batch(2) as (engine, factory, batch_id):
+        monkeypatch.setattr(ExtractionBatchDispatcher, "LOCK_TIMEOUT_MS", 300, raising=False)
+        queue = FakeQueue()
+        key = {"k": f"extraction_batch:{batch_id}"}
+
+        async with engine.connect() as holder:
+            await holder.execute(text(_LOCK_SQL), key)
+            async with factory() as db:
+                await asyncio.wait_for(
+                    ExtractionBatchDispatcher(db, enqueue=queue).advance(batch_id), timeout=20
+                )
+            await holder.execute(text(_UNLOCK_SQL), key)
+
+        assert queue.calls == [], "a contended advance must not dispatch"
+        async with factory() as check:
+            assert [s for s, _, _ in await _items(check, batch_id)] == ["queued", "queued"]
+        assert await _lock_holders(engine, batch_id) == [], "the waiter leaked a lock"
+
+
+@pytest.mark.asyncio
+async def test_a_rolled_back_skip_does_not_break_the_next_claimed_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `discard_writes` skip rolls back, expiring every ORM instance in the session.
+
+    The remaining claimed items must still dispatch. Reading `batch`/`item`
+    attributes after that rollback triggers an implicit refresh, which aborted
+    the whole advance — and with `max_retries=0` no callback fires for the rest
+    of the batch, so it sits active until it reads stalled.
+
+    Real session, not ``db_session``: inside that fixture the dispatcher's
+    rollback unwinds the SAVEPOINT holding the test's own fixture rows, so the
+    batch vanishes and the test cannot observe the product behaviour at all.
+    """
+    async with _committed_batch(2) as (_engine, factory, batch_id):
+        original = HITLSessionService.open_or_resume
+        seen = {"n": 0}
+
+        async def first_one_vanishes(self, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            seen["n"] += 1
+            if seen["n"] == 1:
+                raise HITLSessionInputError("article vanished mid-batch")
+            return await original(self, **kwargs)
+
+        monkeypatch.setattr(HITLSessionService, "open_or_resume", first_one_vanishes)
+        queue = FakeQueue()
+
+        async with factory() as db:
+            await ExtractionBatchDispatcher(db, enqueue=queue).advance(batch_id)
+
+        async with factory() as check:
+            statuses = [(s, r) for s, r, _ in await _items(check, batch_id)]
+        assert statuses[0] == ("skipped", "NO_LONGER_AVAILABLE")
+        assert statuses[1][0] == "dispatched", "the second claimed item never dispatched"
+        assert len(queue.calls) == 1

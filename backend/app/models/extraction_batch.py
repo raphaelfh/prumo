@@ -62,8 +62,12 @@ class ExtractionBatchItem(BaseModel):
     reason_code: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
+        # Built from ITEM_STATUSES so the constant and the constraint cannot
+        # drift; renders byte-identical SQL to the literal it replaced, so
+        # there is no migration drift.
         CheckConstraint(
-            "status IN ('queued','dispatched','skipped','failed','cancelled')", name="status"
+            "status IN (" + ",".join(f"'{status}'" for status in ITEM_STATUSES) + ")",
+            name="status",
         ),
         UniqueConstraint("batch_id", "article_id", name="uq_extraction_batch_items_batch_article"),
         Index("ix_extraction_batch_items_batch_status", "batch_id", "status"),
