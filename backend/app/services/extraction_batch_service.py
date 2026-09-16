@@ -7,16 +7,45 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import AppError
 from app.models.extraction_batch import ExtractionBatch
 from app.repositories.extraction_batch_repository import ExtractionBatchRepository
-from app.schemas.extraction_batch import ExtractionBatchDetail, ExtractionBatchSummary, ItemRow
+from app.schemas.common import ApiErrorCode
+from app.schemas.extraction_batch import (
+    CreateExtractionBatchRequest,
+    ExtractionBatchDetail,
+    ExtractionBatchSummary,
+    ItemRow,
+)
+from app.services.advisory_locks import take_advisory_xact_lock
+from app.services.article_read_service import ArticleNotFoundError, owned_articles
 from app.services.extraction_batch_view import derive_batch
+from app.services.project_template_active_service import (
+    ProjectTemplateNotFoundError,
+    owned_template,
+)
 
 LIST_WINDOW = timedelta(days=7)
 
 
 class BatchNotFoundError(Exception):
     """Missing, foreign, or no longer visible to its owner — one error for all."""
+
+
+class BatchScopeError(Exception):
+    """The template or an article is missing or outside the project (one error, G2/G3)."""
+
+
+class BatchAlreadyActiveError(AppError):
+    """The caller already runs a batch for this tool (G5b)."""
+
+    def __init__(self, batch_id: UUID) -> None:
+        super().__init__(
+            code=ApiErrorCode.AI_BATCH_ALREADY_ACTIVE.value,
+            message="An AI batch is already running for this tool",
+            status_code=409,
+            details={"batch_id": str(batch_id)},
+        )
 
 
 async def owned_batch(db: AsyncSession, *, owner_id: UUID, batch_id: UUID) -> ExtractionBatch:
@@ -87,3 +116,38 @@ class ExtractionBatchService:
             stop_message=batch.stop_message,
             counts=view.counts,
         )
+
+    async def create(self, owner_id: UUID, request: CreateExtractionBatchRequest) -> UUID:
+        """G2, G3, G5b, then the rows. The caller checked G1 and G5 and enqueues after."""
+        try:
+            await owned_template(
+                self.db, project_id=request.project_id, template_id=request.template_id
+            )
+            article_ids = await owned_articles(
+                self.db, project_id=request.project_id, article_ids=request.article_ids
+            )
+        except (ProjectTemplateNotFoundError, ArticleNotFoundError) as exc:
+            raise BatchScopeError("template_id or article_ids do not belong to project_id") from exc
+
+        await take_advisory_xact_lock(self.db, owner_id, request.template_id)
+        active = await self.batches.active_batch_id(owner_id, request.template_id)
+        if active is not None:
+            raise BatchAlreadyActiveError(active)
+
+        batch = ExtractionBatch(
+            owner_id=owner_id,
+            project_id=request.project_id,
+            template_id=request.template_id,
+            skip_articles_with_ai_suggestions=request.skip_articles_with_ai_suggestions,
+        )
+        await self.batches.add(batch, article_ids)
+        await self.db.commit()
+        return batch.id
+
+    async def cancel(self, owner_id: UUID, batch_id: UUID, *, now: datetime) -> None:
+        """Queued articles become not-run; in-flight ones finish (spec §7.1)."""
+        batch = await owned_batch(self.db, owner_id=owner_id, batch_id=batch_id)
+        if batch.cancelled_at is None:
+            batch.cancelled_at = now
+        await self.batches.cancel_queued(batch.id, "CANCELLED")
+        await self.db.commit()

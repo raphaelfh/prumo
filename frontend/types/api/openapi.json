@@ -892,6 +892,54 @@
         "title": "ApiResponse[ExportStatusResponse]",
         "type": "object"
       },
+      "ApiResponse_ExtractionBatchDetail_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionBatchDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ExtractionBatchDetail]",
+        "type": "object"
+      },
       "ApiResponse_ExtractionExportCancelResponse_": {
         "properties": {
           "data": {
@@ -2996,6 +3044,58 @@
         "title": "ApiResponse[list[ArticleRunRef]]",
         "type": "object"
       },
+      "ApiResponse_list_ExtractionBatchSummary__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExtractionBatchSummary"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[ExtractionBatchSummary]]",
+        "type": "object"
+      },
       "ApiResponse_list_GlobalTemplateSummaryRead__": {
         "properties": {
           "data": {
@@ -4034,6 +4134,41 @@
         "title": "CreateDecisionRequest",
         "type": "object"
       },
+      "CreateExtractionBatchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "article_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Article Ids",
+            "type": "array"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "skip_articles_with_ai_suggestions": {
+            "default": true,
+            "title": "Skip Articles With Ai Suggestions",
+            "type": "boolean"
+          },
+          "template_id": {
+            "format": "uuid",
+            "title": "Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "template_id",
+          "article_ids"
+        ],
+        "title": "CreateExtractionBatchRequest",
+        "type": "object"
+      },
       "CreateProjectTemplateRequest": {
         "additionalProperties": false,
         "description": "Name a template that starts with no sections; the tree is built after.\n\n``extra=\"forbid\"``: ``is_active``, ``project_id`` and ``created_by`` are\nthe server's to set \u2014 the invariants in ``template_create_service`` are\nexactly what a client-supplied field set would break.",
@@ -4671,6 +4806,351 @@
         ],
         "title": "ExtractionArticleScope",
         "type": "string"
+      },
+      "ExtractionBatchCounts": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "done_with_issues": {
+            "title": "Done With Issues",
+            "type": "integer"
+          },
+          "needs_attention": {
+            "title": "Needs Attention",
+            "type": "integer"
+          },
+          "not_run": {
+            "title": "Not Run",
+            "type": "integer"
+          },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "queued",
+          "running",
+          "done",
+          "done_with_issues",
+          "needs_attention",
+          "skipped",
+          "not_run"
+        ],
+        "title": "ExtractionBatchCounts",
+        "type": "object"
+      },
+      "ExtractionBatchDetail": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ExtractionBatchCounts"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExtractionBatchItemView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "stalled": {
+            "title": "Stalled",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "finished",
+              "stopped",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "stop_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Code"
+          },
+          "stop_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Message"
+          },
+          "template_id": {
+            "format": "uuid",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "template_name": {
+            "title": "Template Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "project_name",
+          "template_id",
+          "template_name",
+          "kind",
+          "created_at",
+          "finished_at",
+          "state",
+          "stalled",
+          "stop_code",
+          "stop_message",
+          "counts",
+          "items"
+        ],
+        "title": "ExtractionBatchDetail",
+        "type": "object"
+      },
+      "ExtractionBatchItemView": {
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "failed_sections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Sections"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "outcome": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "done_with_issues",
+              "needs_attention",
+              "skipped",
+              "not_run"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "total_sections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Sections"
+          }
+        },
+        "required": [
+          "article_id",
+          "title",
+          "outcome",
+          "reason_code",
+          "message",
+          "failed_sections",
+          "total_sections"
+        ],
+        "title": "ExtractionBatchItemView",
+        "type": "object"
+      },
+      "ExtractionBatchSummary": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ExtractionBatchCounts"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "stalled": {
+            "title": "Stalled",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "finished",
+              "stopped",
+              "cancelled"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "stop_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Code"
+          },
+          "stop_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Message"
+          },
+          "template_id": {
+            "format": "uuid",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "template_name": {
+            "title": "Template Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "project_name",
+          "template_id",
+          "template_name",
+          "kind",
+          "created_at",
+          "finished_at",
+          "state",
+          "stalled",
+          "stop_code",
+          "stop_message",
+          "counts"
+        ],
+        "title": "ExtractionBatchSummary",
+        "type": "object"
       },
       "ExtractionErrorCode": {
         "description": "Stable code for a terminal extraction failure, or for a typed\nsynchronous refusal on the extraction write paths.\n\nCarried on ``ExtractionJobStatusResponse.error_code`` so the frontend can\npick specific, actionable toast copy without parsing the human ``error``\nstring. Only modes the backend genuinely raises are represented \u2014 each\nvalue has a real emitter in ``classify_extraction_error``:\n\n- ``PDF_NOT_FOUND``    \u2014 the article has no stored PDF (``FileNotFoundError``).\n- ``MISSING_API_KEY``  \u2014 no usable LLM key, BYOK or global (``MissingLLMKeyError``).\n- ``ENGINE_RETIRED``   \u2014 the project's stored engine left the catalogue\n  mid-flight (``EngineRetiredError``; enqueue-time validation is a 409),\n  or its provider retired the model upstream (``ModelHTTPError`` 410).\n- ``LLM_ENDPOINT_UNAVAILABLE`` \u2014 the engine's custom endpoint cannot\n  serve: row deleted, unverified, model dropped\n  (``resolve_engine``), or its key no longer decrypts\n  (``EndpointUnavailableError``; enqueue-time validation is a 409).\n- ``MISSING_ENTITY_KEY`` \u2014 a repeating section declares no\n  ``is_entity_key`` field (``MissingEntityKeyError``), refused before any\n  LLM call. Carried by the single-section job and, as a 409, by the sync\n  models kickoff; a batch run keeps reporting per-section text.\n- ``ENTRY_KEY_DUPLICATE`` \u2014 manual entry creation named an identity the\n  coordinate already holds (``EntryKeyDuplicateError``), refused as a 409\n  rather than silently renaming the entry the way the retired model path\n  did (\"Cox Model (2)\").\n- ``EXTRACTION_FAILED``\u2014 generic catch-all for everything else.",
@@ -11682,6 +12162,255 @@
         "summary": "Get Suggestions History",
         "tags": [
           "articles"
+        ]
+      }
+    },
+    "/api/v1/extraction/batches": {
+      "get": {
+        "operationId": "list_extraction_batches_api_v1_extraction_batches_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Active",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ExtractionBatchSummary__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List Extraction Batches",
+        "tags": [
+          "extraction-batches"
+        ]
+      },
+      "post": {
+        "operationId": "start_extraction_batch_api_v1_extraction_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExtractionBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Start Extraction Batch",
+        "tags": [
+          "extraction-batches"
+        ]
+      }
+    },
+    "/api/v1/extraction/batches/{batch_id}": {
+      "get": {
+        "operationId": "get_extraction_batch_api_v1_extraction_batches__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExtractionBatchDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Extraction Batch",
+        "tags": [
+          "extraction-batches"
+        ]
+      }
+    },
+    "/api/v1/extraction/batches/{batch_id}/cancel": {
+      "post": {
+        "operationId": "cancel_extraction_batch_api_v1_extraction_batches__batch_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExtractionBatchDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Cancel Extraction Batch",
+        "tags": [
+          "extraction-batches"
+        ]
+      }
+    },
+    "/api/v1/extraction/batches/{batch_id}/resume": {
+      "post": {
+        "operationId": "resume_extraction_batch_api_v1_extraction_batches__batch_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Resume Extraction Batch",
+        "tags": [
+          "extraction-batches"
         ]
       }
     },
