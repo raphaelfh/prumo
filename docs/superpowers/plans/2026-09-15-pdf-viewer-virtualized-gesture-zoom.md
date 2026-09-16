@@ -1,6 +1,6 @@
 ---
-status: draft
-last_reviewed: 2026-09-15
+status: shipped
+last_reviewed: 2026-09-16
 owner: '@raphaelfh'
 ---
 

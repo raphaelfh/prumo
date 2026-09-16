@@ -1,12 +1,13 @@
 ---
-status: approved
-last_reviewed: 2026-09-15
+status: shipped
+last_reviewed: 2026-09-16
 owner: '@raphaelfh'
 ---
 
 # PDF viewer — dead-API cleanup, page rotation fix, virtualized pages, gesture zoom, fit width
 
-Status: approved by the user on 2026-09-15. Implementation plan:
+Status: shipped on 2026-09-16 — phases 0–4 merged into `dev` as #926, #928, #930, #931 and #933.
+Approved by the user on 2026-09-15. Implementation plan:
 `docs/superpowers/plans/2026-09-15-pdf-viewer-virtualized-gesture-zoom.md`. Built from the 2026-09-15 investigation of slow PDF loads, a study of
 `anaralabs/lector` (MIT) and `zotero/reader` (AGPL-3.0, design reference only — no code copied), and the
 user's rulings: (1) open every document at fit width, (2) rotation stays and must be correct for articles
