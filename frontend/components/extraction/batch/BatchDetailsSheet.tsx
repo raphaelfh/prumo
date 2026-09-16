@@ -198,6 +198,10 @@ export function BatchDetailsSheet({batchId, onOpenChange}: BatchDetailsSheetProp
             articleIds={runDialog?.articleIds ?? []}
             defaultSkipExisting={false}
             onStarted={() => setRunDialog(null)}
+            // No onViewBatch: Retry/Run-remaining starts a NEW batch, and this
+            // sheet is controlled by its caller's `batchId` prop — there is no
+            // setter here to point the sheet at the new batch, so "View" would
+            // have nowhere to navigate.
           />
         )}
       </SheetContent>

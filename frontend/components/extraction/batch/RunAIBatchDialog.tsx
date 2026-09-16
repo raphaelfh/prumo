@@ -35,6 +35,13 @@ interface RunAIBatchDialogProps {
   /** §10: Retry failed / Run remaining reopen with the skip option off. */
   defaultSkipExisting?: boolean;
   onStarted: (batch: ExtractionBatchDetail) => void;
+  /**
+   * Success toast's "View" action. Separate from `onStarted` — that one
+   * only closes this dialog for both callers (BatchSelectionBar,
+   * BatchDetailsSheet), so wiring the toast to it left "View" doing
+   * nothing. Omit when there's nowhere meaningful to navigate.
+   */
+  onViewBatch?: (batchId: string) => void;
 }
 
 const ENGINE_PROBLEM_CODES = new Set([
@@ -75,6 +82,7 @@ export function RunAIBatchDialog({
   articleIds,
   defaultSkipExisting,
   onStarted,
+  onViewBatch,
 }: RunAIBatchDialogProps): ReactElement {
   const [skipExisting, setSkipExisting] = useState(defaultSkipExisting ?? true);
   const engine = useLlmEngine(projectId);
@@ -103,7 +111,9 @@ export function RunAIBatchDialog({
             n === 1
               ? t('aiBatch', 'startedToastOne')
               : t('aiBatch', 'startedToast').replace('{{n}}', String(n)),
-            {action: {label: t('aiBatch', 'view'), onClick: () => onStarted(batch)}},
+            onViewBatch
+              ? {action: {label: t('aiBatch', 'view'), onClick: () => onViewBatch(batch.id)}}
+              : undefined,
           );
         },
         onError: startFailedToast,

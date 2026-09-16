@@ -120,4 +120,22 @@ describe('RunAIBatchDialog', () => {
     expect(base.onStarted).toHaveBeenCalledWith(batch);
     expect(toast.success).toHaveBeenCalled();
   });
+
+  it('wires the toast "View" action to onViewBatch, not onStarted', async () => {
+    const user = userEvent.setup();
+    const batch = {id: 'b1'};
+    const onViewBatch = vi.fn();
+    mutate.mockImplementation((_vars, opts) => {
+      opts.onSuccess(batch);
+    });
+    render(<RunAIBatchDialog {...base} onViewBatch={onViewBatch} />);
+    await user.click(screen.getByRole('button', {name: 'Run AI'}));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+
+    const [, options] = vi.mocked(toast.success).mock.calls[0];
+    const action = (options as unknown as {action: {onClick: (e: MouseEvent) => void}}).action;
+    action.onClick(new MouseEvent('click'));
+
+    expect(onViewBatch).toHaveBeenCalledWith('b1');
+  });
 });

@@ -89,6 +89,7 @@ export function BatchSelectionBar({
         templateId={templateId}
         articleIds={Array.from(selectedIds)}
         onStarted={() => setDialogOpen(false)}
+        onViewBatch={onViewBatch}
       />
     </div>
   );

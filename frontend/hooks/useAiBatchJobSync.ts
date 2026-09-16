@@ -3,16 +3,17 @@
  * background-jobs store, so the notification bell shows one entry per batch
  * without a bespoke rendering path.
  *
- * The server is the source of truth: `useActiveBatches(null)` already scopes
- * to the caller and the last 7 days, so a batch that drops out of that list
- * is left alone here — it has already reached a terminal status locally.
+ * The server is the source of truth: `useRecentBatches` scopes to the caller
+ * and the last 7 days and includes terminal batches, so a batch that drops
+ * out of that list (aged past 7 days) is left alone here — it has already
+ * reached a terminal status locally.
  * `completedAt` is stamped once, on the transition into a terminal state:
  * `countUnreadJobs` keys the bell badge off it, so restamping on every poll
  * would keep the badge from ever settling.
  */
 import {useEffect} from 'react';
 
-import {useActiveBatches} from '@/hooks/extraction/useExtractionBatches';
+import {useRecentBatches} from '@/hooks/extraction/useExtractionBatches';
 import {useBackgroundJobs} from '@/stores/useBackgroundJobs';
 import type {AiBatchJob} from '@/types/background-jobs';
 import type {BackgroundJob} from '@/types/background-jobs';
@@ -65,7 +66,7 @@ function toJob(summary: ExtractionBatchSummary, existing: BackgroundJob | undefi
 
 export function useAiBatchJobSync(): void {
   const {jobs, addJob, updateJob} = useBackgroundJobs();
-  const {data: batches} = useActiveBatches(null);
+  const {data: batches} = useRecentBatches();
 
   useEffect(() => {
     if (!batches) return;

@@ -41,6 +41,25 @@ export function useActiveBatches(projectId: string | null) {
   });
 }
 
+/**
+ * The caller's batches from the last 7 days, active AND terminal (spec
+ * 2026-09-15 §11.5 fix). `useActiveBatches` filters to `active: true` server
+ * side, so a finished batch drops out of that list forever — this is the
+ * query the notification bell needs to ever observe a completion.
+ */
+export function useRecentBatches() {
+  return useQuery({
+    queryKey: extractionBatchKeys.list(null, false),
+    queryFn: () => listExtractionBatches({}),
+    refetchInterval: (query) =>
+      (query.state.data as ExtractionBatchSummary[] | undefined)?.some(isBatchActive)
+        ? ACTIVE_BATCH_POLL_MS
+        : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useBatchDetail(batchId: string | null) {
   const queryClient = useQueryClient();
   const query = useQuery({
