@@ -1,9 +1,9 @@
-import {Check, History} from 'lucide-react';
+import {History} from 'lucide-react';
 import {IconButton} from '@/components/patterns/IconButton';
+import {AcceptCheck} from './AcceptCheck';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {formatFullSuggestionValue, valuelessProposalKind, type SuggestionFieldContext} from '@/lib/ai-extraction/suggestionUtils';
 import {t} from '@/lib/copy';
-import {cn} from '@/lib/utils';
 import type {AISuggestion} from '@/types/ai-extraction';
 
 interface ProposalPreviewProps extends SuggestionFieldContext {
@@ -36,7 +36,7 @@ export function ProposalPreview({latest, count, expanded, onExpand, accepted = f
       <TooltipContent className="max-h-[40vh] max-w-sm overflow-auto whitespace-pre-wrap break-words">{value}</TooltipContent>
     </Tooltip>
     {count > 1 && <span className="rounded-full bg-muted px-1.5 text-[11px] text-muted-foreground">{count}</span>}
-    {!readOnly && onToggle && <IconButton icon={<Check />} label={t('extraction', accepted ? 'reviewUnacceptExtraction' : 'reviewAcceptExtraction')} aria-pressed={accepted} aria-disabled={saving || undefined} aria-busy={pending || undefined} onClick={() => {if (!saving) onToggle();}} className={cn('rounded-full', accepted && 'bg-success/10 text-success shadow-sm hover:text-success', pending && 'animate-pulse ring-1 ring-success/60 motion-reduce:animate-none')} />}
-    {acceptedOlder && onOpenAccepted && <IconButton icon={<History />} label={t('extraction', 'reviewOpenAccepted')} onClick={onOpenAccepted} className="rounded-full bg-success/10 text-success hover:text-success" />}
+    {!readOnly && onToggle && <AcceptCheck accepted={accepted} saving={saving} pending={pending} acceptedElsewhere={acceptedOlder} onToggle={onToggle}/>}
+    {acceptedOlder && onOpenAccepted && <IconButton icon={<History />} label={t('extraction', 'reviewOpenAccepted')} onClick={onOpenAccepted} className="rounded-full text-success hover:text-success" />}
   </div>;
 }
