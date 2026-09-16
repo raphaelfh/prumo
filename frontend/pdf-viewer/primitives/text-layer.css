@@ -1,4 +1,16 @@
-/* Required by pdfjs-dist TextLayer for proper text positioning */
+/*
+ * Required by pdfjs-dist TextLayer for proper text positioning.
+ *
+ * pdf.js paints the text layer as absolutely-positioned spans whose *size* it
+ * does not set directly: it writes per-span custom properties
+ * (`--font-height`, `--scale-x`, `--rotate`) and leaves the `font-size` and
+ * `transform` that consume them to the consuming app's stylesheet. The rules
+ * below are copied from node_modules/pdfjs-dist/web/pdf_viewer.css (`.textLayer`)
+ * so the invisible text tracks the glyphs on the canvas. Without them every
+ * span falls back to the browser's default 16px and no horizontal scale, which
+ * makes both selection and character-precise search highlighting land on the
+ * wrong words.
+ */
 .pdf-viewer-text-layer {
   position: absolute;
   text-align: initial;
@@ -6,10 +18,13 @@
   overflow: clip;
   opacity: 1;
   line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
   text-size-adjust: none;
   forced-color-adjust: none;
   transform-origin: 0 0;
   caret-color: CanvasText;
+  /* Above the canvas, so a drag selects text instead of doing nothing. */
   z-index: 2;
 }
 
@@ -19,6 +34,41 @@
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
+  user-select: text;
+}
+
+/*
+ * `--total-scale-factor` is set on the container by pdf.js itself; the three
+ * derived properties and the sizing rule below are what turn its per-span
+ * `--font-height` / `--scale-x` into the real glyph box.
+ */
+.pdf-viewer-text-layer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-viewer-text-layer > :not(.markedContent),
+.pdf-viewer-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+/* Marked content is a grouping wrapper, not a box of its own. */
+.pdf-viewer-text-layer .markedContent {
+  display: contents;
+}
+
+/* An image's alt text is a screen-reader affordance, not selectable page text. */
+.pdf-viewer-text-layer span[role='img'] {
+  user-select: none;
+  cursor: default;
 }
 
 .pdf-viewer-text-layer ::selection {
@@ -46,12 +96,12 @@
  * `[data-main-rotation="…"]` rules under `:root`). Values copied verbatim
  * from node_modules/pdfjs-dist/web/pdf_viewer.css (search `data-main-rotation`).
  */
-.pdf-viewer-text-layer[data-main-rotation="90"] {
+.pdf-viewer-text-layer[data-main-rotation='90'] {
   transform: rotate(90deg) translateY(-100%);
 }
-.pdf-viewer-text-layer[data-main-rotation="180"] {
+.pdf-viewer-text-layer[data-main-rotation='180'] {
   transform: rotate(180deg) translate(-100%, -100%);
 }
-.pdf-viewer-text-layer[data-main-rotation="270"] {
+.pdf-viewer-text-layer[data-main-rotation='270'] {
   transform: rotate(270deg) translateX(-100%);
 }
