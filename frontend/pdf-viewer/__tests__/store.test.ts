@@ -33,6 +33,22 @@ describe('createViewerStore', () => {
     expect(turns).toEqual([90, 180, 270, 0]);
   });
 
+  it('rotateView(-1) turns the view counter-clockwise and wraps below 0', () => {
+    const store = createViewerStore();
+    const turns = [1, 2, 3, 4].map(() => {
+      store.getState().actions.rotateView(-1);
+      return store.getState().viewRotation;
+    });
+    expect(turns).toEqual([270, 180, 90, 0]);
+  });
+
+  it('rotateView directions cancel out', () => {
+    const store = createViewerStore();
+    store.getState().actions.rotateView();
+    store.getState().actions.rotateView(-1);
+    expect(store.getState().viewRotation).toBe(0);
+  });
+
   it('returns isolated stores — mutating one does not affect another', () => {
     const a = createViewerStore();
     const b = createViewerStore();

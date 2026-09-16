@@ -43,7 +43,7 @@ function isTypingTarget(e: KeyboardEvent): boolean {
 }
 
 /** A confirm is a dialog too: Radix AlertDialog renders `role="alertdialog"`. */
-function isDialogOpen(): boolean {
+export function isDialogOpen(): boolean {
   return !!document.querySelector(
     'dialog[open], :is([role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]):not([hidden]):not([data-state="closed"])',
   );

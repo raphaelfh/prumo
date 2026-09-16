@@ -1,4 +1,5 @@
 import {render} from '@testing-library/react';
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {describe, expect, it, vi} from 'vitest';
 
 // This file imports the real RunPdfContent, whose import graph reaches
@@ -38,10 +39,20 @@ vi.mock('@/hooks/extraction/useArticleDetail', () => ({
   useArticleDetail: () => mockArticleDetail(),
 }));
 
+/** The re-parse control's mutation hook runs on every render, file or not. */
+function renderPanel(articleId: string) {
+  const client = new QueryClient({defaultOptions: {mutations: {retry: false}}});
+  return render(
+    <QueryClientProvider client={client}>
+      <RunPdfContent articleId={articleId} projectId="project-1" />
+    </QueryClientProvider>,
+  );
+}
+
 describe('RunPdfContent — article DOI reaches the viewer as externalLink', () => {
   it('passes an externalLink pointing at doi.org when the article has a DOI', () => {
     mockArticleDetail.mockReturnValue({data: {doi: '10.1234/abcd'}});
-    render(<RunPdfContent articleId="article-1" projectId="project-1" />);
+    renderPanel('article-1');
 
     const props = pdfViewerSpy.mock.calls.at(-1)?.[0] as {
       externalLink?: {href: string};
@@ -52,7 +63,7 @@ describe('RunPdfContent — article DOI reaches the viewer as externalLink', () 
 
   it('passes no externalLink when the article has no DOI', () => {
     mockArticleDetail.mockReturnValue({data: {doi: null}});
-    render(<RunPdfContent articleId="article-2" projectId="project-1" />);
+    renderPanel('article-2');
 
     const props = pdfViewerSpy.mock.calls.at(-1)?.[0] as {
       externalLink?: {href: string};

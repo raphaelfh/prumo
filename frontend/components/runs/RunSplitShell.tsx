@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import type { StoreApi } from "zustand";
 
 import {
@@ -11,6 +11,7 @@ import {
 // PrumoPdfViewer the pages pass as `pdfPanel`, not through this shell.
 import { ViewerProvider, type ViewerState } from "@/pdf-viewer/core";
 import { usePdfPanel, type UsePdfPanelResult } from "@/hooks/usePdfPanel";
+import { isDialogOpen, useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 export interface RunSplitShellProps {
   /** PDF/markdown viewer content for the RIGHT panel (order 2). */
@@ -55,7 +56,45 @@ export function RunSplitShell({
   const internalPdf = usePdfPanel({ initialOpen: initialPdfOpen });
   const pdf = pdfState ?? internalPdf;
 
-  const panels = (
+  // ⇧⌘\ maximizes the PDF — the sibling of ⌘\, the section rail's chord. A mod
+  // chord types nothing, so it works while the cursor sits in a form field.
+  useKeyboardShortcuts({
+    bindings: [{ type: "chord", key: "\\", mod: true, shift: true, handler: pdf.toggleExpanded }],
+    enabled: true,
+  });
+
+  // Escape leaves the expanded view.
+  //
+  // CAPTURE, not bubble: the run screens bind Escape to "close the palette"
+  // through useKeyboardShortcuts, which calls preventDefault whether or not a
+  // palette is open. A bubble listener here registers after that one and would
+  // only ever see an already-handled event, so Escape silently did nothing
+  // while expanded.
+  //
+  // Capture would otherwise outrank a dialog, so an open overlay keeps the key:
+  // the reviewer's Escape closes the confirm in front of them, not the layout
+  // behind it. A second Escape then restores the split.
+  const { isExpanded, collapse } = pdf;
+  useEffect(() => {
+    if (!isExpanded) return;
+    const onKeyDownCapture = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || isDialogOpen()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      collapse();
+    };
+    window.addEventListener("keydown", onKeyDownCapture, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDownCapture, { capture: true });
+  }, [isExpanded, collapse]);
+
+  // Expanded: the PDF is the whole workspace. The form panel and handle come
+  // OUT of the tree rather than collapsing to zero width — a zero-width panel
+  // keeps its focusable content in the Tab order.
+  const panels = pdf.isOpen && pdf.isExpanded ? (
+    <div className="h-full min-w-0" data-testid="assessment-shell-pdf-expanded">
+      {pdfPanel}
+    </div>
+  ) : (
     <ResizablePanelGroup orientation="horizontal" className="h-full">
       {/* v4 stamps data-testid={id} on panels (overriding any explicit
           data-testid prop), so the ids ARE the DOM test contract. */}

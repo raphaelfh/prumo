@@ -143,8 +143,8 @@ export interface ViewerActions {
   /** Multiply the zoom by `factor` (clamped); turns fit width off. */
   zoomBy(factor: number): void;
   setGesturing(isGesturing: boolean): void;
-  /** Turn the view 90° clockwise. */
-  rotateView(): void;
+  /** Turn the view 90°: clockwise by default, counter-clockwise with `-1`. */
+  rotateView(direction?: 1 | -1): void;
   setMode(mode: ViewerMode): void;
 
   // Reader-locate (markdown-first citation locating)

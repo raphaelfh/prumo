@@ -1,5 +1,5 @@
 import type {ReactNode} from 'react';
-import {BookOpenText, ExternalLink, Menu, RotateCw, Search} from 'lucide-react';
+import {BookOpenText, ExternalLink, Maximize2, Menu, Minimize2, RotateCw, Search} from 'lucide-react';
 import {IconButton} from '@/components/patterns/IconButton';
 import {
   DropdownMenu,
@@ -12,6 +12,9 @@ import {cn} from '@/lib/utils';
 import {useViewerStore, useViewerStoreApi} from '../core/context';
 import {NavigationControls} from './NavigationControls';
 import {ZoomControls} from './ZoomControls';
+
+/** ⇧⌘\ / Ctrl+⇧+\ — the sibling of ⌘\, which toggles the run screen's section rail. */
+const EXPAND_KEYS = ['mod', '⇧', '\\'] as const;
 
 /**
  * The viewer's single bar: view mode + page navigation on the left, a
@@ -27,6 +30,9 @@ export function Toolbar({
   onSearchToggle,
   modeToggle = true,
   externalLink,
+  menuItems,
+  expanded = false,
+  onToggleExpand,
 }: {
   className?: string;
   /** Rendered right after the mode toggle (e.g. a parse-status control). */
@@ -40,6 +46,19 @@ export function Toolbar({
   modeToggle?: boolean;
   /** A caller-owned link (e.g. the source article page) shown in the ☰ menu. */
   externalLink?: {label: string; href: string};
+  /**
+   * Caller-owned entries for the ☰ menu (e.g. the re-parse control). Pass
+   * nothing rather than a node that renders null — the trigger's visibility
+   * keys off this, so an always-supplied node would open an empty menu.
+   */
+  menuItems?: ReactNode;
+  /** True while the viewer is maximized over the form pane. */
+  expanded?: boolean;
+  /**
+   * Maximize / restore. The layout is the caller's to change — the viewer only
+   * reports the press — so the control appears only when a caller owns that state.
+   */
+  onToggleExpand?: () => void;
 }) {
   const mode = useViewerStore((s) => s.mode);
   const storeApi = useViewerStoreApi();
@@ -82,7 +101,20 @@ export function Toolbar({
               icon={<Search strokeWidth={1.5} />}
             />
           )}
-          {(!isReader || externalLink) && (
+          {onToggleExpand && (
+            <IconButton
+              label={t('pdf', 'viewerExpand')}
+              tooltip={expanded ? t('pdf', 'viewerRestoreSplit') : t('pdf', 'viewerExpand')}
+              hint={expanded ? undefined : t('pdf', 'viewerExpandHint')}
+              shortcut={EXPAND_KEYS}
+              side="bottom"
+              onClick={onToggleExpand}
+              aria-pressed={expanded}
+              className="aria-pressed:bg-accent aria-pressed:text-accent-foreground"
+              icon={expanded ? <Minimize2 strokeWidth={1.5} /> : <Maximize2 strokeWidth={1.5} />}
+            />
+          )}
+          {(!isReader || externalLink || menuItems) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <IconButton
@@ -92,10 +124,14 @@ export function Toolbar({
                 />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {menuItems}
                 {!isReader && (
                   <DropdownMenuItem onSelect={() => storeApi.getState().actions.rotateView()}>
                     <RotateCw strokeWidth={1.5} className="mr-2 size-4" />
-                    {t('pdf', 'viewerRotateView')}
+                    <span className="flex min-w-0 flex-col">
+                      <span>{t('pdf', 'viewerRotateView')}</span>
+                      <span className="text-xs text-muted-foreground">{t('pdf', 'viewerRotateViewHint')}</span>
+                    </span>
                   </DropdownMenuItem>
                 )}
                 {externalLink && (
