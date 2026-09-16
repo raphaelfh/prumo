@@ -22,10 +22,11 @@ vi.mock('@/services/extractionBatchService', () => ({
 }));
 
 import {listExtractionBatches} from '@/services/extractionBatchService';
+import {extractionBatchKeys} from '@/lib/query-keys/extractionBatch';
 import {useAiBatchJobSync} from '@/hooks/useAiBatchJobSync';
 import {useBackgroundJobs} from '@/stores/useBackgroundJobs';
 
-function summary(state: 'active' | 'finished') {
+function summary(state: 'active' | 'finished', overrides: Partial<ReturnType<typeof baseCounts>> = {}) {
   return {
     id: 'b1',
     kind: 'extraction',
@@ -39,16 +40,20 @@ function summary(state: 'active' | 'finished') {
     stop_message: null,
     created_at: '2026-09-15T00:00:00Z',
     finished_at: null,
-    counts: {
-      done: 1,
-      done_with_issues: 0,
-      needs_attention: 0,
-      not_run: 0,
-      queued: 0,
-      running: 1,
-      skipped: 0,
-      total: 2,
-    },
+    counts: {...baseCounts(), ...overrides},
+  };
+}
+
+function baseCounts() {
+  return {
+    done: 1,
+    done_with_issues: 0,
+    needs_attention: 0,
+    not_run: 0,
+    queued: 0,
+    running: 1,
+    skipped: 0,
+    total: 2,
   };
 }
 
@@ -62,7 +67,8 @@ function renderWithClient() {
   const Wrapper = ({children}: {children: ReactNode}) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  return render(<Harness />, {wrapper: Wrapper});
+  const result = render(<Harness />, {wrapper: Wrapper});
+  return {client, ...result};
 }
 
 describe('useAiBatchJobSync', () => {
@@ -91,23 +97,55 @@ describe('useAiBatchJobSync', () => {
   });
 
   it('observes a batch that finished — through the real list response, not a hand-fed summary', async () => {
-    vi.mocked(listExtractionBatches).mockResolvedValueOnce([summary('active')]);
-    renderWithClient();
+    vi.useFakeTimers({shouldAdvanceTime: true});
+    try {
+      vi.mocked(listExtractionBatches).mockResolvedValueOnce([summary('active')]);
+      renderWithClient();
+
+      await waitFor(() =>
+        expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.status).toBe('running'),
+      );
+
+      vi.mocked(listExtractionBatches).mockResolvedValue([summary('finished')]);
+      // Force the poll: refetchInterval only fires while a batch is active,
+      // which is true right now, so advancing past ACTIVE_BATCH_POLL_MS
+      // triggers the next fetch of the real query.
+      await vi.advanceTimersByTimeAsync(5100);
+      await waitFor(() =>
+        expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.status).toBe('completed'),
+      );
+
+      const job = useBackgroundJobs.getState().getJob('ai-batch-b1');
+      expect(job?.completedAt).toBeTypeOf('number');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not restamp completedAt on a further observation of an already-finished batch', async () => {
+    const nowSpy = vi.spyOn(Date, 'now');
+    nowSpy.mockReturnValue(2000);
+    vi.mocked(listExtractionBatches).mockResolvedValueOnce([summary('finished')]);
+    const {client} = renderWithClient();
 
     await waitFor(() =>
-      expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.status).toBe('running'),
+      expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.status).toBe('completed'),
+    );
+    const firstCompletedAt = useBackgroundJobs.getState().getJob('ai-batch-b1')?.completedAt;
+    expect(firstCompletedAt).toBe(2000);
+
+    // A later observation of the SAME terminal batch (e.g. a refetch on
+    // window focus) arrives with a different counts snapshot but is still
+    // terminal — completedAt must not move even though `Date.now()` has.
+    nowSpy.mockReturnValue(3000);
+    vi.mocked(listExtractionBatches).mockResolvedValue([summary('finished', {done: 2})]);
+    await client.invalidateQueries({queryKey: extractionBatchKeys.all});
+    await waitFor(() =>
+      expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.progress?.current).toBe(2),
     );
 
-    vi.mocked(listExtractionBatches).mockResolvedValue([summary('finished')]);
-    // Force the poll: refetchInterval only fires while a batch is active,
-    // which is true right now, so advancing past ACTIVE_BATCH_POLL_MS
-    // triggers the next fetch of the real query.
-    await waitFor(
-      () => expect(useBackgroundJobs.getState().getJob('ai-batch-b1')?.status).toBe('completed'),
-      {timeout: 8000, interval: 100},
-    );
-
-    const job = useBackgroundJobs.getState().getJob('ai-batch-b1');
-    expect(job?.completedAt).toBeTypeOf('number');
-  }, 10000);
+    const secondCompletedAt = useBackgroundJobs.getState().getJob('ai-batch-b1')?.completedAt;
+    expect(secondCompletedAt).toBe(firstCompletedAt);
+    nowSpy.mockRestore();
+  });
 });
