@@ -25,6 +25,16 @@ vi.mock("@/services/extractionExportService", () => ({
 vi.mock("@/services/articlesExportService", () => ({
     getExportStatus: vi.fn().mockResolvedValue({job_id: "x", status: "completed"}),
 }));
+vi.mock("@/hooks/useAiBatchJobSync", () => ({
+    useAiBatchJobSync: vi.fn(),
+}));
+vi.mock("@/hooks/extraction/useExtractionBatches", () => ({
+    useCancelBatch: () => ({mutate: vi.fn(), isPending: false}),
+    useBatchDetail: () => ({data: undefined}),
+}));
+vi.mock("@/components/extraction/batch/BatchDetailsSheet", () => ({
+    BatchDetailsSheet: () => null,
+}));
 
 import {NotificationCenter} from "../NotificationCenter";
 import {useBackgroundJobs} from "@/stores/useBackgroundJobs";

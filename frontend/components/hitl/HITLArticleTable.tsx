@@ -59,6 +59,7 @@ import {
   type FilterFieldConfig,
   type FilterValues,
 } from "@/components/shared/list";
+import { BatchDetailsSheet } from "@/components/extraction/batch/BatchDetailsSheet";
 import { BatchRowStatus } from "@/components/extraction/batch/BatchRowStatus";
 import { BatchSelectionBar } from "@/components/extraction/batch/BatchSelectionBar";
 import { useBatchRowStatus } from "@/components/extraction/batch/useBatchRowStatus";
@@ -195,7 +196,6 @@ export function HITLArticleTable({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [batchIdForSheet, setBatchIdForSheet] = useState<string | null>(null);
-  void batchIdForSheet; // Task 7 mounts the details sheet reading this state.
   const { activeBatch, rowStatus } = useBatchRowStatus(projectId, templateId);
 
   const [globalFilter, setGlobalFilter] = useState("");
@@ -837,6 +837,10 @@ export function HITLArticleTable({
           }
         />
       </div>
+      <BatchDetailsSheet
+        batchId={batchIdForSheet}
+        onOpenChange={(open) => !open && setBatchIdForSheet(null)}
+      />
     </div>
   );
 }

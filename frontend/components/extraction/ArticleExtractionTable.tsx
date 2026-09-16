@@ -34,6 +34,7 @@ import {Checkbox} from "@/components/ui/checkbox";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import {useArticleSelection} from "@/hooks/extraction/useArticleSelection";
 import {useListKeyboardShortcuts} from "@/hooks/useListKeyboardShortcuts";
+import {BatchDetailsSheet} from '@/components/extraction/batch/BatchDetailsSheet';
 import {BatchRowStatus} from '@/components/extraction/batch/BatchRowStatus';
 import {BatchSelectionBar} from '@/components/extraction/batch/BatchSelectionBar';
 import {useBatchRowStatus} from '@/components/extraction/batch/useBatchRowStatus';
@@ -210,7 +211,6 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
   // Batch-run state: the caller's active batch for this tool + per-row
   // queued/running status (server batch, spec 2026-09-15 §11).
   const [batchIdForSheet, setBatchIdForSheet] = useState<string | null>(null);
-  void batchIdForSheet; // Task 7 mounts the details sheet reading this state.
   const {activeBatch, rowStatus} = useBatchRowStatus(projectId, templateId);
 
     // Declare loadArticles before any use to avoid TDZ
@@ -968,6 +968,10 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
               onAction={clearListFilters}
           />
       )}
+      <BatchDetailsSheet
+          batchId={batchIdForSheet}
+          onOpenChange={(open) => !open && setBatchIdForSheet(null)}
+      />
     </div>
   );
 }
