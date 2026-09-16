@@ -5,8 +5,17 @@ import { MemoryRouter } from 'react-router';
 import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';
 
 vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }));
-vi.mock('@/hooks/extraction/useFullAIExtraction', () => ({
-  useFullAIExtraction: () => ({ extractFullAI: vi.fn(), loading: false, progress: null }),
+// NotificationCenter (mounted via Utility) calls these for AI-batch sync and
+// cancel/details; they need a QueryClientProvider this test doesn't set up,
+// and they're not what's under test here — stub them, same convention as
+// NotificationCenter's own test.
+vi.mock('@/hooks/useAiBatchJobSync', () => ({ useAiBatchJobSync: vi.fn() }));
+vi.mock('@/hooks/extraction/useExtractionBatches', () => ({
+  useCancelBatch: () => ({ mutate: vi.fn(), isPending: false }),
+  useBatchDetail: () => ({ data: undefined }),
+}));
+vi.mock('@/components/extraction/batch/BatchDetailsSheet', () => ({
+  BatchDetailsSheet: () => null,
 }));
 vi.mock('@/hooks/extraction/ai/useRunAIExtraction', () => ({
   useRunAIExtraction: () => ({ extractForRun: vi.fn(), loading: false }),

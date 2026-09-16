@@ -24,10 +24,14 @@ import {ScrollArea} from '@/components/ui/scroll-area';
 import {Progress} from '@/components/ui/progress';
 import {countUnreadJobs, selectRecentJobs, useBackgroundJobs} from '@/stores/useBackgroundJobs';
 import {useBackgroundJobPolling} from '@/hooks/useBackgroundJobPolling';
+import {useAiBatchJobSync} from '@/hooks/useAiBatchJobSync';
+import {useCancelBatch} from '@/hooks/extraction/useExtractionBatches';
+import {BatchDetailsSheet} from '@/components/extraction/batch/BatchDetailsSheet';
 import {cn} from '@/lib/utils';
 import {toast} from 'sonner';
 import {useNavigate} from 'react-router';
 import type {
+    AiBatchJob,
     ArticlesExportJob,
     BackgroundJob,
     ExtractionExportJob,
@@ -40,7 +44,12 @@ import {getExportStatus as getExtractionExportStatus} from '@/services/extractio
 export function NotificationCenter() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [batchIdForSheet, setBatchIdForSheet] = useState<string | null>(null);
     const {jobs, removeJob, clearCompletedJobs, updateJob, lastReadAt, markAllRead} = useBackgroundJobs();
+
+  useAiBatchJobSync();
+  const cancelBatch = useCancelBatch();
+  const handleCancelBatch = (batchId: string) => cancelBatch.mutate(batchId);
 
   // Derive from the reactive `jobs` (not the store getter): the React
   // Compiler tracks deps from the callback body, so the callback MUST
@@ -133,6 +142,32 @@ export function NotificationCenter() {
     // Observe job status transitions to surface completion/failure toasts.
   useBackgroundJobPolling({
     onJobComplete: (job) => {
+      if (job.type === 'ai-batch') {
+        const batchJob = job as AiBatchJob;
+        const needsAttention = batchJob.metadata.counts.needs_attention > 0;
+        if (needsAttention) {
+          toast.warning(
+            t('aiBatch', 'bellNeedsAttention').replace(
+              '{{n}}',
+              String(batchJob.metadata.counts.needs_attention),
+            ),
+            {
+              action: {
+                label: t('aiBatch', 'bellDetails'),
+                onClick: () => setBatchIdForSheet(batchJob.metadata.batchId),
+              },
+            },
+          );
+        } else {
+          toast.success(
+            t('aiBatch', 'bellFinished').replace(
+              '{{done}}',
+              String(batchJob.metadata.counts.done + batchJob.metadata.counts.done_with_issues),
+            ),
+          );
+        }
+        return;
+      }
       toast.success(getCompletionMessage(job), {
         duration: 5000,
           action:
@@ -161,6 +196,16 @@ export function NotificationCenter() {
       });
     },
     onJobFailed: (job) => {
+      if (job.type === 'ai-batch') {
+        toast.error(t('aiBatch', 'bellStoppedEngine'), {
+          duration: 7000,
+          action: {
+            label: t('aiBatch', 'startEngineAction'),
+            onClick: () => navigate('/settings?tab=integrations'),
+          },
+        });
+        return;
+      }
         toast.error(`${t('navigation', 'errorPrefix')}: ${job.error || t('navigation', 'operationFailed')}`, {
         duration: 7000,
       });
@@ -198,6 +243,11 @@ export function NotificationCenter() {
   };
 
   const handleJobClick = (job: BackgroundJob) => {
+    if (job.type === 'ai-batch') {
+      setBatchIdForSheet((job as AiBatchJob).metadata.batchId);
+      setOpen(false);
+      return;
+    }
     if (job.type === 'zotero-import' && job.status === 'completed') {
       const zoteroJob = job as ZoteroImportJob;
       navigate(`/projects/${zoteroJob.metadata.projectId}`);
@@ -285,12 +335,17 @@ export function NotificationCenter() {
                   job={job}
                   onRemove={handleRemoveJob}
                   onClick={handleJobClick}
+                  onCancelBatch={handleCancelBatch}
                 />
               ))}
             </div>
           )}
         </ScrollArea>
       </DropdownMenuContent>
+      <BatchDetailsSheet
+        batchId={batchIdForSheet}
+        onOpenChange={(next) => !next && setBatchIdForSheet(null)}
+      />
     </DropdownMenu>
   );
 }
@@ -301,15 +356,17 @@ interface NotificationItemProps {
   job: BackgroundJob;
   onRemove: (jobId: string, e: React.MouseEvent) => void;
   onClick: (job: BackgroundJob) => void;
+  onCancelBatch: (batchId: string) => void;
 }
 
-function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
+function NotificationItem({ job, onRemove, onClick, onCancelBatch }: NotificationItemProps) {
   const icon = getJobIcon(job);
     const isClickable =
-        job.status === 'completed' &&
-        (job.type === 'zotero-import' ||
-            job.type === 'articles-export' ||
-            job.type === 'extraction-export');
+        job.type === 'ai-batch' ||
+        (job.status === 'completed' &&
+            (job.type === 'zotero-import' ||
+                job.type === 'articles-export' ||
+                job.type === 'extraction-export'));
 
   return (
     <div
@@ -356,8 +413,13 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
             {getJobDescription(job)}
           </p>
 
+          {/* AI batch summary (§11): progress + Cancel while active, finished summary otherwise */}
+          {job.type === 'ai-batch' && (
+            <AiBatchNotificationBody job={job as AiBatchJob} onCancelBatch={onCancelBatch} />
+          )}
+
           {/* Progress (while running) */}
-          {job.status === 'running' && job.progress && (
+          {job.type !== 'ai-batch' && job.status === 'running' && job.progress && (
             <div className="space-y-1 pt-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground truncate flex-1">
@@ -375,7 +437,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
           )}
 
           {/* Stats (when completed) */}
-          {job.status === 'completed' && job.stats && (
+          {job.type !== 'ai-batch' && job.status === 'completed' && job.stats && (
             <div className="flex items-center gap-3 text-xs text-muted-foreground pt-1">
               {job.stats.imported !== undefined && job.stats.imported > 0 && (
                 <span>{job.stats.imported} {t('navigation', 'importedCount')}</span>
@@ -399,6 +461,64 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
   );
 }
 
+// =================== AI BATCH SUMMARY ===================
+
+interface AiBatchNotificationBodyProps {
+  job: AiBatchJob;
+  onCancelBatch: (batchId: string) => void;
+}
+
+function AiBatchNotificationBody({job, onCancelBatch}: AiBatchNotificationBodyProps) {
+  const {counts, state, stalled, stopCode, batchId} = job.metadata;
+  const done = counts.done + counts.done_with_issues;
+
+  if (state === 'active') {
+    return (
+      <div className="space-y-1 pt-1">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground truncate flex-1">
+            {t('aiBatch', 'bellProgress').replace('{{done}}', String(done)).replace('{{total}}', String(counts.total))}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs relative z-10"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancelBatch(batchId);
+            }}
+          >
+            {t('aiBatch', 'bellCancel')}
+          </Button>
+        </div>
+        <Progress value={counts.total > 0 ? (done / counts.total) * 100 : 0} className="h-1" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-0.5 pt-1 text-xs text-muted-foreground">
+      <p>{t('aiBatch', 'bellFinished').replace('{{done}}', String(done))}</p>
+      {counts.needs_attention > 0 && (
+        <p>
+          {counts.needs_attention === 1
+            ? t('aiBatch', 'bellNeedsAttentionOne')
+            : t('aiBatch', 'bellNeedsAttention').replace('{{n}}', String(counts.needs_attention))}
+        </p>
+      )}
+      {stopCode && <p>{t('aiBatch', 'bellStoppedEngine')}</p>}
+      {state === 'cancelled' && (
+        <p>
+          {t('aiBatch', 'bellCancelled')
+            .replace('{{done}}', String(done))
+            .replace('{{notRun}}', String(counts.not_run))}
+        </p>
+      )}
+      {stalled && <p>{t('aiBatch', 'bellStalled')}</p>}
+    </div>
+  );
+}
+
 // =================== HELPERS ===================
 
 function getJobIcon(job: BackgroundJob) {
@@ -418,6 +538,11 @@ function getJobIcon(job: BackgroundJob) {
 }
 
 function getJobTitle(job: BackgroundJob): string {
+  if (job.type === 'ai-batch') {
+    const metadata = (job as AiBatchJob).metadata;
+    const key = metadata.kind === 'quality_assessment' ? 'bellTitleAssessment' : 'bellTitleExtraction';
+    return t('aiBatch', key).replace('{{template}}', metadata.templateName);
+  }
   if (job.type === 'zotero-import') {
       return t('navigation', 'zoteroImport');
   }
@@ -431,6 +556,9 @@ function getJobTitle(job: BackgroundJob): string {
 }
 
 function getJobDescription(job: BackgroundJob): string {
+  if (job.type === 'ai-batch') {
+    return (job as AiBatchJob).metadata.projectName;
+  }
   if (job.type === 'zotero-import') {
     const metadata = (job as ZoteroImportJob).metadata;
     const collectionName = metadata.collectionName || t('navigation', 'defaultCollectionName');

@@ -6,12 +6,20 @@
  * `role="button"` row that contains the Start/View/Continue action button).
  */
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { t } from '@/lib/copy';
+
+// BatchSelectionBar renders RunAIBatchDialog, which pulls in the typed api
+// client, which imports the supabase client at module load. With no VITE_
+// env in the CI vitest job that throws `supabaseUrl is required`.
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: { auth: { getSession: async () => ({ data: { session: null } }) } },
+}));
 
 const { progressById, useAuthMock, structure, values, structureRefetch, valuesRefetch, articleList } = vi.hoisted(() => ({
   progressById: new Map<string, number>(), useAuthMock: vi.fn(), structureRefetch: vi.fn(), valuesRefetch: vi.fn(),
@@ -54,6 +62,24 @@ vi.mock('@/lib/qa/scopedProgress', () => ({
     progressById.get(values) ?? 0,
 }));
 
+const { activeBatches, batchDetail } = vi.hoisted(() => ({
+  activeBatches: { data: undefined as unknown },
+  batchDetail: { data: undefined as unknown },
+}));
+vi.mock('@/hooks/extraction/useExtractionBatches', () => ({
+  useActiveBatches: () => ({ data: activeBatches.data }),
+  useBatchDetail: () => ({ data: batchDetail.data }),
+  useStartBatch: () => ({ mutate: vi.fn(), isPending: false }),
+  useCancelBatch: () => ({ mutate: vi.fn(), isPending: false }),
+  useResumeBatch: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+vi.mock('@/hooks/extraction/useLlmEngine', () => ({
+  useLlmEngine: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
+vi.mock('@/hooks/useProjectMemberRole', () => ({
+  useProjectMemberRole: () => ({ role: 'manager', isManager: true, loading: false }),
+}));
+
 import { HITLArticleTable } from '@/components/hitl/HITLArticleTable';
 
 function LocationProbe() {
@@ -61,15 +87,18 @@ function LocationProbe() {
 }
 
 function renderTable(toolbarActions?: ReactNode, toolbarLeading?: ReactNode) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const ui = () => (
-    <MemoryRouter initialEntries={['/list']}>
-      <Routes>
-        <Route path="/list" element={<HITLArticleTable kind="quality_assessment" projectId="p1" templateId="t1"
-          rowActionHref={(articleId, templateId) => `/qa/${articleId}/${templateId}`}
-          toolbarActions={toolbarActions} toolbarLeading={toolbarLeading} />} />
-        <Route path="*" element={<LocationProbe />} />
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/list']}>
+        <Routes>
+          <Route path="/list" element={<HITLArticleTable kind="quality_assessment" projectId="p1" templateId="t1"
+            rowActionHref={(articleId, templateId) => `/qa/${articleId}/${templateId}`}
+            toolbarActions={toolbarActions} toolbarLeading={toolbarLeading} />} />
+          <Route path="*" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   );
   const view = render(ui());
   return { rerender: () => view.rerender(ui()) };
@@ -222,5 +251,65 @@ describe('HITLArticleTable leading toolbar slot', () => {
     renderTable(undefined, LEADING);
     expect(await screen.findByTestId('hitl-quality_assessment-table-empty')).toBeInTheDocument();
     expect(screen.getByTestId('leading')).toBeInTheDocument();
+  });
+});
+
+describe('HITLArticleTable selection', () => {
+  it('selecting a row shows the selected count and a Run AI action', async () => {
+    const user = userEvent.setup();
+    renderTable();
+    await openControl('Half done');
+
+    const row = screen.getByTestId('hitl-quality_assessment-row-a-wip');
+    await user.click(within(row).getByRole('checkbox', { name: 'Select article: Half done' }));
+
+    expect(await screen.findByText('1 selected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run AI' })).toBeInTheDocument();
+  });
+
+  it('the header checkbox selects every visible row', async () => {
+    const user = userEvent.setup();
+    renderTable();
+    await openControl('Half done');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all articles' }));
+
+    expect(await screen.findByText('3 selected')).toBeInTheDocument();
+  });
+
+  it('Escape clears the selection', async () => {
+    const user = userEvent.setup();
+    renderTable();
+    await openControl('Half done');
+
+    const row = screen.getByTestId('hitl-quality_assessment-row-a-wip');
+    await user.click(within(row).getByRole('checkbox', { name: 'Select article: Half done' }));
+    expect(await screen.findByText('1 selected')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByText('1 selected')).toBeNull());
+  });
+
+  it('renders the running indicator for a row queued in the active batch', async () => {
+    activeBatches.data = [
+      {
+        id: 'batch-1',
+        template_id: 't1',
+        state: 'active',
+        counts: { total: 1, queued: 0, running: 1, done: 0, done_with_issues: 0, failed: 0 },
+      },
+    ];
+    batchDetail.data = {
+      id: 'batch-1',
+      state: 'active',
+      counts: { total: 1, queued: 0, running: 1, done: 0, done_with_issues: 0, failed: 0 },
+      items: [{ article_id: 'a-wip', outcome: 'running' }],
+    };
+    renderTable();
+    await openControl('Half done');
+
+    const row = screen.getByTestId('hitl-quality_assessment-row-a-wip');
+    expect(within(row).getByLabelText('AI is running')).toBeInTheDocument();
   });
 });

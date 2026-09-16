@@ -5,7 +5,9 @@
  * allowing the user to keep using the app while they run.
  */
 
-type JobType = 'zotero-import' | 'articles-export' | 'extraction-export';
+import type {BatchState, ExtractionBatchCounts} from '@/types/extraction-batch';
+
+type JobType = 'zotero-import' | 'articles-export' | 'extraction-export' | 'ai-batch';
 
 type JobStatus =
     | 'pending'      // Waiting to start
@@ -144,6 +146,26 @@ export interface ExtractionExportJob extends BackgroundJob {
         anonymizeReviewerNames: boolean;
         downloadUrl?: string;
     };
+}
+
+/**
+ * AI batch run specific (spec 2026-09-15 §11.5) — mirrors the server batch's
+ * summary so the bell needs no extra fetch.
+ */
+export interface AiBatchJob extends BackgroundJob {
+  type: 'ai-batch';
+  metadata: {
+    batchId: string;
+    projectId: string;
+    projectName: string;
+    templateId: string;
+    templateName: string;
+    kind: string;
+    state: BatchState;
+    stalled: boolean;
+    stopCode: string | null;
+    counts: ExtractionBatchCounts;
+  };
 }
 
 /**

@@ -22,6 +22,7 @@ import {parsing} from './parsing';
 import {templateConfig} from './templateConfig';
 import {llmConnections} from './llmConnections';
 import {aiContext} from './aiContext';
+import {aiBatch} from './aiBatch';
 
 export {
     common,
@@ -55,6 +56,7 @@ const copy = {
     templateConfig,
     llmConnections,
     aiContext,
+    aiBatch,
 } as const;
 
 export type CopyNamespace = keyof typeof copy;
