@@ -211,6 +211,9 @@ export function usePageScrollSync({
   const isGesturing = useViewerStore((s) => s.isGesturing);
   // A ViewerProvider's store never changes, so one sync serves the mount.
   const [sync] = useState(() => createPageScrollSync(storeApi));
+  const pageBeforeGestureRef = useRef(currentPage);
+  const gesturedRef = useRef(false);
+  const deferredGesturePageRef = useRef<number | null>(null);
 
   // The latest locator, for the effects below that must not re-run when it
   // changes: a new layout (a zoom, a page size arriving) must not scroll back
@@ -230,7 +233,20 @@ export function usePageScrollSync({
     const root = rootRef.current;
     const scroller = root?.closest<HTMLElement>(scrollerSelector);
     if (!root || !scroller) return;
-    if (isGesturing) return;
+    if (isGesturing) {
+      if (!gesturedRef.current) {
+        pageBeforeGestureRef.current = currentPage;
+        gesturedRef.current = true;
+      } else if (currentPage !== pageBeforeGestureRef.current) {
+        deferredGesturePageRef.current = currentPage;
+      }
+      return;
+    }
+    if (gesturedRef.current) {
+      gesturedRef.current = false;
+      if (deferredGesturePageRef.current === null) return;
+      deferredGesturePageRef.current = null;
+    }
     if (sync.takePublishedPage(currentPage)) return;
     const top = locatorRef.current.offsetOf(currentPage, root, scroller);
     if (top !== null) sync.scrollTo(scroller, top);
