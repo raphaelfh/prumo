@@ -230,10 +230,11 @@ export function usePageScrollSync({
     const root = rootRef.current;
     const scroller = root?.closest<HTMLElement>(scrollerSelector);
     if (!root || !scroller) return;
+    if (isGesturing) return;
     if (sync.takePublishedPage(currentPage)) return;
     const top = locatorRef.current.offsetOf(currentPage, root, scroller);
     if (top !== null) sync.scrollTo(scroller, top);
-  }, [currentPage, rootRef, scrollerSelector, sync]);
+  }, [currentPage, isGesturing, rootRef, scrollerSelector, sync]);
 
   // Scrolling: scroll position → currentPage.
   useEffect(() => {
