@@ -16,10 +16,11 @@ const ZOOM_EPSILON = 0.001;
 export function useFitWidth({scroller, layout}: {scroller: HTMLElement | null; layout: PageLayout}): void {
   const storeApi = useViewerStoreApi();
   const fitWidth = useViewerStore((s) => s.fitWidth);
+  const isGesturing = useViewerStore((s) => s.isGesturing);
   const {naturalWidth, numPages} = layout;
 
   useEffect(() => {
-    if (!scroller || !fitWidth || numPages === 0) return;
+    if (!scroller || !fitWidth || isGesturing || numPages === 0) return;
     const PENDING = -1;
     let frame: number | null = null;
     const fit = () => {
@@ -47,5 +48,5 @@ export function useFitWidth({scroller, layout}: {scroller: HTMLElement | null; l
       observer.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [scroller, fitWidth, naturalWidth, numPages, storeApi]);
+  }, [scroller, fitWidth, isGesturing, naturalWidth, numPages, storeApi]);
 }

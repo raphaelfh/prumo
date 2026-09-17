@@ -181,6 +181,22 @@ describe('Viewer.Body page sync', () => {
     expect(store.getState().currentPage).toBe(9);
   });
 
+  it('defers programmatic page navigation until a zoom gesture ends', () => {
+    const {store, scrollTo} = renderBody({numPages: 14, currentPage: 1});
+    const callsBeforeGesture = scrollTo.mock.calls.length;
+
+    act(() => store.getState().actions.setGesturing(true));
+    act(() => store.getState().actions.goToPage(12));
+
+    expect(store.getState().currentPage).toBe(12);
+    expect(scrollTo).toHaveBeenCalledTimes(callsBeforeGesture);
+
+    act(() => store.getState().actions.setGesturing(false));
+
+    expect(scrollTo).toHaveBeenCalledTimes(callsBeforeGesture + 1);
+    expect(scrollTo).toHaveBeenLastCalledWith({top: pageTop(12), behavior: 'smooth'});
+  });
+
   describe('where scrollend is unsupported', () => {
     let onscrollend: PropertyDescriptor | undefined;
 

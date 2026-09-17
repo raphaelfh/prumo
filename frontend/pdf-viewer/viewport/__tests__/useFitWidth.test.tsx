@@ -103,6 +103,16 @@ describe('fit width', () => {
     expect(store.getState().zoom).toBe(2);
   });
 
+  it('does not refit during an active zoom gesture', () => {
+    const {store, resizeTo} = renderViewer(966);
+    const fittedZoom = store.getState().zoom;
+
+    act(() => store.getState().actions.setGesturing(true));
+    resizeTo(NATURAL_WIDTH);
+
+    expect(store.getState().zoom).toBeCloseTo(fittedZoom, 10);
+  });
+
   it('fits a newly opened document again', () => {
     const {store} = renderViewer(966);
     act(() => store.getState().actions.setZoom(2));
