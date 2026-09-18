@@ -1,3 +1,9 @@
+---
+status: stable
+last_reviewed: 2026-09-17
+owner: '@raphaelfh'
+---
+
 # prumo Development Guidelines
 
 ## Reporting
