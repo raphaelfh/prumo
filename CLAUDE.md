@@ -1,226 +1,119 @@
 ---
 status: stable
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-17
 owner: '@raphaelfh'
 ---
 
 # prumo Development Guidelines
 
-## Current focus
+## Reporting
 
-- See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the live cycle — the
-  source of truth; don't re-pin a date or a train's status here.
-  ADR-0011 still **proposed**; app-schema reads other than extraction
-  still use PostgREST.
-- Project history lives in `git log` and `docs/adr/` — do not append
-  changelogs to this file. Keep this section to ≤ 5 lines.
+When reporting information to me, be extremely concise and sacrifice grammar for
+sake of concision.
 
 ## Working principles
 
-These bias toward caution over speed. For trivial changes, use judgment.
+- **Surface ambiguity; don't choose silently.** Multiple readings or a simpler
+  path → say so, push back with evidence. The call is the user's → ask.
+  Otherwise act. Feature/creative work starts with `superpowers:brainstorming`.
+- **YAGNI.** Minimum code for the asked problem; complexity beyond a principle
+  must be justified (constitution §Governance).
+- **Surgical on unrelated code, clean in code you touch.** Flag unrelated dead
+  code; where you edit, fix properly — no new legacy.
+- **Red first, evidence before "done".** Failing test → pass; run the command
+  and read the output (`verification-before-completion`).
+- **AI decisions are traceable** (constitution §IX): every suggestion records
+  its generation snapshot; human selections are append-only; "no information" is
+  a recorded proposal, not a silent drop.
 
-- **Think before coding.** State assumptions; if a requirement has multiple
-  readings, surface them — don't choose silently. If a simpler path exists, say
-  so; push back with evidence, not deference. Genuinely unclear, or the call is
-  the user's? Stop and ask — otherwise act, don't re-litigate settled choices.
-  Feature/creative work starts with `superpowers:brainstorming`.
-- **Simplicity first (YAGNI).** The minimum code that solves the asked problem —
-  no speculative abstractions, config, or handling for impossible cases. Any
-  complexity beyond what a principle prescribes must be justified (constitution
-  §Governance). If 200 lines could be 50, rewrite it.
-- **Surgical on unrelated code; clean in code you touch.** Change only what the
-  task requires; match surrounding style; flag unrelated dead code, don't delete
-  it. But where you DO edit, prefer the clean fix over grandfathering a
-  violation — no new legacy left for later.
-- **Goal-driven and verified.** Turn the task into a checkable goal (write the
-  failing test, then make it pass). State a short plan with a verify step each.
-  Evidence before "done" — run the command and read the output, never assert
-  (`code-review` Iron Law; `verification-before-completion`).
-- **Transparency & traceability of AI-assisted decisions.** Every AI suggestion
-  records how it was generated (a per-call generation snapshot on the proposal; runner identity from the attempt owner) and every human selection is
-  append-only (who chose which version, when); a "no information" outcome is a
-  recorded proposal, not a silent drop (constitution §IX).
+## Skills
 
-## Which skill to load
-
-Load the skill before non-trivial work in its area. The four domain
-skills (`backend-development`, `frontend-development`, `ui-styling`,
-`web-testing`) join the skill list once a matching file is touched
-(`paths:`), but their bodies never auto-load — invoke them. Naming a
-skill here is what makes it load reliably.
-
-- Backend (FastAPI/SQLAlchemy/Alembic/Celery/RLS) → `backend-development`
-- Frontend structure/data/state (components/hooks/services/stores) → `frontend-development`
-- PDF canvas/text-layer, selection, zoom/dpr scale → `pdf-viewer`
-- Frontend visual language (density/layout/empty states) → `frontend-ux`
-- Tailwind/shadcn class mechanics → `ui-styling`
-- Before "done" / PR / review → `code-review`
-- Bug / failing test / weird behavior → `debugging`
-- Tests (Vitest/Playwright/pytest/MSW) → `web-testing`
-- Architectural drift sweep → `architectural-quality-loop`
-- Visual feedback loop on a screen → `design-review`
-- Module interface / seam / deepening design → `codebase-design`
-- Stress-testing a plan or decision (interview) → `grilling`
-- Domain term or ADR change → `domain-modeling`
-- Throwaway prototype (state logic or UI variants) → `prototype`
-- Editing a skill, CLAUDE.md, rules or memory → `writing-for-agents`
-
-User-invoked only: `/deploy-release` (deploy, promotion, rollback),
-`/improve-codebase-architecture`, `/retro`, `/handoff`, `/wait-what`,
-`/ship-spec`, `/preflight`, `/merge-train`. The end-to-end flow is in
-[`docs/how-to/use-agent-skills.md`](docs/how-to/use-agent-skills.md).
+Project skills live in `.claude/skills/` and trigger on their descriptions.
+Requires the **superpowers** plugin (6.x, declared in `.claude/settings.json`);
+prumo skills defer generic process to it.
 
 ## Stack
 
-- **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0 async, Alembic,
-  Celery + Redis, Pydantic v2, structlog. PostgreSQL via Supabase
-  (Auth + Storage). Hosted on **Railway** (web + worker + Redis).
-- **Frontend**: TypeScript strict, React 19 + Vite, TanStack Query,
-  Zustand, shadcn/Radix, react-hook-form, Zod. In-house i18n at
-  `frontend/lib/copy/` (no external i18n lib). Hosted on **Vercel**.
-- **Testing**: pytest (backend), vitest (frontend), Playwright (E2E).
+FastAPI + SQLAlchemy 2 async + Alembic + Celery/Redis on **Railway**;
+Postgres/Auth/Storage on **Supabase**; React 19 + Vite + TanStack Query +
+Zustand + shadcn on **Vercel**. In-house i18n at `frontend/lib/copy/` (no i18n
+lib).
 
-## Required plugins
+## Layout gotchas
 
-- **superpowers** (`@claude-plugins-official`, pin to the installed
-  6.x) is a required project plugin, declared in
-  `.claude/settings.json`. The `architectural-quality-loop` family and
-  the process skills under `.claude/skills/debugging/` defer to
-  `superpowers:loop`, `writing-plans`, `using-git-worktrees`,
-  `systematic-debugging`, and `verification-before-completion`. Generic
-  engineering process lives there; keep prumo skills to the
-  prumo-specific delta. Without the plugin those skills are incomplete.
-
-## Layout gotchas (agents get these wrong)
-
-- Frontend tooling runs from the **repo root**: `package.json`,
-  `vite.config.ts`, `vitest.config.ts` live at root; there is no
-  `frontend/package.json`. Never `cd frontend && npm ...`.
-- `supabase/` holds **auth/storage migrations only**; the app schema
-  is owned by Alembic (`backend/alembic/versions/`).
+- Frontend tooling runs from the **repo root** (`package.json`,
+  `vite.config.ts`, `vitest.config.ts`). There is no `frontend/package.json` —
+  never `cd frontend && npm ...`.
+- `supabase/` = **auth/storage migrations only**; app schema is Alembic
+  (`backend/alembic/versions/`).
 
 ## Commands
 
-- `make setup` — first-time install (runs `make hooks`)
-- `make hooks` — install the pre-push gate (`.githooks/`): fast ruff/tsc on
-  changed layers + a `/code-review` reminder on risk-sensitive paths
 - `make start` / `make stop` — local stack (Supabase + backend + frontend)
-- `make test-backend` — backend pytest (needs local Supabase Docker)
-- `make lint-backend` — ruff check + format
-- `npm run test:run` / `npm run lint` — frontend (from repo root)
-- `make quality-scan` — full deterministic gate (`scripts/verify_all.sh`:
-  lint + typecheck + tests + architectural fitness)
-- `uv tool install graphifyy && graphify install && graphify update .` —
-  opt-in, per developer: builds the local knowledge graph the `## graphify`
-  section below refers to (~15s, no LLM, gitignored). Until you run it there
-  is no `graphify-out/`, and the graph-aware hooks stay silent. Add
-  `graphify hook install` to rebuild it on every commit — it is deliberately
-  not committed, because the hook warns on every commit for anyone who has
-  not installed graphify.
+- `make test-backend` (needs local Supabase Docker) · `make lint-backend`
+- `npm run test:run` / `npm run lint` — frontend, from repo root
+- `make quality-scan` — full gate (lint + typecheck + tests + fitness)
+- `make db-fresh` — migrate + seed; prefer over `make reset-db`
 
 ## Read before touching
 
-The extraction + quality-assessment (HITL) stack is the structural
-heart. Before changing anything in `extraction_*` tables,
-`/api/v1/runs/...`, or `/api/v1/hitl/sessions`, read:
+Changing `extraction_*` tables, `/api/v1/runs/...`, or `/api/v1/hitl/sessions` →
+read first:
 
 - [`docs/reference/extraction-hitl-architecture.md`](docs/reference/extraction-hitl-architecture.md)
-  — canonical schema reference
-- [`docs/reference/migrations.md`](docs/reference/migrations.md)
-  — migration strategy, squashing, RLS conventions
-- [`docs/reference/constitution.md`](docs/reference/constitution.md)
-  — architectural principles (layering, typed everything)
+  — schema
+- [`docs/reference/migrations.md`](docs/reference/migrations.md) — migrations,
+  RLS conventions
+- [`docs/reference/constitution.md`](docs/reference/constitution.md) — layering,
+  typing
 
-Full doc index: [`docs/README.md`](docs/README.md) (Diátaxis).
-Agent entry point: [`llms.txt`](llms.txt).
-Design rationale (the *why*):
-[`docs/explanation/extraction-hitl-design-rationale.md`](docs/explanation/extraction-hitl-design-rationale.md)
-(the original 2026-04-27 spec is archived verbatim under `docs/superpowers/specs/archive/`).
+Doc index: [`docs/README.md`](docs/README.md).
 
 ## Hard rules
 
-- **English only** for code, comments, commits, docs, and copy keys.
-- **SQLAlchemy model change ⇒ Alembic migration** (run inside
-  `backend/`: `alembic revision --autogenerate -m "..."`). Supabase
-  CLI migrations are only for `auth`/`storage`. Never apply app-schema
-  DDL through the Supabase MCP.
-- **Seeding is not done in migrations**: `cd backend && uv run python
-  -m app.seed` (idempotent). `make reset-db` wipes local data — prefer
-  `make db-fresh` (chains migrate + seed).
-- **No dead code ships — CI gates it.** Frontend: knip at **zero**
-  findings in **two modes** — `npx knip` (tests count as consumers) and
-  `npx knip --production` (only production code does; catches a feature
-  orphaned behind a still-green test). Legitimate exceptions go in
-  `knip.jsonc`, each with a reason. A `--production` finding is not
-  automatically "delete it" — triage per
-  `.claude/skills/frontend-development/references/dead-code.md`.
-  UI copy: `scripts/fitness/check_copy_keys.py` shrink-only ratchet —
-  knip cannot see unused *members* of an exported object literal, so a
-  `frontend/lib/copy/*.ts` key with no reference fails the fitness gate.
-  Backend: vulture shrink-only ratchet
-  (`backend/.vulture_baseline` + `scripts/vulture_baseline.py`; config
-  in `[tool.vulture]`). Delete dead code in files you touch and tighten
-  the baseline in the same PR — never park a finding behind an ignore.
-- **One ownership predicate, one implementation — and it lives in the
-  WHERE clause.** BOLA is this repo's most repeated incident class, and
-  every instance has been a copied guard that drifted or was never made.
-  CI gates it (`scripts/fitness/check_scope_guards.py`); the guards and
-  the rules are in `.claude/rules/backend.md` § Ownership guards.
-- PRs target `dev` and are squash-merged. Conventional commits.
+- **English only** — code, comments, commits, docs, copy keys.
+- **Model change ⇒ Alembic migration**
+  (`cd backend && alembic revision --autogenerate -m "..."`). Never apply
+  app-schema DDL through the Supabase MCP.
+- **Seed via `cd backend && uv run python -m app.seed`**, never in migrations.
+- **No dead code ships (CI-gated).** Frontend: `npx knip` and
+  `npx knip --production` both at zero; exceptions in `knip.jsonc` with a
+  reason; triage `--production` per
+  `.claude/skills/frontend-development/references/dead-code.md`. Copy keys:
+  `scripts/fitness/check_copy_keys.py`. Backend: vulture shrink-only baseline
+  (`backend/.vulture_baseline`). Delete dead code in files you touch and tighten
+  the baseline in the same PR.
+- **One ownership predicate, in the WHERE clause** (BOLA). Gate:
+  `scripts/fitness/check_scope_guards.py`; rules:
+  `.claude/rules/backend.md` § Ownership guards.
+- PRs target `dev`, squash-merged, conventional commits.
+- No changelogs in CLAUDE.md — history is `git log` + `docs/adr/`.
 
-Path-scoped conventions live in `.claude/rules/` (`backend.md`,
-`frontend.md`) and load automatically when matching files are touched.
+## Branch & merge
 
-## Branch & merge (agentic concurrency)
-
-Concurrent agents and worktrees make `dev` behave like a multi-dev
-branch. Fix throughput without weakening the gate:
-
-- **`dev` stays strict (up-to-date required).** It re-tests each PR
-  against the latest base, catching logical conflicts between two
-  individually-green PRs. Don't drop strict to go faster.
-- **One armed auto-merge at a time (merge-train).** Only one PR carries
-  `gh pr merge --auto --squash` into `dev` at once; arm the next only
-  after the current one lands. N concurrent armed PRs just go `BEHIND`
-  and invalidate each other.
-- **Unstick a `BEHIND` PR with Update-branch, never a hand rebase:**
-  `gh api -X PUT .../pulls/<n>/update-branch`. Never `@dependabot
-  rebase` a grouped PR — it closes and recreates it under a new number.
-  An *armed* PR is updated for you: `.github/workflows/update-armed-prs.yml`
-  runs Update-branch on it after every push to `dev` and dispatches CI on
-  its branch, so its auto-merge fires once the checks pass again.
-- **Scope agents to non-overlapping paths/worktrees** so concurrent PRs
-  rarely conflict. **Remove a worktree once its PR merges**
-  (`git worktree remove` + `git branch -d`, from the main checkout): it is
-  a second checkout of `.claude/`, so every model-invocable skill in it
-  registers again as `.claude/worktrees/<name>:<skill>` until it is gone,
-  and no setting excludes it.
-- A GitHub merge queue is the real fix but needs an org (public repo →
-  a free org); revisit if concurrency outgrows the merge-train.
-- **Promotion (`dev → main`) is hook-enforced, not prose-enforced.**
-  `.claude/hooks/bash-guard.sh` denies any push to `main` outright, and
-  denies the promotion PR (`--base main` / `--merge`) unless a `/ship-spec`
-  run **this checkout drives** (`orchestrator=`) declares `ceiling=prod` with
-  a GREEN preflight on the exact commit. A run in another session never binds
-  you: with no run of your own it asks once, naming any live foreign run.
-  Design:
-  `docs/superpowers/specs/2026-09-05-ship-spec-v2-orchestrator-design.md`.
+- `dev` stays strict (up-to-date required) — don't relax it.
+- **One armed auto-merge at a time** (`/merge-train`); arm the next only after
+  the current lands.
+- Unstick a `BEHIND` PR with `gh api -X PUT .../pulls/<n>/update-branch` — never
+  hand-rebase, never `@dependabot rebase` a grouped PR.
+- Scope concurrent agents to non-overlapping paths/worktrees. Remove a worktree
+  once its PR merges (`git worktree remove` + `git branch -d`, from the main
+  checkout) — else its skills register twice.
+- Promotion `dev → main` is hook-enforced (`.claude/hooks/bash-guard.sh`) via
+  `/ship-spec` with `ceiling=prod`.
 
 ## Compaction
 
-When compacting, always preserve: the active `/ship-spec` ceiling and
-run-state path (`<main>/.superpowers/ship-spec/<basename>/state`); the spec, plan and
-ledger paths; the list of modified files; every test or gate command
-with its last result and the SHA it ran on; open questions and rulings.
-Drop raw tool output — it is in the ledger or the gate log. After a
-compaction, trust the ledger and `git log` over recollection.
+Preserve: active `/ship-spec` ceiling and run-state path
+(`<main>/.superpowers/ship-spec/<basename>/state`); spec, plan, ledger paths;
+modified files; every test/gate command with last result and SHA; open questions
+and rulings. Drop raw tool output. After compaction, trust the ledger and
+`git log` over recollection.
 
 ## graphify
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+If `graphify-out/graph.json` exists, start codebase questions with
+`graphify query "<q>"` (`graphify path "<A>" "<B>"`,
+`graphify explain "<concept>"`) before grep; `graphify-out/wiki/index.md` for
+navigation. After code changes: `graphify update .`. Opt-in setup:
+`uv tool install graphifyy && graphify install && graphify update .`.

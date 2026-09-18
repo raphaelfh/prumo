@@ -3,8 +3,6 @@ name: pdf-viewer
 description: >
   PDF text-layer selection, canvas/dpr scale, Lector. Use when changing
   frontend/pdf-viewer TextLayer, CanvasLayer, selection, or zoom.
-paths:
-  - "frontend/pdf-viewer/**"
 ---
 
 # PDF viewer

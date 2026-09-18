@@ -7,8 +7,8 @@ One paragraph per deterministic check under `scripts/fitness/`. Each check:
   `run_all.sh --scope` forwards it to
 - accepts `--emit-telemetry PATH` / `--jsonl-out PATH` where the check has
   per-finding output to emit. `run_all.sh` writes its own telemetry line per
-  gate, so nothing invokes these today; `check_file_size.py`,
-  `check_skill_router_sync.py` and `check_diff_attribute_copy.py` omit them
+  gate, so nothing invokes these today; `check_file_size.py`
+  and `check_diff_attribute_copy.py` omit them
   rather than ship an unused flag
 - ships with a green-path pytest AND a **canary** (negative test) in `backend/tests/unit/scripts/`
 
@@ -143,15 +143,6 @@ file may cross the soft limit, but shrinking is always allowed and lets you
 tighten the baseline with `--update-baseline`. Splitting the existing god
 files is a separate effort this gate deliberately does not force. Baseline
 format: one `path:max_lines` per currently-oversized file.
-
-### `check_skill_router_sync.py`
-
-Asserts every skill named in CLAUDE.md's `## Which skill to load` router
-resolves to a real `.claude/skills/<name>/` directory. A dead router entry
-sends agents to a skill that does not exist, which fails silently — the agent
-just proceeds unskilled. No baseline; the router and the skills tree must
-always agree. Exit 2 if the router section itself goes missing, because an
-unparsed router reports zero dead entries and stays green forever.
 
 ### `check_scope_guards.py`
 
