@@ -83,6 +83,7 @@ export function createViewerStore(
           numPages: doc?.numPages ?? 0,
           pageSizes: {},
           fitWidth: true,
+          search: clearedResults(get().search),
         });
       },
 

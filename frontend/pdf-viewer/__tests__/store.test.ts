@@ -137,6 +137,25 @@ describe('createViewerStore', () => {
     expect(store.getState().pageSizes).toEqual({});
   });
 
+  it('setDocument drops stale search results but keeps the query for the new document', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setSearchQuery('tumor');
+    actions.setSearchMatches([
+      {pageNumber: 1, charStart: 0, charEnd: 5, context: 'old document'},
+      {pageNumber: 3, charStart: 20, charEnd: 25, context: 'old document'},
+    ]);
+    expect(store.getState().search.matchCount).toBe(2);
+
+    actions.setDocument(stubDocument(1));
+
+    const {search} = store.getState();
+    expect(search.query).toBe('tumor');
+    expect(search.matches).toHaveLength(0);
+    expect(search.matchCount).toBe(0);
+    expect(search.activeIndex).toBe(-1);
+  });
+
   it('accepts initial overrides', () => {
     const store = createViewerStore({zoom: 1.5, currentPage: 7});
     expect(store.getState().zoom).toBe(1.5);
