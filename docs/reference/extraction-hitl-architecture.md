@@ -715,7 +715,8 @@ live contract, not decoration. It carries two sibling keys:
   convention.
 
 Both are read **live** off the project template by every consumer — the
-AI-path guard (`app/services/llm_field_filter.py`), progress
+AI-path guard (`app/services/llm_field_filter.py`, `derived_judgments` only:
+the model is asked about every section whatever the study type), progress
 (`frontend/lib/qa/scopedProgress.ts` via `studyTypeScope`), export parity
 (`app/services/extraction_export_service.py`) and the finalize backstop
 (`app/services/qa_divergence_gate.py`) — while the entity-types tree those

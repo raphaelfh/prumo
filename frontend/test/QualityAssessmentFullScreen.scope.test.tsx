@@ -184,7 +184,11 @@ describe("QualityAssessmentFullScreen — section rail over an out-of-scope doma
   it("holds no jump target in an out-of-scope domain the reviewer opened", async () => {
     await renderDevelopmentOnly();
     const evaluation = screen.getByTestId("qa-domain-eval_d1");
-    await userEvent.click(within(evaluation).getByRole("button", { name: /Evaluation/ }));
+    // The accordion trigger, not the AI-extract button that an out-of-scope
+    // domain now also carries (its label names the section too).
+    await userEvent.click(
+      within(evaluation).getByRole("button", { name: /Evaluation/, expanded: false }),
+    );
     // Its judgment is on screen and unanswered, just after the focused trigger.
     expect(await within(evaluation).findByTestId("qa-domain-summary-eval_d1")).toBeInTheDocument();
     await jumpToNextRequired();

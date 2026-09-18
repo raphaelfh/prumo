@@ -1,7 +1,7 @@
 /**
  * The QA form's scope gating is only as good as the read behind it: every
  * out-of-scope affordance on that screen — the section badge, the muted title,
- * the hidden AI button — resolves from `scope_rules` on the template's
+ * the section nav — resolves from `scope_rules` on the template's
  * `schema`. That column is NOT in a `select('*')` here; it is named
  * explicitly, so dropping it silently turns the whole feature off with no type
  * error and no other failing test. This pins it.
