@@ -2819,51 +2819,6 @@ class TestLlmExclusion:
         assert usage.prompt_tokens == 0
 
     @pytest.mark.asyncio
-    async def test_out_of_scope_section_skips_the_llm_call(self, service):
-        """A section the scope rules exclude is never asked about at all.
-
-        Reuses the same no-fields skip the assessor-owned exclusion reaches,
-        so there is no second "do not call the model" path to keep in step.
-        """
-        fields = self._fields("q1_appropriate_data_sources", "risk_of_bias")
-        et = self._entity("eval_d1_participants", fields)
-        with patch(
-            "app.services.section_extraction_service.build_output_models", return_value=[]
-        ) as bom:
-            extracted, usage = await service._extract_with_llm(
-                pdf_text="text",
-                entity_type=et,
-                fields_override=list(fields),
-                field_filter=LlmFieldFilter(
-                    out_of_scope_sections=frozenset({"eval_d1_participants"})
-                ),
-            )
-        assert bom.call_args.kwargs["fields"] == []
-        assert extracted == {}
-        assert usage.prompt_tokens == 0
-
-    @pytest.mark.asyncio
-    async def test_an_in_scope_section_is_untouched_by_the_scope_set(self, service):
-        """Anti-over-exclusion control: a non-empty scope set must not leak."""
-        fields = self._fields("q1_appropriate_data_sources", "risk_of_bias")
-        et = self._entity("dev_d1_participants", fields)
-        with patch(
-            "app.services.section_extraction_service.build_output_models", return_value=[]
-        ) as bom:
-            await service._extract_with_llm(
-                pdf_text="text",
-                entity_type=et,
-                fields_override=list(fields),
-                field_filter=LlmFieldFilter(
-                    out_of_scope_sections=frozenset({"eval_d1_participants"})
-                ),
-            )
-        assert [f.name for f in bom.call_args.kwargs["fields"]] == [
-            "q1_appropriate_data_sources",
-            "risk_of_bias",
-        ]
-
-    @pytest.mark.asyncio
     async def test_fallback_path_without_override_is_still_filtered(self, service):
         """The re-pin race hands _extract_with_llm fields_override=None and the
         LIVE entity type — the leak a call-site filter cannot cover."""
@@ -3053,13 +3008,14 @@ class TestLlmExclusionWiring:
 
 
 class TestScopeGuardWiring:
-    """The scope half of the same wiring claim.
+    """A study-type classification never narrows what the model is asked.
 
-    ``TestLlmExclusion`` hands the filter in by hand; this proves the real
-    path builds it — run.template_id → live schema → pinned tree → the run's
-    newest proposal on the classifier coordinate → the section is skipped.
-    Without this, every hand-fed test stays green while no call site threads
-    the rules at all.
+    Drives the real run path — run.template_id → live schema → the filter →
+    ``_extract_with_llm`` — with a template that declares scope rules and a
+    stored answer on the classifier. Every answer, including one whose rules
+    exclude this section, still sends the section's fields: the AI fills the
+    whole instrument, and the form, the derived judgments and the export decide
+    what an out-of-scope value counts for.
     """
 
     @staticmethod
@@ -3122,10 +3078,15 @@ class TestScopeGuardWiring:
         service._create_suggestions = AsyncMock(return_value=0)
         service._maybe_verify = AsyncMock(side_effect=lambda *_a, **_k: (None, LlmUsage()))
 
+        # Resolves the classifier's pinned section, so a filter that still
+        # consulted the scope rules WOULD exclude the section. ``create=True``
+        # because today's filter no longer imports the helper; without this
+        # patch an old-style filter fails open and the test goes vacuously green.
         with (
             patch(
                 "app.services.llm_field_filter.entity_types_for_version",
                 AsyncMock(return_value=[scope, evaluation]),
+                create=True,
             ),
             patch(
                 "app.services.section_extraction_service.build_output_models",
@@ -3143,18 +3104,16 @@ class TestScopeGuardWiring:
         return [f.name for f in bom.call_args.kwargs["fields"]]
 
     @pytest.mark.asyncio
-    async def test_a_development_only_run_never_asks_about_the_evaluation_part(
-        self, service
+    @pytest.mark.parametrize(
+        "classifier_answer",
+        [
+            {"value": "development_only"},
+            None,
+            {"value": "development_and_evaluation"},
+        ],
+        ids=["excluded-by-the-rules", "unclassified", "both"],
+    )
+    async def test_every_classification_still_asks_about_the_section(
+        self, service, classifier_answer: Any
     ) -> None:
-        assert await self._sent_fields(service, {"value": "development_only"}) == []
-
-    @pytest.mark.asyncio
-    async def test_an_unclassified_run_still_asks_about_everything(self, service) -> None:
-        """Fails open: no classification excludes nothing (pre-2.1.0 behaviour)."""
-        assert await self._sent_fields(service, None) == ["risk_of_bias"]
-
-    @pytest.mark.asyncio
-    async def test_a_run_classified_as_both_asks_about_everything(self, service) -> None:
-        assert await self._sent_fields(service, {"value": "development_and_evaluation"}) == [
-            "risk_of_bias"
-        ]
+        assert await self._sent_fields(service, classifier_answer) == ["risk_of_bias"]

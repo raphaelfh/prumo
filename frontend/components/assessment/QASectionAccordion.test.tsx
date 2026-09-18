@@ -269,18 +269,15 @@ describe("QASectionAccordion — recommendation card (v2)", () => {
     expect(screen.getByTestId("qa-out-of-scope-qa_domain_one")).toBeInTheDocument();
   });
 
-  it("offers the AI extract button while the section is in scope", () => {
-    renderV2();
-    expect(screen.getByTestId("section-ai-extract-qa-dom")).toBeInTheDocument();
-  });
-
-  it("hides the AI extract button on an out-of-scope section", () => {
-    // The backend refuses the fields anyway (llm_field_filter), so the button
-    // would spin and return nothing — the dead affordance the same guard
-    // already rejects for a fully assessor-owned section.
-    renderV2({ outOfScope: true });
-    expect(screen.queryByTestId("section-ai-extract-qa-dom")).not.toBeInTheDocument();
-  });
+  it.each([false, true])(
+    "offers the AI extract button whether or not the section is in scope (outOfScope=%s)",
+    (outOfScope) => {
+      // The AI fills the whole instrument; the badge, not a missing button,
+      // tells the reviewer an out-of-scope value does not count.
+      renderV2({ outOfScope });
+      expect(screen.getByTestId("section-ai-extract-qa-dom")).toBeInTheDocument();
+    },
+  );
 });
 
 describe("QASectionAccordion — exclusions and summaries (v2)", () => {
