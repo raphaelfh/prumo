@@ -1,12 +1,6 @@
 ---
 name: web-testing
 description: Use whenever writing, debugging, or designing tests for prumo — Playwright E2E (with a11y + visual), Vitest unit/component, pytest backend integration, MSW v2 network mocks, or whenever a test is flaky. Pulls in the right tool, the right fixture pattern, and the project rule that integration beats heavy mocking. Trigger on "test", "spec", "flaky", "Playwright", "Vitest", "pytest", "MSW", "axe", "snapshot", "visual regression", "test strategy", "mock the database", "test fixture", "CI test".
-paths:
-  - "backend/tests/**"
-  - "frontend/test/**"
-  - "frontend/e2e/**"
-  - "**/*.test.ts"
-  - "**/*.test.tsx"
 ---
 
 # Web Testing — prumo
