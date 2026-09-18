@@ -44,8 +44,9 @@ instructions and is the reference for the applicability judgments.
 the instrument's own scale back on one control:
 
 * ``scope_rules`` on ``schema_`` declares which sections each study type takes
-  out of scope — read by progress, derivation, the AI calls and the export,
-  which is what retires the ``dev_``/``eval_`` name-prefix convention.
+  out of scope — read by progress, derivation and the export, which is what
+  retires the ``dev_``/``eval_`` name-prefix convention. The AI calls do not
+  read it: the model fills the whole instrument either way.
 * Signaling questions answer Y/PY/PN/N/**NI**; the separate "no information"
   marker is turned off per field (``allows_no_information``), so one concept
   has one control.

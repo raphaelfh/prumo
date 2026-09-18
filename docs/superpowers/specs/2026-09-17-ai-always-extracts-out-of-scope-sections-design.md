@@ -74,7 +74,9 @@ button at `frontend/components/assessment/QASectionAccordion.tsx:368`, gated by
 `outOfScopeSectionsOnForm` (`frontend/pages/QualityAssessmentFullScreen.tsx:514`,
 `:948`). Those two asking-gates are exactly what §4 removes. Layer 1 keeps its
 other uses — badge, muted title, section nav — and layers 2–4 are untouched, so
-no value changes meaning.
+no value changes meaning. The numbered list names the sites that DECIDE; layers
+1–4 also have read-only consumers (listed in §4 "Untouched by design") that only
+render or apply the meaning those layers decide.
 
 ### 3.2 The read/write asymmetry (the cost argument)
 
@@ -247,7 +249,13 @@ out-of-scope section.
 
 `studyTypeScope.ts`, `scopedProgress.ts`, `derived_judgment_payload.py`,
 `extraction_scope_marking.py`, `extraction_export_service.py`,
-`qa_divergence_gate.py`. Their existing tests are the regression proof that
+`qa_divergence_gate.py`. Also the read-only consumers of layers 1–4, which
+only decide what a value means: `frontend/components/assessment/DerivedDefaultChip.tsx`
+and `frontend/components/assessment/OverallJudgmentBanner.tsx`
+(`isJudgmentOutOfScope`), `frontend/lib/qa/derivedInputState.ts` (the
+`"out-of-scope"` wire literal), `frontend/components/hitl/HITLArticleTable.tsx`
+(`scopedRowProgress`) and `frontend/hooks/qa/useQASectionNav.ts`
+(`outOfScopeSectionsOnForm`). Their existing tests are the regression proof that
 "out of scope" still means what it meant.
 
 ## 5. Dead code
@@ -301,6 +309,16 @@ Ratchets, in the same PR and not as a follow-up:
   unrelated files to whatever they happen to measure today.
 
 ## 6. Tests
+
+> **As shipped (2026-09-18).** By the user's ruling to simplify, the change
+> shipped with a unit-tier regression guard instead of the integration test
+> below: `TestScopeGuardWiring.test_every_classification_still_asks_about_the_section`
+> in `backend/tests/unit/test_section_extraction_service.py`, parametrized over
+> the three classifier answers. It was checked RED against the old code — the
+> `development_only` case failed, the other two passed — and GREEN after. It
+> patches the filter's old tree lookup with `create=True`; without that patch
+> an old-style filter fails open and the test is vacuously green, which the red
+> check caught. The integration design below is kept as the fuller option.
 
 ### 6.1 Where the new tests live, and why
 
@@ -438,13 +456,18 @@ plan's task for §6.2 must satisfy every one.
   `study_type` is not re-asked), or have the stub answer `development_only` for
   `study_type`. Leaving both open makes the write-side re-check's answer depend
   on a `created_at` tie inside the test transaction (the file's own note at
-  `test_entry_group_extraction.py:390-394`).
+  `test_entry_group_extraction.py:351-354`, in `_proposed`'s docstring).
 - **Other LLM calls are not reached** — confirmed, so no further stubs are
   needed: identification only runs for `cardinality='many'`
   (`entity_key.py:187`); the verify pass is skipped because `mode_requested`
   defaults to `"fast"` (`llm_target.py:50`, `verified_mode.py:154`); and the
   entailment gate needs anchor blocks, which a stubbed article text never
-  produces (`section_extraction_service.py:186`).
+  produces: `_run_anchor_blocks` is only filled by the real
+  `_assemble_prompt_text` (`section_extraction_service.py:276`), an evidence
+  item is anchored only when blocks exist (`:1662`), only anchored evidence is
+  queued for the gate (`:1686-1687`), and the gate is skipped when nothing was
+  queued (`if _gate_specs:`, `:1714`) — the stub's `evidence: []` queues
+  nothing either way.
 
 ## 7. Risks accepted
 

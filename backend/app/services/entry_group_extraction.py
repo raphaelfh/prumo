@@ -176,7 +176,7 @@ async def _extract_entry_group(
                 for field in fields
                 if (entity_type.name, field.name) not in field_filter.excluded_coordinates
             ]
-            if entity_type.name in field_filter.out_of_scope_sections or not entry_fields:
+            if not entry_fields:
                 continue
             instance, created = await resolve_instance(
                 service.db,

@@ -728,9 +728,9 @@ class SectionExtractionService(LoggerMixin):
         return result
 
     async def _field_filter(self, run: ExtractionRun) -> LlmFieldFilter:
-        """What the model may see for *run*, memoised: the scope half costs a
-        pinned-tree read plus a proposal lookup, and extract-all walks ~16
-        sections."""
+        """What the model may see for *run*, memoised: building it reads the
+        live template (plus the whole live tree when a derived spec exists),
+        and extract-all walks ~16 sections."""
         if self._filter_run_id != run.id:
             self._llm_field_filter = await build_llm_field_filter(self.db, run)
             self._filter_run_id = run.id
@@ -1355,11 +1355,10 @@ class SectionExtractionService(LoggerMixin):
         ``fields_override`` is the exact field list to send (never mutate
         ``entity_type.fields``); ``prompt_context`` carries the run-pinned
         review question and template instruction, never live columns.
-        ``field_filter`` carries the template's two exclusion sets —
-        assessor-owned coordinates and out-of-scope sections — subtracted
-        HERE, the one seam every extraction path funnels through (including
-        the re-pin fallback that carries no override), so neither reaches
-        the model. ``entry_scope`` names the entry, or the enclosing entries,
+        ``field_filter`` carries the template's assessor-owned coordinates,
+        subtracted HERE, the one seam every extraction path funnels through
+        (including the re-pin fallback that carries no override), so none
+        reaches the model. ``entry_scope`` names the entry, or the enclosing entries,
         this call is about, so the prompt asks for ONE instance's values.
         Returns ({field_name: {value, confidence, reasoning, evidence}},
         usage) — oversized templates are split into multiple calls and
@@ -1393,11 +1392,6 @@ class SectionExtractionService(LoggerMixin):
             if fields_override is not None
             else (getattr(entity_type, "fields", None) or [])
         )
-        if entity_name in field_filter.out_of_scope_sections:
-            # The scope rules take this whole section out of play, so there is
-            # nothing to ask about. Empty list -> the existing no-fields skip
-            # below; no new return path, no LLM call, no proposals.
-            effective = []
         excluded = {f for s, f in field_filter.excluded_coordinates if s == str(entity_name)}
         if excluded:
             effective = [f for f in effective if str(getattr(f, "name", "")) not in excluded]
@@ -1725,8 +1719,6 @@ class SectionExtractionService(LoggerMixin):
             from app.services.extraction_generation import locked_result_filter
 
             field_filter = await locked_result_filter(self.db, run.id, self.user_id, attempt_id)
-            if entity_type.name in field_filter.out_of_scope_sections:
-                return 0
             excluded = {
                 field_map[name]
                 for section, name in field_filter.excluded_coordinates
