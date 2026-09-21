@@ -63,8 +63,6 @@ export function useSectionExtraction(options?: {
       if (item.jobId) queryClient.removeQueries({queryKey: extractionKeys.job(item.jobId)});
       if (item.params.runId) {
         queryClient.removeQueries({queryKey: runsKeys.detail(item.params.runId)});
-        queryClient.removeQueries({queryKey: extractionKeys.runDetail(item.params.runId)});
-        queryClient.removeQueries({queryKey: extractionKeys.proposals(item.params.runId)});
       }
     }
   };
@@ -111,11 +109,7 @@ export function useSectionExtraction(options?: {
     if (runId) {
       // RunView is server-computed: refetch it, never patch its instances/proposals.
       void queryClient.invalidateQueries({queryKey: runsKeys.detail(runId)});
-      void queryClient.invalidateQueries({queryKey: extractionKeys.runDetail(runId)});
-      void queryClient.invalidateQueries({queryKey: extractionKeys.proposals(runId)});
-      if (active.params.entityTypeId) void queryClient.invalidateQueries({queryKey: extractionKeys.instances(runId, active.params.entityTypeId)});
     }
-    void queryClient.invalidateQueries({queryKey: extractionKeys.runsForProjectRoot(active.params.projectId)});
     void queryClient.invalidateQueries({queryKey: articleExtractionValuesKeys.byCaller(active.params.projectId, active.params.templateId, active.userId)});
     void Promise.resolve().then(() => onSuccessRef.current?.(data.result?.extractionRunId ?? runId ?? '', created))
       .catch((error: unknown) => console.error('[useSectionExtraction] onSuccess error:', error));
