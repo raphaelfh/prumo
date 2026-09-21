@@ -75,7 +75,7 @@ import { deriveCanReopenExtraction } from "@/lib/extraction/reopenExtraction";
 import { ReopenExtractionDialog } from "@/components/extraction/dialogs/ReopenExtractionDialog";
 import { rationaleGapCoords } from "@/lib/qa/rationaleGaps";
 import { usePdfPanel } from "@/hooks/usePdfPanel";
-import { useIsBelowDesktop } from "@/hooks/use-mobile";
+import { useIsNarrow } from "@/hooks/use-mobile";
 import { setManagerReviewVisibility } from "@/services/hitlConfigService";
 import type { ExtractionRunStage } from "@/types/ai-extraction";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -336,7 +336,7 @@ export default function QualityAssessmentFullScreen() {
       : null;
 
   // PDF panel state — lifted so RunHeader.PanelToggle can share the same toggle.
-  const pdfPanelState = usePdfPanel({ initialOpen: false, compact: useIsBelowDesktop() });
+  const pdfPanelState = usePdfPanel({ initialOpen: false, compact: useIsNarrow() });
 
   // ONE stable viewer store shared by the form panel (evidence popover) and the
   // PDF reader — the prerequisite for citation locate + highlight. RunSplitShell

@@ -90,10 +90,10 @@ describe("usePdfPanel", () => {
     });
   });
 
-  // Below lg a split gives the PDF ~195px — too narrow for its toolbar's touch
-  // targets, so its trailing controls fell off the edge. There, open means
-  // maximized, and leaving the maximized view returns to the form.
-  describe("compact (below the desktop breakpoint)", () => {
+  // At phone width a split gives the PDF ~195px — too narrow for its toolbar's
+  // touch targets, so its trailing controls fell off the edge. There, open
+  // means maximized, and leaving the maximized view returns to the form.
+  describe("compact (phone width)", () => {
     it("reports an open panel as expanded, without a separate expand step", () => {
       const { result } = renderHook(() => usePdfPanel({ compact: true }));
       expect(result.current.isExpanded).toBe(false);
