@@ -111,7 +111,7 @@ Deeper patterns: [`references/pytest.md`](references/pytest.md).
 
 ## 5. Frontend unit / component — Vitest 2+
 
-Config at `vitest.config.ts`: `jsdom`, globals on, MSW server attached via `frontend/test/setup.ts`. Coverage threshold is 70% (branches/functions/lines/statements).
+Config at `vitest.config.ts`: `jsdom`, globals on, MSW server attached via `frontend/test/setup.ts`.
 
 ### 5.1 Test placement
 
@@ -313,7 +313,7 @@ Retries: `retries: process.env.CI ? 1 : 0` for `local-api`/`local-ui`/`local-hit
 | File                                | When to read                                                                |
 |-------------------------------------|------------------------------------------------------------------------------|
 | [`references/pytest.md`](references/pytest.md)         | Writing backend integration tests, async fixture scope, factory patterns.    |
-| [`references/vitest.md`](references/vitest.md)         | Component tests, hook tests, partial `vi.mock`, in-source tests, browser mode. |
+| [`references/vitest.md`](references/vitest.md)         | Component tests, hook tests, partial `vi.mock`, in-source tests, browser mode, coverage. |
 | [`references/playwright.md`](references/playwright.md) | New E2E flow, fixture composition, expect.poll, project setup, debugging.   |
 | [`references/msw.md`](references/msw.md)               | Designing handlers, runtime overrides, request-matching pitfalls.            |
 | [`references/a11y.md`](references/a11y.md)             | WCAG checklist + axe rules to disable vs. fix.                               |
