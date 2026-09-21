@@ -9,9 +9,17 @@ import {searchDocument} from '../services/searchService';
 export interface SearchBarProps {
   open: boolean;
   onClose: () => void;
+  /**
+   * Bumped on every ⌘F press. Opening alone cannot drive the focus effect:
+   * a second ⌘F while the bar is already open leaves `open` true, so the
+   * effect never re-runs and the caret stays wherever it was (the form field
+   * the reviewer was typing in). The counter changes on every press, so the
+   * key always lands in the find box.
+   */
+  focusRequest?: number;
 }
 
-export function SearchBar({open, onClose}: SearchBarProps) {
+export function SearchBar({open, onClose, focusRequest}: SearchBarProps) {
   const storeApi = useViewerStoreApi();
   const document = useViewerStore((s) => s.document);
   const mode = useViewerStore((s) => s.mode);
@@ -25,7 +33,7 @@ export function SearchBar({open, onClose}: SearchBarProps) {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
-  }, [open]);
+  }, [open, focusRequest]);
 
   // Debounced PDF search: fires 250ms after query or options change. Canvas
   // only — in reader mode the reader searches its own rendered markdown and

@@ -53,7 +53,8 @@ Race, timing or leaking state                     -> read "Flakes" first
 
 ## Frontend: Vitest
 
-- `vitest.config.ts` at the repo root: jsdom, globals, setup `frontend/test/setup.ts`. No coverage threshold is enforced.
+- `vitest.config.ts` at the repo root: jsdom, globals, setup `frontend/test/setup.ts`.
+- Coverage is a report only (`npm run test:coverage`): no thresholds are set and CI never runs it. Without `coverage.include`, Vitest 4 counts only files a test loads, so an untested module is missing from the report rather than at 0%. Thresholds take flat keys (`thresholds: { lines: 70 }`); Jest's `global: { … }` shape is read as a file glob and enforces nothing.
 - Placement: `frontend/test/{components,hooks,lib,services}/` or co-located (`X.test.tsx`, `__tests__/`). Match the neighbors.
 - **Network → MSW v2** (`frontend/test/mocks/server.ts`) with `onUnhandledRequest: 'error'`, except that its baseline silently answers Supabase auth (`POST */auth/v1/token`) and REST (`GET */rest/v1/*` → `[]`, `POST */rest/v1/*`). Override per test with `server.use(http.post('*/api/v1/...', () => HttpResponse.json({ ok: true, data })))`: responses carry the envelope.
 - **`vi.mock` is for modules MSW can't reach**: the copy layer (`vi.mock('@/lib/copy', () => ({ t: (_ns, key) => key }))`), `sonner`, the Supabase client.

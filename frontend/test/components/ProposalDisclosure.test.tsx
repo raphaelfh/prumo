@@ -144,6 +144,60 @@ describe('inline proposal history', () => {
     view.rerender(<><input aria-label="Editor"/><ProposalDisclosure {...base}/></>);
     expect(screen.getByText('First call reasoning')).toBeVisible();
   });
+  // Side-by-side is a working habit, not a per-row choice: the coordinate key
+  // remounts this component on every question, so without a remembered
+  // preference the reviewer re-clicked Compare on every single one.
+  it('carries the compare layout to the next question, and an accepted-version jump still opens single', async () => {
+    const user = userEvent.setup();
+    const view = render(<ProposalDisclosure {...base}/>);
+    await screen.findByRole('article');
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    await user.click(screen.getByRole('button', {name: 'Compare extractions'}));
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+
+    view.rerender(<ProposalDisclosure {...base} fieldId="next-question"/>);
+    await screen.findByText('Second call reasoning');
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+
+    // Opening straight onto one proposal is a request for THAT one.
+    view.rerender(<ProposalDisclosure {...base} fieldId="third" initialProposalId="old"/>);
+    await screen.findByText('First call reasoning');
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+
+    // ...and it does not rewrite the preference for the question after it.
+    view.rerender(<ProposalDisclosure {...base} fieldId="fourth"/>);
+    await screen.findByText('Second call reasoning');
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+  });
+  // The path the coordinate-remount test above does NOT cover, and the one the
+  // real table actually takes: a visited row keeps its disclosure MOUNTED and
+  // only hides it, so a preference read once at mount would be stuck at
+  // whatever it was the first time that question was opened.
+  it('picks up a preference set elsewhere when a mounted row is re-opened', async () => {
+    const user = userEvent.setup();
+    const view = render(<ProposalDisclosure {...base}/>);
+    await screen.findByRole('article');
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+
+    // The reviewer turns compare on somewhere else in the table while this
+    // row is closed; this component never unmounts.
+    view.rerender(<ProposalDisclosure {...base} expanded={false}/>);
+    localStorage.setItem('prumo.pref.review.compareProposals', 'true');
+    view.rerender(<ProposalDisclosure {...base}/>);
+
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    expect(screen.getByRole('button', {name: 'Show one extraction'})).toHaveAttribute('aria-pressed', 'true');
+
+    // ...and the same in reverse, so turning it off propagates too.
+    view.rerender(<ProposalDisclosure {...base} expanded={false}/>);
+    localStorage.setItem('prumo.pref.review.compareProposals', 'false');
+    view.rerender(<ProposalDisclosure {...base}/>);
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+
+    // Toggling from inside this row still writes the preference for the rest.
+    await user.click(screen.getByRole('button', {name: 'Compare extractions'}));
+    expect(localStorage.getItem('prumo.pref.review.compareProposals')).toBe('true');
+  });
   it('fails closed on a candidate acceptance id when typed equality is false', async () => {
     render(<ProposalDisclosure {...base} acceptedProposalId="old" isAccepted={() => false}/>);
     await screen.findByRole('article');
