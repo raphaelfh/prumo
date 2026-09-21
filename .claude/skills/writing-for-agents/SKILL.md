@@ -82,4 +82,4 @@ Hunt for passages begging to collapse into one token: "fast, deterministic, low-
 - Check every line for **relevance**. Without a pruning discipline the default fate is **sediment**: stale layers that settle because adding feels safe and removing feels risky.
 - Hunt **no-ops** sentence by sentence: an instruction the model already obeys by default pays load to say nothing. When a sentence fails, delete the whole sentence. A word too weak to beat the default (_be thorough_) is a no-op; the fix is a stronger word (_relentless_).
 
-Adapted from mattpocock/skills (MIT); see `../THIRD_PARTY_NOTICES.md`.
+Adapted from mattpocock/skills (MIT).
