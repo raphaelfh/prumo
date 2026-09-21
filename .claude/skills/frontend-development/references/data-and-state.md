@@ -90,34 +90,33 @@ The component destructures `{ data, isLoading, error }` from the hook — it nev
 ## Mutation hook — `useMutation` + invalidation
 
 ```typescript
-// hooks/runs/useCreateRun.ts
+// hooks/runs/useAdvanceRun.ts (onError toast omitted)
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/integrations/api';
-import { extractionKeys } from '@/lib/query-keys';
-import type { CreateRunRequest, RunSummaryResponse } from './types';
+import { runsKeys, type AdvanceStageRequest, type RunSummaryResponse } from './types';
 
-export function useCreateRun() {
+export function useAdvanceRun(runId: string) {
   const queryClient = useQueryClient();
 
-  return useMutation<RunSummaryResponse, Error, CreateRunRequest>({
+  return useMutation<RunSummaryResponse, Error, AdvanceStageRequest>({
     mutationFn: (body) =>
-      apiClient<RunSummaryResponse>('/api/v1/runs', { method: 'POST', body }),
-    onSuccess: (run) => {
-      queryClient.invalidateQueries({ queryKey: extractionKeys.runDetail(run.id) });
+      apiClient<RunSummaryResponse>(`/api/v1/runs/${runId}/advance`, { method: 'POST', body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: runsKeys.detail(runId) });
     },
   });
 }
 ```
 
-`onSuccess` invalidates the owning key family so lists/detail views re-fetch automatically. Stale-cache bugs are a recurring incident class — always invalidate.
+`onSuccess` invalidates the key the **reader** uses: `useRun` reads `runsKeys.detail(runId)`, so the run view refetches. Find the `useQuery` that renders the data first, then invalidate its factory key — invalidating a key no `useQuery` reads compiles, runs, and refreshes nothing. Stale-cache bugs are a recurring incident class.
 
-Note: `useCreateRun` calls `apiClient` directly (no service wrapper) because the mutation doesn't need `ErrorResult` — `useMutation` owns the error surface. Either pattern is acceptable for mutations; use `toResult` when you want the service reusable outside a hook.
+Note: `useAdvanceRun` calls `apiClient` directly (no service wrapper) because the mutation doesn't need `ErrorResult` — `useMutation` owns the error surface. Either pattern is acceptable for mutations; use `toResult` when you want the service reusable outside a hook.
 
-> **Hook-local key exception:** `hooks/runs/types.ts` also exports a `runsKeys` object for a handful of reviewer-availability queries that have no `lib/query-keys/` counterpart. That is a documented exception — those keys are scoped to the hooks that use them and are not re-exported. All other keys, including run-detail and extraction data, live in `lib/query-keys/` and must be imported from there.
+> **Run keys live in `hooks/runs/types.ts`.** `runsKeys` is the one key factory outside `lib/query-keys/`. `runsKeys.detail(runId)` is the run view — stage, instances, proposals, decisions: `useRun` reads it, and `useExtractionSession` seeds it on open. It is the only run-detail key; invalidate it after anything that changes a run.
 
 ## Query-key factories — `lib/query-keys/`
 
-All keys live in `lib/query-keys/{domain}.ts` and are exported from the barrel:
+Keys live in `lib/query-keys/{domain}.ts` (`runsKeys` above is the exception) and are exported from the barrel:
 
 ```typescript
 // lib/query-keys/articles.ts
@@ -131,21 +130,6 @@ export const articleKeys = {
     [...articleKeys.all, 'files', articleId] as const,
   citations: (articleId: string) =>
     [...articleKeys.all, 'citations', articleId] as const,
-} as const;
-```
-
-```typescript
-// lib/query-keys/extraction.ts
-export const extractionKeys = {
-  all: ['extraction'] as const,
-  runsForProject: (projectId: string, filters?: Record<string, unknown>) =>
-    [...extractionKeys.all, 'runs', projectId, filters ?? null] as const,
-  runDetail: (runId: string) =>
-    [...extractionKeys.all, 'run-detail', runId] as const,
-  proposals: (runId: string) =>
-    [...extractionKeys.all, 'proposals', runId] as const,
-  hitlSession: (sessionId: string) =>
-    [...extractionKeys.all, 'hitl-session', sessionId] as const,
 } as const;
 ```
 

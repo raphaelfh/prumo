@@ -137,8 +137,9 @@ Why: Envelope inconsistency caused at least four shipped bugs. Rules: `reference
 
 - [ ] Cache keys include every variable that scopes the data: at minimum `project_id`, usually `run_id`, often `article_id`. Missing scope = leaks between projects.
 - [ ] Mutations call `queryClient.invalidateQueries` for every list/detail key whose data they changed — not just the obvious one.
+- [ ] Every invalidated key has a reader: its factory member appears in a `useQuery`. Invalidating a key no screen reads refreshes nothing — the run view is `runsKeys.detail(runId)`, read by `useRun`.
 - [ ] Optimistic updates have a rollback path on error. If `onError` is empty, the cache will lie after a failed mutation.
-- [ ] When the backend autoadvances a Run stage (PROPOSAL → REVIEW), the frontend invalidates the run detail key.
+- [ ] When the backend advances a run's stage as a side effect, the frontend invalidates `runsKeys.detail(runId)`.
 
 Why: Stale-cache bugs are silent — users see old data and assume their click failed. Cache-key playbook: `references/tanstack-cache.md`.
 

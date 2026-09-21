@@ -15,8 +15,8 @@ queryKey: ["runs"]
 // WRONG — scoped to project but not run
 queryKey: ["run-detail", projectId]
 
-// RIGHT
-queryKey: ["run-detail", { projectId, runId }]
+// RIGHT — the factory key carries the id that identifies the run
+queryKey: runsKeys.detail(runId) // ["runs", runId]
 ```
 
 Minimum scopes by data type:
@@ -26,24 +26,27 @@ Minimum scopes by data type:
 | Project list                        | userId implicit via auth; no extra needed     |
 | Project detail                      | `projectId`                                   |
 | Run list                            | `projectId`                                   |
-| Run detail / extraction state       | `projectId`, `runId`                          |
+| Run view (`runsKeys.detail`)        | `runId` (unique across projects)              |
 | Article text blocks                 | `articleFileId` (see `useArticleTextBlocks.ts:41`)|
 | Decision list per article in run    | `projectId`, `runId`, `articleId`             |
 | HITL session                        | `projectId`, `runId`, `kind`                  |
 | Templates list (project)            | `projectId`                                   |
 
-If your reader's key is `["foo", a, b]` and your writer invalidates `["foo", a]`, the reader will not refetch. **Key prefixes must match.** Use the same key-builder function for both reader and invalidator.
+Invalidation matches by prefix: invalidating `["foo", a]` refetches readers of `["foo", a]` and `["foo", a, b]`, while invalidating `["foo", a, b]` misses a reader of `["foo", a]`. **The invalidated key must be a prefix of the reader's key.** Use the same key-builder function for both reader and invalidator.
 
 ## Invalidation patterns
 
 ```ts
-// Mutation completes — invalidate everything it can affect
+// Mutation completes — invalidate the key of every reader it can affect
 useMutation({
   mutationFn: ...,
   onSuccess: (_, vars) => {
-    queryClient.invalidateQueries({ queryKey: ["run-detail", { projectId: vars.projectId, runId: vars.runId }] });
-    queryClient.invalidateQueries({ queryKey: ["run-list", { projectId: vars.projectId }] });
-    queryClient.invalidateQueries({ queryKey: ["decisions", { runId: vars.runId }] });
+    // useRun: the run view (stage, instances, proposals, decisions, consensus)
+    queryClient.invalidateQueries({ queryKey: runsKeys.detail(vars.runId) });
+    // worklist progress: a prefix of the key useArticleExtractionValues reads
+    queryClient.invalidateQueries({
+      queryKey: articleExtractionValuesKeys.byCaller(vars.projectId, vars.templateId, vars.userId),
+    });
   },
 });
 ```
@@ -52,8 +55,9 @@ Checklist for any mutation:
 
 - [ ] Detail key invalidated (the row that changed).
 - [ ] List key invalidated (the list that may now order/filter differently).
-- [ ] Cross-entity keys invalidated (a decision change invalidates the run, the consensus, the published state).
-- [ ] If the server **auto-advances** a Run stage (PROPOSAL → REVIEW), the run-detail key is invalidated — otherwise the UI shows the old stage.
+- [ ] Cross-entity keys invalidated (a decision change invalidates the run view, `runsKeys.detail`, which carries consensus and published state).
+- [ ] Every invalidated key has a reader: its factory member appears in a `useQuery`. Invalidating a key no `useQuery` reads compiles, runs, and refreshes nothing.
+- [ ] If the server advances a run's stage as a side effect, `runsKeys.detail(runId)` is invalidated — otherwise the UI shows the old stage.
 
 ## Optimistic updates
 
@@ -106,15 +110,24 @@ grep -RnB2 -A30 "onMutate" frontend/hooks/ | grep -B32 "onMutate" | grep -v "onE
 
 ## Test patterns
 
+Assert through the reader hook with MSW, not a spy on `invalidateQueries`: a spy passes for a key no `useQuery` reads. `wrapper` holds a fresh `QueryClient` per test.
+
 ```ts
-it("invalidates run-detail after publish", async () => {
-  const qc = new QueryClient();
-  const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
-  const { result } = renderHook(() => usePublishRun(), { wrapper: wrap(qc) });
-  await act(() => result.current.mutateAsync({ projectId, runId }));
-  expect(invalidateSpy).toHaveBeenCalledWith(
-    expect.objectContaining({ queryKey: ["run-detail", { projectId, runId }] }),
+it("refetches the run view after approve-finalize", async () => {
+  let stage = "consensus";
+  server.use(
+    http.get("*/api/v1/runs/:runId/view", () =>
+      HttpResponse.json({ ok: true, data: { run: { id: runId, stage } } })),
+    http.post("*/api/v1/runs/:runId/approve-finalize", () => {
+      stage = "finalized";
+      return HttpResponse.json({ ok: true, data: {} });
+    }),
   );
+  const run = renderHook(() => useRun(runId), { wrapper });
+  await waitFor(() => expect(run.result.current.data?.run.stage).toBe("consensus"));
+  const finalize = renderHook(() => useApproveFinalize(runId), { wrapper });
+  await act(() => finalize.result.current.mutateAsync());
+  await waitFor(() => expect(run.result.current.data?.run.stage).toBe("finalized"));
 });
 ```
 
