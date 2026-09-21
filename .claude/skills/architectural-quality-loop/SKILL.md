@@ -1,6 +1,6 @@
 ---
 name: architectural-quality-loop
-description: "Run one cycle of the prumo autonomous architectural quality loop on a scoped slice of the repo — detects concept-vocabulary drift, layered-architecture violations, security gaps, legacy code, and missing tests; converges through deterministic gates + LLM judge. Trigger on requests like \"run the quality loop\", \"sweep extraction services for drift\", \"find legacy in this slice\", \"audit architectural drift\", \"autoloop on <path>\", \"quality sweep\". Manual: one cycle per invocation. Autonomous: chainable via `superpowers:loop` skill."
+description: "Run one cycle of prumo's architectural quality loop on a scoped slice (path glob or concept): scan for concept drift, layering violations, security gaps, legacy code and test gaps; fix test-first; converge via fitness gates and an LLM judge. Use for \"quality loop\", \"sweep <path> for drift/legacy\"."
 ---
 
 # Architectural Quality Auto-Loop (prumo)
@@ -14,7 +14,7 @@ This skill is the **only user-facing entry point**. It dispatches the sibling su
 - "Run the quality loop on `backend/app/services/extraction_*`."
 - "Sweep `frontend/components/extraction/**` for legacy concepts."
 - "Audit architectural drift in this slice."
-- Periodically (via `superpowers:loop`) as a maintenance cycle.
+- Periodically, wrapped in Claude Code's built-in `/loop`, as a maintenance cycle.
 
 Do **not** use for: a known bug (→ `debugging`); a single concrete refactor (→ the relevant domain skill directly); CI changes; constitution edits.
 
@@ -54,7 +54,7 @@ Invoke the sibling `architectural-scanner` sub-skill with the SCOPE. It dispatch
 1. Drop findings with `confidence < 0.7` → move to `findings_dropped.jsonl` (audit trail; not deleted).
 2. Dedupe by `(file, line, category)`. On collision: `max(severity)`, `max(confidence)`, evidence concatenated with ` || ` (max 200 chars total).
 3. Order by `(severity desc, confidence desc, file)`. Severity rank: `high > medium > low`.
-4. Within severity, prioritise categories in this order: `security` → `concept-drift` → `layered-arch` → `legacy` → `test-gaps` → `computational`.
+4. Within severity, prioritize categories in this order: `security` → `concept-drift` → `layered-arch` → `legacy` → `test-gaps` → `computational`.
 5. Emit `backlog.md` (human-readable) + `backlog.jsonl` (machine-readable).
 
 ## PLAN — single item, small, test-first
@@ -72,19 +72,20 @@ Always inside an isolated git worktree (invoke `superpowers:using-git-worktrees`
 | Finding category | Delegate to |
 |---|---|
 | Backend Python (services, repos, models, schemas, tasks, migrations) | `backend-development` |
-| Frontend TS/React (components, hooks, services) | `ui-styling` (visual) or `frontend-ux` (interaction) |
+| Frontend structure (hooks, services, stores, data flow) | `frontend-development` |
+| Frontend visual work (layout, density, classes) | `frontend-ux` + `ui-styling` |
 | Pure deletion of unused/legacy code | sibling `legacy-eviction` sub-skill |
 | Bug fix that needs investigation | `debugging` |
 | Tests added or modified | `web-testing` |
 
-APPLY **must** write the failing test first (per project rule `feedback_always_test`). Diff + commit hash appended to `iterations/<n>-*.md` under `## DIFF`.
+APPLY **must** write the failing test first (red first, CLAUDE.md § Working principles). Diff + commit hash appended to `iterations/<n>-*.md` under `## DIFF`.
 
 ## VERIFY — the gate
 
-Run `scripts/verify_all.sh` (composes existing Makefile gates + `scripts/fitness/run_all.sh` + Playwright smoke if router/UI touched). Then the LLM judge — see `references/judge-prompt.md` — receives FINDING, DIFF, GATE_OUTPUT, COUNTERFACTUAL_PROBE and returns exactly one of `RESOLVES` / `DOES_NOT_RESOLVE` / `INTRODUCES_REGRESSION`. Only `RESOLVES` passes.
+Run `scripts/verify_all.sh` (lint, typecheck, dead code, tests, `scripts/fitness/run_all.sh`, alembic check, Playwright smoke; a gate that cannot run reports SKIP). Then the LLM judge — see `references/judge-prompt.md` — receives FINDING, DIFF, GATE_OUTPUT, COUNTERFACTUAL_PROBE and returns exactly one of `RESOLVES` / `DOES_NOT_RESOLVE` / `INTRODUCES_REGRESSION`. Only `RESOLVES` passes.
 
 On failure, the gate's stderr or judge's reason **is the prompt** for an APPLY loopback. Hard caps:
-- Max 3 loopbacks per finding → finding moves to `quarantine.md`; APPLY tears down the worktree without merging.
+- Max 3 loopback rounds per finding → finding moves to `quarantine.md`; APPLY tears down the worktree without merging.
 - Max 5 CONVERGE cycles total → write `summary.md` with `status="non_converged"` and stop.
 - Budget exceeded (see `references/budget-policy.md`) → write `summary.md` with `status="budget_exceeded"` and stop.
 
@@ -94,15 +95,15 @@ After every successful VERIFY, write a brief **Reflexion** paragraph to the iter
 
 ```python
 def converged(run_dir: Path) -> bool:
-    rescan = invoke_scanner(scope=read(run_dir / "scope.md"))
-    high_conf = [f for f in rescan if f["confidence"] >= 0.7]
-    gates_green = run("bash scripts/verify_all.sh").returncode == 0
+    findings = invoke_scanner(scope=read(run_dir / "scope.md"))
+    high_conf = [f for f in findings if f["confidence"] >= 0.7]
+    gates_green = exit_code("bash scripts/verify_all.sh") == 0
     return len(high_conf) == 0 and gates_green
 ```
 
 Convergence is the success metric, not "I closed everything I saw." A new re-SCAN may surface findings that the previous SCAN missed — that is fine; they enter the backlog and the loop continues. STOP only when **both** the re-SCAN is quiet AND the gates are green.
 
-When converged: write `summary.md` (counts table, closed/quarantined/dropped, time elapsed, mutation score delta if Phase 5 mutation ran). Rename run-dir to `<run-id>-converged` for easy filtering by `make quality-clean`.
+When converged: write `summary.md` (counts table, closed/quarantined/dropped, time elapsed). Rename run-dir to `<run-id>-converged`.
 
 ## Run artefact layout
 
@@ -128,16 +129,14 @@ docs/superpowers/quality-runs/
 
 - **Hard cap**: 150 subagent invocations + 500k tokens per run.
 - **Soft cap**: 200k tokens — emit telemetry warning, continue.
-- **Autonomous mode** (via `superpowers:loop`): reduced caps (50 subagents, 100k tokens) and max 2 iterations closed before writing `status="awaiting_human_review"`.
-
-Override for a one-off sweep: `PRUMO_QUALITY_LOOP_BUDGET_TOKENS=1000000`.
+- **Autonomous mode** (run through `/loop`): reduced caps (50 subagents, 100k tokens) and max 2 iterations closed before writing `status="awaiting_human_review"`.
 
 ## Autonomous cadence
 
-For periodic sweeps, invoke via `superpowers:loop`:
+For periodic sweeps, wrap the skill in Claude Code's built-in `/loop`:
 
 ```
-/loop 30m Skill architectural-quality-loop --scope "backend/app/services/extraction_*"
+/loop 30m /architectural-quality-loop --scope "backend/app/services/extraction_*"
 ```
 
 Minimum interval: 20 minutes. The loop respects the autonomous-mode caps above. After 2 iterations closed, it stops with `status="awaiting_human_review"`; the human reviews the diffs and clears the gate before the next invocation.
@@ -155,7 +154,7 @@ Minimum interval: 20 minutes. The loop respects the autonomous-mode caps above. 
 
 - Concept glossary (single source of vocabulary): `references/concept-glossary.md`
 - Legacy patterns blacklist (16 entries, hard/warn tiers): `references/legacy-patterns.md`
-- Fitness functions (deterministic checks): `references/fitness-functions.md`
+- Fitness functions (deterministic checks): `scripts/fitness/README.md`
 - LLM judge prompt: `references/judge-prompt.md`
 - Reflexion template: `references/reflexion-template.md`
 - Telemetry schema: `references/telemetry-schema.md`

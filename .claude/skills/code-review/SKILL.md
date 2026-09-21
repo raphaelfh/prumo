@@ -1,332 +1,123 @@
 ---
 name: code-review
-description: Use BEFORE claiming done, before writing a PR body, when receiving review feedback (especially unclear or technically questionable), when requesting review, or after completing a feature/bugfix. Enforces technical rigor over performative agreement, evidence-based completion claims, and a prumo-specific review checklist tuned to recurring incident classes (BOLA, run-state TOCTOU, error swallowing, schema drift, ApiResponse envelope drift, stale TanStack cache). Triggers on phrases "looks good", "should be fine", "I'll fix it", "ready to merge", "tests pass", "done", "complete", "fixed", "ready for review", "let me draft the PR". Be pushy about running it.
+description: "Use before claiming prumo work is done, fixed or passing, before drafting a PR, and when reviewing a diff or answering review feedback. Supplies prumo's verification commands and a review checklist built from its recurring incident classes: BOLA, run-state races, error swallowing, schema and envelope drift, stale TanStack cache, migrations."
 ---
 
 # Code Review (prumo)
 
-Three practices, one principle: **evidence before claims**.
+**Evidence before claims.** Every claim in a review, yours or a reviewer's, rests on a `file:line`, a command's output, or a doc section. The generic discipline lives in superpowers: `verification-before-completion` (the gate), `requesting-code-review` and `receiving-code-review`. This skill adds prumo's commands and the checklist of bug classes that already shipped here once.
 
-1. **Verification gate** — run the actual commands before saying "done".
-2. **Requesting review** — small PR, clear risk + test plan, label `needs-review`.
-3. **Receiving feedback** — technical rigor over performative agreement.
+## The verification gate: prumo's commands
 
-Plus: a **prumo-specific review checklist** grounded in the bug classes that have actually shipped here. Every checklist item exists because we paid for it once.
+Run from the repo root unless noted. Read the whole output before you claim.
 
----
+| Claim | Command | Passes when |
+|---|---|---|
+| Backend tests pass | `make test-backend` | exit 0, no `FAILED` or `ERROR` |
+| One backend test passes | `cd backend && uv run pytest -k <name> -x --tb=short` | `1 passed` |
+| Backend lint and types | `make lint-backend`, then `cd backend && uv run mypy app/` | exit 0, `Success: no issues found` |
+| Frontend tests pass | `npm run test:run` | exit 0 |
+| One frontend test passes | `npx vitest run <path> -t "<name>"` | `1 passed` |
+| Frontend lint and types | `npm run lint` and `npm run typecheck` (not a bare `tsc --noEmit`) | exit 0 |
+| Migration is sound | `cd backend && uv run alembic upgrade head && uv run alembic check` (what CI runs) | both exit 0 |
+| Endpoint is authorized | each client-supplied id maps to its guard (§ A); `python3 scripts/fitness/check_scope_guards.py` | exit 0 |
+| RLS policy holds | a query run as `authenticated` with a JWT claim is refused (`set_config('request.jwt.claims', …, true)` + `SET LOCAL ROLE authenticated`, as `backend/tests/integration/test_llm_connection_rls.py` does). Tests connect as `postgres`, which bypasses RLS | the query returns nothing or errors |
+| Bug is fixed | the regression test failed before the fix and passes after | red, then green, in the output |
+| The UI is right | `design-review` on the changed screen | a screenshot you captured |
+| Everything | `make quality-scan` (`scripts/verify_all.sh`) | exit 0 |
 
-## Core principle
-
-> Technical correctness over social comfort. Verify before implementing. Ask before assuming. **Evidence before claims.**
-
-Every claim in a review (yours or theirs) must link to one of:
-
-- A `file:line` reference (e.g. `backend/app/api/v1/endpoints/extraction_runs.py:88`).
-- A command output (test run, lint run, grep, `git diff`).
-- A doc reference (`docs/reference/extraction-hitl-architecture.md §4.1`).
-
-"It should work" / "it looks right" / "probably fine" are not evidence. If you find yourself typing one of these phrases, stop and run something.
-
----
-
-## When this skill fires
-
-Before any of these statements leave your mouth, run this skill:
-
-- "Done", "complete", "fixed", "ready", "should be good", "tests pass", "build succeeds".
-- "Looks good to me", "LGTM", "approving".
-- "Ready to merge", "ready for review", "let me draft the PR".
-- "I'll just push this and see".
-- Receiving a review comment, especially when your instinct is to immediately agree or immediately disagree.
-
-If the user explicitly asks for a code review, security review, or PR draft — this skill is mandatory.
-
----
-
-## The verification gate (the Iron Law)
-
-**No completion claim ships without fresh evidence.**
-
-`IDENTIFY command → RUN command in full → READ output → CONFIRM it matches the claim → THEN claim`
-
-Skipping any step is lying, not reviewing.
-
-### Commands that count as evidence on prumo
-
-| Claim                                         | Evidence (run from repo root unless noted)         |
-| --------------------------------------------- | -------------------------------------------------- |
-| Backend tests pass                            | `make test-backend` — exit 0, no `FAILED` / `ERROR`|
-| Backend lint clean                            | `make lint-backend` — exit 0, no diff after format |
-| Frontend tests pass                           | `npm run test:run` — exit 0                        |
-| Frontend lint + typecheck                     | `npm run lint` + `npm run typecheck`               |
-| Migration applies cleanly                     | `cd backend && alembic upgrade head` — exit 0      |
-| Migration is reversible                       | `alembic downgrade -1 && alembic upgrade head`     |
-| Bug fixed                                     | New test reproducing the bug now passes            |
-| Endpoint authorized                           | every client-supplied id maps to its guard (`references/bola-audit.md`); `python scripts/fitness/check_scope_guards.py` exit 0 |
-| No N+1                                        | Run the request with SQL echo, count queries       |
-
-### Red flags — stop and run something
-
-- Using "should" / "probably" / "seems to" about your own code.
-- "I refactored this, should be equivalent" without a test re-run.
-- Self-congratulation before verification ("nice, that should do it").
-- Committing because the change "looks small".
-- Trusting an agent's report instead of reading its tool outputs.
-
-Full command table and per-area patterns: `references/verification-before-completion.md`.
-
----
+A subagent's "done" is a claim, not evidence: read `git status` and `git diff`, and rerun the tests yourself. CI green is necessary, not sufficient.
 
 ## The prumo review checklist
 
-Apply to every diff before requesting review and before approving someone else's PR. Each item exists because we shipped this bug class before — see the linked git history.
+Apply it to every diff: yours before you ask for review, anyone's before you approve.
 
-### A. Authorization (OWASP API #1 — BOLA)
+### A. Authorization (BOLA, the #1 incident class)
 
-- [ ] Every client-supplied id (path, query, body) is bound by its guard **before** the data access: `require_project_scope` / `ensure_project_*` for a project, `load_run_for_member` for a run, `assert_kickoff_scope` for the AI kickoff coordinate, the named `owned_*` guard for a row in its parent (`.claude/rules/backend.md` § Ownership guards).
-- [ ] No hand-rolled ownership check: a `select` or `db.get` followed by a compare, where a named guard exists, is a second copy. `scripts/fitness/check_scope_guards.py` catches WHERE-clause copies and raw `project_members` SQL, not a fetch-then-compare.
+- [ ] Every client-supplied id (path, query, body) is bound by its guard **before** the data access. The canonical list is `.claude/rules/backend.md` § Ownership guards: `require_project_*` / `ensure_project_*` for a project, `load_run_for_member` for a run, `assert_kickoff_scope` for the AI kickoff coordinate, the named `owned_*` guard for a row in its parent.
+- [ ] No hand-rolled ownership check. A `select` or `db.get` followed by a compare, where a named guard exists, is a second copy: `check_scope_guards.py` catches WHERE-clause copies and raw `project_members` SQL, not a fetch-then-compare.
 - [ ] The role matches the operation: reviewer for workflow writes, arbitrator for consensus and finalize, manager for configuration and destructive operations. Membership alone is the floor.
-- [ ] Frontend never controls authorization — server is authoritative. If the client decides who can do what, write it down as a defect.
+- [ ] The server decides authorization. A client-side permission check is UX, never the gate.
 
-Why: BOLA is the #1 OWASP API risk and the #1 historical bug class on prumo. Audit playbook: `references/bola-audit.md`.
+### B. RLS
 
-### B. RLS + multi-tenancy
+- [ ] A new table enables RLS in its own migration, with a policy per command that calls the `public.is_project_*(project_id, auth.uid())` helpers, never an inline `FROM project_members`. A backend-only table may instead be `ENABLE ROW LEVEL SECURITY` + `REVOKE ALL` with no policy (migrations 0075, 0076).
+- [ ] Count `op.create_table` against `ENABLE ROW LEVEL SECURITY` by hand: `check_rls_coverage.py` only sees a literal `CREATE TABLE`.
+- [ ] A policy relaxation says in the PR body who gains access, and why.
+- [ ] RLS never substitutes for § A: the API and the worker connect as a privileged role and bypass it. Storage policies that read `public` tables live in Alembic (0003); pure bucket policies live in `supabase/migrations/`.
 
-- [ ] New tables have RLS enabled and a policy per command. Shapes: `backend-development/references/rls.md`.
-- [ ] Policies call the `public.is_project_*(project_id, auth.uid())` helpers; never an inline `FROM project_members`.
-- [ ] If the migration relaxes RLS, the PR body explains who gains access and why.
+### C. Run state and concurrency (TOCTOU)
 
-Why: Supabase RLS is our second line of defense. The archived migration 0018 relaxed reviewer writes for a reason — every RLS relaxation needs the same scrutiny. Full checklist: `references/rls-review.md`.
-
-### C. Run-state and concurrency (TOCTOU)
-
-- [ ] Run-state transitions go through `run_lifecycle_service`, not ad-hoc `run.status = ...` assignments.
-- [ ] State checks (`if run.status == X`) and the subsequent write happen in the same DB transaction, or use a conditional `UPDATE ... WHERE status = X RETURNING ...` so two requests can't both win.
-- [ ] HITL session opens / closes are idempotent — re-running the same request doesn't double-create rows.
-- [ ] Celery tasks that mutate run state re-fetch under lock; don't trust the state captured at enqueue time.
-
-Why: Run-state TOCTOU has bitten us multiple times — see commit `1994ceb fix(backend): resolve 31 auto-found bugs across HITL/extraction stack`. Race-spotting guide: `references/race-conditions.md`.
+- [ ] Stage changes (`pending → extract → consensus → finalized`, or `cancelled`) go through `run_lifecycle_service`, never an ad-hoc `run.stage = …`.
+- [ ] Check-then-write happens under a lock in one transaction: `load_run_for_update` (`services/_extraction_run_lock.py`) for a run row, `take_advisory_xact_lock` (`services/advisory_locks.py`) for a coordinate, keyed exactly as its other callers key it.
+- [ ] Opening a HITL session is idempotent: resending the request creates no second run.
+- [ ] A Celery task that mutates run state re-reads it under the lock; state captured at enqueue time is stale.
 
 ### D. Error swallowing
 
-- [ ] No `.catch(() => ({ success: true }))` or any catch that returns a success-shaped object without context.
-- [ ] `Promise.all` is only used when **every** child must succeed. Otherwise use `Promise.allSettled` and surface partial failures explicitly.
-- [ ] No `except Exception: pass` or bare `except:`. Either re-raise, log + raise, or convert to a specific exception.
-- [ ] Empty query results aren't treated as success. `if not rows: return ok()` is almost always wrong on prumo — usually a missing membership check is silently hiding the data.
+- [ ] No catch returns a success-shaped object (`.catch(() => ({ success: true }))`); no `except Exception: pass`, no bare `except:`.
+- [ ] `Promise.all` only when every child must succeed; otherwise `Promise.allSettled` with partial failures surfaced. A Supabase `{ error }` result is checked, not dropped.
+- [ ] An empty result is not proof of "nothing there": on the backend it can be a wrong scope predicate, in the browser it is RLS filtering rows.
+- [ ] A failed Celery enqueue answers 503 `SERVICE_UNAVAILABLE` (`endpoints/section_extraction.py`), never a fake success.
 
-Why: Commit `5493631 fix(frontend): resolve 17 auto-found extraction hook + service bugs` was almost entirely error-swallow fixes. Deep dive: `references/error-swallowing.md`.
+### E. Schema drift
 
-### E. Schema drift (SQLAlchemy ↔ Pydantic ↔ TypeScript)
-
-- [ ] Every `Optional[X]` in Pydantic matches a `nullable=True` in SQLAlchemy and vice versa.
-- [ ] Defaults are defined in **one** place: prefer DB-side defaults via Alembic, mirror in SQLAlchemy `server_default`, do **not** also default in Pydantic unless you mean "API will fill this in".
-- [ ] Enum values are in sync between Python enum, DB type, and frontend type. New variants require a migration.
-- [ ] Frontend types regenerated / updated when the response shape changes.
-
-Why: Three of the 31 backend bugs in the auto-fix wave were schema drift. Reference: `references/schema-drift.md`.
+- [ ] Pydantic `X | None` matches `nullable=True` in SQLAlchemy and back. A default lives in one place (DB `server_default`), repeated in Pydantic only when the API fills it.
+- [ ] A new enum value lands in a migration (`ALTER TYPE … ADD VALUE`) **and** in `POSTGRESQL_ENUM_VALUES` (`backend/app/models/base.py`).
+- [ ] A changed endpoint or schema regenerates the frontend types (`npm run generate:api-types`) in the same PR; the CI `api-contract` job fails on drift.
 
 ### F. ApiResponse envelope
 
-- [ ] Every API response uses the `ApiResponse` envelope (`{ data, ... }`) consistently. No endpoint returns the bare payload.
-- [ ] Frontend unwraps **once**. If a hook returns `data.data.foo`, that's a double-unwrap bug — see `7100956 fix(qa): drop double-unwrap of ApiResponse envelope in useRunAIExtraction`.
-- [ ] Mutation responses are unwrapped at the same layer as queries — pick a layer (`fetcher` vs `hook`) and stick to it. Mixed layers = bugs.
-
-Why: Envelope inconsistency caused at least four shipped bugs. Rules: `references/api-envelope.md`.
+- [ ] Every JSON response is `ApiResponse[T]` with a typed `T`, built by `ApiResponse.success(x, trace_id=…)`; errors reach the client as `error.message` (`check_api_response_envelope.py`).
+- [ ] The frontend unwraps once, in `apiClient<T>` (`frontend/integrations/api/client.ts`); services wrap it in `ErrorResult<T>` via `toResult`. `data.data.foo` in a hook is a double unwrap (`7100956`).
 
 ### G. TanStack Query cache
 
-- [ ] Cache keys include every variable that scopes the data: at minimum `project_id`, usually `run_id`, often `article_id`. Missing scope = leaks between projects.
-- [ ] Mutations call `queryClient.invalidateQueries` for every list/detail key whose data they changed — not just the obvious one.
-- [ ] Optimistic updates have a rollback path on error. If `onError` is empty, the cache will lie after a failed mutation.
-- [ ] When the backend autoadvances a Run stage (PROPOSAL → REVIEW), the frontend invalidates the run detail key.
-
-Why: Stale-cache bugs are silent — users see old data and assume their click failed. Cache-key playbook: `references/tanstack-cache.md`.
+- [ ] Keys come from a factory (`frontend/lib/query-keys/`, or a domain one such as `runsKeys.detail(runId)`); a literal key array fails `check_react_query_keys.py`. The key carries every id the query reads by.
+- [ ] Each `useMutation` invalidates every key family whose data it changed. No gate checks this: read each `onSuccess`.
+- [ ] An optimistic update has an `onError` rollback.
+- [ ] When the backend auto-advances a run stage, the frontend invalidates the run detail key.
 
 ### H. Migrations
 
-- [ ] Migration revision IDs match the file name. Down-revisions point to the actual previous head.
-- [ ] Destructive migrations (drop column / drop table) have a documented rollback or are gated behind a feature flag.
-- [ ] No data migration in the same revision as a schema migration that locks the table — split them.
 - [ ] Read `docs/reference/migrations.md` before touching `backend/alembic/versions/`.
+- [ ] Revision id ≤ 32 characters, `down_revision` is the current head, one logical change per file.
+- [ ] A migration that deletes or updates rows guards itself in SQL (`AND NOT EXISTS …`). Railway runs `alembic upgrade head` at boot, so a migration that raises blocks every later deploy, the fix included.
+- [ ] No data migration in the same revision as a schema change that locks the table.
 
 ### I. Tests
 
-- [ ] New behavior has a failing test that now passes (TDD or test-with-fix is fine; "I'll add tests later" is not).
-- [ ] Bug fixes include a regression test asserting the original symptom is gone.
-- [ ] No flaky `sleep`-based tests — use deterministic fixtures or `freeze_time`.
-- [ ] Backend test names describe the scenario, not the code path. `test_create_consensus_rejects_viewer_member` > `test_create_consensus_3`.
-- [ ] Each new assertion can fail: expected values are independent literals, not recomputed from the code under test, and the test asserts its precondition before its outcome (`web-testing` §10).
+- [ ] New behavior has a test that failed first; a bug fix has a regression test for the original symptom.
+- [ ] No `sleep`-based waits. No clock library is installed: inject `now`.
+- [ ] Each assertion can fail: expected values are independent literals, and the test asserts its precondition before its outcome (`web-testing` § Anti-patterns).
+- [ ] Test names describe the scenario: `test_create_consensus_rejects_viewer_member`.
 
-### J. Style + meta
+### J. Conventions
 
-- [ ] All code, comments, commit messages, and PR body are in **English** (CLAUDE.md §1).
-- [ ] Commit message follows **Conventional Commits** (`feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `ci`, `perf`) with an optional scope, e.g. `fix(hitl): close session on abort`. See git log on `dev` for the in-repo style.
-- [ ] PR targets `dev`, not `main`.
-- [ ] PR title is the same imperative as the headline commit. PR body has the structure below.
+- [ ] Code, comments, commits and the PR body are in English.
+- [ ] Conventional Commits with a scope (`fix(hitl): close session on abort`); the PR targets `dev`; its body fills `.github/PULL_REQUEST_TEMPLATE.md`, Definition of Done included.
 
-### K. Decisions & docs land with the code
+### K. Decisions and docs land with the code
 
-- [ ] If this PR makes an architectural decision (new dependency, storage strategy, cross-cutting pattern, core abstraction), the ADR is **in this PR** under `docs/adr/` — superseding, never editing, an existing one. Not a "docs follow-up".
-- [ ] A new/changed endpoint under `backend/app/api/v1/endpoints/` or a new `extraction_*` table updates the matching `docs/reference/` doc (and its `last_reviewed`) in this PR, or the PR body says "no doc change needed".
-- [ ] The PR's **Definition of Done** block (`.github/PULL_REQUEST_TEMPLATE.md`) is filled — evidence ticked, not hoped.
+- [ ] An architectural decision (new dependency, storage strategy, cross-cutting pattern) ships its ADR under `docs/adr/` in the same PR, superseding an old one rather than editing it.
+- [ ] A new or changed endpoint, or a new `extraction_*` table, updates its `docs/reference/` doc and `last_reviewed` in the same PR, or the PR body says "no doc change needed".
 
-Why: ADRs and reference docs that lag the code drift out of sync — the `glossary-sync` fitness check only catches concept-vocabulary drift, not endpoint/architecture docs. Bind the decision to the diff that makes it.
+## The spec axis: does the diff do what was asked?
 
----
-
-## The spec axis — does the diff do what was asked?
-
-The checklist above is the **standards** axis. A diff can pass it and still build the wrong thing. When the work has a source of intent (a `/ship-spec` spec or plan, a GitHub issue named in the commits, a plan under `docs/superpowers/plans/`), review that axis too, in a **separate sub-agent** so neither review colours the other.
-
-Brief the spec sub-agent with the diff command (`git diff <base>...HEAD`), the commit list, and the spec path. Ask it to report, quoting the spec line for each finding:
+The checklist is the **standards** axis; a diff can pass it and still build the wrong thing. When the work has a source of intent (a `/ship-spec` spec or plan, an issue named in the commits, a plan under `docs/superpowers/plans/`), review that axis in a **separate sub-agent** so neither review colors the other. Brief it with the diff command (`git diff <base>...HEAD`), the commit list and the spec path, and ask for findings that quote the spec line:
 
 1. Requirements missing or only partly done.
-2. Behaviour in the diff nobody asked for (scope creep).
-3. Requirements that look implemented but wrong.
+2. Behaviour nobody asked for (scope creep).
+3. Requirements that look implemented but are wrong.
 
-Report the two axes under separate headings. Don't merge or re-rank them into one list: that is how one axis masks the other. Inside `/ship-spec`, `ship-reviewer` already reviews against the plan; this section is for work done outside it. With no spec at all, say "no spec available" and skip the axis.
+Report the two axes under separate headings; merging them lets one mask the other. Inside `/ship-spec`, `ship-reviewer` already reviews against the plan. With no spec, say "no spec available" and skip the axis.
 
----
+## Asking for and answering review
 
-## Requesting review
+- **Asking.** One concern per PR, self-reviewed against the checklist, never on red CI. Label `security` when the diff touches auth, RLS or endpoint exposure. The `pr-review` routine skips `claude/` and `autofix/` branches unless the PR carries `needs-review`.
+- **Answering.** Verify each comment against the code before agreeing or pushing back. Push back with evidence when a suggestion contradicts `docs/reference/extraction-hitl-architecture.md` or `docs/reference/migrations.md`. Answer every comment: fixed in `<sha>`, won't fix because…, or a linked follow-up issue.
+- **Writing review as an agent.** Each finding cites `file:line` or a command and names the concrete risk. Order Critical → Important → Minor and stop at ten. Style a linter could catch is not a finding.
 
-### Make the PR easy to review
+## Automated PR review
 
-- **Small.** One concern per PR. If you can't summarize the change in one sentence, it's two PRs.
-- **Targeted at `dev`.** Never open against `main`.
-- **Labeled.** Add `needs-review` (and `security` if it touches auth / RLS / endpoint exposure).
-- **Self-reviewed first.** Run through the prumo checklist above before pinging anyone.
-
-### PR body template
-
-```markdown
-## Why
-
-<1–3 sentences. What problem, why now. Link issue if any.>
-
-## What changed
-
-- <bullet per logical change, grouped by area>
-- <link to file:line where the change is non-obvious>
-
-## Risk
-
-<What could break? Which areas are exercised? Migrations / RLS / state-machine changes get a paragraph.>
-
-## Test plan
-
-- [ ] `make lint-backend` clean
-- [ ] `make test-backend` passes (note any newly added tests)
-- [ ] `npm run lint` clean
-- [ ] `npm run test:run` passes
-- [ ] Manual: <steps a reviewer can reproduce>
-
-## Out of scope
-
-<What you noticed but deliberately did not fix here, with link to follow-up issue if filed.>
-```
-
-Why this template: reviewers need risk + reproduction, not a code rehash. The diff is the "what" — you owe them the "why" and the "how to verify".
-
-### After pushing
-
-1. Watch CI. Do not request review on a red branch.
-2. Resolve your own review comments on the diff (notes for the reviewer) before pinging.
-3. If the PR is non-trivial, write a "review entry point" comment: which file to read first, which is mechanical.
-
-Full protocol: `references/requesting-review.md`.
-
----
-
-## Receiving feedback
-
-### Response pattern
-
-`READ → UNDERSTAND → VERIFY → EVALUATE → RESPOND → IMPLEMENT`
-
-Never skip VERIFY. The reviewer might be wrong. You owe them the courtesy of checking, not the performance of agreeing.
-
-### Banned phrases (performative agreement)
-
-- "You're absolutely right!"
-- "Great catch!" / "Great point!"
-- "Thanks for the feedback!"
-- "Good idea, I'll do that."
-
-These are social lubricant masquerading as engagement. They commit you to changes you haven't evaluated. Replace with one of the four real responses below.
-
-### The four real responses
-
-1. **Restate the requirement.**
-   > "You're asking me to change `ensure_project_member` to a manager check on this endpoint because writes here should be manager-only — confirming."
-2. **Ask a clarifying question** (when truly unclear, not as a stall).
-   > "When you say 'wrap this in a transaction', do you mean the whole handler or just the two-statement state transition?"
-3. **Push back with technical reasoning.**
-   > "I checked `backend/app/api/v1/endpoints/extraction_runs.py:88` — `ensure_project_member` is already called. Did you have a different endpoint in mind, or am I missing a path?"
-4. **Just start working** — when the request is clear, correct, and small.
-
-### When to push back
-
-Push back when the suggestion is:
-
-- Factually wrong (grep proves it, link the file:line).
-- More expensive than the problem (YAGNI — "we might need this someday" is not a reason now).
-- In conflict with `docs/reference/extraction-hitl-architecture.md` or `docs/reference/migrations.md`.
-- A style preference dressed as a correctness claim.
-
-Push back politely with evidence, not opinion: "Here's what the code does today, here's why I picked this, what am I missing?"
-
-### When to defer / when to fix-it-later
-
-- **Fix now**: correctness, security, anything reviewer marked Critical.
-- **Fix in this PR but in a separate commit**: Important, scope-adjacent improvements.
-- **Open a follow-up issue**: Out-of-scope cleanups, "while we're here" suggestions that double the PR size.
-
-Don't silently drop a comment. Either resolve it with a reply ("won't fix because X") or link the follow-up issue.
-
-Full protocol: `references/receiving-feedback.md`.
-
----
-
-## AI-assisted review etiquette
-
-If an AI agent (you or another) is producing review comments:
-
-- Every comment cites `file:line` or a command. No vague pattern-matching.
-- No "consider doing X" without explaining the concrete risk if X isn't done.
-- No mass-flagging style nits that the linter would catch. Make the linter catch them instead.
-- The human reviewer's time is the scarcest resource — prioritize Critical → Important → Minor, in that order, and stop at the first 10 items.
-
-If you (the agent) are receiving AI-generated review on a PR, apply the same standard: demand `file:line`, demand the concrete risk. AI review without evidence is noise.
-
----
-
-## Automated PR review (cloud routine / CI / "review PR N")
-
-Any automated surface reviewing a pull request uses this same skill as
-its single source of truth: the checklist above is WHAT to review;
-`references/automated-pr-review.md` is the orchestration contract —
-how to identify the PR, the dedup rule, the `## Claude review` comment
-format, and the comment-only hard rules. Keep review knowledge HERE,
-never inlined in routine prompts or workflow files (inline copies rot;
-the clone always carries the current version of this skill).
-
----
-
-## Workflow integration
-
-- **TDD / feature-dev**: review-after-each-task. Run the verification gate before saying a task is done.
-- **Multi-task subagent runs**: each subagent's "done" report is unverified — re-run the gate yourself before believing it.
-- **Pre-merge**: full prumo checklist + verification gate. CI green is necessary, not sufficient.
-- **Hotfix on `main`**: still goes via `dev` unless explicitly approved otherwise. Hotfixes get more scrutiny, not less.
-
----
-
-## Bottom line
-
-1. **Evidence before claims.** `file:line` or command output, every time.
-2. **Small PRs, full self-review, clear PR body.**
-3. **Technical rigor over performative agreement.** Verify what the reviewer said. Push back when wrong. Implement when right.
-4. **Run the verification gate.** No exceptions.
-
-Verify. Question. Then implement. Evidence. Then claim.
+Any automated surface reviewing a pull request (the `pr-review` cloud routine, a "review PR N" session) uses this checklist as WHAT to review and [`references/automated-pr-review.md`](references/automated-pr-review.md) as the contract: how to find the PR, the dedup rule, the `## Claude review` comment format, and the comment-only rules. Keep review knowledge here, never inlined in routine prompts.

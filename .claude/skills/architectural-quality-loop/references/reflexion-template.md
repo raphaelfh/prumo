@@ -14,8 +14,8 @@ Between VERIFY (judge returns `RESOLVES`) and CONVERGE, the orchestrator appends
 
 ```markdown
 ## Reflexion (iteration 001)
-**What could still go wrong:** The fitness rule I added enforces the symbol via regex on .py and .ts files but does not scan .sql files, so a future migration that references the legacy table in a JOIN would slip through.
-**What I'd do differently next time:** Extend the SCAN_EXTS constant in check_legacy_concepts.py to include `.sql` for any pattern whose evidence is a SQL identifier, not just .py/.ts.
+**What could still go wrong:** The dropped function's name went into check_retired_symbols.py's RETIRED list, which scans only .py/.ts/.tsx under backend/app, backend/tests and frontend, so a future migration that recreates the function would slip through.
+**What I'd do differently next time:** Pair every retired SQL object with a schema-drift test that asserts it stays dropped, like `test_check_cardinality_one_stays_retired`.
 ```
 
 ```markdown

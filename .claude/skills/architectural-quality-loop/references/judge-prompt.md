@@ -6,8 +6,8 @@ The verification judge is the second gate after `scripts/verify_all.sh`. The orc
 
 - `FINDING` — the JSON object from `findings.jsonl` that this iteration is closing.
 - `DIFF` — the unified diff produced by APPLY (output of `git diff <base>..HEAD` inside the worktree).
-- `GATE_OUTPUT` — the combined stdout + stderr of `scripts/verify_all.sh` run after APPLY. Each gate's output is bracketed by `=== <gate-name> ===` markers; lines may be truncated to the last 2000 bytes per gate.
-- `COUNTERFACTUAL_PROBE` — output of `git diff -R | git apply` (reverting the diff) followed by running ONLY the touched gates (lint on touched files, tests that import touched modules, fitness scripts with `--scope` matching the diff's files).
+- `GATE_OUTPUT` — the combined stdout + stderr of `scripts/verify_all.sh` run after APPLY. Each gate's output opens with `=== <gate> ===` and closes with `=== <gate> exit=<rc> ===`; a gate that could not run prints `=== <gate> SKIP (<reason>) ===` instead. Lines may be truncated to the last 2000 bytes per gate.
+- `COUNTERFACTUAL_PROBE` — output of `git diff <base>..HEAD | git apply -R` (reverting the diff) followed by running ONLY the touched gates (lint on touched files, tests that import touched modules, the fitness checks; `--scope` narrows only `check_legacy_concepts.py`, every other check scans the full tree).
 
 ## The prompt template
 
@@ -24,10 +24,11 @@ You receive four artefacts:
    resolution to FINDING.
 
 3. GATE_OUTPUT — combined stdout + stderr of `scripts/verify_all.sh` run
-   AFTER the diff was applied. Includes ruff, npm lint, tsc, pytest,
-   vitest, scripts/fitness/run_all.sh, and Playwright smoke (if
-   routers/UI touched). Lines may be truncated to the last 2000 bytes
-   per gate.
+   AFTER the diff was applied. Includes ruff, eslint, tsc, knip (twice),
+   vulture, pytest, vitest, the React Compiler check,
+   scripts/fitness/run_all.sh, alembic check and Playwright smoke. A gate
+   that could not run prints "=== <gate> SKIP (<reason>) ===". Lines may
+   be truncated to the last 2000 bytes per gate.
 
 4. COUNTERFACTUAL_PROBE — output of: revert DIFF, then re-run only the
    touched gates. The question this answers: "does reverting the fix
@@ -89,7 +90,7 @@ RULES OF PRECEDENCE
 - Comment-only diff with no fitness rule / regression test → DOES_NOT_
   RESOLVE with reason "no recurrence guard".
 - Diff outside FINDING.file's directory tree → INTRODUCES_REGRESSION
-  unless FINDING.suggested_action explicitly authorised a cross-file fix
+  unless FINDING.suggested_action explicitly authorized a cross-file fix
   (rare; the SCAN should have emitted multiple findings instead).
 - Do not infer intent from variable names. Judge only DIFF + GATE_OUTPUT
   + COUNTERFACTUAL_PROBE.
@@ -107,7 +108,7 @@ No preamble. No markdown. No backticks. No third line.
 
 ```
 RESOLVES
-Diff replaces hardcoded 'prediction_models' check with role enum lookup; all gates green; counterfactual probe shows revert fails check_legacy_concepts.py canary.
+Diff replaces hardcoded 'prediction_models' check with a parent_entity_type_id + cardinality lookup; all gates green; counterfactual probe shows revert fails check_legacy_concepts.py canary.
 ```
 
 ```
@@ -117,12 +118,12 @@ Diff rewrites docstring without adding a fitness rule or regression test, and co
 
 ```
 INTRODUCES_REGRESSION
-Diff touches backend/app/api/v1/endpoints/runs.py despite finding scoped to backend/app/services/extraction_proposal_service.py; cross-file edit not justified by suggested_action.
+Diff touches backend/app/api/v1/endpoints/extraction_runs.py despite finding scoped to backend/app/services/extraction_proposal_service.py; cross-file edit not justified by suggested_action.
 ```
 
 ## Why a fresh context
 
 The judge runs in a fresh LLM call (no conversation history, no other context). Reasons:
-- The PLAN/APPLY phases may have rationalised "why this fix is good"; the judge cannot inherit that bias.
+- The PLAN/APPLY phases may have rationalized "why this fix is good"; the judge cannot inherit that bias.
 - The judge sees ONLY the four artefacts. If a real bug landed in DIFF, the gates catch it; if the gates miss it, that is a bug in the gates, not a bug for the judge to compensate for.
 - Reproducibility: same inputs → same verdict. With conversation history, two judges on the same diff would diverge.
