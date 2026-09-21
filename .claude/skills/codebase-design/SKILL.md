@@ -115,4 +115,4 @@ When designing an interface, ask:
 - **Deepening a cluster given its dependencies**, see [DEEPENING.md](DEEPENING.md): dependency categories, seam discipline, and replace-don't-layer testing.
 - **Exploring alternative interfaces**, see [DESIGN-IT-TWICE.md](DESIGN-IT-TWICE.md): parallel sub-agents design the interface several radically different ways, then compare on depth, locality, and seam placement.
 
-Adapted from mattpocock/skills (MIT); see `../THIRD_PARTY_NOTICES.md`.
+Adapted from mattpocock/skills (MIT).

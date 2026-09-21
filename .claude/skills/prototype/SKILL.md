@@ -26,4 +26,4 @@ The two branches produce very different artifacts, so getting this wrong wastes 
 6. **Never merge it into `dev`.** Prototype code is dead code the moment a decision is made, and the knip, vulture, and copy-key gates will flag it. Commit the prototype to a throwaway branch named `prototype/<topic>`, and record the verdict and the question it settled in the implementing PR or spec.
 7. **Fold the decision in properly.** Rewrite the winning logic or layout in production code with tests. For UI, finish with `design-review` on the real screen.
 
-Adapted from mattpocock/skills (MIT); see `../THIRD_PARTY_NOTICES.md`.
+Adapted from mattpocock/skills (MIT).

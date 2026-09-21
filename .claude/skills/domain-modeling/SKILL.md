@@ -65,4 +65,4 @@ If any is missing, skip the ADR. When writing one:
 - Never edit a past decision. Supersede or amend it, and link both ways in the status block.
 - Per `code-review` §K, the ADR lands in the same PR as the code that makes the decision.
 
-Adapted from mattpocock/skills (MIT); see `../THIRD_PARTY_NOTICES.md`.
+Adapted from mattpocock/skills (MIT).
