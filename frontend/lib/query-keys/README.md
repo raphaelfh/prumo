@@ -2,6 +2,8 @@
 
 Single source of truth for every `queryKey` used in TanStack Query hooks. Every `useQuery({ queryKey: [...] })` call site must source its key from one of the namespace files here — never from a literal array embedded inline at the call site.
 
+One exception: run-scoped keys are `runsKeys` in `frontend/hooks/runs/types.ts`. `runsKeys.detail(runId)` is the run view `useRun` reads; there is no second run-detail key here.
+
 ## Why
 
 `queryKey` is the cache identity. Two call sites that drift in their keys silently double-cache the same data; an invalidation that targets one misses the other. The bug manifests as "stale UI after action X" — exactly the kind of subtle cache drift the code-review skill calls out as a recurring incident class on prumo.

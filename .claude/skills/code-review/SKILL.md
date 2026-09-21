@@ -75,6 +75,7 @@ Apply it to every diff: yours before you ask for review, anyone's before you app
 
 - [ ] Keys come from a factory (`frontend/lib/query-keys/`, or a domain one such as `runsKeys.detail(runId)`); a literal key array fails `check_react_query_keys.py`. The key carries every id the query reads by.
 - [ ] Each `useMutation` invalidates every key family whose data it changed. No gate checks this: read each `onSuccess`.
+- [ ] Every invalidated key has a reader: a `useQuery` on the same factory member (the run view is `runsKeys.detail(runId)`, read by `useRun`). knip does not flag an unused factory member, and a spy on `invalidateQueries` passes for a key nothing reads; assert through the reader hook with MSW, as `frontend/test/hooks/sectionExtractionJobs.test.tsx` does.
 - [ ] An optimistic update has an `onError` rollback.
 - [ ] When the backend auto-advances a run stage, the frontend invalidates the run detail key.
 
