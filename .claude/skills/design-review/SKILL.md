@@ -1,186 +1,88 @@
 ---
 name: design-review
-description: "prumo's visual feedback loop — render the screen, screenshot it, compare to the Plane/Linear target, list the diffs, fix, re-screenshot, confirm. Use BEFORE claiming any frontend screen or component \"done\", and whenever the ask is \"does this look right\", \"match Linear/Plane\", \"tighten this screen\", \"iterate on the UI\", \"why does this look off / generic / AI-made\", or after any non-trivial layout, density, spacing, or theme change. The `/design-review` command runs this loop on a route. Siblings: `frontend-ux` sets the visual language (what it should look like), `ui-styling` is the Tailwind/shadcn mechanics (how to wire the classes); this skill is the *did it actually end up that way* layer that closes the loop with your eyes, not the diff."
+description: "Use before calling any prumo screen or component done, and when asked \"does this look right\", to match Linear/Plane, or to tighten a screen: render it, screenshot desktop and narrow widths, compare against `frontend-ux` and the Linear references, fix the prioritized diffs, re-capture. Also `/design-review <route> [--fix] [--dark] [--baseline]`."
+argument-hint: "<route or screen> [--fix] [--dark] [--baseline]"
 ---
 
-# Design Review — the visual feedback loop
+# Design Review: the visual feedback loop
 
-The single load-bearing frontend practice: **never judge a UI from the code diff
-alone — render it, look at it, and correct against a target.** A class string that
-reads correct still ships the wrong screen (a stale token, a missed `min-w-0`, a
-shadow that resolved to `none`, a dark-mode foreground that vanished). The check
-that closes the loop is visual.
+**Never judge a UI from the diff.** A class string that reads correct still ships the wrong screen: a stale token, a missing `min-w-0`, a shadow that resolved to `none`, a dark-mode foreground that vanished. `frontend-ux` is the target, `ui-styling` the mechanics; this loop checks what actually rendered.
 
-- `frontend-ux` → *what it should look like* (the Plane/Linear/WorkOS language).
-- `ui-styling` → *how to wire it* (Tailwind v4 + shadcn + Radix mechanics).
-- **this skill** → *what you actually rendered, and how to walk it to the target.*
+## Arguments
 
-Read `frontend-ux` first to know the target; run this loop to verify you hit it.
+When invoked as `/design-review`, parse `$ARGUMENTS`:
 
-## When to run
+- **target** (required): a route (`/projects/:id/extraction/:articleId`) or a description ("extraction list empty state"). Resolve a description to a route from `frontend/pages/` and the router, and say which route; ask when it is ambiguous.
+- `--fix`: apply the P0 and P1 fixes and re-verify. Without it, report and stop.
+- `--dark`: also capture dark mode (always do so when the change touched theming).
+- `--baseline`: once the screen matches, print the Playwright `toHaveScreenshot` line and the file it would live in, and ask before recording anything.
 
-- Before claiming **any** frontend screen/component done (this is the UI analogue
-  of `verification-before-completion` — a screenshot is your fresh evidence).
-- "Does this look right?", "match Linear/Plane", "tighten / polish this screen",
-  "this feels generic / AI-made", "iterate on the UI".
-- After a non-trivial change to layout, density, spacing, borders, shadows,
-  empty/loading states, dark mode, or responsive behaviour.
-- Via the `/design-review <route> [--fix] [--dark] [--mobile] [--baseline]`
-  command.
+## The loop
 
-## The loop (do not skip a step)
-
-```
-1. RENDER     dev server up, log in if the screen is gated, open the exact state
-2. CAPTURE    screenshot it at TWO widths every time — desktop (~1280) and
-              narrow (~390). Responsive is never optional; add a dark capture
-              too if you touched theming
-3. COMPARE    hold it against TWO anchors (rubric below): the frontend-ux
-              checklist (objective) and the Linear reference images (vocabulary)
-4. DIFF       write a prioritised list — P0 (breaks the look) → P2 (nice-to-have)
-5. FIX        apply the smallest class/token change per diff (ui-styling mechanics)
-6. RE-CAPTURE screenshot the same screen + state again
-7. CONFIRM    diff closed? loop back to 4 until no P0/P1 remain, then stop
+```text
+1. RENDER      your own dev server, signed in, the exact screen AND state you changed
+2. CAPTURE     desktop (~1280) and narrow (~390) every time; a mid width (~700-900) when the
+               screen has a priority-track header; dark when theming changed or --dark
+3. COMPARE     against the two anchors below
+4. DIFF        a prioritized list: P0 breaks the look, P1 is clearly wrong against the
+               checklist, P2 is polish
+5. FIX         the smallest token or class change per diff (ui-styling mechanics)
+6. RE-CAPTURE  the same screen and state
+7. CONFIRM     loop from 4 until no P0/P1 remain; note the P2s and stop
 ```
 
-Stop when there are no P0/P1 diffs left, or the user calls it. Don't loop on P2
-cosmetics forever — note them and move on.
+## Render
 
-## Tooling — what to capture with
+Browser pane tools (`mcp__Claude_Browser__*`): `preview_start`, `navigate`, `computer` (screenshot, click, type), `read_page`, `form_input`, `javascript_tool`, `resize_window`, `read_console_messages`.
 
-| Goal | Tool | Why |
-| --- | --- | --- |
-| Interactive iteration (the loop above) | **Browser pane** (`mcp__Claude_Browser__*`) — `preview_start` / `navigate`, `computer` (screenshot, click, type), `read_page`, `resize_window`, `javascript_tool` (computed styles), `form_input`, `read_console_messages` | First-party in-app browser; the harness's preview-tools guidance prefers it over Bash or Chrome for running the dev server and verifying. |
-| A scripted capture or a committed regression baseline | **Playwright** `toHaveScreenshot` | Deterministic, lives in CI. Owned by the `web-testing` skill §7 — read it before adding baselines. |
+- **Make sure the server is this tree's.** The dev server is `npm run dev` (Vite, :8080). `preview_start({name})` reads `.claude/launch.json` from the main checkout, and :8080 is often a peer session's server on another branch, so you would review the wrong code and it would look fine. Check the owner: `lsof -nP -iTCP:8080 -sTCP:LISTEN`, then `lsof -a -p <pid> -d cwd`. Two PIDs on 8080 (one `[::1]`, one `*`) means `localhost` hits the other one. If it is not this tree, copy the gitignored `.env` and `backend/.env` from the main checkout, start `npm run dev -- --port <n> --strictPort` in the background, and open `http://127.0.0.1:<n><route>` with `preview_start({url})`.
+- **Sign in.** Product routes sit behind `ProtectedRoute` and redirect to `/auth`. There, `form_input` the test account (`teste@prumo.local` / `Senha123`), submit with `computer`, then go to the target, and confirm with `read_page` that you are on the app shell. `Invalid login credentials` means that Supabase has no such account: bring up the local stack (`make start`, `make db-seed`).
+- **A page that never reaches ready** in a worktree is a CORS suspect before an app bug: the backend accepts any localhost port only with `DEBUG=true`.
+- Drive to the exact state (empty, loading, a given run or reviewer) with `computer` or `javascript_tool`, say which state you captured, and check `read_console_messages` for errors that distort the render.
 
-Mechanics:
+## Capture
 
-- Dev server is `npm run dev` → Vite on **:8080** (`http://127.0.0.1:8080`).
-  `preview_start` reuses a server already on :8080; if nothing is listening,
-  start it first (`npm run dev`) and wait for it before `preview_start`.
-- **Auth.** Most product screens (extraction, HITL, runs, settings) sit behind
-  `ProtectedRoute`, which redirects an unauthenticated session to `/auth` — so
-  `preview_start` at a deep route lands on the **login form**, not your screen.
-  Sign in first: open `/auth`, `preview_fill` the email + password with the
-  browser test account (`teste@prumo.local` / `Senha123`), `preview_click` submit,
-  then go to the target. Confirm with `preview_snapshot` that you're on the app
-  shell (not `/auth`) before you screenshot. If sign-in is rejected (`Invalid login
-  credentials` in `preview_console_logs`), the dev build points at a Supabase where
-  that account isn't seeded — bring up the full local stack (`make start` /
-  `make db-seed`) or use known-good creds before retrying.
-- Navigate within the app with `preview_eval` (`window.location.assign('/...')`)
-  or by starting the preview at the target URL. There is no `preview_navigate`.
-- `preview_screenshot` = the visual; `preview_snapshot` = the DOM/structure;
-  `preview_inspect` = computed CSS for a node (use it to confirm a token actually
-  resolved, e.g. the header is really `48px`, the border is really
-  `hsl(var(--border) / 0.4)`).
-- **Dark mode** is driven by `next-themes` (`attribute="class"`,
-  `storageKey="prumo:theme"`), so a bare `classList.toggle("dark")` gets re-synced
-  out from under you. Force it durably with
-  `preview_eval("localStorage.setItem('prumo:theme','dark'); location.reload()")`,
-  screenshot, then restore (`'system'` or `'light'`) and reload.
-- Responsive — **always** re-capture narrow, not only when you "touched"
-  layout: `preview_resize` to ~390 (below `sm`/640), and sanity-check a mid
-  width (~700–900) whenever the screen has a priority-track header. The app
-  breaks at Tailwind defaults (sm 640, md 768, lg 1024, xl 1280; `2xl` is
-  overridden to **1400**), and some chrome (RunHeader, ExtractionHeader)
-  reflows on its *own* width via `@tailwindcss/container-queries`
-  (`@container/headerbar`) — so a component can change layout without the
-  viewport crossing a breakpoint. Resize the panel, not just the window.
+- Screenshot with `computer {action: "screenshot"}`; `read_page` for structure; `javascript_tool` for the computed style of any node whose token you doubt (the header really 48px, the border really `/0.4`, the shadow not `none`).
+- **Dark mode** is `next-themes` (`storageKey="prumo:theme"`), which re-syncs a toggled class: run `localStorage.setItem('prumo:theme','dark'); location.reload()`, capture, then restore `'system'` and reload.
+- **Narrow**: `resize_window` to ~390 (below `sm`), capture, restore. Some chrome (`RunHeader`, `ExtractionHeader`) reflows on its own width through container queries, so resize the panel too, not only the window.
 
-## Targets — what "correct" means (two anchors)
+## Compare: two anchors
 
-**1. The objective rubric — the `frontend-ux` checklist.** Always available,
-unambiguous, and the thing to enforce first:
+1. **Objective**: the `frontend-ux` § 7 checklist (the `h-12` header, `text-[13px]` body, `border-border/40`, `h-4 w-4` icons at `strokeWidth={1.5}`, instant `hover:bg-muted/50`, soft `shadow-elev-*`, breadcrumb-first, the edge budget, selection vs focus). Enforce it first.
+2. **Vocabulary**: read `docs/design-references/linear_ux.png` and `docs/design-references/linear_project_configuration.png` and compare the feel: density, contrast, chrome, spacing rhythm. They are references, not pixel specs.
 
-- Header height is exactly `h-12` (48px), `bg-background/80 backdrop-blur-md`,
-  `border-b border-border/40`.
-- Body/UI font is `text-[13px]`; titles `text-foreground`, everything else
-  `text-muted-foreground`.
-- Borders use `border-border/40` for chrome/dividers (`border-border/50` for
-  menus & dropdowns, per frontend-ux §3) — never full-opacity 1px slabs.
-- Icons are `h-4 w-4` with `strokeWidth={1.5}`, consistent across the screen.
-- List hover is instant (`duration-0`/`duration-75`) and `hover:bg-muted/50`.
-- Shadows are soft and large (`shadow-[0_8px_30px_rgb(0,0,0,0.04)]` / the
-  `shadow-elev-*` tokens), never a hard `shadow-md` slab.
-- Navigation is breadcrumb-first, not a 24px page title.
+What to look at in the capture:
 
-**2. The vocabulary anchor — the Linear reference images.** Open them and compare
-*feel* (density, contrast, chrome, spacing rhythm):
+- **Density**: rows taller than `h-9`, sparse "webpage" spacing.
+- **Hierarchy**: exactly one thing at `text-foreground`, the rest muted. Borderline contrast gets an axe `color-contrast` check, not an eyeball.
+- **Chrome**: hairlines that separate rather than decorate; no double borders (use `gap-px bg-border`); no card inside a bordered pane.
+- **Interaction**: a hover on every interactive row, a visible keyboard focus ring, hover-only actions reachable on touch (a visible kebab).
+- **Empty and loading**: skeletons match real line heights; empty states are intentional.
+- **Dark**: nothing vanished; reviewer colors and status colors still read and come from tokens.
+- **Narrow**: no overflow; dense tables become card lists (`useIsNarrow`); the sidebar becomes the `MobileSidebar` sheet; header labels collapse before anything clips.
+- **Reduced motion**: with `prefers-reduced-motion` forced, the `field-just-updated` flash and transitions do not animate.
 
-- `docs/design-references/linear_ux.png` — list density, hover affordances,
-  command-palette feel.
-- `docs/design-references/linear_project_configuration.png` — configuration /
-  settings surfaces.
+### Anti-slop tells
 
-These are references, not pixel specs (see `docs/design-references/README.md`).
-Use them to answer "does this *feel* like the same family of tool?"
-
-## The rubric — what to actually look at in the screenshot
-
-- **Density & rhythm** — too much vertical padding? rows taller than `h-9`? Is the
-  information-per-screen close to the Linear reference, or sparse and "webpage-y"?
-- **Hierarchy & contrast** — is exactly one thing the title (`text-foreground`)
-  and the rest muted? Or is everything competing at full contrast? Borderline
-  contrast → don't eyeball it, run the `web-testing` §6 axe `color-contrast` check.
-- **Chrome & borders** — borders subtle (`/40` chrome, `/50` menus) and used to
-  separate, not decorate? Any double borders (use `gap-px bg-border`)? Header thin?
-- **Hover & interaction** — every interactive row/button has a hover state? Focus
-  ring visible on keyboard (`focus-visible:ring-2 focus-visible:ring-ring
-  focus-visible:ring-offset-2`)? Hover is instant?
-- **Empty & loading** — skeletons match real line-height/width (no layout shift)?
-  Empty states intentional, not a bare "No data"?
-- **Dark mode** — any text that vanished (raw color instead of a token)? Do the
-  `reviewer-1..5` dots/avatars and status/severity colors still read on the dark
-  surface and come from tokens (`text-reviewer-N`), not hardcoded hex/HSL? Shadows
-  still read on the dark surface?
-- **Responsive (check every time, not only when you changed layout)** — capture
-  at ~390 (below `sm`) and a mid width (~700–900). Overflow on flex/grid (missing
-  `min-w-0`)? Does a dense table drop to a card list below `sm` (`useIsNarrow`)?
-  Does the sidebar collapse to the `MobileSidebar`/Sheet drawer? Do the
-  container-query headers clip/collapse labels gracefully instead of pushing
-  content out of their track? Are hover-only actions still reachable on touch
-  (a visible kebab, not `group-hover`-only)?
-- **Reduced motion** — with `prefers-reduced-motion` forced, do the
-  field-just-updated flash and any transitions degrade to no-motion (not animate)?
-  Hover stays instant per `frontend-ux` either way.
-
-## Anti-slop tells (catch generic-AI output before the user does)
-
-| Slop tell | prumo-correct |
-| --- | --- |
+| Tell | prumo-correct |
+|---|---|
 | 24–32px centered page title | breadcrumb + `text-[13px]` context, content starts high |
-| Hard `shadow-md`/`shadow-lg` slabs | soft `shadow-[0_8px_30px_rgb(0,0,0,0.04)]` / `elev-*` |
-| Purple/indigo gradient, glassy hero | flat semantic surfaces (`bg-background`, `bg-muted`) |
+| Hard `shadow-md` / `shadow-lg` slabs | soft `shadow-elev-*` |
+| Purple gradient, glassy hero | flat semantic surfaces (`bg-background`, `bg-muted`) |
 | Full-opacity borders everywhere | `border-border/40`, dividers via `gap-px bg-border` |
-| Generous `p-6`/`p-8`, `space-y-6` | dense `py-1`–`py-2`, `text-[13px]`, `h-9` rows |
-| `rounded-2xl` on everything | `rounded-md` (8px) per the menu/dropdown spec |
-| Emoji as icons, mismatched icon sizes | `lucide` `h-4 w-4` `strokeWidth={1.5}` |
-| No hover affordance on rows/actions | `group-hover` reveal + `hover:bg-muted/50` |
+| `p-6`/`p-8`, `space-y-6` | dense `py-1`–`py-2`, `h-9` rows |
+| `rounded-2xl` on everything | `rounded-md` |
+| Emoji icons, mixed icon sizes | lucide `h-4 w-4`, `strokeWidth={1.5}` |
+| No hover affordance | `group-hover` reveal + `hover:bg-muted/50` |
 
-## Recording a regression baseline (optional)
+## Report
 
-Once a screen matches the target and is stable, you can lock it with a Playwright
-snapshot so cosmetic regressions get caught in CI:
+One table, then the verdict:
 
-```ts
-await expect(page).toHaveScreenshot('extraction-list.png', { maxDiffPixels: 200 });
+```text
+| PRI | WHAT'S OFF | frontend-ux RULE | FIX (exact class or token change) | FILE:LINE |
 ```
 
-Baselines live alongside the test; diffs land in `test-results/`. Use **sparingly**
-— snapshots are heavy and break on legit refactors. This is `web-testing` §7
-territory; read it before adding one, and `mask:` volatile regions (timestamps,
-avatars, reviewer colors).
+Each fix is a `ui-styling`-correct change (semantic token, `cn()` order, a named Button size), never a raw color or a hardcoded string. With `--fix`, apply the P0 and P1 rows, respecting the React Compiler rules and routing copy through `frontend/lib/copy/`, then re-capture and loop. End with the before (and after) screenshot, and one line: `RESULT: MATCHES TARGET` or `RESULT: <n> P0 / <m> P1 remain`.
 
-## Checklist (make these TodoWrite items)
-
-- [ ] Rendered the exact screen **and state** I changed (not just the happy path).
-- [ ] Captured desktop-light **and a narrow width (~390)** — responsive is not
-      optional; added a mid width too if the screen has a priority-track header.
-- [ ] Added a dark capture if I touched theming.
-- [ ] Compared against the `frontend-ux` checklist (objective) and the Linear
-      reference images (vocabulary).
-- [ ] Wrote a prioritised diff list (P0 → P2).
-- [ ] Fixed every P0/P1 with the smallest token/class change.
-- [ ] Re-captured and confirmed each diff actually closed.
-- [ ] No raw colors, no full-opacity border slabs, no AI-slop tells remain.
+There are no screenshot baselines in the repo. Lock a screen with `toHaveScreenshot` only once it matches and is stable, masking volatile regions (timestamps, avatars, reviewer colors).

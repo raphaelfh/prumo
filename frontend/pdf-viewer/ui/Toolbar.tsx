@@ -21,6 +21,13 @@ const EXPAND_KEYS = ['mod', '⇧', '\\'] as const;
  * caller-owned `center` (the document switcher) in the middle, zoom + search
  * on the right. Below 32rem of its own width the step buttons (prev/next page,
  * zoom ±) fold away — `[− Fit width +]`, search and the ☰ menu stay.
+ *
+ * The two `1fr` tracks carry `min-w-0` and clip; the trailing track does not.
+ * Grid items floor at min-content by default, so on a phone-width pane the
+ * whole grid overflowed instead of shrinking and the viewer root's
+ * `overflow-hidden` cut the trailing cluster off the right edge — search,
+ * expand and ☰ were on the page but unreachable. Letting the left and centre
+ * tracks shrink keeps that cluster inside the bar at any width.
  */
 export function Toolbar({
   className,
@@ -70,7 +77,7 @@ export function Toolbar({
   return (
     <div className={cn('@container/viewerbar border-b bg-background', className)}>
       <div className="grid min-h-10 grid-cols-[1fr_auto_1fr] items-center gap-2 px-2 [&_[data-viewer-step]]:hidden @[32rem]/viewerbar:[&_[data-viewer-step]]:inline-flex">
-        <div className="flex items-center gap-0.5">
+        <div className="flex min-w-0 items-center gap-0.5 overflow-hidden">
           {modeToggle && (
             <IconButton
               label={t('pdf', 'viewerReaderToggle')}
@@ -87,7 +94,7 @@ export function Toolbar({
           {leading}
           <NavigationControls className="ml-1.5" />
         </div>
-        <div className="flex min-w-0 justify-center">{center}</div>
+        <div className="flex min-w-0 justify-center overflow-hidden">{center}</div>
         <div className="flex items-center justify-end gap-0.5">
           {/* Zoom acts on the PDF canvas; the reader is typography, not a
               page surface, so it is hidden in reader mode. */}

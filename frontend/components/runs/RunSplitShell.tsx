@@ -87,71 +87,84 @@ export function RunSplitShell({
     return () => window.removeEventListener("keydown", onKeyDownCapture, { capture: true });
   }, [isExpanded, collapse]);
 
-  // Expanded: the PDF is the whole workspace. The form panel and handle come
-  // OUT of the tree rather than collapsing to zero width — a zero-width panel
-  // keeps its focusable content in the Tab order.
-  const panels = pdf.isOpen && pdf.isExpanded ? (
-    <div className="h-full min-w-0" data-testid="assessment-shell-pdf-expanded">
-      {pdfPanel}
-    </div>
-  ) : (
+  // Expanded: the PDF is the whole workspace. The form panel and handle leave
+  // the tree rather than collapsing to zero width — a zero-width panel keeps
+  // its focusable content in the Tab order.
+  //
+  // The PDF panel itself NEVER leaves. It used to be swapped for a plain div
+  // when expanded, which unmounted PrumoPdfViewer: every expand and every
+  // restore tore the engine down and re-fetched the file, so the reviewer
+  // watched the document reload (and lost page, zoom and search) on a control
+  // that only changes the layout. Keeping one keyed <ResizablePanel> across
+  // both states makes the toggle a pure resize.
+  const maximized = pdf.isOpen && pdf.isExpanded;
+  const panels = (
     <ResizablePanelGroup orientation="horizontal" className="h-full">
       {/* v4 stamps data-testid={id} on panels (overriding any explicit
           data-testid prop), so the ids ARE the DOM test contract. */}
-      <ResizablePanel
-        id="assessment-shell-form"
-        defaultSize={pdf.isOpen ? "50%" : "100%"}
-        minSize="30%"
-      >
-        <div className="flex h-full flex-col">
-          {/* In-shell PDF toggle: hidden when the caller owns the toggle
-              (e.g. a page wiring RunHeader.PanelToggle via pdfState). */}
-          {!pdfState && (
-            <div className="flex shrink-0 items-center justify-end px-3 py-2">
-              {pdf.isOpen ? (
-                <button
-                  type="button"
-                  onClick={pdf.close}
-                  className="text-sm text-muted-foreground hover:underline"
-                  data-testid="assessment-shell-hide-pdf"
-                >
-                  Hide PDF
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={pdf.open}
-                  className="text-sm text-muted-foreground hover:underline"
-                  data-testid="assessment-shell-show-pdf"
-                >
-                  Show PDF
-                </button>
-              )}
-            </div>
-          )}
-          <div className="min-h-0 flex-1 overflow-auto">{formPanel}</div>
-        </div>
-      </ResizablePanel>
+      {!maximized && (
+        <ResizablePanel
+          key="form"
+          id="assessment-shell-form"
+          defaultSize={pdf.isOpen ? "50%" : "100%"}
+          minSize="30%"
+        >
+          <div className="flex h-full flex-col">
+            {/* In-shell PDF toggle: hidden when the caller owns the toggle
+                (e.g. a page wiring RunHeader.PanelToggle via pdfState). */}
+            {!pdfState && (
+              <div className="flex shrink-0 items-center justify-end px-3 py-2">
+                {pdf.isOpen ? (
+                  <button
+                    type="button"
+                    onClick={pdf.close}
+                    className="text-sm text-muted-foreground hover:underline"
+                    data-testid="assessment-shell-hide-pdf"
+                  >
+                    Hide PDF
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={pdf.open}
+                    className="text-sm text-muted-foreground hover:underline"
+                    data-testid="assessment-shell-show-pdf"
+                  >
+                    Show PDF
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-auto">{formPanel}</div>
+          </div>
+        </ResizablePanel>
+      )}
+      {pdf.isOpen && !maximized ? <ResizableHandle key="handle" withHandle /> : null}
       {pdf.isOpen ? (
-        <>
-          <ResizableHandle withHandle />
-          <ResizablePanel
-            id="assessment-shell-pdf"
-            defaultSize="50%"
-            minSize="30%"
-            maxSize="70%"
-          >
-            {pdfPanel}
-          </ResizablePanel>
-        </>
+        <ResizablePanel
+          key="pdf"
+          id="assessment-shell-pdf"
+          defaultSize="50%"
+          minSize={maximized ? "100%" : "30%"}
+          maxSize={maximized ? "100%" : "70%"}
+          // v4 overrides data-testid with the panel id, so the maximized
+          // state is exposed as its own attribute instead.
+          data-expanded={maximized || undefined}
+        >
+          {pdfPanel}
+        </ResizablePanel>
       ) : null}
     </ResizablePanelGroup>
   );
 
   return (
     <div className="flex h-full w-full flex-col" data-testid="assessment-shell">
-      {header ? <div className="shrink-0">{header}</div> : null}
-      {subHeader ? <div className="shrink-0">{subHeader}</div> : null}
+      {/* Maximizing gives the PDF the whole workspace, vertically too: the run
+          header and its status strip fold away, and the viewer's own restore
+          button (or Escape) brings them back. On a phone-width viewport that
+          header is most of the screen. */}
+      {header && !maximized ? <div className="shrink-0">{header}</div> : null}
+      {subHeader && !maximized ? <div className="shrink-0">{subHeader}</div> : null}
       <div className="min-h-0 flex-1 overflow-hidden">
         {viewerStore ? (
           <ViewerProvider store={viewerStore}>{panels}</ViewerProvider>

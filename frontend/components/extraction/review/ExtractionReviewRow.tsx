@@ -1,4 +1,5 @@
-import {useState} from 'react';
+import {useRef, useState} from 'react';
+import {flushSync} from 'react-dom';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {FieldValueEditor} from '../FieldValueEditor';
 import {DispositionRow} from '../DispositionRow';
@@ -7,6 +8,7 @@ import {ProposalDisclosure} from './ProposalDisclosure';
 import {sameReviewCoordinate} from '@/hooks/extraction/useReviewNavigation';
 import {isEmptyValue} from '@/lib/ai-extraction/valueParser';
 import {unwrapProposedValue, valueAbsentReason} from '@/lib/extraction/valueSemantics';
+import {withPinnedTop} from '@/lib/extraction/scrollAnchor';
 import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
@@ -30,17 +32,24 @@ export function ExtractionReviewRow({instanceId, field, values, onValueChange, a
   const isAccepted = (proposal: AISuggestion) => review?.decisions.isAccepted({...coordinate, id: proposal.id, value: proposal.value}) ?? false;
   const acceptedOlder = history.find(item => item.id === acceptedId && item.id !== latest?.id && review?.decisions.isAccepted({...coordinate, id: item.id, value: unwrapProposedValue(item.proposed_value)}));
   const toggle = (proposal: AISuggestion) => {void review?.decisions.toggle({...coordinate, id: proposal.id, value: proposal.value, allowsNoInformation: field.allows_no_information !== false});};
+  const rowRef = useRef<HTMLTableRowElement>(null);
+  // The panel always opens directly below this row; what used to move was the
+  // row itself, because opening here collapses whichever question was open
+  // before — often one higher up the form. Pin this row's top edge across the
+  // commit so the question the reviewer clicked stays where they are looking.
   const open = (id?: string) => {
-    setVisited(true);
-    setInitialProposalId(id);
-    if (!expanded || !id) review?.navigation.toggleDisclosure(coordinate);
+    withPinnedTop(rowRef.current, () => flushSync(() => {
+      setVisited(true);
+      setInitialProposalId(id);
+      if (!expanded || !id) review?.navigation.toggleDisclosure(coordinate);
+    }));
   };
   const value = values[key];
   const pending = field.is_required && isEmptyValue(value);
   const cellClass = cn('min-w-0 px-2 py-2 align-top', stacked && 'block w-full');
   const disclosureId = `review-disclosure-${key}`;
   return <>
-    <tr role="row" id={`review-question-${key}`} tabIndex={-1} hidden={hidden} data-field-row data-pending-required={pending || undefined} onFocus={() => review?.navigation.activate(coordinate)} className={cn('border-b border-border/40 outline-none focus-visible:outline-2 focus-visible:outline-ring', stacked && 'block', hidden && 'hidden', focused && 'border-b-0')}>
+    <tr ref={rowRef} role="row" id={`review-question-${key}`} tabIndex={-1} hidden={hidden} data-field-row data-pending-required={pending || undefined} onFocus={() => review?.navigation.activate(coordinate)} className={cn('border-b border-border/40 outline-none focus-visible:outline-2 focus-visible:outline-ring', stacked && 'block', hidden && 'hidden', focused && 'border-b-0')}>
       <th scope="row" role="rowheader" className={cn(cellClass, 'text-left font-medium')}>
         <Tooltip><TooltipTrigger asChild><span tabIndex={0} className="block whitespace-normal break-words rounded focus-visible:outline-2 focus-visible:outline-ring">{field.label}{field.is_required && <span className="ml-1 text-muted-foreground" aria-hidden="true">*</span>}</span></TooltipTrigger>{field.description && !focused && <TooltipContent className="max-h-[40vh] max-w-sm overflow-auto whitespace-pre-wrap">{field.description}</TooltipContent>}</Tooltip>
         {focused && field.description && <p className="mt-1 text-xs font-normal text-muted-foreground">{field.description}</p>}

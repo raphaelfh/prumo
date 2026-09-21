@@ -14,7 +14,7 @@ Pure computation, in-memory state, no I/O. Always deepenable: merge the modules 
 
 Dependencies with a local stand-in that runs in the test suite. On prumo: the real Postgres behind local Supabase (pytest `db_client`), MSW v2 for the frontend network. Deepenable if the stand-in exists. The seam is internal; no port at the module's external interface.
 
-Postgres is category 2, never 4: RLS, deferred constraints and migrations do not survive being mocked (see `web-testing` §10).
+Postgres is category 2, never 4: RLS, deferred constraints and migrations do not survive being mocked (see `web-testing` § Anti-patterns).
 
 ### 3. Remote but owned (Ports & Adapters)
 

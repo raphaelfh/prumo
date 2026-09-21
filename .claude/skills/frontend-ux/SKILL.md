@@ -1,27 +1,17 @@
 ---
 name: frontend-ux
-description: prumo's visual language — the *what it should look like* layer (Plane/Linear/WorkOS aesthetic). Use when deciding layout structure, density, header height, sidebar behaviour, hover affordances, empty states, loading patterns, or any "how should this screen feel" question for frontend/ pages and components. The sibling ui-styling skill is the *how* layer underneath (Tailwind/shadcn/Radix mechanics) — read this one first when designing, that one when implementing classes.
+description: "Use when deciding how a prumo screen should look and feel: layout, density, header and sidebar, buttons, hover and selection states, empty and loading states, overlays, responsive behavior. prumo's Plane/Linear visual language; read it before `ui-styling`, which wires the classes."
 ---
 
 # Frontend UX & UI Design System (Plane/Linear/WorkOS Style)
 
-> **Precedence.** On core product UI this skill is authoritative — reproduce the
-> existing Plane/Linear language, do not invent a new one. The enabled
-> `frontend-design@claude-plugins-official` plugin optimises for *distinctive
-> novelty* (it bans common defaults like Inter/system fonts and pushes bold,
-> one-off directions); that fights a fixed benchmark, so reserve it for
-> greenfield / marketing / illustrative surfaces only. When they conflict on a
-> core screen, `frontend-ux` wins.
+> **Precedence.** On core product UI this skill is authoritative: reproduce the
+> existing Plane/Linear language, never a new one. The `frontend-design` plugin
+> optimizes for distinctive novelty, which fights a fixed benchmark; keep it for
+> greenfield and marketing surfaces. When they conflict on a core screen,
+> `frontend-ux` wins.
 >
-> **Verify with your eyes, not the diff.** After applying these rules, close the
-> loop with the `design-review` skill (`/design-review <route>`): render →
-> screenshot → compare to target → fix → re-screenshot. A class string that reads
-> correct still ships the wrong screen.
-
-## Role
-
-You are a senior UX Engineer focused on **Productivity Software**. Your goal is to create an interface that feels like a
-professional tool: fast, precise, and unobtrusive.
+> **Verify with your eyes, not the diff**: close the loop with `design-review`.
 
 ## 1. UX Philosophy: The "Invisible UI"
 
@@ -73,9 +63,9 @@ on a new override (and it parses the tag, so `className={cn("h-8")}` and an
 
 | Size | Height | Use |
 |---|---|---|
-| `sm` | h-7 | **The default for all product chrome** — toolbars, dialog footers, row actions, cards |
+| `sm` | h-7 | **The default** (a Button with no `size` renders it): toolbars, dialog footers, row actions, cards |
 | `xs` | h-6 | Nested density only — inside a popover, inline chips |
-| `default` | h-10 | CTAs only — empty states, auth, marketing |
+| `default` | h-10 | CTAs only, opted into explicitly: empty states, auth, marketing |
 | `icon` | h-7 w-7 | Icon-only at chrome density |
 | `icon-xs` | h-6 w-6 | Icon-only nested density |
 
@@ -90,12 +80,6 @@ override it. Every dense size carries `[@media(pointer:coarse)]:h-11` (and the
 square sizes bump width too) so touch targets reach 44px — that belongs in the
 scale, never at the call site. A square button takes an `icon*` size: dropping
 a height while leaving `w-8` renders a 28×32 rectangle.
-
-**This table is the target, not yet the whole truth.** ~68 buttons carry no
-`size` prop at all, so they still render `default` (h-10) — dialog footers
-across the app are the visible case (`Cancel` / a confirm action at 40px next
-to 28px content). They are neither migrated nor caught by the ratchet, which
-only sees `h-*` overrides. Give a button an explicit size when you touch one.
 
 ## 4. Interaction Patterns
 
@@ -118,7 +102,7 @@ only sees `h-*` overrides. Give a button an explicit size when you touch one.
    itself looks blank, an explicit "recorded" hint so the state is unambiguous.
 6. **Selection is not focus — they never share a vocabulary.** Focus owns the
    outline (`outline-2 outline-ring`); selection owns a tint plus a weight or
-   colour shift (`bg-muted/60` on the row, `font-medium text-foreground` on its
+   color shift (`bg-muted/60` on the row, `font-medium text-foreground` on its
    label). Paint both on the same element and a row that is selected *and*
    focused draws two concentric 2px rules — a stray box floating over the row —
    while a merely selected row lies about having focus. (Shipped once on the
@@ -160,8 +144,8 @@ Principles:
 - **Tables → cards below `sm`.** Do not crush a dense table to unreadable; switch
   to the card-list layout via `useIsNarrow` (`frontend/hooks/use-mobile.tsx`).
 
-The breakpoint scale is the Tailwind default with `2xl` overridden to **1400px**
-(`frontend/index.css`). Wiring mechanics — breakpoint prefixes, container queries,
+The breakpoint scale is Tailwind's default (`sm` 640, `md` 768, `lg` 1024,
+`xl` 1280, `2xl` 1536). Wiring mechanics — breakpoint prefixes, container queries,
 the `useIsMobile`/`useIsNarrow` hooks, the priority-track header — live in
 `ui-styling` (§ *Responsive mechanics*).
 
@@ -210,9 +194,9 @@ Three rules follow, and they are the ones that actually get broken:
 
 **Verify by measuring, not by reading the diff.** Getting a gutter wrong is
 invisible in a class string. Run the browser loop from `design-review`, and for
-a density change measure the same session twice (see the density before/after
-recipe): a font census over elements with their own text node, and a target
-census flagging anything under 24×24.
+a density change measure before and after in the same browser session: a font
+census over elements with their own text node, and a target census flagging
+anything under 24×24.
 
 ## 7. Implementation Checklist
 

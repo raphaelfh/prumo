@@ -147,16 +147,41 @@ describe("RunSplitShell expanded", () => {
     );
   }
 
-  it("keeps the header while hiding the form pane and the handle", () => {
+  it("folds the header away with the form pane and the handle", () => {
     render(<ExpandHarness />);
     expect(screen.getByTestId("form-content")).toBeInTheDocument();
+    expect(screen.getByTestId("header")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("toggle-expand"));
 
     expect(screen.getByTestId("pdf-content")).toBeInTheDocument();
-    expect(screen.getByTestId("header")).toBeInTheDocument();
+    // Maximizing means the whole workspace, vertical space included — the run
+    // header is most of the screen on a phone-width viewport.
+    expect(screen.queryByTestId("header")).not.toBeInTheDocument();
     expect(screen.queryByTestId("form-content")).not.toBeInTheDocument();
     expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+  });
+
+  it("brings the header back when the split is restored", () => {
+    render(<ExpandHarness />);
+    fireEvent.click(screen.getByTestId("toggle-expand"));
+    fireEvent.click(screen.getByTestId("toggle-expand"));
+    expect(screen.getByTestId("header")).toBeInTheDocument();
+  });
+
+  // The viewer engine reloads the file on mount: an expand that remounts it
+  // makes a layout control re-fetch the document and lose page, zoom and
+  // search. Node identity is the only assertion that catches that — the
+  // testid is present either way.
+  it("keeps the SAME viewer node across expand and restore", () => {
+    render(<ExpandHarness />);
+    const before = screen.getByTestId("pdf-content");
+
+    fireEvent.click(screen.getByTestId("toggle-expand"));
+    expect(screen.getByTestId("pdf-content")).toBe(before);
+
+    fireEvent.click(screen.getByTestId("toggle-expand"));
+    expect(screen.getByTestId("pdf-content")).toBe(before);
   });
 
   it("restores the split on a second toggle", () => {
