@@ -76,4 +76,4 @@ Side effects happen inline as decisions crystallize; call the Skill tool with "d
 
 When no open question would still change the design and the user confirms, the chosen deepening is a spec. Hand it to `/ship-spec` or `superpowers:writing-plans`. Don't start refactoring from this session.
 
-Adapted from mattpocock/skills (MIT); see `../THIRD_PARTY_NOTICES.md`.
+Adapted from mattpocock/skills (MIT).

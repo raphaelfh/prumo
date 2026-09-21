@@ -22,4 +22,4 @@ Redact secrets, tokens, and personal data.
 
 If the user passed arguments, treat them as the next session's focus and tailor the document to it.
 
-Adapted from mattpocock/skills (MIT); see `../THIRD_PARTY_NOTICES.md`.
+Adapted from mattpocock/skills (MIT).

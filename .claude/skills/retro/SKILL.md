@@ -24,4 +24,4 @@ You are suggesting improvements to the coding agent's **environment** so future 
 
 4. Present candidates in order of severity. For each: what went wrong (quote the transcript), the category, the exact file and change, and what would now catch it. Stop and let the user choose.
 
-Adapted from mattpocock/skills (MIT); see `../THIRD_PARTY_NOTICES.md`.
+Adapted from mattpocock/skills (MIT).

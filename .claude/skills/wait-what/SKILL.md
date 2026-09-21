@@ -11,4 +11,4 @@ I don't understand where you've got to. Re-pitch your last message:
 - Write in ASD-STE100 Simplified Technical English: short sentences, one idea each, common words.
 - Use the domain terms from `docs/reference/extraction-hitl-architecture.md` §6. Name code only when I must go look at it.
 
-Adapted from mattpocock/skills (MIT); see `../THIRD_PARTY_NOTICES.md`.
+Adapted from mattpocock/skills (MIT).
