@@ -30,7 +30,7 @@ import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/run
 import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
 import {RunSplitShell} from '@/components/runs/RunSplitShell';
 import {RunEditabilityProvider} from '@/components/runs/RunEditabilityContext';
-import {useIsBelowDesktop} from '@/hooks/use-mobile';
+import {useIsBelowDesktop, useIsNarrow} from '@/hooks/use-mobile';
 import {usePdfPanel} from '@/hooks/usePdfPanel';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
@@ -132,7 +132,7 @@ export default function ExtractionFullScreen() {
 
   // UI state
   const belowDesktop = useIsBelowDesktop();
-  const pdf = usePdfPanel({ initialOpen: false });
+  const pdf = usePdfPanel({ initialOpen: false, compact: useIsNarrow() });
   const readerDefaultApplied = useRef(false);
   const closePdfRef = useRef(pdf.close);
   useEffect(() => {closePdfRef.current = pdf.close;}, [pdf.close]);

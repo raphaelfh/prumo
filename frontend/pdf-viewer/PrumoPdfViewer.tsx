@@ -70,6 +70,7 @@ export function PrumoPdfViewer({
   onToggleExpand,
 }: PrumoPdfViewerProps) {
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Cmd/Ctrl+F: open the search bar and prevent the browser's native find.
@@ -84,6 +85,10 @@ export function PrumoPdfViewer({
       if (!root || !root.isConnected || root.offsetParent === null) return;
       e.preventDefault();
       setSearchOpen(true);
+      // Every press claims the find box, not just the one that opens it: a
+      // reviewer whose caret is back in the form hits ⌘F again to type a new
+      // query, and the browser's own find is suppressed either way.
+      setSearchFocusRequest((n) => n + 1);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -103,7 +108,7 @@ export function PrumoPdfViewer({
             onToggleExpand={onToggleExpand}
           />
         )}
-        <SearchBar open={searchOpen} onClose={() => setSearchOpen(false)} />
+        <SearchBar open={searchOpen} focusRequest={searchFocusRequest} onClose={() => setSearchOpen(false)} />
         <ViewerContent
           readerBlocks={readerBlocks}
           readerLoading={readerLoading}
