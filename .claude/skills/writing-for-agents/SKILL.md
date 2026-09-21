@@ -10,7 +10,7 @@ When the document is a skill, also read [`SKILL-MECHANICS.md`](SKILL-MECHANICS.m
 ## prumo specifics
 
 - **CLAUDE.md** loads on every turn of every session. It should hold navigation pointers, hard rules, and gotchas agents actually get wrong, nothing else.
-- **The skill router** is the `## Which skill to load` list in CLAUDE.md. Every `→ \`name\`` entry must match a `.claude/skills/<name>/` directory; `scripts/fitness/check_skill_router_sync.py` enforces it. List only model-invocable skills there.
+- **Skills trigger on their `description`.** Never route to skills from CLAUDE.md; sharpen the description instead. Keep `paths:` off model-invocable skills: it hides the skill from the listing until a matching file is touched.
 - **Path-scoped rules** in `.claude/rules/` load only when matching files are touched. Move a CLAUDE.md line there when it only matters in one layer.
 - **Memory** holds facts not derivable from the repo. A lesson that a check could enforce belongs in `scripts/fitness/` or a hook, not in memory; see `retro`.
 

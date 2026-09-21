@@ -46,8 +46,13 @@ celery_app.conf.update(
     # Retry settings
     task_default_retry_delay=60,  # 1 minute between retries
     task_max_retries=3,
-    # Concurrency
-    worker_concurrency=4,
+    # Concurrency. Railway bills resident RAM, and every prefork child imports
+    # the whole app, so idle children cost money around the clock. Tasks are
+    # I/O-bound (LLM/HTTP) and rate-limited to 10/m, so 2 children suffice.
+    worker_concurrency=2,
+    # Recycle a child once it exceeds ~400 MB (KiB; checked after each task)
+    # so memory grown during a heavy PDF/LLM task is returned.
+    worker_max_memory_per_child=400_000,
     worker_prefetch_multiplier=2,
     # Redis visibility timeout. With task_acks_late=True, an in-flight message
     # stays "invisible" only this long before Redis redelivers it. The

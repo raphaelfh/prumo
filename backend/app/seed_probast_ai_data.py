@@ -393,10 +393,11 @@ _PAI_SIGNALING: list[Any] = [
 ]
 
 # Step-2 study-type classification, and what each choice takes out of scope.
-# Declared data, sibling of ``derived_judgments``: every layer (progress,
-# derivation, AI calls, export) evaluates the SAME rule where it acts, by set
-# membership — which is what retires the ``dev_``/``eval_`` name-prefix
-# convention the frontend used to hardcode.
+# Declared data, sibling of ``derived_judgments``: every layer that decides
+# what a value counts for (progress, derivation, export) evaluates the SAME
+# rule where it acts, by set membership — which is what retires the
+# ``dev_``/``eval_`` name-prefix convention the frontend used to hardcode. The
+# AI calls deliberately do not: the model fills the whole instrument.
 #
 # ``combination`` is deliberately absent: it excludes nothing, and so does an
 # unanswered, marked or unrecognized classifier. Excluding nothing is the

@@ -362,10 +362,10 @@ export function QASectionAccordion({
           {/* Per-domain AI extract — shared with the data-extraction screen.
               Hidden when every field is assessor-owned (LLM-excluded): the
               backend would skip the call, so the button would be a dead
-              affordance (the ``overall_judgement`` section). Same reasoning
-              out of scope: ``llm_field_filter`` drops those fields server-side,
-              so the button would spin and return nothing. */}
-          {!allFieldsExcluded && !outOfScope ? (
+              affordance (the ``overall_judgement`` section). An out-of-scope
+              section keeps it: the AI fills the whole instrument, and the badge
+              says the value does not count. */}
+          {!allFieldsExcluded ? (
             <SectionAIExtractButton
               projectId={projectId}
               articleId={articleId}
