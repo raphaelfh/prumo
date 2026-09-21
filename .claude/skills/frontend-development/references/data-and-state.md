@@ -7,54 +7,46 @@ The data layer has four layers: **service** (HTTP) → **hook** (TanStack Query)
 Services are the only place that call `apiClient`. They return `ErrorResult<T>` via `toResult` from `lib/error-utils.ts`. They never throw across the boundary, never toast, and never import Zustand or React hooks.
 
 ```typescript
-// services/citationsService.ts
-import { apiClient } from '@/integrations/api';
-import { toResult, type ErrorResult } from '@/lib/error-utils';
-import type { components } from '@/types/api/schema';
+// services/aiContextService.ts
+import {apiClient} from '@/integrations/api/client';
+import {toResult, type ErrorResult} from '@/lib/error-utils';
+import type {components} from '@/types/api/schema';
 
-export type ArticleCitationItem = components['schemas']['ArticleCitationItem'];
+export type ProjectAiContextRead =
+  components['schemas']['ProjectAiContextRead'];
+export type ProjectAiContextUpdate =
+  components['schemas']['ProjectAiContextUpdate'];
 
-export function fetchArticleCitations(
-  articleId: string,
-): Promise<ErrorResult<ArticleCitationItem[]>> {
+export function fetchAiContext(
+  projectId: string,
+): Promise<ErrorResult<ProjectAiContextRead>> {
   return toResult(
-    () => apiClient<ArticleCitationItem[]>(`/api/v1/articles/${articleId}/citations`),
-    'citationsService.fetchArticleCitations',
+    () =>
+      apiClient<ProjectAiContextRead>(
+        `/api/v1/projects/${projectId}/ai-context`,
+      ),
+    'aiContextService.fetchAiContext',
   );
 }
 ```
 
 `toResult(operation, context)` runs `operation()` in a `try/catch`: on success it returns `{ ok: true, data }`, on failure it logs and returns `{ ok: false, error }`. The context string ends up in the log line — keep it stable (it feeds dashboards).
 
-For mutations the pattern is the same — `toResult` wraps the `apiClient` POST/PATCH/DELETE:
+For mutations the pattern is the same — `toResult` wraps the `apiClient` POST/PUT/PATCH/DELETE:
 
 ```typescript
-// services/extractionRunService.ts
-import { apiClient } from '@/integrations/api';
-import { toResult, type ErrorResult } from '@/lib/error-utils';
-
-export interface ExtractForRunRequest {
-  projectId: string;
-  articleId: string;
-  templateId: string;
-  runId: string;
-}
-
-export interface ExtractForRunResult {
-  extractionRunId: string;
-  totalSuggestionsCreated: number;
-}
-
-export function extractForRun(
-  params: ExtractForRunRequest,
-): Promise<ErrorResult<ExtractForRunResult>> {
+// services/aiContextService.ts
+export function setAiContext(
+  projectId: string,
+  body: ProjectAiContextUpdate,
+): Promise<ErrorResult<ProjectAiContextRead>> {
   return toResult(
     () =>
-      apiClient<ExtractForRunResult>('/api/v1/extraction/sections', {
-        method: 'POST',
-        body: params,
-      }),
-    'extractionRunService.extractForRun',
+      apiClient<ProjectAiContextRead>(
+        `/api/v1/projects/${projectId}/ai-context`,
+        {method: 'PUT', body},
+      ),
+    'aiContextService.setAiContext',
   );
 }
 ```
@@ -64,21 +56,25 @@ export function extractForRun(
 Query hooks wrap `useQuery` (reads) or `useMutation` (writes). The `queryKey` always comes from a factory in `lib/query-keys/`. The `queryFn` calls the service and throws the error on failure — that surfaces it to TanStack's error boundary:
 
 ```typescript
-// hooks/articles/useArticleCitations.ts
-import { useQuery } from '@tanstack/react-query';
-import { articleKeys } from '@/lib/query-keys';
-import { fetchArticleCitations, type ArticleCitationItem } from '@/services/citationsService';
+// hooks/project/useAiContext.ts
+import {useQuery} from '@tanstack/react-query';
+
+import {projectKeys} from '@/lib/query-keys';
+import {
+  fetchAiContext,
+  type ProjectAiContextRead,
+} from '@/services/aiContextService';
 
 const STALE_MS = 5 * 60_000;
 
-export function useArticleCitations(articleId: string | null | undefined) {
+export function useAiContext(projectId: string | null | undefined) {
   return useQuery({
-    queryKey: articleKeys.citations(articleId ?? ''),
-    enabled: Boolean(articleId),
+    queryKey: projectKeys.aiContext(projectId ?? ''),
+    enabled: Boolean(projectId),
     staleTime: STALE_MS,
-    queryFn: async (): Promise<ArticleCitationItem[]> => {
-      const result = await fetchArticleCitations(articleId!);
-      if (!result.ok) throw result.error;   // TanStack handles the error state
+    queryFn: async (): Promise<ProjectAiContextRead> => {
+      const result = await fetchAiContext(projectId!);
+      if (!result.ok) throw result.error;
       return result.data;
     },
   });
@@ -129,8 +125,10 @@ export const articleKeys = {
     [...articleKeys.all, 'detail', articleId] as const,
   files: (articleId: string) =>
     [...articleKeys.all, 'files', articleId] as const,
-  citations: (articleId: string) =>
-    [...articleKeys.all, 'citations', articleId] as const,
+  textBlocks: (articleFileId: string) =>
+    [...articleKeys.all, 'text-blocks', articleFileId] as const,
+  contentMarkdown: (articleId: string) =>
+    [...articleKeys.all, 'content-markdown', articleId] as const,
 } as const;
 ```
 
