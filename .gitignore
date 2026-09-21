@@ -99,6 +99,8 @@ nosetests.xml
 coverage.xml
 coverage.json
 diff-coverage.md
+# Vitest report from `npm run test:coverage`
+/coverage/
 *.cover
 .hypothesis/
 .pytest_cache/

@@ -9,7 +9,6 @@ Read this when writing tests under `frontend/test/` or `frontend/**/*.test.tsx`.
 - `environment: 'jsdom'` — DOM globals (`document`, `window`) available.
 - `setupFiles`: `frontend/test/mocks/localStorage.ts` (must load first), `frontend/test/setup.ts` (MSW + RTL cleanup + jest-dom matchers).
 - Path alias `@` -> `./frontend`. Use it: `import { foo } from '@/lib/copy'`.
-- Coverage threshold: 70% across branches/functions/lines/statements.
 
 ## 2. Component test recipe
 
@@ -200,11 +199,11 @@ Snapshots are noisy in PR review. Prefer explicit `expect(x).toBe(...)` for prim
 ## 11. Coverage
 
 ```bash
-npx vitest run --coverage
+npm run test:coverage
 open coverage/index.html
 ```
 
-Threshold is 70% in `vitest.config.ts`. CI fails below that. Coverage is per-PR aspirational, not per-file.
+Report only: no thresholds are set, and CI's Frontend Tests job runs `test:run` without coverage, so nothing gates on these numbers. Without `coverage.include`, Vitest 4 counts only files a test loads — an untested module is missing from the report, not 0%. Thresholds take flat keys (`thresholds: { lines: 70 }`); any key Vitest does not define is read as a file glob, so Jest's `global: { … }` shape matches no file and enforces nothing.
 
 ## 12. Anti-patterns
 
