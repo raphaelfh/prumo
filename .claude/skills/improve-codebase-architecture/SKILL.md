@@ -61,9 +61,9 @@ See [HTML-REPORT.md](HTML-REPORT.md) for the full HTML scaffold, diagram pattern
 
 Do NOT propose interfaces yet. After the file is written, ask the user: "Which of these would you like to explore?"
 
-### 3. Grilling loop
+### 3. Decision loop
 
-Once the user picks a candidate, call the Skill tool with "grilling" to walk the decision tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
+Once the user picks a candidate, walk the decision tree with them one question at a time: constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive. Recommend an answer for each question and look the facts up yourself rather than asking the user to.
 
 Side effects happen inline as decisions crystallize; call the Skill tool with "domain-modeling" to keep the domain model current as you go:
 
@@ -74,6 +74,6 @@ Side effects happen inline as decisions crystallize; call the Skill tool with "d
 
 ### 4. Hand off
 
-When the grilling frontier is empty and the user confirms, the chosen deepening is a spec. Hand it to `/ship-spec` or `superpowers:writing-plans`. Don't start refactoring from this session.
+When no open question would still change the design and the user confirms, the chosen deepening is a spec. Hand it to `/ship-spec` or `superpowers:writing-plans`. Don't start refactoring from this session.
 
 Adapted from mattpocock/skills (MIT); see `../THIRD_PARTY_NOTICES.md`.

@@ -60,7 +60,6 @@ skill here is what makes it load reliably.
 - Architectural drift sweep → `architectural-quality-loop`
 - Visual feedback loop on a screen → `design-review`
 - Module interface / seam / deepening design → `codebase-design`
-- Stress-testing a plan or decision (interview) → `grilling`
 - Domain term or ADR change → `domain-modeling`
 - Throwaway prototype (state logic or UI variants) → `prototype`
 - Editing a skill, CLAUDE.md, rules or memory → `writing-for-agents`

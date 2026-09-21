@@ -19,7 +19,6 @@ Model-invoked skills load on their own when their description matches, or when t
 ## 1. Shape the problem
 
 - `superpowers:brainstorming` for any new feature or behaviour change. It turns an idea into an agreed design.
-- `grilling` when a plan or decision already exists and needs stress-testing. It asks questions in rounds, each with a recommended answer, and looks facts up itself.
 - `prototype` when a question is cheaper to answer with throwaway code: a state model a domain expert can click through, or three structurally different layouts of a screen.
 - `domain-modeling` whenever a domain term is fuzzy or new, or a decision deserves an ADR. It edits the glossary in `docs/reference/extraction-hitl-architecture.md` §6 and its mirror, which `check_glossary_sync.py` keeps in step.
 
@@ -70,4 +69,3 @@ Model-invoked skills load on their own when their description matches, or when t
 - Receiving and requesting review: use `code-review`, which already covers both. The `superpowers:receiving-code-review` and `superpowers:requesting-code-review` skills are the generic versions.
 - Debugging: use `debugging`. It layers prumo's evidence and commands over `superpowers:systematic-debugging`.
 - Drift versus design: use `architectural-quality-loop` for violations and `/improve-codebase-architecture` for deepening.
-- Interview versus design: use `superpowers:brainstorming` when there is no design yet, and `grilling` when there is one to attack.
