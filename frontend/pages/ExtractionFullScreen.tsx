@@ -132,7 +132,7 @@ export default function ExtractionFullScreen() {
 
   // UI state
   const belowDesktop = useIsBelowDesktop();
-  const pdf = usePdfPanel({ initialOpen: false });
+  const pdf = usePdfPanel({ initialOpen: false, compact: belowDesktop });
   const readerDefaultApplied = useRef(false);
   const closePdfRef = useRef(pdf.close);
   useEffect(() => {closePdfRef.current = pdf.close;}, [pdf.close]);

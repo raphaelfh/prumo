@@ -22,7 +22,17 @@ export interface UsePdfPanelResult {
  * stranded, so reopening would restore a full-width PDF the reviewer never
  * asked for.
  */
-export function usePdfPanel(opts?: { initialOpen?: boolean }): UsePdfPanelResult {
+export function usePdfPanel(opts?: {
+  initialOpen?: boolean;
+  /**
+   * The viewport cannot host a side-by-side split (below Tailwind `lg`). An
+   * open panel is then ALWAYS maximized, and leaving the maximized view closes
+   * it instead of restoring a split. A phone split gives the PDF ~195px: its
+   * toolbar alone needs ~208px of 44px touch targets, so the trailing controls
+   * (☰, then expand) were pushed off the edge, and neither pane was readable.
+   */
+  compact?: boolean;
+}): UsePdfPanelResult {
   const [isOpen, setIsOpen] = useState<boolean>(opts?.initialOpen ?? false);
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -43,5 +53,16 @@ export function usePdfPanel(opts?: { initialOpen?: boolean }): UsePdfPanelResult
     });
   const collapse = () => setIsExpanded(false);
 
+  if (opts?.compact) {
+    return {
+      isOpen,
+      open,
+      close,
+      toggle,
+      isExpanded: isOpen,
+      toggleExpanded: isOpen ? close : open,
+      collapse: close,
+    };
+  }
   return { isOpen, open, close, toggle, isExpanded, toggleExpanded, collapse };
 }

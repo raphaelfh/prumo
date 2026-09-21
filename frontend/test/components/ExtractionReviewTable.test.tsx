@@ -62,6 +62,32 @@ describe('ExtractionReviewTable', () => {
     expect(screen.getAllByRole('article')).toHaveLength(1);
     expect(preview).toHaveAttribute('aria-expanded', 'false');
   });
+  // Only one disclosure is open at a time, so opening B collapses A. When A
+  // sits above B, the form loses that height and B — the row just clicked —
+  // slides up out from under the cursor. jsdom has no layout, so the jump is
+  // scripted on the row's own rect; what is asserted is the correction.
+  it('keeps the clicked question where it was when a disclosure above it collapses', async () => {
+    const user = userEvent.setup();
+    const scroller = document.createElement('div');
+    scroller.setAttribute('data-radix-scroll-area-viewport', '');
+    const container = document.createElement('div');
+    scroller.append(container);
+    document.body.append(scroller);
+    render(<Harness/>, {container});
+
+    await user.click(screen.getByRole('button', {name: 'New proposal'}));
+    expect(await screen.findByText('New rationale')).toBeVisible();
+
+    const rowB = screen.getByRole('rowheader', {name: 'Question B'}).closest('tr')!;
+    const tops = [400, 220];
+    rowB.getBoundingClientRect = () => ({top: tops.shift() ?? 220} as DOMRect);
+    scroller.scrollTop = 500;
+
+    await user.click(screen.getByRole('button', {name: 'B proposal'}));
+
+    expect(scroller.scrollTop).toBe(320);
+    scroller.remove();
+  });
   it('focus exists only in the toolbar and displays the description and disclosure', async () => {
     const user = userEvent.setup(); render(<Harness/>);
     await user.click(screen.getByRole('button', {name: 'Focus question'}));
