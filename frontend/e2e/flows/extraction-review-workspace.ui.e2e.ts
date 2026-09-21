@@ -157,6 +157,10 @@ test('two generations compare side by side, each source locates, unavailable anc
   await rowFor(page, second.label).getByRole('button', {name: SECONDARY_VALUE, exact: true}).click();
   const secondDisclosure = disclosureFor(page, second);
   const latest = secondDisclosure.getByRole('article');
+  // Compare is a remembered reviewer preference: turned on for the first question, the next one
+  // opens side by side too. Back to one card for the single-source checks below.
+  await expect(latest).toHaveCount(2);
+  await secondDisclosure.getByRole('button', {name: 'Show one extraction', exact: true}).click();
   await expect(latest).toHaveCount(1);
   await expect(flashed).toHaveCount(0, {timeout: 4000});
   const secondSources = latest.getByRole('button', {name: 'Locate in document', exact: true});
@@ -486,6 +490,9 @@ test('design review captures production states without horizontal page overflow'
   await activate(page, second.label);
   await toolbar(page).getByRole('button', {name: 'Focus question', exact: true}).click();
   const secondDisclosure = disclosureFor(page, second);
+  // Compare was turned on for the first question and is remembered, so this one opens side by side.
+  await expect(secondDisclosure.getByRole('article')).toHaveCount(2);
+  await secondDisclosure.getByRole('button', {name: 'Show one extraction', exact: true}).click();
   await expect(secondDisclosure.getByRole('article')).toHaveCount(1);
   await secondDisclosure.getByRole('button', {name: 'Next extraction', exact: true}).click();
   await expect(secondDisclosure.getByRole('article').getByText('No information found', {exact: true})).toBeVisible();

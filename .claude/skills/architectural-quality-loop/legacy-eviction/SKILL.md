@@ -17,8 +17,8 @@ The project's history is full of "we ripped this out for good reasons" moments (
 
 Do **not** use for:
 - Renames (the symbol still exists, just under a new name → use the relevant domain skill).
-- Anything that requires writing replacement logic (use `backend-development` / `ui-styling` instead).
-- A deprecation dance with a transition period (prumo explicitly rejects this pattern — see the root `CLAUDE.md`).
+- Anything that requires writing replacement logic (use `backend-development` / `frontend-development` instead).
+- A deprecation dance with a transition period (prumo rejects it: root `CLAUDE.md` § Working principles, "no new legacy", and § Hard rules, "No dead code ships").
 
 ## The 4-step contract
 
@@ -26,21 +26,21 @@ Every eviction follows these 4 steps in order. Skipping any step is how the same
 
 ### 1. Prove unused (the multi-grep)
 
-Search the **entire repository** for the symbol — not just the file you intend to delete. Two greps minimum:
+Search the **entire repository** for the symbol — not just the file you intend to delete. Two greps minimum, run from the worktree root:
 
 ```bash
 # A. Live identifier search across all extensions
+#    (--exclude-dir matches directory base names, not paths)
 grep -rn "\\b<symbol>\\b" \
   --include="*.py" --include="*.ts" --include="*.tsx" \
   --include="*.js" --include="*.jsx" --include="*.sql" \
   --include="*.md" --include="*.yml" \
-  /Users/raphael/PycharmProjects/prumo \
-  --exclude-dir=node_modules --exclude-dir=__pycache__ \
-  --exclude-dir=.git --exclude-dir=.venv --exclude-dir=.claude/worktrees
+  --exclude-dir=node_modules --exclude-dir=.git \
+  --exclude-dir=.venv --exclude-dir=worktrees \
+  .
 
 # B. Git log -S (the pickaxe): when did this symbol last appear in a diff?
-( cd /Users/raphael/PycharmProjects/prumo && \
-  git log -S '<symbol>' --oneline --since="6 months ago" )
+git log -S '<symbol>' --oneline --since="6 months ago"
 ```
 
 Decide:
@@ -55,13 +55,16 @@ Document the grep result in the iteration md under `## Proof of unused`:
 ## Proof of unused
 
 ```bash
-$ grep -rn "\\bEntityTreeNode\\b" --include="*.ts" ...
-frontend/types/extraction.ts:117:export type EntityTreeNode = ...
-(no other matches)
+$ grep -rn "\\bEntityTreeNode\\b" --include="*.ts" --include="*.tsx" ...
+frontend/components/extraction/EntityTreeNode.tsx:43:export function EntityTreeNode({
+frontend/components/extraction/EntityTreeNode.tsx:185:    <EntityTreeNode
+frontend/lib/copy/extraction.ts:698:    // Placeholders and inline UI (FieldInput, EntityTreeNode, dialogs)
 ```
 
-`git log -S 'EntityTreeNode'` last touched 2026-04-18 in commit
-`04040d5` (introducing it), with no consumer commits since.
+Only its own recursion and a comment. `git log -S 'EntityTreeNode'` shows no
+consumer commit since its introduction in `68f69e18` (2025-10-11), only docs
+and a copy comment. This is the proof behind `04040d55` (2026-04-28), which
+deleted it.
 ```
 
 ### 2. Delete in one commit (no two-step deprecation)
@@ -81,15 +84,18 @@ The deletion + guard land in the **same** commit.
 
 ### 3. Add the recurrence guard (the fitness rule)
 
-If the deletion is at the file/path level: extend the allowlist removal in `scripts/fitness/check_legacy_concepts.py` so a future `grep`-based reintroduction is caught. If the symbol is sui generis (an enum value, a type alias, a function name): consider adding a new pattern to the legacy-patterns blacklist (see `../references/legacy-patterns.md` for the format) and a regex to `check_legacy_concepts.py`, with a canary test in `backend/tests/unit/scripts/test_check_legacy_concepts_canary.py`.
+Only a guard that fails the gate counts:
 
-If the symbol is a runtime concept (not a string match): add an integration test that asserts the symbol's behaviour is gone. Example: when `extracted_values` was dropped, the regression test `test_schema_drift.py::test_calculate_model_progress_signature_locked` was added to ensure the function never re-references the dropped table by name.
+- **A retired identifier** (class, function, type, component, enum or SQL object name): add it to `RETIRED` in `scripts/fitness/check_retired_symbols.py` with the retiring spec and the reason, plus a case in `backend/tests/unit/scripts/test_check_retired_symbols.py`. The gate fails on any word match in code under `backend/app`, `backend/tests` and `frontend`, so the test builds the name by concatenation.
+- **A shape that needs a regex** (SQL usage, an endpoint path, a package import): add a numbered entry to `../references/legacy-patterns.md` and a `tier="hard"` pattern to `scripts/fitness/check_legacy_concepts.py`, with a canary in `backend/tests/unit/scripts/test_check_legacy_concepts_canary.py`. A `tier="warn"` pattern only reports; it guards nothing.
+
+If the symbol is a runtime concept (not a string match): add an integration test that asserts it stays gone. Example: `test_schema_drift.py::test_extracted_values_table_is_dropped` fails if the dropped table comes back; `test_check_cardinality_one_stays_retired` does the same for a dropped function.
 
 The guard goes in the SAME commit as the deletion. Without the guard, the LLM judge's "no recurrence guard" rule returns `DOES_NOT_RESOLVE`.
 
 ### 4. Update the canonical docs
 
-If the deleted concept appeared in `docs/reference/extraction-hitl-architecture.md` §6 Legacy or in `CLAUDE.md` Recent Changes, update those entries. The skill's `../references/legacy-patterns.md` mirror is the secondary source — `check_glossary_sync.py` (Phase 4) catches drift between the two.
+Update every doc that names the concept: `docs/reference/extraction-hitl-architecture.md` §6 Legacy, its mirror `../references/concept-glossary.md`, and `../references/legacy-patterns.md`. Only the mirror is gated (`check_glossary_sync.py`: each mirror term name must appear in the architecture doc); nothing checks `legacy-patterns.md` against §6.
 
 ## Step 0 — worktree isolation (always)
 
@@ -99,7 +105,7 @@ Before any of the 4 steps above, invoke `superpowers:using-git-worktrees` to cre
 .claude/worktrees/quality-loop-<run-id>-<iter>/
 ```
 
-All edits + commits happen in that worktree. If VERIFY fails or the judge rejects, the worktree is torn down by the orchestrator (`git worktree remove`) — the main tree never sees the partial state. Only when the judge returns `RESOLVES` does the orchestrator cherry-pick / merge the commit into `dev`.
+All edits + commits happen in that worktree. If VERIFY fails or the judge rejects, the worktree is torn down by the orchestrator (`git worktree remove`) — the main tree never sees the partial state. Only when the judge returns `RESOLVES` does the orchestrator push the worktree branch and open a PR to `dev` (squash-merged).
 
 ## House rules
 
@@ -113,14 +119,14 @@ All edits + commits happen in that worktree. If VERIFY fails or the judge reject
 ## Cross-skill flow
 
 1. Quality loop SCAN flags a `category=legacy` finding with `confidence ≥ 0.85`.
-2. TRIAGE prioritises it; PLAN decides "pure deletion" and routes APPLY to this skill.
+2. TRIAGE prioritizes it; PLAN decides "pure deletion" and routes APPLY to this skill.
 3. APPLY: invoke `superpowers:using-git-worktrees` → step 1 grep → step 2 delete → step 3 guard → step 4 doc.
-4. VERIFY: `scripts/verify_all.sh` runs in the worktree (must include `check_legacy_concepts.py` re-run, which should NOW reject the pattern if you added a regex).
+4. VERIFY: `scripts/verify_all.sh` runs in the worktree. Its fitness gate re-runs `check_retired_symbols.py` and `check_legacy_concepts.py`, which fail on a reintroduction only through a `RETIRED` entry or a `tier="hard"` pattern.
 5. Judge: receives FINDING + DIFF (your commit) + GATE_OUTPUT + COUNTERFACTUAL_PROBE. Returns `RESOLVES` only if:
    - The grep proof is verbatim in the iteration md.
    - The diff deletes the dead symbol AND adds a guard.
    - All gates exit 0.
-   - The counterfactual probe (revert your diff, re-run check_legacy_concepts.py) shows the new pattern would fire.
+   - The guard is live: its test plants the symbol and expects the check to fail. (Reverting the diff reverts the guard too, so the counterfactual probe cannot show this.)
 6. Reflexion paragraph: one line on the residual risk (e.g. "the symbol may still appear in third-party packages indexing the repo"), one line on what to do differently next time.
 7. CONVERGE: re-SCAN — if 0 findings ≥ 0.7 AND verify_all.sh exit 0 → STOP.
 
@@ -129,6 +135,6 @@ All edits + commits happen in that worktree. If VERIFY fails or the judge reject
 - Worktree skill: `superpowers:using-git-worktrees`
 - Verify wrapper: `scripts/verify_all.sh`
 - Legacy patterns blacklist: `../references/legacy-patterns.md`
-- Fitness function: `scripts/fitness/check_legacy_concepts.py`
+- Fitness functions: `scripts/fitness/check_retired_symbols.py` (retired identifiers), `scripts/fitness/check_legacy_concepts.py` (regex patterns; only `tier="hard"` fails)
 - Judge prompt: `../references/judge-prompt.md`
-- Canary test pattern: `backend/tests/unit/scripts/test_check_legacy_concepts_canary.py`
+- Guard tests: `backend/tests/unit/scripts/test_check_retired_symbols.py`, `backend/tests/unit/scripts/test_check_legacy_concepts_canary.py`

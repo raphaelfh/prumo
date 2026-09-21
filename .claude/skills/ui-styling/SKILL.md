@@ -1,398 +1,115 @@
 ---
 name: ui-styling
-description: "Tailwind + shadcn/ui + Radix mechanics for the prumo frontend (Vite + React 19 + TS strict). Use whenever you are adding or editing a `frontend/components/**/*.tsx` file, installing a new shadcn primitive, writing className strings, building a cva variant, touching `frontend/index.css` / `components.json`, wiring dark mode, fixing a contrast/focus/keyboard a11y bug, or hand-rolling a Radix primitive. Be a little pushy: if you are about to write JSX with classes, read this first — it will stop you from inventing colors, breaking the cn() merge order, or shipping focus-less buttons. For the project's *visual language* (Plane/Linear aesthetic, header height, density, hover affordances) see the sibling `frontend-ux` skill; this skill is the *how* layer underneath."
+description: "Use when writing className strings or editing JSX styling in prumo's frontend: Tailwind v4, shadcn/ui and Radix primitives, cva variants, tokens and dark mode in `frontend/index.css`, focus and keyboard accessibility. The mechanics layer under `frontend-ux`; it stops invented colors, broken `cn()` merges and focus-less controls."
 ---
 
 # UI Styling (prumo)
 
-Mechanics of styling prumo's frontend. Pairs with `frontend-ux` (which sets the
-visual language). When in doubt: **frontend-ux tells you what it should look
-like, this skill tells you how to wire the classes, variables, and primitives so
-it ends up that way**.
+The mechanics of styling prumo. `frontend-ux` says what a screen should look like; this skill says how to wire the classes, tokens and primitives so it ends up that way.
 
-## Stack snapshot
+Files you touch most: `frontend/index.css` (theme, tokens, utilities), `components.json`, `frontend/lib/utils.ts` (`cn`), `frontend/components/ui/*` (37 primitives: `ls` before adding one), `frontend/components/patterns/*`.
 
-| Layer            | What we use                                                            |
-| ---------------- | ---------------------------------------------------------------------- |
-| Bundler / router | Vite + React 19 + TypeScript strict, no Next.js / no RSC               |
-| Tailwind         | **v4.3.3**, CSS-first: `@import "tailwindcss"` + `@theme inline` in `frontend/index.css` |
-| Components       | shadcn/ui (`style: default`, `baseColor: slate`, `cssVariables: true`) |
-| Primitives       | Radix UI under shadcn, plus direct Radix for custom compositions       |
-| Variants         | `class-variance-authority` 0.7.1 + `cn()` (`clsx` + `tailwind-merge`)  |
-| Theming          | HSL CSS variables in `:root` + `.dark`, semantic tokens                |
-| Forms            | `react-hook-form` + `zod` + shadcn `Form*` wrappers                    |
-| State            | TanStack Query v5 (server), Zustand (client)                           |
-| i18n             | In-house `frontend/lib/copy/*` — **not** next-i18next                  |
+## Hard rules
 
-Files you will touch most:
+1. **Compose with `cn()`** from `@/lib/utils`, never string `+`, so `tailwind-merge` sees separate arguments and the later utility wins. `cn()` is built on `extendTailwindMerge` and knows the `shadow-elev-*` utilities; a new custom utility that must dedupe against a built-in one is registered there too, or both classes ship and the cascade picks.
+2. **Semantic tokens, never raw colors.** `bg-background`, `text-muted-foreground`, `border-border`, `bg-primary text-primary-foreground`, the status set. `bg-slate-200` or an inline hex dies in dark mode; a genuinely new color gets a token first.
+3. **Pair every background with its foreground**: `bg-primary` with `text-primary-foreground`, `bg-muted` with `text-muted-foreground`.
+4. **Extend through `className`, caller last**: pass a thin delta and let `cn()` merge. Button height is the exception: pick a named size, never `className="h-8"` (`check_button_scale.py`; the scale is in `frontend-ux` § Buttons).
+5. **Icon-only controls are `IconButton`** (`components/patterns/IconButton.tsx`, props `label` and `icon`): the label is the accessible name and the tooltip. `check_ui_primitives.py` bans an icon-sized `<Button>` anywhere else.
+6. **No cursor utilities.** `index.css` owns the cursor (arrow everywhere, a hand only on `a[href]`); `cursor-pointer`, `cursor-default` and `cursor-not-allowed` fail `check_ui_primitives.py`.
+7. **Focus is never invisible**: interactive elements keep `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden`. Prefer a Radix primitive (Dialog, Popover, Select, DropdownMenu, Tabs) to a `div` with `onClick`.
+8. **Dark mode goes through `next-themes`** (`frontend/contexts/ThemeContext.tsx`: `attribute="class"`, `storageKey="prumo:theme"`, `useTheme().cycle`), never by poking the `dark` class, which it re-syncs from storage.
+9. **Copy goes through `frontend/lib/copy/`**, never an inline English string.
 
-- `/Users/raphael/PycharmProjects/prumo/components.json`
-- `/Users/raphael/PycharmProjects/prumo/frontend/index.css`
-- `/Users/raphael/PycharmProjects/prumo/frontend/lib/utils.ts` (the `cn` helper)
-- `/Users/raphael/PycharmProjects/prumo/frontend/components/ui/*`
-- `/Users/raphael/PycharmProjects/prumo/frontend/components/{extraction,hitl,quality,runs,...}/*`
+## Tailwind v4 wiring
 
-## The hard rules (skim before every edit)
+Tailwind 4 is CSS-first: `frontend/index.css` is the whole config, and there is no `tailwind.config.ts`. PostCSS loads `@tailwindcss/postcss`, which Vite and Vitest both pick up.
 
-1. **Compose via `cn()`** from `@/lib/utils`. Never concatenate classes with
-   string `+`; `tailwind-merge` must see them as separate args so later utilities
-   override earlier ones (`cn("px-2", "px-4")` → `"px-4"`, not `"px-2 px-4"`).
-   The local `cn()` is built on `extendTailwindMerge` and already knows the
-   project's custom shadow utilities (`shadow-elev-card`, `shadow-elev-popover`,
-   `shadow-elev-header`).
-   **Any new custom utility that has to dedupe against built-in size variants
-   must be added there too** — otherwise `cn("shadow-xs", "shadow-elev-popover")`
-   emits both classes and the cascade silently picks the wrong one.
-2. **Use semantic tokens, not raw colors.** `bg-background`, `text-foreground`,
-   `text-muted-foreground`, `border-border`, `bg-primary text-primary-foreground`,
-   `bg-destructive`, `bg-success`, `bg-warning`, `bg-info`. Raw `bg-slate-200` or
-   `text-gray-500` is a smell — it dies in dark mode.
-3. **Pair every fg with its bg.** `bg-primary` always wants
-   `text-primary-foreground`; `bg-muted` wants `text-muted-foreground`. The
-   tokens are defined that way in `frontend/index.css` (`@theme`).
-4. **Always extend the base via the `className` prop**, never override base
-   styles in the consuming file by re-declaring layout primitives. Pass a thin
-   delta. `cn()` will merge correctly. **Exception — Button height:** the size
-   scale owns it. Pick a named size (`sm`/`xs`/`icon`/`icon-xs`/`default`),
-   never `className="h-8"`. `scripts/fitness/check_button_scale.py` fails the
-   build on a new one; see `frontend-ux` § Buttons for the scale.
-5. **Dark mode is `class`-based**, driven by `next-themes` via `ThemeProvider`
-   (`frontend/contexts/ThemeContext.tsx`: `attribute="class"`,
-   `defaultTheme="system"`, `storageKey="prumo:theme"`). Switch through it (the
-   `useTheme().cycle` helper or `setTheme`), not by hand-poking the `dark` class —
-   it re-syncs from storage + system preference. Test every new component in both
-   modes; do not assume `dark:` variants.
-6. **Focus is never invisible.** Keep `focus-visible:ring-2
-   focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden`
-   on any interactive element. Radix gives you keyboard nav for free; do not
-   `tabIndex={-1}` your way out.
-7. **Prefer Radix primitives over div-with-onClick.** Dialog, Popover, Select,
-   DropdownMenu, Tabs, Accordion — all already installed in `components/ui/`.
-8. **No inline raw HSL or hex** in JSX. If you genuinely need a one-off color,
-   add a token in `frontend/index.css` first (e.g. the `success`/`warning`/`info`
-   triad we already have).
+- `@import "tailwindcss" source(none)` plus an explicit `@source "../frontend/**/*.{ts,tsx}"`, so `backend/`, `docs/` and `scripts/` are never scanned.
+- Tokens are bare HSL triples in `:root` and `.dark` inside `@layer base`, mapped in `@theme inline` (`--color-primary: hsl(var(--primary))`). `inline` is what keeps `.dark` overrides working, and the bare triple is what keeps `bg-primary/10` working: a value wrapped in `hsl()` silently breaks the opacity modifier.
+- `@custom-variant dark (&:is(.dark *))`; without it every `dark:` utility falls back to `prefers-color-scheme`.
+- A z-index or other one-off is an `@utility`, not a plugin.
+- Translate any v3 snippet before pasting: `outline-none` → `outline-hidden` (v4's `outline-none` removes the outline entirely), `shadow-sm` → `shadow-xs` and `shadow` → `shadow-sm` (the scale shifted), `!class` → `class!`, `flex-shrink` → `shrink`.
+- **Never rename `rounded-sm` to `rounded-xs`.** `--radius-sm` is overridden to 4px; v4's `rounded-xs` is 2px. `npx @tailwindcss/upgrade` applies that rename blindly.
 
-## The Add → Customize loop
+## Tokens
 
-shadcn is **copy-paste**, not a runtime dep. Components live in the repo at
-`frontend/components/ui/*.tsx` and we edit them like any other file.
+| Token | Purpose |
+|---|---|
+| `background` / `foreground` | page chrome, primary text |
+| `card`, `popover` (each with `-foreground`) | surfaces |
+| `primary` (+ `-foreground`, `primary-hover`), `secondary`, `accent` | actions, highlights |
+| `muted` / `muted-foreground` | secondary text, hover fills |
+| `destructive`, `success`, `warning`, `info` (each with `-foreground`) | status |
+| `ai` / `ai-foreground` | AI suggestions (`bg-ai/5`, `border-ai/60`) |
+| `border`, `input`, `ring` | hairlines, focus ring |
+| `sidebar-*` | sidebar palette (`ProjectSidebar.tsx` still hardcodes its own values) |
+| `reviewer-1..5` | reviewer avatars and dots |
+| `shadow-elev-card`, `-popover`, `-header`, `-overlay` | elevation |
 
-```bash
-npx shadcn@latest add <name>      # writes to frontend/components/ui/<name>.tsx
-```
+Adding one: the property in **both** `:root` and `.dark`, then its mapping in `@theme inline` under the right namespace (`--color-*` with its `-foreground` pair, `--shadow-*`, `--radius-*`, `--text-*`), then check both themes. Shadow names keep the `elev-` prefix, and a new one joins the twMerge shadow group in `frontend/lib/utils.ts`, or shadcn's base `shadow-xs` wins the merge. There are no chart tokens.
 
-The CLI reads `components.json`, drops the file, installs Radix peer deps, and
-wires `@/components/ui/<name>` via the path alias.
+## shadcn: add, then customize
 
-After adding:
+shadcn is copy-paste: `npx shadcn@latest add <name>` writes `frontend/components/ui/<name>.tsx`, and it is ours from then on. Re-running `add` on an existing file overwrites local edits, so edit in place. After adding, read the file, replace any raw color with tokens, and route strings through the copy layer.
 
-1. **Read the file.** Do not assume defaults match our tokens.
-2. **Replace any raw color** (`bg-slate-…`, `text-zinc-…`) with semantic tokens
-   if the CLI inserted one.
-3. **Confirm the cva config** uses our variant names. We have extra status
-   variants on `Badge` and we add `success`/`warning` to buttons in domain UIs —
-   not in `ui/button.tsx`. Keep `ui/*` close to upstream shadcn so future
-   `shadcn add` diffs stay clean. **Three deliberate divergences**, each
-   pinned by a guard test that fails if a `shadcn add` overwrites it:
-   - `ui/button.tsx`'s `size` scale: upstream's heights do not fit this
-     codebase's density (see `frontend-ux` § Buttons), so `sm`/`icon` are
-     retuned and `xs`/`icon-xs` added. Guard: `button.test.tsx`.
-   - The `quiet` cva variant on `ui/input.tsx`, `ui/textarea.tsx` and
-     `ui/select.tsx`'s `SelectTrigger`, the borderless settings control
-     (spec `2026-09-13-borderless-density-pass-design.md` §4.2). It carries
-     `md:text-[13px]` (the Input base's `md:text-sm` would win from 768px),
-     rings on `focus-visible:` only (Radix returns focus to the trigger after
-     a mouse pick) and `aria-[invalid=true]:focus-visible:ring-2` (`aria-*`
-     utilities compile after `focus-visible`). `default` keeps upstream's
-     classes. Guard: `quiet-controls.test.tsx`.
-   - `ui/form.tsx`'s `FormControl` joins its description id, its message id
-     (on error) and an incoming `aria-describedby`; upstream spreads props
-     last, so Radix `Slot` let a passed id overwrite both. Guard:
-     `form.describedby.test.tsx`.
-4. **Wire copy** through `frontend/lib/copy/*` for any user-visible string.
+Keep `ui/*` close to upstream so future diffs stay clean. Three deliberate divergences are pinned by guard tests that fail if an `add` overwrites them:
 
-If the component already exists, **edit it directly** — do not re-run
-`shadcn add`; the CLI will overwrite local changes.
+- `ui/button.tsx` sizes: `default` (h-10), `sm` (h-7, **the default**), `xs`, `lg`, `icon`, `icon-xs`. Guard: `button.test.tsx`.
+- The `quiet` cva variant on `ui/input.tsx`, `ui/textarea.tsx` and `SelectTrigger`: the borderless settings control. It carries `md:text-[13px]` (the base `md:text-sm` would win from 768px), rings on `focus-visible:` only, and `aria-[invalid=true]:focus-visible:ring-2`. Guard: `quiet-controls.test.tsx`.
+- `ui/form.tsx`'s `FormControl` joins its description id, its message id and any incoming `aria-describedby`, where upstream let a passed id overwrite both. Guard: `form.describedby.test.tsx`.
 
-## The cva pattern (canonical example)
+Status colors for domain buttons live in the domain component, not in `ui/button.tsx`. Most `ui/*` files still use `forwardRef` (React 19 accepts `ref` as a prop): match the neighboring file.
 
-`frontend/components/ui/button.tsx` is the reference shape — variants split
-into `variant` + `size`, `defaultVariants`, `VariantProps<typeof …>` for the
-public type, `asChild` via Radix `Slot`.
+## cva
 
-```tsx
-// frontend/components/extraction/StatusPill.tsx
-import {cva, type VariantProps} from "class-variance-authority";
-import {cn} from "@/lib/utils";
-
-const statusPillVariants = cva(
-  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
-  {
-    variants: {
-      tone: {
-        proposal: "bg-info/10 text-info ring-info/30",
-        review:   "bg-warning/10 text-warning ring-warning/30",
-        approved: "bg-success/10 text-success ring-success/30",
-        rejected: "bg-destructive/10 text-destructive ring-destructive/30",
-      },
-      size: {
-        sm: "h-5 text-[11px]",
-        md: "h-6 text-xs",
-      },
-    },
-    defaultVariants: { tone: "proposal", size: "md" },
-  },
-);
-
-export interface StatusPillProps
-  extends React.HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof statusPillVariants> {}
-
-export function StatusPill({ className, tone, size, ...rest }: StatusPillProps) {
-  return <span className={cn(statusPillVariants({ tone, size }), className)} {...rest} />;
-}
-```
-
-Why these choices:
-
-- **`ring-1 ring-inset` + `bg-<token>/10`** — keeps pills legible against any
-  surface without a heavy border; works in both themes because the tokens flip.
-- **Variants on `tone`, not `color`** — semantic name, future-proof against
-  re-theming.
-- **`className` last** in the `cn(...)` call — caller wins, as always.
-- **`ref` is a plain prop in React 19** (we are on `react@19` — no `forwardRef`
-  needed to accept a ref). But ~75% of `ui/*` still uses `forwardRef` (pre-19
-  shape); match the neighboring file rather than mixing both styles in one
-  component.
-
-For compound variants, `cva` `compoundVariants`, ranking rules, and the
-"escape hatch" for arbitrary class slots: see `references/cva-patterns.md`.
-
-## Theming + dark mode
-
-The tokens we actually have (see `frontend/index.css`):
-
-| Token                  | Purpose                            |
-| ---------------------- | ---------------------------------- |
-| `background` / `foreground`  | Page chrome, primary text    |
-| `card` / `card-foreground`   | Card surfaces                |
-| `popover` / `popover-foreground` | Floating surfaces        |
-| `primary` / `primary-foreground` | Buttons, focus rings     |
-| `secondary` / `secondary-foreground` | Subdued buttons      |
-| `muted` / `muted-foreground` | Secondary text, hover bg     |
-| `accent` / `accent-foreground` | Hover/active highlight     |
-| `destructive` + `success` + `warning` + `info` (each with `-foreground`) | Status tokens |
-| `border` / `input` / `ring` | Hairlines + focus ring         |
-| `sidebar-*`                | Sidebar-only palette           |
-| `reviewer-1..5`            | Avatar palette (ReviewerAvatarStack) |
-| `--shadow-card` / `--shadow-popover` (CSS-only) | Box-shadow elevation, consumed via `shadow-elev-card` / `shadow-elev-popover` utilities |
-
-Adding a token: add it in **both** `:root` and `.dark` in
-`frontend/index.css`, then map it in the same file's `@theme inline` block
-(`--color-<name>: hsl(var(--<name>))`). Use HSL **without** the `hsl()`
-wrapper so opacity modifiers (`bg-primary/10`) keep working.
-
-### Box-shadow tokens — the `elev-` prefix
-
-Shadow tokens are mapped in `@theme inline` as `--shadow-elev-card`,
-`--shadow-elev-popover`, `--shadow-elev-header`, `--shadow-elev-overlay`, each
-reading a `--shadow-*` custom property. The `elev-` prefix keeps shadow names
-out of the color namespace (a v3 collision that made `shadow-card` resolve to
-`none`); keep it for any new level. Register the new class in the twMerge
-shadow group in `frontend/lib/utils.ts`, or `cn()` will let shadcn's base
-`shadow-xs` win the cascade.
-
-Tailwind is **v4.3.3**, CSS-first: `frontend/index.css` imports `tailwindcss`
-and declares the theme in `@theme inline`; there is no `tailwind.config.ts`.
-Version-specific notes sit in `references/tailwind-v4.md`.
-
-Full theming patterns (multi-theme via `data-theme`, radius scale,
-prefers-color-scheme bootstrap, charts): `references/theming.md`.
+`ui/button.tsx` is the reference shape: `variant` + `size`, `defaultVariants`, `VariantProps<typeof x>` on the props, `asChild` through Radix `Slot`, and `cn(variants({...}), className)` with the caller's class last. Name variants by meaning (`tone: "approved"`), not color. Export the variants function only when another module composes it: knip flags an unused export.
 
 ## Responsive mechanics
 
-`frontend-ux` §5 sets *how it should adapt*; this is *how to wire it*. Treat
-narrow widths as part of the build, not a later pass — `design-review` captures
-every screen at ~390 regardless of what you changed.
+`frontend-ux` § 5 says how a screen should adapt; this is how to wire it. Breakpoints are Tailwind's defaults (`sm` 640, `md` 768, `lg` 1024, `xl` 1280, `2xl` 1536). Build mobile-first: the unprefixed class is the narrow case, prefixes layer upward, and there are no `max-*` prefixes in the codebase.
 
-**Breakpoint scale.** Tailwind defaults — `sm` 640, `md` 768, `lg` 1024, `xl`
-1280, `2xl` 1536 — nothing overridden in `index.css`. Mobile-first:
-unprefixed = base, prefixes layer *upward* (`grid-cols-1 lg:grid-cols-2`), so
-build the narrow case first and add the wide case on top. There are no `max-*`
-prefixes in the codebase — don't introduce them; restructure mobile-first instead.
+- **Container queries** for a component that adapts to its own width (a header in a resizable panel): mark the parent `@container` (or `@container/headerbar`) and prefix children `@md:`. Tailwind 4 supports them natively, which is why `RunHeader` reflows without a viewport breakpoint. Reach for this before a JS width hook.
+- **Width hooks** (`frontend/hooks/use-mobile.tsx`: `useIsMobile()` < 768, `useIsNarrow()` < 640) swap components (table → card list, sidebar → `MobileSidebar` sheet); they never toggle classes a prefix could.
+- **Priority-track header**: Left/Center/Right tracks, each `min-w-0`, the container `overflow-hidden`, `shrink-0` on the action that must never clip; labels collapse through container queries before anything clips. Reference: `frontend/components/runs/header/RunHeader.tsx`.
+- **`min-w-0`** on any flex or grid child holding text that can be long (`min-w-0 truncate`), on every crumb of a breadcrumb: the most common overflow bug here.
 
-**Container queries — for component-internal reflow.** `@tailwindcss/container-queries`
-is installed and in use. When a component must adapt to *its own* width (a header
-in a resizable panel, a card in a grid cell) rather than the viewport, mark the
-parent `@container` (or a named `@container/headerbar`) and prefix children with
-`@md:` / `@[48rem]:`. This is why `RunHeader` / `ExtractionHeader` reflow correctly
-even when the window hasn't crossed a viewport breakpoint. Reach for this before a
-JS width hook.
+## Accessibility
 
-**JS width hooks — only when CSS can't express it.** `frontend/hooks/use-mobile.tsx`
-exports `useIsMobile()` (<768) and `useIsNarrow()` (<640). Use them to *swap
-components* (data table → card list, sidebar → `MobileSidebar`/`Sheet`), not to
-toggle classes a breakpoint prefix already covers. They read `matchMedia` via
-`useSyncExternalStore`, so they re-render on resize without a mount-effect.
+Radix gives focus trap and return, arrow-key navigation, `aria-expanded` and Escape, and hides the page behind a dialog from screen readers. Radix cannot give you:
 
-**Priority-track header (the "never overflow" pattern).** A flex row of
-Left/Center/Right tracks, each `min-w-0`, the container `overflow-hidden` as a
-backstop, with shrink priorities — `shrink-0` on the action you must never clip,
-`shrink` on the mid-priority track that yields room first. Labels collapse via
-container queries *before* anything clips. Reference:
-`frontend/components/runs/header/RunHeader.tsx`.
+- `aria-invalid` + `aria-describedby` on inputs in error: the `Form*` wrappers thread them, a raw `<input>` does not.
+- Contrast: `text-muted-foreground` on `bg-background` passes AA; on `bg-muted` it does not, so use `text-foreground` there. `text-destructive-foreground` on `bg-destructive` is 3.6:1 in light mode: large or bold text only.
+- A tooltip on a disabled control: a disabled button has `pointer-events-none`, so `IconButton` hangs its tooltip on a wrapping span; do the same by hand for a disabled text button that must explain itself.
+- One tooltip provider, in `App.tsx`; `Tooltip` renders its own when none is mounted, so a test that asserts tooltip text wraps the render in `<TooltipProvider delayDuration={0}>`.
+- Toasts go through `sonner`; both mounted toasters announce, so never nest another live region.
+- A new keyframe animation guards `prefers-reduced-motion`, as `field-just-updated` in `index.css` does.
+- Lucide icons already set `aria-hidden`.
 
-**The `min-w-0` rule.** Any flex/grid child holding text that can be long needs
-`min-w-0` (usually `min-w-0 truncate`) or it forces horizontal scroll — the single
-most common responsive bug here. On a breadcrumb, *every* crumb needs it, not just
-the last.
+## prumo patterns
 
-## Accessibility (the rules Radix already gives you, plus the ones it does not)
+- **Dense data row**: `h-9` row, `py-1.5` cell, `text-[13px]`, `border-border/30` hairline, `hover:bg-muted/40`, `data-[state=selected]:bg-muted/60`, row actions revealed with `group-hover` and always visible on touch.
+- **Side-by-side comparison**: `grid grid-cols-1 lg:grid-cols-2 gap-px bg-border` with `bg-card min-w-0` children draws one 1px divider without doubled borders.
+- **PDF viewer chrome**: `ResizablePanelGroup`, a `bg-muted/30` backdrop, a sticky `h-10 border-b border-border/40` toolbar; live reference `frontend/components/runs/RunPdfContent.tsx`.
+- **Overlays** read their classes from `components/ui/overlay-frame.ts`: centered with `inset-0 m-auto`, never `translate-*` (v4's `translate` property composes with the animation's `transform` and makes the frame jump). Size and height live only in the cva variants; sizes and when to use a dialog are in `frontend-ux` § 8.
+- **`field-just-updated`** (in `index.css`): toggle it for about 1.5 s after an AI refresh writes a value; never invent a second highlight.
 
-Radix Dialog/Popover/Select/DropdownMenu give you focus trap, focus return,
-arrow-key nav, `aria-expanded`, `aria-controls`, and Escape-to-close. Do not
-fight them. Things Radix cannot do for you:
+## Symptoms
 
-- **Icon-only buttons need `aria-label`** or an `sr-only` span — `<Button
-  variant="ghost" size="icon"><X /></Button>` is unlabelled otherwise.
-- **`aria-invalid` + `aria-describedby`** on form inputs in error state. Our
-  `Form*` wrappers in `ui/form.tsx` thread these, but only if you use them —
-  raw `<input>` skips them.
-- **Live regions for async state.** Extraction streaming, HITL decision
-  changes, and toast updates use `aria-live="polite"` (toast component
-  already wraps a live region; trust it).
-- **Color contrast.** `text-muted-foreground` on `bg-background` is WCAG AA.
-  `text-muted-foreground` on `bg-muted` is *not* — pick `text-foreground` for
-  copy that lands on muted surfaces.
-- **`prefers-reduced-motion`** — see `field-just-updated` in `index.css` for
-  the pattern; any new keyframe animation must guard the same way.
-- **Tooltips on disabled controls.** A disabled button has
-  `pointer-events-none`, so nothing on it can open a tooltip. `IconButton`
-  hangs the tooltip on a wrapping `span` when `disabled`; do the same by hand
-  for a disabled text button that must explain itself.
-- **One tooltip provider.** `Tooltip` renders its own provider when none is
-  mounted, so a component rendered alone in a test works without one. A test
-  that asserts tooltip text synchronously wraps the render in
-  `<TooltipProvider delayDuration={0}>`.
+| Symptom | Probable cause |
+|---|---|
+| Hover fill shows through a child | the child has its own `bg-*` |
+| Text vanishes on hover in dark mode | a raw color (`hover:bg-gray-100`) instead of a token |
+| No focus ring on a Radix trigger | props spread after `className`, or a `div` instead of a `button` |
+| `cn()` keeps both `p-2` and `p-4` | one sits inside a template literal or an arbitrary-value bracket |
+| Long text forces horizontal scroll | a flex or grid child without `min-w-0` |
+| Header reflows on window resize, not on panel resize | a viewport prefix (`md:`) where a container one (`@md:`) was meant |
+| A custom `shadow-*` loses to shadcn's `shadow-xs` | missing from the twMerge shadow group in `frontend/lib/utils.ts` |
+| A variant prop is typed `any` | `VariantProps<typeof xVariants>` missing from the props |
 
-Deep dive: `references/a11y.md`.
+## Anti-patterns
 
-## prumo-specific patterns
-
-These are the shapes that recur across `extraction/`, `hitl/`, `quality/`,
-`runs/`. Use the same classes so the UI feels like one product.
-
-### Data-dense table row (extraction lists)
-
-```tsx
-<TableRow
-  className="
-    group h-9 cursor-pointer border-b border-border/30
-    text-[13px] hover:bg-muted/40
-    data-[state=selected]:bg-muted/60
-  "
-  data-state={isSelected ? "selected" : undefined}
->
-  <TableCell className="py-1.5 font-medium text-foreground">{title}</TableCell>
-  <TableCell className="py-1.5 text-muted-foreground">{authors}</TableCell>
-  <TableCell className="py-1.5">
-    {/* Row actions only visible on hover — Plane/Linear pattern */}
-    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-      <Button variant="ghost" size="icon" aria-label="Edit row"><Pencil /></Button>
-    </div>
-  </TableCell>
-</TableRow>
-```
-
-Anchor numbers: `h-9` row, `py-1.5` cell, `text-[13px]` body (matches
-frontend-ux), `border-border/30` hairline, `hover:bg-muted/40` silent hover.
-
-### Side-by-side comparison view (HITL reviewer)
-
-```tsx
-<div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-border rounded-md overflow-hidden">
-  <section className="bg-card p-4 min-w-0">{/* AI proposal */}</section>
-  <section className="bg-card p-4 min-w-0">{/* Reviewer decision */}</section>
-</div>
-```
-
-`gap-px` + container `bg-border` is how you get a 1px divider between two
-cards without doubling borders. `min-w-0` on flex/grid children lets long
-strings ellipsize instead of forcing horizontal scroll.
-
-### PDF viewer chrome
-
-Two-pane layout via `ResizablePanelGroup` (`ui/resizable.tsx`). PDF gets a
-`bg-muted/30` backdrop and rounded inner container; toolbar sits in a
-sticky `h-10 border-b border-border/40` strip — see
-`frontend/components/runs/RunPdfContent.tsx` and `frontend/pdf-viewer/` for the
-live reference. Match the chrome dimensions in any new viewer.
-
-### Instance editor (Dialog vs Sheet)
-
-- **Dialog** for short, atomic edits (≤1 screen of content, no sub-navigation).
-- **Sheet** (`ui/sheet.tsx`) for multi-section editors, especially when the
-  user needs to keep the underlying list visible.
-- Both close on `Esc` and outside click — do **not** disable that without a
-  destructive-change confirmation in `AlertDialog`.
-
-**Frame mechanics.** Dialog, AlertDialog and Sheet read their classes from
-`components/ui/overlay-frame.ts`. Centring is `inset-0 m-auto`, never
-`translate-*`: in Tailwind v4 `translate` is its own CSS property, and the
-animate plugin's keyframe `transform` would compose with it and make the frame
-jump. `sm`, `md` and `lg` all use `h-fit` + `max-h-[85dvh]`; a loading body reserves its own min height. Width
-and height live only in the cva variants, which is why a className on the
-content is gated.
-
-### `field-just-updated` flash
-
-Already wired in `index.css`. Toggle the class for ~1.5s after an AI refresh
-writes a value; respects `prefers-reduced-motion`. Reuse it; do not invent a
-second highlight scheme.
-
-## Common bugs and how to spot them
-
-| Symptom                                       | Probable cause                                                                    |
-| --------------------------------------------- | --------------------------------------------------------------------------------- |
-| Hover-bg shows through child element          | Child element has its own `bg-*` that is not `transparent` or `bg-inherit`.       |
-| Dark-mode text invisible on hover             | You used `hover:bg-gray-100` instead of `hover:bg-muted/50` — raw color, no flip. |
-| Focus ring missing on Radix trigger           | You spread props *before* setting `className` or used a `<div>` not `<button>`.   |
-| `cn()` does not strip earlier `p-2` for `p-4` | One of them is hidden inside a template literal or arbitrary value bracket.       |
-| Long string in flex/grid causes overflow      | Child needs `min-w-0` (flex) or `min-w-0 truncate`.                               |
-| Layout fine on desktop, cramped/overflowing on mobile | Built desktop-first with `max-*` thinking; rebuild mobile-first (base = narrow, add `sm:`/`lg:` upward). |
-| Header reflows on window resize but not when the panel resizes | Used `md:`/`lg:` (viewport) where you wanted `@md:`/`@container` (element width). |
-| Variant prop is typed `any`                   | Missing `VariantProps<typeof xxxVariants>` on the props interface.                |
-| Toast not announced                           | You bypassed `useToast` and rendered a `<div>` yourself.                          |
-| Custom `shadow-*` utility resolves to `box-shadow: none` | Key collides with a `theme.colors` key — Tailwind treats it as a shadow-color modifier. Rename the `boxShadow` key (e.g. prefix `elev-`). |
-| Custom `shadow-*` utility is overridden by shadcn `<Card>` `shadow-xs` | Missing entry in `extendTailwindMerge` shadow group in `frontend/lib/utils.ts`. |
-
-## When to reach for a reference
-
-- `references/shadcn-cli.md` — `components.json` schema, alias setup,
-  adding new components without clobbering local edits, custom registries.
-- `references/cva-patterns.md` — compound variants, default + size +
-  asChild composition, typing tricks, escape hatches.
-- `references/theming.md` — adding tokens, multi-theme via `data-theme`,
-  radius scale, charts, the `sidebar-*` namespace.
-- `references/tailwind-v4.md` — how v4 is wired here (`@theme inline`,
-  `@source`, renamed utilities); translate any v3 snippet before pasting.
-- `references/a11y.md` — patterns for the bits Radix does not give you;
-  testing flow, live-region examples specific to extraction streaming.
-
-## Anti-patterns (do not do these)
-
-- `className={`bg-${color}-500`}` — Tailwind cannot scan dynamic class names.
-  Use a `cva` variant or a lookup map of literal class strings.
-- Reaching for `!important` (`!bg-red-500`). Almost always means the
-  `cn()` arg order is wrong, or you are trying to override a token in a
-  consuming file instead of editing the variant.
-- Re-implementing a Radix primitive because "Radix is too heavy". The
-  primitive is already in the bundle if you imported a sibling from
-  `components/ui`.
-- Adding an `@plugin` for a one-off effect — usually a custom `@utility` in
-  `index.css` is enough.
-- Inline `style={{}}` for layout. The exceptions are dynamic values that
-  truly cannot be enumerated (e.g. `style={{ width: pct + "%" }}` for a
-  progress bar driven by a number); even then prefer CSS variables.
-- Writing English strings inline. Route through `frontend/lib/copy/*` —
-  this is project-wide policy (see the root `CLAUDE.md`, Hard rules).
+- Dynamic class names (`` `bg-${color}-500` ``): Tailwind cannot scan them. Use a cva variant or a map of literal strings.
+- `class!` to win a fight: the `cn()` order is wrong, or the variant needs editing.
+- Re-implementing a Radix primitive "because it is heavy": it is already in the bundle.
+- Inline `style={{}}` for layout, except values that cannot be enumerated (a progress width); prefer a CSS variable even then.

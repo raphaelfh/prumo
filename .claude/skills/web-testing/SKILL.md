@@ -1,320 +1,102 @@
 ---
 name: web-testing
-description: Use whenever writing, debugging, or designing tests for prumo — Playwright E2E (with a11y + visual), Vitest unit/component, pytest backend integration, MSW v2 network mocks, or whenever a test is flaky. Pulls in the right tool, the right fixture pattern, and the project rule that integration beats heavy mocking. Trigger on "test", "spec", "flaky", "Playwright", "Vitest", "pytest", "MSW", "axe", "snapshot", "visual regression", "test strategy", "mock the database", "test fixture", "CI test".
+description: "Use when writing, running, debugging or planning prumo tests: pytest backend integration, Vitest unit and component, MSW mocks, Playwright E2E, or a flaky test. Carries the fixture semantics, commands, project split and CI gates that differ from the defaults, and the rule that integration beats mocking."
 ---
 
-# Web Testing — prumo
+# Web Testing (prumo)
 
-Prumo's testing stack is pytest + Vitest + Playwright. The project memory is explicit: **integration tests beat heavily-mocked tests**. Past incidents had green mocked tests while the prod migration broke. Bias toward real Postgres in backend tests and real network with MSW in frontend tests.
+pytest + Vitest + Playwright. **Integration beats mocking**: mocked database tests have stayed green while the real migration broke. Backend tests run against the real local Supabase Postgres; frontend tests stub the network with MSW.
 
-## 1. Pyramid (prumo-shape)
+## Which test
 
-The classic 70/20/10 doesn't fit this codebase. The DB schema is the structural heart (HITL/extraction stack); mocked DB tests have lied before. Skew toward integration.
-
-| Layer            | Share | Stack                                                   | Wall-clock budget |
-|------------------|-------|---------------------------------------------------------|-------------------|
-| Unit             | ~40%  | Vitest (`frontend/test/*.test.ts`), pytest (`backend/tests/unit/`) | <50ms / test      |
-| Integration      | ~45%  | pytest + real Postgres (`backend/tests/integration/`), Vitest + MSW | 100ms–2s / test   |
-| E2E              | ~15%  | Playwright (`frontend/e2e/flows/`)                       | 5–30s / test      |
-
-**Why integration-heavy:** RLS policies, migrations, deferred constraints, and the `extraction_*` workflow tables don't survive being mocked. Test the real composition.
-
-## 2. Decision flow — which test to write
-
-```
-Is it pure logic (formatter, reducer, util)?       -> Vitest unit OR pytest unit
-Does it touch the DB schema or an Alembic invariant? -> pytest integration (real Postgres, never mock)
-Does it touch a React hook + TanStack Query?       -> Vitest component + MSW
-Does it cross >=2 layers (UI -> API -> DB)?         -> Playwright E2E flow
-Is the bug a race / timing / fixture leak?          -> read references/flakiness.md first
+```text
+Pure logic (formatter, reducer, util)             -> Vitest or pytest unit
+Touches the schema, a constraint or a trigger     -> pytest integration, real Postgres
+A hook or component over TanStack Query           -> Vitest + MSW
+Crosses UI -> API -> DB                           -> Playwright flow
+Race, timing or leaking state                     -> read "Flakes" first
 ```
 
-**Name the seam before the test.** A seam is the public interface the test observes through: an endpoint, a service function, a hook's return value, what the user sees. Write down the seams under test first; for non-trivial work, agree them with the user. Tests live at seams, never against internals. When the interface itself looks wrong for testing, load `codebase-design`.
-
-## 3. Commands
-
-| Goal                                              | Command                                                                                |
-|---------------------------------------------------|----------------------------------------------------------------------------------------|
-| Full backend suite                                | `make test-backend`                                                                    |
-| One backend test                                  | `cd backend && pytest tests/integration/test_run_lifecycle_service.py -k advance_pending` |
-| Run backend tests with stdout                     | `cd backend && pytest -s -vv tests/path/to/test.py::test_name`                         |
-| Full frontend unit suite                          | `npm run test:run`                                                                     |
-| One Vitest file                                   | `npx vitest run frontend/test/ConsensusPanel.test.tsx -t "renders"`                    |
-| Vitest watch (TDD)                                | `npx vitest frontend/test/...`                                                         |
-| Playwright (all projects)                         | `npx playwright test`                                                                  |
-| Playwright local (no HITL)                        | `npm run test:e2e:local:core`                                                          |
-| Playwright HITL (extraction pipeline)             | `npm run test:e2e:local:hitl`                                                          |
-| Playwright UI mode (local dev)                    | `npx playwright test --ui`                                                             |
-| Playwright single flow                            | `npx playwright test frontend/e2e/flows/extraction.e2e.ts --project=local-api`         |
-| Playwright with trace viewer after a failure      | `npx playwright show-trace test-results/.../trace.zip`                                 |
-
-The Playwright config (`playwright.config.ts`) defines three projects: `local-api`, `local-ui`, `local-hitl` (single-worker, stateful). There is no prod-facing project — production is verified by `.github/workflows/post-deploy-smoke.yml`, not Playwright. **HITL-stateful tests must stay pinned to `local-hitl`** — they share a project/article/template triple and parallelism causes runs to delete each other.
-
-## 4. Backend — pytest (8+, async)
-
-Config lives in `backend/pyproject.toml`:
-```toml
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-```
-
-That means `async def test_*` is automatically wrapped — **don't** add `@pytest.mark.asyncio` unless you want explicit loop_scope control. The existing codebase still uses the decorator for clarity; match the surrounding file's style.
-
-### 4.1 Two fixtures: `client` vs `db_client`
-
-`backend/tests/conftest.py` exposes two HTTP fixtures:
-
-- **`client`** — mocked DB + mocked auth. Use only for endpoints whose logic is dependency-light (input validation, 401 paths, transport plumbing). **Do not** use it to assert anything that depends on a real query plan or RLS.
-- **`db_client`** — real Postgres session via `db_session`, mocked auth. Use this for everything touching `app/models/` or that needs RLS, triggers, FKs to hold. Default to this fixture.
-
-Memory rule: if you're about to mock `AsyncSession.execute`, stop. Use `db_client`.
-
-```python
-# backend/tests/integration/test_my_feature.py
-import pytest
-from httpx import AsyncClient
-
-@pytest.mark.asyncio
-async def test_create_run_records_snapshot(db_client: AsyncClient, db_session) -> None:
-    response = await db_client.post(
-        "/api/v1/hitl/sessions",
-        json={"kind": "extraction", "project_template_id": str(template_id), ...},
-    )
-    assert response.status_code == 201
-    # Then read back through SQLAlchemy to confirm the row exists with the expected
-    # invariants (deferred trigger, version snapshot, etc.).
-    await db_session.rollback()  # leave the test DB clean for the next test
-```
-
-### 4.2 Rollback strategy
-
-`db_session` is **function-scoped** and creates a fresh engine per test. You're responsible for `await db_session.rollback()` if you want to be polite to neighbors, but the per-test engine isolates you. Don't commit in tests unless you also clean up in a finally block.
-
-### 4.3 Parametrize with ids
-
-```python
-@pytest.mark.parametrize(
-    ("stage", "allowed"),
-    [("PENDING", True), ("PROPOSAL", True), ("PUBLISHED", False)],
-    ids=["pending-advances", "proposal-advances", "published-locked"],
-)
-async def test_stage_transition(stage, allowed, db_session): ...
-```
-
-`ids=` makes failure output greppable — `pytest -k published-locked` works.
-
-### 4.4 Time and randomness
-
-Use `freezegun` or `time-machine` (whichever is already a dep — check `pyproject.toml`) to pin clocks. For seeded random, set `random.seed` in a fixture, not module-level (module-level leaks across the session).
-
-Deeper patterns: [`references/pytest.md`](references/pytest.md).
-
-## 5. Frontend unit / component — Vitest 2+
-
-Config at `vitest.config.ts`: `jsdom`, globals on, MSW server attached via `frontend/test/setup.ts`. Coverage threshold is 70% (branches/functions/lines/statements).
-
-### 5.1 Test placement
-
-| Test kind                          | Location                                  | Suffix          |
-|------------------------------------|-------------------------------------------|-----------------|
-| Hook / pure logic                  | `frontend/test/<name>.test.ts`            | `.test.ts`      |
-| Component                          | `frontend/test/<name>.test.tsx`           | `.test.tsx`     |
-| Co-located (rare; service tests)   | next to source as `<file>.test.tsx`       | `.test.tsx`     |
-
-### 5.2 MSW v2 — runtime handlers, not module mocks
-
-The setup at `frontend/test/mocks/server.ts` uses `http.get/post` style with `HttpResponse.json`. **Use `server.use(...)` to override per test, not `vi.mock`**, for anything that hits the network:
-
-```ts
-import { http, HttpResponse } from 'msw';
-import { server } from '@/test/mocks/server';
-import { renderHook, waitFor } from '@testing-library/react';
-
-it('handles 409 conflict on publish', async () => {
-  server.use(
-    http.post('*/api/v1/hitl/sessions/:id/publish', () =>
-      HttpResponse.json({ ok: false, error: { code: 'CONFLICT' } }, { status: 409 })
-    )
-  );
-  const { result } = renderHook(() => usePublish(), { wrapper });
-  await waitFor(() => expect(result.current.error?.code).toBe('CONFLICT'));
-});
-```
-
-`onUnhandledRequest: 'error'` is set in setup — an unmocked request fails the test loudly. Good. Don't soften it.
-
-### 5.3 `vi.mock` is for *modules*, not the network
-
-Reserve `vi.mock` for swapping a sibling module (e.g. mocking `lib/copy` to a fixed locale, or stubbing a Zustand store) where MSW can't reach. Partial mocks:
-
-```ts
-vi.mock('@/lib/copy', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/copy')>();
-  return { ...actual, useLocale: () => 'en' };
-});
-```
-
-### 5.4 React Testing Library
-
-- Query by role/name first, by label second, by test-id last. `screen.getByRole('button', { name: /publish/i })`.
-- `userEvent.setup()` once per test; `await user.click(...)`. Don't share a `user` across tests.
-- `findBy*` for anything async (TanStack Query, transitions). Never `waitFor(() => expect(getByText(...)))` — use `findByText`.
-
-### 5.5 TanStack Query test wrapper
-
-Always wrap with a fresh `QueryClient` per test, retries off, gcTime 0. There is no shared render helper: each test file builds its own wrapper (recipe in `references/vitest.md` §2), and screen-level helpers live in `frontend/test/helpers/`.
-
-Deeper patterns: [`references/vitest.md`](references/vitest.md) and [`references/msw.md`](references/msw.md).
-
-## 6. E2E — Playwright 1.50+
-
-Tests live under `frontend/e2e/`, two categories:
-- `flows/*.e2e.ts` — API-driven flow tests (project `local-api`).
-- `flows/*.ui.e2e.ts` — UI-driven flow tests (project `local-ui`).
-- `flows/qa-*.e2e.ts`, `extraction-edit.ui.e2e.ts`, `hitl-*.api.e2e.ts` — stateful, single-worker (`local-hitl`).
-
-### 6.1 Fixtures live in `_fixtures/`
-
-Don't reinvent them. Existing helpers:
-
-| File                      | Purpose                                       |
-|---------------------------|-----------------------------------------------|
-| `auth.ts`                 | `resolveAuthToken(page)`, `loginViaUi(page)`, `loginViaUiAs` |
-| `api.ts`                  | `authHeaders`, `parseEnvelope`, `ApiEnvelope<T>` |
-| `hitl.ts`, `hitl-finalize.ts` | HITL session/run helpers (`prepareCleanQaRun`, …) |
-| `supabase-admin.ts`       | Service-role client for admin DB ops          |
-| `console-errors.ts`       | `watchConsoleErrors`: fail tests on stray console errors |
-| `env.ts`                  | E2E env var loading                            |
-| `registry.ts`             | Cross-test resource registry                   |
-| `ensure-fixtures.ts`, `fixture-ids.ts` | Self-provisioned fixtures and their ids |
-
-Also there: `article-pdf.ts`, `extraction-review-workspace.ts`, `global-setup.ts`, `global-teardown.ts`.
-
-Use them. New helpers go here, not inline.
-
-### 6.2 `test.extend` over page-object classes
-
-Page objects are only worth it when a flow exceeds ~50 lines of selector code. Prefer composable fixtures:
-
-```ts
-import { test as base, expect } from '@playwright/test';
-import { resolveAuthToken } from '../_fixtures/auth';
-
-type Fixtures = { authToken: string };
-const test = base.extend<Fixtures>({
-  authToken: async ({ page }, use) => {
-    const token = await resolveAuthToken(page);
-    await use(token);
-  },
-});
-
-test('publishes an extraction run', async ({ page, authToken }) => { ... });
-```
-
-### 6.3 `expect.poll` over `waitFor` chains
-
-For eventual consistency (Celery jobs, multi-reviewer consensus, run stage transitions):
-
-```ts
-await expect.poll(
-  async () => (await api.getRun(runId)).stage,
-  { timeout: 15_000, intervals: [200, 500, 1000] }
-).toBe('REVIEW');
-```
-
-### 6.4 Traces — always on for failures
-
-Config sets `trace: 'retain-on-failure'`, `screenshot: 'only-on-failure'`, `video: 'retain-on-failure'`. After a failing CI run, download the artifact and `npx playwright show-trace trace.zip` — don't try to debug from logs alone.
-
-### 6.5 Selector hierarchy
-
-1. `getByRole('button', { name: /save/i })` — semantic, a11y-friendly.
-2. `getByLabel('Email')` — forms.
-3. `getByTestId('publish-action')` — last resort, only if role/label don't disambiguate.
-
-Avoid CSS selectors and XPath in new code.
-
-### 6.6 Accessibility — bake `@axe-core/playwright` into flows
-
-Add to any flow that renders a new page:
-
-```ts
-import AxeBuilder from '@axe-core/playwright';
-
-test('extraction page is accessible', async ({ page }) => {
-  await page.goto('/extraction/123');
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-    .analyze();
-  expect(results.violations).toEqual([]);
-});
-```
-
-If a violation is intentional (third-party widget), disable that rule with `.disableRules(['color-contrast'])` and leave a comment with the ticket.
-
-Deeper patterns: [`references/playwright.md`](references/playwright.md) and [`references/a11y.md`](references/a11y.md).
-
-## 7. Visual regression
-
-Playwright snapshots are stored alongside tests; diffs land in `test-results/`. Use sparingly — visual tests are heavy and easy to break with cosmetic refactors.
-
-This is the *regression-locking* half of visual work — it catches drift on an already-correct screen. The *getting-it-correct* half (render → screenshot → compare to the Plane/Linear target → fix → re-screenshot) is the `design-review` skill / `/design-review`; reach for that first when iterating, and only drop a `toHaveScreenshot` baseline once the screen matches and is stable.
-
-```ts
-await expect(page).toHaveScreenshot('extraction-empty-state.png', {
-  maxDiffPixels: 100,
-  threshold: 0.2,
-  mask: [page.locator('[data-testid="timestamp"]')], // mask volatile regions
-});
-```
-
-Update baselines deliberately: `npx playwright test --update-snapshots <file>`. Review diffs in the HTML reporter before committing.
-
-## 8. Determinism — the four levers
-
-Flake comes from non-determinism. Pin all four:
-
-| Source     | Fix                                                                                       |
-|------------|-------------------------------------------------------------------------------------------|
-| Time       | `freezegun.freeze_time` (py) / `vi.useFakeTimers` (vitest) / `page.clock.install` (PW).   |
-| Random     | Seeded `random.Random(42)` / `Math.random` stub / `vi.spyOn(Math, 'random')`.             |
-| Network    | MSW (vitest), route fulfillment (Playwright), real Postgres (pytest).                     |
-| DB state   | Per-test rollback (pytest), per-test `QueryClient` (vitest), admin reset hooks (Playwright). |
-
-If a test is flaky, identify which lever isn't pinned **before** adding retries. See [`references/flakiness.md`](references/flakiness.md).
-
-## 9. CI integration
-
-GitHub Actions runs pytest then Playwright. Gates:
-
-1. Lint (`make lint-backend`, `npm run lint`)
-2. Unit (`make test-backend`, `npm run test:run`; plain `npm test` is watch mode and hangs agent sessions)
-3. E2E (`npx playwright test`)
-
-A failure in any earlier gate cancels later ones. Playwright artifacts (traces, screenshots, HTML report) upload on failure — pull them before guessing.
-
-Retries: `retries: process.env.CI ? 1 : 0` for `local-api`/`local-ui`/`local-hitl`. **Don't** raise this to mask real flake — diagnose instead.
-
-## 10. Anti-patterns we've been bitten by
-
-- **Mocking `AsyncSession.execute`** — green test, prod migration broke. Use `db_client`.
-- **Module-level random seeding in pytest** — bleeds across the session; use a fixture.
-- **Parallel HITL tests** — they share state; pin to `local-hitl`.
-- **`waitFor(() => expect(getByText(...))` in RTL** — use `findByText`; it has its own timeout.
-- **CSS selectors in Playwright** — break on the next Tailwind refactor; use role/label.
-- **Bumping `retries` to silence flake** — re-read §8.
-- **Snapshotting volatile UI** — mask timestamps, IDs, user names. Don't ratchet `maxDiffPixels` upward to hide drift.
-- **Tautological assertions** — the expected value is computed the way the code computes it, so the test cannot disagree. Examples: `expect(total(items)).toBe(items.reduce(...))`, or comparing a Pydantic response model to one built from the same inputs, which stays green when fields drift. Expected values come from an independent source: a literal, a worked example, the spec.
-- **Vacuous tests** — the assertion never runs against the case it names: an empty list iterated, a mocked branch never taken, a filter that matches nothing. Assert the precondition (the row exists, the list is non-empty) before the outcome.
-- **Testing past the interface** — mocking your own collaborators, asserting call counts or order, or verifying a write by querying the table instead of reading it back through the interface. The tell: the test breaks on a refactor that changed no behaviour.
-
-## 11. References (progressive disclosure)
-
-| File                                | When to read                                                                |
-|-------------------------------------|------------------------------------------------------------------------------|
-| [`references/pytest.md`](references/pytest.md)         | Writing backend integration tests, async fixture scope, factory patterns.    |
-| [`references/vitest.md`](references/vitest.md)         | Component tests, hook tests, partial `vi.mock`, in-source tests, browser mode. |
-| [`references/playwright.md`](references/playwright.md) | New E2E flow, fixture composition, expect.poll, project setup, debugging.   |
-| [`references/msw.md`](references/msw.md)               | Designing handlers, runtime overrides, request-matching pitfalls.            |
-| [`references/a11y.md`](references/a11y.md)             | WCAG checklist + axe rules to disable vs. fix.                               |
-| [`references/flakiness.md`](references/flakiness.md)   | Diagnosing a flake — classify the source before patching.                    |
+**Name the seam before the test**: the endpoint, the service function, the hook's return value, or what the user sees. Tests observe through it, never through internals. For non-trivial work, agree the seams with the user first.
+
+## Commands
+
+| Goal | Command |
+|---|---|
+| Backend suite | `make test-backend` |
+| One backend test | `cd backend && uv run pytest tests/integration/test_x.py -k name -x` |
+| Frontend suite | `npm run test:run` (repo root) |
+| One Vitest file | `npx vitest run frontend/path/X.test.tsx -t "name"` |
+| E2E, parallel projects | `npm run test:e2e:local:core` (`local-api` + `local-ui`) |
+| E2E, stateful HITL | `npm run test:e2e:local:hitl` (`local-hitl`, one worker) |
+| One E2E flow | `npx playwright test frontend/e2e/flows/x.e2e.ts --project=local-api` |
+| Trace after a failure | `npx playwright show-trace test-results/<test-dir>/trace.zip` |
+
+## Backend: pytest
+
+`asyncio_mode = "auto"`; many files still add `@pytest.mark.asyncio`, so match the file. Markers: `integration` (auto-applied under `tests/integration/`), `e2e`, `performance`, `llm`. `addopts` deselects `llm`; your own `-m` replaces that, so write `-m "e2e and not llm"`.
+
+| Fixture (`backend/tests/conftest.py`) | What it is | Use for |
+|---|---|---|
+| `client` | mocked database and auth | transport, validation and 401 paths only |
+| `db_session` | real Postgres; each test runs in an outer transaction + SAVEPOINT rolled back at teardown, so commits are allowed and undone | the default |
+| `db_client` | HTTP client over `db_session`; auth is a fake `test-user-id` that belongs to no project | endpoint tests |
+| `db_session_real` | commits for real | DEFERRED triggers, cross-session reads; delete what you insert |
+
+- **RLS never runs here**: tests connect as `postgres`, a superuser. Prove a policy with `set_config('request.jwt.claims', …, true)` + `SET LOCAL ROLE authenticated`, as `tests/integration/test_llm_connection_rls.py` does.
+- **Passing a guard** needs a real member: override `get_current_user` with a seeded profile, as the `auth_as_profile` fixture in `tests/integration/test_hitl_session.py` does.
+- **Seed.** The autouse `seeded_integration_db` fixture creates the seed graph; reference its ids through `SEED` (`tests/integration/conftest.py`). Never skip on a missing seed: CI caps skipped tests at 25 because a missing seed once skipped about 196.
+- **Builders.** `backend/tests/factories/` (`TemplateFactory`, `make_entity_type`) and the helpers in `tests/integration/conftest.py` (`open_session`, `make_proposal`, `make_ai_proposal`). Integration helpers scope article and template queries by `project_id`.
+- **Authorization.** Every state-changing endpoint gets one test per guard it depends on: a non-member (403), a member with the wrong role (403), and a foreign row id (the guard's own refusal, 404-class).
+- **Time and order.** No clock library is installed: inject `now`. pytest-randomly shuffles test order; rerun with the seed it prints (`--randomly-seed=<n>`) or pin it with `-p no:randomly`.
+- `parametrize(..., ids=[...])` so `-k <id>` selects one case.
+
+## Frontend: Vitest
+
+- `vitest.config.ts` at the repo root: jsdom, globals, setup `frontend/test/setup.ts`.
+- Coverage is a report only (`npm run test:coverage`): no thresholds are set and CI never runs it. Without `coverage.include`, Vitest 4 counts only files a test loads, so an untested module is missing from the report rather than at 0%. Thresholds take flat keys (`thresholds: { lines: 70 }`); Jest's `global: { … }` shape is read as a file glob and enforces nothing.
+- Placement: `frontend/test/{components,hooks,lib,services}/` or co-located (`X.test.tsx`, `__tests__/`). Match the neighbors.
+- **Network → MSW v2** (`frontend/test/mocks/server.ts`) with `onUnhandledRequest: 'error'`, except that its baseline silently answers Supabase auth (`POST */auth/v1/token`) and REST (`GET */rest/v1/*` → `[]`, `POST */rest/v1/*`). Override per test with `server.use(http.post('*/api/v1/...', () => HttpResponse.json({ ok: true, data })))`: responses carry the envelope.
+- **`vi.mock` is for modules MSW can't reach**: the copy layer (`vi.mock('@/lib/copy', () => ({ t: (_ns, key) => key }))`), `sonner`, the Supabase client.
+- A fresh `QueryClient` per test (`retry: false`, `gcTime: 0`) in the file's own wrapper; screen-level helpers live in `frontend/test/helpers/`.
+- Query by role and name, then label, then test id; `findBy*` for anything async; one `userEvent.setup()` per test.
+- jsdom has no layout and no Tailwind, so a class-string assertion proves nothing visual; and its user agent is not a Mac, so `mod` means Control in tests.
+
+## E2E: Playwright
+
+- Three projects (`playwright.config.ts`): `local-api` (`flows/**/*.e2e.ts`), `local-ui` (`flows/**/*.ui.e2e.ts`, plus `auth.e2e.ts` and `projects.e2e.ts`) and `local-hitl`, an explicit list of stateful specs with one worker and always one retry. Stateful specs share a project/article/template triple, and parallel runs delete each other's runs: a new one goes into the `local-hitl` list **and** into the other projects' `testIgnore`.
+- Retries are `CI ? 1 : 0` elsewhere. Diagnose a flake before raising them.
+- Helpers live in `frontend/e2e/_fixtures/` (`auth.ts`, `api.ts`, `hitl.ts`, `ensure-fixtures.ts`, `registry.ts`, …); add new ones there. API calls go to `${apiUrl}/api/v1/…`: the base URL is the frontend on :8080, with no proxy.
+- Product pages sit behind auth under `/projects/:projectId/...` (e.g. `/projects/:projectId/extraction/:articleId`).
+- `expect.poll` for eventual consistency (Celery jobs, stage transitions). Run stages are lowercase: `pending`, `extract`, `consensus`, `finalized`, `cancelled`.
+- Selectors: `getByRole`, then `getByLabel`, then `getByTestId`; no CSS or XPath in new code.
+- `locator.click()` waits forever on an `aria-disabled` control; pass `force: true` when the control is deliberately clickable.
+- Accessibility: `new AxeBuilder({ page }).withTags([...]).analyze()` from `@axe-core/playwright`; `extraction-review-workspace.ui.e2e.ts` is the flow that asserts it today.
+- There are no screenshot baselines; `design-review` is the visual check.
+
+## CI
+
+`.github/workflows/ci.yml` runs its test jobs in parallel: backend (`uv run pytest tests/ --cov-fail-under=62`, a 25-skip budget, diff coverage ≥ 80% on PRs, critical-path coverage ≥ 85%), frontend (`npm run test:run`, no coverage), the backend `-m e2e` suite, and the ephemeral-stack Playwright job (`test:e2e:local:core`, plus `:hitl` only when `scripts/ci/extraction_pipeline_touched.py` fires). Playwright artifacts upload on every run: open the trace before guessing.
+
+## Flakes
+
+Find the loose lever before touching retries:
+
+| Source | Pin it with |
+|---|---|
+| Time | inject `now` (pytest) · `vi.useFakeTimers` · `page.clock.install` |
+| Randomness | a seeded `random.Random` in a fixture · `vi.spyOn(Math, 'random')` |
+| Network | real Postgres (pytest) · MSW (Vitest) · route fulfillment (Playwright) |
+| Shared state | SAVEPOINT isolation · a fresh `QueryClient` · `local-hitl` for stateful flows |
+| Order | pytest-randomly's printed seed |
+
+- Repeat to reproduce: Playwright `--repeat-each=20 --workers=1` (without `--workers=1` the repeats run in parallel); Vitest has no repeat flag, so use `it(..., { repeats: 20 })` or a shell loop.
+- An `await import()` inside `it()` times out under load: import at module scope.
+
+## Anti-patterns
+
+- **Mocking `AsyncSession.execute`**: use `db_session` or `db_client`.
+- **Tautological assertions**: the expected value is computed the way the code computes it (`expect(total(items)).toBe(items.reduce(...))`, or comparing a Pydantic response model to one built from the same inputs, which stays green when fields drift). Expected values come from a literal, a worked example or the spec.
+- **Vacuous tests**: the assertion never meets the case it names (an empty list iterated, a branch never taken, a filter that matches nothing). Assert the precondition before the outcome.
+- **Testing past the interface**: mocking your own collaborators, asserting call counts or order, or checking a write by querying the table instead of reading it back through the interface. The tell: it breaks on a refactor that changed no behavior.
+- **Silencing a flake** by raising `retries` or a diff threshold.

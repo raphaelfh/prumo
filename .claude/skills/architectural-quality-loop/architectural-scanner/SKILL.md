@@ -8,7 +8,7 @@ description: SCAN phase of the prumo architectural quality loop — dispatches 5
 Performs the SCAN phase of the architectural quality loop on a scoped slice. Two lanes run in parallel:
 
 1. **Computational lane** — deterministic fitness scripts (`scripts/fitness/run_all.sh`), linters (`ruff`, `eslint`, `tsc`). Findings here have `confidence=1.0`.
-2. **Inferential lane** — 5 Explore subagents in parallel, each specialised in one finding category. Findings here have shape-based confidence (≥ 0.7 floor).
+2. **Inferential lane** — 5 Explore subagents in parallel, each specialized in one finding category. Findings here have shape-based confidence (≥ 0.7 floor).
 
 Both lanes write to the same `findings.jsonl` with a shared schema; the orchestrator (the architectural-quality-loop meta-skill) reads it without caring which lane produced each row.
 
@@ -34,7 +34,7 @@ This is the **single contract** between the scanner and everything downstream. E
   "evidence":          "...≤200 chars, verbatim quote when possible...",
   "suggested_action":  "...≤300 chars...",
   "source":            "subagent:concept-drift|fitness:check_legacy_concepts:<rule>|lint:ruff|lint:tsc",
-  "glossary_term":     "extraction_entity_role",
+  "glossary_term":     "EntityType",
   "blacklist_entry":   4,
   "fix_must_add":      "fitness-rule|regression-test|null"
 }
@@ -54,7 +54,7 @@ Optional: `glossary_term`, `blacklist_entry`, `fix_must_add`.
 1. Resolve SCOPE to a list of file paths (expand glob from repo root).
 2. **In parallel**, dispatch 5 Explore subagents (one per category below) AND run `scripts/fitness/run_all.sh --scope "<scope>"`.
 3. Each subagent: 5-min timeout, 1 retry with the prior error as context. A retry failure emits one row with `severity=low confidence=0.5 source=subagent:<name>:failed` and `evidence="subagent timed out — see telemetry"`. Do **not** drop the failed subagent silently.
-4. Aggregate all rows into `findings.jsonl`. Append a telemetry line per subagent + per fitness script to `telemetry.jsonl` (schema in `../references/telemetry-schema.md`).
+4. Aggregate all rows into `findings.jsonl`. `run_all.sh` prints verdicts only: for fitness rows, re-run each failing check, and `check_legacy_concepts.py` (its warn tier never fails), with `--jsonl-out <path>` (`scripts/fitness/README.md` lists the checks that accept it). Append a telemetry line per subagent + per fitness script to `telemetry.jsonl`; `run_all.sh` writes the fitness lines itself when `PRUMO_TELEMETRY_OUT` points there (schema in `../references/telemetry-schema.md`).
 5. Return path to the run-dir to the orchestrator.
 
 ## The 5 subagents
@@ -69,7 +69,7 @@ Each Explore subagent receives the SCOPE as `${SCOPE}` and the relevant referenc
 >
 > Read `.claude/skills/architectural-quality-loop/references/concept-glossary.md` — it is the **only** source of canonical vocabulary. Then read every file in scope and find:
 > 1. Identifiers, comments, or strings that contradict the glossary (e.g. calling something an `assessment` when the glossary calls it a `quality_assessment Run`).
-> 2. Hardcoded magic strings or numbers that the glossary has promoted to enum/role (e.g. `name == 'prediction_models'` instead of role enum).
+> 2. Hardcoded magic strings or numbers that the glossary has promoted to a typed column or enum (e.g. `name == 'prediction_models'` instead of `parent_entity_type_id` + `cardinality`).
 > 3. Domain words used in the wrong layer (e.g. "AI suggestion" vocabulary in a service that should speak in `ProposalRecord` terms).
 >
 > Emit one JSONL row per finding using the schema in §Output schema of `architectural-scanner/SKILL.md`. Set `category="concept-drift"`, `source="subagent:concept-drift"`, populate `glossary_term` when applicable. Bound `evidence` to 200 chars (a verbatim line is best). Confidence ≥ 0.7 only — drop softer hunches.
@@ -87,7 +87,7 @@ Each Explore subagent receives the SCOPE as `${SCOPE}` and the relevant referenc
 > - `app/services/**` → may import from `app/repositories/**`, `app/schemas/**`, `app/models/**`, `app/core/**`, `app/utils/**`, other `app/services/**`. Never from `app/api/**`.
 > - `app/repositories/**` → may import from `app/models/**`, `app/schemas/**`, `app/core/**`. Never from `app/services/**` or `app/api/**`.
 > - `app/models/**` → no business logic; only ORM + relationships.
-> - Cross-cutting OK: `app/core/**`, `app/utils/**`, `app/config/**`, `app/exceptions/**`, `app/domain/**`.
+> - Support packages (`app/core`, `app/domain`, `app/infrastructure`, `app/llm`, `app/schemas`, `app/utils`) are importable from every layer and may not import any layer back (`scripts/fitness/check_layered_arch.py`).
 >
 > Find imports or call sites that violate this DAG. Find routers that contain business logic (not just orchestration). Find services that call other services in cycles. Find repositories that hand-roll SQL when the model has a relationship. Find models with method bodies that smell like business logic.
 >
@@ -99,10 +99,10 @@ Each Explore subagent receives the SCOPE as `${SCOPE}` and the relevant referenc
 >
 > You are the **security** scanner. Scope: `${SCOPE}`.
 >
-> prumo is multi-tenant; every bug in `runs`, `extraction_*`, `hitl_*` is a candidate RLS/BOLA bug until proven otherwise. Look for:
-> 1. **BOLA**: endpoints that take an entity id (project_id, run_id, article_id) but do not call `is_project_member(<id>, auth.uid())` or equivalent.
+> prumo is multi-tenant; every bug in `runs`, `extraction_*`, `hitl_*` is a candidate BOLA bug until proven otherwise. The API and the worker connect as the service role, which bypasses RLS, so their only tenant boundary is the ownership guard. Look for:
+> 1. **BOLA**: a client-supplied id (project_id, run_id, article_id, …) used without one of the guards in `.claude/rules/backend.md` § Ownership guards, or with a re-typed copy of one.
 > 2. **TOCTOU on Run state**: code that reads `run.stage`, then mutates without `SELECT ... FOR UPDATE` or a database CHECK constraint guarding the transition.
-> 3. **Missing RLS**: SQL inserts/updates into `extraction_*` or `project_*` tables outside an `is_project_*` policy context.
+> 3. **Missing RLS**: a browser/PostgREST path (the `supabase` client in `frontend/`) reading or writing an `extraction_*` or `project_*` table that no `is_project_*` policy covers. API and worker code is out of scope for this item.
 > 4. **Secret / PII in logs**: `structlog.info(... )` calls that include `api_key`, `password`, `pdf_url`, `extracted_text` (likely contains PII).
 > 5. **Error swallowing**: `try ... except: pass`, `except Exception: return None`, `.catch(() => undefined)` that hides server errors from the user.
 >
@@ -114,8 +114,8 @@ Each Explore subagent receives the SCOPE as `${SCOPE}` and the relevant referenc
 >
 > You are the **legacy-spotter** scanner. Scope: `${SCOPE}`.
 >
-> Read `.claude/skills/architectural-quality-loop/references/legacy-patterns.md` — the 16-entry blacklist of concepts that have been removed and must not return. Find:
-> 1. Live references (code, not comments) to any blacklisted concept.
+> Read `.claude/skills/architectural-quality-loop/references/legacy-patterns.md` — the 16-entry blacklist of concepts that have been removed and must not return — and the `RETIRED` list in `scripts/fitness/check_retired_symbols.py` (symbols a spec retired, each with its reason). Find:
+> 1. Live references (code, not comments) to any blacklisted concept or retired symbol.
 > 2. Dead exports: a symbol exported from a module but with zero importers in the rest of the scope.
 > 3. Orphan files: a file with no importers and no role as a CLI / entry point.
 > 4. `// removed`, `# removed`, `_unused` rename hacks, `is_*` flags that are never read.

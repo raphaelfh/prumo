@@ -71,10 +71,10 @@ guard that drifted or was never made.
   ONE guard and import it — never copy a sibling. This list is load-bearing:
   the CI gate matches WHERE-clause shapes, so it cannot see a
   `db.get`-then-compare copy — the enumeration is what prevents copy #3.
-- **The request coordinate** for the AI kickoff endpoints →
-  `api/deps/scope.assert_kickoff_scope`. Both kickoff endpoints share it;
-  `/extraction/models` shipped without the binding precisely because the
-  logic lived inline in its sibling.
+- **The request coordinate** for an AI kickoff endpoint →
+  `api/deps/scope.assert_kickoff_scope` (`POST /extraction/sections`). A new
+  kickoff endpoint imports it: the retired `/extraction/models` shipped
+  without the binding because the logic lived inline in its sibling.
 - **Scope goes in the WHERE clause**, never a compare after `db.get` /
   `get_by_id`. A scoped SELECT never locks a foreign row, and makes
   "missing" and "foreign" indistinguishable — no existence oracle.
@@ -106,6 +106,7 @@ line with a reason in the same PR; the baseline only shrinks.
   mocks). Deferred-trigger tests need the `db_session_real` fixture.
 - Integration setup helpers must scope article/template queries by
   `project_id`.
-- Run with `make test-backend`; seed graph is auto-created by the
-  autouse `SEED` fixture in `tests/integration/conftest.py`. Fixture and
+- Run with `make test-backend`; the seed graph is auto-created by the
+  autouse `seeded_integration_db` fixture in `tests/integration/conftest.py`
+  (its ids are in `SEED`). Fixture and
   authorization-test recipes: the `web-testing` skill.

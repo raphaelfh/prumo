@@ -20,6 +20,11 @@ declare global {
 // Clean DOM after each test
 afterEach(() => {
   cleanup();
+  // ...and the per-browser preferences a component may have written. A
+  // remembered toggle that survives into the next test silently changes the
+  // layout it renders in, which reads as an unrelated failure in whichever
+  // test happens to run after.
+  localStorage.clear();
 });
 
 // Configure MSW for API mocks

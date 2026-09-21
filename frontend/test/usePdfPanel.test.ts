@@ -89,4 +89,38 @@ describe("usePdfPanel", () => {
       expect(result.current.isOpen).toBe(true);
     });
   });
+
+  // At phone width a split gives the PDF ~195px — too narrow for its toolbar's
+  // touch targets, so its trailing controls fell off the edge. There, open
+  // means maximized, and leaving the maximized view returns to the form.
+  describe("compact (phone width)", () => {
+    it("reports an open panel as expanded, without a separate expand step", () => {
+      const { result } = renderHook(() => usePdfPanel({ compact: true }));
+      expect(result.current.isExpanded).toBe(false);
+      act(() => result.current.toggle());
+      expect(result.current.isOpen).toBe(true);
+      expect(result.current.isExpanded).toBe(true);
+    });
+
+    it("closes on restore and on Escape's collapse, never landing in a split", () => {
+      const { result } = renderHook(() => usePdfPanel({ initialOpen: true, compact: true }));
+      act(() => result.current.toggleExpanded());
+      expect(result.current.isOpen).toBe(false);
+
+      act(() => result.current.open());
+      act(() => result.current.collapse());
+      expect(result.current.isOpen).toBe(false);
+      expect(result.current.isExpanded).toBe(false);
+    });
+
+    it("keeps the desktop split when the viewport grows back", () => {
+      const { result, rerender } = renderHook(({ compact }) => usePdfPanel({ initialOpen: true, compact }), {
+        initialProps: { compact: true },
+      });
+      expect(result.current.isExpanded).toBe(true);
+      rerender({ compact: false });
+      expect(result.current.isOpen).toBe(true);
+      expect(result.current.isExpanded).toBe(false);
+    });
+  });
 });
