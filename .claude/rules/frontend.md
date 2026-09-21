@@ -73,8 +73,8 @@ Tailwind/shadcn mechanics → `ui-styling`. This file is the always-true core.
 
 ## Tests
 
-- Run from the repo root: `npm run test:run` (vitest; plain `npm test`
-  is watch mode and hangs agent sessions). E2E: `npm run test:e2e:local`
+- Run from the repo root: `npm run test:run` (`vitest run`; plain
+  `npm test` starts watch mode in an interactive terminal). E2E: `npm run test:e2e:local`
   — fixtures self-provision via `frontend/e2e/_fixtures/ensure-fixtures.ts`,
   but the global CHARMS template must exist (`make db-seed` after a
   bare `reset-db`).

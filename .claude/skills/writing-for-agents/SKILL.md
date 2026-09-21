@@ -12,6 +12,7 @@ When the document is a skill, also read [`SKILL-MECHANICS.md`](SKILL-MECHANICS.m
 - **CLAUDE.md** loads on every turn of every session. It should hold navigation pointers, hard rules, and gotchas agents actually get wrong, nothing else.
 - **Skills trigger on their `description`.** Never route to skills from CLAUDE.md; sharpen the description instead. Keep `paths:` off model-invocable skills: it hides the skill from the listing until a matching file is touched.
 - **Path-scoped rules** in `.claude/rules/` load only when matching files are touched. Move a CLAUDE.md line there when it only matters in one layer.
+- **Disclosed files are rarely opened.** Across 2,357 transcripts a skill's `references/*.md` was read one to three times in total, while the skills themselves ran hundreds of times, and the unread files rotted into stale tutorials. Inline what the agent must know in `SKILL.md`; disclose only a procedure one branch runs, and cut restated library knowledge instead of disclosing it.
 - **Memory** holds facts not derivable from the repo. A lesson that a check could enforce belongs in `scripts/fitness/` or a hook, not in memory; see `retro`.
 
 ## Context pointers

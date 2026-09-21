@@ -74,4 +74,4 @@ weakest `response_model`.
   baseline tightening.
 - Companion: ADR 0007 (single API read path) — together they make the
   typed client + generated types the only data contract.
-- Incident class: `code-review` skill `references/api-envelope.md`.
+- Incident class: `code-review` skill, checklist § F (ApiResponse envelope).
