@@ -2,9 +2,19 @@
 import './mocks/localStorage';
 
 import '@testing-library/jest-dom';
-import {afterAll, afterEach, beforeAll} from 'vitest';
+import {afterAll, afterEach, beforeAll, vi} from 'vitest';
 import {cleanup} from '@testing-library/react';
 import {server} from './mocks/server';
+
+// `@/integrations/supabase/client` calls createClient at module scope and
+// throws "supabaseUrl is required" without a URL. Stubbing here — overriding
+// any local .env — makes every spec see the same env locally and in CI, which
+// has none. Hoisted so it lands before any import can reach the client.
+vi.hoisted(() => {
+  vi.stubEnv('VITE_SUPABASE_URL', 'http://127.0.0.1:54321');
+  vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'test-anon-key');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'test-anon-key');
+});
 
 // Extend expect with jest-dom matchers
 

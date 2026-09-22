@@ -2,15 +2,6 @@ import {render} from '@testing-library/react';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {describe, expect, it, vi} from 'vitest';
 
-// This file imports the real RunPdfContent, whose import graph reaches
-// `@/integrations/supabase/client`, where `createClient` runs at module scope.
-// CI has no Supabase env, so without these stubs the file throws at import and
-// never collects — green locally only because a worktree .env supplies them.
-vi.hoisted(() => {
-  vi.stubEnv('VITE_SUPABASE_URL', 'http://127.0.0.1:54321');
-  vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'test-anon-key');
-});
-
 import {RunPdfContent} from './RunPdfContent';
 
 const pdfViewerSpy = vi.fn();
