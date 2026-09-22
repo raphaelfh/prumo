@@ -38,6 +38,12 @@ SEMICOLON_CHAIN = """\
 run_gate "test:pytest" bash -c 'cd backend; uv run pytest -q'
 """
 
+# The mypy ratchet's pipe is exempt only verbatim: a filter after the judge
+# eats its verdict, and must still be caught.
+MYPY_RATCHET_FILTERED = """\
+run_gate "lint:mypy" bash -c 'cd backend && { uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline | tail -5'
+"""
+
 BACKGROUNDED = """\
 run_gate "test:pytest" bash -c 'cd backend && uv run pytest -q &'
 """
@@ -52,6 +58,7 @@ run_gate "test:pytest" bash -c 'cd backend && uv run pytest -q &'
         ("explicit || true", EXPLICIT_SWALLOW),
         ("semicolon chain", SEMICOLON_CHAIN),
         ("backgrounded gate", BACKGROUNDED),
+        ("filtered mypy ratchet", MYPY_RATCHET_FILTERED),
     ],
 )
 def test_audit_flags_every_status_eating_shape(label: str, script: str) -> None:

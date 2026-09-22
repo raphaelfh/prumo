@@ -15,7 +15,7 @@ Run from the repo root unless noted. Read the whole output before you claim.
 |---|---|---|
 | Backend tests pass | `make test-backend` | exit 0, no `FAILED` or `ERROR` |
 | One backend test passes | `cd backend && uv run pytest -k <name> -x --tb=short` | `1 passed` |
-| Backend lint and types | `make lint-backend`, then CI's mypy ratchet: `cd backend && { uv run mypy app --ignore-missing-imports \|\| true; } \| uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline` | both exit 0 (no error outside `.mypy_baseline`; fix the type, never `--update` the baseline to pass) |
+| Backend lint and types | `make lint-backend` (ruff + CI's mypy ratchet against `backend/.mypy_baseline`, verbatim) | exit 0, `mypy ratchet OK: … no new errors.` (fix the type, never `--update` the baseline to pass) |
 | Frontend tests pass | `npm run test:run` | exit 0 |
 | One frontend test passes | `npx vitest run <path> -t "<name>"` | `1 passed` |
 | Frontend lint and types | `npm run lint` and `npm run typecheck` (not a bare `tsc --noEmit`) | exit 0 |

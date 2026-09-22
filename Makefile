@@ -330,6 +330,8 @@ lint-backend: ## Executa linter do backend
 	@echo "$(GREEN)🔍 Executando linter do Backend...$(NC)"
 	@cd $(BACKEND_DIR) && uv run ruff check .
 	@cd $(BACKEND_DIR) && uv run ruff format --check .
+	@# mypy ratchet, verbatim from CI (ci.yml "Run MyPy"): no NEW (file, code) pair vs .mypy_baseline
+	@cd $(BACKEND_DIR) && { uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline
 
 lint-frontend: ## Executa linter do frontend
 	@echo "$(GREEN)🔍 Executando linter do Frontend...$(NC)"
