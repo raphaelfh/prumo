@@ -48,12 +48,12 @@ Model-invoked skills load on their own when the task matches their description, 
 
 - `superpowers:finishing-a-development-branch`, then a PR to `dev`.
 - `/merge-train` arms auto-merge on one PR at a time.
-- `/preflight` then `/deploy-release` for a promotion to `main`. The promotion is hook-enforced; see CLAUDE.md.
+- `/preflight` then `/deploy-release` for a promotion to `main`. The promotion is hook-enforced; see AGENTS.md.
 
 ## 7. Improve the environment
 
 - `/retro` after a session that went badly. It proposes where each lesson should land, strongest first: a fitness gate or hook, a review rule, a pointer, and only last a memory entry.
-- `writing-for-agents` whenever you edit a skill, CLAUDE.md, a rule, or memory.
+- `writing-for-agents` whenever you edit a skill, AGENTS.md, a rule, or memory.
 - `architectural-quality-loop` finds and fixes violations of rules prumo already has, on a scoped slice.
 - `/improve-codebase-architecture` proposes deeper modules in recently changed areas, as an HTML report, then walks through the one you pick. Reach for it too when an interface itself is in question: where the seam goes, whether a module is shallow. Its output is a spec for step 2, not a commit.
 

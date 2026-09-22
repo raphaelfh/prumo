@@ -16,7 +16,7 @@ Files you touch most: `frontend/index.css` (theme, tokens, utilities), `componen
 3. **Pair every background with its foreground**: `bg-primary` with `text-primary-foreground`, `bg-muted` with `text-muted-foreground`.
 4. **Extend through `className`, caller last**: pass a thin delta and let `cn()` merge. Button height is the exception: pick a named size, never `className="h-8"` (`check_button_scale.py`; the scale is in `frontend-ux` § Buttons).
 5. **Icon-only controls are `IconButton`** (`components/patterns/IconButton.tsx`, props `label` and `icon`): the label is the accessible name and the tooltip. `check_ui_primitives.py` bans an icon-sized `<Button>` anywhere else.
-6. **No cursor utilities.** `index.css` owns the cursor (arrow everywhere, a hand only on `a[href]`); `cursor-pointer`, `cursor-default` and `cursor-not-allowed` fail `check_ui_primitives.py`.
+6. **No cursor utilities.** `index.css` owns the cursor (arrow everywhere, a hand only on `a[href]`); `cursor-pointer`, `cursor-default` and `cursor-not-allowed` fail `check_ui_primitives.py`. The base rule matches roles, not handlers, so a `<div>`, `<td>` or Card with only `onClick` shows the text I-beam and no gate catches it. Give it real semantics: a `<button type="button">`, or, when it holds other controls, a stretched `absolute inset-0` overlay button with the nested controls raised to `relative z-10`, plus a visible focus style.
 7. **Focus is never invisible**: interactive elements keep `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden`. Prefer a Radix primitive (Dialog, Popover, Select, DropdownMenu, Tabs) to a `div` with `onClick`.
 8. **Dark mode goes through `next-themes`** (`frontend/contexts/ThemeContext.tsx`: `attribute="class"`, `storageKey="prumo:theme"`, `useTheme().cycle`), never by poking the `dark` class, which it re-syncs from storage.
 9. **Copy goes through `frontend/lib/copy/`**, never an inline English string.
@@ -91,6 +91,7 @@ Radix gives focus trap and return, arrow-key navigation, `aria-expanded` and Esc
 - **Dense data row**: `h-9` row, `py-1.5` cell, `text-[13px]`, `border-border/30` hairline, `hover:bg-muted/40`, `data-[state=selected]:bg-muted/60`, row actions revealed with `group-hover` and always visible on touch.
 - **Side-by-side comparison**: `grid grid-cols-1 lg:grid-cols-2 gap-px bg-border` with `bg-card min-w-0` children draws one 1px divider without doubled borders.
 - **PDF viewer chrome**: `ResizablePanelGroup`, a `bg-muted/30` backdrop, a sticky `h-10 border-b border-border/40` toolbar; live reference `frontend/components/runs/RunPdfContent.tsx`.
+- **Resizable panels** (react-resizable-panels v4): a numeric size is pixels, so write percentages as strings (`defaultSize="50%"`); Group and Panel stamp `data-testid={id}` over any explicit `data-testid`, so the panel `id` is the test selector; style orientation through the Separator's `aria-orientation`.
 - **Overlays** read their classes from `components/ui/overlay-frame.ts`: centered with `inset-0 m-auto`, never `translate-*` (v4's `translate` property composes with the animation's `transform` and makes the frame jump). Size and height live only in the cva variants; sizes and when to use a dialog are in `frontend-ux` § 8.
 - **`field-just-updated`** (in `index.css`): toggle it for about 1.5 s after an AI refresh writes a value; never invent a second highlight.
 
@@ -106,6 +107,7 @@ Radix gives focus trap and return, arrow-key navigation, `aria-expanded` and Esc
 | Header reflows on window resize, not on panel resize | a viewport prefix (`md:`) where a container one (`@md:`) was meant |
 | A custom `shadow-*` loses to shadcn's `shadow-xs` | missing from the twMerge shadow group in `frontend/lib/utils.ts` |
 | A variant prop is typed `any` | `VariantProps<typeof xVariants>` missing from the props |
+| Page scrolls though no in-flow element overflows; `contain: layout` on the scroller fixes it, `overflow-hidden` does not | an `sr-only` (`position:absolute`) input with no positioned ancestor anchors to `<body>`; put `relative` on its label or wrapper |
 
 ## Anti-patterns
 

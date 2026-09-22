@@ -73,6 +73,7 @@ async def open_hitl_session(
 - A write that must survive a later failure gets its own commit or a dedicated session (`extraction_attempt_service.py`); `begin_nested()` is only for an atomic sub-step.
 - The workflow tables are append-only. An `ON CONFLICT` target must match a real unique index (`on_conflict_do_nothing(index_elements=["request_id"])` in `repositories/extraction_attempt_repository.py`).
 - Raw SQL uses `text()` with bound parameters, never f-strings.
+- Build a filtered view of a `cascade="all, delete-orphan"` relationship as a separate list passed as a parameter; reassigning or mutating the relationship DELETEs the dropped rows on the next (auto)flush. Only a real-Postgres test that flushes after the filter catches it.
 
 ## Migrations (Alembic)
 
@@ -86,6 +87,8 @@ uv run alembic upgrade head && uv run alembic check
 - RLS on `public` tables is written in the same Alembic migration as the table (`op.execute("CREATE POLICY …")`), through the `public.is_project_*` helpers. A backend-only table may be `ENABLE ROW LEVEL SECURITY` + `REVOKE ALL` with no policy (0075, 0076).
 - Storage-object policies that read `public` tables live in Alembic (0003); pure bucket policies and `auth.users` triggers live in `supabase/migrations/`, pushed with `supabase db push`, never auto-applied on deploy.
 - Enum value: `ALTER TYPE … ADD VALUE` in a migration **and** the `POSTGRESQL_ENUM_VALUES` entry.
+- **Function grants.** Supabase's default ACL gives every new `public` function a direct `anon` EXECUTE grant that `REVOKE … FROM PUBLIC` leaves in place, so each function migration writes both `REVOKE EXECUTE … FROM PUBLIC` and `REVOKE EXECUTE … FROM anon` (precedent `0060_revoke_anon_entity_key.py`); `REVOKE … FROM <role>` alone is a no-op while PUBLIC still holds it. CI's plain Postgres cannot see this class: `test_no_security_definer_function_is_anon_executable` means something only against local Supabase, and prod advisors confirm a real exposure.
+- An RLS policy calling a SECURITY DEFINER function the current role cannot EXECUTE segfaults Supabase's Postgres (the cluster restarts). Revoke that role's table access instead of granting `anon` EXECUTE, which PostgREST publishes at `/rest/v1/rpc`. `GRANT anon, authenticated, service_role TO CURRENT_USER` segfaults it too (supautils).
 - Railway runs `alembic upgrade head` at boot, so a migration that raises blocks every later deploy. A data migration that deletes or updates rows guards itself in SQL (`AND NOT EXISTS …`) and stays idempotent; see `0039_absent_reason_backfill.py`.
 - CI runs `upgrade head` and `alembic check`, never a downgrade. When a downgrade matters, add a round-trip case to `backend/tests/integration/test_migration_roundtrip.py` and bump its head pin.
 - Local reset: `make db-fresh` (migrate + seed), not `make reset-db`.

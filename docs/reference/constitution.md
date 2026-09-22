@@ -236,7 +236,7 @@ This constitution is the authoritative reference for all architectural and proce
 
 - All PRs and code reviews MUST verify adherence to these principles.
 - Added complexity beyond what a principle prescribes MUST be justified in the PR description.
-- Use `CLAUDE.md` as the runtime development guidance companion to this constitution.
+- Use `AGENTS.md` as the runtime development guidance companion to this constitution.
 
 **Version**: 2.2.2 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-09-15
 

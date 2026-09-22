@@ -12,7 +12,7 @@ User-supplied arguments: `$ARGUMENTS`
 
 `dev` is strict (up-to-date required) and GitHub's merge queue is
 org-only, so this repo's queue is a convention: **one armed auto-merge
-at a time** (CLAUDE.md § Branch & merge). Two armed PRs go `BEHIND` and
+at a time** (AGENTS.md § Branch & merge). Two armed PRs go `BEHIND` and
 invalidate each other. This command is the mechanical part of that
 convention, so a human never has to babysit it. Run it once, or on a
 loop: `/loop 10m /merge-train`.
