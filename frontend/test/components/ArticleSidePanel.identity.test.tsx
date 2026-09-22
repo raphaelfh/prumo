@@ -13,11 +13,6 @@ import {render, screen, waitFor} from '@testing-library/react';
 import {MemoryRouter} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-vi.hoisted(() => {
-    vi.stubEnv('VITE_SUPABASE_URL', 'http://127.0.0.1:54321');
-    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'test-anon-key');
-});
-
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
 vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn(), warning: vi.fn()}}));
 vi.mock('@/contexts/AuthContext', () => ({
