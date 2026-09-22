@@ -18,6 +18,8 @@ Phase 1 is done only when one command you have already run, its output shown, is
 
 Tighten it: narrow the scope, pin time and seeds, assert the symptom rather than "didn't crash". For a flake, raise the reproduction rate: `cd backend && uv run --with pytest-repeat pytest <test> --count=50 -p no:randomly`, or Playwright `--repeat-each=20 --workers=1`. Then minimize: cut inputs, fixtures and steps one at a time until everything left is load-bearing; the minimal repro becomes the regression test. When no loop is possible, stop and say what you tried and what access you need.
 
+A browser-pane repro runs Chromium, whose scroll anchoring absorbs height changes above the viewport that Safari shows. Before calling a jump or scroll-position bug "not reproducible", re-probe with `* { overflow-anchor: none }` injected, and ask which browser the user runs.
+
 ## 2. Evidence at every boundary
 
 A prumo bug usually crosses two or more layers. Instrument all of them before choosing one:
@@ -43,7 +45,16 @@ request (Pydantic) → endpoint (guard) → service → SQLAlchemy session (flus
 | Error swallowing | A `.catch` or `except` returning success-shaped data; `Promise.all` losing one failure; an ignored Supabase `{ error }`. |
 | Stale cache | The full query key: from a factory, carrying every id the query reads by; the right family invalidated. |
 | Drift | Pydantic ↔ SQLAlchemy nullability and defaults; enum values in `POSTGRESQL_ENUM_VALUES`; `schema.d.ts` regenerated. |
-| Test pollution | Fails only after another test: rerun with pytest-randomly's printed seed (`--randomly-seed=<n>`); look for a `db_session_real` test that did not clean up, or a held advisory lock. |
+| Test pollution | Fails only after another test: rerun with pytest-randomly's printed seed (`--randomly-seed=<n>`); look for a `db_session_real` test that did not clean up. A run hanging at setup with empty output is an orphaned advisory lock on the shared DB: `pg_stat_activity` shows one backend waiting on `pg_advisory_xact_lock` and one `idle in transaction`; recover with `pkill -f "uv run pytest"` and `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state='idle in transaction'`. One full suite at a time against the local DB. |
+| Local-only failure | Red on the long-lived local DB, green on CI's fresh one, can be the bug itself: ask which rows local has that CI lacks (E2E leftovers, clones, old data); prod looks like local. A backfill fixes past rows only; fix the code path that creates them too. |
+
+### Is the red yours?
+
+- Prove a failure predates your change by **names**, not counts: run the suite on your tree and on a stashed baseline, then `grep '^FAILED' | sed 's/ - .*//' | sort` each and `comm -13 base.txt mine.txt`. Run `alembic downgrade` **before** `git stash`, or alembic cannot locate the revision.
+- When you sabotage a guard to prove a test, WIP-commit first or revert the sabotage by hand: `git checkout -- <file>` discards the uncommitted fix too.
+- Bisect a Postgres crash in a separate container: a segfault restarts the whole shared cluster.
+- A CI job retried to green: `gh run view --job <id> --log` serves the **latest** attempt, even for an attempt-1 id. Read the failed one with `gh run view <run> --attempt 1` and `gh api repos/raphaelfh/prumo/actions/jobs/<job-id>/logs`.
+- A red pip-audit or npm-audit (`security-audit.yml`) queries live advisory DBs and runs only on manifest or lockfile changes, so on a dependency PR it usually means dev is red too. Confirm on a clean dev (`npm audit --omit=dev --audit-level=high`; for Python, query `api.osv.dev/v1/query`, since pip-audit crashes locally). Fix by raising the direct dependency's floor or `uv lock --upgrade-package <transitive>`; `npm audit fix --force` downgrades, so leave it alone.
 
 ## 3. Ranked, falsifiable hypotheses
 

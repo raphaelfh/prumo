@@ -25,9 +25,18 @@ before writing code. This file is the always-true core.
   `alembic revision --autogenerate -m "..."` then `alembic upgrade head`.
 - Revision ids must be **≤ 32 chars** (`alembic_version.version_num`
   is varchar(32); overflow breaks CI and the Railway deploy).
-- `auth`/`storage` schemas = Supabase CLI (`supabase migration new`),
-  deployed with `supabase db push` — they are NOT auto-applied on
-  deploy (only Alembic is). Never a Supabase MCP `apply_migration`.
+- `auth`/`storage` schemas = Supabase CLI (`supabase migration new`). A
+  `main` push deploys them through the Supabase GitHub integration; its
+  `Supabase Preview` check is not a required context, so read it after a
+  promotion that touches `supabase/`. Never a Supabase MCP
+  `apply_migration`: its stamped version breaks every later deploy.
+- The `ck` naming convention (`app/models/base.py`) wraps explicit names
+  too: pass the SHORT name (`llm_instruction_len`) to both
+  `CheckConstraint` and `op.create_check_constraint`. A pre-expanded
+  `ck_<table>_...` literal double-wraps and is md5-truncated to 63 chars.
+  Drop or recreate a baseline-named (un-prefixed) constraint with raw
+  `op.execute("ALTER TABLE ... DROP/ADD CONSTRAINT <literal>")`; check the
+  emitted DDL with `alembic upgrade <range> --sql`.
 - Migration touching `extraction_*`? Update the migration-head line
   and `last_reviewed` in `docs/reference/extraction-hitl-architecture.md`.
 
@@ -38,6 +47,13 @@ before writing code. This file is the always-true core.
   Errors reach the client as `error.message`, not FastAPI's default
   `detail`: raise `HTTPException` or an `AppError` subclass and let
   `app/core/error_handler.py` wrap it.
+- Map an `IntegrityError` by constraint NAME with
+  `app/core/integrity.py::violates_constraint`, never by raw SQLSTATE:
+  Postgres 18 reports ON DELETE RESTRICT as 23001, not 23503.
+- A Pydantic schema's class docstring and `Field(description=...)` are
+  published in `openapi.json`. After ANY edit to a public schema class,
+  comment-only included, run `npm run generate:api-types` from the repo
+  root and commit the diff; the CI `API Contract` job fails otherwise.
 
 ## Ownership guards (BOLA)
 
@@ -98,6 +114,11 @@ line with a reason in the same PR; the baseline only shrinks.
   PR body; tighten the baseline the same way after deleting dead code.
   Field declarations under `app/schemas` and `app/models` are excluded by
   design; don't move dead logic there.
+- Vulture scans `app/` only (`[tool.vulture] paths = ["app"]`): tests are
+  not consumers. Rerouting a public function's last `app/` caller makes it
+  a finding even if tests still call it — route the caller through the
+  public function, or delete it after `git log --all -S<name>` shows no
+  open branch needs it.
 
 ## Tests
 
@@ -110,3 +131,21 @@ line with a reason in the same PR; the baseline only shrinks.
   autouse `seeded_integration_db` fixture in `tests/integration/conftest.py`
   (its ids are in `SEED`). Fixture and
   authorization-test recipes: the `web-testing` skill.
+- A test subprocess env is `{**os.environ, "VAR": ...}`, never hand-built:
+  CI has no `backend/.env`.
+
+## Local database
+
+- ONE local Supabase stack (ports 54321/54322) serves every worktree and
+  session. `make db-fresh`, `make reset-db` and `supabase db reset` wipe
+  other sessions' data and auth users — coordinate with peers before
+  running them.
+- Keep the shared DB at `dev`'s head. Applying a migration that exists only
+  in your worktree stamps an `alembic_version` other checkouts cannot
+  resolve, and their backend exits at boot: `alembic downgrade <dev head>`
+  as soon as local verification is done.
+- `Can't locate revision` means the DB is ahead of your checkout. If
+  `git ls-tree -r --name-only origin/dev backend/alembic/versions` lists
+  the revision, your branch is behind dev: update it. Otherwise a peer's
+  unmerged migration is applied: ask its session to roll it back. Never
+  `alembic stamp`, and never downgrade another session's revision.

@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-09-15
+last_reviewed: 2026-09-21
 owner: '@raphaelfh'
 ---
 
@@ -510,52 +510,26 @@ ExtractionTemplateGlobal (kind = extraction | quality_assessment)
                    └─ ExtractionEvidence       (polymorphic FK → proposal/decision/consensus)
 ```
 
-### 4.1 Entity type roles & hierarchy invariants
+### 4.1 Entity type hierarchy invariants
 
-Every `extraction_entity_types` row carries a structural **role**
-(`extraction_entity_role` enum, migration `0016_entity_role_column`):
+Structure is `parent_entity_type_id` + `cardinality` (0069): every
+`cardinality='many'` section is an entry group, a template may hold several
+root groups, and a group may own a group at any depth. The `role` column, its
+enum, the container indexes and the role triggers are dropped; the
+`extraction_entity_types` row in §3 lists the constraints that replace them.
 
-| Role | Meaning | Where rendered |
-| --- | --- | --- |
-| `study_section` | Root entity type. Filled once per article regardless of model. | Top-level accordion in `ExtractionFormView`. |
-| `model_container` | Root entity type with `cardinality='many'`. At most one per template. Drives the model selector UI. | `ModelSection` + `ModelSelector`. |
-| `model_section` | Child of a `model_container`. Rendered once per active model instance. | Inside `ModelSection`, scoped to the active model. |
+**Design rule: role-blind and depth-agnostic.** Design every repeating-group
+mechanism (nouns, prompt scope, nesting, dialogs, exports, progress) for any
+group at any depth: "model" is one noun a group may carry (`entry_label`), and
+CHARMS is one seeded template. Key logic off `cardinality`, `is_required` and
+whether instances exist, never off entity names such as `prediction_models`
+(names are data in seed and migration files only). Prefer deleting model
+vocabulary over parameterizing it.
 
-The role is the **single source of truth** for partitioning entity
-types — the frontend's `partitionEntityTypes` helper
-(`frontend/lib/extraction/entityTypeRoles.ts`) reads only the role
-column; backend services look up the container via
-`ExtractionEntityTypeRepository.get_by_role('model_container', ...)`.
-The previous convention of matching `name = 'prediction_models'` is
-gone everywhere except seed/migration files (where `name` is part of
-the data, not a discriminant).
-
-Database guarantees post 0016:
-
-1. **At most one `model_container` per template** — partial unique
-   indexes `uq_extraction_entity_types_one_container_per_global` and
-   `uq_extraction_entity_types_one_container_per_project`.
-2. **Role ↔ parent coherence** — CHECK constraint
-   `ck_extraction_entity_types_role_parent`: `study_section` and
-   `model_container` rows must have `parent_entity_type_id IS NULL`;
-   `model_section` rows must have a parent.
-3. **`model_section` parent must be `model_container`** — deferred
-   trigger `trg_check_model_section_parent_role`. Deferred so
-   `TemplateCloneService` can insert parent+children in the same
-   transaction.
-4. **`sort_order` is display order only** — `TemplateCloneService`
-   topologically sorts before insertion (Kahn's algorithm with cycle
-   detection, O(N) via `collections.deque`), so seeds and project clones
-   can use any sort_order numbering (local-per-parent or globally unique)
-   without breaking the clone. No more implicit "parents must sort
-   before children" contract.
-
-5. **Snapshot consistency** — `extraction_template_versions.schema_` JSONB
-   snapshots include `role` for every entity_type. Migration `0017`
-   backfilled the role into pre-existing snapshots by joining with the
-   live entity_types (information-preserving: same data, new label),
-   so any future consumer that partitions a snapshot by role works on
-   every Run, not just runs created post-0016.
+**`sort_order` is display order only.** `TemplateCloneService` topologically
+sorts before insertion (Kahn's algorithm with cycle detection), so seeds and
+project clones can number `sort_order` locally per parent or globally without
+breaking the clone.
 
 ### 4.2 LLM prompt module pattern
 
