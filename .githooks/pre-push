@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # prumo pre-push gate — fast, deterministic, local.
 #
-# Blocks the push on the cheap CI red-causes (ruff format/check, tsc typecheck)
-# so obviously-broken code never leaves the machine, and REMINDS you to run
-# `/code-review` in Claude Code when the diff touches risk-sensitive paths.
-# The heavy gates (tests, coverage, e2e, mypy ratchet, architectural fitness)
+# Blocks the push on the cheap CI red-causes (ruff format/check, mypy ratchet,
+# tsc typecheck) so obviously-broken code never leaves the machine, and REMINDS
+# you to run `/code-review` in Claude Code when the diff touches risk-sensitive
+# paths. `scripts/ship.sh gate` runs this file as its gate.
+# The heavy gates (tests, coverage, e2e, architectural fitness)
 # stay in CI; the AI review stays interactive — this only nudges.
 #
 # Only checks the layers that actually changed, so it stays fast.
@@ -26,8 +27,10 @@ rc=0
 echo "▶ pre-push: fast local gate (heavy gates run in CI)"
 
 if printf '%s\n' "$changed" | grep -q '^backend/'; then
-  echo "  • backend: ruff format + check"
+  echo "  • backend: ruff format + check, mypy ratchet"
   ( cd "$root/backend" && uv run ruff format --check . && uv run ruff check . ) || rc=1
+  # Verbatim from CI (ci.yml "Run MyPy"); the pipeline's status is the judge's.
+  ( cd "$root/backend" && { uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline ) || rc=1
 fi
 
 if printf '%s\n' "$changed" | grep -qE '\.(ts|tsx)$'; then

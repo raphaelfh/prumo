@@ -15,7 +15,7 @@ Run from the repo root unless noted. Read the whole output before you claim.
 |---|---|---|
 | Backend tests pass | `make test-backend` | exit 0, no `FAILED` or `ERROR` |
 | One backend test passes | `cd backend && uv run pytest -k <name> -x --tb=short` | `1 passed` |
-| Backend lint and types | `make lint-backend`, then `cd backend && uv run mypy app/` | exit 0, `Success: no issues found` |
+| Backend lint and types | `make lint-backend` (ruff + the CI mypy ratchet against `backend/.mypy_baseline`; never `--update` it to pass) | exit 0, `mypy ratchet OK: … no new errors.` |
 | Frontend tests pass | `npm run test:run` | exit 0 |
 | One frontend test passes | `npx vitest run <path> -t "<name>"` | `1 passed` |
 | Frontend lint and types | `npm run lint` and `npm run typecheck` (not a bare `tsc --noEmit`) | exit 0 |
