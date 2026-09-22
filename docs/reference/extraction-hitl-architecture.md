@@ -524,7 +524,7 @@ group at any depth: "model" is one noun a group may carry (`entry_label`), and
 CHARMS is one seeded template. Key logic off `cardinality`, `is_required` and
 whether instances exist, never off entity names such as `prediction_models`
 (names are data in seed and migration files only). Prefer deleting model
-vocabulary over parameterizing it.
+vocabulary over making it a parameter.
 
 **`sort_order` is display order only.** `TemplateCloneService` topologically
 sorts before insertion (Kahn's algorithm with cycle detection), so seeds and
