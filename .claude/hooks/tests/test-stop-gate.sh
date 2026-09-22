@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deterministic tests for .claude/hooks/stop-format-gate.sh — the /ship-spec
+# Deterministic tests for .claude/hooks/stop-ship-gate.sh — the /ship-spec
 # evidence gate. Wired into scripts/fitness/run_all.sh.
 #
 #   bash .claude/hooks/tests/test-stop-gate.sh
@@ -17,7 +17,7 @@
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-GATE="$HERE/../stop-format-gate.sh"
+GATE="$HERE/../stop-ship-gate.sh"
 
 SANDBOX=$(mktemp -d "${TMPDIR:-/tmp}/stop-gate-test.XXXXXX")
 SANDBOX=$(cd "$SANDBOX" && pwd -P)   # macOS /var -> /private/var

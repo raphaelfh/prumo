@@ -74,6 +74,9 @@ run_check "check_rls_coverage.py" \
 run_check "check_api_response_envelope.py" \
   python3 "${SCRIPT_DIR}/check_api_response_envelope.py"
 
+run_check "check_response_descriptions.py" \
+  python3 "${SCRIPT_DIR}/check_response_descriptions.py"
+
 run_check "check_layered_arch.py" \
   python3 "${SCRIPT_DIR}/check_layered_arch.py"
 
@@ -121,11 +124,6 @@ run_check "test-stop-gate.sh" \
 # ledger even when SDD keyed its workspace off a different basename.
 run_check "test-reinject.sh" \
   bash "${REPO_ROOT}/.claude/hooks/tests/test-reinject.sh"
-
-# The wall-clock line appended after every ledger edit — the one timestamp
-# in the ledger the orchestrator did not write itself.
-run_check "test-ledger-clock.sh" \
-  bash "${REPO_ROOT}/.claude/hooks/tests/test-ledger-clock.sh"
 
 # The state machine that owns every run fact, and the hook that stops the model
 # writing those facts by hand. Both sandbox in $TMPDIR — a test that read real

@@ -14686,7 +14686,7 @@
                 }
               }
             },
-            "description": "Conflict"
+            "description": "Refused: template is active or in use"
           },
           "422": {
             "content": {
@@ -15081,7 +15081,7 @@
                 }
               }
             },
-            "description": "Conflict"
+            "description": "Refused: the draft cannot be discarded as requested"
           },
           "422": {
             "content": {
@@ -15150,7 +15150,7 @@
                 }
               }
             },
-            "description": "Conflict"
+            "description": "Refused: draft lock conflict"
           },
           "422": {
             "content": {
@@ -15777,7 +15777,7 @@
                 }
               }
             },
-            "description": "Conflict"
+            "description": "Refused: draft cannot be published"
           },
           "422": {
             "content": {

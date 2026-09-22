@@ -189,6 +189,14 @@ echo ""
 run_gate "lint:ruff" \
   bash -c 'cd backend && uv run ruff check . && uv run ruff format --check .'
 
+# 1b. Backend types — the mypy ratchet, verbatim from CI (ci.yml "Run MyPy").
+#     The one sanctioned pipe: the pipeline's status is the LAST command's, and
+#     that is the judge (mypy_baseline.py), which also refuses an empty stdin,
+#     so `|| true` on mypy cannot hide a spawn failure. The audit exempts this
+#     exact string only (test_verify_all_gates.py pins it to ci.yml).
+run_gate "lint:mypy" \
+  bash -c 'cd backend && { uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline'
+
 # 2. Frontend lint (eslint)
 run_gate "lint:eslint" \
   npm run lint --silent

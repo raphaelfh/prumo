@@ -1,23 +1,26 @@
 ---
 name: writing-for-agents
-description: Style reference for documents agents consume. Use when creating, editing, or pruning a skill, CLAUDE.md, a `.claude/rules/` file, a subagent definition, or a memory entry.
+description: Style reference for documents agents consume. Use when creating, editing, or pruning a skill, AGENTS.md, a `.claude/rules/` file, a subagent definition, or a memory entry.
 ---
 
-Reference for writing any document an agent consumes: a skill, `CLAUDE.md`, a `.claude/rules/*.md` file, an agent definition in `.claude/agents/`, a memory entry, a doc reached by a pointer. The packaging differs; the writing does not: the same levers make each one predictable, since the agent takes the same _process_ every run rather than producing the same output.
+Reference for writing any document an agent consumes: a skill, `AGENTS.md`, a `.claude/rules/*.md` file, an agent definition in `.claude/agents/`, a memory entry, a doc reached by a pointer. The packaging differs; the writing does not: the same levers make each one predictable, since the agent takes the same _process_ every run rather than producing the same output.
 
 When the document is a skill, also read [`SKILL-MECHANICS.md`](SKILL-MECHANICS.md) for frontmatter, invocation choice, and router skills. `superpowers:writing-skills` covers the complementary part: pressure-testing a skill against a subagent before trusting it.
 
 ## prumo specifics
 
-- **CLAUDE.md** loads on every turn of every session. It should hold navigation pointers, hard rules, and gotchas agents actually get wrong, nothing else.
-- **Skills trigger on their `description`.** Never route to skills from CLAUDE.md; sharpen the description instead. Keep `paths:` off model-invocable skills: it hides the skill from the listing until a matching file is touched.
-- **Path-scoped rules** in `.claude/rules/` load only when matching files are touched. Move a CLAUDE.md line there when it only matters in one layer.
+- **AGENTS.md** (imported by the one-line root `CLAUDE.md` — Claude Code does not read AGENTS.md on its own) loads on every turn of every session. It should hold navigation pointers, hard rules, and gotchas agents actually get wrong, nothing else.
+- **Skills trigger on their `description`.** Never route to skills from AGENTS.md; sharpen the description instead. Keep `paths:` off model-invocable skills: it hides the skill from the listing until a matching file is touched.
+- **Path-scoped rules** in `.claude/rules/` load on any Read or Bash that touches a matching path; the matching skill fires in only a third to half of those sessions. Move an AGENTS.md line to a rule when it only matters in one layer, and keep a must-know line in the rule rather than the skill. `ship-reviewer` and `ship-verifier` have no Skill tool, so a rule is their only source of conventions: cite docs there by full path.
+- **Subagents** cannot `AskUserQuestion` and get no auto-memory: hand them lessons through a `skills:` preload or the brief. A nested subagent runs with `run_in_background: false`, since a backgrounded result goes to the top-level session and never reaches its caller. Workflows take no mid-run input. Read harness settings from `.claude/settings.json`; `claude config get` starts a nested session.
 - **Disclosed files are rarely opened.** Across 2,357 transcripts a skill's `references/*.md` was read one to three times in total, while the skills themselves ran hundreds of times, and the unread files rotted into stale tutorials. Inline what the agent must know in `SKILL.md`; disclose only a procedure one branch runs, and cut restated library knowledge instead of disclosing it.
-- **Memory** holds facts not derivable from the repo. A lesson that a check could enforce belongs in `scripts/fitness/` or a hook, not in memory; see `retro`.
+- **Memory**: the project keeps (almost) no auto-memory. A lesson goes to `AGENTS.md`, a `.claude/rules/` file, the owning skill or `docs/reference/`, or becomes a check in `scripts/fitness/` or a hook; see `retro`. Memory holds only user preferences and pointers to external systems.
+- **Exemplars**: before citing a file as the reference in a skill or rule, confirm it is not a baselined legacy site: a hit from `git grep -F <file> scripts/fitness/*.baseline backend/.vulture_baseline` breaks the doc's own rules.
+- **Lint**: CI's docs gates never see `.claude/**` (`.markdownlintignore` lists it; cspell's `**/*.md` glob skips dot-directories), so a local lint pass on a skill proves nothing about CI. markdownlint printing `Usage:` (exit 0) or cspell printing `Files checked: 0` means the file is excluded: report "excluded from CI lint". For gated docs run CI's version, `npx -y cspell@8.17.5 --config .github/cspell.json <paths>`, and diff against `git show dev:<path>` before claiming a finding is yours. Merge words into `.github/cspell-words.txt` with `awk '!seen[$0]++' | sort -f`; `sort -f -u` drops case-variant pairs.
 
 ## Context pointers
 
-A **context pointer** is a reference held in the agent's context that names some out-of-context material and encodes the condition for reaching it. A skill's description is one; a CLAUDE.md line naming a doc is the same object. The pointer's _wording_, not its target, decides when the agent reaches the material, and how reliably. A must-have target behind a weakly worded pointer is a variance bug: sharpen the wording first, and inline the material only if sharpening fails.
+A **context pointer** is a reference held in the agent's context that names some out-of-context material and encodes the condition for reaching it. A skill's description is one; a AGENTS.md line naming a doc is the same object. The pointer's _wording_, not its target, decides when the agent reaches the material, and how reliably. A must-have target behind a weakly worded pointer is a variance bug: sharpen the wording first, and inline the material only if sharpening fails.
 
 A pointer does two jobs: state what the material is, and list the **branches** that should trigger reaching it (a branch is a distinct case the document handles, so different runs take different paths through it). Every word of an always-loaded pointer costs on every turn, so it earns even harder pruning than the body:
 
@@ -29,7 +32,7 @@ A pointer does two jobs: state what the material is, and list the **branches** t
 
 Every document and pointer you add spends one of two budgets:
 
-- **Context load** is the cost of always-loaded material on the agent's window: a CLAUDE.md line, a skill description, anything sitting in context every turn, spending tokens and attention whether or not it fires.
+- **Context load** is the cost of always-loaded material on the agent's window: a AGENTS.md line, a skill description, anything sitting in context every turn, spending tokens and attention whether or not it fires.
 - **Cognitive load** is the cost on the human: which documents exist and when to reach for each. The human is the index. Not a cost to minimise: it is the price of human agency; spend it where human judgement matters, remove it where it does not.
 
 Material reached only through a pointer escapes context load at the price of the pointer's own line; material with no pointer at all rides entirely on cognitive load.

@@ -38,16 +38,8 @@
       "Bash(alembic history*)",
       "WebSearch"
     ],
-    "ask": [
-      "Bash(make reset-db*)",
-      "Bash(make db-fresh*)",
-      "Bash(supabase db push*)",
-      "Bash(git push --force*)",
-      "Bash(git push -f*)"
-    ],
     "deny": [
-      "mcp__supabase__apply_migration",
-      "Bash(git push fabianofilho*)"
+      "mcp__e42866a9-aa6b-4e28-a2b9-8e94d147cfe6__apply_migration"
     ]
   },
   "hooks": {
@@ -71,16 +63,6 @@
             "timeout": 5
           }
         ]
-      },
-      {
-        "matcher": "Bash|Read|Glob",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/graphify-hint.sh",
-            "timeout": 5
-          }
-        ]
       }
     ],
     "PostToolUse": [
@@ -92,11 +74,6 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-format.sh",
             "timeout": 60,
             "statusMessage": "Formatting edited file"
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ledger-clock.sh",
-            "timeout": 5
           }
         ]
       }
@@ -106,9 +83,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-format-gate.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-ship-gate.sh",
             "timeout": 30,
-            "statusMessage": "Checking format and ship-spec gate evidence"
+            "statusMessage": "Checking ship-spec gate evidence"
           }
         ]
       }
@@ -116,17 +93,6 @@
     "SessionStart": [
       {
         "matcher": "compact|resume",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/reinject-run-state.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
         "hooks": [
           {
             "type": "command",

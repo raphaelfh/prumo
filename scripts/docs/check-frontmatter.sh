@@ -16,9 +16,9 @@ while IFS= read -r -d '' file; do
     *node_modules*|*playwright-report*|*test-results*|*.pytest_cache*|*backend/alembic/versions/archive*|*docs/superpowers/specs/archive*|*docs/superpowers/plans/archive*|*docs/superpowers/quality-runs*) continue ;;
   esac
 
-  # Only enforce on files that should carry frontmatter: docs/**, root *.md, CLAUDE.md
+  # Only enforce on files that should carry frontmatter: docs/**, root AGENTS.md
   case "$file" in
-    docs/*.md|docs/**/*.md|README.md|CLAUDE.md|.claude/CLAUDE.md|llms.txt) : ;;
+    docs/*.md|docs/**/*.md|README.md|AGENTS.md|llms.txt) : ;;
     *) continue ;;
   esac
 

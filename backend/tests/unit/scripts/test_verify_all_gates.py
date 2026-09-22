@@ -21,6 +21,12 @@ applied to the *logical* command (backslash continuations collapsed) because
 `run_gate` and its offending pipe live on different physical lines — a
 line-wise grep for `run_gate.*|` matches nothing even when the bug is live.
 
+One pipe is sanctioned: the mypy ratchet, verbatim from CI. Its pipeline
+status is the LAST command's — `mypy_baseline.py`, the judge — and the judge
+refuses an empty stdin (`mypy_ran`), so `|| true` on mypy cannot hide a spawn
+failure. The exemption is an exact string, pinned to `ci.yml`: any edit to the
+body falls back under the audit.
+
 The matching canary lives in `test_verify_all_gates_canary.py`.
 """
 
@@ -31,6 +37,16 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 VERIFY_ALL = REPO_ROOT / "scripts" / "verify_all.sh"
+CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+MAKEFILE = REPO_ROOT / "Makefile"
+PRE_PUSH = REPO_ROOT / ".githooks" / "pre-push"
+
+# The CI "Run MyPy (no-new-errors ratchet)" step, verbatim (it runs in backend/).
+MYPY_RATCHET = (
+    "{ uv run mypy app --ignore-missing-imports || true; } "
+    "| uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline"
+)
+_SANCTIONED_BODIES = {f"cd backend && {MYPY_RATCHET}"}
 
 # Redirections that legitimately contain `&` and must not count as violations.
 _REDIRECTIONS = re.compile(r"\d?>&\d|&>>?")
@@ -78,7 +94,11 @@ def find_status_eating_gates(script_text: str) -> list[str]:
     for statement in _gate_statements(script_text):
         # A `bash -c '<body>'` runs in a child shell that does NOT inherit the
         # harness's `set -o pipefail`, so each body is audited as a command.
-        bodies = re.findall(r"bash -c '([^']*)'", statement)
+        bodies = [
+            body
+            for body in re.findall(r"bash -c '([^']*)'", statement)
+            if body not in _SANCTIONED_BODIES
+        ]
         # Labels and SKIP reasons are prose, not commands: a reason reading
         # "no migrations; nothing to lint" must not read as a `;` chain.
         without_prose = re.sub(r"'[^']*'|\"[^\"]*\"", "", statement)
@@ -120,6 +140,27 @@ def test_typecheck_gate_uses_the_project_that_has_files() -> None:
     )
 
 
+def test_local_gates_run_the_ci_mypy_ratchet_verbatim() -> None:
+    """CI's mypy ratchet must also run locally, character for character.
+
+    It was CI-only, so a new type error surfaced only after a push. A local
+    copy that drifts from CI (other flags, other baseline) is a second gate
+    with a different verdict, so every copy is pinned to the same string.
+    """
+    assert f"run: '{MYPY_RATCHET}'" in CI_YML.read_text(), (
+        "ci.yml's mypy step no longer matches MYPY_RATCHET; update the "
+        "constant and every local copy together."
+    )
+    lint_backend = re.search(r"^lint-backend:.*?(?=^\S)", MAKEFILE.read_text(), re.M | re.S)
+    assert lint_backend, "Makefile has no lint-backend target"
+    for name, text in [
+        ("Makefile lint-backend", lint_backend.group(0)),
+        ("scripts/verify_all.sh", _executable_lines(VERIFY_ALL.read_text())),
+        (".githooks/pre-push (scripts/ship.sh gate)", _executable_lines(PRE_PUSH.read_text())),
+    ]:
+        assert MYPY_RATCHET in text, f"{name} does not run the CI mypy ratchet"
+
+
 def test_gate_roster_is_pinned() -> None:
     """Pin which gates exist and what each one invokes.
 
@@ -141,6 +182,7 @@ def test_gate_roster_is_pinned() -> None:
             "bash -c 'cd backend && uv run python ../scripts/vulture_baseline.py "
             "--baseline .vulture_baseline --exec'"
         ),
+        "lint:mypy": f"bash -c 'cd backend && {MYPY_RATCHET}'",
         "test:pytest": "bash -c 'cd backend && uv run pytest -q --tb=short'",
         "test:vitest": "npm test -- --run",
         "build:react-compiler": "node scripts/check_compiler_coverage.mjs",

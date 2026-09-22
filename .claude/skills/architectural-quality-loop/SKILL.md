@@ -78,7 +78,7 @@ Always inside an isolated git worktree (invoke `superpowers:using-git-worktrees`
 | Bug fix that needs investigation | `debugging` |
 | Tests added or modified | `web-testing` |
 
-APPLY **must** write the failing test first (red first, CLAUDE.md § Working principles). Diff + commit hash appended to `iterations/<n>-*.md` under `## DIFF`.
+APPLY **must** write the failing test first (red first, AGENTS.md § Working principles). Diff + commit hash appended to `iterations/<n>-*.md` under `## DIFF`.
 
 ## VERIFY — the gate
 
@@ -144,6 +144,7 @@ Minimum interval: 20 minutes. The loop respects the autonomous-mode caps above. 
 ## House rules
 
 - **Deterministic gates are ground truth.** An LLM finding without evidence in a gate is dropped.
+- **A gate is ground truth only once it has failed.** Before trusting, tightening or rewriting a fitness gate, copy the tree to the scratchpad, plant one violation per syntactic form (absolute import, `from app import <layer>`, relative import, `__init__.py`, re-export through a support package), and run the gate with `--repo-root`. Remove any exemption first and watch it go red on the exempted module: a gate that exempts the module it protects cannot see copies inside it.
 - **Diff ≤ 300 LOC**, always test-first, always commit-per-iteration.
 - **No magic string replacing magic string.** Every removal of a legacy concept requires a fitness rule or regression test that prevents recurrence; the LLM judge enforces this via the "no recurrence guard" clause.
 - **Worker isolation.** APPLY runs in a worktree; if VERIFY fails or judge rejects, the worktree is discarded without merging — the main tree is never partially mutated.
