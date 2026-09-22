@@ -27,6 +27,14 @@ review and the knowledge is maintained in exactly one place.
    ruff/eslint gate formatting. Report only findings you are confident
    about: every false positive costs the solo maintainer real time.
    Target 0–6 findings, each with `file:line` and a concrete fix.
+6. **Gate, when the surface runs one.** A cloud routine sandbox has no
+   Postgres, Supabase or `.env`, so `make test-backend` aborts every run.
+   From `backend/`: `uv sync --frozen --extra dev` (ruff and mypy live in
+   the `dev` extra), dummy exports for every `Settings` field without a
+   default (`app/core/config.py`; today `DATABASE_URL`, `SUPABASE_URL`,
+   `SUPABASE_SERVICE_ROLE_KEY`), then `ruff check`, `ruff format --check`,
+   the mypy ratchet from `SKILL.md`'s gate table, and `pytest tests/unit`.
+   Integration tests and Playwright stay with CI.
 
 ## Output contract
 

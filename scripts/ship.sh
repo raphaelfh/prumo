@@ -256,7 +256,7 @@ cmd_gate() {
 # whose clean-tree precheck refused Phase 5 on every run until
 # .claude/agent-memory/ was gitignored.
 #
-# Merge-train rule (CLAUDE.md): only ONE armed auto-merge into dev at a time.
+# Merge-train rule (AGENTS.md): only ONE armed auto-merge into dev at a time.
 # `dev` is strict/up-to-date, so N armed PRs just go BEHIND and invalidate each
 # other. Precheck the train; queue rather than arm when it is occupied.
 cmd_dev() {

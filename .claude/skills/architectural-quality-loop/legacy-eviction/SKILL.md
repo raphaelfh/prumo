@@ -18,7 +18,7 @@ The project's history is full of "we ripped this out for good reasons" moments (
 Do **not** use for:
 - Renames (the symbol still exists, just under a new name → use the relevant domain skill).
 - Anything that requires writing replacement logic (use `backend-development` / `frontend-development` instead).
-- A deprecation dance with a transition period (prumo rejects it: root `CLAUDE.md` § Working principles, "no new legacy", and § Hard rules, "No dead code ships").
+- A deprecation dance with a transition period (prumo rejects it: root `AGENTS.md` § Working principles, "no new legacy", and § Hard rules, "No dead code ships").
 
 ## The 4-step contract
 
@@ -47,6 +47,7 @@ Decide:
 - **Zero live imports / references** outside the file you intend to delete → safe to evict.
 - **Imports exist but the importer is itself dead** → recurse on the importer first; do NOT chain-delete in one shot (one commit per dead file keeps reverts cheap).
 - **Imports exist in live code** → STOP. This is not eviction; the symbol is in use. Either close the finding as wrong, or open a separate refactor task to migrate the users first.
+- **A branch gated on a DB state** (a "heal" or "repair" path) → prove the state can exist before guarding it: read the constraint (DEFERRABLE triggers fire only at COMMIT, so an in-transaction fixture can fabricate the state) and run `BEGIN; INSERT <illegal state>; COMMIT;` against the local DB. A permanently skipped test ("nothing to heal") is the same signal. Unreachable → evict the branch and fix any fixture that relied on it.
 - **External consumers (`__all__`, schema export, public type)** → STOP. Public API removal needs a separate decision and a SemVer-aware plan; not in scope here.
 
 Document the grep result in the iteration md under `## Proof of unused`:

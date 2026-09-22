@@ -15,7 +15,7 @@ Run from the repo root unless noted. Read the whole output before you claim.
 |---|---|---|
 | Backend tests pass | `make test-backend` | exit 0, no `FAILED` or `ERROR` |
 | One backend test passes | `cd backend && uv run pytest -k <name> -x --tb=short` | `1 passed` |
-| Backend lint and types | `make lint-backend` (ruff + the CI mypy ratchet against `backend/.mypy_baseline`; never `--update` it to pass) | exit 0, `mypy ratchet OK: … no new errors.` |
+| Backend lint and types | `make lint-backend` (ruff + CI's mypy ratchet against `backend/.mypy_baseline`, verbatim) | exit 0, `mypy ratchet OK: … no new errors.` (fix the type, never `--update` the baseline to pass) |
 | Frontend tests pass | `npm run test:run` | exit 0 |
 | One frontend test passes | `npx vitest run <path> -t "<name>"` | `1 passed` |
 | Frontend lint and types | `npm run lint` and `npm run typecheck` (not a bare `tsc --noEmit`) | exit 0 |
@@ -25,8 +25,12 @@ Run from the repo root unless noted. Read the whole output before you claim.
 | Bug is fixed | the regression test failed before the fix and passes after | red, then green, in the output |
 | The UI is right | `design-review` on the changed screen | a screenshot you captured |
 | Everything | `make quality-scan` (`scripts/verify_all.sh`) | exit 0 |
+| A symbol has no consumers | `git grep -w -e X` or `git grep -P '\bX\b'` (Apple Git's `-E` has no `\b`: 0 hits, exit 1, no error) | 0 hits, and a plain `git grep -F X` agrees |
 
 A subagent's "done" is a claim, not evidence: read `git status` and `git diff`, and rerun the tests yourself. CI green is necessary, not sufficient.
+
+- Audit and refuter agents read the **working tree**, not the commit. Hold your edits until they finish, or brief each to read `git show HEAD:<path>` (or a detached worktree) and name the revision each finding is about. Reconcile a peer session's claims against git (`git show HEAD:<path>`, `git diff origin/<branch> -- <paths>`, `gh pr view <n> --json state,headRefOid`), not against its description.
+- `Frontend E2E (ephemeral stack)` is not a required check: auto-merge fires with it red or still running. Watch it yourself when the diff touches a UI flow. A fast (<2 min) failure binding port 54322 is a concurrent-PR collision: `gh run rerun --job <id>`.
 
 ## The prumo review checklist
 

@@ -40,6 +40,7 @@ frontend/
 - `apiClient<T>(endpoint, { method, body, timeout, skipAuth })` attaches the Supabase JWT, unwraps the `ApiResponse` envelope and returns `data`; a non-2xx or `ok: false` throws `ApiError` (`code`, `message`, `status`, `traceId`). Default timeout 60 s. Downloads use `apiBlobClient`, which returns `{ kind: 'sync', blob, filename }` or `{ kind: 'async', job_id }`.
 - A service wraps the call in `toResult`, so a hook sees `{ ok, data }` or `{ ok: false, error }`; the `queryFn` rethrows on `!ok` so TanStack sees the failure.
 - A long backend job answers 202 with a job id; poll with `hooks/useBackgroundJobPolling.ts` and track it in `stores/useBackgroundJobs.ts`.
+- Run-view autosave (`hooks/runs/useAutoSaveProposals.ts`) never invalidates `runsKeys.detail`, so a field the server derives from form values (`derived_judgments`) keeps its page-load value; wire a page showing a new derived field through `hooks/runs/useRefetchOnSave.ts`.
 - Reference pair: `services/aiContextService.ts` (`fetchAiContext`) with `hooks/project/useAiContext.ts`; mutation: `hooks/runs/useAdvanceRun.ts`, which invalidates `runsKeys.detail(runId)`.
 
 ## Query keys

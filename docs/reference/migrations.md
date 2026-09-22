@@ -1,10 +1,10 @@
 ---
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-09-21
 owner: '@raphaelfh'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-06-10 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-09-21 · Owner: @raphaelfh
 
 # Database migration strategy
 
@@ -230,7 +230,8 @@ make db-seed       # python -m app.seed (idempotent)
 Use `make db-fresh` after pulling main / after a structural refactor /
 before running an integration test suite that touches schema. It's
 idempotent w.r.t. seed and gives you a clean reproducible baseline in
-one command.
+one command. The local stack is shared by every session and worktree, so
+a reset wipes theirs too: `.claude/rules/backend.md` § Local database.
 
 ## RLS in migrations
 
@@ -246,6 +247,14 @@ must:
 
 See `0012_consensus_decision_run_fk.py` and `0025_reviewer_scoped_select_rls.py` for
 the canonical patterns.
+
+**Narrowing grants.** A column-level `REVOKE UPDATE (col)` on top of a
+table-level GRANT is a silent no-op. Revoke the table-wide verbs and
+re-grant per column instead (`REVOKE INSERT, UPDATE ON t FROM ...;
+GRANT INSERT (<cols>), UPDATE (<cols>) ON t TO ...`; precedent
+`0056_proposal_provenance.py`), and assert the effect in a test with
+`has_column_privilege(...)`. Once grants are per-column, a migration that
+adds a column must grant it explicitly.
 
 ## When AI assistants edit migrations
 
@@ -296,4 +305,4 @@ isolated improvement:
 - Migration history: `make db-history`
 - Archived migrations (pre-squash): `backend/alembic/versions/archive/`
 - Architecture: `docs/reference/extraction-hitl-architecture.md`
-- AI assistant guide: `.claude/CLAUDE.md` §3 (golden rule)
+- AI assistant guide: `AGENTS.md` § Hard rules
