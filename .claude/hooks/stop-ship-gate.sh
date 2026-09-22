@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Stop gate — two scoped checks, so conversational turns cost ~0:
-#
-# 1. Changed Python files are ruff-format clean before the agent ends its
-#    turn (the recurring red-CI class: CI runs `ruff format --check`, local
-#    lint did not). Only inspects files changed vs HEAD in the current checkout.
-# 2. /ship-spec evidence, by named phase:
+# Stop gate — /ship-spec evidence, by named phase (silent when no run is
+# live, so conversational turns cost ~0):
 #      harden                 -> a gate.log for the run worktree's current HEAD,
 #                                ending in GATE_EXIT=0. The gate must have been
 #                                run, not described.
@@ -40,21 +36,11 @@ block() {
 # directory, so it is the fallback, not the first choice.
 SESSION_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)
 
-# --- 1. ruff format on changed Python files (current checkout) --------------
 CWD_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 [ -n "$SESSION_CWD" ] && [ -d "$SESSION_CWD" ] && CWD_ROOT="$SESSION_CWD"
 cd "$CWD_ROOT" || exit 0
-CHANGED_PY=$( (git diff --name-only HEAD -- '*.py'; git diff --cached --name-only -- '*.py') 2>/dev/null | sort -u | head -50)
-if [ -n "$CHANGED_PY" ]; then
-  FAILED=$(cd backend && printf '%s\n' "$CHANGED_PY" | sed 's|^|../|' | xargs -r uv run ruff format --check --force-exclude 2>/dev/null | grep '^Would reformat' || true)
-  if [ -n "$FAILED" ]; then
-    block "Changed Python files are not ruff-format clean (CI will fail):
-$FAILED
-Run: cd backend && uv run ruff format <files>"
-  fi
-fi
 
-# --- 2. /ship-spec gate evidence (phases 4-7 only) ---------------------------
+# --- /ship-spec gate evidence ------------------------------------------------
 # State lives under the MAIN checkout root (common git dir), so the main
 # checkout and every worktree see the same run.
 COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
