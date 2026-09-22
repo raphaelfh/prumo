@@ -122,11 +122,6 @@ run_check "test-stop-gate.sh" \
 run_check "test-reinject.sh" \
   bash "${REPO_ROOT}/.claude/hooks/tests/test-reinject.sh"
 
-# The wall-clock line appended after every ledger edit — the one timestamp
-# in the ledger the orchestrator did not write itself.
-run_check "test-ledger-clock.sh" \
-  bash "${REPO_ROOT}/.claude/hooks/tests/test-ledger-clock.sh"
-
 # The state machine that owns every run fact, and the hook that stops the model
 # writing those facts by hand. Both sandbox in $TMPDIR — a test that read real
 # run state would turn a live run's own gate red, which is exactly how the

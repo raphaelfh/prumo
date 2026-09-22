@@ -42,6 +42,8 @@ Sidebars should feel integrated into the window, not like a separate drawer.
   `components/layout/ProjectSidebar.tsx` still does; it predates this rule.
 - **Active State:** A subtle `bg-muted` or `bg-primary/5`, never a heavy highlight.
 - **Icons:** Always `h-4 w-4` with `strokeWidth={1.5}`.
+- **Collapse is binary:** fully visible or fully hidden (width 0, no icon rail,
+  no border, no hover-peek). ⌘B or the topbar `PanelLeftOpen` toggle reopens it.
 
 ## 3. Component Specifications
 
@@ -125,7 +127,7 @@ The density-first language has to hold from a wide desktop down to a phone.
 | Width                | What the layout does                                                                                              |
 |----------------------|-------------------------------------------------------------------------------------------------------------------|
 | Wide (≥`lg` 1024)    | Full layout: sidebar visible, side-by-side comparison (`lg:grid-cols-2`), all header chips with labels.           |
-| Mid (`sm`–`lg`)      | Sidebar may collapse to an icon rail; two-up panels stack; low-priority header chips start dropping their labels. |
+| Mid (`sm`–`lg`)      | Sidebar may collapse (fully hidden); two-up panels stack; low-priority header chips start dropping their labels. |
 | Narrow (<`sm` 640)   | Sidebar becomes a `Sheet` drawer (`MobileSidebar`); dense tables become **card lists** (`useIsNarrow`); row actions move into an always-visible kebab. |
 
 Principles:

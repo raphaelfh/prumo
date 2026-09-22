@@ -63,7 +63,7 @@ context lean. Design and rationale:
 | `ship.sh ci [sha]` | you need CI's verdict for a commit |
 | `ship.sh dev "<title>" [body-file]` | push, PR to dev, arm or queue |
 | `ship.sh preflight-record <GREEN\|RED> [sha]` | after `/preflight` |
-| `ship.sh facts` | the run-facts block for your verdict — paste it |
+| `ship.sh facts` | the run-facts block for your verdict — run it before `done`, paste it |
 | `ship.sh halt <reason>` / `ship.sh done` | terminal |
 
 `phase` refuses an illegal transition. `preflight-record GREEN` refuses over a
@@ -93,7 +93,7 @@ implementers while the one that wrote its report last lost everything.
 
 **Escalation — "ask only on doubt".** A seat cannot ask the user. It returns
 `status: blocked` with `question`, `options` and `cost_if_wrong`. Rule from the
-spec, the plan or CLAUDE.md first, and ledger it as
+spec, the plan or AGENTS.md first, and ledger it as
 `Ruling: <what> — <why> — <cost if wrong>`. Only when no authority answers do
 you call `AskUserQuestion` — one question, with options. An answer that is a
 request rather than a choice ("show me both") is answered by producing the
@@ -141,9 +141,15 @@ basename is the plan's.
 
 Then, in order:
 
-1. **Isolate first**, with `superpowers:using-git-worktrees` — unless `pwd` is
-   already a dedicated worktree on this task's branch. Deps come from the
-   parent checkout; frontend tooling runs from the repo root.
+1. **Claim the slice, then isolate.** Unpushed work in another checkout is
+   invisible to `gh pr list` and `git worktree list`, so first run
+   `mcp__ccd_session_mgmt__list_sessions` (cwd, branch, prNumber, isRunning)
+   and `git -C <checkout> status --short` / `git log origin/dev..HEAD` in the
+   sibling checkouts, and announce the claim in one line. If two builds
+   already exist, cherry-pick only the unique value onto dev. Then isolate
+   with `superpowers:using-git-worktrees` — unless `pwd` is already a
+   dedicated worktree on this task's branch. Deps come from the parent
+   checkout; frontend tooling runs from the repo root.
 2. `bash scripts/ship.sh init <basename> --to <ceiling> --worktree <abs path>`,
    run **from the main checkout**: `orchestrator=` is captured as your `$PWD`
    and is the checkout the Stop gate applies to, while `--worktree` is where
@@ -180,6 +186,10 @@ Leverage is upstream. All three human interventions of the first live run were
 1. `superpowers:writing-plans`, written at `docs/superpowers/plans/<basename>.md`:
    every step carries its failing test and its verify step, and no task brief
    runs past ~300 lines — a 60-turn implementer cannot finish a 533-line one.
+   SDD's task brief copies only `### Task N` up to the next task heading, so a
+   shared rule lives inside the first task that uses it, or in a workspace
+   file every dispatch names; grep each brief for "see above" / "the recipe"
+   before dispatching.
 2. **Panel.** Run the saved workflow `ship-panel` with the plan path **and the
    spec path** (lenses: constitution/layering, security/RLS/BOLA,
    migration-safety, simplicity/YAGNI, test-coverage, and — with a spec —
@@ -249,7 +259,7 @@ Then `bash scripts/ship.sh ci`. **`PENDING` is a legitimate place to end a
 turn** — wait with a Monitor or a scheduled wakeup, not a busy loop. A `RED`
 there is fixed and the gate re-run on the new SHA.
 
-**Ceiling guard.** If ceiling is `dev`: `bash scripts/ship.sh done`, report, and
+**Ceiling guard.** If ceiling is `dev`: go to **Verdict**, and
 STOP. The next phase is not for you; the hook denies it regardless.
 
 ## `promote` — to prod (ceiling = prod only)
@@ -272,31 +282,31 @@ STOP. The next phase is not for you; the hook denies it regardless.
    ```
 
    The hook allows this only with `ceiling=prod` and a GREEN preflight on the
-   exact `origin/dev` commit. `deploy-release` is the source of truth for
+   exact `origin/dev` commit. Opening this PR re-runs the suite on the same
+   SHA, so the Stop hook sees `PENDING` and refuses to end the turn: wait in
+   the foreground with `gh pr checks <n> --watch --fail-fast --interval 30`,
+   then re-run `bash scripts/ship.sh ci`. `deploy-release` is the source of truth for
    Railway's Wait-for-CI, the SKIPPED-SHA wedge and its recovery.
 
 ## `verify` — in prod, or roll back
 
-`bash scripts/ship.sh phase verify`. Production is verified by the
-`post-deploy-smoke` workflow, never by a suite pointed at prod. Both deploys
-race CI: Vercel publishes the frontend on push; Railway waits for the full
-Actions suite.
+`bash scripts/ship.sh phase verify`, then follow `deploy-release § Verify prod`
+(read `.claude/skills/deploy-release/SKILL.md`): `/health.commit` equals the new
+main SHA and differs from the one captured before promoting, both Railway
+services SUCCESS, the frontend proven by content, the new route in
+`/api/v1/openapi.json`. A green `post-deploy-smoke` proves reachability only;
+never point a suite at prod.
 
-- Wait for both Railway services to report SUCCESS on the promoted SHA.
-- `/health` → 200, then **re-run `post-deploy-smoke`** (the push-triggered run
-  certifies the previous build) and require green.
-- Frontend: prove the promoted build by **content**, not bundle hash — Vercel
-  bakes different env, so the hash legitimately differs. Grep the served chunk
-  for a string the change added *and* one it deleted.
-- For an API change, probe `/api/v1/openapi.json` (not `/openapi.json`) for the
-  new route, or use the 401-vs-404 route probe.
-- **Red anywhere here ⇒ roll back first, report second**, per
-  `deploy-release §Rollback`. The hook allows `railway redeploy` without a
-  preflight for exactly this reason.
+**Red anywhere here ⇒ roll back first, report second**, per
+`deploy-release § Rollback`. The hook allows `railway redeploy` without a
+preflight for this; after a migration ran, a redeploy crash-loops and the
+rollback is a roll-forward or a hand-run `alembic downgrade`.
 
 ## Verdict
 
-`bash scripts/ship.sh done` (or `halt`), then end with one block:
+Run `bash scripts/ship.sh facts` and capture its output, **then**
+`bash scripts/ship.sh done` (or `halt`): `facts` reads only the active run, and
+`done` ends it. End with one block:
 
 - `## RESULT: SHIPPED TO DEV` — PR URL, CI state, auto-merge status; or
 - `## RESULT: SHIPPED TO PROD` — main SHA, Railway/Vercel state, `/health` code,
@@ -305,13 +315,15 @@ Actions suite.
   what to fix to resume; or
 - `## RESULT: ROLLED BACK` — what was reverted, current prod SHA, why.
 
-Plus the output of `bash scripts/ship.sh facts`, pasted. Report faithfully: a
+Plus the captured `facts` output, pasted. Report faithfully: a
 skipped step is named as skipped; a failed gate shows its output; a green you
 did not capture is not a green. If the work was a phased slice, name the next.
 
 **Then close the workspace.** If the run used a worktree, say in the verdict
-that it is now disposable and give the two commands (`git worktree remove <path>`
-and `git branch -d <branch>`, from the main checkout). A session cannot remove
+that it is now disposable and give the commands, from the main checkout:
+`git worktree remove <path>`, then — PRs are squash-merged, so `git branch -d`
+refuses and `git branch --merged` lies — confirm the PR with
+`gh pr view <n> --json state` (`MERGED`) and `git branch -D <branch>`. A session cannot remove
 the worktree it runs in, so this is the human's step, and it is not cosmetic: a
 worktree under `.claude/worktrees/` is a second full checkout of `.claude/`, so
 every model-invocable project skill in it registers a **second** time for as
