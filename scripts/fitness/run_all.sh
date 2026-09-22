@@ -74,6 +74,9 @@ run_check "check_rls_coverage.py" \
 run_check "check_api_response_envelope.py" \
   python3 "${SCRIPT_DIR}/check_api_response_envelope.py"
 
+run_check "check_response_descriptions.py" \
+  python3 "${SCRIPT_DIR}/check_response_descriptions.py"
+
 run_check "check_layered_arch.py" \
   python3 "${SCRIPT_DIR}/check_layered_arch.py"
 

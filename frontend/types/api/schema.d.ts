@@ -8822,7 +8822,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_TemplateDeleteResponse_"];
                 };
             };
-            /** @description Conflict */
+            /** @description Refused: template is active or in use */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9033,7 +9033,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_DiscardDraftResponse_"];
                 };
             };
-            /** @description Conflict */
+            /** @description Refused: the draft cannot be discarded as requested */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9074,7 +9074,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_TakeOverDraftLockResponse_"];
                 };
             };
-            /** @description Conflict */
+            /** @description Refused: draft lock conflict */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9398,7 +9398,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiResponse_RepublishTemplateVersionResponse_"];
                 };
             };
-            /** @description Conflict */
+            /** @description Refused: draft cannot be published */
             409: {
                 headers: {
                     [name: string]: unknown;
