@@ -10,13 +10,6 @@
 import {render, screen, within} from '@testing-library/react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
-// The App module graph statically reaches the Supabase client, which throws at
-// import time without a URL. CI runs vitest with no .env.
-vi.hoisted(() => {
-    vi.stubEnv('VITE_SUPABASE_URL', 'http://127.0.0.1:54321');
-    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'test-anon-key');
-});
-
 vi.mock('@/contexts/AuthContext', () => ({
     AuthProvider: ({children}: {children: React.ReactNode}) => <>{children}</>,
     useAuth: () => ({user: {id: 'u1'}, session: null, loading: false, signOut: vi.fn()}),

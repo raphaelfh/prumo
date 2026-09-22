@@ -10,13 +10,6 @@ import userEvent from '@testing-library/user-event';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {MemoryRouter} from 'react-router';
 
-// Dashboard reaches the Supabase client through projectsService (createProject),
-// and that client throws at import time without a URL. CI runs vitest with no .env.
-vi.hoisted(() => {
-  vi.stubEnv('VITE_SUPABASE_URL', 'http://127.0.0.1:54321');
-  vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'test-anon-key');
-});
-
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({user: {id: 'u1'}, session: null, loading: false, signOut: vi.fn()}),
 }));
