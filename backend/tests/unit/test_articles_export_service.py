@@ -195,13 +195,12 @@ class TestBuildRis:
         content = _build_ris([art])
         assert b"DO  -" not in content
 
-    def test_abstract_truncated_to_255(self) -> None:
-        art = make_article(abstract="X" * 300)
+    def test_abstract_exported_in_full(self) -> None:
+        abstract = "X" * 3000
+        art = make_article(abstract=abstract)
         content = _build_ris([art])
         lines = content.decode().split("\r\n")
-        ab_line = next((line for line in lines if line.startswith("AB")), None)
-        assert ab_line is not None
-        assert len(ab_line) <= 262  # "AB  - " (6 chars) prefix + 255 chars + \r separator
+        assert f"AB  - {abstract}" in lines
 
     def test_multiple_authors(self) -> None:
         art = make_article(authors=["Alpha, A", "Beta, B"])
