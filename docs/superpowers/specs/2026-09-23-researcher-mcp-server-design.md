@@ -81,7 +81,7 @@ owner: '@raphaelfh'
 agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Mount("/mcp")
                                            └─ app/api/mcp/
                                               ├─ server.py   MCPServer, tool registry, scope filter
-                                              ├─ auth.py     PAT TokenVerifier → {user_sub, token_id, scopes}
+                                              ├─ auth.py     ASGI PAT wrapper → {user_sub, token_id, scopes}
                                               ├─ errors.py   service exception → MCP error code
                                               └─ tools/*.py  thin adapters
                                                    │ ensure_project_member / _manager
@@ -93,21 +93,67 @@ agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Mount("/mcp")
 - **Placement.** `app/api/mcp/` sits inside the api layer, so it inherits
   `check_layered_arch` rules: no `app.models.*` imports in tools. A new
   top-level `app/mcp/` would be unclassified and fail the gate.
-- **SDK.** `mcp` SDK v2 is added to `backend/pyproject.toml`. Configuration:
-  - `MCPServer(..., stateless_http=True, streamable_http_path="/")`;
-  - `TransportSecuritySettings(allowed_hosts=[<API host>])`, since Origin
-    and Host validation is required for Streamable HTTP;
-  - the app `lifespan` in `app/main.py` wraps
+- **SDK.** `mcp` SDK v2 (≥ 2.2) is added to `backend/pyproject.toml`.
+  Configuration:
+  - `mcp.streamable_http_app(streamable_http_path="/",
+    stateless_http=True, json_response=True, transport_security=
+    TransportSecuritySettings(allowed_hosts=[<API host>],
+    allowed_origins=[…]))`. Origin and Host validation is required for
+    Streamable HTTP; a wrong Host gets 421.
+  - The app `lifespan` in `app/main.py` wraps
     `async with mcp.session_manager.run()`. A mounted sub-app's lifespan
     does not run on its own.
+- **`json_response=True`.** Replies are plain JSON, not SSE. In SSE mode the
+  existing `TimingMiddleware` / `LoggingMiddleware` measure time to first
+  byte (0.8 ms reported against 600 ms real, in the spike), which would make
+  MCP latency logs wrong. The cost is no progress notifications, which v1
+  tools do not need.
 - **Stateless.** MCP spec 2026-07-28 is stateless, which fits Railway
   round-robin. No sessions, no SSE resumability, no server-to-client
   requests (no sampling, no elicitation).
-- **Middleware.** Confirm in implementation that the three
-  `BaseHTTPMiddleware`s (`app/core/middleware.py`) pass streamed MCP
-  responses through intact; if not, exclude the `/mcp` mount from them.
-  `/mcp` is excluded from the Supabase JWT dependency, the `ApiResponse`
-  envelope and the REST error handler.
+- **Middleware (verified by spike, see §3.1).** The three
+  `BaseHTTPMiddleware`s (`app/core/middleware.py`) and CORS pass MCP
+  responses through intact in both JSON and SSE modes, and still add
+  `X-Trace-Id` / `X-Response-Time`. No exclusion is needed. `/mcp` is
+  excluded from the Supabase JWT dependency, the `ApiResponse` envelope and
+  the REST error handler.
+- **PAT auth is our own pure-ASGI wrapper around the mount, not the SDK's
+  `token_verifier`.** The SDK accepts a `token_verifier` only together with
+  OAuth `AuthSettings` (`issuer_url` required). Those settings make every
+  401 advertise `resource_metadata=<root>/.well-known/oauth-protected-resource/mcp`,
+  and when the app is mounted that URL returns 404; the metadata is served
+  under `/mcp/.well-known/…` instead. With no OAuth planned, advertising it
+  would point clients at a broken OAuth discovery. The wrapper validates the
+  PAT and returns `401 WWW-Authenticate: Bearer`. It places
+  `{user_sub, token_id, scopes}` in a contextvar that tools read.
+
+### 3.1 Spike evidence (2026-09-23, throwaway, not kept)
+
+Setup: FastAPI 0.136.3, Starlette 1.3.1 (the repo's lock), `mcp` 2.2.0,
+uvicorn, the three middlewares and CORS as registered in `app/main.py`,
+MCP mounted at `/mcp`.
+
+| Check | SSE mode | JSON mode |
+|---|---|---|
+| SDK client `initialize` + `tools/list` + `tools/call` | ok | ok |
+| 200 KB tool result intact through middlewares | ok | ok |
+| Progress notifications delivered | ok (3) | none (by design) |
+| `X-Trace-Id` / `X-Response-Time` added | yes | yes |
+| `X-Response-Time` accuracy (600 ms tool) | 0.8 ms (wrong) | 602.8 ms |
+| Invalid bearer | 401 | 401 |
+| Disallowed Host | 421 | 421 |
+
+Claude Code (`claude -p`, HTTP transport with a static `Authorization`
+header):
+
+- A `resource_link` is rendered to the model as text:
+  `[Resource link: a.pdf] <uri>`. The URL is visible even without a text
+  copy.
+- Given the link, the agent downloaded the PDF with `curl -sL` (2.2 MB) and
+  read it with `Read`, quoting the exact title and the first sentence of the
+  abstract.
+- Cursor, VS Code and Gemini CLI rendering of `resource_link` was not
+  tested. §5.1 keeps the URL in a text block for them.
 - **DB sessions.** Tools open their own session via `AsyncSessionLocal`
   (`app/core/deps.py`), one per tool call, not the request-scoped
   `DbSession`.
@@ -149,9 +195,10 @@ agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Mount("/mcp")
 
 ### 4.3 `/mcp` authentication
 
-- A `TokenVerifier` resolves `Authorization: Bearer prumo_pat_…` to
+- The ASGI PAT wrapper (§3) resolves `Authorization: Bearer prumo_pat_…` to
   `{user_sub, token_id, scopes}`. Missing, malformed, unknown, expired or
-  revoked → HTTP 401 with `WWW-Authenticate: Bearer`.
+  revoked → HTTP 401 with `WWW-Authenticate: Bearer` and no
+  `resource_metadata`.
 - `last_used_at` is updated at most once per minute per token.
 - **Membership is re-checked on every tool call.** A user removed from a
   project loses access immediately even if the token is still valid.
@@ -201,7 +248,7 @@ Conventions (MCP 2026-07-28 and Anthropic tool-writing guidance):
 | `get_project(project_id)` | whitelisted descriptive fields, counts, templates (id, kind, active) | project read |
 | `list_articles(project_id, query?, cursor?, limit?)` | id, title, authors, year, status, `has_pdf`, `has_text` | articles read |
 | `get_article_text(article_id, offset?)` | markdown slice + `next_offset` | `/articles/{id}/content-markdown` service |
-| `get_article_pdf(article_id)` | signed Storage URL (10 min) in text **and** as a `resource_link`, filename, size | Supabase Storage |
+| `get_article_pdf(article_id)` | signed Storage URL (10 min) in a text block **and** as a `resource_link` (`mimeType: application/pdf`, name, size). Its description tells the agent to download the URL to read figures and tables; chat-only clients fall back to `get_article_text` | Supabase Storage |
 | `search_project_text(project_id, query, cursor?)` | hits: article id/title, page, block type, snippet | `article_text_blocks` FTS (§5.3) |
 | `get_extractions(project_id, template_id, article_id?, cursor?)` | per field: value, decider (human/AI), evidence quote + locator, run stage — blind-review filtered | `extraction_run_read_service` with the caller's id and arbitrator flag |
 | `get_template(project_id, template_id)` | sections → questions (type, options, instructions), `draft_open`, draft diff vs published | template read + `template_diff_read` |
