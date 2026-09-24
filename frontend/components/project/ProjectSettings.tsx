@@ -6,6 +6,7 @@
 import {useState} from 'react';
 import {useSearchParams} from 'react-router';
 import {Bot, FileText, Info, MessageSquareText, Save, Settings as SettingsIcon, ShieldCheck, Users} from 'lucide-react';
+import {Alert} from '@/components/ui/alert';
 import {Button} from '@/components/ui/button';
 import {
   AlertDialog,
@@ -62,6 +63,21 @@ const SECTIONS: SectionConfig[] = [
 
 const SECTION_IDS = new Set<string>(SECTIONS.map((s) => s.id));
 
+/** Banner labels for the keys a 409 STALE_VALUE can name (the PATCH /details columns). */
+const STALE_FIELD_LABELS: Record<string, string> = {
+    name: t('project', 'basicProjectNameLabel'),
+    description: t('project', 'basicDescriptionLabel'),
+    review_type: t('project', 'basicReviewTypeLabel'),
+    review_title: t('project', 'reviewTitleLabel'),
+    condition_studied: t('project', 'reviewConditionStudiedLabel'),
+    review_rationale: t('project', 'reviewRationaleLabel'),
+    search_strategy: t('project', 'reviewCardSearchTitle'),
+    review_context: t('project', 'reviewContextLabel'),
+    eligibility_criteria: t('project', 'staleFieldEligibility'),
+    study_design: t('project', 'advancedCardStudyTypesTitle'),
+    review_keywords: t('project', 'advancedCardKeywordsTitle'),
+};
+
 /** The URL owns the section: read every render, never mirrored into state. */
 function parseSection(value: string | null): SectionId {
   return value && SECTION_IDS.has(value) ? (value as SectionId) : 'basic';
@@ -83,7 +99,8 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
             },
             {replace: true},
         );
-    const {project, loading, hasUnsavedChanges, updateProject, saveProject} = useProjectSettings(projectId);
+    const {project, loading, hasUnsavedChanges, updateProject, saveProject, staleFields, loadLatest, keepMine} =
+        useProjectSettings(projectId);
     const {isManager} = useProjectMemberRole(projectId);
     const [reviewQuestionDirty, setReviewQuestionDirty] = useState(false);
     const [pendingSection, setPendingSection] = useState<SectionId | null>(null);
@@ -158,6 +175,23 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
         <main className="flex-1 overflow-y-auto bg-background">
             <div className="w-full p-2">
+                {staleFields.length > 0 && (
+                    <Alert
+                        data-testid="project-settings-stale-banner"
+                        className="mb-2 flex flex-wrap items-center gap-2 text-[13px]"
+                    >
+                        <p className="min-w-0 flex-1">
+                            {t('project', 'staleBannerMessage')}{' '}
+                            <strong>{staleFields.map((key) => STALE_FIELD_LABELS[key] ?? key).join(', ')}</strong>
+                        </p>
+                        <Button size="sm" variant="ghost" onClick={() => void loadLatest()}>
+                            {t('project', 'staleLoadLatest')}
+                        </Button>
+                        <Button size="sm" onClick={() => void keepMine()}>
+                            {t('project', 'staleKeepMine')}
+                        </Button>
+                    </Alert>
+                )}
                 {activeSection === 'basic' && (
                     <BasicInfoSection project={project} onChange={updateProject}/>
                 )}

@@ -9,7 +9,9 @@
  * React Compiler. Supabase reads are relocated verbatim from hooks (no
  * new reads); the data-path consolidation owns the typed-client swap.
  */
+import {apiClient, ApiError} from '@/integrations/api/client';
 import {supabase} from '@/integrations/supabase/client';
+import type {components} from '@/types/api/schema';
 import {toResult, PgError, type ErrorResult} from '@/lib/error-utils';
 import type {MemberRole, Project} from '@/types/project';
 import type {ProjectMemberRole} from '@/types/extraction';
@@ -205,44 +207,57 @@ export function loadProjectForSettings(
   }, 'projectSettingsService.loadProjectForSettings');
 }
 
-/**
- * NOTE: `picots_config_ai_review` is deliberately NOT here. This save PATCHes
- * every listed column, so including it let a client's stale snapshot overwrite
- * a newer value — and the `.update()` below has no `.select()`, so an
- * RLS-filtered write returns no error and a non-manager would lose the edit
- * behind a success toast. The review question is written by
- * `PUT /api/v1/projects/:id/ai-context` instead (manager-gated, typed).
- */
-export type SaveProjectFields = Pick<Project,
-  | 'name'
-  | 'description'
-  | 'review_type'
-  | 'review_title'
-  | 'condition_studied'
-  | 'review_rationale'
-  | 'search_strategy'
-  | 'eligibility_criteria'
-  | 'study_design'
-  | 'review_keywords'
-  | 'review_context'
->;
+export type ProjectDetailsFields = components['schemas']['ProjectDetailsFields'];
+type ProjectDetailsUpdate = components['schemas']['ProjectDetailsUpdate'];
+type ProjectDetailsRead = components['schemas']['ProjectDetailsRead'];
 
 /**
- * Persist updated project fields.
+ * Persist the changed descriptive fields; `expected` holds the values the
+ * page loaded (409 STALE_VALUE when any moved server-side).
  *
  * NOTE: toast messages are handled by the caller.
  */
 export function saveProjectSettings(
   projectId: string,
-  fields: SaveProjectFields,
-): Promise<ErrorResult<void>> {
-  return toResult(async () => {
-    const {error} = await supabase
-      .from('projects')
-      .update(fields)
-      .eq('id', projectId);
-    if (error) throw error;
-  }, 'projectSettingsService.saveProjectSettings');
+  body: ProjectDetailsUpdate,
+): Promise<ErrorResult<ProjectDetailsRead>> {
+  return toResult(
+    () => apiClient<ProjectDetailsRead>(`/api/v1/projects/${projectId}/details`, {method: 'PATCH', body}),
+    'projectSettingsService.saveProjectSettings',
+  );
+}
+
+/** The server's current values of the contested fields for a 409 STALE_VALUE; null for any other error. */
+export function staleValuesOf(error: Error): Record<string, unknown> | null {
+  if (!(error instanceof ApiError) || error.status !== 409 || error.code !== 'STALE_VALUE') return null;
+  const current = error.details?.current;
+  return isRecord(current) ? current : null;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+const isStringList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((s) => typeof s === 'string');
+
+/** The Supabase row's `Json` columns narrowed to the PATCH contract; null when a JSONB value has the wrong shape. */
+export function toDetailsFields(values: Partial<Project>): ProjectDetailsFields | null {
+  const {eligibility_criteria, study_design, review_keywords} = values;
+  if (eligibility_criteria !== undefined && !isRecord(eligibility_criteria)) return null;
+  if (study_design !== undefined && !isRecord(study_design)) return null;
+  if (review_keywords !== undefined && !isStringList(review_keywords)) return null;
+  return {
+    name: values.name,
+    description: values.description,
+    review_type: values.review_type,
+    review_title: values.review_title,
+    condition_studied: values.condition_studied,
+    review_rationale: values.review_rationale,
+    search_strategy: values.search_strategy,
+    review_context: values.review_context,
+    eligibility_criteria,
+    study_design,
+    review_keywords,
+  };
 }
 
 // ---------------------------------------------------------------------------
