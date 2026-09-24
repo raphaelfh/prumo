@@ -57,6 +57,7 @@ from app.models.extraction_workflow import (
 from app.models.feedback import FeedbackAttachment, FeedbackReport  # noqa: F401
 from app.models.integration import ZoteroIntegration
 from app.models.llm_connection import LlmConnection, UserProjectEngine
+from app.models.personal_access_token import PersonalAccessToken
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
 
 # Modelos sem dependencias (ou with dependencias minimas)
@@ -116,6 +117,7 @@ __all__ = [
     "ProjectMemberRole",
     "ReviewType",
     "LlmConnection",
+    "PersonalAccessToken",
     # Article
     "Article",
     "ArticleFile",
