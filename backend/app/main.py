@@ -21,7 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import create_engine, text
+from starlette.routing import Route
 
+from app.api.mcp.server import build_mcp_asgi
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.deps import AsyncSessionLocal, get_supabase_client
@@ -118,7 +120,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             error=str(e),
         )
 
-    yield
+    async with app.state.mcp_session_manager.run():
+        yield
 
     # Shutdown
     logger.info("application_shutdown")
@@ -167,6 +170,16 @@ def create_app() -> FastAPI:
 
     # API Routes
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+    # MCP (spec §3): excluded from the JWT dependency, the ApiResponse envelope and
+    # the REST error handler; its manager runs in `lifespan`. An exact Route, not
+    # app.mount: a Mount answers POST /mcp with a 307 to /mcp/. Starlette treats a
+    # non-function endpoint as a raw ASGI app (starlette/routing.py Route.__init__).
+    mcp_app, mcp_session_manager = build_mcp_asgi()
+    app.state.mcp_session_manager = mcp_session_manager
+    app.router.routes.append(
+        Route("/mcp", endpoint=mcp_app, methods=["GET", "POST", "DELETE"], include_in_schema=False)
+    )
 
     @app.get("/health", tags=["Health"])
     async def health_check() -> dict[str, object]:

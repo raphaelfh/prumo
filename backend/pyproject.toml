@@ -143,6 +143,7 @@ markers = [
     "performance: performance-sensitive or long-running tests",
     "integration: integration test requiring db_session + seeded fixtures from tests/integration/conftest.py",
     "llm: live LLM smoke test; deselected by default via addopts, run with -m llm and PRUMO_LLM_SMOKE=1",
+    "mcp_real_sessions: MCP test whose tool sessions get their own connections and real commits (race tests); the test deletes its own rows",
 ]
 
 
