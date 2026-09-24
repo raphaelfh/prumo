@@ -19,9 +19,10 @@ import functools
 import importlib
 import inspect
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from math import ceil
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import logfire
 from limits import parse
@@ -86,6 +87,8 @@ class _ToolRule:
 
 _RULES: dict[str, _ToolRule] = {}
 
+_F = TypeVar("_F", bound=Callable[..., Any])
+
 
 class _PrumoMCPServer(MCPServer[Any]):
     """Filters ``tools/list`` to what the caller's token scope may call."""
@@ -136,7 +139,7 @@ def agent_tool(
     idempotent: bool = True,
     meta: dict[str, Any] | None = None,
     structured_output: bool | None = None,
-) -> Any:
+) -> Callable[[_F], _F]:
     """Register a tool through the ONE choke point (``_dispatch``).
 
     ``description`` is a required static string (no docstring fallback).
@@ -145,7 +148,7 @@ def agent_tool(
     data). Tools never call ``mcp.tool()`` / ``add_tool`` directly.
     """
 
-    def decorator(fn: Any) -> Any:
+    def decorator(fn: _F) -> _F:
         rule = _ToolRule(requires=requires, project_arg=project_arg)
         _RULES[fn.__name__] = rule
 
