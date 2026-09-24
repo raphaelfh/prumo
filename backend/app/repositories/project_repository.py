@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager
 
 from app.models.project import Project, ProjectMember, ProjectMemberRole
 from app.repositories.base import BaseRepository
@@ -23,37 +24,6 @@ class ProjectRepository(BaseRepository[Project]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, Project)
 
-    async def get_by_user(
-        self,
-        user_id: UUID | str,
-        *,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> list[Project]:
-        """
-        List projects a user can access.
-
-        Args:
-            user_id: User ID.
-            skip: Pagination offset.
-            limit: Maximum number of results.
-
-        Returns:
-            Project list.
-        """
-        if isinstance(user_id, str):
-            user_id = UUID(user_id)
-
-        # Projects where the user is a member.
-        result = await self.db.execute(
-            select(Project)
-            .join(ProjectMember)
-            .where(ProjectMember.user_id == user_id)
-            .offset(skip)
-            .limit(limit)
-        )
-        return list(result.scalars().all())
-
 
 class ProjectMemberRepository(BaseRepository[ProjectMember]):
     """
@@ -64,6 +34,26 @@ class ProjectMemberRepository(BaseRepository[ProjectMember]):
 
     def __init__(self, db: AsyncSession):
         super().__init__(db, ProjectMember)
+
+    async def list_for_user(self, user_id: UUID | str) -> list[ProjectMember]:
+        """The caller's own membership rows, each with `.project` loaded.
+
+        The ONE membership predicate of a `list_projects` read: `user_id` is
+        the verified principal, never a client-supplied id, so there is
+        nothing to bind against a second party — unlike `get_member`, which
+        checks a specific project a caller names.
+        """
+        if isinstance(user_id, str):
+            user_id = UUID(user_id)
+
+        result = await self.db.execute(
+            select(ProjectMember)
+            .join(ProjectMember.project)
+            .options(contains_eager(ProjectMember.project))
+            .where(ProjectMember.user_id == user_id)
+            .order_by(Project.name, Project.id)
+        )
+        return list(result.scalars().all())
 
     async def get_member(
         self,
