@@ -10,7 +10,7 @@ owner: '@raphaelfh'
 **Status:** Draft. Design approved section by section in chat. Revised after
 two review rounds: an adversarial code review, then security, architecture,
 tool-design/SOTA and data/testing reviewers. Two spikes resolved the open
-unknowns (§3.1). Reconciled with the tree in two rounds (2026-09-24):
+unknowns (§3.1). Reconciled with the tree in three rounds (2026-09-24):
 every cited file:line re-read; delivery tasks in §10.
 
 ## 1. Decision summary
@@ -132,7 +132,7 @@ agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Mount("/mcp")
                                            └─ app/api/mcp/
                                               ├─ asgi_auth.py  pure-ASGI PAT wrapper → McpPrincipal contextvar
                                               ├─ server.py     MCPServer, tool registry, scope/role choke point
-                                              ├─ session.py    injectable session factory (default AsyncSessionLocal)
+                                              ├─ session.py    injectable session + storage factories
                                               ├─ errors.py     service exception → MCP error
                                               └─ tools/*.py    thin adapters
                                                    │
@@ -223,8 +223,16 @@ agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Mount("/mcp")
     display telemetry, not auth. Five minutes is the display granularity
     the Settings list needs ("last used 3 min ago" is not a promise).
 - **Scope/role choke point.** Each tool is registered with a declared
-  requirement (`read` or `write`) and the name of its project argument.
-  `server.py` enforces it in one place, before the adapter runs:
+  requirement (`read` or `write`) and the name of its project argument,
+  through one custom decorator defined in `server.py`:
+  `@agent_tool(requires="read" | "write", project_arg="project_id" |
+  "article_id", ...)`. It records the requirement in the registry and
+  registers the wrapped coroutine with the `MCPServer`; tools never call
+  the SDK's `@mcp.tool()` directly. Because the tool functions are only
+  ever invoked by the SDK, vulture's `ignore_decorators` gains
+  `"@agent_tool"` (task 2b; vulture matches the decorator's name without
+  its call arguments). `server.py` enforces the requirement in one place,
+  before the adapter runs:
   1. filters `tools/list` by token scope;
   2. refuses a write tool on a `read` token → `SCOPE_INSUFFICIENT`;
   3. resolves the project (for article-scoped tools,
@@ -246,10 +254,22 @@ agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Mount("/mcp")
   `AsyncSessionLocal`, one session per tool call. Tests bind the factory
   to the `db_session` SAVEPOINT connection (§8). `db_client` overrides only `get_db`, so without this, tools would
   read outside the test's seed data and commit for real.
+- **Storage client.** `session.py` also holds the storage factory, the
+  only way a tool gets a `StorageAdapter`. Its default builds a fresh
+  adapter per call, `create_storage_adapter(get_supabase_client())`
+  (`app/core/factories.py:17-34`, `app/core/deps.py:75`; never cached,
+  per that docstring's event-loop bug). `get_article_pdf` calls
+  `SupabaseStorageAdapter.get_signed_url("articles", storage_key,
+  expires_in=600)` (`app/infrastructure/storage/supabase_storage.py:190-208`)
+  on the adapter it returns. Tests override the factory with a recording
+  fake (fixture `fake_storage`, §8), so no test reaches Supabase Storage
+  and `test_signed_url_ttl` can assert the requested TTL.
 - **Transactions.** `template_field_service` and `claim_draft_lock` only
   `flush()`. The REST endpoints commit once at the end
   (`template_structure.py`). `edit_template_draft` does the same: claim →
-  N ops → one commit. Any error closes the session without committing.
+  N ops → one commit. Any error rolls back every structure write and the
+  lock claim, and commits nothing but the §6.1 refused audit row (for the
+  codes whose §7 "audit row" is yes; the others commit nothing).
 
 ### 3.1 Spike evidence (2026-09-23/24, throwaway, not kept)
 
@@ -317,6 +337,15 @@ house style.
 - `expires_in_days` is an integer in `[1, 365]` (Pydantic `Field(ge=1,
   le=365)`); out of range → 422 before any write. The table CHECK is the
   backstop.
+- **`expires_at` is computed in SQL, never in Python.** `pat_service`
+  inserts `expires_at = now() + make_interval(days => :n)`. `created_at`
+  takes its `server_default` `now()` (the `func.now()` default of
+  `TimestampMixin`, `app/models/base.py:181-185`), and `now()` is the
+  transaction's start time, so both columns read the same clock and
+  `expires_at - created_at` is exactly `:n` days. The CHECK therefore
+  accepts `expires_in_days = 365` (`<=`). A Python `datetime.now() +
+  timedelta(days=365)` is taken later than the transaction's `now()` and
+  would break the CHECK at exactly 365.
 - Ownership lives in exactly one guard, `pat_service.owned_token(user_id,
   token_id)`, listed in `.claude/rules/backend.md`.
 
@@ -346,7 +375,9 @@ house style.
 ### 4.3 `/mcp` authentication
 
 - The ASGI wrapper resolves the bearer. Missing, malformed, unknown, expired
-  or revoked → 401 `WWW-Authenticate: Bearer` (no `resource_metadata`).
+  or revoked → 401 `WWW-Authenticate: Bearer` (no `resource_metadata`),
+  or 429 once the `mcp401:<ip>` bucket is exhausted (§7; a valid token
+  never counts against it).
 - The lookup runs on every request, so a revoked token fails on its next
   call.
 - `last_used_at` is updated at most once per 5 minutes per token (§3).
@@ -530,12 +561,12 @@ note.
 | `list_projects()` | projects the user belongs to (role, `is_active`), plus caller name, token scope and expiry | **new** `project_read_service.list_projects_for_user` |
 | `get_project(project_id)` | whitelisted descriptive fields, counts (articles, articles with text), templates (id, kind, active, `narrow`) | **new** `project_read_service.get_project_overview` + `project_details_service` schema |
 | `list_articles(project_id, query?, has_pdf?, has_text?, cursor?, limit?)` | id, title, authors, year, `text_status`, `removed_at_source`, `has_pdf`, `has_text` | **new** `article_list_read_service.list_project_articles` |
-| `get_article(article_id)` | metadata (incl. `publication_status`), abstract, files (`article_file_id`, role, `extraction_status`), outline (pages, block counts, headings if parsed), extraction status per template | **new** `article_list_read_service.get_article_detail` + **new** `article_text_block_read_service.get_file_outline` |
-| `get_article_text(article_id, file_id?, page_from?, page_to?, cursor?)` | text content only: a fixed header line, the delimited markdown blocks (each prefixed with a locator `[p4·b123]`), a fixed trailer line carrying `next_cursor` (§5.0) | **new** `article_text_block_read_service.page_text_blocks` (keyset on `(page_number, block_index)`) |
-| `get_article_pdf(article_id, file_id?)` | `{pdf: {url, expires_at, filename, size} \| null, reason: "no_pdf" \| null, next_step: string \| null}` in `structuredContent`, plus a `resource_link` when `pdf` is set | `ArticleFileRepository.get_latest_pdf` / `owned_article_file` + Supabase Storage signed URL (10 min) |
+| `get_article(article_id, file_id?)` | metadata (incl. `publication_status`), abstract, files (`article_file_id`, role, `extraction_status`), outline of `file_id` or, without it, of the latest PDF (pages, block counts, headings if parsed), extraction status per template | **new** `article_list_read_service.get_article_detail` + **new** `article_read_service.resolve_article_file` + **new** `article_text_block_read_service.get_file_outline` |
+| `get_article_text(article_id, file_id?, page_from?, page_to?, cursor?)` | text content only: a fixed header line, the delimited markdown blocks (each prefixed with a locator `[p4·b123]`), a fixed trailer line carrying `next_cursor` (§5.0) | **new** `article_text_block_read_service.page_text_blocks` (keyset on `(page_number, block_index, char_offset)`, 28,000-character budget; "`get_article_text` paging" below) |
+| `get_article_pdf(article_id, file_id?)` | `{pdf: {url, expires_at, filename, size} \| null, reason: "no_pdf" \| null, next_step: string \| null}` in `structuredContent`, plus a `resource_link` when `pdf` is set | **new** `article_read_service.resolve_article_file` (wraps `owned_article_file` / `ArticleFileRepository.get_latest_pdf`) + Supabase Storage signed URL (10 min) from the §3 storage factory |
 | `search_project_text(project_id, query, article_id?, cursor?)` | hits: `article_id`, title, `article_file_id`, page, `block_id`, block type, snippet | **new** `article_text_search_service` (FTS, §5.3) |
 | `get_extractions(project_id, template_id, article_id?, response_format?, cursor?)` | see below | **new** `extraction_agent_read_service` |
-| `get_template(project_id, template_id)` | sections → questions (type, options, instructions), `draft_open`, `narrow`, draft diff vs published | `template_version_read_service.get_active_version_tree` / live tree + `template_version_read_service.get_template_config_diff` |
+| `get_template(project_id, template_id)` | sections → questions (type, options, instructions), `draft_open`, `narrow`, draft diff vs published | `template_version_read_service.get_active_version_tree` / **new** public `extraction_snapshot.live_entity_types` (after `owned_template`) + `template_version_read_service.get_template_config_diff` |
 
 **New read modules.** What exists today does not answer these reads
 (§2): `ProjectRepository.get_by_user` has no role, counts or templates;
@@ -581,8 +612,63 @@ the row-in-parent list in `.claude/rules/backend.md` § Ownership guards.
 Guard and rules entry ship in §10 task 6, the first task with a
 `file_id` argument (`get_article`); task 7 reuses the guard. Without
 `file_id`, the latest PDF
-(`ArticleFileRepository.get_latest_pdf`, already article-scoped) is
-used.
+(`ArticleFileRepository.get_latest_pdf`, already article-scoped by its
+WHERE clause, `app/repositories/article_repository.py:350-370`) is used.
+
+**File resolution is one service call.** Tools are api-layer and may not
+import repositories (`scripts/fitness/check_layered_arch.py:52`, `api →
+services | support`), so no tool calls `get_latest_pdf` itself. A new
+`article_read_service.resolve_article_file(db, *, article_id, file_id:
+UUID | None) -> ArticleFile | None`, beside the guard, is the only path:
+with `file_id` it returns `owned_article_file(...)` (raises on missing or
+foreign); without it, `ArticleFileRepository(db).get_latest_pdf(article_id)`
+(`None` when the article has no PDF). `get_article`'s outline,
+`get_article_text` and `get_article_pdf` all call it. It ships in task 6
+with the guard (`get_article` already needs the no-`file_id` fallback);
+task 7 reuses it. The existing `ArticleFileService.get_content_markdown`
+(`article_file_service.py:44-48`) wraps the same repository call but is
+named and documented for the content-markdown dialog, so the tools do
+not borrow it.
+
+**`get_template` trees.** With an active version, the tree is
+`get_active_version_tree` (the pinned snapshot, or its live fallback when
+narrow). A never-published template has no version, and
+`get_active_version_tree` raises `NoActiveTemplateVersionError`
+(`template_version_read_service.py:311-315`), so the live tree needs a
+public reader. Today the only one is the private live branch inside
+`extraction_snapshot.entity_types_for_version`
+(`extraction_snapshot.py:236-254`). Task 8 extracts it, unchanged, into
+public `extraction_snapshot.live_entity_types(db, *, template_id) ->
+list[RunViewEntityType]` (one `selectinload` statement, fields sorted by
+`sort_order`); `entity_types_for_version`'s fallback calls it, so the
+run view, the prompts and `get_template` share one live reader and no
+copy exists. It takes no `project_id`: the tool calls
+`project_template_active_service.owned_template` first, the same guard
+as every template-scoped read. `template_restore_service._live_entity_types`
+(`:161`) is not a duplicate: it returns ORM rows keyed by id for the
+restore writer, not the read shape.
+
+**`get_article_text` paging.** A result page is cut by a **character
+budget**, not a block count:
+
+- Blocks of the requested page range are appended in `(page_number,
+  block_index)` order while the body stays within **28,000 characters**,
+  counting each block's text plus its locator prefix. The budget is
+  checked before a block is appended; a result always carries at least
+  one block (or one chunk), so paging always advances.
+- **A single block longer than the budget is split, not truncated.** It
+  is cut at a code-point boundary (Python `str` slicing, so no broken
+  UTF-8) at the budget, and the cursor points **inside** the block:
+  the keyset is `(page_number, block_index, char_offset)`, with
+  `char_offset = 0` at a block start. The first chunk is prefixed
+  `[p4·b123]`, each continuation `[p4·b123 cont.]`; both cite as
+  `p4·b123`. **Why split:** every chunk keeps a valid block locator and
+  paging reaches every character; truncating with a marker would make
+  the rest of the block unreadable through this tool.
+- The fixed lines (header, the two delimiter lines, trailer with its
+  cursor) are outside the 28,000 budget, are bounded (under 1,000
+  characters together), and **count** toward the ≤ 32,000-character cap
+  of `test_response_size_cap` (§8).
 
 **`get_article_pdf`.** Its description tells the agent to download the URL
 to read figures and tables. Chat-only clients should use
@@ -740,6 +826,19 @@ exist or is not in scope:
   | — | `name` | derived from `label`, below |
 
   Every other create field takes the schema default.
+- **`null` on `update_question`.** `label` is NOT NULL
+  (`ExtractionField.label`, `app/models/extraction.py:357`); an explicit
+  `label: null` → `INVALID_ARGUMENT` with `field: "label"`.
+  `TemplateFieldUpdateRequest` already refuses it (label is in
+  `_NON_NULLABLE_UPDATE_FIELDS`, `template_structure.py:110-123`, checked
+  by the model validator at `:159-164`), but a model-level validator
+  reports an empty `loc`, so `field` would be blank. `UpdateQuestionOp`
+  therefore refuses `null` on `label` with a **field** validator (runs
+  only when the key is sent), so `errors()[0]["loc"]` is `("label",)`.
+  `description` and `instructions` map to nullable `text` columns
+  (`description`, `llm_description`, `extraction.py:358,376`): an
+  explicit `null` is allowed and **clears** the value; an omitted key
+  leaves it unchanged (`exclude_unset=True`).
 - **`name` derivation.** A backend port of the UI's `uniqueFieldKey`
   (`frontend/lib/extraction/slug.ts`): lower-case, strip accents (NFD),
   non-alphanumerics → `_`, trim and collapse `_`; prefix `field_` if it
@@ -768,11 +867,13 @@ exist or is not in scope:
   be claimed.
 - Argument validation failures → `INVALID_ARGUMENT` with the op index
   (§7).
-- **Steps**, in one session, ≤ 25 ops:
+- **Steps**, in one session, ≤ 25 ops, after the pre-checks in the §7
+  check order (template ownership via `owned_template` first, then the
+  audited argument and baseline refusals):
   1. `claim_draft_lock` as the token's user. Its WHERE clause is
-     project-scoped, which also proves template ownership. Held by another
-     manager → `DRAFT_LOCK_HELD` with the holder's name. **Never**
-     `take_over`.
+     project-scoped too (a backstop; ownership was already proven by
+     `owned_template`). Held by another manager → `DRAFT_LOCK_HELD` with
+     the holder's name. **Never** `take_over`.
   2. Apply the ops in order via `template_field_service.create_field` /
      `update_field` (mapping above). Any refusal rolls back **all** ops,
      including the lock claim, and returns the failing op index and code.
@@ -943,8 +1044,9 @@ backend-only pattern.
   `server_default=func.now()` and has no `updated_at` (append-only, so
   not `BaseModel`'s `TimestampMixin`).
 - **Which calls get a row.** Only write tools, and only after the call
-  passed the §3 choke point and the rate limit: applied writes, and write
-  refusals from domain rules. Access refusals (auth, scope, membership,
+  passed the §3 choke point, the rate limit and, for
+  `edit_template_draft`, the `owned_template` check (§7 "Check order"):
+  applied writes, and write refusals from domain rules. Access refusals (auth, scope, membership,
   role), rate limits and `NOT_FOUND` produce only a log span. The §7
   table's "audit row" column is the complete list, per code. Read tools
   never write a row (§6.3).
@@ -1014,7 +1116,22 @@ backend-only pattern.
   (slowapi `Limiter.limiter` property). The exact call is pinned at plan
   time against the locked slowapi.
   - Keyed `pat:<token_id>`: 120 reads/min, 20 writes/min.
-  - A per-IP limit applies to 401s (30/min), keyed `mcp401:<ip>`.
+  - A per-IP limit applies to 401s (30/min), keyed `mcp401:<ip>`
+    (`<ip>` = the ASGI `client` host).
+    - **Hit only on a failed lookup, after it.** The wrapper looks the
+      token up first; only a missing, malformed, unknown, expired or
+      revoked token hits `mcp401:<ip>`. Under the limit the answer is the
+      401; over it, 429. A valid token never touches this counter, so a
+      valid PAT is never refused by it, even from an exhausted IP.
+    - **Coarse by deployment.** The container runs gunicorn with
+      `UvicornWorker` (`backend/Dockerfile:114`) and no forwarded-IP
+      trust is configured (no `--forwarded-allow-ips` /
+      `FORWARDED_ALLOW_IPS` in the repo; uvicorn trusts
+      `X-Forwarded-For` only from `127.0.0.1` by default), so behind
+      Railway's proxy the `client` host is the proxy's address, not the
+      caller's. The counter is therefore a near-global brake on
+      bad-token spraying, not per-client throttling; configuring
+      forwarded-IP trust is outside this spec.
   - Tests need no new reset: the autouse fixture in
     `tests/integration/conftest.py:73` already calls `limiter.reset()`,
     which clears the shared storage these keys live in.
@@ -1071,10 +1188,28 @@ the SDK's generic error, without either. `TemplateFieldCreateRequest`
 does **not** check `options` against the type
 (`template_structure.py:86-104`), so `AddQuestionOp` carries that
 validator (`options` required for `select`/`multiselect`, refused
-otherwise); the REST path is unchanged. Order within a call:
-`TOO_MANY_OPS` → per op, `OP_NOT_ALLOWED_VIA_AGENT` (unknown op, or
-`type`/`options` keys on `update_question`) → `INVALID_ARGUMENT` → then
-`NO_PUBLISHED_VERSION` / `NARROW_BASELINE` → lock claim.
+otherwise); the REST path is unchanged.
+
+**Check order for `edit_template_draft`.** Template ownership is proven
+**before** any audited refusal:
+
+1. `project_template_active_service.owned_template(db, project_id=…,
+   template_id=…)` (the listed BOLA guard; ownership in the WHERE clause,
+   `project_template_active_service.py:34-64`). A foreign or nonexistent
+   `template_id` raises `ProjectTemplateNotFoundError` → `NOT_FOUND`, **no
+   audit row**, whatever the ops are (30 ops, disallowed ops, bad
+   arguments all lose to it). Without this step first, a caller could
+   write a refused row carrying a `template_id` it cannot see.
+2. `TOO_MANY_OPS`;
+3. per op, `OP_NOT_ALLOWED_VIA_AGENT` (unknown op, or `type`/`options`
+   keys on `update_question`) → `INVALID_ARGUMENT`;
+4. `NO_PUBLISHED_VERSION` / `NARROW_BASELINE`;
+5. lock claim, then the ops (a `section_id` or `field_id` outside the
+   template → `NOT_FOUND` from `_owned_entity_type` / `_owned_field`, no
+   audit row).
+
+Steps 2–5 audit their refusals (§6.1); step 1 and the step-5 row guards
+never do.
 
 **Prompt injection.** The server supplies private data plus untrusted
 content, two legs of the "lethal trifecta". Containment:
@@ -1102,6 +1237,10 @@ driven over ASGITransport do not register diff coverage.
   tests"). Used only by protocol, auth, Host/Origin and rate-limit tests.
 - `mcp_client` — the SDK in-memory `Client` against the `MCPServer`, with
   the principal set; used by tool-logic tests.
+- `fake_storage` — overrides the `session.py` storage factory (§3
+  "Storage client") with a fake whose `get_signed_url` records `(bucket,
+  path, expires_in)` and returns a fixed URL; restores the default after
+  the test. Used by the `get_article_pdf` tests.
 - `bind_mcp_session_factory` — autouse in this directory: binds
   `app/api/mcp/session.py` to the `db_session` connection and restores the
   default after the test.
@@ -1138,11 +1277,17 @@ driven over ASGITransport do not register diff coverage.
   expired and one revoked → create succeeds; 10 active → 409
   `TOKEN_LIMIT_REACHED`.
 - `test_expires_in_days_bounds`: 0 and 366 → 422, 1 and 365 → 201; no row
-  written on 422.
+  written on 422. For 365, the stored row has `expires_at - created_at =
+  interval '365 days'` exactly (the §4.1 SQL-side computation; a
+  Python-side timestamp would fail the CHECK here).
 - `test_list_tokens_status_and_order`: active first, then `created_at`
   desc; `status` is `active` / `expired` / `revoked`.
 - `test_token_routes_rate_limited`: 21st POST in a minute → 429; 61st GET
   → 429 (§4.2, ADR 0020).
+- `test_mcp401_bucket_spares_valid_tokens` (over `mcp_http_client`): 30
+  calls with unknown bearers → 401 each; the 31st bad call → 429; then a
+  call with `pat_primary_read` from the same client host → 200 (the
+  valid lookup never hits `mcp401:<ip>`, §7).
 
 **RLS probes.** Both new tables: 0 rows for `authenticated`/`anon`, paired
 with a positive service-role visibility check (the
@@ -1180,15 +1325,23 @@ and that `peer_values_hidden` is set when values are withheld.
 - `name` is unchanged.
 
 After UI publish, the change appears. On a narrow template, both ops →
-`NARROW_BASELINE` with no writes.
+`NARROW_BASELINE`: no structure rows, lock not claimed; one refused
+`agent_actions` row.
 
 **Draft semantics** (`test_mcp_edit_template_draft.py`)
 - Lock held by another manager → `DRAFT_LOCK_HELD`, holder unchanged.
 - Two sessions racing `claim_draft_lock` (`@pytest.mark.mcp_real_sessions`)
   → one wins.
-- A batch with one invalid op → full rollback, including the lock claim.
-- A disallowed op → no writes.
-- `test_ops_cap_25`: 26 ops → refused before any write.
+- A batch with one invalid op → full rollback, including the lock claim;
+  one refused `agent_actions` row.
+- A disallowed op → `OP_NOT_ALLOWED_VIA_AGENT`: no structure rows, lock
+  not claimed; one refused `agent_actions` row.
+- `test_ops_cap_25`: 26 ops → `TOO_MANY_OPS`; no structure rows, lock
+  not claimed; one refused `agent_actions` row.
+- `test_foreign_template_with_too_many_ops_is_not_found`, parametrized
+  over a template of another project and a random `template_id`: 30 ops
+  → `NOT_FOUND` (not `TOO_MANY_OPS`), and zero `agent_actions` rows
+  (§7 "Check order").
 - `test_lock_retained_after_success`: after a successful batch,
   `config_draft_by` is the token's user.
 - `test_add_question_mapping`: `section_id`/`options`/`instructions` land
@@ -1201,25 +1354,28 @@ After UI publish, the change appears. On a narrow template, both ops →
 - `test_duplicate_name_race_maps_to_retryable`
   (`@pytest.mark.mcp_real_sessions`): a
   concurrent insert of the derived name → `DUPLICATE_NAME`,
-  `retryable: true`, full rollback.
+  `retryable: true`, full rollback (no structure rows, lock claim undone);
+  one refused `agent_actions` row.
 - `test_deadlock_maps_to_retry`: a serialization failure / deadlock raised
-  from the flush (injected) → `RETRY`, `retryable: true`, no rows written.
+  from the flush (injected) → `RETRY`, `retryable: true`; no structure
+  rows, lock claim undone; one refused `agent_actions` row.
 - `test_invalid_argument_carries_op_index`, parametrized: a 101-char
   label, `options` on a `text` question, a `select` without `options`,
   `type: "rating"`, and `label: null` on `update_question`, each as op 3
   of 4 → `INVALID_ARGUMENT`, `retryable: false`, `op_index: 2`, `field`
-  naming the argument; no structure rows written and the lock not
-  claimed. For `update_project_details`: `name: ""`, `review_type:
+  naming the argument; no structure rows, lock not claimed; one refused
+  `agent_actions` row. For `update_project_details`: `name: ""`, `review_type:
   "meta"`, `review_keywords: "x"` → `INVALID_ARGUMENT` with `field`.
 - `test_no_published_version_refused`: a template with no active version
-  → `NO_PUBLISHED_VERSION`, `retryable: false`, no writes, one refused
-  audit row.
+  → `NO_PUBLISHED_VERSION`, `retryable: false`; no structure rows, lock
+  not claimed; one refused `agent_actions` row.
 
 **Project details** (`test_project_details_service.py`,
 `test_project_details_api.py`, `test_mcp_update_project_details.py`)
 - Whitelist enforced (service, REST 422, MCP `FIELD_NOT_EDITABLE`).
 - `STALE_VALUE` / 409 with `details.current` when a field changed after
-  the caller read it; nothing written.
+  the caller read it; no project column written (and, on MCP, one
+  refused `agent_actions` row).
 - Before/after recorded.
 - REST (`test_project_details_gate_order`): manager 200; reviewer 403;
   outsider 404; random (missing) project id 404 — the same body as the
@@ -1259,7 +1415,7 @@ After UI publish, the change appears. On a narrow template, both ops →
 - Index usage is asserted via `pg_indexes` plus a plan under
   `SET LOCAL enable_seqscan = off`.
 
-**`get_extractions`**
+**`get_extractions` and `get_template`**
 - Query count is bounded per page (no N+1).
 - Concise and detailed shapes validate against their `outputSchema`s.
 - `test_picks_live_run_over_finalized_after_reopen`: a finalized run and a
@@ -1267,6 +1423,11 @@ After UI publish, the change appears. On a narrow template, both ops →
   the live run.
 - `test_no_run_row`: article without a run → `run: null`,
   `reason: "no_run"`.
+- `test_get_template_live_tree_matches_fallback`: for a never-published
+  template, `get_template`'s tree equals `live_entity_types`; for a
+  narrow version, `entity_types_for_version` still returns the same live
+  tree (the extraction changed no behavior); a template of another
+  project → `NOT_FOUND`.
 - Export regression: the existing export tests pass unchanged after the
   `extraction_current_run` move.
 
@@ -1283,7 +1444,13 @@ After UI publish, the change appears. On a narrow template, both ops →
 - `test_instructions_length`: server `instructions` ≤ 2,048 characters.
 - `test_response_size_cap`: the largest page of every list/text tool, on a
   seeded worst case (long blocks, 50 rows), serializes under the ~8k-token
-  budget (measured as ≤ 32,000 characters of JSON).
+  budget (measured as ≤ 32,000 characters of JSON; for
+  `get_article_text`, the whole text content including header, delimiter
+  and trailer lines).
+- `test_article_text_splits_oversized_block`: a seeded block of 70,000
+  characters → three pages, chunks prefixed `[pN·bM]`, `[pN·bM cont.]`,
+  `[pN·bM cont.]`; each result ≤ 32,000 characters; the chunks
+  concatenate to the block's text exactly.
 - `test_untrusted_content_flag`: every structured result carrying
   article-derived text has `untrusted_content: true` and the text inside
   the delimiters.
@@ -1292,8 +1459,10 @@ After UI publish, the change appears. On a narrow template, both ops →
   §5.0 header with `untrusted_content=true`, its last line as the trailer;
   paging with the trailer's `next_cursor` until `none` returns every block
   exactly once; the result has no `structuredContent`.
-- `test_signed_url_ttl`: `get_article_pdf` `pdf.expires_at` is 10 minutes
-  (± 5 s) after the call, and the Storage client was asked for 600 s.
+- `test_signed_url_ttl` (with `fake_storage`): `get_article_pdf`
+  `pdf.expires_at` is 10 minutes (± 5 s) after the call, and the fake
+  recorded exactly one `get_signed_url("articles", <storage_key>,
+  expires_in=600)`.
 - `test_no_pdf_marker`: an article without a PDF → success (no
   `isError`), `pdf: null`, `reason: "no_pdf"`, no `resource_link`; a
   foreign `file_id` → `NOT_FOUND`.
@@ -1317,8 +1486,9 @@ After UI publish, the change appears. On a narrow template, both ops →
   `owned_template`, `owned_article_file`; no raw `project_members` SQL).
 - OpenAPI response descriptions.
 - `knip` / `knip --production`.
-- vulture: add `"@*.tool"` to `[tool.vulture] ignore_decorators` in the
-  same PR.
+- vulture: `"@agent_tool"` added to `backend/pyproject.toml`
+  `[tool.vulture] ignore_decorators` in task 2b, the task that defines
+  the §3 decorator; `backend/.vulture_baseline` gains no MCP entry.
 - mypy ratchet: new files must be clean, with no baseline entries.
 - File-size ceiling.
 - Copy-key check.
@@ -1388,7 +1558,8 @@ to its own revision, and each REST-contract task regenerates
   (`status: accepted`); constitution amendment 2.3.0 (§4.6). Tests: §8
   PAT + RLS probe for the table.
 - **Task 2a — MCP mount.** `app/api/mcp/server.py` with `build_mcp_asgi()` (no
-  tools yet), `session.py` (injectable factory); `MCP_ALLOWED_HOSTS` /
+  tools yet), `session.py` (injectable session factory and storage
+  factory, §3 "Storage client"); `MCP_ALLOWED_HOSTS` /
   `MCP_ALLOWED_ORIGINS` settings and their two parsing properties in
   `app/core/config.py`; mount at `/mcp` in `create_app()` and lifespan
   wiring (`app.state.mcp_session_manager.run()`); fixtures
@@ -1404,13 +1575,15 @@ to its own revision, and each REST-contract task regenerates
   `server.py` plus the non-raising `is_project_manager` helper in
   `security.py`; `errors.py` (`McpErrorCode`, the §7 mapping); `/mcp`
   rate limits on the shared limiter (`pat:<token_id>`, `mcp401:<ip>`);
-  server info and `instructions`; fixture `mcp_client` (needs
+  server info and `instructions`; the `@agent_tool` registration
+  decorator (§3) and `"@agent_tool"` in `backend/pyproject.toml`
+  `[tool.vulture] ignore_decorators`; fixture `mcp_client` (needs
   `McpPrincipal`) and PAT fixtures `pat_primary_rw`, `pat_primary_read`,
-  `pat_reviewer_rw`, `pat_outsider_rw`. Tests: §8
-  auth (401 cases, revoke between calls, `last_used_at` throttle), rate
-  limit, instructions length, scope filtering and the choke-point
-  ordering (against a test-only tool registered by the fixture), error
-  mapping units.
+  `pat_reviewer_rw`, `pat_outsider_rw`. Tests: §8 auth (401 cases,
+  revoke between calls, `last_used_at` throttle), rate limit (incl.
+  `test_mcp401_bucket_spares_valid_tokens`), instructions length, scope
+  filtering and the choke-point ordering (against a test-only tool
+  registered by the fixture with `@agent_tool`), error mapping units.
 - **Task 3 — Audit table.** `AgentAction` model + `0078_agent_actions`
   (`created_at` server default, §6.1); head pin →
   `0078_agent_actions`; `agent_action_service` (insert only: applied
@@ -1441,34 +1614,47 @@ to its own revision, and each REST-contract task regenerates
   `article_list_read_service`, `get_file_outline`;
   `article_read_service.owned_article_file` guard + its
   `.claude/rules/backend.md` row-in-parent entry (`get_article` is the
-  first tool with a `file_id`, §5.1); tools `list_projects`,
+  first tool with a `file_id`, §5.1) and
+  `article_read_service.resolve_article_file` (the service wrapper over
+  `ArticleFileRepository.get_latest_pdf`, §5.1); tools `list_projects`,
   `get_project`, `list_articles`, `get_article`; cursor helper. Tests:
   BOLA rows for these tools (incl. `get_article` `file_id`), cursor
   tampering, empty states, `outputSchema` validation.
 - **Task 7 — Text, PDF, search.** `page_text_blocks`;
   `article_text_search_service`; `0079_article_text_fts` (build mode
   decided from the prod row count); head pin → `0079_article_text_fts`;
-  tools `get_article_text` (header/trailer, §5.0), `get_article_pdf`
-  (`no_pdf` marker), `search_project_text`, reusing task 6's
-  `owned_article_file`. Tests: search, signed URL TTL, no-PDF marker,
-  article-text header/trailer, untrusted content, response size cap,
-  `file_id` BOLA for the two new tools.
+  tools `get_article_text` (header/trailer, §5.0; 28,000-character
+  budget with in-block split, §5.1), `get_article_pdf` (`no_pdf` marker;
+  signed URL through the task-2a storage factory, §3 "Storage client"),
+  `search_project_text`, reusing task 6's `owned_article_file` and
+  `resolve_article_file` (no tool imports `ArticleFileRepository`);
+  fixture `fake_storage`. Tests: search, signed URL TTL
+  (`test_signed_url_ttl`), no-PDF marker, article-text header/trailer,
+  `test_article_text_splits_oversized_block`, untrusted content,
+  response size cap, `file_id` BOLA for the two new tools.
 - **Task 8 — Extractions and template reads.** Move the current-run rule to
   `extraction_current_run.py` (export call sites + unit test follow);
-  `extraction_agent_read_service`; tools `get_extractions`,
+  `extraction_agent_read_service`; extract the live branch of
+  `extraction_snapshot.entity_types_for_version` into public
+  `extraction_snapshot.live_entity_types` (§5.1 "`get_template` trees";
+  the existing fallback calls it, no copy); tools `get_extractions`,
   `get_template` (never-published → success with `published_version:
   null`). Tests: blind-review parity, live-over-finalized, no N+1,
-  export regression.
+  export regression, `test_get_template_live_tree_matches_fallback`.
 - **Task 9 — `update_project_details` tool.** Adapter over
   `project_details_service` (loose input schema, adapter validation →
   `INVALID_ARGUMENT` / `FIELD_NOT_EDITABLE`), audit rows, `_meta` hint.
   Tests: §8 project details (MCP) + audit.
 - **Task 10 — `edit_template_draft` tool.** `template_field_naming.py`; op
   models `AddQuestionOp` / `UpdateQuestionOp` (incl. the
-  options-vs-type validator); op mapping; `NO_PUBLISHED_VERSION` /
-  `NARROW_BASELINE` checks; lock claim; batch rollback; audit rows.
+  options-vs-type validator and the field-level `label` non-null
+  validator, §5.2); op mapping; the §7 check order (`owned_template`
+  first, then `TOO_MANY_OPS`, op checks, `NO_PUBLISHED_VERSION` /
+  `NARROW_BASELINE`); lock claim; batch rollback; audit rows.
   Tests: §8 draft semantics (incl. `INVALID_ARGUMENT`,
-  `NO_PUBLISHED_VERSION`) + isolation + `test_audit_row_matrix`.
+  `NO_PUBLISHED_VERSION`,
+  `test_foreign_template_with_too_many_ops_is_not_found`) + isolation +
+  `test_audit_row_matrix`.
 - **Task 11 — Draft chip.** `has_agent_edits` / `agent_edit_token_name` on
   `TemplateConfigStatusRead`; `npm run generate:api-types`; chip line in
   `TemplateConfigPublishControls.tsx`; copy keys in
