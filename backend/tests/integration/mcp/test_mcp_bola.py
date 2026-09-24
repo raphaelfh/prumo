@@ -51,6 +51,13 @@ BOLA_CASES = [
         "NOT_FOUND",
         id="get_article-random-uuid",
     ),
+    pytest.param(
+        "pat_outsider_rw",
+        "get_article_text",
+        {"article_id": str(SEED.primary_article)},
+        "NOT_FOUND",
+        id="get_article_text-outsider-on-foreign-article",
+    ),
 ]
 
 
@@ -110,6 +117,34 @@ async def test_get_article_file_id_of_an_article_in_another_project_is_not_found
         mcp_client,
         pat_primary_rw,
         "get_article",
+        {"article_id": str(SEED.primary_article), "file_id": str(foreign_file)},
+    )
+    assert error_payload(result)["code"] == "NOT_FOUND"
+
+
+async def test_get_article_text_file_id_of_another_article_in_same_project_is_not_found(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    other_article = await insert_article(db_session, SEED.primary_project, title="Sibling")
+    other_file = await insert_pdf(db_session, SEED.primary_project, other_article)
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "get_article_text",
+        {"article_id": str(SEED.primary_article), "file_id": str(other_file)},
+    )
+    assert error_payload(result)["code"] == "NOT_FOUND"
+
+
+async def test_get_article_text_file_id_of_an_article_in_another_project_is_not_found(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    foreign_article = await insert_article(db_session, SEED.secondary_project, title="Foreign")
+    foreign_file = await insert_pdf(db_session, SEED.secondary_project, foreign_article)
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "get_article_text",
         {"article_id": str(SEED.primary_article), "file_id": str(foreign_file)},
     )
     assert error_payload(result)["code"] == "NOT_FOUND"
