@@ -1,13 +1,18 @@
 // frontend/services/projectSettingsService.ts
 /**
- * Project settings service — IO for project-level CRUD operations used in
- * the Settings page and comparison-permission checks.
+ * Project settings service — IO for the Settings page and the
+ * comparison-permission checks.
+ *
+ * Writes to `projects` go through the API (`apiClient`): the details save
+ * (PATCH /projects/{id}/details, optimistic precondition) and the delete
+ * (DELETE /projects/{id}); the browser role holds no INSERT/UPDATE/DELETE
+ * grant on that table. The remaining Supabase calls are the Settings load,
+ * the comparison-permission reads, the member RPCs/writes and the profile read.
  *
  * Service-layer contract (zero-bailouts spec): exported functions never
  * throw across the boundary; they return ErrorResult<T>. try/catch and
  * throw are free here — module-level functions are not compiled by the
- * React Compiler. Supabase reads are relocated verbatim from hooks (no
- * new reads); the data-path consolidation owns the typed-client swap.
+ * React Compiler.
  */
 import {apiClient, ApiError} from '@/integrations/api/client';
 import {supabase} from '@/integrations/supabase/client';
@@ -21,29 +26,20 @@ import {getRolePermissions, isValidUserRole, type ManagerVisibilitySettings, typ
 // AdvancedSettingsSection: delete project
 // ---------------------------------------------------------------------------
 
-export interface DeleteProjectResult {
-  /** True when at least one row was deleted (RLS returned data). */
-  deleted: boolean;
-}
+type ProjectDeleteRead = components['schemas']['ProjectDeleteRead'];
 
 /**
- * Delete a project by id. Returns {deleted: false} when RLS blocked the
- * delete (no rows returned) so the caller can surface the appropriate toast.
+ * Delete a project by id (`DELETE /api/v1/projects/{id}`, manager-gated).
+ * A non-manager's attempt comes back as an ApiError 403, never as an empty
+ * success; a non-member or missing project as a 404.
  *
  * NOTE: toast messages are handled by the caller (AdvancedSettingsSection).
  */
-export function deleteProject(
-  projectId: string,
-): Promise<ErrorResult<DeleteProjectResult>> {
-  return toResult(async () => {
-    const {data, error} = await supabase
-      .from('projects')
-      .delete()
-      .eq('id', projectId)
-      .select();
-    if (error) throw error;
-    return {deleted: Boolean(data && data.length > 0)};
-  }, 'projectSettingsService.deleteProject');
+export function deleteProject(projectId: string): Promise<ErrorResult<ProjectDeleteRead>> {
+  return toResult(
+    () => apiClient<ProjectDeleteRead>(`/api/v1/projects/${projectId}`, {method: 'DELETE'}),
+    'projectSettingsService.deleteProject',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -285,14 +281,6 @@ export function getProjectMemberRole(
     return (data?.role as ProjectMemberRole | null) ?? null;
   }, 'projectSettingsService.getProjectMemberRole');
 }
-
-// ---------------------------------------------------------------------------
-// useNavigation: search and profile
-// ---------------------------------------------------------------------------
-
-
-
-
 
 // ---------------------------------------------------------------------------
 // useNavigation: user profile

@@ -13,7 +13,7 @@ vi.mock('@/integrations/api/client', async (importOriginal) => ({
 }));
 
 import {ApiError} from '@/integrations/api/client';
-import {saveProjectSettings, staleValuesOf, toDetailsFields} from '@/services/projectSettingsService';
+import {deleteProject, saveProjectSettings, staleValuesOf, toDetailsFields} from '@/services/projectSettingsService';
 import type {Project} from '@/types/project';
 
 beforeEach(() => apiClientMock.mockReset());
@@ -67,5 +67,22 @@ describe('toDetailsFields', () => {
     [{review_keywords: 'x'}],
   ])('refuses a JSONB value of the wrong shape: %j', (values) => {
     expect(toDetailsFields(values as Partial<Project>)).toBeNull();
+  });
+});
+
+describe('deleteProject', () => {
+  it('DELETEs the project route and returns the deleted id', async () => {
+    apiClientMock.mockResolvedValueOnce({id: 'p1'});
+
+    const result = await deleteProject('p1');
+
+    expect(apiClientMock).toHaveBeenCalledWith('/api/v1/projects/p1', {method: 'DELETE'});
+    expect(result).toEqual({ok: true, data: {id: 'p1'}});
+  });
+
+  it('returns ok:false on a rejection (a 403 arrives as an error, not an empty result)', async () => {
+    apiClientMock.mockRejectedValueOnce(new ApiError('FORBIDDEN', 'Manager role required', 403));
+    const result = await deleteProject('p1');
+    expect(result.ok).toBe(false);
   });
 });

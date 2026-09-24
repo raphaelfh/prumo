@@ -18,7 +18,7 @@ frontend/services/extractionInstanceService.ts|extraction_instances:1
 frontend/services/profileService.ts|profiles:2
 frontend/services/projectSettingsService.ts|profiles:1
 frontend/services/projectSettingsService.ts|project_members:5
-frontend/services/projectSettingsService.ts|projects:3
+frontend/services/projectSettingsService.ts|projects:2
 frontend/services/projectsService.ts|articles:1
 frontend/services/projectsService.ts|projects:2
 frontend/services/qaTemplateService.ts|extraction_entity_types:1

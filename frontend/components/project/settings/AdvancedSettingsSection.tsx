@@ -4,6 +4,7 @@
 
 import {useState} from 'react';
 import {useNavigate} from 'react-router';
+import {useQueryClient} from '@tanstack/react-query';
 import {Textarea} from '@/components/ui/textarea';
 import {Button} from '@/components/ui/button';
 import {
@@ -19,6 +20,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import {Trash2} from 'lucide-react';
 import {deleteProject} from '@/services/projectSettingsService';
+import {ApiError} from '@/integrations/api/client';
+import {useAuth} from '@/contexts/AuthContext';
+import {projectsListKey} from '@/hooks/useProjectsQuery';
 import {useMyConnections} from '@/hooks/user/useLlmConnections';
 import {useProjectConnections} from '@/hooks/project/useProjectConnections';
 import {toast} from 'sonner';
@@ -73,6 +77,8 @@ export function AdvancedSettingsSection({
                                         }: AdvancedSettingsSectionProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const {user} = useAuth();
 
   // --- Parsing toggle state ---
   // Derive the current parser type synchronously from the loaded project settings
@@ -110,14 +116,16 @@ export function AdvancedSettingsSection({
 
     if (!result.ok) {
       console.error('Error deleting project:', result.error);
+      if (result.error instanceof ApiError && result.error.status === 403) {
+        toast.error(t('project', 'advancedErrorDeletingMessage'));
+        return;
+      }
       toast.error(`${t('project', 'advancedErrorDeleting')}: ${result.error.message ?? ''}`);
       return;
     }
-    if (!result.data.deleted) {
-      toast.error(t('project', 'advancedErrorDeletingMessage'));
-      return;
-    }
     toast.success(t('project', 'advancedProjectDeleted'));
+    // The hub, the sidebar switcher and the breadcrumb all read this one entry.
+    if (user?.id) void queryClient.invalidateQueries({queryKey: projectsListKey(user.id)});
     navigate('/');
   };
 
