@@ -5,9 +5,9 @@ import json
 
 from sqlalchemy import text
 
-from app.api.mcp.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from app.schemas.mcp_articles import McpArticleDetail, McpArticleList
 from app.utils.opaque_cursor import decode_cursor, encode_cursor
+from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured

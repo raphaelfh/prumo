@@ -14,11 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.errors import McpErrorCode, McpToolError
 from app.api.mcp.server import agent_tool
-from app.api.mcp.untrusted import wrap_untrusted
 from app.schemas.mcp_articles import McpArticleDetail, McpArticleList
 from app.services import article_list_read_service, article_read_service
 from app.services.article_text_block_read_service import get_file_outline
 from app.utils.opaque_cursor import InvalidCursorError
+from app.utils.untrusted import wrap_untrusted
 
 _QUERY_CAP = 200
 _LIMIT_MIN = 1

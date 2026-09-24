@@ -21,9 +21,9 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.mcp.untrusted import wrap_untrusted
 from app.schemas.mcp_search import McpSearchHit, McpSearchResult
 from app.utils.opaque_cursor import decode_cursor, encode_cursor
+from app.utils.untrusted import wrap_untrusted
 
 _PAGE_SIZE = 20
 _SNIPPET_CAP = 400

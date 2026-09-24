@@ -13,9 +13,9 @@ from sqlalchemy import text
 from structlog.testing import capture_logs
 
 from app.api.mcp import server
-from app.api.mcp.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from app.schemas.mcp_articles import McpArticleDetail
 from app.schemas.mcp_search import McpArticlePdfResult, McpSearchResult
+from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
@@ -135,6 +135,7 @@ async def test_signed_url_never_in_span_or_logs(
     assert url not in repr(recorded)
     assert url not in repr(entries)
     assert url not in caplog.text
+    assert len(fake_storage.calls) == 1  # the signed URL really came from the fake adapter
 
     span_kwargs_keys = set(recorded[0][1].keys())
     set_attribute_keys = {k for k, _ in attr_calls}

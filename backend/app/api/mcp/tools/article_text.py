@@ -15,11 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.errors import McpErrorCode, McpToolError
 from app.api.mcp.server import agent_tool
-from app.api.mcp.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from app.schemas.mcp_article_text import McpTextPage, chunk_locator_prefix
 from app.services import article_read_service
 from app.services.article_text_block_read_service import page_text_blocks
 from app.utils.opaque_cursor import InvalidCursorError
+from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 
 # Body budget (spec §5.1): each chunk's text + its locator prefix + its
 # newline. Header, delimiter and trailer lines sit outside this budget.

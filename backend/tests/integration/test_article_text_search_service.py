@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.api.mcp.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from app.services.article_text_search_service import search_project_text
+from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
 
