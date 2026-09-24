@@ -31,6 +31,22 @@ from app.services.pat_service import create_token, resolve_principal
 from tests.integration.conftest import SEED
 
 
+class _FakeStorage:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, int]] = []
+
+    async def get_signed_url(self, bucket: str, path: str, expires_in: int = 3600) -> str:
+        self.calls.append((bucket, path, expires_in))
+        return f"https://storage.test/signed/{path}?token=fake"
+
+
+@pytest.fixture
+def fake_storage(monkeypatch: pytest.MonkeyPatch) -> _FakeStorage:
+    fake = _FakeStorage()
+    monkeypatch.setattr(mcp_session, "storage_factory", lambda: fake)  # restored after the test
+    return fake
+
+
 @pytest.fixture(autouse=True)
 def bind_mcp_session_factory(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
