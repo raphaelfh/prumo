@@ -14,6 +14,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config_validators import validate_linear_team_id
 
+API_VERSION = "0.1.0"
+"""The published API version: ``FastAPI(version=…)``, ``/health``, ``/`` and the MCP server."""
+
 
 class Settings(BaseSettings):
     """
