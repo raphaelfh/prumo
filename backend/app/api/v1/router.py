@@ -24,6 +24,8 @@ from app.api.v1.endpoints import (
     parser_settings,
     project_archive,
     project_connections,
+    project_delete,
+    project_details,
     project_templates,
     section_extraction,
     template_catalogue,
@@ -130,6 +132,18 @@ api_router.include_router(
 
 api_router.include_router(
     project_archive.router,
+    prefix="/projects",
+    tags=["projects"],
+)
+
+api_router.include_router(
+    project_details.router,
+    prefix="/projects",
+    tags=["projects"],
+)
+
+api_router.include_router(
+    project_delete.router,
     prefix="/projects",
     tags=["projects"],
 )

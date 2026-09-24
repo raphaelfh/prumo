@@ -5,6 +5,11 @@ import {MemoryRouter, useLocation, useNavigate} from 'react-router';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('@/lib/copy', () => ({t: (_ns: string, key: string) => key}));
+const hookState = vi.hoisted(() => ({
+  staleFields: [] as string[],
+  loadLatest: vi.fn(),
+  keepMine: vi.fn(),
+}));
 // Stateful: an edit through a section's onChange really flips hasUnsavedChanges.
 vi.mock('@/hooks/useProjectSettings', () => ({
   useProjectSettings: () => {
@@ -15,6 +20,10 @@ vi.mock('@/hooks/useProjectSettings', () => ({
       hasUnsavedChanges: dirty,
       updateProject: () => setDirty(true),
       saveProject: vi.fn(),
+      loadProject: vi.fn(),
+      staleFields: hookState.staleFields,
+      loadLatest: hookState.loadLatest,
+      keepMine: hookState.keepMine,
     };
   },
 }));
@@ -78,7 +87,10 @@ function renderAt(search: string) {
   );
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  hookState.staleFields = [];
+});
 
 describe('ProjectSettings sections', () => {
   it('renders the section named in the URL', () => {
@@ -190,5 +202,28 @@ describe('ProjectSettings unsaved review question', () => {
     await userEvent.click(screen.getByRole('button', {name: 'tabTeam'}));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(screen.getByTestId('section-team')).toBeInTheDocument();
+  });
+});
+
+describe('ProjectSettings stale banner', () => {
+  it('shows no banner while nothing is stale', () => {
+    renderAt('?tab=settings&section=basic');
+    expect(screen.queryByTestId('project-settings-stale-banner')).toBeNull();
+  });
+
+  it('names the contested fields and wires Load latest / Keep mine', async () => {
+    hookState.staleFields = ['name', 'review_keywords'];
+    renderAt('?tab=settings&section=basic');
+
+    const banner = screen.getByTestId('project-settings-stale-banner');
+    expect(banner).toHaveAttribute('role', 'alert');
+    expect(banner).toHaveTextContent('staleBannerMessage');
+    expect(banner).toHaveTextContent('basicProjectNameLabel');
+    expect(banner).toHaveTextContent('advancedCardKeywordsTitle');
+
+    await userEvent.click(within(banner).getByRole('button', {name: 'staleLoadLatest'}));
+    expect(hookState.loadLatest).toHaveBeenCalledTimes(1);
+    await userEvent.click(within(banner).getByRole('button', {name: 'staleKeepMine'}));
+    expect(hookState.keepMine).toHaveBeenCalledTimes(1);
   });
 });
