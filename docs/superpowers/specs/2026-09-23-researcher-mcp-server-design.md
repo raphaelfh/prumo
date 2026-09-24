@@ -249,6 +249,16 @@ agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Mount("/mcp")
   (`security.py:47-50`), and mapping on a detail string would silently
   break on a copy edit. No tool re-implements this check. The rule is
   added to `.claude/rules/backend.md` § Ownership guards.
+- **Where MCP models live.** Tool op models (`AddQuestionOp`,
+  `UpdateQuestionOp`) and every `outputSchema` result model go in
+  `app/schemas/mcp_*.py`: vulture excludes `app/schemas/`
+  (`backend/pyproject.toml:189-190`), and api → schemas is an allowed
+  edge (`scripts/fitness/check_layered_arch.py:52`). Models placed under
+  `app/api/mcp/` would have serialize-only fields flagged by vulture
+  (min_confidence 60), and §8 forbids baselining them. Tests override the
+  `session.py` factories by `monkeypatch.setattr` on the module
+  attribute — no setter functions that only tests call (vulture would
+  flag them).
 - **DB sessions.** Tools and the ASGI wrapper get their sessions from
   `app/api/mcp/session.py`, one factory whose default is
   `AsyncSessionLocal`, one session per tool call. Tests bind the factory
@@ -302,7 +312,12 @@ Migration `0077_personal_access_tokens` (down revision
 `0076_extraction_batches`, the current head). ORM model
 `app/models/personal_access_token.py` (`PersonalAccessToken`), exported
 from `app/models/__init__.py` like `LlmConnection`
-(`app/models/llm_connection.py`). Backend-only
+(`app/models/llm_connection.py`), but declared as
+`PersonalAccessToken(Base, UUIDMixin)` with its own `created_at =
+mapped_column(DateTime(timezone=True), nullable=False,
+server_default=func.now())` — **not** `BaseModel`/`TimestampMixin`, whose
+`updated_at` the table below does not have (`alembic check` would flag
+the drift). Backend-only
 table following the `_deny_all()` pattern of migration 0072
 (`llm_connections`): ENABLE RLS, a `deny_all FOR ALL USING (false)` policy,
 and `REVOKE ALL … FROM authenticated, anon`. Columns are text + CHECK, per
@@ -339,8 +354,8 @@ house style.
   backstop.
 - **`expires_at` is computed in SQL, never in Python.** `pat_service`
   inserts `expires_at = now() + make_interval(days => :n)`. `created_at`
-  takes its `server_default` `now()` (the `func.now()` default of
-  `TimestampMixin`, `app/models/base.py:181-185`), and `now()` is the
+  takes its `server_default` `now()` (declared on the model above, the
+  same `func.now()` form as `app/models/base.py:181-185`), and `now()` is the
   transaction's start time, so both columns read the same clock and
   `expires_at - created_at` is exactly `:n` days. The CHECK therefore
   accepts `expires_in_days = 365` (`<=`). A Python `datetime.now() +
@@ -1577,7 +1592,9 @@ to its own revision, and each REST-contract task regenerates
   rate limits on the shared limiter (`pat:<token_id>`, `mcp401:<ip>`);
   server info and `instructions`; the `@agent_tool` registration
   decorator (§3) and `"@agent_tool"` in `backend/pyproject.toml`
-  `[tool.vulture] ignore_decorators`; fixture `mcp_client` (needs
+  `[tool.vulture] ignore_decorators`; `app/schemas/mcp_*.py` as the home
+  of every MCP op/result model (§3 "Where MCP models live"); fixture
+  `mcp_client` (needs
   `McpPrincipal`) and PAT fixtures `pat_primary_rw`, `pat_primary_read`,
   `pat_reviewer_rw`, `pat_outsider_rw`. Tests: §8 auth (401 cases,
   revoke between calls, `last_used_at` throttle), rate limit (incl.
