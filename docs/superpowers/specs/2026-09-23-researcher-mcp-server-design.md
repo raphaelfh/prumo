@@ -153,7 +153,7 @@ agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Route("/mcp")
   them, the task stops and the orchestrator rules; no silent upgrade.
 - **Mount factory.** `server.py` exposes `build_mcp_asgi() ->
   (ASGIApp, StreamableHTTPSessionManager)`. Each call runs
-  `mcp.streamable_http_app(streamable_http_path="/", stateless_http=True,
+  `mcp.streamable_http_app(streamable_http_path="/mcp", stateless_http=True,
   json_response=True, transport_security=TransportSecuritySettings(
   allowed_hosts=settings.mcp_allowed_hosts,
   allowed_origins=settings.mcp_allowed_origins))`, which builds a **new**
