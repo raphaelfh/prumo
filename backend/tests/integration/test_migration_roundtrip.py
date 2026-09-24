@@ -1328,7 +1328,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0079_agent_actions"
+    expected_head = "0080_article_text_fts"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -1765,3 +1765,26 @@ async def test_migration_0079_agent_actions_roundtrip(
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
     assert await posture() == (True, ["deny_all"], 0)  # re-upgrade restores the REVOKE
+
+
+# --- 0080: article text FTS index -----------------------------------------
+@pytest.mark.asyncio
+async def test_migration_0080_article_text_fts_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    async def has_index() -> bool:
+        found = (
+            await migration_session.execute(
+                text("SELECT to_regclass('public.idx_article_text_blocks_fts') IS NOT NULL")
+            )
+        ).scalar_one()
+        await migration_session.rollback()
+        return bool(found)
+
+    assert await has_index()
+    _run_alembic("downgrade", "0079_agent_actions", database_url=migration_db_url)
+    try:
+        assert not await has_index()
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await has_index()
