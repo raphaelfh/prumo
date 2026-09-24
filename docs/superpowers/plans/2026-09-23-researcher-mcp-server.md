@@ -1180,9 +1180,9 @@ Run each, from `$WT` unless stated:
 - `git -C "$WT" status` → clean after the commit.
 - Then restore the shared DB: `cd "$WT/backend" && uv run alembic downgrade 0076_extraction_batches`.
 
-### Task 4: PAT Settings UI (Integrations → Personal access tokens)
+### Task 4a: PAT Settings UI — create, list, revoke (Integrations → Personal access tokens)
 
-**Context.** Researchers create, list and revoke the personal access tokens (PATs) their AI agents send to `/mcp`, and copy a ready-made client config. Backend routes and their generated types already exist (Task 1). Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §4.5 (UI), §4.7 (states), §8 "Frontend".
+**Context.** Researchers create, list and revoke the personal access tokens (PATs) their AI agents send to `/mcp`. Backend routes and their generated types already exist (Task 1). This task ships the token CRUD group and a bare reveal dialog (secret + copy + warning, no client snippets yet); Task 4b adds the permanent "Connect an AI agent (MCP)" card and upgrades this dialog to reuse its chip selector. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §4.5 (UI), §4.7 (states), §8 "Frontend".
 
 **Rules for this task (restated, all binding):**
 - Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; confirm with `git -C "$WT" status`. Frontend tooling runs from `$WT` (repo root: `package.json`, `vitest.config.ts`); there is no `frontend/package.json` — never `cd frontend && npm …`. The worktree needs its own `node_modules` (`npm ci` in `$WT` if absent; never a symlink).
@@ -1191,7 +1191,7 @@ Run each, from `$WT` unless stated:
 - React Compiler: no `try/finally`, and no `throw` inside `try`, in a component or hook body.
 - Types come from `frontend/types/api/schema.d.ts` (generated; never hand-edited). This task changes no backend contract, so it does not run `npm run generate:api-types`.
 - Buttons use named sizes (`size="sm"`, `IconButton` for icon-only); no `h-*` in a `Button` className (`check_button_scale.py`); never size a `DialogContent` with a className (`check_ui_primitives.py`, use `size`).
-- Load `frontend-development`, `frontend-ux`, `ui-styling` and `web-testing` before coding; run `design-review` on Settings → Integrations before calling it done.
+- Load `frontend-development`, `frontend-ux`, `ui-styling` and `web-testing` before coding.
 - Commits: conventional, ending with a blank line then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 **Files:**
@@ -1208,7 +1208,7 @@ Run each, from `$WT` unless stated:
 
 **Interfaces:**
 - Consumes (Task 1, generated in `schema.d.ts`): routes `GET /api/v1/me/tokens` (list), `POST /api/v1/me/tokens` `{name, scope: "read" | "read_write", expires_in_days: 1..365}` (201; the secret once plus the row), `DELETE /api/v1/me/tokens/{id}` (idempotent revoke). 409 code `TOKEN_LIMIT_REACHED` at 10 active tokens (body `PersonalAccessTokenRefusalResponse`). Task 1's schema names (`app/schemas/personal_access_token.py`): `PersonalAccessTokenRead` (`id, name, token_prefix, scope: "read" | "read_write", status: "active" | "expired" | "revoked", expires_at, last_used_at: string | null, revoked_at: string | null, created_at`), `PersonalAccessTokenCreateRequest` (`name, scope, expires_in_days`), `PersonalAccessTokenCreated` (`{token: PersonalAccessTokenRead, secret: string}`). Every route answers the `ApiResponse` envelope (`apiClient` unwraps `data`).
-- Produces: `getApiBaseUrl(): string` exported from `frontend/integrations/api/client.ts` (the only reader of `VITE_API_URL`); `meKeys.tokens()`; service `fetchMyTokens`, `createMyToken`, `revokeMyToken`, `isTokenLimitError`; hooks `useMyTokens`, `useCreateMyToken`, `useRevokeMyToken`; component `PersonalAccessTokensGroup`.
+- Produces: `getApiBaseUrl(): string` exported from `frontend/integrations/api/client.ts` (the only reader of `VITE_API_URL`); `meKeys.tokens()`; service `fetchMyTokens`, `createMyToken`, `revokeMyToken`, `isTokenLimitError`; hooks `useMyTokens`, `useCreateMyToken`, `useRevokeMyToken`; component `PersonalAccessTokensGroup` (its reveal dialog exposes the secret `CopyBlock` that Task 4b augments); a `CopyBlock({label, code, copyAriaLabel?})` helper defined in this file, which Task 4b extracts to a shared location.
 
 - [ ] **Step 0: Interface check**
 
@@ -1298,7 +1298,9 @@ Run the Step 5 tests → PASS. Commit (service, hooks, keys, two tests): `feat(s
 
 Create `frontend/lib/copy/personalAccessTokens.ts` (`export const personalAccessTokens = {…} as const`) and register it in `frontend/lib/copy/index.ts` (`import {personalAccessTokens} from './personalAccessTokens';` and `personalAccessTokens,` in the `copy` object). Keys and English text:
 
-`groupTitle: 'Personal access tokens'`, `groupHint: 'Let an AI agent read and, with a read-write token, edit your projects through prumo's MCP server.'`, `clientsNote: 'Works with agents that send a header: Claude Code, Cursor, VS Code, Gemini CLI. Web chat apps (claude.ai, ChatGPT) are not supported.'`, `readRecommendation: 'Use a read token unless the agent needs to edit.'`, `listLoading: 'Loading tokens…'`, `listEmpty: 'No tokens yet'`, `listLoadError: "Couldn't load your tokens."`, `retry: 'Retry'`, `createButton: 'Create token'`, `createTitle: 'Create a personal access token'`, `nameLabel: 'Name'`, `namePlaceholder: 'e.g. Claude Code on my laptop'`, `scopeLabel: 'Access'`, `scopeRead: 'Read'`, `scopeReadWrite: 'Read and write'`, `expiryLabel: 'Expires in'`, `expiryDays: '{{n}} days'`, `createSubmit: 'Create'`, `creating: 'Creating…'`, `cancel: 'Cancel'`, `createLimitError: '10 active tokens is the limit — revoke one first'`, `createError: "Couldn't create the token."`, `revealTitle: 'Copy your token now'`, `revealWarning: 'This token will not be shown again. Store it like a password.'`, `copy: 'Copy'`, `copied: 'Copied'`, `copyTokenAria: 'Copy token'`, `revealDone: 'I copied it'`, `snippetsTitle: 'Connect your agent'`, `snippetClaudeCode: 'Claude Code'`, `snippetCursor: 'Cursor (~/.cursor/mcp.json)'`, `snippetVsCode: 'VS Code (.vscode/mcp.json)'`, `snippetGemini: 'Gemini CLI (~/.gemini/settings.json)'`, `expiresOn: 'Expires {{date}}'`, `lastUsed: 'Last used {{when}}'`, `neverUsed: 'Never used'`, `expiredBadge: 'Expired {{date}}'`, `revokedBadge: 'Revoked {{date}}'`, `revokeAria: 'Revoke token'`, `revokeTitle: 'Revoke token?'`, `revokeDescription: '"{{name}}" stops working immediately. Agents using it lose access.'`, `revokeConfirm: 'Revoke'`, `revoking: 'Revoking…'`, `revokeSuccess: 'Token revoked'`, `revokeError: "Couldn't revoke the token."`.
+`groupTitle: 'Personal access tokens'`, `groupHint: 'Let an AI agent read and, with a read-write token, edit your projects through prumo's MCP server.'`, `clientsNote: 'Works with agents that send an Authorization header, such as Claude Code or Cursor. Web chat apps (claude.ai, ChatGPT) are not supported.'`, `readRecommendation: 'Use a read token unless the agent needs to edit.'`, `listLoading: 'Loading tokens…'`, `listEmpty: 'No tokens yet'`, `listLoadError: "Couldn't load your tokens."`, `retry: 'Retry'`, `createButton: 'Create token'`, `createTitle: 'Create a personal access token'`, `nameLabel: 'Name'`, `namePlaceholder: 'e.g. Claude Code on my laptop'`, `scopeLabel: 'Access'`, `scopeRead: 'Read'`, `scopeReadWrite: 'Read and write'`, `expiryLabel: 'Expires in'`, `expiryDays: '{{n}} days'`, `createSubmit: 'Create'`, `creating: 'Creating…'`, `cancel: 'Cancel'`, `createLimitError: '10 active tokens is the limit — revoke one first'`, `createError: "Couldn't create the token."`, `revealTitle: 'Copy your token now'`, `revealWarning: 'This token will not be shown again. Store it like a password.'`, `copy: 'Copy'`, `copied: 'Copied'`, `copyTokenAria: 'Copy token'`, `revealDone: 'I copied it'`, `expiresOn: 'Expires {{date}}'`, `lastUsed: 'Last used {{when}}'`, `neverUsed: 'Never used'`, `expiredBadge: 'Expired {{date}}'`, `revokedBadge: 'Revoked {{date}}'`, `revokeAria: 'Revoke token'`, `revokeTitle: 'Revoke token?'`, `revokeDescription: '"{{name}}" stops working immediately. Agents using it lose access.'`, `revokeConfirm: 'Revoke'`, `revoking: 'Revoking…'`, `revokeSuccess: 'Token revoked'`, `revokeError: "Couldn't revoke the token."`.
+
+(Task 4b adds the "Connect an AI agent" card's keys to this same file — do not create a second copy file for it.)
 
 - [ ] **Step 8: Component — failing tests (every §4.7 state)**
 
@@ -1309,7 +1311,7 @@ Create `frontend/test/components/PersonalAccessTokensGroup.test.tsx`. Mock the s
 4. rows: ACTIVE shows name, `prumo_pat_abc123…`, `neverUsed`, and a `revokeAria` button; EXPIRED and REVOKED rows carry `data-muted="true"`, show `Expired 1/2/2026` / `Revoked 2/3/2026` (`toLocaleDateString('en-US')`), and have no `revokeAria` button inside the row (`within(row)`).
 5. create at cap: `createMyToken` → `{ok: false, error: new ApiError('TOKEN_LIMIT_REACHED', 'limit', 409)}` → inline `createLimitError` inside the still-open dialog (`getByRole('dialog')`).
 6. create 422/other: `new ApiError('VALIDATION_ERROR', 'name: too long', 422)` → inline `name: too long`; dialog open.
-7. reveal: `createMyToken` → `{ok: true, data: {secret: 'prumo_pat_SECRET', token: ACTIVE}}` → dialog `revealTitle` shows `prumo_pat_SECRET`, `revealWarning`, four snippet headings, and the Claude Code snippet text `claude mcp add --transport http prumo https://api.test/mcp --header "Authorization: Bearer prumo_pat_SECRET"`; pressing Escape keeps it open; clicking `revealDone` closes it and `queryByText('prumo_pat_SECRET')` is null, and (keep the test's `QueryClient` in a variable) `await waitFor(() => expect(JSON.stringify(queryClient.getMutationCache().getAll().map((m) => m.state.data))).not.toContain('prumo_pat_SECRET'))` — the secret leaves the MutationCache too.
+7. reveal: `createMyToken` → `{ok: true, data: {secret: 'prumo_pat_SECRET', token: ACTIVE}}` → dialog `revealTitle` shows `prumo_pat_SECRET`, `revealWarning`; pressing Escape keeps it open; clicking `revealDone` closes it and `queryByText('prumo_pat_SECRET')` is null, and (keep the test's `QueryClient` in a variable) `await waitFor(() => expect(JSON.stringify(queryClient.getMutationCache().getAll().map((m) => m.state.data))).not.toContain('prumo_pat_SECRET'))` — the secret leaves the MutationCache too. (Task 4b extends this case with the chip selector; it does not exist yet.)
 8. revoke: click `revokeAria` → alertdialog whose description contains the token name; `revokeMyToken` pending (unresolved promise) → confirm button shows `revoking` and is disabled; resolve → `revokeMyToken` called with the id and `toast.success(revokeSuccess)`.
 9. revoke error: `{ok: false, error: new Error('gone')}` → `toast.error('gone')`; row still rendered.
 
@@ -1321,30 +1323,11 @@ Run: `npx vitest run frontend/test/components/PersonalAccessTokensGroup.test.tsx
 
 `frontend/components/user/PersonalAccessTokensGroup.tsx` renders one `SettingsGroup` (title `groupTitle`, hint `groupHint`) as its root. Structure:
 
-```tsx
-const EXPIRY_DAYS = [30, 90, 365] as const; // default 90
-
-function mcpSnippets(baseUrl: string, secret: string) {
-  const url = `${baseUrl}/mcp`;
-  const headers = {Authorization: `Bearer ${secret}`};
-  return [
-    {label: t('personalAccessTokens', 'snippetClaudeCode'),
-     code: `claude mcp add --transport http prumo ${url} --header "Authorization: Bearer ${secret}"`},
-    {label: t('personalAccessTokens', 'snippetCursor'),
-     code: JSON.stringify({mcpServers: {prumo: {url, headers}}}, null, 2)},
-    {label: t('personalAccessTokens', 'snippetVsCode'),
-     code: JSON.stringify({servers: {prumo: {type: 'http', url, headers}}}, null, 2)},
-    {label: t('personalAccessTokens', 'snippetGemini'),
-     code: JSON.stringify({mcpServers: {prumo: {httpUrl: url, headers}}}, null, 2)},
-  ];
-}
-```
-
-- `CopyBlock({label, code})`: heading + `<pre className="…font-mono text-[12px]…">` + a `Button size="sm" variant="ghost"` using `useCopyToClipboard()` (`copied` ? `copied` : `copy`). One instance per snippet and one for the secret (aria `copyTokenAria`).
+- `CopyBlock({label, code, copyAriaLabel})`: heading + `<pre className="…font-mono text-[12px]…">` + a `Button size="sm" variant="ghost"` using `useCopyToClipboard()` (`copied` ? `copied` : `copy`), aria label `copyAriaLabel ?? copy`. Exported (not just local) — Task 4b imports it before extracting it to a shared file.
 - `TokenRow({row})`: `<li data-muted={row.status !== 'active'} className={cn('flex items-center gap-3 rounded-md px-2 py-1 text-[13px]', row.status !== 'active' && 'text-muted-foreground opacity-70')}>` with name, `<code>{row.token_prefix}…</code>`, scope `Badge` (`scopeRead`/`scopeReadWrite`), then: active → `expiresOn` + (`last_used_at` ? `lastUsed` with `relativeTime(row.last_used_at)` from `@/lib/relative-time` : `neverUsed`) + revoke; expired → `Badge variant="outline"` `expiredBadge` with the `expires_at` date; revoked → the `revokedBadge` with `revoked_at`. Dates: `new Date(iso).toLocaleDateString('en-US')`.
 - Revoke: controlled `AlertDialog` (`open` state) with `IconButton label={revokeAria} icon={<Trash2 strokeWidth={1.5}/>}` trigger; description `revokeDescription` with `{{name}}` replaced; the action button `onClick={(e) => { e.preventDefault(); revoke.mutate(row.id, {onSuccess: () => { toast.success(…revokeSuccess); setOpen(false); }, onError: (error) => { toast.error(error.message || t('personalAccessTokens', 'revokeError')); setOpen(false); }}); }}`, `disabled={revoke.isPending}`, label `revoking` while pending.
-- Create (`const create = useCreateMyToken()`): `AppDialog` (`size="sm"`, `title={createTitle}`, `showFooter={false}` — `AppDialog` has no confirm-disabled prop) holding a `<form onSubmit>` with `Input` (name, `maxLength={80}`), a scope `Select` (`read` default), an expiry `Select` over `EXPIRY_DAYS` (`expiryDays`), and a `SettingsActions` row: `Button type="submit" size="sm"` (`creating` while pending, `createSubmit` otherwise; `disabled` while pending or the trimmed name is empty) and `Button type="button" size="sm" variant="ghost"` `cancel`. On error: `setFormError(isTokenLimitError(error) ? t('personalAccessTokens', 'createLimitError') : error.message || t('personalAccessTokens', 'createError'))` rendered as `<p role="alert" className="text-[13px] text-destructive">`; the dialog stays open. On success: close it, reset the form, `setSecret(data.secret)`.
-- Reveal: `Dialog open={secret !== null} onOpenChange={() => {}}` with `DialogContent size="md" showCloseButton={false} onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}`: `revealTitle`, `revealWarning`, `CopyBlock` for the secret, `snippetsTitle`, the four `CopyBlock`s from `mcpSnippets(getApiBaseUrl(), secret)`, footer `Button size="sm"` `revealDone` → `setSecret(null)` and `create.reset()` (with the hook's `gcTime: 0` this removes the mutation, and its `data.secret`, from the MutationCache). After close the secret is in neither component state nor the query cache; only `token_prefix` is ever shown.
+- Create (`const create = useCreateMyToken()`): `AppDialog` (`size="sm"`, `title={createTitle}`, `showFooter={false}` — `AppDialog` has no confirm-disabled prop) holding a `<form onSubmit>` with `Input` (name, `maxLength={80}`), a scope `Select` (`read` default), an expiry `Select` over `[30, 90, 365] as const` (`expiryDays`, default 90), and a `SettingsActions` row: `Button type="submit" size="sm"` (`creating` while pending, `createSubmit` otherwise; `disabled` while pending or the trimmed name is empty) and `Button type="button" size="sm" variant="ghost"` `cancel`. On error: `setFormError(isTokenLimitError(error) ? t('personalAccessTokens', 'createLimitError') : error.message || t('personalAccessTokens', 'createError'))` rendered as `<p role="alert" className="text-[13px] text-destructive">`; the dialog stays open. On success: close it, reset the form, `setSecret(data.secret)`.
+- Reveal: `Dialog open={secret !== null} onOpenChange={() => {}}` with `DialogContent size="md" showCloseButton={false} onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}`: `revealTitle`, `revealWarning`, `CopyBlock` for the secret (aria `copyTokenAria`), footer `Button size="sm"` `revealDone` → `setSecret(null)` and `create.reset()` (with the hook's `gcTime: 0` this removes the mutation, and its `data.secret`, from the MutationCache). After close the secret is in neither component state nor the query cache; only `token_prefix` is ever shown. (No client snippets here yet — Task 4b inserts the chip selector between the secret `CopyBlock` and the footer button.)
 - Body, in order: `clientsNote` and `readRecommendation` as muted `text-[13px]` lines; `isPending` → `<ul aria-label={listLoading}>` with two `Skeleton className="h-8 w-full"` rows; `isError` → error line + `retry` (`refetch()`); empty → `listEmpty` beside the create button; rows → `<ul role="list">`. The create button (`Button size="sm" variant="ghost"`, `Plus` icon) is rendered in every state and `disabled={tokens.isPending}` only.
 
 Add `<PersonalAccessTokensGroup/>` after `<ZoteroIntegrationSection/>` in `IntegrationsSection.tsx` and extend its docstring (three groups).
@@ -1363,7 +1346,159 @@ From `$WT`:
 - `npm run lint`, `npm run typecheck` → clean.
 - `npm run deadcode` and `npm run deadcode:production` → zero findings.
 - `python3 scripts/fitness/check_copy_keys.py`, `python3 scripts/fitness/check_frontend_data_path.py`, `python3 scripts/fitness/check_react_query_keys.py`, then `bash scripts/fitness/run_all.sh` → green.
-- `design-review` on Settings → Integrations (desktop and narrow width, light and dark): empty, list with the three row statuses, create dialog with the cap error, reveal dialog.
+- `git -C "$WT" status` → clean.
+
+### Task 4b: MCP client configuration card + reveal-dialog reuse
+
+**Context.** Product decision (2026-09-24, spec §4.5): a permanent, Postiz-style "Connect an AI agent (MCP)" card in Settings → Integrations, always visible whether or not the researcher has created a token, with a six-client chip row (Claude Code, Cursor, VS Code / Copilot, Gemini CLI, Codex, Windsurf). Selecting a chip shows that client's one-line instruction and config snippet with a Copy button. The one-time token-reveal dialog (Task 4a, `PersonalAccessTokensGroup.tsx`) reuses the same chip selector with the real secret. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §4.5 (client formats, non-goals), §4.7 (states), §8 "Frontend".
+
+**Rules for this task (restated, all binding):**
+- Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; confirm with `git -C "$WT" status`. Frontend tooling runs from `$WT` (repo root); never `cd frontend && npm …`.
+- English only. All user-visible text through `t(namespace, key)` from `@/lib/copy`, added to `frontend/lib/copy/personalAccessTokens.ts` (Task 4a's file — no second copy module); every new key referenced (`check_copy_keys.py`); `npx knip` / `npx knip --production` at zero. The snippet **code** itself (CLI command, JSON, TOML) is generated data, not copy, and is not translated.
+- Data path: component → hook → service → `apiClient` for anything that talks to the backend; `clientSnippets.ts` is a pure, backend-free module (no `apiClient`, no I/O) — it only formats strings from `{url, token}`, so it is exempt from the component→hook→service chain, same as any other `frontend/lib/*` pure helper. No `fetch()`, no `supabase.from(...)`, no `import.meta.env.VITE_API_URL` outside `frontend/integrations/`.
+- React Compiler: no `try/finally`, no `throw` inside `try`, in a component or hook body.
+- Buttons use named sizes; no `h-*` in a `Button` className (`check_button_scale.py`).
+- The chip row must be keyboard-navigable: use `ToggleGroup`/`ToggleGroupItem` from `@/components/ui/toggle-group` (`type="single"`, roving tabindex built in — the same primitive `EngineGear.tsx` uses for its engine picker), not a custom `<div>` row of buttons.
+- Load `frontend-development`, `frontend-ux`, `ui-styling` and `web-testing` before coding; run `design-review` on Settings → Integrations before calling the pair of tasks done.
+- Commits: conventional, ending with a blank line then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+
+**Files:**
+- Create: `frontend/lib/mcp/clientSnippets.ts`
+- Create test: `frontend/lib/mcp/__tests__/clientSnippets.test.ts`
+- Create: `frontend/components/user/CopyBlock.tsx` (extracted out of `PersonalAccessTokensGroup.tsx`, where Task 4a defined it)
+- Modify: `frontend/components/user/PersonalAccessTokensGroup.tsx` (import `CopyBlock` instead of defining it; reveal dialog gains the chip selector)
+- Create: `frontend/components/user/McpClientSnippetSelector.tsx`
+- Create: `frontend/components/user/McpClientConfigCard.tsx`
+- Modify: `frontend/components/user/IntegrationsSection.tsx` (render the card after `PersonalAccessTokensGroup`; docstring → four groups)
+- Modify: `frontend/lib/copy/personalAccessTokens.ts` (add the card/chip keys; no new copy file, no `copy/index.ts` change — already registered)
+- Create test: `frontend/test/components/McpClientConfigCard.test.tsx`
+- Modify test: `frontend/test/components/PersonalAccessTokensGroup.test.tsx` (case 7 gains the chip selector)
+- Modify test: `frontend/test/components/IntegrationsSection.test.tsx` (four groups)
+
+**Interfaces:**
+- Consumes (Task 4a): `getApiBaseUrl()` (`@/integrations/api/client`), `t()` and `frontend/lib/copy/personalAccessTokens.ts`, `useCopyToClipboard()`, the `CopyBlock` component being extracted here, and `PersonalAccessTokensGroup`'s reveal-dialog structure (secret `CopyBlock` + `revealDone` footer button). Shadcn `ToggleGroup`/`ToggleGroupItem` (`@/components/ui/toggle-group`).
+- Produces: `ClientId` union and `buildClientSnippet(client: ClientId, {url, token}: {url: string; token: string}): string`, plus `TOKEN_PLACEHOLDER = '<YOUR_PRUMO_TOKEN>'`, all from `frontend/lib/mcp/clientSnippets.ts`; `McpClientSnippetSelector({token}: {token: string})` (computes `url` itself via `getApiBaseUrl()`); `McpClientConfigCard` (no props — always renders, feeds `McpClientSnippetSelector` the placeholder token).
+
+- [ ] **Step 1: `clientSnippets.ts` — failing test**
+
+Create `frontend/lib/mcp/__tests__/clientSnippets.test.ts`. Fix `{url: 'https://api.test/mcp', token: 'prumo_pat_SECRET'}` and assert `buildClientSnippet` per `ClientId`, against the verified shapes in spec §4.5:
+- `'claude-code'` → `'claude mcp add --transport http prumo https://api.test/mcp --header "Authorization: Bearer prumo_pat_SECRET"'`.
+- `'cursor'` → `JSON.parse(result)` deep-equals `{mcpServers: {prumo: {url: 'https://api.test/mcp', headers: {Authorization: 'Bearer prumo_pat_SECRET'}}}}`.
+- `'vscode'` → parses to `{servers: {prumo: {type: 'http', url: 'https://api.test/mcp', headers: {Authorization: 'Bearer prumo_pat_SECRET'}}}}`.
+- `'gemini-cli'` → parses to `{mcpServers: {prumo: {httpUrl: 'https://api.test/mcp', headers: {Authorization: 'Bearer prumo_pat_SECRET'}}}}`.
+- `'codex'` → contains `'[mcp_servers.prumo]'`, `'url = "https://api.test/mcp"'`, `'[mcp_servers.prumo.http_headers]'`, `'Authorization = "Bearer prumo_pat_SECRET"'`.
+- `'windsurf'` → parses to `{mcpServers: {prumo: {serverUrl: 'https://api.test/mcp', headers: {Authorization: 'Bearer prumo_pat_SECRET'}}}}`.
+
+Also assert `TOKEN_PLACEHOLDER === '<YOUR_PRUMO_TOKEN>'`.
+
+Run: `npx vitest run frontend/lib/mcp/__tests__/clientSnippets.test.ts` → FAIL (module missing).
+
+- [ ] **Step 2: Implement `clientSnippets.ts`**
+
+```ts
+export type ClientId = 'claude-code' | 'cursor' | 'vscode' | 'gemini-cli' | 'codex' | 'windsurf';
+
+export const CLIENT_IDS: readonly ClientId[] = ['claude-code', 'cursor', 'vscode', 'gemini-cli', 'codex', 'windsurf'] as const;
+
+/** Shown in the permanent card, where there is no real secret yet. */
+export const TOKEN_PLACEHOLDER = '<YOUR_PRUMO_TOKEN>';
+
+/** One config snippet per client, verified against each vendor's current docs (spec §4.5). Not translated: syntax is language-independent. */
+export function buildClientSnippet(client: ClientId, {url, token}: {url: string; token: string}): string {
+  const headers = {Authorization: `Bearer ${token}`};
+  switch (client) {
+    case 'claude-code':
+      return `claude mcp add --transport http prumo ${url} --header "Authorization: Bearer ${token}"`;
+    case 'cursor':
+      return JSON.stringify({mcpServers: {prumo: {url, headers}}}, null, 2);
+    case 'vscode':
+      return JSON.stringify({servers: {prumo: {type: 'http', url, headers}}}, null, 2);
+    case 'gemini-cli':
+      return JSON.stringify({mcpServers: {prumo: {httpUrl: url, headers}}}, null, 2);
+    case 'codex':
+      return `[mcp_servers.prumo]\nurl = "${url}"\n\n[mcp_servers.prumo.http_headers]\nAuthorization = "Bearer ${token}"`;
+    case 'windsurf':
+      return JSON.stringify({mcpServers: {prumo: {serverUrl: url, headers}}}, null, 2);
+  }
+}
+```
+
+Run the Step 1 test → PASS. Commit: `git -C "$WT" add frontend/lib/mcp/clientSnippets.ts frontend/lib/mcp/__tests__/clientSnippets.test.ts` then `git -C "$WT" commit -m "feat(settings): add per-client MCP config snippet builder" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
+
+- [ ] **Step 3: Copy keys**
+
+Add to `frontend/lib/copy/personalAccessTokens.ts` (same `as const` object Task 4a created): `connectTitle: 'Connect an AI agent (MCP)'`, `connectHint: 'Pick your agent for a ready-to-paste config.'`, `docsLink: 'Docs'`, `chipClaudeCode: 'Claude Code'`, `chipCursor: 'Cursor'`, `chipVsCode: 'VS Code / Copilot'`, `chipGeminiCli: 'Gemini CLI'`, `chipCodex: 'Codex'`, `chipWindsurf: 'Windsurf'`, `instructionClaudeCode: 'Run this in your terminal.'`, `instructionCursor: 'In Cursor, open Settings > MCP > Add, or edit ~/.cursor/mcp.json directly.'`, `instructionVsCode: 'In VS Code, run "MCP: Add Server" from the Command Palette, or edit .vscode/mcp.json directly.'`, `instructionGeminiCli: 'Add this to ~/.gemini/settings.json, or run "gemini mcp add" with these values.'`, `instructionCodex: 'Add this to ~/.codex/config.toml.'`, `instructionWindsurf: 'In Windsurf, open Cascade > MCP Servers > Add, or edit ~/.codeium/windsurf/mcp_config.json directly.'`.
+
+- [ ] **Step 4: Extract `CopyBlock` — failing test, then move**
+
+Create `frontend/test/components/CopyBlock.test.tsx`: renders the label and `<pre>` with `code`; clicking the copy button calls `navigator.clipboard.writeText(code)` (mock `useCopyToClipboard` the way `PersonalAccessTokensGroup.test.tsx` exercises the secret's copy button) and shows `copied` text for `resetMs`; the button's `aria-label` defaults to `t('personalAccessTokens', 'copy')` and takes `copyAriaLabel` when given.
+
+Run it against the not-yet-moved code → FAIL (no `frontend/components/user/CopyBlock.tsx`).
+
+Move the `CopyBlock` function out of `PersonalAccessTokensGroup.tsx` verbatim into `frontend/components/user/CopyBlock.tsx` (named export, same props), and replace its definition in `PersonalAccessTokensGroup.tsx` with `import {CopyBlock} from '@/components/user/CopyBlock';`. Run `npx vitest run frontend/test/components/CopyBlock.test.tsx frontend/test/components/PersonalAccessTokensGroup.test.tsx` → both PASS (the existing reveal-dialog secret case still passes unchanged). Commit: `refactor(settings): extract CopyBlock for reuse by the MCP client selector`.
+
+- [ ] **Step 5: `McpClientSnippetSelector` — failing test**
+
+Create `frontend/test/components/McpClientSnippetSelector.test.tsx`. Render `<McpClientSnippetSelector token="prumo_pat_SECRET"/>` with `vi.stubEnv('VITE_API_URL', 'https://api.test')`. Assert: six `ToggleGroupItem`s with the six `chip*` labels; `'claude-code'` selected by default, showing `instructionClaudeCode` and a `<pre>` containing `'claude mcp add --transport http prumo https://api.test/mcp --header "Authorization: Bearer prumo_pat_SECRET"'`; clicking the `chipCursor` chip switches the instruction to `instructionCursor` and the snippet to the Cursor JSON (`JSON.parse` the `<pre>` text and deep-equal); the visible snippet's Copy button copies exactly that client's `buildClientSnippet` output (spy `useCopyToClipboard`'s `copy`).
+
+Run: `npx vitest run frontend/test/components/McpClientSnippetSelector.test.tsx` → FAIL (module missing).
+
+- [ ] **Step 6: Implement `McpClientSnippetSelector`**
+
+`frontend/components/user/McpClientSnippetSelector.tsx`:
+
+```tsx
+const INSTRUCTION_KEY: Record<ClientId, string> = {
+  'claude-code': 'instructionClaudeCode', cursor: 'instructionCursor', vscode: 'instructionVsCode',
+  'gemini-cli': 'instructionGeminiCli', codex: 'instructionCodex', windsurf: 'instructionWindsurf',
+};
+const CHIP_KEY: Record<ClientId, string> = {
+  'claude-code': 'chipClaudeCode', cursor: 'chipCursor', vscode: 'chipVsCode',
+  'gemini-cli': 'chipGeminiCli', codex: 'chipCodex', windsurf: 'chipWindsurf',
+};
+```
+
+`useState<ClientId>('claude-code')`; `<ToggleGroup type="single" value={client} onValueChange={(v) => v && setClient(v as ClientId)}>` with one `ToggleGroupItem value={id}` per `CLIENT_IDS`, label `t('personalAccessTokens', CHIP_KEY[id])`; below it a muted `text-[13px]` line `t('personalAccessTokens', INSTRUCTION_KEY[client])`; then `<CopyBlock label={t('personalAccessTokens', CHIP_KEY[client])} code={buildClientSnippet(client, {url: `${getApiBaseUrl()}/mcp`, token})}/>`.
+
+Run the Step 5 test → PASS. Commit: `git -C "$WT" add frontend/components/user/McpClientSnippetSelector.tsx frontend/test/components/McpClientSnippetSelector.test.tsx frontend/lib/copy/personalAccessTokens.ts` then `git -C "$WT" commit -m "feat(settings): add the MCP client chip selector" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
+
+- [ ] **Step 7: `McpClientConfigCard` — failing test**
+
+Create `frontend/test/components/McpClientConfigCard.test.tsx`. Render `<McpClientConfigCard/>` (no provider needed beyond what `McpClientSnippetSelector` requires). Assert: `connectTitle` heading and `connectHint` text always present; a `docsLink` link with `href` `'https://github.com/raphaelfh/prumo/blob/dev/docs/how-to/connect-an-ai-agent.md'`, `target="_blank"`, `rel="noopener noreferrer"`; the default (`claude-code`) snippet contains `TOKEN_PLACEHOLDER` (`'<YOUR_PRUMO_TOKEN>'`), never a real secret.
+
+Run: `npx vitest run frontend/test/components/McpClientConfigCard.test.tsx` → FAIL (module missing).
+
+- [ ] **Step 8: Implement `McpClientConfigCard`**
+
+`frontend/components/user/McpClientConfigCard.tsx`: one `SettingsGroup` (title `connectTitle`, hint `connectHint`) whose header row also carries `<a href="https://github.com/raphaelfh/prumo/blob/dev/docs/how-to/connect-an-ai-agent.md" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 text-[12px] text-primary hover:underline">{t('personalAccessTokens', 'docsLink')}<ExternalLink className="h-3 w-3" strokeWidth={1.5}/></a>` (same pattern as `AiConnectionsSection.tsx`'s docs link), body `<McpClientSnippetSelector token={TOKEN_PLACEHOLDER}/>`.
+
+Add `<McpClientConfigCard/>` after `<PersonalAccessTokensGroup/>` in `IntegrationsSection.tsx`; extend its docstring to "four groups".
+
+Run the Step 7 test → PASS. Commit: `git -C "$WT" add frontend/components/user/McpClientConfigCard.tsx frontend/test/components/McpClientConfigCard.test.tsx frontend/components/user/IntegrationsSection.tsx` then `git -C "$WT" commit -m "feat(settings): add the permanent Connect an AI agent card" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
+
+- [ ] **Step 9: Wire the card into `IntegrationsSection.test.tsx` — update**
+
+Update `frontend/test/components/IntegrationsSection.test.tsx`: the body now holds exactly **four** groups (`getAllByRole('heading', {level: 2})` length 4); the fourth's heading is `t('personalAccessTokens', 'connectTitle')`.
+
+Run: `npx vitest run frontend/test/components/IntegrationsSection.test.tsx` → PASS (the component already renders the card from Step 8; this step only updates the assertion). Commit: `git -C "$WT" add frontend/test/components/IntegrationsSection.test.tsx` then `git -C "$WT" commit -m "test(settings): expect four Integrations groups with the MCP card" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
+
+- [ ] **Step 10: Reveal-dialog reuse — failing test, then implement**
+
+Update `frontend/test/components/PersonalAccessTokensGroup.test.tsx` case 7 (reveal): after `revealWarning`, assert the same six `chip*` labels are present, the default snippet contains the real secret `'prumo_pat_SECRET'` (never `TOKEN_PLACEHOLDER`), and clicking `chipCursor` swaps in the Cursor JSON built from that same secret. Run → FAIL (selector not in the dialog yet).
+
+In `PersonalAccessTokensGroup.tsx`'s reveal `DialogContent`, insert `<McpClientSnippetSelector token={secret}/>` between the secret `CopyBlock` and the `revealDone` footer button. Run the Step 8 (4a) and this updated case → PASS; re-run the full `PersonalAccessTokensGroup.test.tsx` file → PASS (no other case regresses; `secret` is still cleared to `null` and the mutation reset on `revealDone`, so the selector unmounts with it).
+
+Commit: `git -C "$WT" add frontend/components/user/PersonalAccessTokensGroup.tsx frontend/test/components/PersonalAccessTokensGroup.test.tsx` then `git -C "$WT" commit -m "feat(settings): reuse the MCP client selector in the token reveal dialog" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
+
+- [ ] **Step 11: Verify**
+
+From `$WT`:
+- `npm run test:run -- frontend/lib/mcp/__tests__ frontend/test/components/CopyBlock.test.tsx frontend/test/components/McpClientSnippetSelector.test.tsx frontend/test/components/McpClientConfigCard.test.tsx frontend/test/components/PersonalAccessTokensGroup.test.tsx frontend/test/components/IntegrationsSection.test.tsx` → PASS.
+- `npm run test:run` → whole suite PASS.
+- `npm run lint`, `npm run typecheck` → clean.
+- `npm run deadcode` and `npm run deadcode:production` → zero findings.
+- `python3 scripts/fitness/check_copy_keys.py`, `python3 scripts/fitness/check_frontend_data_path.py`, `python3 scripts/fitness/check_react_query_keys.py`, then `bash scripts/fitness/run_all.sh` → green.
+- `design-review` on Settings → Integrations (desktop and narrow width, light and dark): empty token list with the connect card, token list with the three row statuses, create dialog with the cap error, reveal dialog with the chip selector.
 - `git -C "$WT" status` → clean.
 
 ### Task 5a: Project details schema, service and `PATCH /projects/{id}/details` (backend)
@@ -3702,7 +3837,7 @@ Expected: all green; zero knip findings; contract regeneration is a no-op.
 - Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec` (branch `feat/researcher-mcp-server`). Absolute paths; `git -C "$WT" …`; confirm with `git -C "$WT" status`. English only.
 - Every file under `docs/` carries YAML frontmatter (`status`, `last_reviewed`, `owner: '@raphaelfh'`); how-to status values: `stable` · `draft` · `deprecated`. Docs CI runs markdownlint (`.github/markdownlint.json`: atx headings, dash lists, fenced code), cspell (custom words in `.github/cspell-words.txt`), lychee link check, frontmatter and staleness checks.
 - Load `writing-for-agents` before editing `.claude/rules/backend.md`. Add only what is not already there: Task 6b added `article_read_service.owned_article_file` and Task 10a `template_field_service.owned_field`; Tasks 1/2b added no rules entry, so `pat_service.owned_token` and the choke-point bullet are this task's (grep first, never duplicate).
-- Facts in the docs must match the shipped code: take tool names from `backend/app/api/mcp/tools/*.py`, limits from `app/api/mcp` and `pat_service`, snippets from the Task 4 component/copy (`frontend/components/user/PersonalAccessTokensGroup.tsx`, `frontend/lib/copy/personalAccessTokens.ts`). No secret or real token in any example.
+- Facts in the docs must match the shipped code: take tool names from `backend/app/api/mcp/tools/*.py`, limits from `app/api/mcp` and `pat_service`, snippets from the Task 4a/4b component/copy (`frontend/components/user/McpClientConfigCard.tsx`, `frontend/components/user/McpClientSnippetSelector.tsx`, `frontend/lib/mcp/clientSnippets.ts`, `frontend/lib/copy/personalAccessTokens.ts`). No secret or real token in any example.
 - The docstring fix is its own `refactor(templates): …` commit (AGENTS.md: orphans outside the task go in a sibling refactor commit).
 
 **Files:**
@@ -3727,7 +3862,7 @@ Expected: the 11 tools, both settings, `owned_token`; note which rules/deploymen
 Frontmatter `status: stable`, today's `last_reviewed`, `owner: '@raphaelfh'`. Sections (dash lists, fenced code with a language tag):
 1. `# Connect an AI agent to prumo` — one paragraph: prumo serves a remote MCP server at `<api-url>/mcp`; header-capable agents (Claude Code, Cursor, VS Code, Gemini CLI) connect with a personal access token; web chat apps (claude.ai connectors, ChatGPT) need OAuth and are not supported.
 2. `## Create a token` — Settings → Integrations → Personal access tokens; name, scope (`read`, or `read_write` for edits — recommend `read` unless edits are needed), expiry 1–365 days; the secret is shown once; at most 10 active tokens; revoke from the same list (expired/revoked rows stay listed with their badge).
-3. `## Add prumo to your agent` — the four snippets exactly as the Settings dialog renders them, with `<api-url>` and `<token>` placeholders: Claude Code `claude mcp add --transport http prumo <api-url>/mcp --header "Authorization: Bearer <token>"`; Cursor `mcp.json` with `mcpServers.prumo.url` + `headers`; VS Code `.vscode/mcp.json` with `servers.prumo` (`type: "http"`, `url`, `headers`); Gemini CLI `settings.json` with `mcpServers.prumo.httpUrl` + `headers`. Say the dialog fills `<api-url>` in.
+3. `## Add prumo to your agent` — the six snippets exactly as the "Connect an AI agent (MCP)" card's chips render them (`buildClientSnippet` in `frontend/lib/mcp/clientSnippets.ts`), with `<api-url>` and `<token>` placeholders: Claude Code `claude mcp add --transport http prumo <api-url>/mcp --header "Authorization: Bearer <token>"`; Cursor `~/.cursor/mcp.json` with `mcpServers.prumo.url` + `headers`; VS Code / Copilot `.vscode/mcp.json` with `servers.prumo` (`type: "http"`, `url`, `headers`); Gemini CLI `~/.gemini/settings.json` with `mcpServers.prumo.httpUrl` + `headers`; Codex `~/.codex/config.toml` with `[mcp_servers.prumo]` `url` and a `[mcp_servers.prumo.http_headers]` `Authorization` line; Windsurf `~/.codeium/windsurf/mcp_config.json` with `mcpServers.prumo.serverUrl` + `headers`. Say the card fills `<api-url>` in and the token appears only after the researcher picks their real secret from the reveal dialog or their own token row.
 4. `## What the agent can do` — table of the 9 read tools (one line each: what it returns) and the 2 write tools; rules the agent sees: cite article title + page/block locator (`p4·b123`), article text is untrusted content, text is paged, blind review hides peers' in-flight values (the result says `peer_values_hidden`, never "no one extracted").
 5. `## What edits look like` — `update_project_details`: 11 descriptive fields only, needs the values it last read (`expected`), Claude Code asks you before each call, a changed field returns `STALE_VALUE`; `edit_template_draft`: add a question or reword one, saved as an **unpublished draft** that reviewers and AI extraction do not see until a manager clicks Publish; the Configuration tab shows "includes edits via AI agent · <token name>". Every applied or refused edit is recorded.
 6. `## What the agent cannot do` — publish, discard or delete; move/delete questions, change types/options, edit sections; edit PICOT or blind-review visibility; write extraction values or start AI runs; upload PDFs.

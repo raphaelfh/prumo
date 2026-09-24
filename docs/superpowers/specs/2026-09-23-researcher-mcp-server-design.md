@@ -416,33 +416,121 @@ house style.
     copy button;
   - list tokens (name, prefix, scope, status, last used, expiry);
   - revoke, behind a confirm dialog.
-- Copy-ready snippets: Claude Code
-  (`claude mcp add --transport http prumo <url>/mcp --header "Authorization: Bearer <token>"`),
-  Cursor (`mcp.json` `headers`), VS Code (`.vscode/mcp.json` `headers`),
-  Gemini CLI (`httpUrl` + `headers`).
-  - `<url>` is the API base URL from `frontend/integrations/api/client.ts`
-    (`VITE_API_URL`, fallback `http://127.0.0.1:8000`). **New** exported
-    helper `getApiBaseUrl()` in `client.ts`, created in task 4: today the
-    value is the module-private `const API_BASE_URL =
-    import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"`
-    (`client.ts:16-17`). Task 4 moves that expression into
-    `getApiBaseUrl()` and makes `client.ts`'s own request code call it, so
-    the env read stays in one place (the private constant is deleted, not
-    kept beside the helper). The component never reads
-    `import.meta.env.VITE_API_URL` itself: the data-path ratchet counts
-    every such read (`scripts/fitness/check_frontend_data_path.py:53`).
-- The tab states that web chat apps (claude.ai, ChatGPT) are not supported,
-  and recommends a `read` token unless edits are needed.
+- **"Connect an AI agent (MCP)" card** — a second, permanent card in the
+  same Integrations tab (Postiz-style client configuration; product
+  decision 2026-09-24). Always rendered, independent of whether the
+  researcher has created a token yet: a short description, a **Docs**
+  link, and a row of six client chips — Claude Code, Cursor,
+  VS Code / Copilot, Gemini CLI, Codex, Windsurf. Selecting a chip shows
+  that client's one-line instruction (e.g. "In Cursor, open Settings >
+  MCP > Add…") and its config snippet in a code block with a Copy button
+  (the same `CopyBlock` the reveal dialog uses). The card's snippets use
+  the placeholder `<YOUR_PRUMO_TOKEN>` in place of a real secret; the URL
+  is always `${getApiBaseUrl()}/mcp` (no trailing slash) with an
+  `Authorization: Bearer` header.
+  - **Chip group widget.** A shadcn `ToggleGroup type="single"`
+    (`frontend/components/ui/toggle-group.tsx`) — the repo's existing
+    pattern for a single-select chip row (`EngineGear.tsx`'s engine
+    picker). Radix's `ToggleGroup` ships roving-tabindex arrow-key
+    navigation, so no extra keyboard wiring is needed. A `RadioGroup`
+    (`frontend/components/ui/radio-group.tsx`) was considered — the repo
+    has it and uses it for form choices — but rejected here because it
+    has no chip-styled precedent, whereas `ToggleGroup` is already the
+    chip-select idiom.
+  - **Docs link target.** No docs-base-URL constant or in-app docs route
+    exists in the frontend (checked: no `DOCS_BASE`/`DOCS_URL` constant,
+    no docs router). `ZoteroIntegrationSection.tsx` sets the precedent for
+    an external link — a hardcoded `href` with `target="_blank"` and the
+    `ExternalLink` icon (no shared constant module). The card follows
+    that precedent and links straight to the how-to Task 12 writes:
+    `https://github.com/raphaelfh/prumo/blob/dev/docs/how-to/connect-an-ai-agent.md`
+    (`dev` is the repo's default branch; the repo is public, so the link
+    resolves for anyone).
+  - **Verified client config shapes** (WebSearch/WebFetch against each
+    vendor's current docs, 2026-09-24; all six carry a static
+    `Authorization` header over streamable HTTP, so none is dropped):
+    - **Claude Code** — `claude mcp add --transport http prumo <url>
+      --header "Authorization: Bearer <token>"`
+      (code.claude.com/docs/en/mcp).
+    - **Cursor** — `~/.cursor/mcp.json`:
+      `{"mcpServers":{"prumo":{"url":"<url>","headers":{"Authorization":"Bearer
+      <token>"}}}}` (cursor.com/docs/mcp).
+    - **VS Code / Copilot** — `.vscode/mcp.json`:
+      `{"servers":{"prumo":{"type":"http","url":"<url>","headers":{"Authorization":"Bearer
+      <token>"}}}}` (code.visualstudio.com/docs/agent-customization/mcp-servers
+      — `type: "http"` is required, or VS Code defaults to stdio and
+      tries to launch the URL as a subprocess).
+    - **Gemini CLI** — `~/.gemini/settings.json`:
+      `{"mcpServers":{"prumo":{"httpUrl":"<url>","headers":{"Authorization":"Bearer
+      <token>"}}}}` (github.com/google-gemini/gemini-cli
+      `docs/tools/mcp-server.md`).
+    - **Codex** — `~/.codex/config.toml`:
+      `[mcp_servers.prumo]` with `url = "<url>"` and a
+      `[mcp_servers.prumo.http_headers]` table holding
+      `Authorization = "Bearer <token>"` (learn.chatgpt.com/docs/extend/mcp).
+      `http_headers` is the static-value map; `bearer_token_env_var` and
+      `env_http_headers` instead read from the environment, so a
+      hardcoded token in the snippet needs `http_headers`.
+    - **Windsurf** — `~/.codeium/windsurf/mcp_config.json`:
+      `{"mcpServers":{"prumo":{"serverUrl":"<url>","headers":{"Authorization":"Bearer
+      <token>"}}}}` (docs.windsurf.com/windsurf/cascade/mcp). Cognition's
+      2026 Devin-Desktop rebrand of Windsurf keeps this path and these
+      JSON keys unchanged.
+  - Snippet data lives in **one typed module**,
+    `frontend/lib/mcp/clientSnippets.ts`: a `ClientId` union
+    (`'claude-code' | 'cursor' | 'vscode' | 'gemini-cli' | 'codex' |
+    'windsurf'`) and a pure function `buildClientSnippet(client: ClientId,
+    {url, token}: {url: string; token: string}): string` — one branch per
+    client, per the verified shapes above — unit-tested per client
+    (`frontend/lib/mcp/__tests__/clientSnippets.test.ts`). The snippet
+    code itself (CLI command, JSON, TOML) is **not** translated — syntax
+    is language-independent; every other user-visible string (chip
+    labels, the one-line instructions, the card's title/description, the
+    Docs link text) goes through `t()` in
+    `frontend/lib/copy/personalAccessTokens.ts` (the file this feature
+    already uses — no second copy file).
+  - The one-time reveal dialog after creating a token reuses the same
+    chip selector and snippet rendering, with the real secret in place of
+    `<YOUR_PRUMO_TOKEN>` (`buildClientSnippet(client, {url:
+    getApiBaseUrl(), token: secret})`), alongside its existing "copy
+    token" block and "shown once" warning.
+- **Not adopted** (explicit non-goals):
+  - **Token in the URL path** — a query or path segment leaks into
+    server logs and browser history; the header carries it instead.
+  - **"Reveal" of an existing token later** — storage is hash-only (ADR
+    0020, §4.6), so there is nothing left to reveal after the one-time
+    dialog closes; only `token_prefix` is ever shown again.
+  - **Claude.ai / ChatGPT chips** — both require OAuth, out of scope
+    (§9).
+- `<url>` is the API base URL from `frontend/integrations/api/client.ts`
+  (`VITE_API_URL`, fallback `http://127.0.0.1:8000`). **New** exported
+  helper `getApiBaseUrl()` in `client.ts`, created in task 4a: today the
+  value is the module-private `const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"`
+  (`client.ts:16-17`). Task 4a moves that expression into
+  `getApiBaseUrl()` and makes `client.ts`'s own request code call it, so
+  the env read stays in one place (the private constant is deleted, not
+  kept beside the helper). The component never reads
+  `import.meta.env.VITE_API_URL` itself: the data-path ratchet counts
+  every such read (`scripts/fitness/check_frontend_data_path.py:53`).
+- The card and the group's `clientsNote` copy state that web chat apps
+  (claude.ai, ChatGPT) are not supported, and recommend a `read` token
+  unless edits are needed.
 - Follows component → hook → service → apiClient:
   - query keys: `meKeys.tokens()` added to `frontend/lib/query-keys/me.ts`
     next to `connections()`; create and revoke invalidate it;
   - service `frontend/services/personalAccessTokenService.ts`, hooks
     `frontend/hooks/user/usePersonalAccessTokens.ts` (list + create +
     revoke);
-  - component `frontend/components/user/PersonalAccessTokensGroup.tsx`,
-    rendered by `IntegrationsSection.tsx`;
-  - copy in a new `frontend/lib/copy/personalAccessTokens.ts`, registered
-    in `frontend/lib/copy/index.ts`.
+  - component `frontend/components/user/PersonalAccessTokensGroup.tsx`
+    (token CRUD) and `frontend/components/user/McpClientConfigCard.tsx`
+    (the permanent card), both rendered by `IntegrationsSection.tsx`;
+  - a shared `frontend/components/user/McpClientSnippetSelector.tsx`
+    (chip group + instruction + `CopyBlock`), used by the card and by the
+    reveal dialog;
+  - pure snippet module `frontend/lib/mcp/clientSnippets.ts`;
+  - copy in `frontend/lib/copy/personalAccessTokens.ts`, registered in
+    `frontend/lib/copy/index.ts`.
 - States: §4.7.
 
 ### 4.6 Constitution deviations — ADR 0020 and amendment
@@ -501,11 +589,12 @@ note.
 | list error | inline error with a retry button; create stays available |
 | create error: 409 at cap | inline form error: "10 active tokens is the limit — revoke one first"; dialog stays open |
 | create error: 422 / other | inline form error from the envelope message; dialog stays open |
-| one-time secret reveal | dialog shows the full secret with copy button and the snippets, and says it will not be shown again; closing requires an explicit "I copied it" button; after close only the prefix is shown |
+| one-time secret reveal | dialog shows the full secret with copy button, the client chip selector and its real-token snippet, and says the secret will not be shown again; closing requires an explicit "I copied it" button; after close only the prefix is shown |
 | revoke confirm | confirm dialog naming the token; revoke button shows pending state |
 | revoke error | toast with the envelope message; row unchanged |
 | expired row | muted row, `Expired <date>` badge, no revoke button |
 | revoked row | muted row, `Revoked <date>` badge, no revoke button |
+| "Connect an AI agent (MCP)" card | always rendered (no loading/error state of its own — static content); one chip selected at a time, keyboard-navigable via the `ToggleGroup`'s arrow-key roving tabindex; each snippet's Copy button shows a transient "Copied" confirmation, same as the secret's copy button |
 
 ## 5. Tools
 
@@ -1509,7 +1598,16 @@ After UI publish, the change appears. On a narrow template, both ops →
   unchanged.
 - 409 at cap → inline form error, dialog open.
 - Expired and revoked rows render muted with their badge and no revoke.
-- Per-client snippets render, with the base URL from `getApiBaseUrl()`.
+- `buildClientSnippet` returns the verified shape for each of the six
+  `ClientId`s given a fixed `{url, token}`.
+- The "Connect an AI agent (MCP)" card renders unconditionally (empty and
+  non-empty token list alike, and before any token is ever created), with
+  six chips, the placeholder `<YOUR_PRUMO_TOKEN>` in the selected chip's
+  snippet, and the base URL from `getApiBaseUrl()`; selecting a different
+  chip swaps the instruction and snippet; Copy shows the transient
+  "Copied" confirmation.
+- The reveal dialog's chip selector renders the same six chips with the
+  real secret in place of the placeholder.
 - The "includes edits via AI agent" chip appears with and without a
   token name, and is absent while status is loading or errored.
 - `useProjectSettings`: sends only changed keys with `expected` via
@@ -1570,8 +1668,9 @@ Also: Cursor or Gemini CLI connects to the stateless mount.
 
 ## 10. Delivery tasks
 
-One PR, tasks in dependency order: 1, 2a, 2b, 3, …, 12 (task 2 is split
-in two so each half fits one brief; the other numbers are unchanged).
+One PR, tasks in dependency order: 1, 2a, 2b, 3, 4a, 4b, 5, …, 12 (tasks 2
+and 4 are each split in two so every half fits one brief; the other
+numbers are unchanged).
 Each task is test-first and sized for an implementer brief of ≤ ~300
 lines. Migrations land in number order (0077 → 0078 → 0079), so
 `agent_actions` comes before any tool that audits and before the FTS
@@ -1626,12 +1725,22 @@ to its own revision, and each REST-contract task regenerates
   `0078_agent_actions`; `agent_action_service` (insert only: applied
   in-transaction, refused after rollback; oversized-input marker).
   Tests: RLS probe, insert shapes, FK behavior, 64 KiB marker.
-- **Task 4 — PAT Settings UI.** `meKeys.tokens()`; service, hooks, component;
-  the **new** `getApiBaseUrl()` export in `client.ts`, which replaces the
-  module-private `API_BASE_URL` (`client.ts:16-17`) and is called by
-  `client.ts`'s own request code (§4.5); copy file
-  `personalAccessTokens.ts` + registration; §4.7 states. Consumes the
-  types task 1 generated. Tests: §8 frontend PAT items.
+- **Task 4a — PAT Settings UI.** `meKeys.tokens()`; service, hooks,
+  component; the **new** `getApiBaseUrl()` export in `client.ts`, which
+  replaces the module-private `API_BASE_URL` (`client.ts:16-17`) and is
+  called by `client.ts`'s own request code (§4.5); copy file
+  `personalAccessTokens.ts` + registration; the create/list/revoke states
+  of §4.7 (the reveal dialog ships with just the secret and copy button —
+  no client snippets yet). Consumes the types task 1 generated. Tests: §8
+  frontend PAT items (excluding the card/snippet ones).
+- **Task 4b — MCP client configuration card.** Pure module
+  `frontend/lib/mcp/clientSnippets.ts` (`buildClientSnippet`, six
+  `ClientId`s, §4.5); shared `McpClientSnippetSelector.tsx` (chip group +
+  instruction + `CopyBlock`); permanent card
+  `McpClientConfigCard.tsx`, rendered by `IntegrationsSection.tsx`;
+  Task 4a's reveal dialog in `PersonalAccessTokensGroup.tsx` gains the
+  same selector with the real secret; copy keys added to
+  `personalAccessTokens.ts`. Tests: §8 frontend card/snippet items.
 - **Task 5 — Project details service + UI save.** `project_details_service`
   (types and canonical-JSON precondition, §5.2);
   `ProjectDetailsRefusalCode` in `app/schemas/project_details.py`;
