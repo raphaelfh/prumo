@@ -78,6 +78,8 @@ guard that drifted or was never made.
   `project_template_active_service.owned_template`,
   `template_section_service.owned_section`,
   `article_read_service.owned_articles` (and `owned_article`, which delegates),
+  `article_read_service.owned_article_file` (an article file in its article;
+  `resolve_article_file` wraps it with the latest-PDF fallback),
   `extraction_batch_service.owned_batch` (a batch in its owner, who is still
   a project member),
   `ExtractionInstanceRepository.get_in_coordinate`,
