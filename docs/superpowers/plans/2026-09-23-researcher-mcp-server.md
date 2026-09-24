@@ -46,8 +46,8 @@ owner: '@raphaelfh'
 **Files:**
 - Modify: `backend/pyproject.toml` (`[project] dependencies`), `backend/uv.lock`
 - Create: `backend/app/models/personal_access_token.py`; Modify: `backend/app/models/__init__.py` (import + `__all__`, next to `LlmConnection`)
-- Create: `backend/alembic/versions/0077_personal_access_tokens.py`
-- Modify: `backend/tests/integration/test_migration_roundtrip.py` (`expected_head` at `:1331`; new 0077 test at the end)
+- Create: `backend/alembic/versions/0078_personal_access_tokens.py`
+- Modify: `backend/tests/integration/test_migration_roundtrip.py` (`expected_head` at `:1331`; new 0078 test at the end)
 - Create: `backend/app/schemas/personal_access_token.py`
 - Create: `backend/app/services/pat_service.py`
 - Create: `backend/app/api/v1/endpoints/personal_access_tokens.py`; Modify: `backend/app/api/v1/router.py` (import + `include_router` next to `user_connections`, `:65-69`)
@@ -80,12 +80,12 @@ git -C "$WT" commit -m "build(backend): add the mcp SDK for the researcher MCP s
 
 - [ ] **Step 2: Write the failing migration and RLS tests**
 
-In `test_migration_roundtrip.py` change `expected_head = "0076_extraction_batches"` to `expected_head = "0077_personal_access_tokens"` and append:
+In `test_migration_roundtrip.py` change `expected_head = "0077_revoke_project_writes"` (#970's peer migration, now the pre-task head) to `expected_head = "0078_personal_access_tokens"` and append:
 
 ```python
-# --- 0077: personal_access_tokens (backend-only, deny_all) ----------------
+# --- 0078: personal_access_tokens (backend-only, deny_all) ----------------
 @pytest.mark.asyncio
-async def test_migration_0077_personal_access_tokens_roundtrip(
+async def test_migration_0078_personal_access_tokens_roundtrip(
     migration_db_url: str, migration_session: AsyncSession
 ) -> None:
     async def posture() -> tuple[list[str], int]:
@@ -100,7 +100,7 @@ async def test_migration_0077_personal_access_tokens_roundtrip(
         return list(policies), int(grants)
 
     assert await posture() == (["deny_all"], 0)
-    _run_alembic("downgrade", "0076_extraction_batches", database_url=migration_db_url)
+    _run_alembic("downgrade", "0077_revoke_project_writes", database_url=migration_db_url)
     try:
         assert (await posture())[0] == []  # table gone
     finally:
@@ -113,8 +113,8 @@ Create `test_personal_access_token_rls.py` mirroring `test_llm_connection_rls.py
 - `test_select_denied_by_missing_grant`: `SELECT count(*)` as `SEED.primary_profile` → `outcome.error` contains `"permission denied"`.
 - `test_policy_floor_denies_select_even_with_grant`: insert one row as owner (`INSERT … (id, user_id, name, token_prefix, token_hash, scope, expires_at) VALUES (gen_random_uuid(), :uid, 'rls', 'prumo_pat_abcdef', md5(random()::text), 'read', now() + interval '1 day')`), assert owner `count(*) >= 1` (service-role visibility), then `_attempt(..., regrant_select=True)` → `Outcome(rows=0, error=None)`.
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/test_personal_access_token_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" "tests/integration/test_migration_roundtrip.py::test_migration_0077_personal_access_tokens_roundtrip" -q`
-Expected: FAIL (relation `public.personal_access_tokens` does not exist; head is 0076).
+Run: `cd "$WT/backend" && uv run pytest tests/integration/test_personal_access_token_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" "tests/integration/test_migration_roundtrip.py::test_migration_0078_personal_access_tokens_roundtrip" -q`
+Expected: FAIL (relation `public.personal_access_tokens` does not exist; head is `0077_revoke_project_writes`).
 
 - [ ] **Step 3: Model and migration**
 
@@ -124,7 +124,7 @@ Expected: FAIL (relation `public.personal_access_tokens` does not exist; head is
 """Personal access tokens for the /mcp mount (spec §4.1, ADR 0020).
 
 Only the SHA-256 of the secret is stored; the secret is shown once.
-Backend-only table: migration 0077 enables RLS with ``deny_all`` and
+Backend-only table: migration 0078 enables RLS with ``deny_all`` and
 revokes every privilege from ``authenticated`` / ``anon``. Not
 ``BaseModel``: the table has no ``updated_at``.
 """
@@ -178,7 +178,7 @@ class PersonalAccessToken(Base, UUIDMixin):
 
 Export it from `app/models/__init__.py` (`from app.models.personal_access_token import PersonalAccessToken` and `"PersonalAccessToken"` in `__all__`).
 
-`backend/alembic/versions/0077_personal_access_tokens.py` (hand-written; `revision = "0077_personal_access_tokens"`, `down_revision = "0076_extraction_batches"`; module docstring states why: second auth carrier for `/mcp`, hash-only storage, 0072 deny-all posture). `upgrade()`: `op.create_table("personal_access_tokens", …)` with the columns above (`id` uuid pk, no server default — the model's `uuid4` supplies it), `sa.ForeignKey("public.profiles.id", ondelete="CASCADE", name="personal_access_tokens_user_id_fkey")`, `sa.UniqueConstraint("token_hash", name="personal_access_tokens_token_hash_key")`, the three `sa.CheckConstraint`s with the SAME short names, `created_at` `server_default=sa.func.now()`, `schema="public"`; `op.create_index("ix_personal_access_tokens_active_user", "personal_access_tokens", ["user_id"], schema="public", postgresql_where=sa.text("revoked_at IS NULL"))`; then the 0072 `_deny_all` block verbatim for this table:
+`backend/alembic/versions/0078_personal_access_tokens.py` (hand-written; `revision = "0078_personal_access_tokens"`, `down_revision = "0077_revoke_project_writes"` (#970's peer migration); module docstring states why: second auth carrier for `/mcp`, hash-only storage, 0072 deny-all posture). `upgrade()`: `op.create_table("personal_access_tokens", …)` with the columns above (`id` uuid pk, no server default — the model's `uuid4` supplies it), `sa.ForeignKey("public.profiles.id", ondelete="CASCADE", name="personal_access_tokens_user_id_fkey")`, `sa.UniqueConstraint("token_hash", name="personal_access_tokens_token_hash_key")`, the three `sa.CheckConstraint`s with the SAME short names, `created_at` `server_default=sa.func.now()`, `schema="public"`; `op.create_index("ix_personal_access_tokens_active_user", "personal_access_tokens", ["user_id"], schema="public", postgresql_where=sa.text("revoked_at IS NULL"))`; then the 0072 `_deny_all` block verbatim for this table:
 
 ```python
 op.execute('ALTER TABLE "public"."personal_access_tokens" ENABLE ROW LEVEL SECURITY;')
@@ -190,7 +190,7 @@ op.execute('REVOKE ALL ON "public"."personal_access_tokens" FROM "authenticated"
 Run: `cd "$WT/backend" && uv run alembic upgrade head && uv run alembic check` → `No new upgrade operations detected.` Then the Step 2 command → PASS.
 
 ```bash
-git -C "$WT" add backend/app/models backend/alembic/versions/0077_personal_access_tokens.py backend/tests/integration/test_migration_roundtrip.py backend/tests/integration/test_personal_access_token_rls.py
+git -C "$WT" add backend/app/models backend/alembic/versions/0078_personal_access_tokens.py backend/tests/integration/test_migration_roundtrip.py backend/tests/integration/test_personal_access_token_rls.py
 git -C "$WT" commit -m "feat(auth): add the personal_access_tokens table (backend-only)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -928,7 +928,7 @@ cd "$WT/backend" && uv run alembic downgrade 0076_extraction_batches
 ```
 Expected: all pass; lint and mypy clean; layered-arch and scope-guards OK. Vulture: `session_factory` no longer reported; exactly two tolerated intermediate findings, never baselined: `storage_factory` (cleared by Task 7b) and `agent_tool` (cleared by Task 6a, the first app tool). Any other finding fails the task. Name both in the task report.
 
-### Task 3: Agent action audit table (`agent_actions`, migration 0078, `agent_action_service`)
+### Task 3: Agent action audit table (`agent_actions`, migration 0079, `agent_action_service`)
 
 **Context.** Every MCP write tool (Tasks 9 and 10) records one append-only row per applied write and per domain-rule refusal (constitution §IX traceability; spec §6.1). This task ships only the table, its ORM model and an insert-only service; no tool calls it yet. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §6.1, §7 "audit row" column.
 
@@ -937,7 +937,7 @@ Expected: all pass; lint and mypy clean; layered-arch and scope-guards OK. Vultu
 - English only (code, comments, docstrings, commits).
 - Layering `api → services → repositories → models` (`scripts/fitness/check_layered_arch.py`). The service may import `app.models`; nothing in `app/api/` may. Services and repositories `flush()`, never `commit()`: the caller owns the transaction.
 - Model change ⇒ Alembic migration in the same task. Revision id ≤ 32 chars. CHECK names are SHORT (`outcome_check`): the `ck` naming convention in `app/models/base.py` expands them to `ck_agent_actions_<short>` in both model and migration; a pre-expanded `ck_…` literal double-wraps.
-- The migration roundtrip head pin moves in this task: `backend/tests/integration/test_migration_roundtrip.py:1331` `expected_head = "0077_personal_access_tokens"` → `"0078_agent_actions"`.
+- The migration roundtrip head pin moves in this task: `backend/tests/integration/test_migration_roundtrip.py:1331` `expected_head = "0078_personal_access_tokens"` → `"0079_agent_actions"`.
 - Local DB is shared by every worktree (`.claude/rules/backend.md` § Local database): apply with `cd "$WT/backend" && uv run alembic upgrade head` to run the tests, and when verification is done run `cd "$WT/backend" && uv run alembic downgrade 0076_extraction_batches` (dev's head). Never `alembic stamp`, never `make db-fresh`/`reset-db`.
 - mypy: new files clean, no `.mypy_baseline` entries. vulture: never a `.vulture_baseline` entry; the two tolerated intermediate findings are named in Step 9.
 - Commits: conventional, ending with a blank line then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -946,14 +946,14 @@ Expected: all pass; lint and mypy clean; layered-arch and scope-guards OK. Vultu
 **Files:**
 - Create: `backend/app/models/agent_action.py`
 - Modify: `backend/app/models/__init__.py` (import `AgentAction` after the `LlmConnection` import line; add `"AgentAction"` to `__all__`)
-- Create: `backend/alembic/versions/0078_agent_actions.py`
+- Create: `backend/alembic/versions/0079_agent_actions.py`
 - Create: `backend/app/services/agent_action_service.py`
 - Modify: `backend/tests/integration/test_migration_roundtrip.py:1331`
 - Test (new): `backend/tests/integration/test_agent_action_service.py`
 - Test (new): `backend/tests/integration/test_agent_action_rls.py`
 
 **Interfaces:**
-- Consumes (Task 1): table `public.personal_access_tokens` (model `app.models.personal_access_token.PersonalAccessToken`; columns `id, user_id, name, token_prefix, token_hash, scope, expires_at, last_used_at, revoked_at, created_at`), current head `0077_personal_access_tokens`.
+- Consumes (Task 1): table `public.personal_access_tokens` (model `app.models.personal_access_token.PersonalAccessToken`; columns `id, user_id, name, token_prefix, token_hash, scope, expires_at, last_used_at, revoked_at, created_at`), current head `0078_personal_access_tokens`.
 - Produces (Tasks 9, 10, 11 rely on these exact names):
   - `app.models.agent_action.AgentAction` (table `public.agent_actions`), columns `id, created_at, token_id, user_id, project_id, template_id, tool, input, before, after, outcome, error_code`.
   - Index `ix_agent_actions_template_applied` on `(template_id, created_at) WHERE outcome = 'applied'` (Task 11's chip query uses it), plus plain FK indexes `ix_agent_actions_project_id`, `ix_agent_actions_token_id`, `ix_agent_actions_user_id` (the ON DELETE CASCADE / SET NULL of a project, token or profile delete would otherwise scan this ever-growing insert-only table; migrations.md names "FKs without indexes" a hazard).
@@ -1009,12 +1009,12 @@ Create `backend/tests/integration/test_agent_action_rls.py` by following the str
 
 - [ ] **Step 3: Move the head pin and run everything red**
 
-Edit `backend/tests/integration/test_migration_roundtrip.py:1331` to `expected_head = "0078_agent_actions"` and append (same shape as the file's 0077 test — `migration_db_url`, `migration_session`, `_run_alembic`):
+Edit `backend/tests/integration/test_migration_roundtrip.py:1331` to `expected_head = "0079_agent_actions"` and append (same shape as the file's 0078 test — `migration_db_url`, `migration_session`, `_run_alembic`):
 
 ```python
-# --- 0078: agent_actions (backend-only, deny_all) --------------------------
+# --- 0079: agent_actions (backend-only, deny_all) --------------------------
 @pytest.mark.asyncio
-async def test_migration_0078_agent_actions_roundtrip(
+async def test_migration_0079_agent_actions_roundtrip(
     migration_db_url: str, migration_session: AsyncSession
 ) -> None:
     async def posture() -> tuple[bool, list[str], int]:
@@ -1031,7 +1031,7 @@ async def test_migration_0078_agent_actions_roundtrip(
         return bool(exists), list(policies), int(grants)
 
     assert await posture() == (True, ["deny_all"], 0)
-    _run_alembic("downgrade", "0077_personal_access_tokens", database_url=migration_db_url)
+    _run_alembic("downgrade", "0078_personal_access_tokens", database_url=migration_db_url)
     try:
         assert await posture() == (False, [], 0)  # table, policy and grants gone
     finally:
@@ -1039,8 +1039,8 @@ async def test_migration_0078_agent_actions_roundtrip(
     assert await posture() == (True, ["deny_all"], 0)  # re-upgrade restores the REVOKE
 ```
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/test_agent_action_service.py tests/integration/test_agent_action_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" "tests/integration/test_migration_roundtrip.py::test_migration_0078_agent_actions_roundtrip" -v`
-Expected: FAIL — `ModuleNotFoundError: app.services.agent_action_service` / `relation "public.agent_actions" does not exist` / head `0077_personal_access_tokens` ≠ `0078_agent_actions`.
+Run: `cd "$WT/backend" && uv run pytest tests/integration/test_agent_action_service.py tests/integration/test_agent_action_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" "tests/integration/test_migration_roundtrip.py::test_migration_0079_agent_actions_roundtrip" -v`
+Expected: FAIL — `ModuleNotFoundError: app.services.agent_action_service` / `relation "public.agent_actions" does not exist` / head `0078_personal_access_tokens` ≠ `0079_agent_actions`.
 
 - [ ] **Step 4: Add the ORM model**
 
@@ -1095,9 +1095,9 @@ class AgentAction(Base, UUIDMixin):
 
 Not `BaseModel`: the table has no `updated_at` (append-only), and `TimestampMixin` would make `alembic check` report drift. Register it in `backend/app/models/__init__.py` (`from app.models.agent_action import AgentAction` and `"AgentAction"` in `__all__`).
 
-- [ ] **Step 5: Write migration `0078_agent_actions`**
+- [ ] **Step 5: Write migration `0079_agent_actions`**
 
-Create `backend/alembic/versions/0078_agent_actions.py`: `revision = "0078_agent_actions"`, `down_revision = "0077_personal_access_tokens"`. Docstring states spec §6.1 and the 0072 backend-only posture. `upgrade()`: `op.create_table("agent_actions", …, schema="public")` with the same columns, `sa.ForeignKey(..., name="agent_actions_<col>_fkey", ondelete=…)` for each FK, `server_default=sa.func.now()` on `created_at`, `postgresql.JSONB()` columns, the three short-named `sa.CheckConstraint`s; then
+Create `backend/alembic/versions/0079_agent_actions.py`: `revision = "0079_agent_actions"`, `down_revision = "0078_personal_access_tokens"`. Docstring states spec §6.1 and the 0072 backend-only posture. `upgrade()`: `op.create_table("agent_actions", …, schema="public")` with the same columns, `sa.ForeignKey(..., name="agent_actions_<col>_fkey", ondelete=…)` for each FK, `server_default=sa.func.now()` on `created_at`, `postgresql.JSONB()` columns, the three short-named `sa.CheckConstraint`s; then
 
 ```python
     op.create_index(
@@ -1114,7 +1114,7 @@ Create `backend/alembic/versions/0078_agent_actions.py`: `revision = "0078_agent
 `downgrade()`: `op.drop_table("agent_actions", schema="public")` (index, policy and constraints fall with it).
 
 Run: `cd "$WT/backend" && uv run alembic upgrade head && uv run alembic check`
-Expected: upgrade to `0078_agent_actions`; `No new upgrade operations detected.`
+Expected: upgrade to `0079_agent_actions`; `No new upgrade operations detected.`
 
 - [ ] **Step 6: Write the service**
 
@@ -1157,13 +1157,13 @@ async def _insert(db: AsyncSession, **values: Any) -> AgentAction:
 
 - [ ] **Step 7: Run the tests green**
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/test_agent_action_service.py tests/integration/test_agent_action_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" "tests/integration/test_migration_roundtrip.py::test_alembic_history_chain_is_continuous" "tests/integration/test_migration_roundtrip.py::test_migration_0078_agent_actions_roundtrip" -v`
+Run: `cd "$WT/backend" && uv run pytest tests/integration/test_agent_action_service.py tests/integration/test_agent_action_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" "tests/integration/test_migration_roundtrip.py::test_alembic_history_chain_is_continuous" "tests/integration/test_migration_roundtrip.py::test_migration_0079_agent_actions_roundtrip" -v`
 Expected: all PASS.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git -C "$WT" add backend/app/models/agent_action.py backend/app/models/__init__.py backend/alembic/versions/0078_agent_actions.py backend/app/services/agent_action_service.py backend/tests/integration/test_agent_action_service.py backend/tests/integration/test_agent_action_rls.py backend/tests/integration/test_migration_roundtrip.py
+git -C "$WT" add backend/app/models/agent_action.py backend/app/models/__init__.py backend/alembic/versions/0079_agent_actions.py backend/app/services/agent_action_service.py backend/tests/integration/test_agent_action_service.py backend/tests/integration/test_agent_action_rls.py backend/tests/integration/test_migration_roundtrip.py
 git -C "$WT" commit -m "feat(mcp): add append-only agent_actions audit table and service
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -1503,356 +1503,11 @@ From `$WT`:
 
 ### Task 5a: Project details schema, service and `PATCH /projects/{id}/details` (backend)
 
-**Context.** Today the Settings page writes 11 project columns with a raw `supabase.from('projects').update(fields)` (`frontend/services/projectSettingsService.ts:236-245`), gated only by RLS. The MCP agent (Task 9) will edit the same columns, so both writers must share one typed schema, one role gate and one optimistic precondition. Spec §10 task 5 is split in two to fit one brief each: this task (5a) builds the schema, the service and the REST route and commits the generated API types; Task 5b moves the UI save onto the route, deletes the PostgREST write and shows the stale-value banner. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §5.2 (types table, "Precondition"), §5.4 (service, route), §7 "Code homes", §8 "Project details".
-
-**Rules for this task (restated, all binding):**
-- Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; confirm with `git -C "$WT" status`. Backend from `$WT/backend` with `uv run`; frontend tooling (only `npm run generate:api-types` here) from `$WT`, never `cd frontend && npm …` (`npm ci` first if `$WT/node_modules` is absent).
-- English only. Layering `api → services → repositories → models`: the endpoint never touches the DB; `app/schemas/` may not import `app.models` (support layer); services `flush()` only, the endpoint commits once. Responses use the typed `ApiResponse` envelope; every `responses=` entry carries an explicit `"description"` (`scripts/fitness/check_response_descriptions.py`); 4xx via `HTTPException` or an `AppError` subclass.
-- Shared local DB (`.claude/rules/backend.md` § Local database): `cd "$WT/backend" && uv run alembic upgrade head` before integration tests; after Verify, `uv run alembic downgrade 0076_extraction_batches` (dev's head). Never `alembic stamp`, `make db-fresh` or `make reset-db`.
-- One ownership predicate (BOLA): membership and role come only from the non-raising helpers in `app/api/deps/security.py` — `is_project_member` and `is_project_manager` (the latter added by Task 2b over `public.is_project_manager`). No hand-rolled `project_members` SQL. Do NOT use `require_project_manager`: it answers 403 for an outsider and a missing project alike, which breaks the 404 contract below.
-- REST contract changes ⇒ run `npm run generate:api-types` from `$WT` and commit `frontend/types/api/openapi.json` + `frontend/types/api/schema.d.ts` (CI's API Contract job fails otherwise). Any later edit to a public schema class (docstrings included) ⇒ regenerate again.
-- Diff coverage: handler lines driven only through the httpx `ASGITransport` fixtures register no coverage, so the endpoint also gets a direct-call unit test of its coroutine (`update_project_details.__wrapped__`: slowapi's `@limiter.limit` wrapper refuses a non-Starlette request), the `backend/tests/unit/test_entry_create_endpoint_unit.py` pattern.
-- mypy is `strict` with no pydantic plugin: new files clean, no `.mypy_baseline` entry; `AppError.details` is `dict[str, Any] | None`, so a reader indexes `(exc.details or {})["current"]`.
-- Load `backend-development` and `web-testing` before coding.
-- Commits: conventional, ending with a blank line then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-
-**Files:**
-- Create: `backend/app/schemas/project_details.py`, `backend/app/services/project_details_service.py`, `backend/app/api/v1/endpoints/project_details.py`
-- Modify: `backend/app/api/v1/router.py` (import `project_details` between `project_connections` and `project_templates`; `include_router(project_details.router, prefix="/projects", tags=["projects"])` after the `ai_context` block)
-- Test (new): `backend/tests/unit/test_project_details_schema.py`, `backend/tests/integration/test_project_details_service.py`, `backend/tests/integration/test_project_details_api.py`, `backend/tests/unit/test_project_details_endpoint_unit.py`
-- Regenerate: `frontend/types/api/openapi.json`, `frontend/types/api/schema.d.ts`
-
-**Interfaces:**
-- Consumes (Task 2b): `app.api.deps.security.is_project_manager(db, project_id: UUID, user_sub: UUID | str) -> bool`, the non-raising sibling of the existing `is_project_member(db, project_id, user_sub) -> bool`.
-- Produces (Tasks 5b, 6a and 9 use these exact names):
-  - `app.schemas.project_details`: `ReviewTypeValue` (Literal of the six `review_type` values), `ProjectDetailsFields`, `ProjectDetailsValues` (the 11 columns with their stored types — the typed "current values" shape; Task 6a's `get_project` returns it), `ProjectDetailsRead(ProjectDetailsValues)` (adds `updated_at`), `ProjectDetailsUpdate`, `ProjectDetailsRefusalCode.STALE_VALUE`, `ProjectDetailsRefusalResponse`.
-  - `app.services.project_details_service.update_details(db: AsyncSession, *, project_id: UUID, fields: ProjectDetailsFields, expected: ProjectDetailsFields) -> ProjectDetailsChange`; `ProjectDetailsChange(before: dict[str, Any], after: dict[str, Any], details: ProjectDetailsRead)` (frozen dataclass; `before`/`after` hold only the keys in `fields`, as JSON values); `StaleProjectValueError(AppError)` — 409, code `STALE_VALUE`, `details={"current": {<contested key>: <current JSON value>}}` (read it as `(exc.details or {})["current"]`). Flushes; never commits.
-  - REST `PATCH /api/v1/projects/{project_id}/details`, body `{fields, expected}`, `ApiResponse[ProjectDetailsRead]`; generated types committed.
-
-- [ ] **Step 1: Schema — failing unit tests**
-
-Create `backend/tests/unit/test_project_details_schema.py`:
-- `test_review_type_values_match_the_postgres_enum`: `set(get_args(ReviewTypeValue)) == set(POSTGRESQL_ENUM_VALUES["review_type"])` (from `app.models.base`; the schema cannot import models, so this pins the copy).
-- `test_editable_columns_are_exactly_the_eleven`: `set(ProjectDetailsFields.model_fields) == {"name", "description", "review_type", "review_title", "condition_studied", "review_rationale", "search_strategy", "eligibility_criteria", "study_design", "review_keywords", "review_context"}` `== set(ProjectDetailsValues.model_fields) == set(ProjectDetailsRead.model_fields) - {"updated_at"}`.
-- `test_unknown_key_is_refused` parametrized over `picots_config_ai_review`, `settings`, `is_active`, `created_by_id` → `ValidationError` with `errors()[0]["type"] == "extra_forbidden"`.
-- `test_invalid_values_name_their_field` parametrized: `{"name": ""}` → loc `("name",)`; `{"name": None}` → `("name",)`; `{"review_type": "meta"}` → `("review_type",)`; `{"review_keywords": "x"}` → `("review_keywords",)`; `{"eligibility_criteria": None}`, `{"study_design": None}`, `{"review_keywords": None}` → their own loc.
-- `test_nullable_columns_accept_null`: `{"description": None, "review_type": None, "review_context": None}` validates and `model_dump(mode="json", exclude_unset=True)` equals the input.
-- `test_update_requires_expected_for_every_changed_key`: `ProjectDetailsUpdate.model_validate({"fields": {"name": "a", "description": "b"}, "expected": {"name": "x"}})` raises, message mentions `description`; `{"fields": {}, "expected": {}}` raises (nothing to change).
-
-Run: `cd "$WT/backend" && uv run pytest tests/unit/test_project_details_schema.py -v` → FAIL (module missing).
-
-- [ ] **Step 2: Implement the schema**
-
-Create `backend/app/schemas/project_details.py` (module docstring: the ONE whitelist of the 11 descriptive columns shared by `PATCH …/details` and the MCP `update_project_details` tool; PICOT stays on `PUT /ai-context`, `settings.managers_see_reviewers` on `PUT /manager-review-visibility`):
-
-```python
-ReviewTypeValue = Literal["interventional", "predictive_model", "diagnostic", "prognostic", "qualitative", "other"]
-_NOT_NULL_COLUMNS = ("name", "eligibility_criteria", "study_design", "review_keywords")
-
-
-class ProjectDetailsFields(BaseModel):
-    """A partial set of editable project columns: omitted keys are untouched, an unknown key is refused."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str | None = Field(default=None, min_length=1)
-    description: str | None = None
-    review_type: ReviewTypeValue | None = None
-    review_title: str | None = None
-    condition_studied: str | None = None
-    review_rationale: str | None = None
-    search_strategy: str | None = None
-    eligibility_criteria: dict[str, Any] | None = None
-    study_design: dict[str, Any] | None = None
-    review_keywords: list[str] | None = None
-    review_context: str | None = None
-
-    @field_validator(*_NOT_NULL_COLUMNS)
-    @classmethod
-    def _refuse_null(cls, value: Any, info: ValidationInfo) -> Any:
-        # A field validator (not a model one) so errors()[0]["loc"] names the column.
-        if value is None:
-            raise ValueError(f"{info.field_name} cannot be null")
-        return value
-```
-
-`ProjectDetailsUpdate(fields: ProjectDetailsFields, expected: ProjectDetailsFields)`, `extra="forbid"`, with a `@model_validator(mode="after")` that raises `ValueError("fields must name at least one column")` when `fields.model_fields_set` is empty and `ValueError(f"expected is missing: {', '.join(sorted(missing))}")` when `fields.model_fields_set - expected.model_fields_set` is non-empty. `ProjectDetailsValues`: the 11 columns with their stored types (`name: str`, `eligibility_criteria: dict[str, Any]`, `study_design: dict[str, Any]`, `review_keywords: list[str]`, `review_type: ReviewTypeValue | None`, the text columns `str | None`); docstring: the current values of the 11 columns, exactly what `expected` must echo. `ProjectDetailsRead(ProjectDetailsValues)` adds `updated_at: datetime`. `ProjectDetailsRefusalCode(StrEnum)` with `STALE_VALUE = "STALE_VALUE"` (docstring: slice-local like `TemplateDraftLockRefusalCode` in `app/schemas/hitl_session.py`, not `ApiErrorCode`); `ProjectDetailsStaleDetails(current: dict[str, Any])`; `ProjectDetailsRefusalError(code, message, details: ProjectDetailsStaleDetails)`; `ProjectDetailsRefusalResponse(ok: bool = False, error: ProjectDetailsRefusalError, trace_id: str | None = None)` — "the 409 body, declared so the generated client types `details.current`".
-
-Run Step 1 → PASS.
-
-- [ ] **Step 3: Service — failing integration tests**
-
-Create `backend/tests/integration/test_project_details_service.py` (`db_session`, `SEED.primary_project`). Helper `_set(db, **cols)` runs one raw `UPDATE public.projects SET … WHERE id = :pid` (JSONB via `CAST(:v AS jsonb)` with `json.dumps`) then `flush()`. Tests:
-- `test_applies_only_the_named_keys_and_reports_before_after`: set `description='old'`, `review_title='keep'`; `update_details(fields=F(description="new"), expected=F(description="old"))` → `change.before == {"description": "old"}`, `change.after == {"description": "new"}`, `change.details.description == "new"`, `change.details.review_title == "keep"`, `change.details.updated_at` is a `datetime`; a raw re-select shows `new`.
-- `test_stale_value_raises_with_current_and_writes_nothing`: set `name='Agent name'`, `description='d'`; `fields=F(name="Mine", description="d2")`, `expected=F(name="Old name", description="d")` → `StaleProjectValueError`, `exc.status_code == 409`, `exc.code == "STALE_VALUE"`, `exc.details == {"current": {"name": "Agent name"}}` (only the contested key); raw re-select: name and description unchanged.
-- `test_precondition_is_canonical_json_equality`, parametrized `(stored, expected_value, stale)` over: `eligibility_criteria` `{"inclusion": ["a"], "notes": ""}` vs the same keys in reverse order → not stale; `review_keywords` `["a", "b"]` vs `["b", "a"]` → stale; `description` `None` vs `""` → stale; `description` `"x "` vs `"x"` → stale; `review_type` `"diagnostic"` vs `"diagnostic"` → not stale.
-- `test_jsonb_columns_round_trip`: write `study_design={"types": ["RCT"], "notes": "n"}` and `review_keywords=["k1"]` with matching `expected`; raw re-select returns them.
-- `test_missing_project_is_not_found`: random `uuid4()` → `NotFoundError` (from `app.core.error_handler`), status 404.
-
-Run: `cd "$WT/backend" && uv run pytest tests/integration/test_project_details_service.py -v` → FAIL.
-
-- [ ] **Step 4: Implement the service**
-
-Create `backend/app/services/project_details_service.py` (docstring: one writer for the 11 descriptive columns, REST and MCP; row lock; canonical-JSON precondition; flushes, caller commits):
-
-```python
-class StaleProjectValueError(AppError):
-    """A column changed since the caller read it (possibly by the other writer)."""
-
-    def __init__(self, *, current: dict[str, Any]) -> None:
-        super().__init__(
-            code=ProjectDetailsRefusalCode.STALE_VALUE,
-            message="These fields changed since you read them.",
-            status_code=status.HTTP_409_CONFLICT,
-            details={"current": current},
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class ProjectDetailsChange:
-    before: dict[str, Any]
-    after: dict[str, Any]
-    details: ProjectDetailsRead
-
-
-def _values(project: Project, keys: Iterable[str]) -> dict[str, Any]:
-    # JSONB loads as plain dict/list, review_type as its str value: already JSON values.
-    return {key: getattr(project, key) for key in keys}
-
-
-async def update_details(
-    db: AsyncSession, *, project_id: UUID, fields: ProjectDetailsFields, expected: ProjectDetailsFields
-) -> ProjectDetailsChange:
-    project = (
-        await db.execute(
-            select(Project).where(Project.id == project_id).with_for_update()
-            .execution_options(populate_existing=True)
-        )
-    ).scalar_one_or_none()
-    if project is None:
-        raise NotFoundError("Project", str(project_id))
-    changes = fields.model_dump(mode="json", exclude_unset=True)
-    prior = expected.model_dump(mode="json", exclude_unset=True)
-    before = _values(project, changes)
-    contested = {key: value for key, value in before.items() if key not in prior or prior[key] != value}
-    if contested:
-        raise StaleProjectValueError(current=contested)
-    for key, value in changes.items():
-        setattr(project, key, value)  # new objects for JSONB: plain JSONB tracks reassignment only
-    await db.flush()
-    await db.refresh(project)
-    details = ProjectDetailsRead.model_validate(
-        {**_values(project, ProjectDetailsFields.model_fields), "updated_at": project.updated_at}
-    )
-    return ProjectDetailsChange(before=before, after=_values(project, changes), details=details)
-```
-
-Run Step 3 → PASS. Commit (schema, service, both test files): `feat(projects): add project details service with optimistic precondition`, co-author trailer.
-
-- [ ] **Step 5: REST route — failing integration and handler unit tests**
-
-Create `backend/tests/integration/test_project_details_api.py`, borrowing the identity fixtures the way `tests/integration/test_ai_context_endpoints.py` does (`client_as_manager = engine_setup.client_as_manager`, same for `client_as_reviewer`, `client_as_outsider`, from `tests.integration.helpers.engine_setup`). `_URL = "/api/v1/projects/{pid}/details"`. Read the current `description` of `SEED.primary_project` first and use it as `expected`.
-- `test_project_details_gate_order`: manager → 200 with `data.description == "via api"` and all 11 keys plus `updated_at` in `data`; reviewer → 403; outsider → 404; `uuid4()` project as manager → 404, and its `error` equals the outsider's `error` (`code` and `message`); none of the refused calls changed the row.
-- `test_stale_value_is_409_with_current`: raw-set `description='changed by agent'`, PATCH with `expected.description = 'stale'` → 409, `error.code == "STALE_VALUE"`, `error.details.current == {"description": "changed by agent"}`; row unchanged.
-- `test_unknown_field_is_422`: `fields={"picots_config_ai_review": {}}` → 422 envelope `error.code == "VALIDATION_ERROR"`.
-- `test_expected_must_cover_fields`: `fields={"name": "a"}`, `expected={}` → 422.
-- `test_route_is_rate_limited`: 30 no-op PATCHes (`fields` = `expected` = current description) → 200 each; the 31st → 429.
-
-Create `backend/tests/unit/test_project_details_endpoint_unit.py` (`from app.api.v1.endpoints import project_details as pd`; `_handler = pd.update_project_details.__wrapped__`; monkeypatch the module globals `is_project_member`, `is_project_manager` (`AsyncMock`) and `update_details`; `db = SimpleNamespace(commit=AsyncMock())`; `body = ProjectDetailsUpdate.model_validate({"fields": {"description": "n"}, "expected": {"description": "o"}})`; `request = SimpleNamespace(state=SimpleNamespace(trace_id="t1"))`):
-- `test_non_member_is_404_and_nothing_else_runs`: member `False` → `HTTPException` 404; `is_project_manager` and `update_details` not awaited; no commit.
-- `test_member_non_manager_is_403`: member `True`, manager `False` → 403; `update_details` not awaited; no commit.
-- `test_manager_commits_once_and_returns_details`: both `True`, `update_details` returns a `ProjectDetailsChange` → `ApiResponse` whose `data` is `change.details`, `trace_id == "t1"`; `db.commit` awaited once; with `SimpleNamespace(state=SimpleNamespace())` → `trace_id is None`.
-- `test_stale_value_propagates_without_commit`: `update_details` raises `StaleProjectValueError(current={"description": "x"})` → it propagates (the `AppError` handler renders the 409); no commit.
-
-Run: `cd "$WT/backend" && uv run pytest tests/integration/test_project_details_api.py tests/unit/test_project_details_endpoint_unit.py -v` → FAIL (404 route; module missing).
-
-- [ ] **Step 6: Implement the route**
-
-Create `backend/app/api/v1/endpoints/project_details.py` (docstring: auth + gate order + envelope only; member → 404 so an outsider and a missing project look the same, manager → 403; not `require_project_manager`, which 403s both):
-
-```python
-router = APIRouter()
-
-
-@router.patch(
-    "/{project_id}/details",
-    response_model=ApiResponse[ProjectDetailsRead],
-    responses={
-        status.HTTP_403_FORBIDDEN: {"description": "A member who is not a project manager"},
-        status.HTTP_404_NOT_FOUND: {"description": "Not a member of the project, or no such project"},
-        status.HTTP_409_CONFLICT: {"model": ProjectDetailsRefusalResponse, "description": "Refused: a field changed since the caller read it"},
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Unknown or invalid field, or expected does not cover fields"},
-    },
-)
-@limiter.limit("30/minute")
-async def update_project_details(
-    project_id: UUID, body: ProjectDetailsUpdate, request: Request, db: DbSession,
-    user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse[ProjectDetailsRead]:
-    """Write the changed descriptive columns if every `expected` value is still current."""
-    if not await is_project_member(db, project_id, user_sub):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    if not await is_project_manager(db, project_id, user_sub):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager role required")
-    change = await update_details(db, project_id=project_id, fields=body.fields, expected=body.expected)
-    await db.commit()
-    return ApiResponse.success(change.details, trace_id=getattr(request.state, "trace_id", None))
-```
-
-Imports (by name, so the unit test can patch them on this module): `get_current_user_sub`, `is_project_member`, `is_project_manager` from `app.api.deps.security`; `DbSession` from `app.core.deps`; `limiter` from `app.utils.rate_limiter`; `ApiResponse` from `app.schemas.common`; the schemas from `app.schemas.project_details`; `update_details` from `app.services.project_details_service`. `StaleProjectValueError` propagates to `app_error_handler` (409 envelope with `details`). Register the router in `backend/app/api/v1/router.py`. Run Step 5 → PASS.
-
-- [ ] **Step 7: Regenerate the contract and commit**
-
-Run from `$WT`: `npm run generate:api-types`; then `grep -n "ProjectDetailsUpdate\|/details" frontend/types/api/schema.d.ts` shows the route and schemas. Commit the endpoint, router, both Step 5 test files, `openapi.json`, `schema.d.ts`: `feat(projects): add PATCH /projects/{id}/details`, co-author trailer.
-
-- [ ] **Step 8: Verify**
-
-- `cd "$WT/backend" && uv run pytest tests/unit/test_project_details_schema.py tests/unit/test_project_details_endpoint_unit.py tests/integration/test_project_details_service.py tests/integration/test_project_details_api.py tests/integration/test_ai_context_endpoints.py -v` → PASS.
-- `make lint-backend` (ruff, format, mypy ratchet: no new pair) → clean; `uv run mypy app/schemas/project_details.py app/services/project_details_service.py app/api/v1/endpoints/project_details.py --ignore-missing-imports` → clean.
-- `cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec` → no new finding except these tolerated intermediate ones, if vulture reports them: the dataclass fields `before` / `after` of `ProjectDetailsChange` (cleared by Task 9, whose `update_project_details` tool reads `change.before` / `change.after`); still tolerated from earlier tasks: `storage_factory` (→ Task 7b), `agent_tool` (→ Task 6a), `record_applied` / `record_refused` (→ Task 9). Never baseline them; name them in the task report. Any other finding fails the task.
-- From `$WT`: `bash scripts/fitness/run_all.sh` → green (layered arch, scope guards, response descriptions, file size); `npm run generate:api-types` again → `git -C "$WT" status` shows no diff.
-- `cd "$WT/backend" && uv run alembic downgrade 0076_extraction_batches`.
+Delivered by PR #970 (b7960b01) with identical names; nothing to do.
 
 ### Task 5b: Settings save moved off PostgREST onto `PATCH /projects/{id}/details` (frontend)
 
-**Context.** Task 5a shipped `PATCH /api/v1/projects/{project_id}/details` (body `{fields, expected}` — `expected` must name every key of `fields`; `ApiResponse[ProjectDetailsRead]`; 409 `STALE_VALUE` with `error.details.current` = the server's values of the contested keys; 403 member non-manager; 404 non-member or missing project; 422 validation) and committed its generated types. This task moves the Settings save onto it, deletes the raw `supabase.from('projects').update(fields)` write (`frontend/services/projectSettingsService.ts:236-245`), refreshes the TanStack caches that show the saved columns, and adds a stale-value banner. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §5.4 ("Frontend change", "States"), §8.
-
-**Rules for this task (restated, all binding):**
-- Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; confirm with `git -C "$WT" status`. Frontend tooling runs from `$WT` (never `cd frontend && npm …`); the worktree needs its own `node_modules` (`npm ci` if absent).
-- English only. All copy through `t()`; new keys must be referenced (`check_copy_keys.py`); `npx knip` / `npx knip --production` at zero (do not export a type nobody imports). React Compiler: no `try/finally`, no `throw` inside `try` in a hook or component body. Buttons use named sizes.
-- Data path: component → hook → service → `apiClient`; services return `ErrorResult<T>`, never throw, never toast. No `supabase.from('projects').update` remains. Types from `frontend/types/api/schema.d.ts` (generated by Task 5a; never hand-edited); this task changes no backend contract.
-- The hook's own state stays local (not TanStack Query; converting it is out of scope), but a successful save changes columns that cached reads show, so it invalidates exactly two keys (the "stale cache after a mutation" incident class): `projectKeys.aiContext(projectId)` (`frontend/hooks/project/useAiContext.ts`: its `labels` and `review_type` vary with `review_type`; 5-minute `staleTime`; rendered by `ReviewQuestionSection` on this same page) and `projectsListKey(user.id)` (`frontend/hooks/useProjectsQuery.ts`: `name`, `description`, `review_title` for the hub, sidebar switcher and breadcrumb; its docstring requires every invalidator to name this exact key, never `projectKeys.all`). A refused save (409/403/other) invalidates nothing.
-- Typed edge: no `as unknown as` cast into `ProjectDetailsFields`. The Supabase `Project` row types JSONB columns as `Json`; a narrow mapper checks the three JSONB shapes and refuses a mismatch before any request.
-- Load `frontend-development`, `frontend-ux`, `ui-styling`, `web-testing` before coding; `design-review` before calling it done.
-- Commits: conventional, ending with a blank line then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-
-**Files:**
-- Modify: `frontend/services/projectSettingsService.ts:208-246` (delete `SaveProjectFields` and the PostgREST save; add the PATCH, `staleValuesOf`, `toDetailsFields`)
-- Modify: `frontend/hooks/useProjectSettings.ts` (whole file)
-- Modify: `frontend/components/project/ProjectSettings.tsx` (stale banner)
-- Modify: `frontend/lib/copy/project.ts` (four keys)
-- Modify test: `frontend/test/components/ProjectSettings.sections.test.tsx:9-20` (mock shape) + banner cases
-- Test (new): `frontend/test/services/projectSettingsService.test.ts`, `frontend/test/hooks/useProjectSettings.test.tsx`
-- Modify: `scripts/fitness/check_frontend_data_path.baseline` (`frontend/services/projectSettingsService.ts|projects:4` → `:3`)
-
-**Interfaces:**
-- Consumes (Task 5a, generated): `components['schemas']['ProjectDetailsFields' | 'ProjectDetailsUpdate' | 'ProjectDetailsRead']`; the route above. Existing: `projectKeys` (`@/lib/query-keys`), `projectsListKey(userId)` (`@/hooks/useProjectsQuery`), `useAuth()` (`@/contexts/AuthContext`, `.user?.id`), `useQueryClient` (`@tanstack/react-query`), `ApiError(code, message, status, traceId?, details?)` (`@/integrations/api/client`).
-- Produces: `saveProjectSettings(projectId, body)` (PATCH), `staleValuesOf(error)`, `toDetailsFields(values)`, `ProjectDetailsFields` type; hook return adds `staleFields: string[]`, `loadLatest(): Promise<void>`, `keepMine(): Promise<void>`.
-
-- [ ] **Step 1: Frontend service — failing test, then the swap**
-
-Create `frontend/test/services/projectSettingsService.test.ts`: partial mock of `@/integrations/api/client` keeping `ApiError` real (`vi.mock(path, async (importOriginal) => ({...(await importOriginal<…>()), apiClient: apiClientMock}))`). Assert `saveProjectSettings('p1', {fields: {name: 'n'}, expected: {name: 'o'}})` calls `apiClient('/api/v1/projects/p1/details', {method: 'PATCH', body: {fields: {name: 'n'}, expected: {name: 'o'}}})` and returns `{ok: true, data}`; a rejection → `{ok: false}`; `staleValuesOf(new ApiError('STALE_VALUE', 'm', 409, 't', {current: {name: 'x'}}))` → `{name: 'x'}`; `staleValuesOf` of a 403 `ApiError`, of a 409 with another code, and of `new Error('m')` → `null`; `toDetailsFields({name: 'n', eligibility_criteria: {inclusion: []}, review_keywords: ['k']})` returns the same values; `toDetailsFields({eligibility_criteria: ['x']})`, `({study_design: 'x'})`, `({review_keywords: [1]})` and `({review_keywords: 'x'})` → `null`. Run → FAIL.
-
-In `projectSettingsService.ts` delete `SaveProjectFields` and the PostgREST `saveProjectSettings` (the NOTE comment about `picots_config_ai_review` goes with them), and add:
-
-```ts
-export type ProjectDetailsFields = components['schemas']['ProjectDetailsFields'];
-type ProjectDetailsUpdate = components['schemas']['ProjectDetailsUpdate'];
-type ProjectDetailsRead = components['schemas']['ProjectDetailsRead'];
-
-/** Persist the changed descriptive fields; `expected` holds the values the page loaded (409 STALE_VALUE when any moved). */
-export function saveProjectSettings(projectId: string, body: ProjectDetailsUpdate): Promise<ErrorResult<ProjectDetailsRead>> {
-  return toResult(
-    () => apiClient<ProjectDetailsRead>(`/api/v1/projects/${projectId}/details`, {method: 'PATCH', body}),
-    'projectSettingsService.saveProjectSettings',
-  );
-}
-
-/** The server's current values of the contested fields for a 409 STALE_VALUE; null for any other error. */
-export function staleValuesOf(error: Error): Record<string, unknown> | null {
-  if (!(error instanceof ApiError) || error.status !== 409 || error.code !== 'STALE_VALUE') return null;
-  const current = error.details?.current;
-  return current && typeof current === 'object' ? (current as Record<string, unknown>) : null;
-}
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === 'string');
-
-/** The Supabase row's `Json` columns narrowed to the PATCH contract; null when a JSONB value has the wrong shape. */
-export function toDetailsFields(values: Partial<Project>): ProjectDetailsFields | null {
-  const {eligibility_criteria, study_design, review_keywords} = values;
-  if (eligibility_criteria !== undefined && !isRecord(eligibility_criteria)) return null;
-  if (study_design !== undefined && !isRecord(study_design)) return null;
-  if (review_keywords !== undefined && !isStringList(review_keywords)) return null;
-  return {
-    name: values.name, description: values.description, review_type: values.review_type,
-    review_title: values.review_title, condition_studied: values.condition_studied,
-    review_rationale: values.review_rationale, search_strategy: values.search_strategy,
-    review_context: values.review_context, eligibility_criteria, study_design, review_keywords,
-  };
-}
-```
-
-Keys absent from `values` stay `undefined`, which `JSON.stringify` drops, so only the changed keys are sent. If `tsc` reports a scalar column whose row type differs from the generated one, narrow that column the same way — never cast. (imports: `apiClient`, `ApiError` from `@/integrations/api/client`; `components` from `@/types/api/schema`; `Project` from `@/types/project`.) Run the service test → PASS. Then `python3 scripts/fitness/check_frontend_data_path.py --update-baseline` → `projectSettingsService.ts|projects:4` becomes `:3`, no other line changes.
-
-- [ ] **Step 2: Hook — failing tests (MSW)**
-
-Create `frontend/test/hooks/useProjectSettings.test.tsx`. Mock `@/integrations/supabase/client` as `{supabase: {auth: {getSession: vi.fn(async () => ({data: {session: {access_token: 'test'}}}))}, from: fromMock}}` where `fromMock` returns `{select: () => ({eq: () => ({single: async () => ({data: {...serverRow}, error: null})})}), update: updateMock}`; `vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}))`; `vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'u1'}})}))`. `serverRow` is a mutable `Project`-shaped object (`id: 'p1', name: 'Old', description: 'D', …`). MSW (`server` from `@/test/mocks/server`): `http.patch('*/api/v1/projects/:id/details', …)` pushes each JSON body into `requests[]` and answers from a per-test queue (`{status: 200, body: {ok: true, data: {}}}` by default). `renderHook(() => useProjectSettings('p1'), {wrapper})` where `wrapper` provides a `QueryClient` whose `invalidateQueries` is spied (`vi.spyOn(queryClient, 'invalidateQueries')`); `waitFor(() => expect(result.current.project?.name).toBe('Old'))`. Cases:
-1. only changed keys: `updateProject({name: 'New'})`, `saveProject()` → `requests == [{fields: {name: 'New'}, expected: {name: 'Old'}}]`; `updateMock` never called; `toast.success` with `t('project', 'settingsSaveSuccess')`; `fromMock` called again (reload); `invalidateQueries` called with `{queryKey: projectKeys.aiContext('p1')}` and with `{queryKey: projectsListKey('u1')}`, and never with `{queryKey: projectKeys.all}`.
-2. 409: reply `409 {ok: false, error: {code: 'STALE_VALUE', message: 'stale', details: {current: {name: 'Agent'}}}}` → `staleFields == ['name']`, `project.name == 'New'`, `hasUnsavedChanges` true, `toast.error` not called, `invalidateQueries` not called.
-3. keep mine: after case 2's 409, the next reply is 200; `keepMine()` → second request `{fields: {name: 'New'}, expected: {name: 'Agent'}}`, `staleFields == []`.
-4. load latest: edit `name: 'New'` and `description: 'Mine'`; 409 with `current: {name: 'Agent'}`; set `serverRow.name = 'Agent'`; `loadLatest()` → `project.name == 'Agent'`, `project.description == 'Mine'`, `hasUnsavedChanges` true, `staleFields == []`.
-5. 403: reply `403 {ok: false, error: {code: 'FORBIDDEN', message: 'Manager role required'}}` → `toast.error(t('project', 'settingsSaveError'))`, `project.name == 'New'`, `staleFields == []`, `invalidateQueries` not called.
-6. no-op: `updateProject({name: 'Old'})`, `saveProject()` → no request; `hasUnsavedChanges` false.
-7. bad JSONB shape: `updateProject({review_keywords: 'x' as unknown as string[]})`, `saveProject()` → no request; `toast.error(t('project', 'settingsSaveError'))`; edits kept.
-
-Run: `npx vitest run frontend/test/hooks/useProjectSettings.test.tsx` → FAIL.
-
-- [ ] **Step 3: Implement the hook**
-
-Rewrite `frontend/hooks/useProjectSettings.ts` keeping its load path and its `useEffect(() => { queueMicrotask(() => void loadProject()); }, [loadProject])`:
-
-```ts
-/** The 11 columns PATCH /projects/{id}/details writes (backend ProjectDetailsFields). */
-const DETAIL_KEYS = ['name', 'description', 'review_type', 'review_title', 'condition_studied', 'review_rationale',
-  'search_strategy', 'eligibility_criteria', 'study_design', 'review_keywords', 'review_context'] as const;
-type DetailKey = (typeof DETAIL_KEYS)[number];
-
-const changedKeys = (edited: Project, loaded: Project): DetailKey[] =>
-  DETAIL_KEYS.filter((key) => JSON.stringify(edited[key]) !== JSON.stringify(loaded[key]));
-const pick = (row: Project, keys: readonly DetailKey[]): Partial<Project> =>
-  Object.fromEntries(keys.map((key) => [key, row[key]]));
-```
-
-`const queryClient = useQueryClient(); const {user} = useAuth();`. State: `project`, `loadedProject` (the last server snapshot), `loading`, `hasUnsavedChanges`, `staleFields: string[]`, `staleCurrent: Partial<Project>`. `fetchProject()` wraps `loadProjectForSettings` (error → existing `common.errors_loadProject` toast, returns `null`); `loadProject()` sets `project` and `loadedProject` to the fresh row and clears dirty and stale state. `persist(edited, snapshot)`: `keys = changedKeys(edited, snapshot)`; none → `setHasUnsavedChanges(false)` and return; `fields = toDetailsFields(pick(edited, keys))`, `expected = toDetailsFields(pick(snapshot, keys))`; either `null` → `toast.error(t('project', 'settingsSaveError'))`, edits kept, return; else `saveProjectSettings(projectId, {fields, expected})`; on `!ok`: `staleValuesOf(result.error)` non-null → `setStaleFields(Object.keys(current))`, `setStaleCurrent(current as Partial<Project>)`, no toast; otherwise `toast.error(t('project', 'settingsSaveError'))`; edits kept either way. On ok: success toast; `void queryClient.invalidateQueries({queryKey: projectKeys.aiContext(projectId)})`; when `user?.id`, `void queryClient.invalidateQueries({queryKey: projectsListKey(user.id)})`; `await loadProject()`. `saveProject()` = `persist(project, loadedProject)`. `keepMine()`: `snapshot = {...loadedProject, ...staleCurrent}`; set it as `loadedProject`, clear stale state, `await persist(project, snapshot)`. `loadLatest()`: fetch fresh; `kept = changedKeys(project, loadedProject).filter((key) => !staleFields.includes(key))`; `setProject({...fresh, ...pick(project, kept)})`, `setLoadedProject(fresh)`, `setHasUnsavedChanges(kept.length > 0)`, clear stale state. Return `{project, loading, hasUnsavedChanges, updateProject, saveProject, loadProject, staleFields, loadLatest, keepMine}`. No `try/finally`.
-
-Run Step 2 → PASS.
-
-- [ ] **Step 4: Stale banner — failing component test, then implement**
-
-In `frontend/test/components/ProjectSettings.sections.test.tsx`, add a hoisted `hookState = {staleFields: [] as string[], loadLatest: vi.fn(), keepMine: vi.fn()}` (reset `staleFields = []` in `beforeEach`) and extend the mock's return with `staleFields: hookState.staleFields, loadLatest: hookState.loadLatest, keepMine: hookState.keepMine, loadProject: vi.fn()`. New `describe('ProjectSettings stale banner')`: default → `queryByTestId('project-settings-stale-banner')` is null; with `hookState.staleFields = ['name', 'review_keywords']` → the banner (`role="alert"`) shows `staleBannerMessage`, `basicProjectNameLabel`, `advancedCardKeywordsTitle` (copy is mocked to return keys), and clicking `staleLoadLatest` / `staleKeepMine` calls the two mocks. Run → FAIL.
-
-Add to `frontend/lib/copy/project.ts` after `settingsDiscardConfirm`: `staleBannerMessage: 'These fields changed since you opened the page (possibly by an AI agent):'`, `staleLoadLatest: 'Load latest'`, `staleKeepMine: 'Keep mine'`, `staleFieldEligibility: 'Eligibility criteria'`.
-
-In `ProjectSettings.tsx`: a module-level `STALE_FIELD_LABELS: Record<string, string>` — `name` → `basicProjectNameLabel`, `description` → `basicDescriptionLabel`, `review_type` → `basicReviewTypeLabel`, `review_title` → `reviewTitleLabel`, `condition_studied` → `reviewConditionStudiedLabel`, `review_rationale` → `reviewRationaleLabel`, `search_strategy` → `reviewCardSearchTitle`, `review_context` → `reviewContextLabel`, `eligibility_criteria` → `staleFieldEligibility`, `study_design` → `advancedCardStudyTypesTitle`, `review_keywords` → `advancedCardKeywordsTitle` (all `t('project', …)`). Destructure `staleFields, loadLatest, keepMine` from the hook and render, as the first child of `<div className="w-full p-2">`:
-
-```tsx
-{staleFields.length > 0 && (
-  <Alert data-testid="project-settings-stale-banner" className="mb-2 flex flex-wrap items-center gap-2 text-[13px]">
-    <p className="min-w-0 flex-1">
-      {t('project', 'staleBannerMessage')}{' '}
-      <strong>{staleFields.map((key) => STALE_FIELD_LABELS[key] ?? key).join(', ')}</strong>
-    </p>
-    <Button size="sm" variant="ghost" onClick={() => void loadLatest()}>{t('project', 'staleLoadLatest')}</Button>
-    <Button size="sm" onClick={() => void keepMine()}>{t('project', 'staleKeepMine')}</Button>
-  </Alert>
-)}
-```
-
-(`Alert` from `@/components/ui/alert`, which sets `role="alert"`.) The existing states stay as they are: saving → the header button's `settingsSaving` label and `disabled={loading}`; saved → success toast, the two cache invalidations and a reload; 403/other → `settingsSaveError` toast with edits kept. Run the sections test → PASS.
-
-- [ ] **Step 5: Commit**
-
-`git -C "$WT" add` the service, hook, component, `project.ts`, the three frontend tests and `scripts/fitness/check_frontend_data_path.baseline`; `git -C "$WT" commit -m "feat(settings): save project details through the API with a stale-value banner" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
-
-- [ ] **Step 6: Verify**
-
-- From `$WT`: `npm run test:run -- frontend/test/services/projectSettingsService.test.ts frontend/test/hooks/useProjectSettings.test.tsx frontend/test/components/ProjectSettings.sections.test.tsx frontend/test/components/AdvancedSettingsSection.test.tsx` → PASS; then `npm run test:run` → PASS.
-- `npm run lint`, `npm run typecheck`, `npm run deadcode`, `npm run deadcode:production` → clean / zero.
-- `grep -c "from('projects')" frontend/services/projectSettingsService.ts` → `3` (delete, the settings load, the comparison-permission read); `grep -rn "SaveProjectFields\|as unknown as ProjectDetailsFields" frontend` → no hit.
-- `bash scripts/fitness/run_all.sh` → green (copy keys, data path, react-query keys, file size).
-- `npm run generate:api-types` → `git -C "$WT" status` shows no diff (Task 5a's contract is current).
-- `design-review` on Project → Settings with the stale banner (desktop, narrow, dark).
+Delivered by PR #970 (b7960b01) with identical names; nothing to do.
 
 ### Task 6a: Project read tools (`list_projects`, `get_project`)
 
@@ -2363,7 +2018,7 @@ Expected: all green; `check_scope_guards` reports no duplicate `(ArticleFile, ar
 
 ### Task 7a: `page_text_blocks` + `get_article_text` tool
 
-Spec §10 Task 7 is split in two to fit one brief each: **7a** (paged article text) and **7b** (FTS migration `0079_article_text_fts`, search, PDF URL). 7a lands first; it adds no migration.
+Spec §10 Task 7 is split in two to fit one brief each: **7a** (paged article text) and **7b** (FTS migration `0080_article_text_fts`, search, PDF URL). 7a lands first; it adds no migration.
 
 **Rules for this task (restated; they bind every step):**
 - Worktree `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Edit only under `$WT`; backend commands from `$WT/backend`; git only as `git -C "$WT" …`; never `git switch`/`checkout`; confirm with `git -C "$WT" status`.
@@ -2528,14 +2183,14 @@ cd "$WT" && python scripts/fitness/check_layered_arch.py && python scripts/fitne
 
 Expected: all green (the existing text-block endpoint and repository tests are unchanged); no baseline grows. Vulture: never baseline; the only tolerated intermediate findings are `storage_factory` (→ Task 7b), `record_applied` / `record_refused` (→ Task 9) and, if reported, `ProjectDetailsChange.before` / `.after` (→ Task 9); any other finding fails the task. `git -C "$WT" status` clean.
 
-### Task 7b: FTS migration 0079 + `search_project_text` + `get_article_pdf`
+### Task 7b: FTS migration 0080 + `search_project_text` + `get_article_pdf`
 
 Second half of spec §10 Task 7 (7a shipped `get_article_text`).
 
 **Rules for this task (restated; they bind every step):**
 - Worktree `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Edit only under `$WT`; backend commands from `$WT/backend`; git only as `git -C "$WT" …`; never `git switch`/`checkout`; confirm with `git -C "$WT" status`.
 - English only.
-- Migration rules: hand-written file (docstring states WHY); revision id ≤ 32 chars (`0079_article_text_fts` = 21); `down_revision = "0078_agent_actions"` (Task 3's head — confirm with `ls "$WT/backend/alembic/versions"`); never apply DDL through the Supabase MCP; the index is migration-only (`env.py` `include_object` drops reflected indexes with no model counterpart, so `alembic check` stays clean and no model changes). In the same task, move the roundtrip head pin `backend/tests/integration/test_migration_roundtrip.py` `expected_head` (in `test_alembic_head_is_expected_revision`, `:1331` today) from `"0078_agent_actions"` to `"0079_article_text_fts"`. The table is `article_text_blocks`, not `extraction_*`, so the migration-head line in `docs/reference/extraction-hitl-architecture.md` does not move. Shared local DB (`.claude/rules/backend.md` § Local database): `uv run alembic upgrade head` before the tests; after Verify, `cd "$WT/backend" && uv run alembic downgrade 0076_extraction_batches` (dev's head; the 0079 → 0078 → 0077 downgrades all run). Never `alembic stamp`, never reset.
+- Migration rules: hand-written file (docstring states WHY); revision id ≤ 32 chars (`0080_article_text_fts` = 21); `down_revision = "0079_agent_actions"` (Task 3's head — confirm with `ls "$WT/backend/alembic/versions"`); never apply DDL through the Supabase MCP; the index is migration-only (`env.py` `include_object` drops reflected indexes with no model counterpart, so `alembic check` stays clean and no model changes). In the same task, move the roundtrip head pin `backend/tests/integration/test_migration_roundtrip.py` `expected_head` (in `test_alembic_head_is_expected_revision`, `:1331` today) from `"0079_agent_actions"` to `"0080_article_text_fts"`. The table is `article_text_blocks`, not `extraction_*`, so the migration-head line in `docs/reference/extraction-hitl-architecture.md` does not move. Shared local DB (`.claude/rules/backend.md` § Local database): `uv run alembic upgrade head` before the tests; after Verify, `cd "$WT/backend" && uv run alembic downgrade 0076_extraction_batches` (dev's head; the 0080 → 0079 → 0078 → 0077 downgrades all run, the last one being #970's peer migration `0077_revoke_project_writes`). Never `alembic stamp`, never reset.
 - **Build mode (ruled).** A **plain** `CREATE INDEX IF NOT EXISTS` inside Alembic's transaction (house default; `0050_field_name_unique_heal.py` precedent: "Plain index — not CONCURRENTLY: Alembic runs transactional"). Production `article_text_blocks` measured 2026-09-24: ≈ 6,078 rows, 4.2 MB — the build is sub-second, so the brief write lock is harmless. No CONCURRENTLY variant. The implementer does not query production.
 - Layering: `app/api/**` → `app.services.*` + support only; no repository/model import in tools. Files resolve only through `article_read_service.resolve_article_file` (guard `owned_article_file`; `ArticleFileNotFoundError` → `NOT_FOUND`); a named `article_id` filter on search is checked with the existing guard `article_read_service.owned_article(db, *, project_id, article_id)` (`ArticleNotFoundError` → `NOT_FOUND`). No new ownership predicate; no `project_members` literal.
 - Search scope: `article_files.project_id = :gated_project` **in the WHERE clause** of the search query; match with the exact index expression `to_tsvector('simple', text) @@ websearch_to_tsquery('simple', :q)` (never raises on user syntax); `:q` ≤ 200 chars (tool refuses longer with `INVALID_ARGUMENT`, `field "query"`); rank by `(ts_rank desc, block id)`; `ts_headline` only on the page rows, in an outer query. Page size fixed at 20.
@@ -2545,7 +2200,7 @@ Second half of spec §10 Task 7 (7a shipped `get_article_text`).
 - Tool metadata: `@agent_tool` only; `title`; static descriptions; hints `readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False`; `outputSchema` from the return model. Results ≤ 32,000 characters of JSON. Snippet ≤ 400 chars, title ≤ 200 chars. Decorator shape (Task 2b, `app/api/mcp/server.py`): `@agent_tool(requires="read", project_arg=…, title=…, description=…)` — the decorator derives these hints from `requires` and its `destructive=False` / `idempotent=True` defaults; a tool is `async def name(db: AsyncSession, …)` with `db` injected by the dispatcher (no session accessor). Metadata tests read the SDK's snake_case attributes: `tool.output_schema`, `tool.annotations.read_only_hint` / `destructive_hint` / `idempotent_hint` / `open_world_hint`; results `result.is_error` / `result.structured_content`.
 
 **Files:**
-- Create: `backend/alembic/versions/0079_article_text_fts.py`
+- Create: `backend/alembic/versions/0080_article_text_fts.py`
 - Modify: `backend/tests/integration/test_migration_roundtrip.py` (`expected_head`)
 - Create: `backend/tests/integration/test_article_text_fts_index.py`
 - Create: `backend/app/services/article_text_search_service.py`
@@ -2581,12 +2236,12 @@ async def test_fts_query_uses_index(db_session):
     assert "idx_article_text_blocks_fts" in plan
 ```
 
-Also change `expected_head = "0078_agent_actions"` → `"0079_article_text_fts"` in `test_migration_roundtrip.py` and append a roundtrip for the index (the file's `migration_db_url` / `migration_session` fixtures and `_run_alembic` helper, like its 0077/0078 tests):
+Also change `expected_head = "0079_agent_actions"` → `"0080_article_text_fts"` in `test_migration_roundtrip.py` and append a roundtrip for the index (the file's `migration_db_url` / `migration_session` fixtures and `_run_alembic` helper, like its 0078/0079 tests):
 
 ```python
-# --- 0079: article text FTS index -----------------------------------------
+# --- 0080: article text FTS index -----------------------------------------
 @pytest.mark.asyncio
-async def test_migration_0079_article_text_fts_roundtrip(
+async def test_migration_0080_article_text_fts_roundtrip(
     migration_db_url: str, migration_session: AsyncSession
 ) -> None:
     async def has_index() -> bool:
@@ -2596,7 +2251,7 @@ async def test_migration_0079_article_text_fts_roundtrip(
         return bool(found)
 
     assert await has_index()
-    _run_alembic("downgrade", "0078_agent_actions", database_url=migration_db_url)
+    _run_alembic("downgrade", "0079_agent_actions", database_url=migration_db_url)
     try:
         assert not await has_index()
     finally:
@@ -2604,22 +2259,22 @@ async def test_migration_0079_article_text_fts_roundtrip(
     assert await has_index()
 ```
 
-Run `cd "$WT/backend" && uv run pytest tests/integration/test_article_text_fts_index.py "tests/integration/test_migration_roundtrip.py::test_migration_0079_article_text_fts_roundtrip" -v` → FAIL (`NoResultFound`; index absent at head).
+Run `cd "$WT/backend" && uv run pytest tests/integration/test_article_text_fts_index.py "tests/integration/test_migration_roundtrip.py::test_migration_0080_article_text_fts_roundtrip" -v` → FAIL (`NoResultFound`; index absent at head).
 
-- [ ] **Step 2: Migration** — `backend/alembic/versions/0079_article_text_fts.py`:
+- [ ] **Step 2: Migration** — `backend/alembic/versions/0080_article_text_fts.py`:
 
 ```python
 """Add an expression GIN index for agent full-text search over article text.
 
-Revision ID: 0079_article_text_fts
-Revises: 0078_agent_actions
+Revision ID: 0080_article_text_fts
+Revises: 0079_agent_actions
 Create Date: 2026-09-24
 """
 
 from alembic import op
 
-revision = "0079_article_text_fts"
-down_revision = "0078_agent_actions"
+revision = "0080_article_text_fts"
+down_revision = "0079_agent_actions"
 
 
 def upgrade() -> None:
@@ -2641,7 +2296,7 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS public.idx_article_text_blocks_fts")
 ```
 
-Run `cd "$WT/backend" && uv run alembic upgrade head && uv run alembic check && uv run pytest tests/integration/test_article_text_fts_index.py tests/integration/test_migration_roundtrip.py -v` → PASS (roundtrip green at the new head). Commit `feat(db): add article text FTS index (0079)` (+ blank line + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`).
+Run `cd "$WT/backend" && uv run alembic upgrade head && uv run alembic check && uv run pytest tests/integration/test_article_text_fts_index.py tests/integration/test_migration_roundtrip.py -v` → PASS (roundtrip green at the new head). Commit `feat(db): add article text FTS index (0080)` (+ blank line + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`).
 
 - [ ] **Step 3: Failing search service tests** — `backend/tests/integration/test_article_text_search_service.py`:
   - `test_search_confined_to_project`: the word `zebrafishmcp` in a block of a primary-project article and of a secondary-project article → searching the primary project returns only the primary hit (`article_id`, `page`, `block_id`, `locator == "p<page>·b<idx>"`); searching the secondary project returns only the other.
@@ -2726,7 +2381,7 @@ cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vul
 cd "$WT" && python scripts/fitness/check_layered_arch.py && python scripts/fitness/check_scope_guards.py && python scripts/fitness/check_file_size.py && bash scripts/fitness/check_migration_split.sh
 ```
 
-Expected: all green; head pin `0079_article_text_fts`; no baseline grows. `storage_factory` (tolerated since Task 2a) is cleared here by `get_article_pdf`; still tolerated, never baselined: `record_applied` / `record_refused` (→ Task 9) and, if reported, `ProjectDetailsChange.before` / `.after` (→ Task 9); any other finding fails the task. `git -C "$WT" status` clean.
+Expected: all green; head pin `0080_article_text_fts`; no baseline grows. `storage_factory` (tolerated since Task 2a) is cleared here by `get_article_pdf`; still tolerated, never baselined: `record_applied` / `record_refused` (→ Task 9) and, if reported, `ProjectDetailsChange.before` / `.after` (→ Task 9); any other finding fails the task. `git -C "$WT" status` clean.
 
 ### Task 8a: Current-run module move + `live_entity_types` + `get_template` (+ `get_article` extraction status)
 

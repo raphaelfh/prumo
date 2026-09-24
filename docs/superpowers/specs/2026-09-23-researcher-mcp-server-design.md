@@ -308,8 +308,9 @@ covers them.
 
 ### 4.1 Table `personal_access_tokens`
 
-Migration `0077_personal_access_tokens` (down revision
-`0076_extraction_batches`, the current head). ORM model
+Migration `0078_personal_access_tokens` (down revision
+`0077_revoke_project_writes`, #970's peer migration — the current head
+as of this merge). ORM model
 `app/models/personal_access_token.py` (`PersonalAccessToken`), exported
 from `app/models/__init__.py` like `LlmConnection`
 (`app/models/llm_connection.py`), but declared as
@@ -1002,8 +1003,8 @@ exist or is not in scope:
 
 ### 5.3 Search index
 
-Migration `0079_article_text_fts` (down revision
-`0078_agent_actions`): an expression GIN index
+Migration `0080_article_text_fts` (down revision
+`0079_agent_actions`): an expression GIN index
 `to_tsvector('simple', text)` on `article_text_blocks`.
 
 - **Migration-only.** `env.py` `include_object` ignores DB-only indexes. A
@@ -1125,8 +1126,8 @@ service while the UI kept a second, unchecked writer to the same columns.
 
 ### 6.1 Table `agent_actions` (append-only)
 
-Migration `0078_agent_actions` (down revision
-`0077_personal_access_tokens`). ORM model `app/models/agent_action.py`
+Migration `0079_agent_actions` (down revision
+`0078_personal_access_tokens`). ORM model `app/models/agent_action.py`
 (`AgentAction`), exported from `app/models/__init__.py`. Same 0072
 backend-only pattern.
 
@@ -1630,9 +1631,9 @@ After UI publish, the change appears. On a narrow template, both ops →
 - Migration roundtrip head pin
   (`tests/integration/test_migration_roundtrip.py:1331`, `expected_head`)
   moves with each migration, in the task that adds it, so the roundtrip
-  test is green after every task: task 1 `0076_extraction_batches` →
-  `0077_personal_access_tokens`; task 3 → `0078_agent_actions`; task 7 →
-  `0079_article_text_fts`.
+  test is green after every task: task 1 `0077_revoke_project_writes` →
+  `0078_personal_access_tokens`; task 3 → `0079_agent_actions`; task 7 →
+  `0080_article_text_fts`.
 - `frontend/types/api/openapi.json` and `schema.d.ts` regenerated with
   `npm run generate:api-types` (`scripts/generate_api_types.sh`) in every
   task that changes a REST contract (tasks 1, 5, 11); CI's api-contract
@@ -1672,7 +1673,7 @@ One PR, tasks in dependency order: 1, 2a, 2b, 3, 4a, 4b, 5, …, 12 (tasks 2
 and 4 are each split in two so every half fits one brief; the other
 numbers are unchanged).
 Each task is test-first and sized for an implementer brief of ≤ ~300
-lines. Migrations land in number order (0077 → 0078 → 0079), so
+lines. Migrations land in number order (0078 → 0079 → 0080), so
 `agent_actions` comes before any tool that audits and before the FTS
 migration. Each migration task moves the roundtrip head pin
 (`tests/integration/test_migration_roundtrip.py:1331` `expected_head`)
@@ -1681,8 +1682,8 @@ to its own revision, and each REST-contract task regenerates
 `npm run generate:api-types` (§8 Gates).
 
 - **Task 1 — PAT foundation.** `mcp` dependency + `uv lock` (acceptance §3);
-  `PersonalAccessToken` model + `0077_personal_access_tokens`; head pin
-  `0076_extraction_batches` → `0077_personal_access_tokens`;
+  `PersonalAccessToken` model + `0078_personal_access_tokens`; head pin
+  `0077_revoke_project_writes` → `0078_personal_access_tokens`;
   `pat_service` (create with profile lock and cap, list with status,
   revoke, `owned_token`, active predicate, hash lookup); router
   `personal_access_tokens.py` at `/me` with `@limiter.limit`;
@@ -1720,9 +1721,9 @@ to its own revision, and each REST-contract task regenerates
   `test_mcp401_bucket_spares_valid_tokens`), instructions length, scope
   filtering and the choke-point ordering (against a test-only tool
   registered by the fixture with `@agent_tool`), error mapping units.
-- **Task 3 — Audit table.** `AgentAction` model + `0078_agent_actions`
+- **Task 3 — Audit table.** `AgentAction` model + `0079_agent_actions`
   (`created_at` server default, §6.1); head pin →
-  `0078_agent_actions`; `agent_action_service` (insert only: applied
+  `0079_agent_actions`; `agent_action_service` (insert only: applied
   in-transaction, refused after rollback; oversized-input marker).
   Tests: RLS probe, insert shapes, FK behavior, 64 KiB marker.
 - **Task 4a — PAT Settings UI.** `meKeys.tokens()`; service, hooks,
@@ -1767,8 +1768,8 @@ to its own revision, and each REST-contract task regenerates
   BOLA rows for these tools (incl. `get_article` `file_id`), cursor
   tampering, empty states, `outputSchema` validation.
 - **Task 7 — Text, PDF, search.** `page_text_blocks`;
-  `article_text_search_service`; `0079_article_text_fts` (build mode
-  decided from the prod row count); head pin → `0079_article_text_fts`;
+  `article_text_search_service`; `0080_article_text_fts` (build mode
+  decided from the prod row count); head pin → `0080_article_text_fts`;
   tools `get_article_text` (header/trailer, §5.0; 28,000-character
   budget with in-block split, §5.1), `get_article_pdf` (`no_pdf` marker;
   signed URL through the task-2a storage factory, §3 "Storage client"),
