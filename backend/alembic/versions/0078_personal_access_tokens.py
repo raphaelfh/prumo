@@ -11,8 +11,8 @@ single ``deny_all`` policy, and every privilege revoked from
 ``authenticated`` / ``anon``. The backend's own role owns the table and
 bypasses RLS; there is no PostgREST read path for token rows.
 
-Revision ID: 0077_personal_access_tokens
-Revises: 0076_extraction_batches
+Revision ID: 0078_personal_access_tokens
+Revises: 0077_revoke_project_writes
 Create Date: 2026-09-24
 """
 
@@ -21,8 +21,8 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from alembic import op
 
-revision = "0077_personal_access_tokens"
-down_revision = "0076_extraction_batches"
+revision = "0078_personal_access_tokens"
+down_revision = "0077_revoke_project_writes"
 branch_labels = None
 depends_on = None
 

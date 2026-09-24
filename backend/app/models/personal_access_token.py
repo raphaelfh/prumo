@@ -1,7 +1,7 @@
 """Personal access tokens for the /mcp mount (spec §4.1, ADR 0020).
 
 Only the SHA-256 of the secret is stored; the secret is shown once.
-Backend-only table: migration 0077 enables RLS with ``deny_all`` and
+Backend-only table: migration 0078 enables RLS with ``deny_all`` and
 revokes every privilege from ``authenticated`` / ``anon``. Not
 ``BaseModel``: the table has no ``updated_at``.
 """

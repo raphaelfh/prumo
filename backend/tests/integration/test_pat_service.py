@@ -1,4 +1,4 @@
-"""Integration tests for ``app.services.pat_service`` (migration 0077, spec §4.2)."""
+"""Integration tests for ``app.services.pat_service`` (migration 0078, spec §4.2)."""
 
 from __future__ import annotations
 

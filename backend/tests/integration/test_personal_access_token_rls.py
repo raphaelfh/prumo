@@ -1,4 +1,4 @@
-"""RLS + privilege probes for ``personal_access_tokens`` (migration 0077).
+"""RLS + privilege probes for ``personal_access_tokens`` (migration 0078).
 
 Backend-only table, same posture as ``llm_connections`` (0072): the row
 holds a SHA-256 hash of a bearer secret, so ``authenticated`` / ``anon``
@@ -85,7 +85,7 @@ async def test_no_privilege_granted(db_session: AsyncSession, role: str, privile
     ).scalar_one()
     assert granted is False, (
         f"{role} holds {privilege} on {_TABLE} — the personal-access-token "
-        "table must be API-only (migration 0077 REVOKE did not take effect)"
+        "table must be API-only (migration 0078 REVOKE did not take effect)"
     )
 
 

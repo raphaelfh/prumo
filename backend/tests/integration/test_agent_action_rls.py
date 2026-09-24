@@ -1,4 +1,4 @@
-"""RLS + privilege probes for ``agent_actions`` (migration 0078).
+"""RLS + privilege probes for ``agent_actions`` (migration 0079).
 
 Backend-only audit table: no PostgREST read/write path. Same shape as
 ``test_llm_connection_rls.py`` -- API-only, ``deny_all`` policy floor.
@@ -75,7 +75,7 @@ async def test_no_privilege_granted(db_session: AsyncSession, role: str, privile
     ).scalar_one()
     assert granted is False, (
         f"{role} holds {privilege} on {_TABLE} — the audit table "
-        "must be API-only (migration 0078 REVOKE did not take effect)"
+        "must be API-only (migration 0079 REVOKE did not take effect)"
     )
 
 
