@@ -1,8 +1,8 @@
 /**
  * Settings → Integrations → Personal access tokens (spec §4.5, §4.7): list,
  * create, revoke, and the one-time secret reveal. Renders one SettingsGroup
- * as its root (borderless density pass § 4.3). `CopyBlock` is exported here
- * so Task 4b can import it before extracting it to a shared location.
+ * as its root (borderless density pass § 4.3). The reveal dialog reuses
+ * `McpClientSnippetSelector` (Task 4b) with the real secret.
  */
 import {useState, type MouseEvent} from 'react';
 import {Plus, Trash2} from 'lucide-react';
@@ -27,7 +27,7 @@ import {Input} from '@/components/ui/input';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Skeleton} from '@/components/ui/skeleton';
 import {SettingsActions, SettingsGroup, SettingsRow} from '@/components/settings';
-import {useCopyToClipboard} from '@/hooks/useCopyToClipboard';
+import {CopyBlock} from '@/components/user/CopyBlock';
 import {
   useCreateMyToken,
   useMyTokens,
@@ -43,21 +43,6 @@ const SCOPE_COPY = {read: 'scopeRead', read_write: 'scopeReadWrite'} as const;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US');
-}
-
-export function CopyBlock({label, code, copyAriaLabel}: {label: string; code: string; copyAriaLabel?: string}) {
-  const {copied, copy} = useCopyToClipboard();
-  return (
-    <div className="space-y-1">
-      <p className="text-[13px] font-medium">{label}</p>
-      <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5">
-        <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[12px]">{code}</pre>
-        <Button type="button" size="sm" variant="ghost" onClick={() => copy(code)} aria-label={copyAriaLabel ?? t('personalAccessTokens', 'copy')}>
-          {copied ? t('personalAccessTokens', 'copied') : t('personalAccessTokens', 'copy')}
-        </Button>
-      </div>
-    </div>
-  );
 }
 
 function TokenRow({row}: {row: PersonalAccessTokenRead}) {
