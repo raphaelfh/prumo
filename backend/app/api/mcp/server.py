@@ -16,6 +16,7 @@ maps it with ``to_tool_error``.
 from __future__ import annotations
 
 import functools
+import importlib
 import inspect
 import time
 from dataclasses import dataclass
@@ -109,6 +110,10 @@ mcp = _PrumoMCPServer(
 
 
 def build_mcp_asgi() -> tuple[ASGIApp, StreamableHTTPSessionManager]:
+    importlib.import_module(
+        "app.api.mcp.tools"
+    )  # registers every @agent_tool; a top-level import would be circular
+    # (tool modules import agent_tool from here)
     app = mcp.streamable_http_app(
         streamable_http_path="/mcp",  # the SDK app's own Route matches the outer /mcp Route's path
         stateless_http=True,

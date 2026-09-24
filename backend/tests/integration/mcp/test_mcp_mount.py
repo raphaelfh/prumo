@@ -30,12 +30,13 @@ async def test_initialize_answers_json_with_server_name(
     assert r.json()["result"]["serverInfo"]["name"] == "prumo"
 
 
-async def test_tools_list_is_empty_before_any_tool(
+async def test_tools_list_names_registered_tools(
     mcp_http_client: AsyncClient, pat_primary_read: SeededPat
 ) -> None:
     r = await rpc(mcp_http_client, "tools/list", headers=pat_primary_read.headers)
     assert r.status_code == 200
-    assert r.json()["result"]["tools"] == []
+    names = {t["name"] for t in r.json()["result"]["tools"]}
+    assert {"list_projects", "get_project"} <= names  # later tasks only add tools
 
 
 async def test_wrong_host_is_421(mcp_http_client: AsyncClient, pat_primary_read: SeededPat) -> None:
