@@ -38,13 +38,15 @@ export function McpClientSnippetSelector({token}: {token: string}) {
 
   return (
     <div className="space-y-2">
-      <ToggleGroup type="single" value={client} onValueChange={(v) => v && setClient(v as ClientId)}>
-        {CLIENT_IDS.map((id) => (
-          <ToggleGroupItem key={id} value={id}>
-            {t('personalAccessTokens', CHIP_KEY[id])}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      <div className="overflow-x-auto">
+        <ToggleGroup type="single" value={client} onValueChange={(v) => v && setClient(v as ClientId)}>
+          {CLIENT_IDS.map((id) => (
+            <ToggleGroupItem key={id} value={id} className="shrink-0 whitespace-nowrap">
+              {t('personalAccessTokens', CHIP_KEY[id])}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </div>
       <p className="text-[13px] text-muted-foreground">{t('personalAccessTokens', INSTRUCTION_KEY[client])}</p>
       <CopyBlock
         label={t('personalAccessTokens', CHIP_KEY[client])}

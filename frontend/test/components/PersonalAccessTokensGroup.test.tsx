@@ -190,6 +190,21 @@ describe('PersonalAccessTokensGroup', () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t('personalAccessTokens', 'revokeSuccess')));
   });
 
+  it('revoke: Cancel closes the confirmation dialog without revoking', async () => {
+    vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [ACTIVE]});
+    renderGroup();
+    await waitFor(() => expect(screen.getByText('Claude Code')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', {name: t('personalAccessTokens', 'revokeAria')}));
+    const alert = screen.getByRole('alertdialog');
+
+    await userEvent.click(within(alert).getByRole('button', {name: t('personalAccessTokens', 'cancel')}));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(svc.revokeMyToken).not.toHaveBeenCalled();
+    expect(screen.getByText('Claude Code')).toBeInTheDocument();
+  });
+
   it('revoke error: toasts the server message and keeps the row', async () => {
     vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [ACTIVE]});
     vi.mocked(svc.revokeMyToken).mockResolvedValue({ok: false, error: new Error('gone')});

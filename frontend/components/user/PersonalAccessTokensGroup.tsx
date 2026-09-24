@@ -11,6 +11,7 @@ import {toast} from 'sonner';
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -22,7 +23,7 @@ import {IconButton} from '@/components/patterns/IconButton';
 import {AppDialog} from '@/components/patterns/AppDialog';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
-import {Dialog, DialogContent} from '@/components/ui/dialog';
+import {Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from '@/components/ui/dialog';
 import {Input} from '@/components/ui/input';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Skeleton} from '@/components/ui/skeleton';
@@ -66,17 +67,26 @@ function TokenRow({row}: {row: PersonalAccessTokenRead}) {
     <li
       data-muted={row.status !== 'active'}
       className={cn(
-        'flex items-center gap-3 rounded-md px-2 py-1 text-[13px]',
-        row.status !== 'active' && 'text-muted-foreground opacity-70',
+        'flex flex-col gap-1 rounded-md px-2 py-1.5 text-[13px]',
+        '@[30rem]/settings:flex-row @[30rem]/settings:items-center @[30rem]/settings:gap-3 @[30rem]/settings:py-1',
+        row.status !== 'active' && 'text-muted-foreground',
       )}
     >
-      <span className="font-medium">{row.name}</span>
-      <code className="text-[12px] text-muted-foreground">{row.token_prefix}…</code>
-      <Badge variant="secondary">{t('personalAccessTokens', SCOPE_COPY[row.scope])}</Badge>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 truncate font-medium">{row.name}</span>
+        <code className="shrink-0 text-[12px] text-muted-foreground">{row.token_prefix}…</code>
+        <Badge variant="secondary" className="shrink-0">{t('personalAccessTokens', SCOPE_COPY[row.scope])}</Badge>
+        {row.status === 'expired' && (
+          <Badge variant="outline" className="shrink-0">{t('personalAccessTokens', 'expiredBadge').replace('{{date}}', formatDate(row.expires_at))}</Badge>
+        )}
+        {row.status === 'revoked' && row.revoked_at && (
+          <Badge variant="outline" className="shrink-0">{t('personalAccessTokens', 'revokedBadge').replace('{{date}}', formatDate(row.revoked_at))}</Badge>
+        )}
+      </div>
       {row.status === 'active' && (
-        <>
-          <span className="text-muted-foreground">{t('personalAccessTokens', 'expiresOn').replace('{{date}}', formatDate(row.expires_at))}</span>
-          <span className="text-muted-foreground">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+          <span>{t('personalAccessTokens', 'expiresOn').replace('{{date}}', formatDate(row.expires_at))}</span>
+          <span>
             {row.last_used_at
               ? t('personalAccessTokens', 'lastUsed').replace('{{when}}', relativeTime(row.last_used_at))
               : t('personalAccessTokens', 'neverUsed')}
@@ -94,6 +104,7 @@ function TokenRow({row}: {row: PersonalAccessTokenRead}) {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
+                  <AlertDialogCancel>{t('personalAccessTokens', 'cancel')}</AlertDialogCancel>
                   <AlertDialogAction onClick={onConfirm} disabled={revoke.isPending}>
                     {revoke.isPending ? t('personalAccessTokens', 'revoking') : t('personalAccessTokens', 'revokeConfirm')}
                   </AlertDialogAction>
@@ -101,13 +112,7 @@ function TokenRow({row}: {row: PersonalAccessTokenRead}) {
               </AlertDialogContent>
             </AlertDialog>
           </div>
-        </>
-      )}
-      {row.status === 'expired' && (
-        <Badge variant="outline">{t('personalAccessTokens', 'expiredBadge').replace('{{date}}', formatDate(row.expires_at))}</Badge>
-      )}
-      {row.status === 'revoked' && row.revoked_at && (
-        <Badge variant="outline">{t('personalAccessTokens', 'revokedBadge').replace('{{date}}', formatDate(row.revoked_at))}</Badge>
+        </div>
       )}
     </li>
   );
@@ -258,17 +263,17 @@ export function PersonalAccessTokensGroup() {
           onEscapeKeyDown={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
-          <div className="space-y-3">
-            <div>
-              <h2 className="text-[15px] font-medium">{t('personalAccessTokens', 'revealTitle')}</h2>
-              <p className="text-[13px] text-muted-foreground">{t('personalAccessTokens', 'revealWarning')}</p>
-            </div>
+          <DialogHeader>
+            <DialogTitle>{t('personalAccessTokens', 'revealTitle')}</DialogTitle>
+            <DialogDescription>{t('personalAccessTokens', 'revealWarning')}</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
             {secret && <CopyBlock label={t('personalAccessTokens', 'copyTokenAria')} code={secret} copyAriaLabel={t('personalAccessTokens', 'copyTokenAria')} />}
             {secret && <McpClientSnippetSelector token={secret} />}
-            <div className="flex justify-end">
-              <Button size="sm" onClick={closeReveal}>{t('personalAccessTokens', 'revealDone')}</Button>
-            </div>
-          </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button size="sm" onClick={closeReveal}>{t('personalAccessTokens', 'revealDone')}</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </SettingsGroup>
