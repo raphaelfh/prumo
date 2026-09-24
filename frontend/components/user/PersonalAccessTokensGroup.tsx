@@ -4,7 +4,7 @@
  * as its root (borderless density pass § 4.3). `CopyBlock` is exported here
  * so Task 4b can import it before extracting it to a shared location.
  */
-import {useState} from 'react';
+import {useState, type MouseEvent} from 'react';
 import {Plus, Trash2} from 'lucide-react';
 import {toast} from 'sonner';
 
@@ -50,7 +50,7 @@ export function CopyBlock({label, code, copyAriaLabel}: {label: string; code: st
   return (
     <div className="space-y-1">
       <p className="text-[13px] font-medium">{label}</p>
-      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5">
+      <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5">
         <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[12px]">{code}</pre>
         <Button type="button" size="sm" variant="ghost" onClick={() => copy(code)} aria-label={copyAriaLabel ?? t('personalAccessTokens', 'copy')}>
           {copied ? t('personalAccessTokens', 'copied') : t('personalAccessTokens', 'copy')}
@@ -63,7 +63,7 @@ export function CopyBlock({label, code, copyAriaLabel}: {label: string; code: st
 function TokenRow({row}: {row: PersonalAccessTokenRead}) {
   const [open, setOpen] = useState(false);
   const revoke = useRevokeMyToken();
-  const onConfirm = (e: Event) => {
+  const onConfirm = (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     revoke.mutate(row.id, {
       onSuccess: () => {
