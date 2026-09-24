@@ -10,11 +10,17 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.article import ArticleFile
+from app.models.article import ArticleFile, ArticleTextBlock
 from app.repositories.article_text_block_repository import ArticleTextBlockRepository
+from app.schemas.mcp_articles import McpFileOutline, McpOutlineHeading
+
+# Module constants (spec §5.1 size caps): an outline keeps at most this many
+# headings, each capped in length.
+_HEADING_CAP = 60
+_HEADING_TEXT_CAP = 120
 
 
 class ArticleFileNotFoundError(Exception):
@@ -58,3 +64,44 @@ async def list_text_blocks(db: AsyncSession, article_file_id: UUID) -> list[dict
         }
         for row in rows
     ]
+
+
+async def get_file_outline(db: AsyncSession, *, article_file_id: UUID) -> McpFileOutline:
+    """An article file's page/block counts plus its heading outline
+    (spec §5.1): one aggregate query, one capped headings query."""
+    page_count, block_count = (
+        await db.execute(
+            select(
+                func.count(func.distinct(ArticleTextBlock.page_number)),
+                func.count(),
+            ).where(ArticleTextBlock.article_file_id == article_file_id)
+        )
+    ).one()
+
+    heading_rows = (
+        await db.execute(
+            select(
+                ArticleTextBlock.page_number,
+                ArticleTextBlock.block_index,
+                ArticleTextBlock.text,
+            )
+            .where(
+                ArticleTextBlock.article_file_id == article_file_id,
+                ArticleTextBlock.block_type == "heading",
+            )
+            .order_by(ArticleTextBlock.page_number, ArticleTextBlock.block_index)
+            .limit(_HEADING_CAP + 1)
+        )
+    ).all()
+    headings_truncated = len(heading_rows) > _HEADING_CAP
+
+    return McpFileOutline(
+        article_file_id=article_file_id,
+        page_count=page_count,
+        block_count=block_count,
+        headings=[
+            McpOutlineHeading(page=page, block_index=block_index, text=text[:_HEADING_TEXT_CAP])
+            for page, block_index, text in heading_rows[:_HEADING_CAP]
+        ],
+        headings_truncated=headings_truncated,
+    )

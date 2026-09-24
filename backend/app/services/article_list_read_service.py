@@ -1,0 +1,170 @@
+"""Agent-facing article list + detail reads (`list_articles`, `get_article`).
+
+Sibling of the guards-only `article_read_service`: that module owns the
+ownership predicates (`owned_article_file`, `resolve_article_file`); this one
+builds the list/detail response shapes the MCP tools return. `get_article`'s
+outline is filled by the tool, not here (it depends on which file the tool
+resolved via `resolve_article_file`).
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from sqlalchemy import exists, func, or_, select, tuple_
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.article import Article, ArticleFile
+from app.repositories.article_repository import ArticleFileRepository
+from app.schemas.mcp_articles import (
+    McpArticleDetail,
+    McpArticleFileRow,
+    McpArticleList,
+    McpArticleRow,
+)
+from app.services.article_read_service import ArticleNotFoundError
+from app.utils.opaque_cursor import decode_cursor, encode_cursor
+
+# Module constants (spec §5.1 size caps).
+_TITLE_CAP = 200
+_LIST_AUTHORS_CAP = 3
+_LIST_AUTHOR_CAP = 60
+_DETAIL_AUTHORS_CAP = 20
+_ABSTRACT_CAP = 6_000
+
+
+def _escape_ilike(value: str) -> str:
+    """Escape `%`, `_` and `\\` so a caller's query is a literal substring,
+    not a wildcard pattern, under `ilike(..., escape="\\")`."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _cap_list_authors(authors: list[str] | None) -> tuple[list[str], int]:
+    authors = authors or []
+    capped = [a[:_LIST_AUTHOR_CAP] for a in authors[:_LIST_AUTHORS_CAP]]
+    return capped, len(authors)
+
+
+async def list_project_articles(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    query: str | None,
+    has_pdf: bool | None,
+    has_text: bool | None,
+    cursor: str | None,
+    limit: int,
+) -> McpArticleList:
+    # Mirrors `ArticleFileRepository.get_latest_pdf`: the latest PDF's
+    # extraction_status decides an article's text_status/has_text.
+    latest_pdf_status = (
+        select(ArticleFile.extraction_status)
+        .where(ArticleFile.article_id == Article.id, ArticleFile.file_type.ilike("%pdf%"))
+        .order_by(ArticleFile.created_at.desc())
+        .limit(1)
+        .correlate(Article)
+        .scalar_subquery()
+    )
+    has_pdf_expr = exists(
+        select(1)
+        .where(ArticleFile.article_id == Article.id, ArticleFile.file_type.ilike("%pdf%"))
+        .correlate(Article)
+    )
+
+    stmt = select(
+        Article.id,
+        Article.title,
+        Article.authors,
+        Article.publication_year,
+        Article.removed_at_source_at,
+        latest_pdf_status.label("text_status"),
+        has_pdf_expr.label("has_pdf"),
+    ).where(Article.project_id == project_id)
+
+    if query:
+        pattern = f"%{_escape_ilike(query)}%"
+        stmt = stmt.where(
+            or_(
+                Article.title.ilike(pattern, escape="\\"),
+                func.array_to_string(Article.authors, " ").ilike(pattern, escape="\\"),
+            )
+        )
+
+    if has_pdf is not None:
+        stmt = stmt.where(has_pdf_expr if has_pdf else ~has_pdf_expr)
+
+    if has_text is not None:
+        is_parsed = latest_pdf_status == "parsed"
+        stmt = stmt.where(is_parsed if has_text else ~is_parsed)
+
+    values = decode_cursor(cursor, arity=2)
+    if values is not None:
+        cursor_title, cursor_id = str(values[0]), UUID(str(values[1]))
+        stmt = stmt.where(tuple_(Article.title, Article.id) > (cursor_title, cursor_id))
+
+    stmt = stmt.order_by(Article.title, Article.id).limit(limit + 1)
+
+    rows = (await db.execute(stmt)).all()
+    has_more = len(rows) > limit
+    page = rows[:limit]
+
+    articles = []
+    for row in page:
+        authors, authors_total = _cap_list_authors(row.authors)
+        articles.append(
+            McpArticleRow(
+                article_id=row.id,
+                title=row.title[:_TITLE_CAP],
+                authors=authors,
+                authors_total=authors_total,
+                year=row.publication_year,
+                text_status=row.text_status,
+                removed_at_source=row.removed_at_source_at is not None,
+                has_pdf=row.has_pdf,
+                has_text=row.text_status == "parsed",
+            )
+        )
+
+    next_cursor = encode_cursor([page[-1].title, str(page[-1].id)]) if has_more and page else None
+    return McpArticleList(articles=articles, next_cursor=next_cursor)
+
+
+async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticleDetail:
+    row = (await db.execute(select(Article).where(Article.id == article_id))).scalar_one_or_none()
+    if row is None:  # removed between the choke point's check and this read
+        raise ArticleNotFoundError(f"Article {article_id} not found")
+
+    files = await ArticleFileRepository(db).list_for_article_ordered(article_id)
+
+    abstract = row.abstract
+    abstract_truncated = False
+    if abstract is not None and len(abstract) > _ABSTRACT_CAP:
+        abstract = abstract[:_ABSTRACT_CAP]
+        abstract_truncated = True
+
+    return McpArticleDetail(
+        article_id=row.id,
+        project_id=row.project_id,
+        title=row.title,
+        authors=(row.authors or [])[:_DETAIL_AUTHORS_CAP],
+        year=row.publication_year,
+        journal_title=row.journal_title,
+        doi=row.doi,
+        pmid=row.pmid,
+        publication_status=row.publication_status,
+        removed_at_source=row.removed_at_source_at is not None,
+        abstract=abstract,
+        abstract_truncated=abstract_truncated,
+        files=[
+            McpArticleFileRow(
+                article_file_id=f.id,
+                role=f.file_role,
+                file_type=f.file_type,
+                original_filename=f.original_filename,
+                extraction_status=f.extraction_status,
+                created_at=f.created_at,
+            )
+            for f in files
+        ],
+        outline=None,
+    )
