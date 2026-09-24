@@ -317,7 +317,7 @@ async def test_foreign_key_delete_rules(db_session: AsyncSession) -> None:
             )
         )
     ).all()
-    assert {conname: confdeltype for conname, confdeltype in rows} == {
+    assert dict(rows) == {
         "agent_actions_token_id_fkey": "n",
         "agent_actions_user_id_fkey": "n",
         "agent_actions_project_id_fkey": "c",
@@ -421,7 +421,7 @@ async def test_foreign_keys_are_indexed(db_session: AsyncSession) -> None:
             )
         )
     ).all()
-    by_name = {name: indexdef for name, indexdef in rows}
+    by_name = dict(rows)
     assert by_name["ix_agent_actions_project_id"].endswith("(project_id)")
     assert by_name["ix_agent_actions_token_id"].endswith("(token_id)")
     assert by_name["ix_agent_actions_user_id"].endswith("(user_id)")
