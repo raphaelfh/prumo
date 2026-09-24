@@ -48,6 +48,7 @@ dependencies = [
     "structlog>=24.0.0",
     # Rate Limiting
     "slowapi>=0.1.9",
+    "mcp>=2.2,<3",  # researcher MCP server (/mcp mount)
     # Utils
     "python-multipart>=0.0.9",
     # Floor raised for PYSEC-2026-3552/3553/3554 (fix: 50.0.0). Do not lower.
