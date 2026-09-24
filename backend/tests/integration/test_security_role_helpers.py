@@ -1,8 +1,16 @@
-"""Non-raising role-check helpers (spec §3, the MCP choke point)."""
+"""The non-raising role helpers in ``app.api.deps.security``.
+
+``is_project_manager`` is the boolean twin of ``ensure_project_manager``: a
+route that owns its refusal shape (404 for an outsider, 403 for a member who
+is not a manager) branches on it instead of catching the 403 the ``ensure_*``
+helper raises. It must agree with ``public.is_project_manager`` — the
+function the RLS policies call — for every caller class, including a project
+that does not exist.
+"""
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,23 +21,21 @@ from tests.integration.conftest import SEED
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("profile_name", "project_name", "expected"),
+    ("profile", "project", "expected"),
     [
-        ("primary", "primary_project", True),
-        ("reviewer", "primary_project", False),
-        ("outsider", "primary_project", False),
-        ("primary", None, False),
+        pytest.param(SEED.primary_profile, SEED.primary_project, True, id="manager"),
+        pytest.param(SEED.reviewer_profile, SEED.primary_project, False, id="reviewer"),
+        pytest.param(SEED.outsider_profile, SEED.primary_project, False, id="outsider"),
+        pytest.param(SEED.primary_profile, uuid4(), False, id="missing-project"),
     ],
-    ids=["manager", "reviewer-not-manager", "outsider-not-member", "foreign-project"],
 )
 async def test_is_project_manager(
-    db_session: AsyncSession, profile_name: str, project_name: str | None, expected: bool
+    db_session: AsyncSession, profile: UUID, project: UUID, expected: bool
 ) -> None:
-    profile = {
-        "primary": SEED.primary_profile,
-        "reviewer": SEED.reviewer_profile,
-        "outsider": SEED.outsider_profile,
-    }[profile_name]
-    project = SEED.primary_project if project_name == "primary_project" else uuid4()
-
     assert await is_project_manager(db_session, project, profile) is expected
+
+
+@pytest.mark.asyncio
+async def test_is_project_manager_accepts_a_raw_subject(db_session: AsyncSession) -> None:
+    """A JWT ``sub`` string is normalised inside the helper, like ``is_project_member``."""
+    assert await is_project_manager(db_session, SEED.primary_project, str(SEED.primary_profile))

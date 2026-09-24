@@ -591,25 +591,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/me/tokens": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List My Tokens */
-        get: operations["list_my_tokens_api_v1_me_tokens_get"];
-        put?: never;
-        /** Create My Token */
-        post: operations["create_my_token_api_v1_me_tokens_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/me/tokens/{token_id}": {
+    "/api/v1/projects/{project_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -619,8 +601,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Revoke My Token */
-        delete: operations["revoke_my_token_api_v1_me_tokens__token_id__delete"];
+        /**
+         * Delete Project
+         * @description Delete the project and everything under it (the foreign keys cascade).
+         */
+        delete: operations["delete_project_api_v1_projects__project_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -724,6 +709,26 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Project Details
+         * @description Write the changed descriptive columns if every `expected` value is still current.
+         */
+        patch: operations["update_project_details_api_v1_projects__project_id__details_patch"];
         trace?: never;
     };
     "/api/v1/projects/{project_id}/extraction-export": {
@@ -2411,40 +2416,6 @@ export interface components {
              */
             trace_id?: string | null;
         };
-        /** ApiResponse[PersonalAccessTokenCreated] */
-        ApiResponse_PersonalAccessTokenCreated_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["PersonalAccessTokenCreated"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[PersonalAccessTokenRead] */
-        ApiResponse_PersonalAccessTokenRead_: {
-            /** @description Dados da resposta */
-            data?: components["schemas"]["PersonalAccessTokenRead"] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
         /** ApiResponse[PortableTemplate] */
         ApiResponse_PortableTemplate_: {
             /** @description Dados da resposta */
@@ -2483,6 +2454,40 @@ export interface components {
         ApiResponse_ProjectArchiveRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ProjectArchiveRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ProjectDeleteRead] */
+        ApiResponse_ProjectDeleteRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ProjectDeleteRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ProjectDetailsRead] */
+        ApiResponse_ProjectDetailsRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ProjectDetailsRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -3048,26 +3053,6 @@ export interface components {
              * @description Dados da resposta
              */
             data?: components["schemas"]["LlmConnectionRead"][] | null;
-            /** @description Error details */
-            error?: components["schemas"]["ErrorDetail"] | null;
-            /**
-             * Ok
-             * @description Indica se a operacao foi bem-sucedida
-             */
-            ok: boolean;
-            /**
-             * Trace Id
-             * @description rastreamento
-             */
-            trace_id?: string | null;
-        };
-        /** ApiResponse[list[PersonalAccessTokenRead]] */
-        ApiResponse_list_PersonalAccessTokenRead__: {
-            /**
-             * Data
-             * @description Dados da resposta
-             */
-            data?: components["schemas"]["PersonalAccessTokenRead"][] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4765,115 +4750,6 @@ export interface components {
             type: "auto" | "standard" | "llamaparse" | "docling";
         };
         /**
-         * PersonalAccessTokenCreateRequest
-         * @description Body of ``POST /api/v1/me/tokens``.
-         */
-        PersonalAccessTokenCreateRequest: {
-            /**
-             * Expires In Days
-             * @description Token lifetime, in days, from creation.
-             */
-            expires_in_days: number;
-            /**
-             * Name
-             * @description Caller-chosen label for the token.
-             */
-            name: string;
-            /**
-             * Scope
-             * @description Which MCP tool tier the token may call.
-             * @enum {string}
-             */
-            scope: "read" | "read_write";
-        };
-        /**
-         * PersonalAccessTokenCreated
-         * @description Response of ``POST /api/v1/me/tokens``.
-         *
-         *     The only response that ever carries the secret: it is shown once, at
-         *     creation, and never again — only its SHA-256 hash is stored.
-         */
-        PersonalAccessTokenCreated: {
-            /**
-             * Secret
-             * @description The bearer secret. Shown once; store it now.
-             */
-            secret: string;
-            token: components["schemas"]["PersonalAccessTokenRead"];
-        };
-        /**
-         * PersonalAccessTokenRead
-         * @description A token row, never including the secret.
-         */
-        PersonalAccessTokenRead: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Expires At
-             * Format: date-time
-             */
-            expires_at: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Last Used At */
-            last_used_at: string | null;
-            /** Name */
-            name: string;
-            /** Revoked At */
-            revoked_at: string | null;
-            /**
-             * Scope
-             * @enum {string}
-             */
-            scope: "read" | "read_write";
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "active" | "expired" | "revoked";
-            /**
-             * Token Prefix
-             * @description First characters of the secret, shown for identification.
-             */
-            token_prefix: string;
-        };
-        /**
-         * PersonalAccessTokenRefusalCode
-         * @description Why ``POST /api/v1/me/tokens`` returned 409.
-         *
-         *     Slice-local, like ``TemplateDraftLockRefusalCode``
-         *     (``app/schemas/hitl_session.py``): one endpoint's outcome, not part of
-         *     the cross-cutting ``ApiErrorCode`` vocabulary.
-         * @enum {string}
-         */
-        PersonalAccessTokenRefusalCode: "TOKEN_LIMIT_REACHED";
-        /** PersonalAccessTokenRefusalError */
-        PersonalAccessTokenRefusalError: {
-            code: components["schemas"]["PersonalAccessTokenRefusalCode"];
-            /** Message */
-            message: string;
-        };
-        /**
-         * PersonalAccessTokenRefusalResponse
-         * @description The 409 body, declared so the generated client types the refusal.
-         */
-        PersonalAccessTokenRefusalResponse: {
-            error: components["schemas"]["PersonalAccessTokenRefusalError"];
-            /**
-             * Ok
-             * @default false
-             */
-            ok: boolean;
-            /** Trace Id */
-            trace_id?: string | null;
-        };
-        /**
          * PicotsSlot
          * @description One PICOTS slot. Flat since migration 0063 — ``timing`` included.
          */
@@ -5104,6 +4980,137 @@ export interface components {
             label: string;
             /** Provider */
             provider: string;
+        };
+        /**
+         * ProjectDeleteRead
+         * @description The id of the project that was deleted.
+         */
+        ProjectDeleteRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * ProjectDetailsFields
+         * @description A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.
+         */
+        ProjectDetailsFields: {
+            /** Condition Studied */
+            condition_studied?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Eligibility Criteria */
+            eligibility_criteria?: {
+                [key: string]: unknown;
+            } | null;
+            /** Name */
+            name?: string | null;
+            /** Review Context */
+            review_context?: string | null;
+            /** Review Keywords */
+            review_keywords?: string[] | null;
+            /** Review Rationale */
+            review_rationale?: string | null;
+            /** Review Title */
+            review_title?: string | null;
+            /** Review Type */
+            review_type?: ("interventional" | "predictive_model" | "diagnostic" | "prognostic" | "qualitative" | "other") | null;
+            /** Search Strategy */
+            search_strategy?: string | null;
+            /** Study Design */
+            study_design?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * ProjectDetailsRead
+         * @description The 11 columns as stored after a write.
+         */
+        ProjectDetailsRead: {
+            /** Condition Studied */
+            condition_studied: string | null;
+            /** Description */
+            description: string | null;
+            /** Eligibility Criteria */
+            eligibility_criteria: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /** Review Context */
+            review_context: string | null;
+            /** Review Keywords */
+            review_keywords: string[];
+            /** Review Rationale */
+            review_rationale: string | null;
+            /** Review Title */
+            review_title: string | null;
+            /** Review Type */
+            review_type: ("interventional" | "predictive_model" | "diagnostic" | "prognostic" | "qualitative" | "other") | null;
+            /** Search Strategy */
+            search_strategy: string | null;
+            /** Study Design */
+            study_design: {
+                [key: string]: unknown;
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ProjectDetailsRefusalCode
+         * @description Why ``PATCH .../details`` returned 409.
+         *
+         *     Slice-local, like ``TemplateDraftLockRefusalCode``: one surface's outcome,
+         *     not part of the cross-cutting ``ApiErrorCode`` vocabulary.
+         * @enum {string}
+         */
+        ProjectDetailsRefusalCode: "STALE_VALUE";
+        /** ProjectDetailsRefusalError */
+        ProjectDetailsRefusalError: {
+            code: components["schemas"]["ProjectDetailsRefusalCode"];
+            details: components["schemas"]["ProjectDetailsStaleDetails"];
+            /** Message */
+            message: string;
+        };
+        /**
+         * ProjectDetailsRefusalResponse
+         * @description The 409 body, declared so the generated client types ``details.current``.
+         */
+        ProjectDetailsRefusalResponse: {
+            error: components["schemas"]["ProjectDetailsRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /**
+         * ProjectDetailsStaleDetails
+         * @description The server's current values of the contested keys only.
+         */
+        ProjectDetailsStaleDetails: {
+            /** Current */
+            current: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * ProjectDetailsUpdate
+         * @description The changed columns and the values the caller last read for each of them.
+         *
+         *     ``expected`` must name every key of ``fields``: the write applies only if
+         *     each of those columns still holds its ``expected`` value, else 409.
+         */
+        ProjectDetailsUpdate: {
+            expected: components["schemas"]["ProjectDetailsFields"];
+            fields: components["schemas"]["ProjectDetailsFields"];
         };
         /**
          * ProjectTemplateRead
@@ -8029,86 +8036,12 @@ export interface operations {
             };
         };
     };
-    list_my_tokens_api_v1_me_tokens_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_list_PersonalAccessTokenRead__"];
-                };
-            };
-            /** @description Missing or invalid Supabase session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    create_my_token_api_v1_me_tokens_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PersonalAccessTokenCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiResponse_PersonalAccessTokenCreated_"];
-                };
-            };
-            /** @description Missing or invalid Supabase session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Refused: 10 active tokens is the limit */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PersonalAccessTokenRefusalResponse"];
-                };
-            };
-            /** @description Invalid name, scope or expires_in_days */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    revoke_my_token_api_v1_me_tokens__token_id__delete: {
+    delete_project_api_v1_projects__project_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                token_id: string;
+                project_id: string;
             };
             cookie?: never;
         };
@@ -8120,17 +8053,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse_PersonalAccessTokenRead_"];
+                    "application/json": components["schemas"]["ApiResponse_ProjectDeleteRead_"];
                 };
             };
-            /** @description Missing or invalid Supabase session */
-            401: {
+            /** @description A member who is not a project manager */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Token not found */
+            /** @description Not a member of the project, or no such project */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -8412,6 +8345,62 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    update_project_details_api_v1_projects__project_id__details_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectDetailsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProjectDetailsRead_"];
+                };
+            };
+            /** @description A member who is not a project manager */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a member of the project, or no such project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refused: a field changed since the caller read it */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetailsRefusalResponse"];
+                };
+            };
+            /** @description Unknown or invalid field, or expected does not cover fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

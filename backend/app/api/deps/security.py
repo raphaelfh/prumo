@@ -72,11 +72,13 @@ async def is_project_member(db: DbSession, project_id: UUID, user_sub: UUID | st
 
 
 async def is_project_manager(db: DbSession, project_id: UUID, user_sub: UUID | str) -> bool:
-    """Report manager-role without raising.
+    """Report the manager role without raising.
 
     The non-raising twin of :func:`ensure_project_manager`, over the same
-    ``public.is_project_manager`` RLS calls — the MCP choke point and REST
-    gates branch on it instead of mapping an ``ensure_*`` 403 detail string.
+    ``public.is_project_manager`` the RLS policies call. A route that owns its
+    refusal shape — 404 for an outsider or a missing project, 403 for a
+    member who is not a manager — branches on this and :func:`is_project_member`
+    instead of mapping the 403 an ``ensure_*`` helper raises for both.
     """
     return await _project_role_allows(
         db,
