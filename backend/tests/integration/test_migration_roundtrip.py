@@ -1328,7 +1328,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0077_personal_access_tokens"
+    expected_head = "0078_agent_actions"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -1723,3 +1723,45 @@ async def test_migration_0077_personal_access_tokens_roundtrip(
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
     assert await posture() == (["deny_all"], 0)
+
+
+# --- 0078: agent_actions (backend-only, deny_all) --------------------------
+@pytest.mark.asyncio
+async def test_migration_0078_agent_actions_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    async def posture() -> tuple[bool, list[str], int]:
+        exists = (
+            await migration_session.execute(
+                text("SELECT to_regclass('public.agent_actions') IS NOT NULL")
+            )
+        ).scalar_one()
+        policies = (
+            (
+                await migration_session.execute(
+                    text(
+                        "SELECT polname FROM pg_policy WHERE polrelid = to_regclass('public.agent_actions')"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        grants = (
+            await migration_session.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema = 'public' "
+                    "AND table_name = 'agent_actions' AND grantee IN ('authenticated', 'anon')"
+                )
+            )
+        ).scalar_one()
+        await migration_session.rollback()
+        return bool(exists), list(policies), int(grants)
+
+    assert await posture() == (True, ["deny_all"], 0)
+    _run_alembic("downgrade", "0077_personal_access_tokens", database_url=migration_db_url)
+    try:
+        assert await posture() == (False, [], 0)  # table, policy and grants gone
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await posture() == (True, ["deny_all"], 0)  # re-upgrade restores the REVOKE

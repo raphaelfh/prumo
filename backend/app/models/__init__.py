@@ -12,6 +12,7 @@ IMPORTANTE: A ordem de importacao importa!
 
 # Base models primeiro
 # Modelos que dependem of the anteriores
+from app.models.agent_action import AgentAction
 from app.models.article import Article, ArticleFile, FileRole
 from app.models.article_author import (
     ArticleAuthor,
@@ -109,6 +110,7 @@ __all__ = [
     "BaseModel",
     "TimestampMixin",
     "UUIDMixin",
+    "AgentAction",
     # User
     "Profile",
     # Project
