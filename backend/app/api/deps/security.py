@@ -71,6 +71,21 @@ async def is_project_member(db: DbSession, project_id: UUID, user_sub: UUID | st
     )
 
 
+async def is_project_manager(db: DbSession, project_id: UUID, user_sub: UUID | str) -> bool:
+    """Report manager-role without raising.
+
+    The non-raising twin of :func:`ensure_project_manager`, over the same
+    ``public.is_project_manager`` RLS calls — the MCP choke point and REST
+    gates branch on it instead of mapping an ``ensure_*`` 403 detail string.
+    """
+    return await _project_role_allows(
+        db,
+        sql="SELECT public.is_project_manager(:pid, :uid) AS ok",
+        project_id=project_id,
+        user_sub=UUID(user_sub) if isinstance(user_sub, str) else user_sub,
+    )
+
+
 async def ensure_project_member(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
     """Enforce project-membership. Plain async helper (not a FastAPI dependency)
     so callers can pass a ``project_id`` from the request body — see

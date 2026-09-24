@@ -11,14 +11,18 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.schemas.mcp_auth import McpPrincipal
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
 from app.services.pat_service import (
+    PAT_PREFIX,
     TokenLimitReachedError,
     TokenNotFoundError,
     create_token,
     list_tokens,
     owned_token,
+    resolve_principal,
     revoke_token,
+    touch_last_used,
 )
 from tests.integration.conftest import SEED
 
@@ -224,3 +228,52 @@ async def test_concurrent_creates_at_nine_active_admit_exactly_one(_engine: Asyn
                 {"uid": str(SEED.outsider_profile)},
             )
             await cleanup.commit()
+
+
+@pytest.mark.asyncio
+async def test_resolve_principal_matches_only_active_well_formed(db_session: AsyncSession) -> None:
+    created = await create_token(
+        db_session, user_id=SEED.reviewer_profile, payload=_req(scope="read_write")
+    )
+
+    principal = await resolve_principal(db_session, created.secret)
+    assert principal == McpPrincipal(
+        user_sub=SEED.reviewer_profile,
+        token_id=created.token.id,
+        scope="read_write",
+        token_expires_at=created.token.expires_at,
+    )
+
+    assert await resolve_principal(db_session, "abc") is None
+    assert await resolve_principal(db_session, PAT_PREFIX + "a" * 43) is None
+
+    await revoke_token(db_session, user_id=SEED.reviewer_profile, token_id=created.token.id)
+    assert await resolve_principal(db_session, created.secret) is None
+
+    aged = await create_token(db_session, user_id=SEED.reviewer_profile, payload=_req())
+    await db_session.execute(
+        text(
+            "UPDATE public.personal_access_tokens "
+            "SET created_at = now() - interval '2 days', expires_at = now() - interval '1 day' "
+            "WHERE id = :id"
+        ),
+        {"id": str(aged.token.id)},
+    )
+    assert await resolve_principal(db_session, aged.secret) is None
+
+
+@pytest.mark.asyncio
+async def test_touch_last_used_is_throttled(db_session: AsyncSession) -> None:
+    created = await create_token(db_session, user_id=SEED.reviewer_profile, payload=_req())
+
+    assert await touch_last_used(db_session, created.token.id) is True
+    assert await touch_last_used(db_session, created.token.id) is False
+
+    await db_session.execute(
+        text(
+            "UPDATE public.personal_access_tokens "
+            "SET last_used_at = now() - interval '6 minutes' WHERE id = :id"
+        ),
+        {"id": str(created.token.id)},
+    )
+    assert await touch_last_used(db_session, created.token.id) is True

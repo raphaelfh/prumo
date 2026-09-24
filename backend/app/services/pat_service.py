@@ -18,16 +18,19 @@ from __future__ import annotations
 import hashlib
 import secrets
 import string
-from typing import Literal, cast
+from datetime import timedelta
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from fastapi import status
-from sqlalchemy import ColumnElement, and_, case, func, insert, select, update
+from sqlalchemy import ColumnElement, and_, case, func, insert, or_, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
 from app.models.personal_access_token import PersonalAccessToken
 from app.models.user import Profile
+from app.schemas.mcp_auth import McpPrincipal
 from app.schemas.personal_access_token import (
     PersonalAccessTokenCreated,
     PersonalAccessTokenCreateRequest,
@@ -174,3 +177,37 @@ async def revoke_token(
     )
     await db.refresh(row)
     return _read(row, "revoked")
+
+
+async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | None:
+    """The /mcp bearer lookup: active tokens only, by the indexed hash."""
+    if not secret.startswith(PAT_PREFIX):
+        return None
+    row = (
+        await db.execute(
+            select(PersonalAccessToken).where(
+                PersonalAccessToken.token_hash == hash_secret(secret), active_clause()
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    return McpPrincipal(
+        user_sub=row.user_id, token_id=row.id, scope=row.scope, token_expires_at=row.expires_at
+    )
+
+
+async def touch_last_used(db: AsyncSession, token_id: UUID) -> bool:
+    """At most one write per 5 minutes per token; the throttle is in the WHERE clause."""
+    result = await db.execute(
+        update(PersonalAccessToken)
+        .where(
+            PersonalAccessToken.id == token_id,
+            or_(
+                PersonalAccessToken.last_used_at.is_(None),
+                PersonalAccessToken.last_used_at < func.now() - timedelta(minutes=5),
+            ),
+        )
+        .values(last_used_at=func.now())
+    )
+    return cast("CursorResult[Any]", result).rowcount == 1
