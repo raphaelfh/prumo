@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 
 describe('IntegrationsSection', () => {
-  it('renders one SettingsPage whose body holds exactly the three groups', () => {
+  it('renders one SettingsPage whose body holds exactly the four groups', () => {
     const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
     const {container} = render(
       <QueryClientProvider client={client}><TooltipProvider><IntegrationsSection /></TooltipProvider></QueryClientProvider>,
@@ -46,12 +46,13 @@ describe('IntegrationsSection', () => {
     const body = container.querySelector('[class~="@container/settings"]');
     expect(body).not.toBeNull();
     const groups = Array.from(body!.children);
-    expect(groups).toHaveLength(3);
+    expect(groups).toHaveLength(4);
     groups.forEach((g) => expect(g).toHaveClass('border-t'));
     expect(within(groups[0] as HTMLElement).getByRole('heading', {level: 2, name: t('llmConnections', 'integrationsTitle')})).toBeInTheDocument();
     expect(within(groups[1] as HTMLElement).getByRole('heading', {level: 2, name: t('user', 'integrationsZoteroTitle')})).toBeInTheDocument();
     expect(within(groups[2] as HTMLElement).getByRole('heading', {level: 2, name: t('personalAccessTokens', 'groupTitle')})).toBeInTheDocument();
+    expect(within(groups[3] as HTMLElement).getByRole('heading', {level: 2, name: t('personalAccessTokens', 'connectTitle')})).toBeInTheDocument();
     expect(container.querySelector('.space-y-8')).toBeNull();
-    expect(screen.getAllByRole('heading', {level: 2})).toHaveLength(3);
+    expect(screen.getAllByRole('heading', {level: 2})).toHaveLength(4);
   });
 });
