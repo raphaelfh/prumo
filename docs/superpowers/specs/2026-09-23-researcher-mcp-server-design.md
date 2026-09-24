@@ -128,7 +128,7 @@ every cited file:line re-read; delivery tasks in §10.
 ## 3. Architecture
 
 ```
-agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Mount("/mcp")
+agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Route("/mcp")
                                            └─ app/api/mcp/
                                               ├─ asgi_auth.py  pure-ASGI PAT wrapper → McpPrincipal contextvar
                                               ├─ server.py     MCPServer, tool registry, scope/role choke point
@@ -287,7 +287,7 @@ Setup:
 - FastAPI 0.136.3 and Starlette 1.3.1 (the repo's lock), `mcp` 2.2.0,
   uvicorn;
 - the three middlewares and CORS as registered in `app/main.py`;
-- MCP mounted at `/mcp`;
+- MCP served at the exact route `/mcp` (a Starlette `Route` with the ASGI app as endpoint, not a `Mount`, so `POST /mcp` is never 307-redirected);
 - Claude Code 2.1.280 over HTTP with a static `Authorization` header.
 
 | Check | Result |
@@ -1576,7 +1576,7 @@ to its own revision, and each REST-contract task regenerates
   tools yet), `session.py` (injectable session factory and storage
   factory, §3 "Storage client"); `MCP_ALLOWED_HOSTS` /
   `MCP_ALLOWED_ORIGINS` settings and their two parsing properties in
-  `app/core/config.py`; mount at `/mcp` in `create_app()` and lifespan
+  `app/core/config.py`; exact `Route("/mcp")` in `create_app()` and lifespan
   wiring (`app.state.mcp_session_manager.run()`); fixtures
   `mcp_http_client` and `bind_mcp_session_factory` (with the
   `mcp_real_sessions` marker and its `pyproject.toml` registration).
