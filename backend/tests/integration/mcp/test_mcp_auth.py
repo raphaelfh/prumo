@@ -131,7 +131,7 @@ async def test_last_used_failure_does_not_block_auth(
     pat_primary_read: SeededPat,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def _raise(*args: object, **kwargs: object) -> bool:
+    async def _raise(*_args: object, **_kwargs: object) -> bool:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(asgi_auth, "touch_last_used", _raise)
@@ -159,7 +159,7 @@ async def test_mcp401_bucket_spares_valid_tokens(
 async def test_principal_reaches_the_tool_over_http(
     mcp_http_client: AsyncClient,
     pat_reviewer_rw: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
 ) -> None:
     r = await rpc(
         mcp_http_client,

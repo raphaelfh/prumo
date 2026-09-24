@@ -151,7 +151,9 @@ def agent_tool(
         async def call(**kwargs: Any) -> Any:
             return await _dispatch(fn.__name__, rule, fn, kwargs)
 
-        call.__signature__ = exposed  # type: ignore[attr-defined]
+        # setattr, not `call.__signature__ = …`: the SDK's `inspect.signature(call)`
+        # reads this dunder at call time, never a name any reader in app/ touches.
+        setattr(call, "__signature__", exposed)  # noqa: B010
 
         mcp.add_tool(
             call,

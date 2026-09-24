@@ -161,27 +161,27 @@ class ProbeResult(BaseModel):
     user_sub: str | None = None
 
 
-async def probe_read(db: AsyncSession, project_id: UUID) -> ProbeResult:
+async def probe_read(db: AsyncSession, project_id: UUID) -> ProbeResult:  # noqa: ARG001
     return ProbeResult(ok=True)
 
 
-async def probe_write(db: AsyncSession, project_id: UUID) -> ProbeResult:
+async def probe_write(db: AsyncSession, project_id: UUID) -> ProbeResult:  # noqa: ARG001
     return ProbeResult(ok=True)
 
 
-async def probe_article(db: AsyncSession, article_id: UUID) -> ProbeResult:
+async def probe_article(db: AsyncSession, article_id: UUID) -> ProbeResult:  # noqa: ARG001
     return ProbeResult(ok=True)
 
 
-async def probe_whoami(db: AsyncSession) -> ProbeResult:
+async def probe_whoami(db: AsyncSession) -> ProbeResult:  # noqa: ARG001
     return ProbeResult(ok=True, user_sub=str(current_principal().user_sub))
 
 
-async def probe_text(db: AsyncSession) -> str:
+async def probe_text(db: AsyncSession) -> str:  # noqa: ARG001
     return "plain"
 
 
-async def probe_boom(db: AsyncSession) -> ProbeResult:
+async def probe_boom(db: AsyncSession) -> ProbeResult:  # noqa: ARG001
     return ProbeResult.model_validate({"ok": "not-a-bool"})
 
 

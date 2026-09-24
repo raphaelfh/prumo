@@ -64,14 +64,14 @@ def _fake_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_non_http_scope_passes_through(monkeypatch: pytest.MonkeyPatch) -> None:
     called = {"inner": False}
 
-    async def inner(scope: dict, receive: object, send: object) -> None:
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
         called["inner"] = True
 
     resolve = AsyncMock(return_value=PRINCIPAL)
     monkeypatch.setattr(asgi_auth, "resolve_principal", resolve)
 
     app = asgi_auth._PatAuthApp(inner)
-    await app({"type": "lifespan"}, _receive, lambda m: None)
+    await app({"type": "lifespan"}, _receive, lambda _m: None)
 
     assert called["inner"] is True
     resolve.assert_not_awaited()
@@ -91,7 +91,7 @@ async def test_missing_or_malformed_header_is_401(
 ) -> None:
     inner_called = {"called": False}
 
-    async def inner(scope: dict, receive: object, send: object) -> None:
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
         inner_called["called"] = True
 
     resolve = AsyncMock(return_value=PRINCIPAL)
@@ -120,7 +120,7 @@ async def test_scheme_is_case_insensitive_and_principal_is_set_then_reset(
 
     recorded: dict[str, object] = {}
 
-    async def inner(scope: dict, receive: object, send: object) -> None:
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
         try:
             recorded["principal"] = asgi_auth.current_principal()
         except LookupError as exc:
@@ -128,7 +128,7 @@ async def test_scheme_is_case_insensitive_and_principal_is_set_then_reset(
 
     app = asgi_auth._PatAuthApp(inner)
     secret = "prumo_pat_" + "a" * 43
-    await app(_scope([(b"authorization", f"bearer {secret}".encode())]), _receive, lambda m: None)
+    await app(_scope([(b"authorization", f"bearer {secret}".encode())]), _receive, lambda _m: None)
 
     resolve.assert_awaited_once()
     assert resolve.await_args is not None
@@ -144,7 +144,7 @@ async def test_unknown_token_is_401_then_429_when_the_bucket_is_spent(
 ) -> None:
     monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(return_value=None))
 
-    async def inner(scope: dict, receive: object, send: object) -> None:
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
         raise AssertionError("inner must not be called")
 
     sent: list[dict] = []
@@ -157,7 +157,7 @@ async def test_unknown_token_is_401_then_429_when_the_bucket_is_spent(
     await app(_scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, send)
     assert sent[0]["status"] == 401
 
-    monkeypatch.setattr(asgi_auth.limiter.limiter, "hit", lambda *a, **k: False)
+    monkeypatch.setattr(asgi_auth.limiter.limiter, "hit", lambda *_a, **_k: False)
     sent.clear()
     await app(_scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, send)
     assert sent[0]["status"] == 429
@@ -167,7 +167,7 @@ async def test_unknown_token_is_401_then_429_when_the_bucket_is_spent(
 async def test_touch_failure_still_serves(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(return_value=PRINCIPAL))
 
-    async def _raise_touch(*args: object, **kwargs: object) -> bool:
+    async def _raise_touch(*_args: object, **_kwargs: object) -> bool:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(asgi_auth, "touch_last_used", _raise_touch)
@@ -177,12 +177,12 @@ async def test_touch_failure_still_serves(monkeypatch: pytest.MonkeyPatch) -> No
 
     recorded: dict[str, object] = {}
 
-    async def inner(scope: dict, receive: object, send: object) -> None:
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
         recorded["principal"] = asgi_auth.current_principal()
 
     app = asgi_auth._PatAuthApp(inner)
     secret = "prumo_pat_" + "a" * 43
-    await app(_scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, lambda m: None)
+    await app(_scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, lambda _m: None)
 
     assert recorded["principal"] is PRINCIPAL
     assert len(recorder.calls) == 1
@@ -194,7 +194,7 @@ async def test_contextvar_reset_when_inner_raises(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(return_value=PRINCIPAL))
     monkeypatch.setattr(asgi_auth, "touch_last_used", AsyncMock(return_value=True))
 
-    async def inner(scope: dict, receive: object, send: object) -> None:
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
         raise RuntimeError("tool blew up")
 
     app = asgi_auth._PatAuthApp(inner)
@@ -202,7 +202,7 @@ async def test_contextvar_reset_when_inner_raises(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(RuntimeError, match="tool blew up"):
         await app(
-            _scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, lambda m: None
+            _scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, lambda _m: None
         )
 
     with pytest.raises(LookupError):

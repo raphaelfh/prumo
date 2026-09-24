@@ -22,7 +22,7 @@ async def test_tools_list_is_scope_filtered(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_read: SeededPat,
     pat_primary_rw: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
 ) -> None:
     async with mcp_client(pat_primary_read) as client:
         names = [t.name for t in (await client.list_tools()).tools]
@@ -37,7 +37,7 @@ async def test_tools_list_is_scope_filtered(
 async def test_read_token_calling_write_tool_is_scope_insufficient(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_read: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
 ) -> None:
     async with mcp_client(pat_primary_read) as client:
         r = await client.call_tool("probe_write", {"project_id": str(SEED.primary_project)})
@@ -50,7 +50,7 @@ async def test_read_token_calling_write_tool_is_scope_insufficient(
 async def test_outsider_gets_identical_not_found_for_missing_and_foreign(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_outsider_rw: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
 ) -> None:
     async with mcp_client(pat_outsider_rw) as client:
         r_foreign = await client.call_tool("probe_read", {"project_id": str(SEED.primary_project)})
@@ -67,7 +67,7 @@ async def test_reviewer_is_manager_required_for_write(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_reviewer_rw: SeededPat,
     pat_primary_rw: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
 ) -> None:
     async with mcp_client(pat_reviewer_rw) as client:
         r = await client.call_tool("probe_write", {"project_id": str(SEED.primary_project)})
@@ -96,7 +96,7 @@ async def test_member_removed_while_token_live(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_reviewer_rw: SeededPat,
     db_session: AsyncSession,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
 ) -> None:
     async with mcp_client(pat_reviewer_rw) as client:
         r_ok = await client.call_tool("probe_read", {"project_id": str(SEED.primary_project)})
@@ -116,7 +116,7 @@ async def test_rate_limit_per_token(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_read: SeededPat,
     pat_primary_rw: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(server, "_READ_LIMIT", parse("2/minute"))
@@ -140,7 +140,7 @@ async def test_rate_limit_per_token(
 async def test_write_tools_use_the_write_bucket(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_rw: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(server, "_WRITE_LIMIT", parse("1/minute"))
@@ -159,7 +159,7 @@ async def test_write_tools_use_the_write_bucket(
 async def test_unexpected_validation_error_is_internal_and_logged(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_rw: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _Recorder:
@@ -186,7 +186,7 @@ async def test_unexpected_validation_error_is_internal_and_logged(
 async def test_structured_output_switch(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_rw: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
 ) -> None:
     async with mcp_client(pat_primary_rw) as client:
         tools = (await client.list_tools()).tools
@@ -206,7 +206,7 @@ async def test_structured_output_switch(
 async def test_server_info_instructions_and_cache_hints(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_rw: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
 ) -> None:
     async with mcp_client(pat_primary_rw) as client:
         assert client.server_info is not None
@@ -230,7 +230,7 @@ async def test_server_info_instructions_and_cache_hints(
 async def test_tool_call_span_carries_no_secret(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
     pat_primary_read: SeededPat,
-    probe_tools: None,
+    probe_tools: None,  # noqa: ARG001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _Span:
