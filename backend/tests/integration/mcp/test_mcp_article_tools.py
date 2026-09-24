@@ -134,6 +134,31 @@ async def test_get_article_tool(mcp_client, pat_primary_rw, db_session):
     assert with_old_file["outline"]["article_file_id"] == str(old_pdf)
 
 
+async def test_get_article_wraps_outline_headings(mcp_client, pat_primary_rw, db_session):
+    # Outline headings are PDF-derived text (spec §5.0): wrapped like the
+    # abstract, not just flagged by the top-level untrusted_content bit.
+    article_id = await insert_article(db_session, SEED.primary_project, title="ZQ-Wrapped-Outline")
+    file_id = await insert_pdf(db_session, SEED.primary_project, article_id)
+    await insert_blocks(
+        db_session,
+        file_id,
+        [(1, 0, "Intro", "heading"), (2, 0, "Methods", "heading")],
+    )
+
+    body = structured(
+        await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
+    )
+    McpArticleDetail.model_validate(body)
+    assert body["untrusted_content"] is True
+    headings = body["outline"]["headings"]
+    assert len(headings) == 2
+    for heading in headings:
+        assert heading["text"].startswith(UNTRUSTED_OPEN)
+        assert heading["text"].endswith(UNTRUSTED_CLOSE)
+    assert "Intro" in headings[0]["text"]
+    assert "Methods" in headings[1]["text"]
+
+
 async def test_get_article_without_pdf(mcp_client, pat_primary_rw, db_session):
     article_id = await insert_article(db_session, SEED.primary_project, title="ZQ-No-Pdf")
     result = await call_tool(

@@ -68,6 +68,8 @@ async def insert_pdf(
             "aid": str(article_id),
             "key": f"seed/{file_id}.pdf",
             "status": status,
+            # asyncpg infers this bind's wire type from its use in `... || ' milliseconds'`
+            # (text concatenation) and rejects a raw int, so it is bound as str.
             "offset_ms": str(offset_ms),
         },
     )

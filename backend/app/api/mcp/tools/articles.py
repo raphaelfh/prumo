@@ -85,6 +85,19 @@ async def get_article(
         db, article_id=article_id, file_id=file_id
     )
     outline = await get_file_outline(db, article_file_id=file.id) if file is not None else None
+    if outline is not None:
+        # Headings are PDF-derived text (spec §5.0): wrapped like the
+        # abstract. The length cap already ran in get_file_outline, on the
+        # RAW heading text -- wrapping here, after that cap, keeps the
+        # delimiters from eating into it.
+        outline = outline.model_copy(
+            update={
+                "headings": [
+                    heading.model_copy(update={"text": wrap_untrusted(heading.text)})
+                    for heading in outline.headings
+                ]
+            }
+        )
     return detail.model_copy(
         update={
             "abstract": wrap_untrusted(detail.abstract) if detail.abstract else None,
