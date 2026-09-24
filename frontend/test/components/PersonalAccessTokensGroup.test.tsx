@@ -147,6 +147,17 @@ describe('PersonalAccessTokensGroup', () => {
     expect(screen.getByText('prumo_pat_SECRET')).toBeInTheDocument();
     expect(screen.getByText(t('personalAccessTokens', 'revealWarning'))).toBeInTheDocument();
 
+    for (const key of ['chipClaudeCode', 'chipCursor', 'chipVsCode', 'chipGeminiCli', 'chipCodex', 'chipWindsurf'] as const) {
+      expect(screen.getByRole('radio', {name: t('personalAccessTokens', key)})).toBeInTheDocument();
+    }
+    expect(screen.getByText('claude mcp add --transport http prumo https://api.test/mcp --header "Authorization: Bearer prumo_pat_SECRET"')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('radio', {name: t('personalAccessTokens', 'chipCursor')}));
+    const cursorPre = screen.getAllByText((_, el) => el?.tagName === 'PRE' && (el.textContent ?? '').startsWith('{'))[0];
+    expect(JSON.parse(cursorPre.textContent ?? '')).toEqual({
+      mcpServers: {prumo: {url: 'https://api.test/mcp', headers: {Authorization: 'Bearer prumo_pat_SECRET'}}},
+    });
+
     await userEvent.keyboard('{Escape}');
     expect(screen.getByText('prumo_pat_SECRET')).toBeInTheDocument();
 

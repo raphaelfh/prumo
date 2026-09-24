@@ -28,6 +28,7 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/c
 import {Skeleton} from '@/components/ui/skeleton';
 import {SettingsActions, SettingsGroup, SettingsRow} from '@/components/settings';
 import {CopyBlock} from '@/components/user/CopyBlock';
+import {McpClientSnippetSelector} from '@/components/user/McpClientSnippetSelector';
 import {
   useCreateMyToken,
   useMyTokens,
@@ -263,6 +264,7 @@ export function PersonalAccessTokensGroup() {
               <p className="text-[13px] text-muted-foreground">{t('personalAccessTokens', 'revealWarning')}</p>
             </div>
             {secret && <CopyBlock label={t('personalAccessTokens', 'copyTokenAria')} code={secret} copyAriaLabel={t('personalAccessTokens', 'copyTokenAria')} />}
+            {secret && <McpClientSnippetSelector token={secret} />}
             <div className="flex justify-end">
               <Button size="sm" onClick={closeReveal}>{t('personalAccessTokens', 'revealDone')}</Button>
             </div>
