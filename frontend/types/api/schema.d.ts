@@ -591,6 +591,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Project
+         * @description Delete the project and everything under it (the foreign keys cascade).
+         */
+        delete: operations["delete_project_api_v1_projects__project_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/ai-context": {
         parameters: {
             query?: never;
@@ -689,6 +709,26 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Project Details
+         * @description Write the changed descriptive columns if every `expected` value is still current.
+         */
+        patch: operations["update_project_details_api_v1_projects__project_id__details_patch"];
         trace?: never;
     };
     "/api/v1/projects/{project_id}/extraction-export": {
@@ -2414,6 +2454,40 @@ export interface components {
         ApiResponse_ProjectArchiveRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ProjectArchiveRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ProjectDeleteRead] */
+        ApiResponse_ProjectDeleteRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ProjectDeleteRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ProjectDetailsRead] */
+        ApiResponse_ProjectDetailsRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ProjectDetailsRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -4906,6 +4980,137 @@ export interface components {
             label: string;
             /** Provider */
             provider: string;
+        };
+        /**
+         * ProjectDeleteRead
+         * @description The id of the project that was deleted.
+         */
+        ProjectDeleteRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * ProjectDetailsFields
+         * @description A partial set of editable project columns: omitted keys are untouched, an unknown key is refused.
+         */
+        ProjectDetailsFields: {
+            /** Condition Studied */
+            condition_studied?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Eligibility Criteria */
+            eligibility_criteria?: {
+                [key: string]: unknown;
+            } | null;
+            /** Name */
+            name?: string | null;
+            /** Review Context */
+            review_context?: string | null;
+            /** Review Keywords */
+            review_keywords?: string[] | null;
+            /** Review Rationale */
+            review_rationale?: string | null;
+            /** Review Title */
+            review_title?: string | null;
+            /** Review Type */
+            review_type?: ("interventional" | "predictive_model" | "diagnostic" | "prognostic" | "qualitative" | "other") | null;
+            /** Search Strategy */
+            search_strategy?: string | null;
+            /** Study Design */
+            study_design?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * ProjectDetailsRead
+         * @description The 11 columns as stored after a write.
+         */
+        ProjectDetailsRead: {
+            /** Condition Studied */
+            condition_studied: string | null;
+            /** Description */
+            description: string | null;
+            /** Eligibility Criteria */
+            eligibility_criteria: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /** Review Context */
+            review_context: string | null;
+            /** Review Keywords */
+            review_keywords: string[];
+            /** Review Rationale */
+            review_rationale: string | null;
+            /** Review Title */
+            review_title: string | null;
+            /** Review Type */
+            review_type: ("interventional" | "predictive_model" | "diagnostic" | "prognostic" | "qualitative" | "other") | null;
+            /** Search Strategy */
+            search_strategy: string | null;
+            /** Study Design */
+            study_design: {
+                [key: string]: unknown;
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ProjectDetailsRefusalCode
+         * @description Why ``PATCH .../details`` returned 409.
+         *
+         *     Slice-local, like ``TemplateDraftLockRefusalCode``: one surface's outcome,
+         *     not part of the cross-cutting ``ApiErrorCode`` vocabulary.
+         * @enum {string}
+         */
+        ProjectDetailsRefusalCode: "STALE_VALUE";
+        /** ProjectDetailsRefusalError */
+        ProjectDetailsRefusalError: {
+            code: components["schemas"]["ProjectDetailsRefusalCode"];
+            details: components["schemas"]["ProjectDetailsStaleDetails"];
+            /** Message */
+            message: string;
+        };
+        /**
+         * ProjectDetailsRefusalResponse
+         * @description The 409 body, declared so the generated client types ``details.current``.
+         */
+        ProjectDetailsRefusalResponse: {
+            error: components["schemas"]["ProjectDetailsRefusalError"];
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /** Trace Id */
+            trace_id?: string | null;
+        };
+        /**
+         * ProjectDetailsStaleDetails
+         * @description The server's current values of the contested keys only.
+         */
+        ProjectDetailsStaleDetails: {
+            /** Current */
+            current: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * ProjectDetailsUpdate
+         * @description The changed columns and the values the caller last read for each of them.
+         *
+         *     ``expected`` must name every key of ``fields``: the write applies only if
+         *     each of those columns still holds its ``expected`` value, else 409.
+         */
+        ProjectDetailsUpdate: {
+            expected: components["schemas"]["ProjectDetailsFields"];
+            fields: components["schemas"]["ProjectDetailsFields"];
         };
         /**
          * ProjectTemplateRead
@@ -7831,6 +8036,51 @@ export interface operations {
             };
         };
     };
+    delete_project_api_v1_projects__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProjectDeleteRead_"];
+                };
+            };
+            /** @description A member who is not a project manager */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a member of the project, or no such project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_ai_context_api_v1_projects__project_id__ai_context_get: {
         parameters: {
             query?: never;
@@ -8095,6 +8345,62 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    update_project_details_api_v1_projects__project_id__details_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectDetailsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProjectDetailsRead_"];
+                };
+            };
+            /** @description A member who is not a project manager */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a member of the project, or no such project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refused: a field changed since the caller read it */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetailsRefusalResponse"];
+                };
+            };
+            /** @description Unknown or invalid field, or expected does not cover fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
