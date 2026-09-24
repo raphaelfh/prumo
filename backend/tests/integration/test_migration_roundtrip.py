@@ -1694,13 +1694,25 @@ async def test_migration_0077_personal_access_tokens_roundtrip(
     migration_db_url: str, migration_session: AsyncSession
 ) -> None:
     async def posture() -> tuple[list[str], int]:
-        policies = (await migration_session.execute(text(
-            "SELECT polname FROM pg_policy WHERE polrelid = to_regclass('public.personal_access_tokens')"
-        ))).scalars().all()
-        grants = (await migration_session.execute(text(
-            "SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema = 'public' "
-            "AND table_name = 'personal_access_tokens' AND grantee IN ('authenticated', 'anon')"
-        ))).scalar_one()
+        policies = (
+            (
+                await migration_session.execute(
+                    text(
+                        "SELECT polname FROM pg_policy WHERE polrelid = to_regclass('public.personal_access_tokens')"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        grants = (
+            await migration_session.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema = 'public' "
+                    "AND table_name = 'personal_access_tokens' AND grantee IN ('authenticated', 'anon')"
+                )
+            )
+        ).scalar_one()
         await migration_session.rollback()
         return list(policies), int(grants)
 
