@@ -4,11 +4,9 @@
  * and apiClient for GET status and cancel (JSON only). Constitution Principle VI.
  */
 
-import {apiClient} from "@/integrations/api/client";
+import {apiClient, getApiBaseUrl} from "@/integrations/api/client";
 import {supabase} from "@/integrations/supabase/client";
 
-const API_BASE_URL =
-    import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 const EXPORT_BASE = "/api/v1/articles-export";
 
 export type ExportFormat = "csv" | "ris" | "rdf";
@@ -54,7 +52,7 @@ export async function startExport(
         throw new Error("Auth required");
     }
 
-    const url = `${API_BASE_URL}${EXPORT_BASE}`;
+    const url = `${getApiBaseUrl()}${EXPORT_BASE}`;
     const res = await fetch(url, {
         method: "POST",
         headers: {
