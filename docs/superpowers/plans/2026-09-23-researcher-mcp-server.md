@@ -24,7 +24,7 @@ owner: '@raphaelfh'
 - Seed only via `cd backend && uv run python -m app.seed`; never in migrations. This plan adds no seed data.
 - Local DB is ONE Supabase stack shared by every worktree. Never `make db-fresh` / `make reset-db` / `supabase db reset`. Before integration tests: `cd "$WT/backend" && uv run alembic upgrade head`. When the task's verification is done: `uv run alembic downgrade 0076_extraction_batches` (dev's head). Never `alembic stamp`.
 - `make test-backend` runs the whole suite on that shared DB: use the targeted `uv run pytest <paths>` commands each task gives.
-- No dead code: vulture shrink-only (`cd backend && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec`), never baseline a new finding. An intermediate finding (a symbol whose first caller lands in a later task) is tolerated in a commit ONLY when that task's Verify names it and the task that clears it; the branch tip must be vulture-clean. Chain: `session_factory` 2a→2b, `storage_factory` 2a→7b, `agent_tool` 2b→6a, `record_applied`/`record_refused` 3→9, `ProjectDetailsChange.before/after` (if reported) 5→9, `apply_draft_ops`/`assert_isolated_baseline` (+ `DraftOpError`/`AppliedDraftOp` attributes if reported) 10a→10b; frontend `npx knip` and `npx knip --production` at zero; copy keys via `scripts/fitness/check_copy_keys.py`.
+- No dead code: vulture shrink-only (`cd backend && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec`), never baseline a new finding. An intermediate finding (a symbol whose first caller lands in a later task) is tolerated in a commit ONLY when that task's Verify names it and the task that clears it; the branch tip must be vulture-clean. Chain: `session_factory` 2a→2b, `storage_factory` 2a→7b, `agent_tool` 2b→6a, `record_applied`/`record_refused` 3→9, `ProjectDetailsChange.before/after` (if reported) 5a→9, `apply_draft_ops`/`assert_isolated_baseline` (+ `DraftOpError`/`AppliedDraftOp` attributes if reported) 10a→10b; frontend `npx knip` and `npx knip --production` at zero; copy keys via `scripts/fitness/check_copy_keys.py`.
 - BOLA: one ownership predicate, in the WHERE clause, one implementation (`python3 scripts/fitness/check_scope_guards.py`). Membership/role only through `app/api/deps/security.py` helpers; no raw `project_members` SQL.
 - Layering: `api → services | support`, `services → repositories | models | support` (`python3 scripts/fitness/check_layered_arch.py`). `app/api/mcp/` is api-layer: no `app.models` / `app.repositories` imports there.
 - Services only `flush()`; the endpoint / tool dispatcher commits once per request.
@@ -32,7 +32,8 @@ owner: '@raphaelfh'
 - Frontend tooling runs from the repo root (`$WT`); never `cd frontend && npm …`. First frontend command in the worktree: `npm ci`.
 - `.claude/hooks/post-edit-format.sh` runs `ruff check --fix` / `eslint --fix` after every edit: add an import in the same edit as its first use, or it is stripped.
 - REST contract change ⇒ `npm run generate:api-types` from `$WT` and commit `frontend/types/api/openapi.json` + `schema.d.ts`.
-- Backend gates: `cd "$WT/backend" && uv run ruff check . && uv run ruff format --check . && uv run mypy <new files> --ignore-missing-imports` (new files clean, no `.mypy_baseline` entries); `bash "$WT/scripts/fitness/run_all.sh"`.
+- Backend gates: `cd "$WT/backend" && uv run ruff check . && uv run ruff format --check . && uv run mypy <new files> --ignore-missing-imports` (new files clean, no `.mypy_baseline` entries); `bash "$WT/scripts/fitness/run_all.sh"`. mypy is `strict` with no pydantic plugin: a plain `str` never flows into a `Literal` field (type the column `Mapped[Literal[…]]` or `cast` at the boundary), and `AppError.details` is `dict | None` (read `(exc.details or {})[…]`).
+- Diff coverage: handler lines reached only through httpx `ASGITransport` register no coverage, so every REST endpoint and the `/mcp` auth wrapper also get a direct-call unit test (`fn.__wrapped__` under `@limiter.limit`, the `tests/unit/test_*_endpoint_unit.py` pattern). Tool coroutines need none: the SDK in-memory client runs them in-process.
 - Load before coding: `backend-development` + `web-testing` (backend tasks), `frontend-development` + `web-testing` (+ `frontend-ux`, `ui-styling` for UI). Before calling a task done: `code-review`.
 - Commits: conventional, ending with a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Do not push or open a PR.
 
@@ -50,7 +51,7 @@ owner: '@raphaelfh'
 - Create: `backend/app/schemas/personal_access_token.py`
 - Create: `backend/app/services/pat_service.py`
 - Create: `backend/app/api/v1/endpoints/personal_access_tokens.py`; Modify: `backend/app/api/v1/router.py` (import + `include_router` next to `user_connections`, `:65-69`)
-- Test (all NEW): `backend/tests/integration/test_personal_access_token_rls.py`, `backend/tests/integration/test_pat_service.py`, `backend/tests/integration/test_personal_access_tokens_api.py`
+- Test (all NEW): `backend/tests/integration/test_personal_access_token_rls.py`, `backend/tests/integration/test_pat_service.py`, `backend/tests/integration/test_personal_access_tokens_api.py`, `backend/tests/unit/test_personal_access_tokens_endpoint_unit.py` (direct handler calls: ASGITransport-driven handler lines register no diff coverage)
 - Regenerate: `frontend/types/api/openapi.json`, `frontend/types/api/schema.d.ts`
 - Create: `docs/adr/0020-personal-access-tokens-for-mcp.md`; Modify: `docs/reference/constitution.md`
 
@@ -131,6 +132,7 @@ revokes every privilege from ``authenticated`` / ``anon``. Not
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Text, func, text
@@ -149,7 +151,10 @@ class PersonalAccessToken(Base, UUIDMixin):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     token_prefix: Mapped[str] = mapped_column(Text, nullable=False)
     token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
-    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    # Literal, not str: strict mypy (no pydantic plugin) rejects a str passed to the
+    # Literal-typed PersonalAccessTokenRead.scope / McpPrincipal.scope. Explicit Text
+    # keeps the DDL a plain text column (verified: no alembic drift, mypy clean).
+    scope: Mapped[Literal["read", "read_write"]] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -265,7 +270,7 @@ async def create_token(db, *, user_id, payload) -> PersonalAccessTokenCreated:
     return PersonalAccessTokenCreated(token=_read(row, "active"), secret=secret)
 ```
 
-`list_tokens`: `status_expr = case((active_clause(), "active"), (PersonalAccessToken.revoked_at.is_not(None), "revoked"), else_="expired")`; `select(PersonalAccessToken, status_expr.label("status")).where(PersonalAccessToken.user_id == user_id).order_by(case((active_clause(), 0), else_=1), PersonalAccessToken.created_at.desc(), PersonalAccessToken.id.desc()).limit(50)`. `revoke_token`: `row = await owned_token(...)`; `None` → `TokenNotFoundError`; `await db.execute(update(PersonalAccessToken).where(PersonalAccessToken.id == row.id, PersonalAccessToken.revoked_at.is_(None)).values(revoked_at=func.now()))` (id-only WHERE: ownership was proven by `owned_token`; never re-state `user_id` here — `check_scope_guards` would count a second predicate); `await db.refresh(row)`; return `_read(row, "revoked")`. `_read(row, status)` builds `PersonalAccessTokenRead` from the row's attributes. Services only `flush()`/execute; they never commit.
+`list_tokens`: `status_expr = case((active_clause(), "active"), (PersonalAccessToken.revoked_at.is_not(None), "revoked"), else_="expired")`; `select(PersonalAccessToken, status_expr.label("status")).where(PersonalAccessToken.user_id == user_id).order_by(case((active_clause(), 0), else_=1), PersonalAccessToken.created_at.desc(), PersonalAccessToken.id.desc()).limit(50)`. `revoke_token`: `row = await owned_token(...)`; `None` → `TokenNotFoundError`; `await db.execute(update(PersonalAccessToken).where(PersonalAccessToken.id == row.id, PersonalAccessToken.revoked_at.is_(None)).values(revoked_at=func.now()))` (id-only WHERE: ownership was proven by `owned_token`; never re-state `user_id` here — `check_scope_guards` would count a second predicate); `await db.refresh(row)`; return `_read(row, "revoked")`. `_read(row: PersonalAccessToken, status: Literal["active", "expired", "revoked"]) -> PersonalAccessTokenRead` builds it from the row's attributes (`row.scope` is already the Literal type, so strict mypy passes; in `list_tokens` the SQL `status` label comes back as `str` — `cast("Literal['active', 'expired', 'revoked']", status)` at that one boundary). Services only `flush()`/execute; they never commit.
 
 Run: `cd "$WT/backend" && uv run pytest tests/integration/test_pat_service.py -q` → PASS.
 
@@ -281,10 +286,16 @@ git -C "$WT" commit -m "feat(auth): add pat_service with cap, status and owned_t
 - `test_foreign_or_missing_token_is_404`: token created by `engine_setup.client_as(str(SEED.primary_profile), db_session)`; the reviewer's DELETE of it → 404; DELETE `/{uuid4()}` → 404 with the same `error.message`.
 - `test_expires_in_days_bounds`: 0 and 366 → 422 and `SELECT count(*) FROM public.personal_access_tokens WHERE user_id = :reviewer` unchanged; 1 and 365 → 201.
 - `test_cap_is_409_with_code`: 10 creates → 201; 11th → 409, `json()["error"]["code"] == "TOKEN_LIMIT_REACHED"`.
-- `test_pat_cannot_call_token_routes`: `AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://test")` (fresh app: no overrides) GET `_BASE` with `Authorization: Bearer prumo_pat_` + `"a" * 43` → 401.
+- `test_pat_cannot_call_token_routes` (ADR 0020: a PAT never mints a PAT): a REAL token — `created = await create_token(db_session, user_id=SEED.reviewer_profile, payload=…)`; a fresh `app = create_app()` whose ONLY override is `app.dependency_overrides[get_db]` yielding `db_session` (so the row is visible; auth stays real); `AsyncClient(transport=ASGITransport(app=app), base_url="http://test")` with `Authorization: Bearer {created.secret}` → GET `_BASE`, POST `_BASE` (valid body) and DELETE `f"{_BASE}/{created.token.id}"` each 401; the reviewer's token count is unchanged and the token is still active.
 - `test_token_routes_rate_limited`: 20 POSTs (10×201 then 10×409) then the 21st → 429; in the same test, 60 GETs → 200 each, the 61st → 429.
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/test_personal_access_tokens_api.py -q` → FAIL (404 on `/api/v1/me/tokens`).
+`backend/tests/unit/test_personal_access_tokens_endpoint_unit.py` (the `tests/unit/test_entry_create_endpoint_unit.py` pattern: `from app.api.v1.endpoints import personal_access_tokens as pat_endpoints`; `_create = pat_endpoints.create_my_token.__wrapped__`, likewise `list_my_tokens` and `revoke_my_token` — slowapi's wrapper refuses a non-Starlette request; monkeypatch the module globals `create_token`, `list_tokens`, `revoke_token`; `db = SimpleNamespace(commit=AsyncMock())`; `request = SimpleNamespace(state=SimpleNamespace(trace_id="t1"))`, and `SimpleNamespace(state=SimpleNamespace())` for the fallback):
+- `test_create_commits_and_carries_trace_id`: returns `ApiResponse` with the service's data and `trace_id == "t1"`; `db.commit` awaited once; with the bare state → `trace_id is None`.
+- `test_create_limit_propagates_without_commit`: service raises `TokenLimitReachedError` → `pytest.raises(TokenLimitReachedError)`; `db.commit` not awaited.
+- `test_list_returns_rows`: `list_tokens` stub rows → `data` equals them.
+- `test_revoke_not_found_is_404_without_commit`: `revoke_token` raises `TokenNotFoundError` → `HTTPException` 404 `"Token not found"`; no commit. Success → commit awaited once.
+
+Run: `cd "$WT/backend" && uv run pytest tests/integration/test_personal_access_tokens_api.py tests/unit/test_personal_access_tokens_endpoint_unit.py -q` → FAIL (404 on `/api/v1/me/tokens`; `ModuleNotFoundError` for the endpoint module).
 
 - [ ] **Step 7: Router**
 
@@ -308,12 +319,12 @@ async def create_my_token(body: PersonalAccessTokenCreateRequest, request: Reque
     await db.commit()
     return ApiResponse.success(data, trace_id=getattr(request.state, "trace_id", None))
 ```
-`scripts/fitness/check_response_descriptions.py` requires every `responses=` entry to be an inline dict literal with a `"description"` key (never a name or spread). GET `/tokens` (`@limiter.limit("60/minute")`, `responses={401: {...}}`) returns `ApiResponse[list[PersonalAccessTokenRead]]`. DELETE `/tokens/{token_id}` (`@limiter.limit("20/minute")`, `responses={401: {...}, 404: {"description": "Token not found"}}`) maps `TokenNotFoundError` → `HTTPException(404, "Token not found")`, commits, returns `ApiResponse[PersonalAccessTokenRead]`. In `router.py`: `api_router.include_router(personal_access_tokens.router, prefix="/me", tags=["me"])` right after the `user_connections` block.
+`scripts/fitness/check_response_descriptions.py` requires every `responses=` entry to be an inline dict literal with a `"description"` key (never a name or spread). Import the service functions by name (`from app.services.pat_service import create_token, list_tokens, revoke_token, …`) so the unit test can patch them on this module. GET `/tokens` (`list_my_tokens`, `@limiter.limit("60/minute")`, `responses={401: {...}}`) returns `ApiResponse[list[PersonalAccessTokenRead]]`. DELETE `/tokens/{token_id}` (`revoke_my_token`, `@limiter.limit("20/minute")`, `responses={401: {...}, 404: {"description": "Token not found"}}`) maps `TokenNotFoundError` → `HTTPException(404, "Token not found")`, commits, returns `ApiResponse[PersonalAccessTokenRead]`. In `router.py`: `api_router.include_router(personal_access_tokens.router, prefix="/me", tags=["me"])` right after the `user_connections` block.
 
 Run the Step 6 command → PASS. Then `cd "$WT" && npm ci && npm run generate:api-types` and `python3 scripts/fitness/check_response_descriptions.py` → `OK`.
 
 ```bash
-git -C "$WT" add backend/app/api/v1/endpoints/personal_access_tokens.py backend/app/api/v1/router.py backend/tests/integration/test_personal_access_tokens_api.py frontend/types/api/openapi.json frontend/types/api/schema.d.ts
+git -C "$WT" add backend/app/api/v1/endpoints/personal_access_tokens.py backend/app/api/v1/router.py backend/tests/integration/test_personal_access_tokens_api.py backend/tests/unit/test_personal_access_tokens_endpoint_unit.py frontend/types/api/openapi.json frontend/types/api/schema.d.ts
 git -C "$WT" commit -m "feat(auth): add /me/tokens personal access token routes" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -333,7 +344,7 @@ git -C "$WT" commit -m "docs(adr): accept ADR 0020 and amend the constitution to
 - [ ] **Step 9: Verify**
 
 ```bash
-cd "$WT/backend" && uv run pytest tests/integration/test_pat_service.py tests/integration/test_personal_access_tokens_api.py tests/integration/test_personal_access_token_rls.py tests/integration/test_migration_roundtrip.py tests/integration/test_user_connections_api.py -q
+cd "$WT/backend" && uv run pytest tests/integration/test_pat_service.py tests/integration/test_personal_access_tokens_api.py tests/unit/test_personal_access_tokens_endpoint_unit.py tests/integration/test_personal_access_token_rls.py tests/integration/test_migration_roundtrip.py tests/integration/test_user_connections_api.py -q
 uv run ruff check . && uv run ruff format --check .
 uv run mypy app/models/personal_access_token.py app/schemas/personal_access_token.py app/services/pat_service.py app/api/v1/endpoints/personal_access_tokens.py --ignore-missing-imports
 uv run alembic check
@@ -622,7 +633,7 @@ Expected: tests pass; `make lint-backend` and mypy clean; layered-arch OK; `gene
 
 `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec` (branch `feat/researcher-mcp-server`). Spec `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §3 ("PAT auth…", "Scope/role choke point", "Where MCP models live"), §4.3, §4.4, §5.0 (server info, `instructions`, `cacheScope`), §6.3 (span), §7 (rate limits, error table), §8 (fixtures, PAT/auth tests), §10 task 2b. Load `backend-development` and `web-testing` first. Before integration tests run `cd "$WT/backend" && uv run alembic upgrade head` (shared local DB; never reset it).
 
-State after Tasks 1–2a: `personal_access_tokens` table; `app/services/pat_service.py` with `PAT_PREFIX = "prumo_pat_"`, `hash_secret(secret) -> str`, `active_clause()` (THE active predicate), `create_token(db, *, user_id, payload: PersonalAccessTokenCreateRequest) -> PersonalAccessTokenCreated` (`.secret`, `.token.id/.scope/.expires_at`), `revoke_token(db, *, user_id, token_id)`; `app/api/mcp/server.py` with `mcp = MCPServer(name="prumo")` and `build_mcp_asgi() -> (ASGIApp, StreamableHTTPSessionManager)`; `app/api/mcp/session.py` with `session_factory` / `storage_factory` (read through the module: `from app.api.mcp import session as mcp_session`); `create_app()` serves the SDK app at the exact `Route("/mcp")` (no Mount, no trailing slash) unauthenticated and stores `app.state.mcp_session_manager`; fixtures `mcp_http_client` and autouse `bind_mcp_session_factory` in `backend/tests/integration/mcp/conftest.py`; `_rpc(client, method, params=None, headers=None)` in `tests/integration/mcp/test_mcp_mount.py` posts JSON-RPC to `/mcp`.
+State after Tasks 1–2a: `personal_access_tokens` table (model `PersonalAccessToken.scope: Mapped[Literal["read", "read_write"]]`, so it flows into Literal-typed Pydantic fields under strict mypy); `app/services/pat_service.py` with `PAT_PREFIX = "prumo_pat_"`, `hash_secret(secret) -> str`, `active_clause()` (THE active predicate), `create_token(db, *, user_id, payload: PersonalAccessTokenCreateRequest) -> PersonalAccessTokenCreated` (`.secret`, `.token.id/.scope/.expires_at`), `revoke_token(db, *, user_id, token_id)`; `app/api/mcp/server.py` with `mcp = MCPServer(name="prumo")` and `build_mcp_asgi() -> (ASGIApp, StreamableHTTPSessionManager)`; `app/api/mcp/session.py` with `session_factory` / `storage_factory` (read through the module: `from app.api.mcp import session as mcp_session`); `create_app()` serves the SDK app at the exact `Route("/mcp")` (no Mount, no trailing slash) unauthenticated and stores `app.state.mcp_session_manager`; fixtures `mcp_http_client` and autouse `bind_mcp_session_factory` in `backend/tests/integration/mcp/conftest.py`; `_rpc(client, method, params=None, headers=None)` in `tests/integration/mcp/test_mcp_mount.py` posts JSON-RPC to `/mcp`.
 
 **Files:**
 - Modify: `backend/app/services/pat_service.py` (add `resolve_principal`, `touch_last_used`)
@@ -632,12 +643,12 @@ State after Tasks 1–2a: `personal_access_tokens` table; `app/services/pat_serv
 - Modify: `backend/app/api/mcp/server.py` (server info, scope-filtering subclass, `agent_tool`, dispatcher)
 - Modify: `backend/app/core/config.py` (module constant `API_VERSION = "0.1.0"`), `backend/app/main.py` (the three `"0.1.0"` literals → `API_VERSION`; the `/mcp` Route endpoint wrapped by `with_pat_auth`)
 - Modify: `backend/pyproject.toml` (`[tool.vulture] ignore_decorators` += `"@agent_tool"`)
-- Test: Modify `backend/tests/integration/mcp/conftest.py`, `backend/tests/integration/mcp/test_mcp_mount.py`, `backend/tests/integration/test_pat_service.py`; Create `backend/tests/integration/mcp/rpc.py`, `backend/tests/integration/mcp/test_mcp_auth.py`, `backend/tests/integration/mcp/test_mcp_choke_point.py`, `backend/tests/integration/test_security_role_helpers.py`, `backend/tests/unit/test_mcp_errors.py`
+- Test: Modify `backend/tests/integration/mcp/conftest.py`, `backend/tests/integration/mcp/test_mcp_mount.py`, `backend/tests/integration/test_pat_service.py`; Create `backend/tests/integration/mcp/rpc.py`, `backend/tests/integration/mcp/test_mcp_auth.py`, `backend/tests/integration/mcp/test_mcp_choke_point.py`, `backend/tests/integration/test_security_role_helpers.py`, `backend/tests/unit/test_mcp_errors.py`, `backend/tests/unit/test_mcp_asgi_auth.py` (direct `_PatAuthApp` calls: the wrapper is the `/mcp` route endpoint, and lines reached only over httpx `ASGITransport` register no diff coverage)
 
 **Interfaces — Produces (Tasks 3–10 rely on these exact names):**
 - `app.schemas.mcp_auth.McpPrincipal(BaseModel, frozen)`: `user_sub: UUID`, `token_id: UUID`, `scope: Literal["read", "read_write"]`, `token_expires_at: datetime`.
 - `app.api.mcp.asgi_auth`: `principal_var: ContextVar[McpPrincipal]`, `current_principal() -> McpPrincipal`, `with_pat_auth(app: ASGIApp) -> ASGIApp` (returns a `_PatAuthApp` instance — a class, because the `/mcp` `Route` would run a plain function as a request/response endpoint).
-- `app.api.mcp.errors`: `McpErrorCode` (StrEnum, the 15 §7 codes), `NOT_FOUND_MESSAGE`, `McpToolError(code, message, **extras)`, `to_tool_error(exc: BaseException) -> McpToolError`, `error_result(err: McpToolError) -> CallToolResult`. `NOT_FOUND` maps `ArticleFileNotFoundError` from `app.services.article_text_block_read_service`: Task 6's `owned_article_file` guard must raise that same class. The §7 "audit row" column is NOT encoded here; the audit writer (Tasks 9–10) owns it.
+- `app.api.mcp.errors`: `McpErrorCode` (StrEnum, the 15 §7 codes), `NOT_FOUND_MESSAGE`, `McpToolError(code, message, **extras)`, `to_tool_error(exc: BaseException) -> McpToolError`, `error_result(err: McpToolError) -> CallToolResult`. `NOT_FOUND` maps `ArticleFileNotFoundError` from `app.services.article_text_block_read_service`: Task 6's `owned_article_file` guard must raise that same class. The §7 "audit row" column is NOT encoded here; the audit writer (Tasks 9–10) owns it. `to_tool_error` maps ONLY pass-through `McpToolError`, the five not-found classes, and everything else → `INTERNAL_ERROR`: every audited code (`INVALID_ARGUMENT`, `DRAFT_LOCK_HELD`, `NO_PUBLISHED_VERSION`, `DUPLICATE_NAME`, `RETRY`, …) is mapped once, in the write tool next to its audit row (Tasks 9/10b); a copy here would be unreachable or would return an audited code with no row.
 - `app.api.mcp.server.agent_tool(*, requires: Literal["read","write"], project_arg: Literal["project_id","article_id"] | None, title: str, description: str, destructive: bool = False, idempotent: bool = True, meta: dict[str, Any] | None = None, structured_output: bool | None = None)`. `description` is a required static string (no docstring fallback). Annotations are derived: `read_only_hint = requires == "read"`, `destructive_hint = destructive`, `idempotent_hint = idempotent`, `open_world_hint = False` — a read tool passes only `requires`, `project_arg`, `title`, `description`. `project_arg=None` skips project resolution and membership (e.g. `list_projects`). `structured_output` is passed to `mcp.add_tool`: `False` makes a text-only tool (no `outputSchema`, no `structuredContent`; the SDK would otherwise wrap a `str` return as `{"result": …}`). A tool that must add content blocks (e.g. a `resource_link`) annotates its return `Annotated[CallToolResult, ResultModel]` and returns `CallToolResult(content=[TextContent(json), ResourceLink(...)], structured_content=model.model_dump(mode="json"))`: SDK 2.2.0 (`func_metadata`) still publishes `ResultModel`'s `outputSchema` and validates `structured_content` against it; no decorator switch is involved. A tool is `async def name(db: AsyncSession, <args>) -> <ResultModel>`; the dispatcher injects `db` (hidden from the input schema) after the checks, and the tool commits its own writes (services only flush). The decorator returns the undecorated function, so unit tests call it directly. Tools raise `McpToolError` or service exceptions; never build error results themselves. Not-found service exceptions (`ArticleNotFoundError`, `ArticleFileNotFoundError`, `ProjectTemplateNotFoundError`, `EntityTypeNotFoundError`, `FieldNotFoundError`) may simply propagate: `to_tool_error` maps them to `NOT_FOUND` with `NOT_FOUND_MESSAGE`. `McpToolError` takes no `next_step` (fixed per code in `_SPECS`; an extra named `next_step` would collide with the payload field).
 - `app.api.deps.security.is_project_manager(db, project_id, user_sub) -> bool`; `pat_service.resolve_principal(db, secret) -> McpPrincipal | None`; `pat_service.touch_last_used(db, token_id) -> bool`.
 - Fixtures: `SeededPat(secret, principal)` with `.headers`; `pat_primary_rw`, `pat_primary_read`, `pat_reviewer_rw`, `pat_outsider_rw` (seeded in `db_session`, so unusable in `mcp_real_sessions` tests); `mcp_client` — a factory: `async with mcp_client(pat) as client:` (SDK in-memory `mcp.Client` with `principal_var` set).
@@ -702,7 +713,7 @@ git -C "$WT" commit -m "feat(mcp): add PAT principal lookup and a non-raising is
 `backend/tests/unit/test_mcp_errors.py`:
 - `test_every_code_renders_with_its_retryability`: for every `code in McpErrorCode`, `r = error_result(McpToolError(code, "m"))`; `r.is_error is True`; `r.structured_content["code"] == code.value`; `r.structured_content["retryable"] is (code in {DUPLICATE_NAME, RETRY, RATE_LIMITED})`; `next_step` is a non-empty string; `json.loads(r.content[0].text) == r.structured_content`. Also `len(McpErrorCode) == 15`.
 - `test_extras_ride_the_payload`: `error_result(McpToolError(McpErrorCode.DRAFT_LOCK_HELD, "m", holder_name="Ana")).structured_content["holder_name"] == "Ana"`.
-- `test_to_tool_error_mapping`, parametrized `(exception, expected code)`: `ArticleNotFoundError("x")`, `ArticleFileNotFoundError("x")` (`app.services.article_text_block_read_service`), `ProjectTemplateNotFoundError("x")` (`app.services.project_template_active_service`), `EntityTypeNotFoundError("x")`, `FieldNotFoundError("x")` (`app.services.template_field_service`) → `NOT_FOUND` with `message == NOT_FOUND_MESSAGE`; `DraftLockHeldError("m", details={"holder_id": "1", "holder_name": "Ana"})` → `DRAFT_LOCK_HELD`, `extras == {"holder_name": "Ana"}`; `NoActiveTemplateVersionError()` → `NO_PUBLISHED_VERSION`; `DuplicateFieldNameError()` → `DUPLICATE_NAME`; `DBAPIError("stmt", {}, _PgLike("40P01"))` (an `Exception` subclass carrying `.sqlstate`, the `tests/unit/test_config_write_deadlock_mapping.py` helper) → `RETRY`; the same with `"23505"` → `INTERNAL_ERROR`; a `ValidationError` from `class _M(BaseModel): label: str = Field(max_length=3)` with `label="abcd"` → `INVALID_ARGUMENT`, `extras["field"] == "label"`; `RuntimeError()` → `INTERNAL_ERROR`; an `McpToolError` passes through unchanged.
+- `test_to_tool_error_mapping`, parametrized `(exception, expected code)`: `ArticleNotFoundError("x")`, `ArticleFileNotFoundError("x")` (`app.services.article_text_block_read_service`), `ProjectTemplateNotFoundError("x")` (`app.services.project_template_active_service`), `EntityTypeNotFoundError("x")`, `FieldNotFoundError("x")` (`app.services.template_field_service`) → `NOT_FOUND` with `message == NOT_FOUND_MESSAGE`; an `McpToolError` passes through unchanged; everything else → `INTERNAL_ERROR` with empty `extras`, pinned by: a `ValidationError` from `class _M(BaseModel): label: str = Field(max_length=3)` with `label="abcd"` (a server-side validation bug is never blamed on the caller — spec §7 limits `INVALID_ARGUMENT` to the adapters' own argument validation, which raise `McpToolError` themselves), `DraftLockHeldError("m", details={"holder_name": "Ana"})`, `NoActiveTemplateVersionError()`, `DuplicateFieldNameError()` and `DBAPIError("stmt", {}, _PgLike("40P01"))` (an `Exception` subclass carrying `.sqlstate`, the `tests/unit/test_config_write_deadlock_mapping.py` helper) — the audited codes are mapped only inside the write tools, beside their audit row — and `RuntimeError()`.
 
 Run: `cd "$WT/backend" && uv run pytest tests/unit/test_mcp_errors.py -q` → FAIL (`ModuleNotFoundError: app.api.mcp.errors`).
 
@@ -750,7 +761,7 @@ class McpToolError(Exception):
         super().__init__(message)
         self.code, self.message, self.extras = code, message, extras
 ```
-`to_tool_error(exc)`: pass-through for `McpToolError`; the five not-found classes above → `McpToolError(NOT_FOUND, NOT_FOUND_MESSAGE)` (one message for missing and foreign: no existence oracle); `DraftLockHeldError` → `DRAFT_LOCK_HELD` with `holder_name=(exc.details or {}).get("holder_name")`; `NoActiveTemplateVersionError` → `NO_PUBLISHED_VERSION`; `DuplicateFieldNameError` → `DUPLICATE_NAME`; `DBAPIError` with `is_deadlock(exc)` (`app.api.v1.endpoints._integrity`, 40P01 only — the template_structure 409 mapping) → `RETRY`; `pydantic.ValidationError` → `INVALID_ARGUMENT` with `field=".".join(str(p) for p in exc.errors()[0]["loc"])` and the first error's `msg` as message; anything else → `INTERNAL_ERROR`. `error_result(err)`: `payload = McpToolErrorPayload(code=err.code.value, message=err.message, retryable=spec.retryable, next_step=spec.next_step, **err.extras).model_dump(mode="json")`; return `CallToolResult(content=[TextContent(type="text", text=json.dumps(payload))], structured_content=payload, is_error=True)` (`from mcp.types import CallToolResult, TextContent`). The model reads `structuredContent`; the text copy serves clients that drop it (spec §3.1).
+`to_tool_error(exc)`: pass-through for `McpToolError`; the five not-found classes above → `McpToolError(NOT_FOUND, NOT_FOUND_MESSAGE)` (one message for missing and foreign: no existence oracle); anything else → `McpToolError(INTERNAL_ERROR, "Internal error.")`. No `pydantic.ValidationError` branch (a stray one is a server bug: it must be logged as `INTERNAL_ERROR`, not reported as the caller's `INVALID_ARGUMENT` with no audit row) and no branch for an audited code (one mapping site per exception: the write tool, next to `audit.refuse`). `error_result(err)`: `payload = McpToolErrorPayload(code=err.code.value, message=err.message, retryable=spec.retryable, next_step=spec.next_step, **err.extras).model_dump(mode="json")`; return `CallToolResult(content=[TextContent(type="text", text=json.dumps(payload))], structured_content=payload, is_error=True)` (`from mcp.types import CallToolResult, TextContent`). The model reads `structuredContent`; the text copy serves clients that drop it (spec §3.1).
 
 Run the Step 3 command → PASS.
 
@@ -781,7 +792,7 @@ async def _seed_pat(db: AsyncSession, user_id: UUID, scope: Literal["read", "rea
     assert principal is not None
     return SeededPat(created.secret, principal)
 ```
-Fixtures `pat_primary_rw` (`SEED.primary_profile`, `read_write`), `pat_primary_read` (`read`), `pat_reviewer_rw`, `pat_outsider_rw`, each `await _seed_pat(db_session, …)`. `mcp_client` returns an `@asynccontextmanager` `connect(pat)`: `token = principal_var.set(pat.principal)`; `async with Client(server.mcp) as client: yield client` (`from mcp import Client`); `finally: principal_var.reset(token)`. Fixture `probe_tools` registers, via `@agent_tool`, module-level-annotated test tools `probe_read(db, project_id: UUID) -> ProbeResult` (read, `project_arg="project_id"`), `probe_write(db, project_id: UUID) -> ProbeResult` (write, `destructive=True`, `idempotent=False`), `probe_article(db, article_id: UUID) -> ProbeResult` (read, `"article_id"`), `probe_whoami(db) -> ProbeResult` (read, `project_arg=None`, returns `ProbeResult(ok=True, user_sub=str(current_principal().user_sub))`), `probe_text(db) -> str` (read, `project_arg=None`, `structured_output=False`, returns `"plain"`); `ProbeResult(BaseModel)`: `ok: bool`, `user_sub: str | None = None`. Teardown: `server.mcp.remove_tool(name)` and `server._RULES.pop(name)` for each.
+Fixtures `pat_primary_rw` (`SEED.primary_profile`, `read_write`), `pat_primary_read` (`read`), `pat_reviewer_rw`, `pat_outsider_rw`, each `await _seed_pat(db_session, …)`. `mcp_client` returns an `@asynccontextmanager` `connect(pat)`: `token = principal_var.set(pat.principal)`; `async with Client(server.mcp) as client: yield client` (`from mcp import Client`); `finally: principal_var.reset(token)`. Fixture `probe_tools` registers, via `@agent_tool`, module-level-annotated test tools `probe_read(db, project_id: UUID) -> ProbeResult` (read, `project_arg="project_id"`), `probe_write(db, project_id: UUID) -> ProbeResult` (write, `destructive=True`, `idempotent=False`), `probe_article(db, article_id: UUID) -> ProbeResult` (read, `"article_id"`), `probe_whoami(db) -> ProbeResult` (read, `project_arg=None`, returns `ProbeResult(ok=True, user_sub=str(current_principal().user_sub))`), `probe_text(db) -> str` (read, `project_arg=None`, `structured_output=False`, returns `"plain"`), `probe_boom(db) -> ProbeResult` (read, `project_arg=None`, returns `ProbeResult.model_validate({"ok": "not-a-bool"})`, i.e. raises a server-side `ValidationError`); `ProbeResult(BaseModel)`: `ok: bool`, `user_sub: str | None = None`. Teardown: `server.mcp.remove_tool(name)` and `server._RULES.pop(name)` for each.
 
 Move `_HEADERS`, `_INIT` and `_rpc` out of `test_mcp_mount.py` into NEW `backend/tests/integration/mcp/rpc.py` as `RPC_HEADERS`, `INIT_PARAMS`, `rpc(client, method, params=None, headers=None)` (unchanged behavior: POST JSON-RPC to `/mcp`, no trailing slash); `test_mcp_mount.py` imports them, and every request there that expects 200/421/403 now sends `pat_primary_read.headers`.
 
@@ -800,11 +811,21 @@ Move `_HEADERS`, `_INIT` and `_rpc` out of `test_mcp_mount.py` into NEW `backend
 - `pat_reviewer_rw`: `probe_write` → `MANAGER_REQUIRED`; `probe_read` ok; `probe_article(primary_article)` ok; `probe_article(uuid4())` → `NOT_FOUND`. `pat_primary_rw` `probe_write` → `is_error False`, `{"ok": True, …}`.
 - `test_member_removed_while_token_live`: reviewer ok, then `DELETE FROM public.project_members WHERE project_id = :p AND user_id = :u` in `db_session`, → `NOT_FOUND`.
 - `test_rate_limit_per_token`: `monkeypatch.setattr(server, "_READ_LIMIT", parse("2/minute"))` (`from limits import parse`); third `probe_read` → `RATE_LIMITED`, `retryable True`, `retry_after_seconds >= 1`; `pat_primary_rw` still ok (own bucket).
+- `test_write_tools_use_the_write_bucket`: `monkeypatch.setattr(server, "_WRITE_LIMIT", parse("1/minute"))`, `_READ_LIMIT` untouched; `pat_primary_rw` `probe_write` ok, second `probe_write` → `RATE_LIMITED`; `probe_read` with the same PAT → ok (a dispatcher that charged writes to `_READ_LIMIT` fails the second assertion).
+- `test_unexpected_validation_error_is_internal_and_logged`: `monkeypatch.setattr(server, "logger", recorder)` (records `.exception(event, **kw)` calls); `probe_boom` → `INTERNAL_ERROR` (never `INVALID_ARGUMENT`), `retryable False`; the recorder holds exactly one `"mcp_tool_internal_error"` with `tool == "probe_boom"`.
 - `test_structured_output_switch`: `probe_text`'s `tools/list` entry has `output_schema is None`; calling it → `is_error is False`, `structured_content is None`, `content == [TextContent(type="text", text="plain")]`; `probe_read` still has an `output_schema`.
 - `test_server_info_instructions_and_cache_hints`: `client.server_info.name == "prumo"`, `.version == API_VERSION`; `len(client.instructions) <= 2048` and contains `"list_projects"`, `"untrusted"`, `"Publish"`; `(await client.list_tools()).ttl_ms == 3_600_000` and `.cache_scope == "private"`; every listed tool has `title` and `annotations.open_world_hint is False`.
 - `test_tool_call_span_carries_no_secret`: monkeypatch `server.logfire.span` with a recorder context manager; one `probe_read` → span `"mcp.tool_call"` with `tool == "probe_read"`, `token_id`, `project_id`, `outcome == "ok"`; no recorded value contains `"prumo_pat_"`.
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/mcp -q` → FAIL (import errors: `asgi_auth`, `agent_tool`).
+`backend/tests/unit/test_mcp_asgi_auth.py` — calls `_PatAuthApp(inner)(scope, receive, send)` directly (no DB, no httpx). Helpers: `inner` = an `async def` ASGI app that records `current_principal()` (or the `LookupError`) and sends a 200; `sent: list[dict]` via `async def send(m): sent.append(m)`; `scope = {"type": "http", "method": "POST", "path": "/mcp", "headers": [(b"authorization", b"bearer prumo_pat_x")], "client": ("1.2.3.4", 1)}`; `monkeypatch.setattr(asgi_auth.mcp_session, "session_factory", fake)` where `fake()` returns an async context manager yielding `SimpleNamespace(commit=AsyncMock())`; `monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(return_value=PRINCIPAL | None))`, same for `touch_last_used`. Cases:
+- `test_non_http_scope_passes_through`: `{"type": "lifespan"}` → `inner` called, `resolve_principal` not awaited.
+- `test_missing_or_malformed_header_is_401`: no header, `Basic abc`, `Bearer ` (empty) → `sent[0]["status"] == 401` with `(b"www-authenticate", b"Bearer")`; `inner` not called; `resolve_principal` not awaited.
+- `test_scheme_is_case_insensitive_and_principal_is_set_then_reset`: header `bearer <secret>` → `resolve_principal` awaited with `<secret>`; `inner` saw `PRINCIPAL`; after the call `pytest.raises(LookupError, current_principal)`.
+- `test_unknown_token_is_401_then_429_when_the_bucket_is_spent`: `resolve_principal` → `None` → 401; `monkeypatch.setattr(asgi_auth.limiter.limiter, "hit", lambda *a, **k: False)` → 429 with `(b"retry-after", b"60")`.
+- `test_touch_failure_still_serves`: `touch_last_used` raises `RuntimeError` → `inner` still called with `PRINCIPAL`; `asgi_auth.logger.warning` (monkeypatched recorder) called once with `token_id`.
+- `test_contextvar_reset_when_inner_raises`: `inner` raises `RuntimeError` → propagates; `current_principal()` then raises `LookupError`.
+
+Run: `cd "$WT/backend" && uv run pytest tests/integration/mcp tests/unit/test_mcp_asgi_auth.py -q` → FAIL (import errors: `asgi_auth`, `agent_tool`).
 
 - [ ] **Step 6: `asgi_auth.py`, choke point, server info, route wrapper**
 
@@ -852,7 +873,7 @@ class _PatAuthApp:
 def with_pat_auth(app: ASGIApp) -> ASGIApp:
     return _PatAuthApp(app)
 ```
-Import `touch_last_used` by name (`from app.services.pat_service import resolve_principal, touch_last_used`) so the test can monkeypatch it on `asgi_auth`; `limiter` from `app.utils.rate_limiter` (the shared instance); `parse` from `limits`; `Response` from `starlette.responses`.
+Import `resolve_principal` / `touch_last_used` by name (`from app.services.pat_service import resolve_principal, touch_last_used`) so the tests can monkeypatch them on `asgi_auth`; `from app.api.mcp import session as mcp_session` (module, read at call time); `logger = get_logger(__name__)` (`app.core.logging`); `limiter` from `app.utils.rate_limiter` (the shared instance); `parse` from `limits`; `Response` from `starlette.responses`. `_bearer(scope)` returns `None` for a missing header, another scheme or an empty secret.
 
 `server.py` additions (keep `build_mcp_asgi` as is):
 
@@ -884,21 +905,21 @@ mcp = _PrumoMCPServer(name="prumo", title="prumo", version=API_VERSION,
 4. `not await is_project_member(db, project_id, principal.user_sub)` → `McpToolError(NOT_FOUND, NOT_FOUND_MESSAGE)`;
 5. write only: `not await is_project_manager(db, project_id, principal.user_sub)` → `McpToolError(MANAGER_REQUIRED, "Only a project manager can do this.")`;
 6. `result = await fn(db, **kwargs)`; `span.set_attribute("outcome", "ok")`; return `result`.
-`except Exception as exc`: `err = to_tool_error(exc)`; for `INTERNAL_ERROR` call `logger.exception("mcp_tool_internal_error", tool=name, token_id=…)` (never swallowed); `span.set_attribute("outcome", err.code.value)`; return `error_result(err)`. Never log arguments, bearers or signed URLs.
+`except Exception as exc`: `err = to_tool_error(exc)`; for `INTERNAL_ERROR` call `logger.exception("mcp_tool_internal_error", tool=name, token_id=…)` (module-level `logger = get_logger(__name__)`; never swallowed — this is the only log line a stray `ValidationError` gets); `span.set_attribute("outcome", err.code.value)`; return `error_result(err)`. Never log arguments, results, bearers or signed URLs.
 
 `app/core/config.py`: module-level `API_VERSION = "0.1.0"` (the `FastAPI(version=…)` value); `main.py` uses it in `FastAPI(version=API_VERSION)`, `/health` and `/`, and wraps the Task 2a route's endpoint: `Route("/mcp", endpoint=with_pat_auth(mcp_app), methods=["GET", "POST", "DELETE"], include_in_schema=False)` (still an exact route, no `Mount`). `backend/pyproject.toml` `[tool.vulture] ignore_decorators`: add `"@agent_tool",` (the SDK, not app code, calls registered tools).
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/mcp tests/unit/test_mcp_errors.py -q` → PASS.
+Run: `cd "$WT/backend" && uv run pytest tests/integration/mcp tests/unit/test_mcp_errors.py tests/unit/test_mcp_asgi_auth.py -q` → PASS.
 
 ```bash
-git -C "$WT" add backend/app/api/mcp backend/app/core/config.py backend/app/main.py backend/pyproject.toml backend/tests/integration/mcp
+git -C "$WT" add backend/app/api/mcp backend/app/core/config.py backend/app/main.py backend/pyproject.toml backend/tests/integration/mcp backend/tests/unit/test_mcp_asgi_auth.py
 git -C "$WT" commit -m "feat(mcp): authenticate /mcp with PATs and gate every tool in one choke point" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 - [ ] **Step 7: Verify**
 
 ```bash
-cd "$WT/backend" && uv run pytest tests/integration/mcp tests/unit/test_mcp_errors.py tests/unit/test_mcp_config.py tests/integration/test_pat_service.py tests/integration/test_security_role_helpers.py tests/integration/test_personal_access_tokens_api.py tests/unit/test_cors_config.py -q
+cd "$WT/backend" && uv run pytest tests/integration/mcp tests/unit/test_mcp_errors.py tests/unit/test_mcp_asgi_auth.py tests/unit/test_mcp_config.py tests/integration/test_pat_service.py tests/integration/test_security_role_helpers.py tests/integration/test_personal_access_tokens_api.py tests/unit/test_cors_config.py -q
 cd "$WT" && make lint-backend
 cd "$WT/backend" && uv run mypy app/api/mcp app/schemas/mcp_auth.py app/schemas/mcp_errors.py app/services/pat_service.py --ignore-missing-imports
 uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
@@ -935,7 +956,7 @@ Expected: all pass; lint and mypy clean; layered-arch and scope-guards OK. Vultu
 - Consumes (Task 1): table `public.personal_access_tokens` (model `app.models.personal_access_token.PersonalAccessToken`; columns `id, user_id, name, token_prefix, token_hash, scope, expires_at, last_used_at, revoked_at, created_at`), current head `0077_personal_access_tokens`.
 - Produces (Tasks 9, 10, 11 rely on these exact names):
   - `app.models.agent_action.AgentAction` (table `public.agent_actions`), columns `id, created_at, token_id, user_id, project_id, template_id, tool, input, before, after, outcome, error_code`.
-  - Index `ix_agent_actions_template_applied` on `(template_id, created_at) WHERE outcome = 'applied'` (Task 11's chip query uses it).
+  - Index `ix_agent_actions_template_applied` on `(template_id, created_at) WHERE outcome = 'applied'` (Task 11's chip query uses it), plus plain FK indexes `ix_agent_actions_project_id`, `ix_agent_actions_token_id`, `ix_agent_actions_user_id` (the ON DELETE CASCADE / SET NULL of a project, token or profile delete would otherwise scan this ever-growing insert-only table; migrations.md names "FKs without indexes" a hazard).
   - `app.services.agent_action_service.record_applied(db: AsyncSession, *, token_id: UUID, user_id: UUID, project_id: UUID, template_id: UUID | None, tool: str, tool_input: dict[str, Any], before: dict[str, Any], after: dict[str, Any]) -> AgentAction` — call INSIDE the write's transaction, before the caller's single commit.
   - `app.services.agent_action_service.record_refused(db: AsyncSession, *, token_id: UUID, user_id: UUID, project_id: UUID, template_id: UUID | None, tool: str, tool_input: dict[str, Any], error_code: str) -> AgentAction` — the caller rolls back its write first, calls this, then commits. `error_code` is a plain `str` (the MCP `McpErrorCode` lives in the api layer, which services may not import).
   - Both only `add` + `flush`; neither commits.
@@ -975,22 +996,50 @@ Tests (each `@pytest.mark.asyncio`, `db_session: AsyncSession`):
 3. `test_oversized_input_is_stored_as_a_marker`: `big = {"blob": "x" * 70_000}`; insert through `record_applied`; expected canonical bytes `raw = json.dumps(big, ensure_ascii=False, sort_keys=True, separators=(", ", ": ")).encode()`; assert stored `input == {"truncated": True, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}`.
 4. `test_input_under_the_threshold_is_stored_verbatim`: `{"blob": "x" * 50_000}` → stored equal to the input.
 5. `test_input_size_is_measured_in_bytes_not_characters`: `{"blob": "é" * 40_000}` (80,000 UTF-8 bytes, 40,000 chars) → marker.
-6. `test_table_constraints`, four `pytest.raises(DBAPIError)` blocks, each inside `async with db.begin_nested():`, raw SQL INSERTs: `outcome = 'maybe'` (names `ck_agent_actions_outcome_check` in `str(exc.value)`); `outcome = 'applied'` with `error_code = 'X'` (`ck_agent_actions_error_code_check`); `outcome = 'refused'` with `error_code` NULL (`ck_agent_actions_error_code_check`); `input = jsonb_build_object('blob', repeat('x', 70000))` (`ck_agent_actions_input_size_check`).
+6. `test_table_constraints`, four `pytest.raises(DBAPIError)` blocks, each inside `async with db.begin_nested():`, raw SQL INSERTs that name every NOT NULL column and pass `id = gen_random_uuid()` (`id` has no server default — `UUIDMixin` supplies it in Python — so an INSERT without it fails on NOT NULL `id` before the CHECK under test runs): `outcome = 'maybe'` (names `ck_agent_actions_outcome_check` in `str(exc.value)`); `outcome = 'applied'` with `error_code = 'X'` (`ck_agent_actions_error_code_check`); `outcome = 'refused'` with `error_code` NULL (`ck_agent_actions_error_code_check`); `input = jsonb_build_object('blob', repeat('x', 70000))` (`ck_agent_actions_input_size_check`).
 7. `test_foreign_key_delete_rules` (catalog): `SELECT conname, confdeltype FROM pg_constraint WHERE conrelid = 'public.agent_actions'::regclass AND contype = 'f'` → `{"agent_actions_token_id_fkey": "n", "agent_actions_user_id_fkey": "n", "agent_actions_project_id_fkey": "c", "agent_actions_template_id_fkey": "n"}`.
 8. `test_deleting_the_token_or_template_keeps_the_row_and_nulls_the_reference`: throwaway project + template + token; `record_applied` on them; `DELETE FROM personal_access_tokens WHERE id = :tok`, `DELETE FROM project_extraction_templates WHERE id = :tid`; the row still exists with `token_id IS NULL` and `template_id IS NULL`.
 9. `test_deleting_the_project_removes_its_rows`: throwaway project; `record_refused` on it; `DELETE FROM projects WHERE id = :pid`; zero rows for it.
-10. `test_partial_index_exists`: `SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'ix_agent_actions_template_applied'` contains `(template_id, created_at)` and `WHERE (outcome = 'applied'::text)`.
+10. `test_partial_index_exists`: `SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'ix_agent_actions_template_applied'` contains `(template_id, created_at)` and `WHERE (outcome = 'applied'::text)`; and `test_foreign_keys_are_indexed`: `{indexname: indexdef}` for `ix_agent_actions_project_id` / `_token_id` / `_user_id` each ends with `(project_id)` / `(token_id)` / `(user_id)`.
 11. `test_service_exposes_insert_only`: `{n for n, v in vars(agent_action_service).items() if callable(v) and not n.startswith("_") and getattr(v, "__module__", "") == agent_action_service.__name__} == {"record_applied", "record_refused"}` (append-only is enforced by exposing no update/delete; no DB trigger, which would fight the FK cascades).
 
 - [ ] **Step 2: Write the failing RLS probe**
 
-Create `backend/tests/integration/test_agent_action_rls.py` by following the structure of `backend/tests/integration/test_llm_connection_rls.py` (same `_attempt` helper shape: commit, optional `GRANT SELECT` re-grant, `set_config('request.jwt.claims', …)`, `SET LOCAL ROLE authenticated`, rollback in `finally`), with `_TABLE = "public.agent_actions"` and an insert of a refused row for `SEED.primary_project` / `SEED.primary_profile` (`tool = 'rls-probe'`, `input = '{}'::jsonb`, `outcome = 'refused'`, `error_code = 'X'`). Tests: `test_no_privilege_granted` parametrized over `authenticated`/`anon` × `SELECT/INSERT/UPDATE/DELETE` (`has_table_privilege` is false); `test_select_denied_by_missing_grant` (error contains `permission denied`); `test_insert_denied_by_missing_grant`; `test_policy_floor_denies_select_even_with_grant` (owner sees ≥ 1 row, re-granted `authenticated` sees 0 rows, no error).
+Create `backend/tests/integration/test_agent_action_rls.py` by following the structure of `backend/tests/integration/test_llm_connection_rls.py` (same `_attempt` helper shape: commit, optional `GRANT SELECT` re-grant, `set_config('request.jwt.claims', …)`, `SET LOCAL ROLE authenticated`, rollback in `finally`), with `_TABLE = "public.agent_actions"` and an insert of a refused row for `SEED.primary_project` / `SEED.primary_profile` (`id = gen_random_uuid()` — no server default on `id` —, `tool = 'rls-probe'`, `input = '{}'::jsonb`, `outcome = 'refused'`, `error_code = 'X'`). Tests: `test_no_privilege_granted` parametrized over `authenticated`/`anon` × `SELECT/INSERT/UPDATE/DELETE` (`has_table_privilege` is false); `test_select_denied_by_missing_grant` (error contains `permission denied`); `test_insert_denied_by_missing_grant`; `test_policy_floor_denies_select_even_with_grant` (owner sees ≥ 1 row, re-granted `authenticated` sees 0 rows, no error).
 
 - [ ] **Step 3: Move the head pin and run everything red**
 
-Edit `backend/tests/integration/test_migration_roundtrip.py:1331` to `expected_head = "0078_agent_actions"`.
+Edit `backend/tests/integration/test_migration_roundtrip.py:1331` to `expected_head = "0078_agent_actions"` and append (same shape as the file's 0077 test — `migration_db_url`, `migration_session`, `_run_alembic`):
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/test_agent_action_service.py tests/integration/test_agent_action_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" -v`
+```python
+# --- 0078: agent_actions (backend-only, deny_all) --------------------------
+@pytest.mark.asyncio
+async def test_migration_0078_agent_actions_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    async def posture() -> tuple[bool, list[str], int]:
+        exists = (await migration_session.execute(text(
+            "SELECT to_regclass('public.agent_actions') IS NOT NULL"))).scalar_one()
+        policies = (await migration_session.execute(text(
+            "SELECT polname FROM pg_policy WHERE polrelid = to_regclass('public.agent_actions')"
+        ))).scalars().all()
+        grants = (await migration_session.execute(text(
+            "SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema = 'public' "
+            "AND table_name = 'agent_actions' AND grantee IN ('authenticated', 'anon')"
+        ))).scalar_one()
+        await migration_session.rollback()
+        return bool(exists), list(policies), int(grants)
+
+    assert await posture() == (True, ["deny_all"], 0)
+    _run_alembic("downgrade", "0077_personal_access_tokens", database_url=migration_db_url)
+    try:
+        assert await posture() == (False, [], 0)  # table, policy and grants gone
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await posture() == (True, ["deny_all"], 0)  # re-upgrade restores the REVOKE
+```
+
+Run: `cd "$WT/backend" && uv run pytest tests/integration/test_agent_action_service.py tests/integration/test_agent_action_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" "tests/integration/test_migration_roundtrip.py::test_migration_0078_agent_actions_roundtrip" -v`
 Expected: FAIL — `ModuleNotFoundError: app.services.agent_action_service` / `relation "public.agent_actions" does not exist` / head `0077_personal_access_tokens` ≠ `0078_agent_actions`.
 
 - [ ] **Step 4: Add the ORM model**
@@ -1036,6 +1085,10 @@ class AgentAction(Base, UUIDMixin):
             "created_at",
             postgresql_where=text("outcome = 'applied'"),
         ),
+        # FK indexes: project/token/profile deletes cascade or SET NULL into this table.
+        Index("ix_agent_actions_project_id", "project_id"),
+        Index("ix_agent_actions_token_id", "token_id"),
+        Index("ix_agent_actions_user_id", "user_id"),
         {"schema": "public"},
     )
 ```
@@ -1051,6 +1104,8 @@ Create `backend/alembic/versions/0078_agent_actions.py`: `revision = "0078_agent
         "ix_agent_actions_template_applied", "agent_actions", ["template_id", "created_at"],
         schema="public", postgresql_where=sa.text("outcome = 'applied'"),
     )
+    for column in ("project_id", "token_id", "user_id"):
+        op.create_index(f"ix_agent_actions_{column}", "agent_actions", [column], schema="public")
     op.execute('ALTER TABLE "public"."agent_actions" ENABLE ROW LEVEL SECURITY;')
     op.execute('CREATE POLICY "deny_all" ON "public"."agent_actions" FOR ALL USING (false);')
     op.execute('REVOKE ALL ON "public"."agent_actions" FROM "authenticated", "anon";')
@@ -1102,7 +1157,7 @@ async def _insert(db: AsyncSession, **values: Any) -> AgentAction:
 
 - [ ] **Step 7: Run the tests green**
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/test_agent_action_service.py tests/integration/test_agent_action_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" "tests/integration/test_migration_roundtrip.py::test_alembic_history_chain_is_continuous" -v`
+Run: `cd "$WT/backend" && uv run pytest tests/integration/test_agent_action_service.py tests/integration/test_agent_action_rls.py "tests/integration/test_migration_roundtrip.py::test_alembic_head_is_expected_revision" "tests/integration/test_migration_roundtrip.py::test_alembic_history_chain_is_continuous" "tests/integration/test_migration_roundtrip.py::test_migration_0078_agent_actions_roundtrip" -v`
 Expected: all PASS.
 
 - [ ] **Step 8: Commit**
@@ -1235,7 +1290,7 @@ export function isTokenLimitError(error: Error): boolean {
 }
 ```
 
-`frontend/hooks/user/usePersonalAccessTokens.ts`: `useMyTokens()` = `useQuery({queryKey: meKeys.tokens(), queryFn})` (queryFn rethrows `result.error` on `!ok`); `useCreateMyToken()` = `useMutation<PersonalAccessTokenCreated, Error, PersonalAccessTokenCreateRequest>`; `useRevokeMyToken()` = `useMutation<void, Error, string>`; both `onSuccess` invalidate `meKeys.tokens()` — the same shape as `frontend/hooks/user/useLlmConnections.ts`.
+`frontend/hooks/user/usePersonalAccessTokens.ts`: `useMyTokens()` = `useQuery({queryKey: meKeys.tokens(), queryFn})` (queryFn rethrows `result.error` on `!ok`); `useCreateMyToken()` = `useMutation<PersonalAccessTokenCreated, Error, PersonalAccessTokenCreateRequest>` with `gcTime: 0` (the response carries the secret; the MutationCache must drop it as soon as the component calls `reset()`, not 5 minutes later); `useRevokeMyToken()` = `useMutation<void, Error, string>`; both `onSuccess` invalidate `meKeys.tokens()` — the same shape as `frontend/hooks/user/useLlmConnections.ts`.
 
 Run the Step 5 tests → PASS. Commit (service, hooks, keys, two tests): `feat(settings): add personal access token service and hooks`, co-author trailer.
 
@@ -1254,7 +1309,7 @@ Create `frontend/test/components/PersonalAccessTokensGroup.test.tsx`. Mock the s
 4. rows: ACTIVE shows name, `prumo_pat_abc123…`, `neverUsed`, and a `revokeAria` button; EXPIRED and REVOKED rows carry `data-muted="true"`, show `Expired 1/2/2026` / `Revoked 2/3/2026` (`toLocaleDateString('en-US')`), and have no `revokeAria` button inside the row (`within(row)`).
 5. create at cap: `createMyToken` → `{ok: false, error: new ApiError('TOKEN_LIMIT_REACHED', 'limit', 409)}` → inline `createLimitError` inside the still-open dialog (`getByRole('dialog')`).
 6. create 422/other: `new ApiError('VALIDATION_ERROR', 'name: too long', 422)` → inline `name: too long`; dialog open.
-7. reveal: `createMyToken` → `{ok: true, data: {secret: 'prumo_pat_SECRET', token: ACTIVE}}` → dialog `revealTitle` shows `prumo_pat_SECRET`, `revealWarning`, four snippet headings, and the Claude Code snippet text `claude mcp add --transport http prumo https://api.test/mcp --header "Authorization: Bearer prumo_pat_SECRET"`; pressing Escape keeps it open; clicking `revealDone` closes it and `queryByText('prumo_pat_SECRET')` is null.
+7. reveal: `createMyToken` → `{ok: true, data: {secret: 'prumo_pat_SECRET', token: ACTIVE}}` → dialog `revealTitle` shows `prumo_pat_SECRET`, `revealWarning`, four snippet headings, and the Claude Code snippet text `claude mcp add --transport http prumo https://api.test/mcp --header "Authorization: Bearer prumo_pat_SECRET"`; pressing Escape keeps it open; clicking `revealDone` closes it and `queryByText('prumo_pat_SECRET')` is null, and (keep the test's `QueryClient` in a variable) `await waitFor(() => expect(JSON.stringify(queryClient.getMutationCache().getAll().map((m) => m.state.data))).not.toContain('prumo_pat_SECRET'))` — the secret leaves the MutationCache too.
 8. revoke: click `revokeAria` → alertdialog whose description contains the token name; `revokeMyToken` pending (unresolved promise) → confirm button shows `revoking` and is disabled; resolve → `revokeMyToken` called with the id and `toast.success(revokeSuccess)`.
 9. revoke error: `{ok: false, error: new Error('gone')}` → `toast.error('gone')`; row still rendered.
 
@@ -1288,8 +1343,8 @@ function mcpSnippets(baseUrl: string, secret: string) {
 - `CopyBlock({label, code})`: heading + `<pre className="…font-mono text-[12px]…">` + a `Button size="sm" variant="ghost"` using `useCopyToClipboard()` (`copied` ? `copied` : `copy`). One instance per snippet and one for the secret (aria `copyTokenAria`).
 - `TokenRow({row})`: `<li data-muted={row.status !== 'active'} className={cn('flex items-center gap-3 rounded-md px-2 py-1 text-[13px]', row.status !== 'active' && 'text-muted-foreground opacity-70')}>` with name, `<code>{row.token_prefix}…</code>`, scope `Badge` (`scopeRead`/`scopeReadWrite`), then: active → `expiresOn` + (`last_used_at` ? `lastUsed` with `relativeTime(row.last_used_at)` from `@/lib/relative-time` : `neverUsed`) + revoke; expired → `Badge variant="outline"` `expiredBadge` with the `expires_at` date; revoked → the `revokedBadge` with `revoked_at`. Dates: `new Date(iso).toLocaleDateString('en-US')`.
 - Revoke: controlled `AlertDialog` (`open` state) with `IconButton label={revokeAria} icon={<Trash2 strokeWidth={1.5}/>}` trigger; description `revokeDescription` with `{{name}}` replaced; the action button `onClick={(e) => { e.preventDefault(); revoke.mutate(row.id, {onSuccess: () => { toast.success(…revokeSuccess); setOpen(false); }, onError: (error) => { toast.error(error.message || t('personalAccessTokens', 'revokeError')); setOpen(false); }}); }}`, `disabled={revoke.isPending}`, label `revoking` while pending.
-- Create: `AppDialog` (`size="sm"`, `title={createTitle}`, `showFooter={false}` — `AppDialog` has no confirm-disabled prop) holding a `<form onSubmit>` with `Input` (name, `maxLength={80}`), a scope `Select` (`read` default), an expiry `Select` over `EXPIRY_DAYS` (`expiryDays`), and a `SettingsActions` row: `Button type="submit" size="sm"` (`creating` while pending, `createSubmit` otherwise; `disabled` while pending or the trimmed name is empty) and `Button type="button" size="sm" variant="ghost"` `cancel`. On error: `setFormError(isTokenLimitError(error) ? t('personalAccessTokens', 'createLimitError') : error.message || t('personalAccessTokens', 'createError'))` rendered as `<p role="alert" className="text-[13px] text-destructive">`; the dialog stays open. On success: close it, reset the form, `setSecret(data.secret)`.
-- Reveal: `Dialog open={secret !== null} onOpenChange={() => {}}` with `DialogContent size="md" showCloseButton={false} onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}`: `revealTitle`, `revealWarning`, `CopyBlock` for the secret, `snippetsTitle`, the four `CopyBlock`s from `mcpSnippets(getApiBaseUrl(), secret)`, footer `Button size="sm"` `revealDone` → `setSecret(null)`. The secret lives only in this component state; after close only `token_prefix` is ever shown.
+- Create (`const create = useCreateMyToken()`): `AppDialog` (`size="sm"`, `title={createTitle}`, `showFooter={false}` — `AppDialog` has no confirm-disabled prop) holding a `<form onSubmit>` with `Input` (name, `maxLength={80}`), a scope `Select` (`read` default), an expiry `Select` over `EXPIRY_DAYS` (`expiryDays`), and a `SettingsActions` row: `Button type="submit" size="sm"` (`creating` while pending, `createSubmit` otherwise; `disabled` while pending or the trimmed name is empty) and `Button type="button" size="sm" variant="ghost"` `cancel`. On error: `setFormError(isTokenLimitError(error) ? t('personalAccessTokens', 'createLimitError') : error.message || t('personalAccessTokens', 'createError'))` rendered as `<p role="alert" className="text-[13px] text-destructive">`; the dialog stays open. On success: close it, reset the form, `setSecret(data.secret)`.
+- Reveal: `Dialog open={secret !== null} onOpenChange={() => {}}` with `DialogContent size="md" showCloseButton={false} onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}`: `revealTitle`, `revealWarning`, `CopyBlock` for the secret, `snippetsTitle`, the four `CopyBlock`s from `mcpSnippets(getApiBaseUrl(), secret)`, footer `Button size="sm"` `revealDone` → `setSecret(null)` and `create.reset()` (with the hook's `gcTime: 0` this removes the mutation, and its `data.secret`, from the MutationCache). After close the secret is in neither component state nor the query cache; only `token_prefix` is ever shown.
 - Body, in order: `clientsNote` and `readRecommendation` as muted `text-[13px]` lines; `isPending` → `<ul aria-label={listLoading}>` with two `Skeleton className="h-8 w-full"` rows; `isError` → error line + `retry` (`refetch()`); empty → `listEmpty` beside the create button; rows → `<ul role="list">`. The create button (`Button size="sm" variant="ghost"`, `Plus` icon) is rendered in every state and `disabled={tokens.isPending}` only.
 
 Add `<PersonalAccessTokensGroup/>` after `<ZoteroIntegrationSection/>` in `IntegrationsSection.tsx` and extend its docstring (three groups).
@@ -1311,47 +1366,39 @@ From `$WT`:
 - `design-review` on Settings → Integrations (desktop and narrow width, light and dark): empty, list with the three row statuses, create dialog with the cap error, reveal dialog.
 - `git -C "$WT" status` → clean.
 
-### Task 5: Project details service, `PATCH /projects/{id}/details`, and the Settings save moved off PostgREST
+### Task 5a: Project details schema, service and `PATCH /projects/{id}/details` (backend)
 
-**Context.** Today the Settings page writes 11 project columns with a raw `supabase.from('projects').update(fields)` (`frontend/services/projectSettingsService.ts:236-245`), gated only by RLS. The MCP agent (Task 9) will edit the same columns, so both writers must share one typed schema, one role gate and one optimistic precondition. This task builds the service and REST route, moves the UI save onto it, deletes the PostgREST write, and shows a stale-value banner. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §5.2 (types table, "Precondition"), §5.4 (service, route, frontend, states), §7 "Code homes", §8 "Project details".
+**Context.** Today the Settings page writes 11 project columns with a raw `supabase.from('projects').update(fields)` (`frontend/services/projectSettingsService.ts:236-245`), gated only by RLS. The MCP agent (Task 9) will edit the same columns, so both writers must share one typed schema, one role gate and one optimistic precondition. Spec §10 task 5 is split in two to fit one brief each: this task (5a) builds the schema, the service and the REST route and commits the generated API types; Task 5b moves the UI save onto the route, deletes the PostgREST write and shows the stale-value banner. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §5.2 (types table, "Precondition"), §5.4 (service, route), §7 "Code homes", §8 "Project details".
 
 **Rules for this task (restated, all binding):**
-- Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; confirm with `git -C "$WT" status`. Frontend tooling runs from `$WT` (never `cd frontend && npm …`); backend from `$WT/backend` with `uv run`.
+- Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; confirm with `git -C "$WT" status`. Backend from `$WT/backend` with `uv run`; frontend tooling (only `npm run generate:api-types` here) from `$WT`, never `cd frontend && npm …` (`npm ci` first if `$WT/node_modules` is absent).
 - English only. Layering `api → services → repositories → models`: the endpoint never touches the DB; `app/schemas/` may not import `app.models` (support layer); services `flush()` only, the endpoint commits once. Responses use the typed `ApiResponse` envelope; every `responses=` entry carries an explicit `"description"` (`scripts/fitness/check_response_descriptions.py`); 4xx via `HTTPException` or an `AppError` subclass.
 - Shared local DB (`.claude/rules/backend.md` § Local database): `cd "$WT/backend" && uv run alembic upgrade head` before integration tests; after Verify, `uv run alembic downgrade 0076_extraction_batches` (dev's head). Never `alembic stamp`, `make db-fresh` or `make reset-db`.
 - One ownership predicate (BOLA): membership and role come only from the non-raising helpers in `app/api/deps/security.py` — `is_project_member` and `is_project_manager` (the latter added by Task 2b over `public.is_project_manager`). No hand-rolled `project_members` SQL. Do NOT use `require_project_manager`: it answers 403 for an outsider and a missing project alike, which breaks the 404 contract below.
 - REST contract changes ⇒ run `npm run generate:api-types` from `$WT` and commit `frontend/types/api/openapi.json` + `frontend/types/api/schema.d.ts` (CI's API Contract job fails otherwise). Any later edit to a public schema class (docstrings included) ⇒ regenerate again.
-- Frontend: component → hook → service → `apiClient`; services return `ErrorResult<T>`, never throw, never toast. No `supabase.from('projects').update` remains. All copy through `t()`; new keys must be referenced (`check_copy_keys.py`); `npx knip` / `npx knip --production` at zero (do not export a type nobody imports). React Compiler: no `try/finally`, no `throw` inside `try` in a hook or component body. Buttons use named sizes.
-- The hook stays on local state (not TanStack Query); converting it is out of scope.
-- Load `backend-development`, `frontend-development`, `frontend-ux`, `ui-styling`, `web-testing` before coding.
+- Diff coverage: handler lines driven only through the httpx `ASGITransport` fixtures register no coverage, so the endpoint also gets a direct-call unit test of its coroutine (`update_project_details.__wrapped__`: slowapi's `@limiter.limit` wrapper refuses a non-Starlette request), the `backend/tests/unit/test_entry_create_endpoint_unit.py` pattern.
+- mypy is `strict` with no pydantic plugin: new files clean, no `.mypy_baseline` entry; `AppError.details` is `dict[str, Any] | None`, so a reader indexes `(exc.details or {})["current"]`.
+- Load `backend-development` and `web-testing` before coding.
 - Commits: conventional, ending with a blank line then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 **Files:**
 - Create: `backend/app/schemas/project_details.py`, `backend/app/services/project_details_service.py`, `backend/app/api/v1/endpoints/project_details.py`
 - Modify: `backend/app/api/v1/router.py` (import `project_details` between `project_connections` and `project_templates`; `include_router(project_details.router, prefix="/projects", tags=["projects"])` after the `ai_context` block)
-- Test (new): `backend/tests/unit/test_project_details_schema.py`, `backend/tests/integration/test_project_details_service.py`, `backend/tests/integration/test_project_details_api.py`
+- Test (new): `backend/tests/unit/test_project_details_schema.py`, `backend/tests/integration/test_project_details_service.py`, `backend/tests/integration/test_project_details_api.py`, `backend/tests/unit/test_project_details_endpoint_unit.py`
 - Regenerate: `frontend/types/api/openapi.json`, `frontend/types/api/schema.d.ts`
-- Modify: `frontend/services/projectSettingsService.ts:208-246` (delete `SaveProjectFields` and the PostgREST save; add the PATCH and `staleValuesOf`)
-- Modify: `frontend/hooks/useProjectSettings.ts` (whole file)
-- Modify: `frontend/components/project/ProjectSettings.tsx` (stale banner)
-- Modify: `frontend/lib/copy/project.ts` (four keys)
-- Modify test: `frontend/test/components/ProjectSettings.sections.test.tsx:9-20` (mock shape) + banner cases
-- Test (new): `frontend/test/services/projectSettingsService.test.ts`, `frontend/test/hooks/useProjectSettings.test.tsx`
-- Modify: `scripts/fitness/check_frontend_data_path.baseline` (`frontend/services/projectSettingsService.ts|projects:4` → `:3`)
 
 **Interfaces:**
 - Consumes (Task 2b): `app.api.deps.security.is_project_manager(db, project_id: UUID, user_sub: UUID | str) -> bool`, the non-raising sibling of the existing `is_project_member(db, project_id, user_sub) -> bool`.
-- Produces (Task 9 calls these exact names):
-  - `app.schemas.project_details`: `ReviewTypeValue` (Literal of the six `review_type` values), `ProjectDetailsFields`, `ProjectDetailsUpdate`, `ProjectDetailsRead`, `ProjectDetailsRefusalCode.STALE_VALUE`, `ProjectDetailsRefusalResponse`.
-  - `app.services.project_details_service.update_details(db: AsyncSession, *, project_id: UUID, fields: ProjectDetailsFields, expected: ProjectDetailsFields) -> ProjectDetailsChange`; `ProjectDetailsChange(before: dict[str, Any], after: dict[str, Any], details: ProjectDetailsRead)` (frozen dataclass; `before`/`after` hold only the keys in `fields`, as JSON values); `StaleProjectValueError(AppError)` — 409, code `STALE_VALUE`, `details={"current": {<contested key>: <current JSON value>}}` (read it as `exc.details["current"]`). Flushes; never commits.
-  - REST `PATCH /api/v1/projects/{project_id}/details`, body `{fields, expected}`, `ApiResponse[ProjectDetailsRead]`.
-  - Frontend: `saveProjectSettings(projectId, body)` (PATCH), `staleValuesOf(error)`, `ProjectDetailsFields` type; hook return adds `staleFields: string[]`, `loadLatest(): Promise<void>`, `keepMine(): Promise<void>`.
+- Produces (Tasks 5b, 6a and 9 use these exact names):
+  - `app.schemas.project_details`: `ReviewTypeValue` (Literal of the six `review_type` values), `ProjectDetailsFields`, `ProjectDetailsValues` (the 11 columns with their stored types — the typed "current values" shape; Task 6a's `get_project` returns it), `ProjectDetailsRead(ProjectDetailsValues)` (adds `updated_at`), `ProjectDetailsUpdate`, `ProjectDetailsRefusalCode.STALE_VALUE`, `ProjectDetailsRefusalResponse`.
+  - `app.services.project_details_service.update_details(db: AsyncSession, *, project_id: UUID, fields: ProjectDetailsFields, expected: ProjectDetailsFields) -> ProjectDetailsChange`; `ProjectDetailsChange(before: dict[str, Any], after: dict[str, Any], details: ProjectDetailsRead)` (frozen dataclass; `before`/`after` hold only the keys in `fields`, as JSON values); `StaleProjectValueError(AppError)` — 409, code `STALE_VALUE`, `details={"current": {<contested key>: <current JSON value>}}` (read it as `(exc.details or {})["current"]`). Flushes; never commits.
+  - REST `PATCH /api/v1/projects/{project_id}/details`, body `{fields, expected}`, `ApiResponse[ProjectDetailsRead]`; generated types committed.
 
 - [ ] **Step 1: Schema — failing unit tests**
 
 Create `backend/tests/unit/test_project_details_schema.py`:
 - `test_review_type_values_match_the_postgres_enum`: `set(get_args(ReviewTypeValue)) == set(POSTGRESQL_ENUM_VALUES["review_type"])` (from `app.models.base`; the schema cannot import models, so this pins the copy).
-- `test_editable_columns_are_exactly_the_eleven`: `set(ProjectDetailsFields.model_fields) == {"name", "description", "review_type", "review_title", "condition_studied", "review_rationale", "search_strategy", "eligibility_criteria", "study_design", "review_keywords", "review_context"}`.
+- `test_editable_columns_are_exactly_the_eleven`: `set(ProjectDetailsFields.model_fields) == {"name", "description", "review_type", "review_title", "condition_studied", "review_rationale", "search_strategy", "eligibility_criteria", "study_design", "review_keywords", "review_context"}` `== set(ProjectDetailsValues.model_fields) == set(ProjectDetailsRead.model_fields) - {"updated_at"}`.
 - `test_unknown_key_is_refused` parametrized over `picots_config_ai_review`, `settings`, `is_active`, `created_by_id` → `ValidationError` with `errors()[0]["type"] == "extra_forbidden"`.
 - `test_invalid_values_name_their_field` parametrized: `{"name": ""}` → loc `("name",)`; `{"name": None}` → `("name",)`; `{"review_type": "meta"}` → `("review_type",)`; `{"review_keywords": "x"}` → `("review_keywords",)`; `{"eligibility_criteria": None}`, `{"study_design": None}`, `{"review_keywords": None}` → their own loc.
 - `test_nullable_columns_accept_null`: `{"description": None, "review_type": None, "review_context": None}` validates and `model_dump(mode="json", exclude_unset=True)` equals the input.
@@ -1394,7 +1441,7 @@ class ProjectDetailsFields(BaseModel):
         return value
 ```
 
-`ProjectDetailsUpdate(fields: ProjectDetailsFields, expected: ProjectDetailsFields)`, `extra="forbid"`, with a `@model_validator(mode="after")` that raises `ValueError("fields must name at least one column")` when `fields.model_fields_set` is empty and `ValueError(f"expected is missing: {', '.join(sorted(missing))}")` when `fields.model_fields_set - expected.model_fields_set` is non-empty. `ProjectDetailsRead`: the 11 columns with their stored types (`name: str`, `eligibility_criteria: dict[str, Any]`, `study_design: dict[str, Any]`, `review_keywords: list[str]`, `review_type: ReviewTypeValue | None`, the text columns `str | None`) plus `updated_at: datetime`. `ProjectDetailsRefusalCode(StrEnum)` with `STALE_VALUE = "STALE_VALUE"` (docstring: slice-local like `TemplateDraftLockRefusalCode` in `app/schemas/hitl_session.py`, not `ApiErrorCode`); `ProjectDetailsStaleDetails(current: dict[str, Any])`; `ProjectDetailsRefusalError(code, message, details: ProjectDetailsStaleDetails)`; `ProjectDetailsRefusalResponse(ok: bool = False, error: ProjectDetailsRefusalError, trace_id: str | None = None)` — "the 409 body, declared so the generated client types `details.current`".
+`ProjectDetailsUpdate(fields: ProjectDetailsFields, expected: ProjectDetailsFields)`, `extra="forbid"`, with a `@model_validator(mode="after")` that raises `ValueError("fields must name at least one column")` when `fields.model_fields_set` is empty and `ValueError(f"expected is missing: {', '.join(sorted(missing))}")` when `fields.model_fields_set - expected.model_fields_set` is non-empty. `ProjectDetailsValues`: the 11 columns with their stored types (`name: str`, `eligibility_criteria: dict[str, Any]`, `study_design: dict[str, Any]`, `review_keywords: list[str]`, `review_type: ReviewTypeValue | None`, the text columns `str | None`); docstring: the current values of the 11 columns, exactly what `expected` must echo. `ProjectDetailsRead(ProjectDetailsValues)` adds `updated_at: datetime`. `ProjectDetailsRefusalCode(StrEnum)` with `STALE_VALUE = "STALE_VALUE"` (docstring: slice-local like `TemplateDraftLockRefusalCode` in `app/schemas/hitl_session.py`, not `ApiErrorCode`); `ProjectDetailsStaleDetails(current: dict[str, Any])`; `ProjectDetailsRefusalError(code, message, details: ProjectDetailsStaleDetails)`; `ProjectDetailsRefusalResponse(ok: bool = False, error: ProjectDetailsRefusalError, trace_id: str | None = None)` — "the 409 body, declared so the generated client types `details.current`".
 
 Run Step 1 → PASS.
 
@@ -1467,7 +1514,7 @@ async def update_details(
 
 Run Step 3 → PASS. Commit (schema, service, both test files): `feat(projects): add project details service with optimistic precondition`, co-author trailer.
 
-- [ ] **Step 5: REST route — failing integration tests**
+- [ ] **Step 5: REST route — failing integration and handler unit tests**
 
 Create `backend/tests/integration/test_project_details_api.py`, borrowing the identity fixtures the way `tests/integration/test_ai_context_endpoints.py` does (`client_as_manager = engine_setup.client_as_manager`, same for `client_as_reviewer`, `client_as_outsider`, from `tests.integration.helpers.engine_setup`). `_URL = "/api/v1/projects/{pid}/details"`. Read the current `description` of `SEED.primary_project` first and use it as `expected`.
 - `test_project_details_gate_order`: manager → 200 with `data.description == "via api"` and all 11 keys plus `updated_at` in `data`; reviewer → 403; outsider → 404; `uuid4()` project as manager → 404, and its `error` equals the outsider's `error` (`code` and `message`); none of the refused calls changed the row.
@@ -1476,7 +1523,13 @@ Create `backend/tests/integration/test_project_details_api.py`, borrowing the id
 - `test_expected_must_cover_fields`: `fields={"name": "a"}`, `expected={}` → 422.
 - `test_route_is_rate_limited`: 30 no-op PATCHes (`fields` = `expected` = current description) → 200 each; the 31st → 429.
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/test_project_details_api.py -v` → FAIL (404 route).
+Create `backend/tests/unit/test_project_details_endpoint_unit.py` (`from app.api.v1.endpoints import project_details as pd`; `_handler = pd.update_project_details.__wrapped__`; monkeypatch the module globals `is_project_member`, `is_project_manager` (`AsyncMock`) and `update_details`; `db = SimpleNamespace(commit=AsyncMock())`; `body = ProjectDetailsUpdate.model_validate({"fields": {"description": "n"}, "expected": {"description": "o"}})`; `request = SimpleNamespace(state=SimpleNamespace(trace_id="t1"))`):
+- `test_non_member_is_404_and_nothing_else_runs`: member `False` → `HTTPException` 404; `is_project_manager` and `update_details` not awaited; no commit.
+- `test_member_non_manager_is_403`: member `True`, manager `False` → 403; `update_details` not awaited; no commit.
+- `test_manager_commits_once_and_returns_details`: both `True`, `update_details` returns a `ProjectDetailsChange` → `ApiResponse` whose `data` is `change.details`, `trace_id == "t1"`; `db.commit` awaited once; with `SimpleNamespace(state=SimpleNamespace())` → `trace_id is None`.
+- `test_stale_value_propagates_without_commit`: `update_details` raises `StaleProjectValueError(current={"description": "x"})` → it propagates (the `AppError` handler renders the 409); no commit.
+
+Run: `cd "$WT/backend" && uv run pytest tests/integration/test_project_details_api.py tests/unit/test_project_details_endpoint_unit.py -v` → FAIL (404 route; module missing).
 
 - [ ] **Step 6: Implement the route**
 
@@ -1511,15 +1564,49 @@ async def update_project_details(
     return ApiResponse.success(change.details, trace_id=getattr(request.state, "trace_id", None))
 ```
 
-Imports: `get_current_user_sub`, `is_project_member`, `is_project_manager` from `app.api.deps.security`; `DbSession` from `app.core.deps`; `limiter` from `app.utils.rate_limiter`; `ApiResponse` from `app.schemas.common`; the schemas from `app.schemas.project_details`; `update_details` from `app.services.project_details_service`. `StaleProjectValueError` propagates to `app_error_handler` (409 envelope with `details`). Register the router in `backend/app/api/v1/router.py`. Run Step 5 → PASS.
+Imports (by name, so the unit test can patch them on this module): `get_current_user_sub`, `is_project_member`, `is_project_manager` from `app.api.deps.security`; `DbSession` from `app.core.deps`; `limiter` from `app.utils.rate_limiter`; `ApiResponse` from `app.schemas.common`; the schemas from `app.schemas.project_details`; `update_details` from `app.services.project_details_service`. `StaleProjectValueError` propagates to `app_error_handler` (409 envelope with `details`). Register the router in `backend/app/api/v1/router.py`. Run Step 5 → PASS.
 
 - [ ] **Step 7: Regenerate the contract and commit**
 
-Run from `$WT`: `npm run generate:api-types`; then `grep -n "ProjectDetailsUpdate\|/details" frontend/types/api/schema.d.ts` shows the route and schemas. Commit the endpoint, router, API test, `openapi.json`, `schema.d.ts`: `feat(projects): add PATCH /projects/{id}/details`, co-author trailer.
+Run from `$WT`: `npm run generate:api-types`; then `grep -n "ProjectDetailsUpdate\|/details" frontend/types/api/schema.d.ts` shows the route and schemas. Commit the endpoint, router, both Step 5 test files, `openapi.json`, `schema.d.ts`: `feat(projects): add PATCH /projects/{id}/details`, co-author trailer.
 
-- [ ] **Step 8: Frontend service — failing test, then the swap**
+- [ ] **Step 8: Verify**
 
-Create `frontend/test/services/projectSettingsService.test.ts`: partial mock of `@/integrations/api/client` keeping `ApiError` real (`vi.mock(path, async (importOriginal) => ({...(await importOriginal<…>()), apiClient: apiClientMock}))`). Assert `saveProjectSettings('p1', {fields: {name: 'n'}, expected: {name: 'o'}})` calls `apiClient('/api/v1/projects/p1/details', {method: 'PATCH', body: {fields: {name: 'n'}, expected: {name: 'o'}}})` and returns `{ok: true, data}`; a rejection → `{ok: false}`; `staleValuesOf(new ApiError('STALE_VALUE', 'm', 409, 't', {current: {name: 'x'}}))` → `{name: 'x'}`; `staleValuesOf` of a 403 `ApiError`, of a 409 with another code, and of `new Error('m')` → `null`. Run → FAIL.
+- `cd "$WT/backend" && uv run pytest tests/unit/test_project_details_schema.py tests/unit/test_project_details_endpoint_unit.py tests/integration/test_project_details_service.py tests/integration/test_project_details_api.py tests/integration/test_ai_context_endpoints.py -v` → PASS.
+- `make lint-backend` (ruff, format, mypy ratchet: no new pair) → clean; `uv run mypy app/schemas/project_details.py app/services/project_details_service.py app/api/v1/endpoints/project_details.py --ignore-missing-imports` → clean.
+- `cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec` → no new finding except these tolerated intermediate ones, if vulture reports them: the dataclass fields `before` / `after` of `ProjectDetailsChange` (cleared by Task 9, whose `update_project_details` tool reads `change.before` / `change.after`); still tolerated from earlier tasks: `storage_factory` (→ Task 7b), `agent_tool` (→ Task 6a), `record_applied` / `record_refused` (→ Task 9). Never baseline them; name them in the task report. Any other finding fails the task.
+- From `$WT`: `bash scripts/fitness/run_all.sh` → green (layered arch, scope guards, response descriptions, file size); `npm run generate:api-types` again → `git -C "$WT" status` shows no diff.
+- `cd "$WT/backend" && uv run alembic downgrade 0076_extraction_batches`.
+
+### Task 5b: Settings save moved off PostgREST onto `PATCH /projects/{id}/details` (frontend)
+
+**Context.** Task 5a shipped `PATCH /api/v1/projects/{project_id}/details` (body `{fields, expected}` — `expected` must name every key of `fields`; `ApiResponse[ProjectDetailsRead]`; 409 `STALE_VALUE` with `error.details.current` = the server's values of the contested keys; 403 member non-manager; 404 non-member or missing project; 422 validation) and committed its generated types. This task moves the Settings save onto it, deletes the raw `supabase.from('projects').update(fields)` write (`frontend/services/projectSettingsService.ts:236-245`), refreshes the TanStack caches that show the saved columns, and adds a stale-value banner. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §5.4 ("Frontend change", "States"), §8.
+
+**Rules for this task (restated, all binding):**
+- Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; confirm with `git -C "$WT" status`. Frontend tooling runs from `$WT` (never `cd frontend && npm …`); the worktree needs its own `node_modules` (`npm ci` if absent).
+- English only. All copy through `t()`; new keys must be referenced (`check_copy_keys.py`); `npx knip` / `npx knip --production` at zero (do not export a type nobody imports). React Compiler: no `try/finally`, no `throw` inside `try` in a hook or component body. Buttons use named sizes.
+- Data path: component → hook → service → `apiClient`; services return `ErrorResult<T>`, never throw, never toast. No `supabase.from('projects').update` remains. Types from `frontend/types/api/schema.d.ts` (generated by Task 5a; never hand-edited); this task changes no backend contract.
+- The hook's own state stays local (not TanStack Query; converting it is out of scope), but a successful save changes columns that cached reads show, so it invalidates exactly two keys (the "stale cache after a mutation" incident class): `projectKeys.aiContext(projectId)` (`frontend/hooks/project/useAiContext.ts`: its `labels` and `review_type` vary with `review_type`; 5-minute `staleTime`; rendered by `ReviewQuestionSection` on this same page) and `projectsListKey(user.id)` (`frontend/hooks/useProjectsQuery.ts`: `name`, `description`, `review_title` for the hub, sidebar switcher and breadcrumb; its docstring requires every invalidator to name this exact key, never `projectKeys.all`). A refused save (409/403/other) invalidates nothing.
+- Typed edge: no `as unknown as` cast into `ProjectDetailsFields`. The Supabase `Project` row types JSONB columns as `Json`; a narrow mapper checks the three JSONB shapes and refuses a mismatch before any request.
+- Load `frontend-development`, `frontend-ux`, `ui-styling`, `web-testing` before coding; `design-review` before calling it done.
+- Commits: conventional, ending with a blank line then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+
+**Files:**
+- Modify: `frontend/services/projectSettingsService.ts:208-246` (delete `SaveProjectFields` and the PostgREST save; add the PATCH, `staleValuesOf`, `toDetailsFields`)
+- Modify: `frontend/hooks/useProjectSettings.ts` (whole file)
+- Modify: `frontend/components/project/ProjectSettings.tsx` (stale banner)
+- Modify: `frontend/lib/copy/project.ts` (four keys)
+- Modify test: `frontend/test/components/ProjectSettings.sections.test.tsx:9-20` (mock shape) + banner cases
+- Test (new): `frontend/test/services/projectSettingsService.test.ts`, `frontend/test/hooks/useProjectSettings.test.tsx`
+- Modify: `scripts/fitness/check_frontend_data_path.baseline` (`frontend/services/projectSettingsService.ts|projects:4` → `:3`)
+
+**Interfaces:**
+- Consumes (Task 5a, generated): `components['schemas']['ProjectDetailsFields' | 'ProjectDetailsUpdate' | 'ProjectDetailsRead']`; the route above. Existing: `projectKeys` (`@/lib/query-keys`), `projectsListKey(userId)` (`@/hooks/useProjectsQuery`), `useAuth()` (`@/contexts/AuthContext`, `.user?.id`), `useQueryClient` (`@tanstack/react-query`), `ApiError(code, message, status, traceId?, details?)` (`@/integrations/api/client`).
+- Produces: `saveProjectSettings(projectId, body)` (PATCH), `staleValuesOf(error)`, `toDetailsFields(values)`, `ProjectDetailsFields` type; hook return adds `staleFields: string[]`, `loadLatest(): Promise<void>`, `keepMine(): Promise<void>`.
+
+- [ ] **Step 1: Frontend service — failing test, then the swap**
+
+Create `frontend/test/services/projectSettingsService.test.ts`: partial mock of `@/integrations/api/client` keeping `ApiError` real (`vi.mock(path, async (importOriginal) => ({...(await importOriginal<…>()), apiClient: apiClientMock}))`). Assert `saveProjectSettings('p1', {fields: {name: 'n'}, expected: {name: 'o'}})` calls `apiClient('/api/v1/projects/p1/details', {method: 'PATCH', body: {fields: {name: 'n'}, expected: {name: 'o'}}})` and returns `{ok: true, data}`; a rejection → `{ok: false}`; `staleValuesOf(new ApiError('STALE_VALUE', 'm', 409, 't', {current: {name: 'x'}}))` → `{name: 'x'}`; `staleValuesOf` of a 403 `ApiError`, of a 409 with another code, and of `new Error('m')` → `null`; `toDetailsFields({name: 'n', eligibility_criteria: {inclusion: []}, review_keywords: ['k']})` returns the same values; `toDetailsFields({eligibility_criteria: ['x']})`, `({study_design: 'x'})`, `({review_keywords: [1]})` and `({review_keywords: 'x'})` → `null`. Run → FAIL.
 
 In `projectSettingsService.ts` delete `SaveProjectFields` and the PostgREST `saveProjectSettings` (the NOTE comment about `picots_config_ai_review` goes with them), and add:
 
@@ -1542,23 +1629,41 @@ export function staleValuesOf(error: Error): Record<string, unknown> | null {
   const current = error.details?.current;
   return current && typeof current === 'object' ? (current as Record<string, unknown>) : null;
 }
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === 'string');
+
+/** The Supabase row's `Json` columns narrowed to the PATCH contract; null when a JSONB value has the wrong shape. */
+export function toDetailsFields(values: Partial<Project>): ProjectDetailsFields | null {
+  const {eligibility_criteria, study_design, review_keywords} = values;
+  if (eligibility_criteria !== undefined && !isRecord(eligibility_criteria)) return null;
+  if (study_design !== undefined && !isRecord(study_design)) return null;
+  if (review_keywords !== undefined && !isStringList(review_keywords)) return null;
+  return {
+    name: values.name, description: values.description, review_type: values.review_type,
+    review_title: values.review_title, condition_studied: values.condition_studied,
+    review_rationale: values.review_rationale, search_strategy: values.search_strategy,
+    review_context: values.review_context, eligibility_criteria, study_design, review_keywords,
+  };
+}
 ```
 
-(imports: `apiClient`, `ApiError` from `@/integrations/api/client`; `components` from `@/types/api/schema`). Run the service test → PASS. Then `python3 scripts/fitness/check_frontend_data_path.py --update-baseline` → `projectSettingsService.ts|projects:4` becomes `:3`, no other line changes.
+Keys absent from `values` stay `undefined`, which `JSON.stringify` drops, so only the changed keys are sent. If `tsc` reports a scalar column whose row type differs from the generated one, narrow that column the same way — never cast. (imports: `apiClient`, `ApiError` from `@/integrations/api/client`; `components` from `@/types/api/schema`; `Project` from `@/types/project`.) Run the service test → PASS. Then `python3 scripts/fitness/check_frontend_data_path.py --update-baseline` → `projectSettingsService.ts|projects:4` becomes `:3`, no other line changes.
 
-- [ ] **Step 9: Hook — failing tests (MSW)**
+- [ ] **Step 2: Hook — failing tests (MSW)**
 
-Create `frontend/test/hooks/useProjectSettings.test.tsx`. Mock `@/integrations/supabase/client` as `{supabase: {auth: {getSession: vi.fn(async () => ({data: {session: {access_token: 'test'}}}))}, from: fromMock}}` where `fromMock` returns `{select: () => ({eq: () => ({single: async () => ({data: {...serverRow}, error: null})})}), update: updateMock}`; `vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}))`. `serverRow` is a mutable `Project`-shaped object (`id: 'p1', name: 'Old', description: 'D', …`). MSW (`server` from `@/test/mocks/server`): `http.patch('*/api/v1/projects/:id/details', …)` pushes each JSON body into `requests[]` and answers from a per-test queue (`{status: 200, body: {ok: true, data: {}}}` by default). `renderHook(() => useProjectSettings('p1'))`, `waitFor(() => expect(result.current.project?.name).toBe('Old'))`. Cases:
-1. only changed keys: `updateProject({name: 'New'})`, `saveProject()` → `requests == [{fields: {name: 'New'}, expected: {name: 'Old'}}]`; `updateMock` never called; `toast.success` with `t('project', 'settingsSaveSuccess')`; `fromMock` called again (reload).
-2. 409: reply `409 {ok: false, error: {code: 'STALE_VALUE', message: 'stale', details: {current: {name: 'Agent'}}}}` → `staleFields == ['name']`, `project.name == 'New'`, `hasUnsavedChanges` true, `toast.error` not called.
+Create `frontend/test/hooks/useProjectSettings.test.tsx`. Mock `@/integrations/supabase/client` as `{supabase: {auth: {getSession: vi.fn(async () => ({data: {session: {access_token: 'test'}}}))}, from: fromMock}}` where `fromMock` returns `{select: () => ({eq: () => ({single: async () => ({data: {...serverRow}, error: null})})}), update: updateMock}`; `vi.mock('sonner', () => ({toast: {success: vi.fn(), error: vi.fn()}}))`; `vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'u1'}})}))`. `serverRow` is a mutable `Project`-shaped object (`id: 'p1', name: 'Old', description: 'D', …`). MSW (`server` from `@/test/mocks/server`): `http.patch('*/api/v1/projects/:id/details', …)` pushes each JSON body into `requests[]` and answers from a per-test queue (`{status: 200, body: {ok: true, data: {}}}` by default). `renderHook(() => useProjectSettings('p1'), {wrapper})` where `wrapper` provides a `QueryClient` whose `invalidateQueries` is spied (`vi.spyOn(queryClient, 'invalidateQueries')`); `waitFor(() => expect(result.current.project?.name).toBe('Old'))`. Cases:
+1. only changed keys: `updateProject({name: 'New'})`, `saveProject()` → `requests == [{fields: {name: 'New'}, expected: {name: 'Old'}}]`; `updateMock` never called; `toast.success` with `t('project', 'settingsSaveSuccess')`; `fromMock` called again (reload); `invalidateQueries` called with `{queryKey: projectKeys.aiContext('p1')}` and with `{queryKey: projectsListKey('u1')}`, and never with `{queryKey: projectKeys.all}`.
+2. 409: reply `409 {ok: false, error: {code: 'STALE_VALUE', message: 'stale', details: {current: {name: 'Agent'}}}}` → `staleFields == ['name']`, `project.name == 'New'`, `hasUnsavedChanges` true, `toast.error` not called, `invalidateQueries` not called.
 3. keep mine: after case 2's 409, the next reply is 200; `keepMine()` → second request `{fields: {name: 'New'}, expected: {name: 'Agent'}}`, `staleFields == []`.
 4. load latest: edit `name: 'New'` and `description: 'Mine'`; 409 with `current: {name: 'Agent'}`; set `serverRow.name = 'Agent'`; `loadLatest()` → `project.name == 'Agent'`, `project.description == 'Mine'`, `hasUnsavedChanges` true, `staleFields == []`.
-5. 403: reply `403 {ok: false, error: {code: 'FORBIDDEN', message: 'Manager role required'}}` → `toast.error(t('project', 'settingsSaveError'))`, `project.name == 'New'`, `staleFields == []`.
+5. 403: reply `403 {ok: false, error: {code: 'FORBIDDEN', message: 'Manager role required'}}` → `toast.error(t('project', 'settingsSaveError'))`, `project.name == 'New'`, `staleFields == []`, `invalidateQueries` not called.
 6. no-op: `updateProject({name: 'Old'})`, `saveProject()` → no request; `hasUnsavedChanges` false.
+7. bad JSONB shape: `updateProject({review_keywords: 'x' as unknown as string[]})`, `saveProject()` → no request; `toast.error(t('project', 'settingsSaveError'))`; edits kept.
 
 Run: `npx vitest run frontend/test/hooks/useProjectSettings.test.tsx` → FAIL.
 
-- [ ] **Step 10: Implement the hook**
+- [ ] **Step 3: Implement the hook**
 
 Rewrite `frontend/hooks/useProjectSettings.ts` keeping its load path and its `useEffect(() => { queueMicrotask(() => void loadProject()); }, [loadProject])`:
 
@@ -1574,11 +1679,11 @@ const pick = (row: Project, keys: readonly DetailKey[]): Partial<Project> =>
   Object.fromEntries(keys.map((key) => [key, row[key]]));
 ```
 
-State: `project`, `loadedProject` (the last server snapshot), `loading`, `hasUnsavedChanges`, `staleFields: string[]`, `staleCurrent: Partial<Project>`. `fetchProject()` wraps `loadProjectForSettings` (error → existing `common.errors_loadProject` toast, returns `null`); `loadProject()` sets `project` and `loadedProject` to the fresh row and clears dirty and stale state. `persist(edited, snapshot)`: `keys = changedKeys(edited, snapshot)`; none → `setHasUnsavedChanges(false)` and return; else `saveProjectSettings(projectId, {fields: asFields(pick(edited, keys)), expected: asFields(pick(snapshot, keys))})` with `const asFields = (values: Partial<Project>) => values as unknown as ProjectDetailsFields;` (the Supabase row types JSONB columns as `Json`; the server validates the shapes); on `!ok`: `staleValuesOf(result.error)` non-null → `setStaleFields(Object.keys(current))`, `setStaleCurrent(current as Partial<Project>)`, no toast; otherwise `toast.error(t('project', 'settingsSaveError'))`; edits kept either way. On ok: success toast and `await loadProject()`. `saveProject()` = `persist(project, loadedProject)`. `keepMine()`: `snapshot = {...loadedProject, ...staleCurrent}`; set it as `loadedProject`, clear stale state, `await persist(project, snapshot)`. `loadLatest()`: fetch fresh; `kept = changedKeys(project, loadedProject).filter((key) => !staleFields.includes(key))`; `setProject({...fresh, ...pick(project, kept)})`, `setLoadedProject(fresh)`, `setHasUnsavedChanges(kept.length > 0)`, clear stale state. Return `{project, loading, hasUnsavedChanges, updateProject, saveProject, loadProject, staleFields, loadLatest, keepMine}`. No `try/finally`.
+`const queryClient = useQueryClient(); const {user} = useAuth();`. State: `project`, `loadedProject` (the last server snapshot), `loading`, `hasUnsavedChanges`, `staleFields: string[]`, `staleCurrent: Partial<Project>`. `fetchProject()` wraps `loadProjectForSettings` (error → existing `common.errors_loadProject` toast, returns `null`); `loadProject()` sets `project` and `loadedProject` to the fresh row and clears dirty and stale state. `persist(edited, snapshot)`: `keys = changedKeys(edited, snapshot)`; none → `setHasUnsavedChanges(false)` and return; `fields = toDetailsFields(pick(edited, keys))`, `expected = toDetailsFields(pick(snapshot, keys))`; either `null` → `toast.error(t('project', 'settingsSaveError'))`, edits kept, return; else `saveProjectSettings(projectId, {fields, expected})`; on `!ok`: `staleValuesOf(result.error)` non-null → `setStaleFields(Object.keys(current))`, `setStaleCurrent(current as Partial<Project>)`, no toast; otherwise `toast.error(t('project', 'settingsSaveError'))`; edits kept either way. On ok: success toast; `void queryClient.invalidateQueries({queryKey: projectKeys.aiContext(projectId)})`; when `user?.id`, `void queryClient.invalidateQueries({queryKey: projectsListKey(user.id)})`; `await loadProject()`. `saveProject()` = `persist(project, loadedProject)`. `keepMine()`: `snapshot = {...loadedProject, ...staleCurrent}`; set it as `loadedProject`, clear stale state, `await persist(project, snapshot)`. `loadLatest()`: fetch fresh; `kept = changedKeys(project, loadedProject).filter((key) => !staleFields.includes(key))`; `setProject({...fresh, ...pick(project, kept)})`, `setLoadedProject(fresh)`, `setHasUnsavedChanges(kept.length > 0)`, clear stale state. Return `{project, loading, hasUnsavedChanges, updateProject, saveProject, loadProject, staleFields, loadLatest, keepMine}`. No `try/finally`.
 
-Run Step 9 → PASS.
+Run Step 2 → PASS.
 
-- [ ] **Step 11: Stale banner — failing component test, then implement**
+- [ ] **Step 4: Stale banner — failing component test, then implement**
 
 In `frontend/test/components/ProjectSettings.sections.test.tsx`, add a hoisted `hookState = {staleFields: [] as string[], loadLatest: vi.fn(), keepMine: vi.fn()}` (reset `staleFields = []` in `beforeEach`) and extend the mock's return with `staleFields: hookState.staleFields, loadLatest: hookState.loadLatest, keepMine: hookState.keepMine, loadProject: vi.fn()`. New `describe('ProjectSettings stale banner')`: default → `queryByTestId('project-settings-stale-banner')` is null; with `hookState.staleFields = ['name', 'review_keywords']` → the banner (`role="alert"`) shows `staleBannerMessage`, `basicProjectNameLabel`, `advancedCardKeywordsTitle` (copy is mocked to return keys), and clicking `staleLoadLatest` / `staleKeepMine` calls the two mocks. Run → FAIL.
 
@@ -1599,22 +1704,19 @@ In `ProjectSettings.tsx`: a module-level `STALE_FIELD_LABELS: Record<string, str
 )}
 ```
 
-(`Alert` from `@/components/ui/alert`, which sets `role="alert"`.) The existing states stay as they are: saving → the header button's `settingsSaving` label and `disabled={loading}`; saved → success toast and reload; 403/other → `settingsSaveError` toast with edits kept. Run the sections test → PASS.
+(`Alert` from `@/components/ui/alert`, which sets `role="alert"`.) The existing states stay as they are: saving → the header button's `settingsSaving` label and `disabled={loading}`; saved → success toast, the two cache invalidations and a reload; 403/other → `settingsSaveError` toast with edits kept. Run the sections test → PASS.
 
-- [ ] **Step 12: Commit**
+- [ ] **Step 5: Commit**
 
 `git -C "$WT" add` the service, hook, component, `project.ts`, the three frontend tests and `scripts/fitness/check_frontend_data_path.baseline`; `git -C "$WT" commit -m "feat(settings): save project details through the API with a stale-value banner" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
 
-- [ ] **Step 13: Verify**
+- [ ] **Step 6: Verify**
 
-- `cd "$WT/backend" && uv run pytest tests/unit/test_project_details_schema.py tests/integration/test_project_details_service.py tests/integration/test_project_details_api.py tests/integration/test_ai_context_endpoints.py -v` → PASS.
-- `make lint-backend` (ruff, format, mypy ratchet: no new pair) → clean.
-- `cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec` → no new finding except these tolerated intermediate ones, if vulture reports them: the dataclass fields `before` / `after` of `ProjectDetailsChange` (cleared by Task 9, whose `update_project_details` tool reads `change.before` / `change.after`); still tolerated from earlier tasks: `storage_factory` (→ Task 7b), `agent_tool` (→ Task 6a), `record_applied` / `record_refused` (→ Task 9). Never baseline them; name them in the task report. Any other finding fails the task.
 - From `$WT`: `npm run test:run -- frontend/test/services/projectSettingsService.test.ts frontend/test/hooks/useProjectSettings.test.tsx frontend/test/components/ProjectSettings.sections.test.tsx frontend/test/components/AdvancedSettingsSection.test.tsx` → PASS; then `npm run test:run` → PASS.
 - `npm run lint`, `npm run typecheck`, `npm run deadcode`, `npm run deadcode:production` → clean / zero.
-- `grep -c "from('projects')" frontend/services/projectSettingsService.ts` → `3` (delete, the settings load, the comparison-permission read); `grep -rn "SaveProjectFields" frontend` → no hit.
-- `bash scripts/fitness/run_all.sh` → green (layered arch, scope guards, response descriptions, copy keys, data path, file size).
-- `npm run generate:api-types` again → `git -C "$WT" status` shows no diff (contract committed and current).
+- `grep -c "from('projects')" frontend/services/projectSettingsService.ts` → `3` (delete, the settings load, the comparison-permission read); `grep -rn "SaveProjectFields\|as unknown as ProjectDetailsFields" frontend` → no hit.
+- `bash scripts/fitness/run_all.sh` → green (copy keys, data path, react-query keys, file size).
+- `npm run generate:api-types` → `git -C "$WT" status` shows no diff (Task 5a's contract is current).
 - `design-review` on Project → Settings with the stale banner (desktop, narrow, dark).
 
 ### Task 6a: Project read tools (`list_projects`, `get_project`)
@@ -1627,7 +1729,7 @@ Spec §10 Task 6 is split in two to fit one brief each: **6a** (projects) and **
 - Shared local DB (`.claude/rules/backend.md` § Local database): `cd "$WT/backend" && uv run alembic upgrade head` before integration tests; after Verify, `uv run alembic downgrade 0076_extraction_batches` (dev's head). Never `alembic stamp`, `make db-fresh` or `make reset-db`.
 - Layering (`scripts/fitness/check_layered_arch.py`): `app/api/**` imports only `app.services.*` and support (`app.schemas`, `app.core`, `app.utils`, …) — never `app.models.*` or `app.repositories.*`. Services may import models/repositories.
 - Read tools write nothing: no `flush()`, no `commit()`, no `agent_actions` row.
-- Membership is never hand-rolled: no string literal containing `project_members` anywhere in `backend/app` (`check_scope_guards.py` membership-sql detector). Use the SQL function `public.is_project_member` (SQLAlchemy `func.public.is_project_member(...)`).
+- Membership is never hand-rolled: no string literal containing `project_members` anywhere in `backend/app` (`check_scope_guards.py` membership-sql detector), and ONE membership predicate per query — never a join ON clause restating membership next to a `public.is_project_member` WHERE. `list_projects` reads the caller's own membership rows (the `user_id` is the verified principal, not a client id, so there is nothing to bind) through the membership repository: `ProjectMemberRepository.list_for_user(user_id)` (added here, one `ProjectMember.user_id == user_id` WHERE, the shape of the existing `get_member`); `get_project`'s role comes from the existing `ProjectMemberRepository.get_member(project_id, user_id)` (the `extraction_run_read_service.is_run_arbitrator` precedent) — the choke point already proved membership, so no second check.
 - One ownership predicate per (model, scope columns): a `.where()` that pins `Model.id == x` together with a scope column (`project_id`, `article_id`, `template_id`, …) must not duplicate an existing guard — e.g. never write `ProjectExtractionTemplate.id == … , ProjectExtractionTemplate.project_id == …` (that is `project_template_active_service.owned_template`).
 - MCP result models live in `app/schemas/mcp_*.py` (vulture excludes `app/schemas/`; never baseline an MCP symbol in `backend/.vulture_baseline`).
 - Every tool: registered only through `@agent_tool(...)` from `app/api/mcp/server.py` (never the SDK's `@mcp.tool()`), shaped `async def name(db: AsyncSession, <args>) -> <ResultModel>` — the dispatcher injects `db` after its checks (there is no session accessor) — with `title=` and a static `description=` string (no user data interpolated). Read tools pass `requires="read"` and leave `destructive`/`idempotent` at their defaults, so the decorator publishes `readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False`; the return-annotated Pydantic model becomes the `outputSchema`. Everything the model needs goes in `structuredContent`.
@@ -1635,6 +1737,7 @@ Spec §10 Task 6 is split in two to fit one brief each: **6a** (projects) and **
 
 **Files:**
 - Create: `backend/app/services/project_read_service.py`
+- Modify: `backend/app/repositories/project_repository.py` — add `ProjectMemberRepository.list_for_user`; delete `ProjectRepository.get_by_user` (no caller in `app/` or `tests/`; the new method replaces it — `grep -rn "get_by_user" backend/app backend/tests` must then show only `integration_repository`)
 - Create: `backend/app/schemas/mcp_projects.py`
 - Create: `backend/app/api/mcp/tools/projects.py`
 - Create: `backend/app/api/mcp/tools/__init__.py` — THE tool registration point (every later tool task adds its module to its import line)
@@ -1650,14 +1753,17 @@ Spec §10 Task 6 is split in two to fit one brief each: **6a** (projects) and **
   - `app.api.mcp.server.agent_tool(*, requires: "read" | "write", project_arg: "project_id" | "article_id" | None, title: str, description: str, destructive: bool = False, idempotent: bool = True, meta=None, structured_output=None)`. The choke point runs before the tool: scope filter, rate limit, project resolution, `is_project_member` → `NOT_FOUND`. `list_projects` takes no project argument: `project_arg=None` (no project gate; it reads only the caller's own memberships). The per-call session is the injected `db: AsyncSession` first parameter.
   - `app.api.mcp.asgi_auth.current_principal() -> app.schemas.mcp_auth.McpPrincipal` (`user_sub: UUID`, `token_id: UUID`, `scope: Literal["read", "read_write"]`, `token_expires_at: datetime`).
   - `app.api.mcp.errors`: `McpErrorCode` (StrEnum; `NOT_FOUND`, `INVALID_ARGUMENT`, …), `McpToolError(code, message, **extras)` (no `next_step` kwarg: it is fixed per code).
-  - `app.schemas.project_details.ProjectDetailsFields` (Task 5; the 11 editable columns: `name, description, review_type, review_title, condition_studied, review_rationale, search_strategy, eligibility_criteria, study_design, review_keywords, review_context`).
+  - `app.repositories.project_repository.ProjectMemberRepository(db).get_member(project_id, user_id) -> ProjectMember | None` (exists; `.role` is `Mapped[str]`, one of `manager | reviewer | viewer | consensus`).
+  - `app.schemas.project_details.ProjectDetailsValues` (Task 5a; the 11 columns with their stored types, exactly what `update_project_details`' `expected` must echo) and `ProjectDetailsFields` (Task 5a; the 11 editable columns: `name, description, review_type, review_title, condition_studied, review_rationale, search_strategy, eligibility_criteria, study_design, review_keywords, review_context`).
   - `app/services/profile_names.py`: `profile_names(db, ids: set[UUID]) -> dict[UUID, str | None]` (exists).
   - `app/services/extraction_snapshot.py`: `snapshot_is_narrow(entity_types: list[dict]) -> bool` (exists, `:154`).
   - Fixtures in `backend/tests/integration/mcp/conftest.py`: `mcp_client` (factory: `async with mcp_client(pat) as client:` — SDK in-memory `Client` with the PAT's principal set), `pat_primary_rw`, `pat_primary_read`, `pat_reviewer_rw`, `pat_outsider_rw` (`SeededPat`), `mcp_http_client`, autouse `bind_mcp_session_factory`; `tests/integration/mcp/rpc.py` (`rpc`, `INIT_PARAMS`). SDK 2.2.0 Python attributes are snake_case: `result.is_error`, `result.structured_content`, `tool.output_schema`, `tool.annotations.read_only_hint` / `destructive_hint` / `idempotent_hint` / `open_world_hint` (camelCase is the wire JSON only).
 - Produces (6b, 7a, 7b, 8a, 8b, 9, 10b rely on these exact names):
   - `backend/app/api/mcp/tools/__init__.py`: the tool registration point — one `from app.api.mcp.tools import …  # noqa: F401` line listing every tool module.
+  - `ProjectMemberRepository.list_for_user(user_id: UUID) -> list[ProjectMember]` (each with `.project` loaded; ordered by project name, id)
   - `project_read_service.list_projects_for_user(db, *, user_id: UUID) -> list[McpProjectListItem]`
-  - `project_read_service.get_project_overview(db, *, project_id: UUID, user_id: UUID) -> McpProjectOverview`
+  - `project_read_service.get_project_overview(db, *, project_id: UUID, user_id: UUID) -> McpProjectOverview | None` (`None` when the project or the membership vanished after the choke point)
+  - `app.schemas.mcp_projects.ProjectRoleValue = Literal["manager", "reviewer", "viewer", "consensus"]`
   - `project_read_service.template_summaries(db, *, project_id: UUID) -> list[McpTemplateSummary]` (all templates of the project, ordered `(name, id)`, each with `published_version: int | None` and `narrow: bool | None`; `None` when never published)
   - `backend/tests/integration/mcp/tool_calls.py`: `call_tool(mcp_client, pat, name, arguments) -> CallToolResult`, `structured(result) -> dict`, `error_payload(result) -> dict`
 
@@ -1720,14 +1826,34 @@ async def test_list_projects_outsider_empty(db_session):
     assert await list_projects_for_user(db_session, user_id=SEED.outsider_profile) == []
 
 
+def test_project_role_values_match_the_postgres_enum():
+    assert set(get_args(ProjectRoleValue)) == set(POSTGRESQL_ENUM_VALUES["project_member_role"])
+
+
+async def test_list_projects_is_one_statement(db_session):
+    statements: list[str] = []
+
+    def listener(_conn, _cursor, statement, _params, _context, _many):
+        statements.append(statement)
+
+    event.listen(db_session.bind.sync_engine, "before_cursor_execute", listener)
+    try:
+        await list_projects_for_user(db_session, user_id=SEED.primary_profile)
+    finally:
+        event.remove(db_session.bind.sync_engine, "before_cursor_execute", listener)
+    assert len(statements) == 1 and "is_project_member" not in statements[0]  # one predicate, no double check
+
+
 async def test_project_overview_counts_and_details(db_session):
     ov = await get_project_overview(db_session, project_id=SEED.primary_project, user_id=SEED.primary_profile)
-    assert ov.role == "manager"
-    assert set(ov.details) == {
+    assert ov is not None and ov.role == "manager"
+    assert isinstance(ov.details, ProjectDetailsValues)
+    assert set(ov.details.model_dump()) == {
         "name", "description", "review_type", "review_title", "condition_studied",
         "review_rationale", "search_strategy", "eligibility_criteria", "study_design",
         "review_keywords", "review_context",
     }
+    assert await get_project_overview(db_session, project_id=uuid4(), user_id=SEED.primary_profile) is None
     assert ov.counts.articles >= 1
     assert 0 <= ov.counts.articles_with_text <= ov.counts.articles
     assert SEED.primary_template in {t.template_id for t in ov.templates}
@@ -1749,7 +1875,7 @@ async def test_template_summaries_narrow_flag(db_session):
     assert (by_id[template_id].published_version, by_id[template_id].narrow) == (None, None)
 ```
 
-`fresh_charms` / `force_narrow_baseline` come from `tests/integration/helpers/template_fixtures.py` (exist).
+`fresh_charms` / `force_narrow_baseline` come from `tests/integration/helpers/template_fixtures.py` (exist); `POSTGRESQL_ENUM_VALUES` from `app.models.base`; `ProjectRoleValue` from `app.schemas.mcp_projects`; `ProjectDetailsValues` from `app.schemas.project_details`; `event` from `sqlalchemy`; `get_args` from `typing`; `uuid4` from `uuid`.
 
 - [ ] **Step 2: Run — expect FAIL** (`ModuleNotFoundError: app.services.project_read_service`)
 
@@ -1758,16 +1884,18 @@ async def test_template_summaries_narrow_flag(db_session):
 - [ ] **Step 3: Result models** — `backend/app/schemas/mcp_projects.py`:
 
 ```python
+ProjectRoleValue = Literal["manager", "reviewer", "viewer", "consensus"]  # pinned to the PG enum by a test
+
 class McpProjectListItem(BaseModel):
     project_id: UUID
     name: str
-    role: str  # manager | reviewer | viewer | consensus
+    role: ProjectRoleValue
     is_active: bool
 
 class McpProjectList(BaseModel):
     projects: list[McpProjectListItem]
     caller_name: str | None
-    token_scope: str
+    token_scope: Literal["read", "read_write"]
     token_expires_at: datetime
     note: str | None = None
 
@@ -1785,16 +1913,16 @@ class McpTemplateSummary(BaseModel):
 
 class McpProjectOverview(BaseModel):
     project_id: UUID
-    role: str
+    role: ProjectRoleValue
     is_active: bool
-    details: dict[str, Any]  # the 11 ProjectDetailsFields keys as JSON values, never truncated (update_project_details needs exact `expected`)
+    details: ProjectDetailsValues  # typed outputSchema; never truncated (update_project_details needs exact `expected`)
     counts: McpProjectCounts
     templates: list[McpTemplateSummary]
 ```
 
-- [ ] **Step 4: Service** — `backend/app/services/project_read_service.py` (module docstring: why a new read module; `ProjectRepository.get_by_user` has no role, counts or templates):
-  - `list_projects_for_user`: `select(Project.id, Project.name, Project.is_active, ProjectMember.role).join(ProjectMember, and_(ProjectMember.project_id == Project.id, ProjectMember.user_id == user_id)).where(func.public.is_project_member(Project.id, user_id)).order_by(Project.name, Project.id)`. The membership predicate is the SQL function; the join only reads the role column. No `project_members` string literal.
-  - `get_project_overview`: load `Project` by id (the choke point already proved membership); role = the entry for `project_id` in `await list_projects_for_user(db, user_id=user_id)` (reuse — no second membership join); `details = ProjectDetailsFields.model_validate({k: getattr(project, k) for k in ProjectDetailsFields.model_fields}).model_dump(mode="json")`; counts in one statement: `count(Article.id)` and `count(Article.id).filter(exists(ArticleFile where article_id == Article.id and extraction_status == "parsed"))` with `Article.project_id == project_id`; `templates = await template_summaries(db, project_id=project_id)`.
+- [ ] **Step 4: Repository + service** — first `ProjectMemberRepository.list_for_user(user_id)` in `backend/app/repositories/project_repository.py` (docstring: the caller's own memberships; the one membership predicate of the list read): `select(ProjectMember).join(ProjectMember.project).options(contains_eager(ProjectMember.project)).where(ProjectMember.user_id == user_id).order_by(Project.name, Project.id)` → `list(result.scalars().all())`; delete the caller-less `ProjectRepository.get_by_user` it replaces. Then `backend/app/services/project_read_service.py` (module docstring: why a new read module — the repositories have no counts or template summaries; why the membership repository is the role source):
+  - `list_projects_for_user`: `[McpProjectListItem(project_id=m.project_id, name=m.project.name, role=cast(ProjectRoleValue, m.role), is_active=m.project.is_active) for m in await ProjectMemberRepository(db).list_for_user(user_id)]` (`cast`: `ProjectMember.role` is `Mapped[str]`; strict mypy refuses a `str` into the Literal field). No `is_project_member` call, no second join.
+  - `get_project_overview`: `project = await db.get(Project, project_id)`; `member = await ProjectMemberRepository(db).get_member(project_id, user_id)`; either `None` → return `None` (the tool answers `NOT_FOUND`); `details = ProjectDetailsValues.model_validate({k: getattr(project, k) for k in ProjectDetailsValues.model_fields})`; `role = cast(ProjectRoleValue, member.role)`; counts in one statement: `count(Article.id)` and `count(Article.id).filter(exists(ArticleFile where article_id == Article.id and extraction_status == "parsed"))` with `Article.project_id == project_id`; `templates = await template_summaries(db, project_id=project_id)`.
   - `template_summaries`: `select(ProjectExtractionTemplate, ExtractionTemplateVersion).outerjoin(ExtractionTemplateVersion, and_(ExtractionTemplateVersion.project_template_id == ProjectExtractionTemplate.id, ExtractionTemplateVersion.is_active.is_(True))).where(ProjectExtractionTemplate.project_id == project_id).order_by(ProjectExtractionTemplate.name, ProjectExtractionTemplate.id)`; `narrow = snapshot_is_narrow((version.schema_ or {}).get("entity_types") or [])` when a version exists, else `None`; `published_version = version.version`. No `.id ==` in the WHERE (no second copy of `owned_template`).
 
 - [ ] **Step 5: Run — expect PASS** (same command as Step 2).
@@ -1802,7 +1930,7 @@ class McpProjectOverview(BaseModel):
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C "$WT" add backend/app/services/project_read_service.py backend/app/schemas/mcp_projects.py backend/tests/integration/test_project_read_service.py backend/tests/integration/mcp/tool_calls.py
+git -C "$WT" add backend/app/services/project_read_service.py backend/app/repositories/project_repository.py backend/app/schemas/mcp_projects.py backend/tests/integration/test_project_read_service.py backend/tests/integration/mcp/tool_calls.py
 git -C "$WT" commit -m "feat(mcp): add project read service for agent tools
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -1867,12 +1995,15 @@ async def list_projects(db: AsyncSession) -> McpProjectList:
                         "(id, kind, active, narrow). Call list_articles or get_template next.")
 async def get_project(db: AsyncSession, project_id: UUID) -> McpProjectOverview:
     principal = current_principal()
-    return await project_read_service.get_project_overview(
+    overview = await project_read_service.get_project_overview(
         db, project_id=project_id, user_id=principal.user_sub
     )
+    if overview is None:  # removed between the choke point and this read
+        raise McpToolError(McpErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE)
+    return overview
 ```
 
-Imports: `agent_tool` from `app.api.mcp.server`, `current_principal` from `app.api.mcp.asgi_auth`, `AsyncSession` from `sqlalchemy.ext.asyncio`, `profile_names` from `app.services.profile_names`, the models from `app.schemas.mcp_projects`, `project_read_service` as a module.
+Imports: `agent_tool` from `app.api.mcp.server`, `current_principal` from `app.api.mcp.asgi_auth`, `McpErrorCode`, `McpToolError`, `NOT_FOUND_MESSAGE` from `app.api.mcp.errors`, `AsyncSession` from `sqlalchemy.ext.asyncio`, `profile_names` from `app.services.profile_names`, the models from `app.schemas.mcp_projects`, `project_read_service` as a module.
 
 Registration point — create `backend/app/api/mcp/tools/__init__.py`:
 
@@ -1901,7 +2032,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```bash
 cd "$WT/backend" && uv run pytest tests/integration/test_project_read_service.py tests/integration/mcp -v
 cd "$WT/backend" && uv run ruff check app tests && uv run ruff format --check app tests
-cd "$WT/backend" && uv run mypy app/services/project_read_service.py app/schemas/mcp_projects.py app/api/mcp/tools/projects.py --ignore-missing-imports
+cd "$WT/backend" && uv run mypy app/services/project_read_service.py app/repositories/project_repository.py app/schemas/mcp_projects.py app/api/mcp/tools/projects.py --ignore-missing-imports
 cd "$WT/backend" && { uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline
 cd "$WT/backend" && uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec
 cd "$WT" && python scripts/fitness/check_layered_arch.py && python scripts/fitness/check_scope_guards.py && python scripts/fitness/check_file_size.py
@@ -2315,7 +2446,30 @@ async def test_fts_query_uses_index(db_session):
     assert "idx_article_text_blocks_fts" in plan
 ```
 
-Also change `expected_head = "0078_agent_actions"` → `"0079_article_text_fts"` in `test_migration_roundtrip.py`. Run `cd "$WT/backend" && uv run pytest tests/integration/test_article_text_fts_index.py -v` → FAIL (`NoResultFound`).
+Also change `expected_head = "0078_agent_actions"` → `"0079_article_text_fts"` in `test_migration_roundtrip.py` and append a roundtrip for the index (the file's `migration_db_url` / `migration_session` fixtures and `_run_alembic` helper, like its 0077/0078 tests):
+
+```python
+# --- 0079: article text FTS index -----------------------------------------
+@pytest.mark.asyncio
+async def test_migration_0079_article_text_fts_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    async def has_index() -> bool:
+        found = (await migration_session.execute(text(
+            "SELECT to_regclass('public.idx_article_text_blocks_fts') IS NOT NULL"))).scalar_one()
+        await migration_session.rollback()
+        return bool(found)
+
+    assert await has_index()
+    _run_alembic("downgrade", "0078_agent_actions", database_url=migration_db_url)
+    try:
+        assert not await has_index()
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await has_index()
+```
+
+Run `cd "$WT/backend" && uv run pytest tests/integration/test_article_text_fts_index.py "tests/integration/test_migration_roundtrip.py::test_migration_0079_article_text_fts_roundtrip" -v` → FAIL (`NoResultFound`; index absent at head).
 
 - [ ] **Step 2: Migration** — `backend/alembic/versions/0079_article_text_fts.py`:
 
@@ -2392,6 +2546,7 @@ def fake_storage(monkeypatch):
   - `test_search_project_text_tool`: seeded hit → `McpSearchResult.model_validate(body)`, `untrusted_content is True`; zero hits → `hits == []` and `note` mentions variant spellings.
   - `test_search_query_length_cap`: 201-char `query` → `INVALID_ARGUMENT`, `field == "query"`; `cursor="!!"` → `field == "cursor"`.
   - `test_signed_url_ttl(fake_storage)`: article with a PDF (`storage_key` known) → `pdf.expires_at` is 600 s (± 5 s) after the call; `fake_storage.calls == [("articles", <storage_key>, 600)]`; `result.content` holds exactly one `ResourceLink` (`type == "resource_link"`) whose `uri` equals `pdf.url` and `mime_type == "application/pdf"`, plus the JSON text block; `result.structured_content` validates as `McpArticlePdfResult`.
+  - `test_signed_url_never_in_span_or_logs(fake_storage, monkeypatch, caplog)` (spec §8: no span or log carries a signed URL): `monkeypatch.setattr(server.logfire, "span", recorder)` where `recorder(name, **attrs)` is a `@contextmanager` that appends `(name, attrs)` and yields an object whose `set_attribute(k, v)` appends `(k, v)` too (`from app.api.mcp import server`); `caplog.set_level(logging.DEBUG)`; `with capture_logs() as entries:` (`structlog.testing`) call `get_article_pdf` on an article with a PDF → success, and the returned `pdf.url` (it starts `https://storage.test/signed/`) appears in none of `repr(recorded)`, `repr(entries)`, `caplog.text`; the span's attribute keys are exactly `tool`, `token_id`, `project_id`, `outcome`.
   - `test_no_pdf_marker(fake_storage)`: article with no PDF → success (`result.is_error is False`), `pdf is None`, `reason == "no_pdf"`, `next_step == "this article has no PDF; use get_article for metadata"`, no `resource_link` block, `fake_storage.calls == []`; a `file_id` of another article → `NOT_FOUND`, `fake_storage.calls == []`.
   - `test_untrusted_content_flag`: `get_article` (article with an abstract) and `search_project_text` (one hit) results have `untrusted_content is True`; the abstract and every snippet start with `UNTRUSTED_OPEN` and end with `UNTRUSTED_CLOSE`; `list_articles` has `untrusted_content is True`.
   - `test_search_and_pdf_metadata`: both tools have `title`, `output_schema` (for `get_article_pdf`: the `McpArticlePdfResult` schema), `(read_only_hint, destructive_hint, idempotent_hint, open_world_hint) == (True, False, True, False)`.
@@ -2422,7 +2577,7 @@ async def get_article_pdf(db: AsyncSession, article_id: UUID,
                           file_id: UUID | None = None) -> Annotated[CallToolResult, McpArticlePdfResult]:
 ```
 
-Body: `resolve_article_file` (let `ArticleFileNotFoundError` propagate → `NOT_FOUND`); `None` or a non-PDF `file_type` → `result = McpArticlePdfResult(pdf=None, reason="no_pdf", next_step="this article has no PDF; use get_article for metadata")` and `links = []`; else `url = await mcp_session.storage_factory().get_signed_url("articles", file.storage_key, expires_in=600)`, `expires_at = datetime.now(UTC) + timedelta(seconds=600)` taken just before the call, `filename = file.original_filename or file.storage_key.rsplit("/", 1)[-1]`, `size = file.bytes`, and `links = [ResourceLink(type="resource_link", uri=url, name=filename, mime_type="application/pdf")]`. Return `CallToolResult(content=[TextContent(type="text", text=result.model_dump_json()), *links], structured_content=result.model_dump(mode="json"))` (`from mcp.types import CallToolResult, ResourceLink, TextContent`; `Annotated` from `typing`): the SDK keeps `McpArticlePdfResult` as the `outputSchema` and validates `structured_content` against it. Never log the URL. Add `article_pdf` and `search` to the import line in `backend/app/api/mcp/tools/__init__.py`. Run Step 5 → PASS. Commit `feat(mcp): add search_project_text and get_article_pdf tools` (+ Co-Authored-By line).
+Body (never log the URL, the result or the arguments; `test_signed_url_never_in_span_or_logs` holds it): `resolve_article_file` (let `ArticleFileNotFoundError` propagate → `NOT_FOUND`); `None` or a non-PDF `file_type` → `result = McpArticlePdfResult(pdf=None, reason="no_pdf", next_step="this article has no PDF; use get_article for metadata")` and `links = []`; else `url = await mcp_session.storage_factory().get_signed_url("articles", file.storage_key, expires_in=600)`, `expires_at = datetime.now(UTC) + timedelta(seconds=600)` taken just before the call, `filename = file.original_filename or file.storage_key.rsplit("/", 1)[-1]`, `size = file.bytes`, and `links = [ResourceLink(type="resource_link", uri=url, name=filename, mime_type="application/pdf")]`. Return `CallToolResult(content=[TextContent(type="text", text=result.model_dump_json()), *links], structured_content=result.model_dump(mode="json"))` (`from mcp.types import CallToolResult, ResourceLink, TextContent`; `Annotated` from `typing`): the SDK keeps `McpArticlePdfResult` as the `outputSchema` and validates `structured_content` against it. Never log the URL. Add `article_pdf` and `search` to the import line in `backend/app/api/mcp/tools/__init__.py`. Run Step 5 → PASS. Commit `feat(mcp): add search_project_text and get_article_pdf tools` (+ Co-Authored-By line).
 
 - [ ] **Step 7: Verify**
 
@@ -2450,6 +2605,8 @@ Spec §10 Task 8 is split in two to fit one brief each: **8a** (the moves, the t
 - The export file only shrinks: tighten its `scripts/fitness/check_file_size.baseline` line (`backend/app/services/extraction_export_service.py:2274`) with `python scripts/fitness/check_file_size.py --update-baseline` and commit the shrink (never a growth).
 - Vulture scans `app/` only: after the move every public name must still have an `app/` caller (export uses all three; `live_entity_types` is called by `entity_types_for_version` and the tool).
 - Layering: `app/api/**` → `app.services.*` + support only. Ownership: `get_template` calls `project_template_active_service.owned_template(db, project_id=, template_id=)` **first** (let `ProjectTemplateNotFoundError` propagate: the dispatcher answers `NOT_FOUND`, whose fixed `next_step` points at `list_projects` / `list_articles`); never re-write the `(ProjectExtractionTemplate.id, project_id)` predicate. `live_entity_types` takes no `project_id` (its callers are already scoped).
+- **Draft state is manager-only.** `draft_open` and `draft_diff` come from `get_template_config_status` / `get_template_config_diff`, whose REST endpoints are `require_project_manager` (`backend/app/api/v1/endpoints/project_templates.py:557-605`). `get_template` is a member-level read, so it computes them only when the non-raising `app.api.deps.security.is_project_manager(db, project_id, current_principal().user_sub)` is true (the same helper the choke point uses; api → api import is allowed); for any other role both are `null` and neither service is called. Never `require_project_manager` / `ensure_*` here.
+- Query count: bounded per page — the statement count of a call must not grow with the number of sections, questions or draft changes (spec §8).
 - Read tools write nothing; no `agent_actions` row.
 - Size: every result ≤ 32,000 characters of JSON. `get_template` pages questions by a **24,000-character budget** (JSON length of the emitted questions) with an opaque cursor over `(section position, question position)`; a section may continue on the next page (`continued: true`); the draft diff rides on the first page only, capped at 40 change rows (`before`/`after` ≤ 200 chars, `changes_truncated`). Tool metadata: `@agent_tool` only; `title`; static description; hints `(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)`; `outputSchema`. Decorator shape (Task 2b, `app/api/mcp/server.py`): `@agent_tool(requires="read", project_arg=…, title=…, description=…)` — the decorator derives these hints from `requires` and its `destructive=False` / `idempotent=True` defaults; a tool is `async def name(db: AsyncSession, …)` with `db` injected by the dispatcher (no session accessor). Metadata tests read the SDK's snake_case attributes: `tool.output_schema`, `tool.annotations.read_only_hint` / `destructive_hint` / `idempotent_hint` / `open_world_hint`; results `result.is_error` / `result.structured_content`.
 
@@ -2472,7 +2629,7 @@ Spec §10 Task 8 is split in two to fit one brief each: **8a** (the moves, the t
 **Interfaces:**
 - Consumes (exist): `owned_template` + `ProjectTemplateNotFoundError` (`project_template_active_service.py:34`); `template_version_read_service.get_active_version_tree(db, *, project_id, template_id) -> TemplateActiveVersionRead` (raises `NoActiveTemplateVersionError`, `:56`/`:312`), `get_template_config_status(db, *, project_id, template_id, viewer_id=None) -> TemplateConfigStatusRead` (`.has_pending_changes`), `get_template_config_diff(db, *, project_id, template_id) -> TemplateConfigDiffRead` (`.status`, `.changes.{additive,cosmetic,semantic,destructive}` rows with `tier, variant, label_path, attribute, before, after`); `RunViewEntityType`/`RunViewField` (`app/schemas/extraction_run.py:201,238`); test helpers `tests/integration/helpers/template_fixtures.py` (`fresh_charms(db) -> (project_id, template_id, schema)`, `force_narrow_baseline(db, template_id, section_id)`).
 - Consumes (Task 6a/6b): `project_read_service.template_summaries(db, *, project_id) -> list[McpTemplateSummary]` (`published_version`, `narrow`); `article_list_read_service.get_article_detail`; `opaque_cursor.encode_cursor/decode_cursor/InvalidCursorError`; `tool_calls.call_tool/structured/error_payload`; `article_seed.insert_article`.
-- Consumes (Tasks 2a/2b, exact names): `app.api.mcp.server.agent_tool(*, requires, project_arg, title, description, …)` (tool shape `async def name(db: AsyncSession, …)`, `db` injected); `app.api.mcp.errors.McpToolError(code, message, **extras)` (no `next_step` kwarg), `McpErrorCode`; fixtures `mcp_client` (`async with mcp_client(pat) as client`), `pat_primary_read`, `pat_reviewer_rw`, `pat_outsider_rw`.
+- Consumes (Tasks 2a/2b, exact names): `app.api.mcp.server.agent_tool(*, requires, project_arg, title, description, …)` (tool shape `async def name(db: AsyncSession, …)`, `db` injected); `app.api.mcp.errors.McpToolError(code, message, **extras)` (no `next_step` kwarg), `McpErrorCode`; `app.api.mcp.asgi_auth.current_principal()` (`.user_sub`); `app.api.deps.security.is_project_manager(db, project_id, user_sub) -> bool`; fixtures `mcp_client` (`async with mcp_client(pat) as client`), `pat_primary_read`, `pat_reviewer_rw`, `pat_outsider_rw`; test helpers `template_fixtures.add_section(db, template_id, name) -> UUID`, `add_field(db, entity_type_id, name) -> UUID`, `set_label`.
 - Consumes (Task 6b, extended here): the `get_article` tool in `backend/app/api/mcp/tools/articles.py` and `McpArticleDetail` in `app/schemas/mcp_articles.py` — this task adds the per-template `extraction_status` 6b deferred, so 8a must land after 6b.
 - Produces (8b relies on these):
   - `extraction_current_run.ACTIVE_RUN_STAGES: set[str]`, `select_current_runs_by_article(run_rows: list[ExtractionRun]) -> dict[UUID, ExtractionRun]`, `run_recency_key(run: ExtractionRun) -> tuple[datetime, str]`.
@@ -2520,6 +2677,8 @@ Run `cd "$WT/backend" && uv run pytest tests/integration/test_live_entity_types.
   - `test_get_template_live_tree_matches_fallback`: set the clone's versions `is_active = false` → success (`result.is_error is False`), `published_version is None`, `narrow is None`, `draft_diff.status` equals `get_template_config_diff(...).status`, and the field ids equal `live_entity_types(...)`'s; a template of another project → `NOT_FOUND`.
   - `test_get_template_narrow_flag`: `force_narrow_baseline` → `narrow is True`.
   - `test_get_template_draft_open`: `project_id, template_id, schema = await fresh_charms(db)`; `await set_label(db_session, "extraction_fields", UUID(schema["entity_types"][0]["fields"][0]["id"]), "Relabeled")` (`template_fixtures.set_label(db, table, node_id, label)`) → `draft_open is True` and `sum(draft_diff.counts.values()) >= 1`.
+  - `test_get_template_draft_state_is_manager_only` (`SEED.primary_template` in `SEED.primary_project`, where `SEED.reviewer_profile` is a reviewer): as `pat_primary_read` (manager) `draft_open` is a `bool` and `draft_diff` is present; then `monkeypatch.setattr(templates_tool, "get_template_config_status", _boom)` and the same for `get_template_config_diff` (`from app.api.mcp.tools import templates as templates_tool`; `_boom` raises `AssertionError`) and call as `pat_reviewer_rw` → success, `draft_open is None`, `draft_diff is None`, sections still returned (REST parity: config-status/diff are manager-gated).
+  - `test_get_template_query_count_bounded` (listen on `db_session.bind.sync_engine` `before_cursor_execute`, the `tests/integration/test_proposal_generation_read.py:162-178` pattern; manager PAT so the diff path runs): count the statements of one page-1 call on the `fresh_charms` clone (`c1`); then `add_section` ×3 on it, each with `add_field` ×3 (live rows: the published tree is unchanged, the draft diff grows by 12 changes), call again (`c2`) → `c1 == c2`; deactivate the clone's versions (live-tree path), call (`c3`), add 3 more fields to one section, call (`c4`) → `c3 == c4`.
   - `test_get_template_bad_cursor`: `cursor="!!"` → `INVALID_ARGUMENT`, `field "cursor"`.
   - `test_get_template_metadata`: `title`, `output_schema`, `(read_only_hint, destructive_hint, idempotent_hint, open_world_hint) == (True, False, True, False)`.
   - In `test_mcp_article_tools.py`, `test_get_article_extraction_status`: seeded article with a finalized run and a newer live run on `SEED.primary_template` → that template's entry has the live `run_id`/stage; a template with no run → `run_id None`, `reason "no_run"`.
@@ -2529,7 +2688,7 @@ Run `cd "$WT/backend" && uv run pytest tests/integration/mcp/test_mcp_get_templa
 
 - [ ] **Step 5: Implement.**
 
-`app/schemas/mcp_templates.py`: `McpTemplateQuestion{field_id, name, label, description, type, options: list[str] | None, instructions, required}`; `McpTemplateSection{section_id, name, label, parent_section_id, cardinality, continued: bool, questions}`; `McpDraftChange{tier, variant, label_path: list[str], attribute, before, after}`; `McpDraftDiff{status: str, counts: dict[str, int], changes: list[McpDraftChange], changes_truncated: bool}`; `McpTemplateView{template_id, name, kind, published_version: int | None, narrow: bool | None, draft_open: bool, sections, draft_diff: McpDraftDiff | None, next_cursor: str | None}`. `options` = `allowed_values` as strings (a dict item → its `label`, else `value`); `instructions` = `llm_description`.
+`app/schemas/mcp_templates.py`: `McpTemplateQuestion{field_id, name, label, description, type, options: list[str] | None, instructions, required}`; `McpTemplateSection{section_id, name, label, parent_section_id, cardinality, continued: bool, questions}`; `McpDraftChange{tier, variant, label_path: list[str], attribute, before, after}`; `McpDraftDiff{status: str, counts: dict[str, int], changes: list[McpDraftChange], changes_truncated: bool}`; `McpTemplateView{template_id, name, kind, published_version: int | None, narrow: bool | None, draft_open: bool | None, sections, draft_diff: McpDraftDiff | None, next_cursor: str | None}` (`draft_open`/`draft_diff` `None` for a non-manager). `options` = `allowed_values` as strings (a dict item → its `label`, else `value`); `instructions` = `llm_description`.
 
 `app/api/mcp/tools/templates.py`:
 
@@ -2548,7 +2707,10 @@ async def get_template(db: AsyncSession, project_id: UUID, template_id: UUID,
         tree = (await get_active_version_tree(db, project_id=project_id, template_id=template_id)).entity_types
     except NoActiveTemplateVersionError:
         tree = await live_entity_types(db, template_id=template_id)
-    status = await get_template_config_status(db, project_id=project_id, template_id=template_id)
+    is_manager = await is_project_manager(db, project_id, current_principal().user_sub)
+    draft_open = None
+    if is_manager:  # config-status/diff are manager-only over REST; same here
+        draft_open = (await get_template_config_status(db, project_id=project_id, template_id=template_id)).has_pending_changes
     try:
         raw = decode_cursor(cursor, arity=2)
     except InvalidCursorError as exc:
@@ -2556,12 +2718,12 @@ async def get_template(db: AsyncSession, project_id: UUID, template_id: UUID,
     start = (int(raw[0]), int(raw[1])) if raw else (0, 0)
     sections, nxt = _page_sections(tree, start, budget=24_000)
     diff = None
-    if raw is None:
+    if raw is None and is_manager:
         diff = _capped_diff(await get_template_config_diff(db, project_id=project_id, template_id=template_id))
     return McpTemplateView(
         template_id=template.id, name=template.name, kind=template.kind,
         published_version=summary.published_version, narrow=summary.narrow,
-        draft_open=status.has_pending_changes, sections=sections, draft_diff=diff,
+        draft_open=draft_open, sections=sections, draft_diff=diff,
         next_cursor=encode_cursor(list(nxt)) if nxt else None)
 
 
@@ -2586,7 +2748,7 @@ def _page_sections(tree, start, *, budget):
     return out, None
 ```
 
-`_question(field: RunViewField) -> McpTemplateQuestion` maps the columns named above; `_capped_diff(diff: TemplateConfigDiffRead) -> McpDraftDiff` fills `counts` per tier from the four buckets and the first 40 rows (tier order additive, cosmetic, semantic, destructive), truncating `before`/`after` strings to 200 chars. A section with zero questions is still emitted (empty `questions`).
+Imports by name (the tests patch them on this module): `get_active_version_tree`, `get_template_config_status`, `get_template_config_diff`, `NoActiveTemplateVersionError` from `app.services.template_version_read_service`; `is_project_manager` from `app.api.deps.security`; `current_principal` from `app.api.mcp.asgi_auth`. `_question(field: RunViewField) -> McpTemplateQuestion` maps the columns named above; `_capped_diff(diff: TemplateConfigDiffRead) -> McpDraftDiff` fills `counts` per tier from the four buckets and the first 40 rows (tier order additive, cosmetic, semantic, destructive), truncating `before`/`after` strings to 200 chars. A section with zero questions is still emitted (empty `questions`).
 
 `article_list_read_service.article_template_status`: templates via `template_summaries(db, project_id=project_id)`; runs `select(ExtractionRun).where(ExtractionRun.article_id == article_id, ExtractionRun.project_id == project_id)`; group by `(template_id, kind)` and pick with `select_current_runs_by_article`; no run → `reason "no_run"`. `get_article` sets `extraction_status` from it using `detail.project_id`.
 
@@ -2728,6 +2890,8 @@ Expected: all green; blind-filter suites unchanged; no baseline grows. Vulture: 
 - Shared local DB (`.claude/rules/backend.md` § Local database): `cd "$WT/backend" && uv run alembic upgrade head` before integration tests; after Verify, `uv run alembic downgrade 0076_extraction_batches` (dev's head). Never `alembic stamp`, `make db-fresh` or `make reset-db`.
 - Layering (`scripts/fitness/check_layered_arch.py`): `app/api/**` imports only `app.services.*`, `app.schemas.*`, `app.core/domain/utils/…` and other `app.api.*` modules — never `app.models.*` or `app.repositories.*`.
 - Services `flush()` only; the tool adapter owns the transaction and commits **once**. An applied write inserts its audit row in the same transaction before that commit. A refusal: `rollback()` first, then (only for audited codes) insert one `outcome='refused'` row and `commit()` in the same session, then return the error.
+- One mapping site per exception: every audited code is mapped HERE, in the tool, next to `audit.refuse`. The dispatcher's `to_tool_error` (Task 2b) maps only `McpToolError` pass-through, the not-found classes and `INTERNAL_ERROR` — it has no `ValidationError`, deadlock or other audited branch, so anything the tool does not catch is a logged `INTERNAL_ERROR` with no row. The audit insert and the final `commit()` sit INSIDE the tool's `try`, so a deadlock there is still an audited `RETRY`.
+- mypy is `strict` with no pydantic plugin: `AppError.details` is `dict[str, Any] | None` — read `(exc.details or {})["current"]`.
 - Audit per code (spec §7, complete list). Row: `INVALID_ARGUMENT`, `DRAFT_LOCK_HELD`, `NARROW_BASELINE`, `NO_PUBLISHED_VERSION`, `OP_NOT_ALLOWED_VIA_AGENT`, `TOO_MANY_OPS`, `FIELD_NOT_EDITABLE`, `STALE_VALUE`, `DUPLICATE_NAME`, `RETRY`. No row: `NOT_FOUND`, `MANAGER_REQUIRED`, `SCOPE_INSUFFICIENT`, `RATE_LIMITED`, `INTERNAL_ERROR`. An HTTP 401 never reaches a tool and never writes a row.
 - Membership/role/scope are enforced only by the Task 2b choke point (`@agent_tool(requires="write", project_arg="project_id")`): read token → `SCOPE_INSUFFICIENT`, non-member/missing project → `NOT_FOUND`, member non-manager → `MANAGER_REQUIRED`. The tool never re-checks them and never hand-rolls `project_members` SQL.
 - Everything the model needs goes in `structuredContent` (an `outputSchema` result model); models live in `app/schemas/mcp_*.py` (vulture excludes `app/schemas/`), never under `app/api/mcp/`.
@@ -2741,57 +2905,31 @@ Expected: all green; blind-filter suites unchanged; no baseline grows. Vulture: 
 - Modify: `backend/app/api/mcp/tools/__init__.py` (the Task 6a registration point) — add `project_details` to the import line
 - Modify: `backend/tests/integration/mcp/test_mcp_bola.py` (created by Task 6a) — add `update_project_details` to its per-tool parametrization
 - Create: `backend/tests/integration/mcp/test_mcp_update_project_details.py`
-- Create: `backend/tests/integration/mcp/test_mcp_audit.py` (Task 10b appends `test_audit_row_matrix`)
-- Create: `backend/tests/unit/test_mcp_audited_codes.py`
+- Create: `backend/tests/integration/mcp/test_mcp_audit.py` (Task 10b appends `test_audit_row_matrix`, which also pins `AUDITED_CODES` to the §7 table)
 
 **Interfaces:**
-- Consumes (landed by Tasks 2a/2b/3/5/6a, exact names):
+- Consumes (landed by Tasks 2a/2b/3/5a/6a, exact names):
   - `app.api.mcp.server.agent_tool(*, requires, project_arg, title, description, destructive=False, idempotent=True, meta=None, structured_output=None)`; the tool is `async def name(db: AsyncSession, …)` and uses the injected `db` (the dispatcher's one session per call; it never opens its own).
   - `app.api.mcp.asgi_auth.current_principal() -> app.schemas.mcp_auth.McpPrincipal` (`user_sub: UUID`, `token_id: UUID`, `scope`, `token_expires_at`).
   - `app.api.mcp.errors`: `McpErrorCode` (StrEnum, the 15 §7 codes), `McpToolError(code: McpErrorCode, message: str, **extras)` (the dispatcher turns it into an error result: `is_error=True`, `structured_content = {code, message, retryable, next_step, **extras}`; `retryable`/`next_step` come from `errors._SPECS` per code — never pass `next_step`).
   - `app.services.agent_action_service`: `record_applied(db, *, token_id, user_id, project_id, template_id, tool, tool_input, before, after) -> AgentAction` and `record_refused(db, *, token_id, user_id, project_id, template_id, tool, tool_input, error_code: str) -> AgentAction` (both flush only; oversized `tool_input` → truncation marker inside the service).
-  - `app.schemas.project_details.ProjectDetailsFields` (11 optional keys, `extra="forbid"`); `app.services.project_details_service.update_details(db, *, project_id, fields: ProjectDetailsFields, expected: ProjectDetailsFields) -> ProjectDetailsChange` (`.before` / `.after`: `dict[str, Any]` of JSON values for the changed keys), `StaleProjectValueError` (an `AppError`; the contested keys are `exc.details["current"]`).
-  - Test fixtures (`backend/tests/integration/mcp/conftest.py`): `mcp_client` (factory: `async with mcp_client(pat) as client:`), `pat_primary_rw`, `pat_primary_read`, `pat_reviewer_rw`, `pat_outsider_rw`, autouse `bind_mcp_session_factory`; `tests/integration/mcp/tool_calls.py` (`call_tool(mcp_client, pat, name, arguments)`).
+  - `app.schemas.project_details.ProjectDetailsFields` (11 optional keys, `extra="forbid"`); `app.services.project_details_service.update_details(db, *, project_id, fields: ProjectDetailsFields, expected: ProjectDetailsFields) -> ProjectDetailsChange` (`.before` / `.after`: `dict[str, Any]` of JSON values for the changed keys), `StaleProjectValueError` (an `AppError`; the contested keys are `(exc.details or {})["current"]`).
+  - Test fixtures (`backend/tests/integration/mcp/conftest.py`): `mcp_client` (factory: `async with mcp_client(pat) as client:`), `mcp_http_client` (httpx over the real `/mcp` route, PAT wrapper included), `pat_primary_rw`, `pat_primary_read`, `pat_reviewer_rw`, `pat_outsider_rw`, autouse `bind_mcp_session_factory` (the auth wrapper's lookup session joins `db_session` too); `tests/integration/mcp/tool_calls.py` (`call_tool(mcp_client, pat, name, arguments)`, `error_payload(result) -> dict` — the §7 error body; reuse it, never a local copy); `tests/integration/mcp/rpc.py` (`rpc(client, method, params=None, headers=None)`); `pat_service.create_token` / `revoke_token`.
   - `app/api/v1/endpoints/_integrity.py`: `is_deadlock(exc: DBAPIError) -> bool` (Postgres 40P01; api → api import is allowed).
 - Produces (Task 10b relies on these exact names):
   - `app/api/mcp/audit.py`: `AuditScope` (frozen dataclass: `tool: str`, `project_id: UUID`, `template_id: UUID | None`, `input: dict[str, Any]`); `async def refuse(db, scope: AuditScope, error: McpToolError) -> NoReturn`; `async def record_applied_write(db, scope: AuditScope, *, before: dict[str, Any], after: dict[str, Any]) -> None`.
   - `app/api/mcp/errors.py`: `AUDITED_CODES: frozenset[McpErrorCode]`.
-  - `tests/integration/mcp/test_mcp_audit.py` helpers `_err(result) -> dict` and `_audit_count(db, *, outcome, error_code=None, tool=None) -> int`.
+  - `tests/integration/mcp/test_mcp_audit.py` helper `_audit_count(db, *, outcome, error_code=None, tool=None) -> int` (error bodies come from `tool_calls.error_payload`).
 
 - [ ] **Step 0: Interface check**
 
 Run: `grep -n "def agent_tool\|def current_principal\|class McpToolError" "$WT"/backend/app/api/mcp/*.py; grep -n "^async def record_" "$WT"/backend/app/services/agent_action_service.py` → all present, and `grep -n AUDITED_CODES "$WT"/backend/app/api/mcp/errors.py` → no hit (this task adds it).
 
-- [ ] **Step 1: Failing unit test — the audited-code set equals the §7 table**
+- [ ] **Step 1: Failing integration tests for the tool**
 
-`backend/tests/unit/test_mcp_audited_codes.py`:
-
-```python
-from app.api.mcp.errors import AUDITED_CODES, McpErrorCode
-
-_AUDITED = {"INVALID_ARGUMENT", "DRAFT_LOCK_HELD", "NARROW_BASELINE", "NO_PUBLISHED_VERSION",
-            "OP_NOT_ALLOWED_VIA_AGENT", "TOO_MANY_OPS", "FIELD_NOT_EDITABLE", "STALE_VALUE",
-            "DUPLICATE_NAME", "RETRY"}
-_NOT_AUDITED = {"NOT_FOUND", "MANAGER_REQUIRED", "SCOPE_INSUFFICIENT", "RATE_LIMITED", "INTERNAL_ERROR"}
-
-
-def test_audited_codes_match_the_spec_table() -> None:
-    assert {c.value for c in AUDITED_CODES} == _AUDITED
-    # A new McpErrorCode member must be classified here, or this fails.
-    assert {c.value for c in McpErrorCode} == _AUDITED | _NOT_AUDITED
-```
-
-Run: `cd "$WT/backend" && uv run pytest tests/unit/test_mcp_audited_codes.py -v` → FAIL (`ImportError: AUDITED_CODES`).
-
-- [ ] **Step 2: Failing integration tests for the tool**
-
-`backend/tests/integration/mcp/test_mcp_update_project_details.py` — seed state through `db_session` (bound to the tool sessions), call through `mcp_client`, read results with `result.is_error` / `result.structured_content` (SDK 2.x snake_case). Put `_err` and `_audit_count` in `test_mcp_audit.py` and import them:
+`backend/tests/integration/mcp/test_mcp_update_project_details.py` — seed state through `db_session` (bound to the tool sessions), call through `mcp_client`, read results with `result.is_error` / `result.structured_content` (SDK 2.x snake_case); error bodies through `error_payload` from `tests.integration.mcp.tool_calls`. Put `_audit_count` in `test_mcp_audit.py` and import it:
 
 ```python
-def _err(result) -> dict:
-    assert result.is_error, result
-    return result.structured_content
-
 async def _audit_count(db, *, outcome: str, error_code: str | None = None, tool: str | None = None) -> int:
     sql = "SELECT count(*) FROM public.agent_actions WHERE outcome = :o"
     params = {"o": outcome}
@@ -2811,15 +2949,17 @@ Tests (one `async def` each, `@pytest.mark.asyncio`; `P = SEED.primary_project`;
 - `test_empty_fields_is_invalid`: `fields={}`, `expected={}` → `INVALID_ARGUMENT`, `field == "fields"`.
 - `test_stale_value_returns_current_and_writes_nothing`: `fields={"name": "Agent name"}`, `expected={"name": "not the current name"}` → `STALE_VALUE`, `current == {"name": <current>}`; `projects.name` unchanged; one refused row with `error_code='STALE_VALUE'`, zero `applied` rows.
 - `test_deadlock_maps_to_retry`: `monkeypatch.setattr(project_details_service, "update_details", _raise_deadlock)` where `_raise_deadlock` raises `DBAPIError("UPDATE", {}, _Pg())` and `class _Pg(Exception): sqlstate = "40P01"` → `RETRY`, `retryable is True`; one refused row.
+- `test_deadlock_at_the_audit_insert_is_audited_retry`: `monkeypatch.setattr(project_details_tool, "record_applied_write", <async raising the same 40P01 DBAPIError>)` (`from app.api.mcp.tools import project_details as project_details_tool`) → `RETRY`; `projects.description` unchanged (rolled back); one refused `RETRY` row, zero applied rows (the dispatcher never sees it).
+- `test_unexpected_error_is_internal_with_no_row`: patch `update_details` to raise `RuntimeError` → `INTERNAL_ERROR`; zero refused rows.
 - `test_update_project_details_requires_user_interaction_meta`: `async with mcp_client(pat_primary_rw) as client: tools = (await client.list_tools()).tools`; the `update_project_details` entry has `meta["anthropic/requiresUserInteraction"] is True`, `annotations.destructive_hint is True`, `annotations.idempotent_hint is True`, `annotations.read_only_hint is False`, `annotations.open_world_hint is False`, a `title`, and an `output_schema` whose `properties` are `project_id`, `before`, `after`, `note`.
 
-In `test_mcp_audit.py` also add `test_read_tool_writes_no_row`: call `list_projects` and `get_project(project_id=P)` → `SELECT count(*) FROM public.agent_actions` unchanged.
+In `test_mcp_audit.py` also add `test_read_tool_writes_no_row`: call `list_projects` and `get_project(project_id=P)` → `SELECT count(*) FROM public.agent_actions` unchanged. And `test_http_401_writes_no_row` (spec §8: a missing or expired PAT → HTTP 401, no row), over `mcp_http_client`: `before = SELECT count(*) FROM public.agent_actions`; `rpc(c, "tools/call", {"name": "update_project_details", "arguments": {"project_id": str(P), "fields": {"description": "x"}, "expected": {"description": <current>}}}, headers=h)` for `h` = no `Authorization`, an expired token (`created = await create_token(db_session, user_id=SEED.primary_profile, payload=…read_write…)` then `UPDATE public.personal_access_tokens SET created_at = now() - interval '2 days', expires_at = now() - interval '1 day' WHERE id = :id`) and a revoked one (`revoke_token(db_session, user_id=SEED.primary_profile, token_id=…)`), each with `Authorization: Bearer <secret>` → 401 each; the count equals `before` and `projects.description` is unchanged.
 
 In `test_mcp_bola.py` add `update_project_details` (arguments `{"project_id": …, "fields": {"description": "x"}, "expected": {"description": None}}`) to the parametrization: outsider → `NOT_FOUND`, reviewer → `MANAGER_REQUIRED`, read token → absent from `tools/list` and `SCOPE_INSUFFICIENT` on a direct call; each of these leaves `agent_actions` row count unchanged.
 
-Run: `cd "$WT/backend" && uv run pytest tests/integration/mcp/test_mcp_update_project_details.py tests/integration/mcp/test_mcp_audit.py tests/integration/mcp/test_mcp_bola.py -v -k "update_project_details or read_tool"` → FAIL (unknown tool `update_project_details`).
+Run: `cd "$WT/backend" && uv run pytest tests/integration/mcp/test_mcp_update_project_details.py tests/integration/mcp/test_mcp_audit.py tests/integration/mcp/test_mcp_bola.py -v -k "update_project_details or read_tool or http_401"` → FAIL (unknown tool `update_project_details`; `test_http_401_writes_no_row` may already pass — the 401 path exists since Task 2b — which is fine: it pins the §8 rule).
 
-- [ ] **Step 3: Implement `AUDITED_CODES` and `app/api/mcp/audit.py`**
+- [ ] **Step 2: Implement `AUDITED_CODES` and `app/api/mcp/audit.py`**
 
 In `errors.py`:
 
@@ -2866,9 +3006,7 @@ async def refuse(db: AsyncSession, scope: AuditScope, error: McpToolError) -> No
     raise error
 ```
 
-Run the Step 1 test → PASS.
-
-- [ ] **Step 4: Implement the result model and the tool**
+- [ ] **Step 3: Implement the result model and the tool**
 
 `backend/app/schemas/mcp_project_details.py`:
 
@@ -2881,7 +3019,7 @@ class UpdateProjectDetailsResult(BaseModel):
     note: str | None = None
 ```
 
-`backend/app/api/mcp/tools/project_details.py` — import the service **module** (`from app.services import project_details_service`) and call `project_details_service.update_details(...)` so `test_deadlock_maps_to_retry` can patch it; `StaleProjectValueError` via the same module, `ProjectDetailsFields` from `app.schemas.project_details`. Key logic (the description is a static string: when to use it, that `expected` must carry the values last read via `get_project`, that the human is asked first, that it returns before/after; next tool `get_project`):
+`backend/app/api/mcp/tools/project_details.py` — import the service **module** (`from app.services import project_details_service`) and call `project_details_service.update_details(...)` so `test_deadlock_maps_to_retry` can patch it; import `record_applied_write` / `refuse` by name from `app.api.mcp.audit` (the commit-time test patches `record_applied_write` on this module); `StaleProjectValueError` via the same module, `ProjectDetailsFields` from `app.schemas.project_details`. Key logic (the description is a static string: when to use it, that `expected` must carry the values last read via `get_project`, that the human is asked first, that it returns before/after; next tool `get_project`):
 
 ```python
 _TOOL = "update_project_details"
@@ -2899,17 +3037,17 @@ async def update_project_details(db: AsyncSession, project_id: UUID, fields: dic
         parsed_fields, parsed_expected = _parse(fields, expected)
         change = await project_details_service.update_details(
             db, project_id=project_id, fields=parsed_fields, expected=parsed_expected)
+        await record_applied_write(db, scope, before=change.before, after=change.after)
+        await db.commit()  # inside the try: a deadlock here is an audited RETRY too
     except McpToolError as error:
         await refuse(db, scope, error)
     except project_details_service.StaleProjectValueError as exc:
         await refuse(db, scope, McpToolError(McpErrorCode.STALE_VALUE,
-                     "A field changed since it was read.", current=exc.details["current"]))
+                     "A field changed since it was read.", current=(exc.details or {})["current"]))
     except DBAPIError as exc:
         if not is_deadlock(exc):
-            raise
+            raise  # INTERNAL_ERROR via the dispatcher: logged, no row
         await refuse(db, scope, McpToolError(McpErrorCode.RETRY, "A concurrent write won; nothing was changed."))
-    await record_applied_write(db, scope, before=change.before, after=change.after)
-    await db.commit()
     return UpdateProjectDetailsResult(project_id=project_id, before=change.before, after=change.after,
                                       note=_REVIEW_TYPE_NOTE if "review_type" in fields else None)
 
@@ -2940,23 +3078,23 @@ def _validated(raw: dict[str, Any], *, prefix: str) -> ProjectDetailsFields:
 
 `fields` and `expected` stay `dict[str, Any]` in the signature (a loose JSON object in the input schema): declaring `ProjectDetailsFields` there would make the SDK reject an unknown key with its generic error before `FIELD_NOT_EDITABLE` can name the whitelist. Keys of `expected` not in `fields` are ignored after the whitelist check. The decorator derives `read_only_hint=False` from `requires="write"`, `open_world_hint=False` always. Add `project_details` to the import line in `backend/app/api/mcp/tools/__init__.py`.
 
-- [ ] **Step 5: Run the tests**
+- [ ] **Step 4: Run the tests**
 
-Run: `cd "$WT/backend" && uv run pytest tests/unit/test_mcp_audited_codes.py tests/integration/mcp/test_mcp_update_project_details.py tests/integration/mcp/test_mcp_audit.py tests/integration/mcp/test_mcp_bola.py -v`
+Run: `cd "$WT/backend" && uv run pytest tests/integration/mcp/test_mcp_update_project_details.py tests/integration/mcp/test_mcp_audit.py tests/integration/mcp/test_mcp_bola.py -v`
 Expected: PASS (all, including the pre-existing BOLA rows).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git -C "$WT" add backend/app/api/mcp/audit.py backend/app/api/mcp/errors.py backend/app/api/mcp/tools/project_details.py backend/app/api/mcp/tools/__init__.py backend/app/schemas/mcp_project_details.py backend/tests/unit/test_mcp_audited_codes.py backend/tests/integration/mcp/test_mcp_update_project_details.py backend/tests/integration/mcp/test_mcp_audit.py backend/tests/integration/mcp/test_mcp_bola.py
+git -C "$WT" add backend/app/api/mcp/audit.py backend/app/api/mcp/errors.py backend/app/api/mcp/tools/project_details.py backend/app/api/mcp/tools/__init__.py backend/app/schemas/mcp_project_details.py backend/tests/integration/mcp/test_mcp_update_project_details.py backend/tests/integration/mcp/test_mcp_audit.py backend/tests/integration/mcp/test_mcp_bola.py
 git -C "$WT" commit -m "feat(mcp): add update_project_details write tool with audit rows
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 7: Verify**
+- [ ] **Step 6: Verify**
 
-Run, from `$WT/backend`: `uv run pytest tests/integration/mcp tests/unit/test_mcp_audited_codes.py -q`; `uv run ruff check . && uv run ruff format --check .`; `{ uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline` (no new entry); `uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec` — `record_applied` / `record_refused` (tolerated since Task 3) and `ProjectDetailsChange.before` / `.after` (Task 5, if reported) are cleared here; zero findings remain; never baseline one. From `$WT`: `bash scripts/fitness/run_all.sh` (layered arch, scope guards, file size among them).
+Run, from `$WT/backend`: `uv run pytest tests/integration/mcp tests/unit/test_mcp_errors.py -q`; `uv run ruff check . && uv run ruff format --check .`; `{ uv run mypy app --ignore-missing-imports || true; } | uv run python ../scripts/mypy_baseline.py --baseline .mypy_baseline` (no new entry); `uv run python ../scripts/vulture_baseline.py --baseline .vulture_baseline --exec` — `record_applied` / `record_refused` (tolerated since Task 3) and `ProjectDetailsChange.before` / `.after` (Task 5a, if reported) are cleared here; zero findings remain; never baseline one. From `$WT`: `bash scripts/fitness/run_all.sh` (layered arch, scope guards, file size among them).
 Expected: all green. No REST contract changed, so no `npm run generate:api-types`.
 
 ### Task 10a: Questionnaire-draft service — `template_field_naming`, op models, `agent_template_draft_service`
@@ -2988,7 +3126,7 @@ Expected: all green. No REST contract changed, so no `npm run generate:api-types
 - Produces (Task 10b uses exactly these):
   - `template_field_naming.derive_field_name(label: str, taken: Collection[str]) -> str`.
   - `mcp_template_draft.AddQuestionOp` (`op: Literal["add_question"]`, `section_id: UUID`, `label`, `type: FieldType`, `options: AllowedValues | None`, `instructions: str | None`), `UpdateQuestionOp` (`op: Literal["update_question"]`, `field_id: UUID`, `label`, `description`, `instructions`), `DraftOp = AddQuestionOp | UpdateQuestionOp`.
-  - `agent_template_draft_service`: `NarrowBaselineError`; `DraftOpError(op_index: int, cause: Exception)` (attrs `.op_index`, `.cause`); `AppliedDraftOp` (frozen dataclass: `op_index: int`, `op: str`, `field: TemplateFieldRead`, `before: dict[str, Any] | None`); `async def assert_isolated_baseline(db, *, template_id) -> None`; `async def apply_draft_ops(db, *, project_id, template_id, ops: Sequence[DraftOp]) -> list[AppliedDraftOp]`.
+  - `agent_template_draft_service`: `NarrowBaselineError`; `DraftOpError(op_index: int, cause: Exception)` (attrs `.op_index`, `.cause`); `AppliedDraftOp` (frozen dataclass: `op_index: int`, `op: Literal["add_question", "update_question"]` — a Literal, not `str`, because Task 10b passes it into the Literal-typed `AppliedQuestion.op` under strict mypy —, `field: TemplateFieldRead`, `before: dict[str, Any] | None`); `async def assert_isolated_baseline(db, *, template_id) -> None`; `async def apply_draft_ops(db, *, project_id, template_id, ops: Sequence[DraftOp]) -> list[AppliedDraftOp]`.
 
 - [ ] **Step 1: Failing unit tests — name derivation (port of `frontend/lib/extraction/slug.ts` `uniqueFieldKey`)**
 
@@ -3215,6 +3353,7 @@ Expected: tests, ruff, mypy ratchet, fitness green.
   3. per op, in order: unknown `op`, or a `type`/`options` key on `update_question` → `OP_NOT_ALLOWED_VIA_AGENT` (`op_index`); else op-model validation failure → `INVALID_ARGUMENT` (`op_index`, `field` from `errors()[0]["loc"]`);
   4. no active version → `NO_PUBLISHED_VERSION`; narrow active version → `NARROW_BASELINE`;
   5. `claim_draft_lock(db, project_id=…, template_id=…, user_id=<token's user>)` — held by another → `DRAFT_LOCK_HELD` with `holder_name`. **Never** call `take_over_draft_lock`. Then the ops; a `section_id`/`field_id` outside the template → `NOT_FOUND` with `op_index`, **no audit row**; `DuplicateFieldNameError` → `DUPLICATE_NAME` (retryable); Postgres deadlock 40P01 → `RETRY` (retryable).
+- One mapping site per exception: every audited code is mapped in this tool next to `audit.refuse`; the dispatcher's `to_tool_error` (Task 2b) has no branch for them (only `McpToolError` pass-through, the not-found classes, else a logged `INTERNAL_ERROR` with no row). The config diff, the audit insert and the final `commit()` sit INSIDE the `try`, so a deadlock there is still an audited `RETRY`.
 - Audit per code (complete): row for `INVALID_ARGUMENT`, `DRAFT_LOCK_HELD`, `NARROW_BASELINE`, `NO_PUBLISHED_VERSION`, `OP_NOT_ALLOWED_VIA_AGENT`, `TOO_MANY_OPS`, `FIELD_NOT_EDITABLE`, `STALE_VALUE`, `DUPLICATE_NAME`, `RETRY`; none for `NOT_FOUND`, `MANAGER_REQUIRED`, `SCOPE_INSUFFICIENT`, `RATE_LIMITED`, `INTERNAL_ERROR`. `app/api/mcp/audit.refuse` implements this: rollback of every structure write **and the lock claim**, then the refused row, then commit. Applied: one `outcome='applied'` row in the write's transaction, then one commit.
 - Access (scope, membership, manager) is the Task 2b choke point's job (`@agent_tool(requires="write", project_arg="project_id")`); the tool never re-checks it.
 - After success the lock stays with the token's user. No publish, discard or delete tool exists.
@@ -3230,7 +3369,7 @@ Expected: tests, ruff, mypy ratchet, fitness green.
 - Create: `backend/tests/integration/mcp/test_mcp_template_isolation.py`
 
 **Interfaces:**
-- Consumes: from Task 10a — `agent_template_draft_service` (`assert_isolated_baseline`, `apply_draft_ops`, `NarrowBaselineError`, `DraftOpError(.op_index, .cause)`, `AppliedDraftOp(op_index, op, field: TemplateFieldRead, before)`), `mcp_template_draft.AddQuestionOp`/`UpdateQuestionOp`; from Task 9 — `app/api/mcp/audit.py` (`AuditScope`, `refuse`, `record_applied_write`), `errors.AUDITED_CODES`, test helpers `_err`, `_audit_count` in `test_mcp_audit.py`; from Task 2a/2b — `agent_tool(*, requires, project_arg, title, description, destructive=False, idempotent=True, meta=None, structured_output=None)` (tool shape `async def name(db: AsyncSession, …)`, `db` injected), `current_principal()` (`.user_sub`), `mcp_session.session_factory` (race-test setup only), `McpErrorCode`, `NOT_FOUND_MESSAGE`, `McpToolError(code, message, **extras)`, `server._WRITE_LIMIT` / `limiter.limiter.hit` (the dispatcher's rate-limit call), `pat_service.create_token` / `resolve_principal`, fixtures `mcp_client` (factory: `async with mcp_client(pat) as client:`), `pat_primary_rw`, `pat_primary_read`, `pat_reviewer_rw`, `pat_outsider_rw` (`SeededPat(secret, principal)`, seeded inside `db_session`), `SeededPat`, `bind_mcp_session_factory`, marker `mcp_real_sessions`; existing — `template_draft_lock_service.claim_draft_lock` / `DraftLockHeldError` (`.details["holder_name"]`), `template_version_read_service.get_template_config_diff` / `NoActiveTemplateVersionError`, `project_template_active_service.owned_template` / `ProjectTemplateNotFoundError`, `app/api/v1/endpoints/_integrity.is_deadlock`, section/field errors (`SectionNotFoundError`, `EntityTypeNotFoundError`, `FieldNotFoundError`, `DuplicateFieldNameError`).
+- Consumes: from Task 10a — `agent_template_draft_service` (`assert_isolated_baseline`, `apply_draft_ops`, `NarrowBaselineError`, `DraftOpError(.op_index, .cause)`, `AppliedDraftOp(op_index, op: Literal["add_question", "update_question"], field: TemplateFieldRead, before)`), `mcp_template_draft.AddQuestionOp`/`UpdateQuestionOp`; from Task 9 — `app/api/mcp/audit.py` (`AuditScope`, `refuse`, `record_applied_write`), `errors.AUDITED_CODES`, test helper `_audit_count` in `test_mcp_audit.py`; from Task 6a — `tests/integration/mcp/tool_calls.error_payload(result) -> dict` (the §7 error body; never a local copy); from Task 2a/2b — `agent_tool(*, requires, project_arg, title, description, destructive=False, idempotent=True, meta=None, structured_output=None)` (tool shape `async def name(db: AsyncSession, …)`, `db` injected), `current_principal()` (`.user_sub`), `mcp_session.session_factory` (race-test setup only), `McpErrorCode`, `NOT_FOUND_MESSAGE`, `McpToolError(code, message, **extras)`, `server._WRITE_LIMIT` / `limiter.limiter.hit` (the dispatcher's rate-limit call), `pat_service.create_token` / `resolve_principal`, fixtures `mcp_client` (factory: `async with mcp_client(pat) as client:`), `pat_primary_rw`, `pat_primary_read`, `pat_reviewer_rw`, `pat_outsider_rw` (`SeededPat(secret, principal)`, seeded inside `db_session`), `SeededPat`, `bind_mcp_session_factory`, marker `mcp_real_sessions`; existing — `template_draft_lock_service.claim_draft_lock` / `DraftLockHeldError` (`.details["holder_name"]`), `template_version_read_service.get_template_config_diff` / `NoActiveTemplateVersionError`, `project_template_active_service.owned_template` / `ProjectTemplateNotFoundError`, `app/api/v1/endpoints/_integrity.is_deadlock`, section/field errors (`SectionNotFoundError`, `EntityTypeNotFoundError`, `FieldNotFoundError`, `DuplicateFieldNameError`).
 - Test helpers (existing): `tests.integration.helpers.template_fixtures` — `fresh_charms(db)` → `(project_id=SEED.secondary_project, template_id, schema)` (published, wide, manager `SEED.primary_profile`, article `ARTICLE_ID`), `force_narrow_baseline`, `add_field`, `draft_lock_holder`; `tests.integration.conftest` — `SEED`, `open_session`, `set_config_draft_marker`, `get_config_draft_marker`, `purge_templates`, `clean_project_clones`.
 - Produces: MCP tool `edit_template_draft(project_id: UUID, template_id: UUID, ops: list[dict[str, Any]]) -> EditTemplateDraftResult`.
 
@@ -3252,7 +3391,7 @@ Run: `grep -n "async def update_project_details\|async def refuse\|AUDITED_CODES
 - `test_no_published_version_refused`: deactivate `T`'s versions (`UPDATE extraction_template_versions SET is_active = false WHERE project_template_id = :t`) → `NO_PUBLISHED_VERSION`, `retryable is False`; no structure rows, lock not claimed, one refused row.
 - `test_narrow_baseline_refused`: seeded `SEED.primary_template` (narrow v1) in `SEED.primary_project` with one add and one update on `SEED.primary_field` → `NARROW_BASELINE`; no structure rows, lock not claimed, one refused row.
 - `test_row_guard_not_found_has_op_index_and_no_row`: op 0 valid add, op 1 `update_question(SEED.primary_field)` (another template) → `NOT_FOUND`, `op_index == 1`; op 0's field absent (rolled back); lock not claimed (rolled back); zero rows.
-- `test_deadlock_maps_to_retry`: patch `template_field_service.create_field` with a wrapper that delegates on its first call and raises `DBAPIError("INSERT", {}, _Pg())` (`class _Pg(Exception): sqlstate = "40P01"`) on the second; two adds → `RETRY`, `retryable is True`; the first add's row is gone, lock claim undone, one refused row.
+- `test_deadlock_maps_to_retry`: patch `template_field_service.create_field` with a wrapper that delegates on its first call and raises `DBAPIError("INSERT", {}, _Pg())` (`class _Pg(Exception): sqlstate = "40P01"`) on the second; two adds → `RETRY`, `retryable is True`; the first add's row is gone, lock claim undone, one refused row. Same again with `record_applied_write` patched on the tool module (`from app.api.mcp.tools import template_draft as template_draft_tool`) to raise that error → `RETRY`, zero applied rows, one refused row.
 - `test_claim_draft_lock_race` (`@pytest.mark.mcp_real_sessions`): setup/teardown through `mcp_session.session_factory()` (real connections): `fresh_charms` + commit; teardown deletes `agent_actions` rows of `SEED.secondary_project`, `clean_project_clones(db, SEED.secondary_project)`, the `ARTICLE_ID` article, commit. Session A: `claim_draft_lock(A, …, user_id=SEED.reviewer_profile)` without commit; start the tool call as `asyncio.create_task(...)`; `await asyncio.sleep(0.3)`; assert the task is not done (blocked on the row lock); `await A.commit()`; the tool result is `DRAFT_LOCK_HELD`; holder is the reviewer; no field added.
 - `test_duplicate_name_race_maps_to_retryable` (`@pytest.mark.mcp_real_sessions`, same setup/teardown): `monkeypatch.setattr(template_field_service, "_name_taken", _never_taken)` (an `async def` returning `False`, so only the 0050 index can refuse) and wrap `template_field_naming.derive_field_name` so that, after computing the name, it inserts a field with that name into `S` in a separate session and commits; one `add_question(S, "Race")` → `DUPLICATE_NAME`, `retryable is True`; only the concurrent row carries that name; lock claim undone; one refused row.
 
@@ -3270,7 +3409,7 @@ Run: `cd "$WT/backend" && uv run pytest tests/integration/mcp/test_mcp_edit_temp
 
 - [ ] **Step 3: Failing tests — audit matrix and BOLA rows** (`test_mcp_audit.py`)
 
-`test_audit_row_matrix`, `@pytest.mark.parametrize("code", list(McpErrorCode))`, looks the driver up in a `_DRIVERS: dict[McpErrorCode, Callable]` (a missing entry fails the test, so a new enum member needs a case), asserts `_err(result)["code"] == code.value`, then `_audit_count(db_session, outcome="refused", error_code=code.value) == (1 if code in AUDITED_CODES else 0)`. Drivers: `NOT_FOUND` random template id; `MANAGER_REQUIRED` reviewer PAT on `update_project_details`; `SCOPE_INSUFFICIENT` read PAT on `update_project_details`; `INVALID_ARGUMENT` 101-char label; `DRAFT_LOCK_HELD` reviewer holds the lock; `NARROW_BASELINE` seeded primary template; `NO_PUBLISHED_VERSION` versions deactivated; `OP_NOT_ALLOWED_VIA_AGENT` `{"op": "delete_question"}`; `TOO_MANY_OPS` 26 ops; `FIELD_NOT_EDITABLE` `update_project_details` with `{"settings": {}}`; `STALE_VALUE` wrong `expected`; `DUPLICATE_NAME` patch `template_field_service.create_field` to raise `DuplicateFieldNameError`; `RETRY` patch it to raise the 40P01 `DBAPIError`; `RATE_LIMITED` make the dispatcher's `limiter.limiter.hit(_WRITE_LIMIT, "pat", token_id)` refuse (`monkeypatch.setattr(limiter.limiter, "hit", lambda *a, **k: False)`, `from app.utils.rate_limiter import limiter`; `get_window_stats` stays real); `INTERNAL_ERROR` patch `agent_template_draft_service.apply_draft_ops` to raise `RuntimeError`.
+`test_audit_row_matrix`, `@pytest.mark.parametrize("code", list(McpErrorCode))`, looks the driver up in a `_DRIVERS: dict[McpErrorCode, Callable]` (a missing entry fails the test, so a new enum member needs a case), asserts `error_payload(result)["code"] == code.value`, then `_audit_count(db_session, outcome="refused", error_code=code.value) == (1 if code.value in _AUDITED else 0)`, where `_AUDITED` is a literal set in the test file copied from the spec §7 table — `{"INVALID_ARGUMENT", "DRAFT_LOCK_HELD", "NARROW_BASELINE", "NO_PUBLISHED_VERSION", "OP_NOT_ALLOWED_VIA_AGENT", "TOO_MANY_OPS", "FIELD_NOT_EDITABLE", "STALE_VALUE", "DUPLICATE_NAME", "RETRY"}` — never read from `AUDITED_CODES` (the matrix is the check on it); one extra assertion `{c.value for c in AUDITED_CODES} == _AUDITED` pins the constant. Drivers: `NOT_FOUND` random template id; `MANAGER_REQUIRED` reviewer PAT on `update_project_details`; `SCOPE_INSUFFICIENT` read PAT on `update_project_details`; `INVALID_ARGUMENT` 101-char label; `DRAFT_LOCK_HELD` reviewer holds the lock; `NARROW_BASELINE` seeded primary template; `NO_PUBLISHED_VERSION` versions deactivated; `OP_NOT_ALLOWED_VIA_AGENT` `{"op": "delete_question"}`; `TOO_MANY_OPS` 26 ops; `FIELD_NOT_EDITABLE` `update_project_details` with `{"settings": {}}`; `STALE_VALUE` wrong `expected`; `DUPLICATE_NAME` patch `template_field_service.create_field` to raise `DuplicateFieldNameError`; `RETRY` patch it to raise the 40P01 `DBAPIError`; `RATE_LIMITED` make the dispatcher's `limiter.limiter.hit(_WRITE_LIMIT, "pat", token_id)` refuse (`monkeypatch.setattr(limiter.limiter, "hit", lambda *a, **k: False)`, `from app.utils.rate_limiter import limiter`; `get_window_stats` stays real); `INTERNAL_ERROR` patch `agent_template_draft_service.apply_draft_ops` to raise `RuntimeError`.
 `test_applied_draft_row_matches_draft_marker`: `set_config_draft_marker(db, T, None)`, one add → the applied row's `created_at == get_config_draft_marker(db, T)` (same transaction `now()`).
 `test_mcp_bola.py`: add `edit_template_draft` rows — outsider → `NOT_FOUND`, reviewer → `MANAGER_REQUIRED`, read PAT → absent from `tools/list` and `SCOPE_INSUFFICIENT`; a section id of another template → `NOT_FOUND`; zero rows for all.
 
@@ -3280,7 +3419,7 @@ Run: `cd "$WT/backend" && uv run pytest tests/integration/mcp/test_mcp_audit.py 
 
 Append to `mcp_template_draft.py`: `AppliedQuestion(op_index: int, op: Literal["add_question","update_question"], field_id: UUID, section_id: UUID, name: str, label: str)`; `EditTemplateDraftResult(status: Literal["draft_saved_unpublished"], visible_to_reviewers_and_ai: Literal[False], applied: list[AppliedQuestion], diff: TemplateConfigDiffRead, editor_path: str, next_step: str)`.
 
-`backend/app/api/mcp/tools/template_draft.py` — import the service **module** (`from app.services import agent_template_draft_service`) so tests can patch `apply_draft_ops`. Static description: adds or rewords questions in the unpublished draft only; never report a question as live; after `RETRY`/`DUPLICATE_NAME` call `get_template` before resending an `add_question` (it is not idempotent); a manager must click Publish.
+`backend/app/api/mcp/tools/template_draft.py` — import the service **module** (`from app.services import agent_template_draft_service`) so tests can patch `apply_draft_ops`; import `record_applied_write` / `refuse` by name from `app.api.mcp.audit` (a test patches `record_applied_write` on this module). Static description: adds or rewords questions in the unpublished draft only; never report a question as live; after `RETRY`/`DUPLICATE_NAME` call `get_template` before resending an `add_question` (it is not idempotent); a manager must click Publish.
 
 ```python
 _TOOL = "edit_template_draft"
@@ -3307,6 +3446,10 @@ async def edit_template_draft(db: AsyncSession, project_id: UUID, template_id: U
                                user_id=current_principal().user_sub)                # 5
         applied = await agent_template_draft_service.apply_draft_ops(
             db, project_id=project_id, template_id=template_id, ops=parsed)
+        diff = await get_template_config_diff(db, project_id=project_id, template_id=template_id)
+        await record_applied_write(db, scope, before={"ops": [a.before for a in applied]},
+                                   after={"ops": [_applied_json(a) for a in applied]})
+        await db.commit()  # inside the try: a commit-time deadlock is an audited RETRY
     except McpToolError as error:
         await refuse(db, scope, error)
     except DraftLockHeldError as exc:
@@ -3317,14 +3460,10 @@ async def edit_template_draft(db: AsyncSession, project_id: UUID, template_id: U
         if error is None:
             raise exc.cause from exc  # unmapped: INTERNAL_ERROR via the choke point, no row
         await refuse(db, scope, error)
-    except DBAPIError as exc:  # the lock claim's UPDATE can lose a deadlock too
+    except DBAPIError as exc:  # the lock claim's UPDATE or the commit can lose a deadlock too
         if not is_deadlock(exc):
             raise
         await refuse(db, scope, McpToolError(McpErrorCode.RETRY, "A concurrent edit won; nothing was changed."))
-    diff = await get_template_config_diff(db, project_id=project_id, template_id=template_id)
-    await record_applied_write(db, scope, before={"ops": [a.before for a in applied]},
-                               after={"ops": [_applied_json(a) for a in applied]})
-    await db.commit()
     return EditTemplateDraftResult(status="draft_saved_unpublished", visible_to_reviewers_and_ai=False,
         applied=[AppliedQuestion(op_index=a.op_index, op=a.op, field_id=a.field.id, section_id=a.field.entity_type_id,
                                  name=a.field.name, label=a.field.label) for a in applied],

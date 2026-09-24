@@ -581,7 +581,7 @@ note.
 | `get_article_pdf(article_id, file_id?)` | `{pdf: {url, expires_at, filename, size} \| null, reason: "no_pdf" \| null, next_step: string \| null}` in `structuredContent`, plus a `resource_link` when `pdf` is set | **new** `article_read_service.resolve_article_file` (wraps `owned_article_file` / `ArticleFileRepository.get_latest_pdf`) + Supabase Storage signed URL (10 min) from the §3 storage factory |
 | `search_project_text(project_id, query, article_id?, cursor?)` | hits: `article_id`, title, `article_file_id`, page, `block_id`, block type, snippet | **new** `article_text_search_service` (FTS, §5.3) |
 | `get_extractions(project_id, template_id, article_id?, response_format?, cursor?)` | see below | **new** `extraction_agent_read_service` |
-| `get_template(project_id, template_id)` | sections → questions (type, options, instructions), `draft_open`, `narrow`, draft diff vs published | `template_version_read_service.get_active_version_tree` / **new** public `extraction_snapshot.live_entity_types` (after `owned_template`) + `template_version_read_service.get_template_config_diff` |
+| `get_template(project_id, template_id)` | sections → questions (type, options, instructions), `narrow`; `draft_open` and the draft diff vs published **for managers only** (`null` for other roles: the REST config-status/diff endpoints are manager-gated, `project_templates.py:557-605`; the tool checks the non-raising `is_project_manager`) | `template_version_read_service.get_active_version_tree` / **new** public `extraction_snapshot.live_entity_types` (after `owned_template`) + `template_version_read_service.get_template_config_diff` |
 
 **New read modules.** What exists today does not answer these reads
 (§2): `ProjectRepository.get_by_user` has no role, counts or templates;
@@ -590,11 +590,13 @@ note.
 tests:
 
 - `app/services/project_read_service.py`: `list_projects_for_user`
-  (join `project_members` for role; membership through the SQL helper
-  rule of `.claude/rules/backend.md`, no hand-rolled
-  `FROM project_members` predicate — the role column is read on the
-  already-scoped join) and `get_project_overview` (article counts,
-  templates with `snapshot_is_narrow` of the active version).
+  (the caller's own membership rows through the membership repository,
+  `ProjectMemberRepository.list_for_user(user_id)`: ONE predicate,
+  `user_id` = the verified principal, so there is no client id to bind
+  and no second `is_project_member` check) and `get_project_overview`
+  (role from the existing `ProjectMemberRepository.get_member` — the
+  choke point already proved membership; typed `details`; article
+  counts; templates with `snapshot_is_narrow` of the active version).
 - `app/services/article_list_read_service.py`: `list_project_articles`
   (keyset on `(title, id)`, `query` = `ILIKE` on title/authors capped at
   200 chars, `has_pdf` / `has_text` filters as `EXISTS` subqueries on
@@ -994,7 +996,13 @@ service while the UI kept a second, unchecked writer to the same columns.
     `details.current`. It returns, beside today's `project`, `loading`,
     `hasUnsavedChanges`, `updateProject`, `saveProject`, `loadProject`
     (`useProjectSettings.ts:75-82`): `staleFields` (contested keys, `[]`
-    when none), `loadLatest()` and `keepMine()`.
+    when none), `loadLatest()` and `keepMine()`. After a successful save
+    it invalidates the two cached reads that show the saved columns:
+    `projectKeys.aiContext(projectId)` (PICOT labels and prompt preview
+    vary with `review_type`, same page) and `projectsListKey(userId)`
+    (name/description/review title in the hub, sidebar switcher and
+    breadcrumb). A refused save invalidates nothing. JSONB values are
+    narrowed to the contract by a mapper, never cast.
   - `frontend/components/project/ProjectSettings.tsx` (the page that
     calls the hook, `:86`) renders the stale banner above the sections
     when `staleFields` is non-empty, with "Load latest" → `loadLatest()`
@@ -1019,7 +1027,7 @@ service while the UI kept a second, unchecked writer to the same columns.
   | State | What the user sees |
   |---|---|
   | saving | save button pending, form read-only (existing `loading`) |
-  | saved | existing success toast; form reloads from the server |
+  | saved | existing success toast; form reloads from the server; the AI-context and project-list caches are invalidated, so the PICOT labels/preview and the hub, switcher and breadcrumb show the new values |
   | stale (409) | banner above the form: "These fields changed since you opened the page (possibly by an AI agent): <field labels>." Buttons: "Load latest" (reload, drops local edits to those fields) and "Keep mine" (re-sends with the server's values as `expected`). Unsaved edits stay in the form. |
   | forbidden (403) | existing save-error toast; edits kept |
   | other error | existing save-error toast; edits kept |
@@ -1047,7 +1055,10 @@ backend-only pattern.
 | `outcome` | text, `CHECK (outcome IN ('applied','refused'))` |
 | `error_code` | text null |
 
-- Index `(template_id, created_at) WHERE outcome = 'applied'`.
+- Index `(template_id, created_at) WHERE outcome = 'applied'`, plus
+  plain indexes on the FK columns `project_id`, `token_id` and `user_id`
+  (a project, token or profile delete cascades or SET NULLs into this
+  ever-growing table; without them each delete scans it).
 - **Why `created_at` is `DEFAULT now()`.** `now()` is the transaction's
   start time. The 0048 trigger stamps `config_draft_since =
   COALESCE(config_draft_since, now())` (`0048_config_draft_marker.py:92-99`)
@@ -1188,10 +1199,16 @@ for cross-cutting codes):
 | `DuplicateFieldNameError` (race backstop only, §5.2) | `DUPLICATE_NAME` | yes | yes | "call `get_template`, then resend; the server re-derives the name" |
 | deadlock / serialization failure (the 409 mapping in `template_structure.py`) | `RETRY` | yes | yes | "call `get_template` to check state before resending" |
 | rate limit | `RATE_LIMITED` | yes | no — log span only | retry-after seconds |
-| anything else | `INTERNAL_ERROR` | no | no — the session state is unknown, and a failing audit insert would mask the original error; Logfire records the exception | logged to Logfire, never swallowed |
+| anything else, including a `ValidationError` the adapter did not raise itself (a server bug, never blamed on the caller) | `INTERNAL_ERROR` | no | no — the session state is unknown, and a failing audit insert would mask the original error; Logfire records the exception | logged to Logfire, never swallowed |
 
 A missing, expired or revoked PAT never reaches a tool: it is an HTTP 401
 from the ASGI wrapper (§4.3), with no code and no audit row.
+
+**One mapping site per exception.** Each audited code is mapped once,
+in the write tool beside its audit row; the tool's audit insert and
+commit sit inside that mapping, so a commit-time deadlock is still an
+audited `RETRY`. The choke point's generic mapper handles only the
+not-found classes (`NOT_FOUND`) and everything else (`INTERNAL_ERROR`).
 
 **`INVALID_ARGUMENT` placement.** Tool input schemas declare `fields`,
 `expected` and each op as loose JSON objects, and the adapter validates
@@ -1242,8 +1259,11 @@ content, two legs of the "lethal trifecta". Containment:
 
 Backend integration (pytest, local Supabase), test-first. Tools and the
 ASGI wrapper use the injectable session factory bound to `db_session`.
-Each tool coroutine also gets a direct unit test, because handler lines
-driven over ASGITransport do not register diff coverage.
+Handler lines driven only over ASGITransport do not register diff
+coverage, so every REST endpoint and the `/mcp` auth wrapper also get a
+direct-call unit test (`fn.__wrapped__` under `@limiter.limit`). Tool
+coroutines need none: tool-logic tests use the SDK in-memory `Client`,
+which runs them in-process.
 
 **Fixtures** (`backend/tests/integration/mcp/conftest.py`):
 - `mcp_http_client` — function-scoped: fresh `create_app()`, enters
