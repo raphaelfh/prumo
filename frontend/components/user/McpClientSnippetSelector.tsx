@@ -11,8 +11,11 @@ import {CopyBlock} from '@/components/user/CopyBlock';
 import {getApiBaseUrl} from '@/integrations/api/client';
 import {buildClientSnippet, CLIENT_IDS, type ClientId} from '@/lib/mcp/clientSnippets';
 import {t} from '@/lib/copy';
+import type {personalAccessTokens} from '@/lib/copy/personalAccessTokens';
 
-const INSTRUCTION_KEY: Record<ClientId, string> = {
+type CopyKey = keyof typeof personalAccessTokens;
+
+const INSTRUCTION_KEY: Record<ClientId, CopyKey> = {
   'claude-code': 'instructionClaudeCode',
   cursor: 'instructionCursor',
   vscode: 'instructionVsCode',
@@ -21,7 +24,7 @@ const INSTRUCTION_KEY: Record<ClientId, string> = {
   windsurf: 'instructionWindsurf',
 };
 
-const CHIP_KEY: Record<ClientId, string> = {
+const CHIP_KEY: Record<ClientId, CopyKey> = {
   'claude-code': 'chipClaudeCode',
   cursor: 'chipCursor',
   vscode: 'chipVsCode',
