@@ -178,9 +178,10 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                 {staleFields.length > 0 && (
                     <Alert
                         data-testid="project-settings-stale-banner"
-                        className="mb-2 flex flex-wrap items-center gap-2 text-[13px]"
+                        className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2 text-[13px]"
                     >
-                        <p className="min-w-0 flex-1">
+                        {/* basis-56: on a narrow column the buttons wrap below instead of crushing the text. */}
+                        <p className="min-w-0 flex-1 basis-56">
                             {t('project', 'staleBannerMessage')}{' '}
                             <strong>{staleFields.map((key) => STALE_FIELD_LABELS[key] ?? key).join(', ')}</strong>
                         </p>
