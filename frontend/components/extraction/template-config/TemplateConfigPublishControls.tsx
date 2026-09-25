@@ -119,6 +119,28 @@ export function TemplateConfigPublishControls({
   // the chip in those states.
   const agentEdits =
     hasPendingChanges && configStatus?.has_agent_edits === true;
+  const agentEditsText =
+    configStatus?.agent_edit_token_name != null
+      ? t("templateConfig", "draftAgentEditsBy").replace(
+          "{{token}}",
+          configStatus.agent_edit_token_name,
+        )
+      : t("templateConfig", "draftAgentEdits");
+  const heldByText = t("templateConfig", "draftHeldBy").replace(
+    "{{who}}",
+    configStatus?.draft_holder_name ?? t("templateConfig", "historyUnknownAuthor"),
+  );
+  // Design review 11 P0: at <640px this cluster is the bar's own
+  // horizontal-scroll track (TemplateConfigEditor.tsx:303-315), and it
+  // has no scroll affordance — an annotation line that never folds pushes
+  // Discard/Publish clean off-canvas with no visual cue that they still
+  // exist. Same idiom as the section-count span (TemplateConfigEditor.tsx:320),
+  // the first thing to fold when space runs out; the text stays reachable
+  // below the fold threshold via the always-visible trigger's own tooltip
+  // (the draft chip below, the Take-over button further down), never
+  // dropped with no alternative.
+  const annotationLineClassName =
+    "hidden whitespace-nowrap text-[13px] text-muted-foreground @[52rem]/configbar:inline";
 
   let chip = null;
   if (hasPendingChanges) {
@@ -146,7 +168,11 @@ export function TemplateConfigPublishControls({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {t("templateConfig", "diffTriggerTooltip")}
+          <div>{t("templateConfig", "diffTriggerTooltip")}</div>
+          {/* Design review 11 P0: the always-visible chip's tooltip is
+              where the agent-edit line stays reachable once the bar folds
+              it away below @[52rem]/configbar. */}
+          {agentEdits && <div>{agentEditsText}</div>}
         </TooltipContent>
       </Tooltip>
     );
@@ -182,24 +208,11 @@ export function TemplateConfigPublishControls({
     <>
       {chip}
       {agentEdits && (
-        <span className="text-xs text-muted-foreground">
-          {configStatus?.agent_edit_token_name != null
-            ? t("templateConfig", "draftAgentEditsBy").replace(
-                "{{token}}",
-                configStatus.agent_edit_token_name,
-              )
-            : t("templateConfig", "draftAgentEdits")}
-        </span>
+        <span className={annotationLineClassName}>{agentEditsText}</span>
       )}
       {heldByOther && (
         <>
-          <span className="text-xs text-muted-foreground">
-            {t("templateConfig", "draftHeldBy").replace(
-              "{{who}}",
-              configStatus?.draft_holder_name ??
-                t("templateConfig", "historyUnknownAuthor"),
-            )}
-          </span>
+          <span className={annotationLineClassName}>{heldByText}</span>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -213,7 +226,11 @@ export function TemplateConfigPublishControls({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {t("templateConfig", "draftTakeOverTooltip")}
+              {/* Design review 11 P0: this button never folds, so it is
+                  where "who" stays reachable once the annotation line
+                  above folds away below @[52rem]/configbar. */}
+              <div>{heldByText}</div>
+              <div>{t("templateConfig", "draftTakeOverTooltip")}</div>
             </TooltipContent>
           </Tooltip>
         </>
