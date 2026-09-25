@@ -1472,8 +1472,8 @@ After UI publish, the change appears. On a narrow template, both ops →
 - `test_add_question_mapping`: `section_id`/`options`/`instructions` land
   in `entity_type_id`/`allowed_values`/`llm_description`; `sort_order` is
   the section's max + 1.
-- `test_derived_name_collision_suffixes`: two `add_question` with the same
-  label (one existing, one in the batch) → names `x`, `x_2`, `x_3`;
+- `test_derived_name_collision_suffixes`: an existing `age` field, then two
+  `add_question` in the same batch labeled `Age` → names `age_2`, `age_3`;
   unit tests of `template_field_naming` mirror `slug.ts` cases (accents,
   digit-leading, 1-char, > 46 chars).
 - `test_duplicate_name_race_maps_to_retryable`
