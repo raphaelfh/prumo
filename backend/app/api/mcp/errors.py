@@ -86,6 +86,24 @@ _SPECS: dict[McpErrorCode, _CodeSpec] = {  # one entry per code; next_step text 
 }
 
 
+AUDITED_CODES: frozenset[McpErrorCode] = frozenset(
+    {
+        McpErrorCode.INVALID_ARGUMENT,
+        McpErrorCode.DRAFT_LOCK_HELD,
+        McpErrorCode.NARROW_BASELINE,
+        McpErrorCode.NO_PUBLISHED_VERSION,
+        McpErrorCode.OP_NOT_ALLOWED_VIA_AGENT,
+        McpErrorCode.TOO_MANY_OPS,
+        McpErrorCode.FIELD_NOT_EDITABLE,
+        McpErrorCode.STALE_VALUE,
+        McpErrorCode.DUPLICATE_NAME,
+        McpErrorCode.RETRY,
+    }
+)
+"""Codes whose refusal writes one ``agent_actions`` row (spec §6.1/§7). The rest are
+access refusals, rate limits or unknown session state: a log span only."""
+
+
 class McpToolError(Exception):
     """A tool-facing error: code + message + per-code extras (spec §7)."""
 

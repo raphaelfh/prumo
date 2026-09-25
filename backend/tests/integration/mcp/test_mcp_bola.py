@@ -112,6 +112,39 @@ BOLA_CASES = [
         "NOT_FOUND",
         id="get_extractions-random-article-uuid",
     ),
+    pytest.param(
+        "pat_outsider_rw",
+        "update_project_details",
+        {
+            "project_id": str(SEED.primary_project),
+            "fields": {"description": "x"},
+            "expected": {"description": None},
+        },
+        "NOT_FOUND",
+        id="update_project_details-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_reviewer_rw",
+        "update_project_details",
+        {
+            "project_id": str(SEED.primary_project),
+            "fields": {"description": "x"},
+            "expected": {"description": None},
+        },
+        "MANAGER_REQUIRED",
+        id="update_project_details-reviewer-not-manager",
+    ),
+    pytest.param(
+        "pat_primary_read",
+        "update_project_details",
+        {
+            "project_id": str(SEED.primary_project),
+            "fields": {"description": "x"},
+            "expected": {"description": None},
+        },
+        "SCOPE_INSUFFICIENT",
+        id="update_project_details-read-token",
+    ),
 ]
 
 
@@ -120,6 +153,8 @@ async def test_bola_returns_expected_code(
     mcp_client,
     pat_outsider_rw,
     pat_primary_rw,
+    pat_reviewer_rw,
+    pat_primary_read,
     pat_fixture: str,
     tool: str,
     arguments: dict,
@@ -130,9 +165,46 @@ async def test_bola_returns_expected_code(
     # cannot be called from a running event loop" in this repo's pytest-asyncio
     # setup. The PATs the table's rows name are requested as ordinary fixture
     # args instead, and selected here by name.
-    pats = {"pat_outsider_rw": pat_outsider_rw, "pat_primary_rw": pat_primary_rw}
+    pats = {
+        "pat_outsider_rw": pat_outsider_rw,
+        "pat_primary_rw": pat_primary_rw,
+        "pat_reviewer_rw": pat_reviewer_rw,
+        "pat_primary_read": pat_primary_read,
+    }
     result = await call_tool(mcp_client, pats[pat_fixture], tool, arguments)
     assert error_payload(result)["code"] == expected_code
+
+
+async def test_update_project_details_absent_from_tools_list_for_read_token(
+    mcp_client, pat_primary_read
+) -> None:
+    async with mcp_client(pat_primary_read) as client:
+        names = {t.name for t in (await client.list_tools()).tools}
+    assert "update_project_details" not in names
+
+
+async def test_update_project_details_bola_writes_no_row(
+    mcp_client,
+    pat_outsider_rw,
+    pat_reviewer_rw,
+    pat_primary_read,
+    db_session: AsyncSession,
+) -> None:
+    arguments = {
+        "project_id": str(SEED.primary_project),
+        "fields": {"description": "x"},
+        "expected": {"description": None},
+    }
+    before = (
+        await db_session.execute(text("SELECT count(*) FROM public.agent_actions"))
+    ).scalar_one()
+    for pat in (pat_outsider_rw, pat_reviewer_rw, pat_primary_read):
+        result = await call_tool(mcp_client, pat, "update_project_details", arguments)
+        assert result.is_error
+    after = (
+        await db_session.execute(text("SELECT count(*) FROM public.agent_actions"))
+    ).scalar_one()
+    assert after == before
 
 
 async def test_get_project_not_found_after_membership_removed(

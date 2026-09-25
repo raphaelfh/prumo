@@ -6,6 +6,7 @@ from app.api.mcp.tools import (  # noqa: F401
     article_text,
     articles,
     extractions,
+    project_details,
     projects,
     search,
     templates,
