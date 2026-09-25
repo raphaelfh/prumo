@@ -112,11 +112,10 @@ async def test_success_returns_unpublished_draft(
         await db_session.execute(
             text(
                 "SELECT before, after FROM public.agent_actions "
-                "WHERE outcome = 'applied' AND tool = 'edit_template_draft' "
-                "ORDER BY created_at DESC LIMIT 1"
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
             )
         )
-    ).one()
+    ).one()  # exactly one applied row
     assert len(row.after["ops"]) == 2
     assert row.before["ops"] == [None, {"label": old_label}]
 
@@ -704,8 +703,10 @@ async def test_duplicate_name_race_maps_to_retryable(
     ``extraction_fields`` write, and ``claim_draft_lock`` + ``apply_draft_ops``
     share one open transaction that holds that same row locked for the whole
     call — so a second writer to the SAME template can only block until this
-    call ends, never land inside it. A literal mid-flight second connection
-    reproduces that lock wait exactly (verified: it hangs indefinitely).
+    call ends, never land inside it. In production that second writer just
+    waits for this call's commit. The indefinite hang seen while prototyping
+    a literal mid-flight writer was the test harness: a ``thread.join()``
+    blocked the event loop that had to commit, not the server.
     Sequencing the commit first, and forcing ``derive_field_name`` to ignore
     the (now correctly populated) ``taken`` set, reproduces the same
     observable contract — a name that both app-level guards miss, caught only
@@ -817,3 +818,17 @@ async def test_nul_in_an_op_string_is_invalid_argument(
     assert await _label_set(db_session, template_id) == before
     assert await draft_lock_holder(db_session, template_id) is None
     assert await _audit_count(db_session, outcome="refused") == 1
+
+
+async def test_edit_template_draft_hints_are_pinned(mcp_client, pat_primary_rw) -> None:
+    """F17 (final review): a repeated call adds the question twice, so the
+    tool is destructive, NOT idempotent, and closed-world."""
+    async with mcp_client(pat_primary_rw) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    a = tools["edit_template_draft"].annotations
+    assert (a.read_only_hint, a.destructive_hint, a.idempotent_hint, a.open_world_hint) == (
+        False,
+        True,
+        False,
+        False,
+    )

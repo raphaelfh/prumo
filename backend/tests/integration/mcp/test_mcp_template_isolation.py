@@ -35,6 +35,12 @@ async def test_draft_ops_stay_invisible_until_publish(
     field = section["fields"][0]
     field_id = field["id"]
     old_label = field["label"]
+    old_description = (
+        await db_session.execute(
+            text("SELECT llm_description FROM public.extraction_fields WHERE id = :id"),
+            {"id": field_id},
+        )
+    ).scalar_one()
 
     active_version_id = (
         await db_session.execute(
@@ -149,7 +155,7 @@ async def test_draft_ops_stay_invisible_until_publish(
     assert new_field_id not in sent_ids
     sent_field = next(f for f in kwargs["fields_override"] if str(f.id) == field_id)
     assert sent_field.label == old_label
-    assert sent_field.llm_description != "REWORDED"
+    assert sent_field.llm_description == old_description
 
     # 5. the field's `name` never changes on a reword.
     row_name = (

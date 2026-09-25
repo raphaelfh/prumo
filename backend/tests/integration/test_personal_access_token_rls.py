@@ -19,15 +19,9 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.conftest import SEED
+from tests.integration.helpers.pat_rows import insert_pat_row
 
 _TABLE = "public.personal_access_tokens"
-
-_INSERT_TOKEN = (
-    "INSERT INTO public.personal_access_tokens "
-    "(id, user_id, name, token_prefix, token_hash, scope, expires_at) "
-    "VALUES (gen_random_uuid(), :uid, 'rls', 'prumo_pat_abcdef', md5(random()::text), "
-    "'read', now() + interval '1 day')"
-)
 
 
 class Outcome(NamedTuple):
@@ -111,10 +105,7 @@ async def test_select_denied_by_missing_grant(db_session: AsyncSession) -> None:
 async def test_policy_floor_denies_select_even_with_grant(db_session: AsyncSession) -> None:
     """If the grant ever comes back (one dashboard click), ``deny_all``
     must still return zero rows — proven against a row that exists."""
-    await db_session.execute(
-        text(_INSERT_TOKEN),
-        {"uid": str(SEED.primary_profile)},
-    )
+    await insert_pat_row(db_session, name="rls")
     owner_count = (await db_session.execute(text(f"SELECT count(*) FROM {_TABLE}"))).scalar_one()
     assert owner_count >= 1, "fixture row must be visible to the table owner"
 

@@ -155,9 +155,18 @@ async def _build_drivers(
     """One driver per :class:`McpErrorCode`; a missing entry fails
     ``test_audit_row_matrix`` outright, so a new enum member needs a case here."""
 
+    # NOT_FOUND and RATE_LIMITED are driven through the WRITE tool (write
+    # bucket): an unaudited code must write no row even where rows are written.
     async def not_found() -> CallToolResult:
         return await call_tool(
-            mcp_client, pat_primary_rw, "get_project", {"project_id": str(uuid4())}
+            mcp_client,
+            pat_primary_rw,
+            "edit_template_draft",
+            {
+                "project_id": str(SEED.primary_project),
+                "template_id": str(uuid4()),
+                "ops": [{"op": "add_question", "section_id": str(uuid4()), "label": "Q"}],
+            },
         )
 
     async def manager_required() -> CallToolResult:
@@ -365,12 +374,20 @@ async def _build_drivers(
         )
 
     async def rate_limited() -> CallToolResult:
+        project_id, template_id, schema = await fresh_charms(db_session)
+        section_id = _section_id(schema)
         monkeypatch.setattr(limiter.limiter, "hit", lambda *_a, **_k: False)
         return await call_tool(
             mcp_client,
             pat_primary_rw,
-            "get_project",
-            {"project_id": str(SEED.primary_project)},
+            "edit_template_draft",
+            {
+                "project_id": str(project_id),
+                "template_id": str(template_id),
+                "ops": [
+                    {"op": "add_question", "section_id": section_id, "label": "Q", "type": "text"}
+                ],
+            },
         )
 
     async def internal_error() -> CallToolResult:
@@ -459,10 +476,9 @@ async def test_applied_draft_row_matches_draft_marker(
         await db_session.execute(
             text(
                 "SELECT created_at FROM public.agent_actions "
-                "WHERE outcome = 'applied' AND tool = 'edit_template_draft' "
-                "ORDER BY created_at DESC LIMIT 1"
+                "WHERE outcome = 'applied' AND tool = 'edit_template_draft'"
             )
         )
-    ).scalar_one()
+    ).scalar_one()  # exactly one applied row
     marker = await get_config_draft_marker(db_session, template_id)
     assert applied_created_at == marker
