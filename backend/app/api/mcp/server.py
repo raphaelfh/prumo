@@ -43,10 +43,10 @@ from app.api.mcp.errors import (
     error_result,
     to_tool_error,
 )
-from app.api.mcp.result_json import compact_json
 from app.core.config import API_VERSION, settings
 from app.core.logging import get_logger
 from app.services.article_read_service import get_article_project_id
+from app.utils.compact_json import compact_json
 from app.utils.rate_limiter import limiter
 
 logger = get_logger(__name__)

@@ -40,7 +40,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps.security import is_project_manager
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.errors import McpErrorCode, McpToolError
-from app.api.mcp.result_json import compact_json
 from app.api.mcp.server import agent_tool
 from app.llm.claim_value import normalize_options
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
@@ -60,6 +59,7 @@ from app.services.template_version_read_service import (
     get_active_version_tree,
     get_template_config_diff,
 )
+from app.utils.compact_json import compact_json
 from app.utils.opaque_cursor import InvalidCursorError, decode_cursor, encode_cursor
 
 _RESULT_CAP = 32_000

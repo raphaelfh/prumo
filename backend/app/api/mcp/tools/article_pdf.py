@@ -18,10 +18,10 @@ from mcp.types import CallToolResult, ResourceLink, TextContent
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp import session as mcp_session
-from app.api.mcp.result_json import compact_json
 from app.api.mcp.server import agent_tool
 from app.schemas.mcp_search import McpArticlePdfResult, McpPdfLink
 from app.services import article_read_service
+from app.utils.compact_json import compact_json
 
 _SIGNED_URL_TTL_SECONDS = 600
 

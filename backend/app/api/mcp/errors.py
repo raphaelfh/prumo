@@ -20,12 +20,12 @@ from typing import Any
 
 from mcp.types import CallToolResult, TextContent
 
-from app.api.mcp.result_json import compact_json
 from app.schemas.mcp_errors import McpToolErrorPayload
 from app.services.article_read_service import ArticleNotFoundError
 from app.services.article_text_block_read_service import ArticleFileNotFoundError
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_field_service import EntityTypeNotFoundError, FieldNotFoundError
+from app.utils.compact_json import compact_json
 
 
 class McpErrorCode(StrEnum):
