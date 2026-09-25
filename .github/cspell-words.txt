@@ -37,6 +37,7 @@ centralising
 Claude
 Cochrane
 codegen
+codeium
 conftest
 contextvars
 coro
