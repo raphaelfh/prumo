@@ -14,13 +14,13 @@ bug and is logged as ``INTERNAL_ERROR``, never reported as the caller's
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
 from mcp.types import CallToolResult, TextContent
 
+from app.api.mcp.result_json import compact_json
 from app.schemas.mcp_errors import McpToolErrorPayload
 from app.services.article_read_service import ArticleNotFoundError
 from app.services.article_text_block_read_service import ArticleFileNotFoundError
@@ -123,7 +123,7 @@ def error_result(err: McpToolError) -> CallToolResult:
         **err.extras,
     ).model_dump(mode="json")
     return CallToolResult(
-        content=[TextContent(type="text", text=json.dumps(payload))],
+        content=[TextContent(type="text", text=compact_json(payload))],
         structured_content=payload,
         is_error=True,
     )

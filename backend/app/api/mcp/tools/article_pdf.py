@@ -18,6 +18,7 @@ from mcp.types import CallToolResult, ResourceLink, TextContent
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp import session as mcp_session
+from app.api.mcp.result_json import compact_json
 from app.api.mcp.server import agent_tool
 from app.schemas.mcp_search import McpArticlePdfResult, McpPdfLink
 from app.services import article_read_service
@@ -48,9 +49,10 @@ async def get_article_pdf(
             reason="no_pdf",
             next_step="this article has no PDF; use get_article for metadata",
         )
+        structured_content = result.model_dump(mode="json")
         return CallToolResult(
-            content=[TextContent(type="text", text=result.model_dump_json())],
-            structured_content=result.model_dump(mode="json"),
+            content=[TextContent(type="text", text=compact_json(structured_content))],
+            structured_content=structured_content,
         )
 
     url = await mcp_session.storage_factory().get_signed_url(
@@ -66,7 +68,8 @@ async def get_article_pdf(
     links = [
         ResourceLink(type="resource_link", uri=url, name=filename, mime_type="application/pdf")
     ]
+    structured_content = result.model_dump(mode="json")
     return CallToolResult(
-        content=[TextContent(type="text", text=result.model_dump_json()), *links],
-        structured_content=result.model_dump(mode="json"),
+        content=[TextContent(type="text", text=compact_json(structured_content)), *links],
+        structured_content=structured_content,
     )

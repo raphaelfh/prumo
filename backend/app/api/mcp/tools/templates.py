@@ -32,7 +32,6 @@ question's JSON against it.
 
 from __future__ import annotations
 
-import json
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -41,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps.security import is_project_manager
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.errors import McpErrorCode, McpToolError
+from app.api.mcp.result_json import compact_json
 from app.api.mcp.server import agent_tool
 from app.llm.claim_value import normalize_options
 from app.schemas.extraction_run import RunViewEntityType, RunViewField
@@ -73,14 +73,15 @@ _CURSOR_RESERVE = 64
 
 
 def _json_len(model: BaseModel) -> int:
-    """Length as `json.dumps` renders it (default separators): the same
-    measure the size-cap tests apply (`len(json.dumps(page))`), which is
-    longer than pydantic's own compact `model_dump_json()` -- every key and
-    every list item gets extra `", "` / `": "` spacing. All size accounting
-    in this module uses this, never the raw `model_dump_json()` length, or
-    the budget under-charges and a page can clear the compact count while
-    still exceeding the real 32,000-char cap."""
-    return len(json.dumps(model.model_dump(mode="json")))
+    """Length of `compact_json` (task 2c's one serializer): the same measure
+    the size-cap tests apply (`len(json.dumps(page))`) and the dispatcher
+    uses for a result's text copy, which is longer than pydantic's own
+    compact `model_dump_json()` -- every key and every list item gets extra
+    `", "` / `": "` spacing. All size accounting in this module uses this,
+    never the raw `model_dump_json()` length, or the budget under-charges
+    and a page can clear the compact count while still exceeding the real
+    32,000-char cap."""
+    return len(compact_json(model.model_dump(mode="json")))
 
 
 @agent_tool(

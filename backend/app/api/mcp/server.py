@@ -29,7 +29,8 @@ from limits import parse
 from mcp.server import CacheHint, MCPServer
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import Tool, ToolAnnotations
+from mcp.types import CallToolResult, TextContent, Tool, ToolAnnotations
+from pydantic import BaseModel
 from starlette.types import ASGIApp
 
 from app.api.deps.security import is_project_manager, is_project_member
@@ -42,6 +43,7 @@ from app.api.mcp.errors import (
     error_result,
     to_tool_error,
 )
+from app.api.mcp.result_json import compact_json
 from app.core.config import API_VERSION, settings
 from app.core.logging import get_logger
 from app.services.article_read_service import get_article_project_id
@@ -223,6 +225,22 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
 
                 result = await fn(db, **kwargs)
                 span.set_attribute("outcome", "ok")
+                # `CallToolResult` is itself a `BaseModel` (a tool that builds its own,
+                # e.g. get_article_pdf's resource_link) -- isinstance() alone would match
+                # it too and double-wrap it. Only a tool returning its plain result model
+                # needs the compact text copy built here.
+                if isinstance(result, BaseModel) and not isinstance(result, CallToolResult):
+                    # The SDK's own `convert_result` dumps a returned model twice: once
+                    # (compact) as `structuredContent`, once (indent=2) as the text
+                    # copy. Build the `CallToolResult` ourselves so both copies are the
+                    # SAME compact JSON (spec §5.0); `convert_result` passes a
+                    # `CallToolResult` it is handed straight through, only validating
+                    # `structured_content` against the tool's output schema.
+                    structured_content = result.model_dump(mode="json", by_alias=True)
+                    return CallToolResult(
+                        content=[TextContent(type="text", text=compact_json(structured_content))],
+                        structured_content=structured_content,
+                    )
                 return result
         except Exception as exc:  # noqa: BLE001 - every tool exception is mapped here
             err = to_tool_error(exc)
