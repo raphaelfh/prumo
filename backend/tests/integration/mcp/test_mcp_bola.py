@@ -87,6 +87,31 @@ BOLA_CASES = [
         "NOT_FOUND",
         id="get_template-random-uuid",
     ),
+    pytest.param(
+        "pat_outsider_rw",
+        "get_extractions",
+        {"project_id": str(SEED.primary_project), "template_id": str(SEED.primary_template)},
+        "NOT_FOUND",
+        id="get_extractions-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_primary_rw",
+        "get_extractions",
+        {"project_id": str(SEED.primary_project), "template_id": str(uuid4())},
+        "NOT_FOUND",
+        id="get_extractions-random-template-uuid",
+    ),
+    pytest.param(
+        "pat_primary_rw",
+        "get_extractions",
+        {
+            "project_id": str(SEED.primary_project),
+            "template_id": str(SEED.primary_template),
+            "article_id": str(uuid4()),
+        },
+        "NOT_FOUND",
+        id="get_extractions-random-article-uuid",
+    ),
 ]
 
 
@@ -231,5 +256,35 @@ async def test_get_template_of_another_project_is_not_found(
         pat_reviewer_rw,
         "get_template",
         {"project_id": str(SEED.primary_project), "template_id": str(foreign_template_id)},
+    )
+    assert error_payload(result)["code"] == "NOT_FOUND"
+
+
+async def test_get_extractions_template_id_of_another_project_is_not_found(
+    mcp_client, pat_reviewer_rw, db_session: AsyncSession
+) -> None:
+    _project_id, foreign_template_id, _schema = await fresh_charms(db_session)
+    result = await call_tool(
+        mcp_client,
+        pat_reviewer_rw,
+        "get_extractions",
+        {"project_id": str(SEED.primary_project), "template_id": str(foreign_template_id)},
+    )
+    assert error_payload(result)["code"] == "NOT_FOUND"
+
+
+async def test_get_extractions_article_id_of_another_project_is_not_found(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    foreign_article = await insert_article(db_session, SEED.secondary_project, title="Foreign")
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "get_extractions",
+        {
+            "project_id": str(SEED.primary_project),
+            "template_id": str(SEED.primary_template),
+            "article_id": str(foreign_article),
+        },
     )
     assert error_payload(result)["code"] == "NOT_FOUND"
