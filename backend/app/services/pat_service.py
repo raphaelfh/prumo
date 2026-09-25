@@ -23,7 +23,19 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 from fastapi import status
-from sqlalchemy import ColumnElement, and_, case, func, insert, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    case,
+    column,
+    exists,
+    func,
+    insert,
+    or_,
+    select,
+    table,
+    update,
+)
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -179,14 +191,29 @@ async def revoke_token(
     return _read(row, "revoked")
 
 
+# Supabase's `auth.users`, which the app does not map: only the two columns
+# that end a user's access. A hard delete needs no check -- it cascades
+# through `profiles` to the user's tokens.
+_auth_users = table(
+    "users", column("id"), column("banned_until"), column("deleted_at"), schema="auth"
+)
+
+
 async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | None:
-    """The /mcp bearer lookup: active tokens only, by the indexed hash."""
+    """The /mcp bearer lookup: active tokens of a user who is neither banned
+    nor soft-deleted, by the indexed hash, in one query (ADR 0020)."""
     if not secret.startswith(PAT_PREFIX):
         return None
+    user_locked_out = exists().where(
+        _auth_users.c.id == PersonalAccessToken.user_id,
+        or_(_auth_users.c.banned_until > func.now(), _auth_users.c.deleted_at.is_not(None)),
+    )
     row = (
         await db.execute(
             select(PersonalAccessToken).where(
-                PersonalAccessToken.token_hash == hash_secret(secret), active_clause()
+                PersonalAccessToken.token_hash == hash_secret(secret),
+                active_clause(),
+                ~user_locked_out,
             )
         )
     ).scalar_one_or_none()

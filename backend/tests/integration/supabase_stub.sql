@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS auth.users (
   email TEXT,
   instance_id UUID,
   aud TEXT,
-  role TEXT
+  role TEXT,
+  -- read by pat_service.resolve_principal: a banned or soft-deleted user's
+  -- tokens stop resolving
+  banned_until TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ
 );
 -- Stub auth.uid() and auth.role(): real implementations live in
 -- Supabase's auth schema. They mirror Supabase's readers of the

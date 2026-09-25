@@ -41,6 +41,7 @@ from app.api.mcp.errors import (
     McpErrorCode,
     McpToolError,
     error_result,
+    reject_nul,
     to_tool_error,
 )
 from app.core.config import API_VERSION, settings
@@ -223,6 +224,8 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
                             McpErrorCode.MANAGER_REQUIRED, "Only a project manager can do this."
                         )
 
+                if not write:  # a write tool rejects NUL inside its own audited try
+                    reject_nul(kwargs)
                 result = await fn(db, **kwargs)
                 span.set_attribute("outcome", "ok")
                 # `CallToolResult` is itself a `BaseModel` (a tool that builds its own,
@@ -237,10 +240,11 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
                     # `CallToolResult` it is handed straight through, only validating
                     # `structured_content` against the tool's output schema.
                     structured_content = result.model_dump(mode="json", by_alias=True)
-                    return CallToolResult(
+                    result = CallToolResult(
                         content=[TextContent(type="text", text=compact_json(structured_content))],
                         structured_content=structured_content,
                     )
+                span.set_attribute("response_size", _response_size(result))
                 return result
         except Exception as exc:  # noqa: BLE001 - every tool exception is mapped here
             err = to_tool_error(exc)
@@ -249,4 +253,14 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
                     "mcp_tool_internal_error", tool=name, token_id=str(principal.token_id)
                 )
             span.set_attribute("outcome", err.code.value)
-            return error_result(err)
+            refusal = error_result(err)
+            span.set_attribute("response_size", _response_size(refusal))
+            return refusal
+
+
+def _response_size(result: Any) -> int:
+    """Chars of the result's text copy (spec §6.3) -- the compact JSON a
+    structured result carries, or a text-only tool's own string."""
+    if isinstance(result, CallToolResult):
+        return sum(len(c.text) for c in result.content if isinstance(c, TextContent))
+    return len(result) if isinstance(result, str) else len(compact_json(result))

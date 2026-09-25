@@ -17,7 +17,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.audit import AuditScope, record_applied_write, refuse
-from app.api.mcp.errors import McpErrorCode, McpToolError
+from app.api.mcp.errors import McpErrorCode, McpToolError, reject_nul
 from app.api.mcp.server import agent_tool
 from app.api.v1.endpoints._integrity import is_deadlock
 from app.schemas.mcp_project_details import UpdateProjectDetailsResult
@@ -33,8 +33,9 @@ _DESCRIPTION = (
     "Edit a project's descriptive fields (name, description, review type and the other "
     "whitelisted columns from get_project). `expected` must carry the value of each field "
     "in `fields` exactly as last read via get_project -- the write is refused if any of "
-    "them changed meanwhile. The prumo client asks the human before every call. Returns "
-    "the before/after values of the changed fields; call get_project next to confirm."
+    "them changed meanwhile. Clients that support it (e.g. Claude Code) ask the human "
+    "before each call, and every change is audited. Returns the before/after values of "
+    "the changed fields; call get_project next to confirm."
 )
 
 
@@ -94,7 +95,8 @@ async def update_project_details(
 def _parse(
     fields: dict[str, Any], expected: dict[str, Any]
 ) -> tuple[ProjectDetailsFields, ProjectDetailsFields]:
-    # Order: whitelist first (FIELD_NOT_EDITABLE), then presence, then types (INVALID_ARGUMENT).
+    # Order: NUL, whitelist (FIELD_NOT_EDITABLE), presence, types (INVALID_ARGUMENT).
+    reject_nul({"fields": fields, "expected": expected})
     for key in sorted({*fields, *expected}):
         if key not in ProjectDetailsFields.model_fields:
             raise McpToolError(

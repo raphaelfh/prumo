@@ -15,6 +15,7 @@ from app.api.mcp.errors import (
     error_result,
     to_tool_error,
 )
+from app.core.error_handler import NotFoundError
 from app.services.article_read_service import ArticleNotFoundError
 from app.services.article_text_block_read_service import ArticleFileNotFoundError
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
@@ -106,3 +107,11 @@ def test_to_tool_error_mapping(exc: BaseException, expected_code: McpErrorCode) 
         assert err is exc
     if expected_code == McpErrorCode.INTERNAL_ERROR and not isinstance(exc, McpToolError):
         assert err.extras == {}
+
+
+def test_app_not_found_error_maps_to_not_found() -> None:
+    """F9 (final review): `project_details_service` raises the app-wide
+    `NotFoundError` for a project deleted mid-call -- NOT_FOUND, not INTERNAL."""
+    err = to_tool_error(NotFoundError("Project", "x"))
+    assert err.code == McpErrorCode.NOT_FOUND
+    assert err.message == NOT_FOUND_MESSAGE

@@ -139,7 +139,13 @@ async def test_signed_url_never_in_span_or_logs(
 
     span_kwargs_keys = set(recorded[0][1].keys())
     set_attribute_keys = {k for k, _ in attr_calls}
-    assert span_kwargs_keys | set_attribute_keys == {"tool", "token_id", "project_id", "outcome"}
+    assert span_kwargs_keys | set_attribute_keys == {
+        "tool",
+        "token_id",
+        "project_id",
+        "outcome",
+        "response_size",
+    }
 
 
 async def test_no_pdf_marker(mcp_client, pat_primary_rw, db_session, fake_storage):
@@ -243,3 +249,16 @@ async def test_response_size_cap_search_project_text(mcp_client, pat_primary_rw,
     )
     assert len(body["hits"]) == 20
     assert len(json.dumps(body)) <= 32_000
+
+
+async def test_search_nul_in_query_is_invalid_argument(mcp_client, pat_primary_read) -> None:
+    """F10 (final review): the dispatcher refuses U+0000 in any read tool's
+    string argument, naming it, before Postgres sees it."""
+    result = await call_tool(
+        mcp_client,
+        pat_primary_read,
+        "search_project_text",
+        {"project_id": str(SEED.primary_project), "query": "a\u0000b"},
+    )
+    payload = error_payload(result)
+    assert (payload["code"], payload["field"]) == ("INVALID_ARGUMENT", "query")

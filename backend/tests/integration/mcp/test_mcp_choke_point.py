@@ -26,6 +26,7 @@ async def test_tools_list_is_scope_filtered(
 ) -> None:
     async with mcp_client(pat_primary_read) as client:
         names = [t.name for t in (await client.list_tools()).tools]
+    assert "probe_read" in names
     assert "probe_write" not in names
     assert names == sorted(names)
 
@@ -260,9 +261,13 @@ async def test_tool_call_span_carries_no_secret(
     monkeypatch.setattr(server, "logfire", _Logfire())
 
     async with mcp_client(pat_primary_read) as client:
-        await client.call_tool("probe_read", {"project_id": str(SEED.primary_project)})
+        result = await client.call_tool("probe_read", {"project_id": str(SEED.primary_project)})
+        refused = await client.call_tool("probe_read", {"project_id": str(uuid4())})
 
-    assert len(spans) == 1
+    assert len(spans) == 2
+    # spec §6.3: the span carries the result's size -- its compact text copy.
+    assert spans[0].attrs["response_size"] == len(result.content[0].text)
+    assert spans[1].attrs["response_size"] == len(refused.content[0].text)
     span = spans[0]
     assert span.name == "mcp.tool_call"
     assert span.attrs["tool"] == "probe_read"

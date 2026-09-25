@@ -28,7 +28,9 @@ _INPUT_HEADROOM_BYTES = 4_096
 def _bounded_input(tool_input: dict[str, Any]) -> dict[str, Any]:
     canonical = json.dumps(tool_input, ensure_ascii=False, sort_keys=True, separators=(", ", ": "))
     raw = canonical.encode("utf-8")
-    if len(raw) <= _INPUT_CHECK_BYTES - _INPUT_HEADROOM_BYTES:
+    # jsonb rejects U+0000 (the refusal that names it must still persist): such
+    # an input is stored as its digest, like an oversized one.
+    if len(raw) <= _INPUT_CHECK_BYTES - _INPUT_HEADROOM_BYTES and "\\u0000" not in canonical:
         return tool_input
     return {"truncated": True, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
 

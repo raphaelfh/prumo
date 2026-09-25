@@ -789,3 +789,31 @@ async def test_duplicate_name_race_maps_to_retryable(
                 text("DELETE FROM public.articles WHERE id = :a"), {"a": str(ARTICLE_ID)}
             )
             await teardown.commit()
+
+
+async def test_nul_in_an_op_string_is_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    """F10 (final review): a U+0000 inside an op string is INVALID_ARGUMENT
+    naming the op and field, audited, with nothing written."""
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+    before = await _label_set(db_session, template_id)
+    ops = [
+        {"op": "add_question", "section_id": section_id, "label": "Fine", "type": "text"},
+        {"op": "add_question", "section_id": section_id, "label": "Bad\u0000", "type": "text"},
+    ]
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "edit_template_draft",
+        {"project_id": str(project_id), "template_id": str(template_id), "ops": ops},
+    )
+    payload = error_payload(result)
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["op_index"] == 1
+    assert payload["field"] == "label"
+    assert await _label_set(db_session, template_id) == before
+    assert await draft_lock_holder(db_session, template_id) is None
+    assert await _audit_count(db_session, outcome="refused") == 1

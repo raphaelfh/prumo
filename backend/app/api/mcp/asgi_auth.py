@@ -23,6 +23,8 @@ from app.services.pat_service import resolve_principal, touch_last_used
 from app.utils.rate_limiter import limiter
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = get_logger(__name__)
@@ -58,11 +60,11 @@ def _bearer(scope: Scope) -> str | None:
     return secret or None
 
 
-async def _touch_last_used(token_id: object) -> None:
+async def _touch_last_used(token_id: UUID) -> None:
     """Best-effort last-used stamp, in its own session; a failure here never blocks auth."""
     try:
         async with mcp_session.session_factory() as db:
-            await touch_last_used(db, token_id)  # type: ignore[arg-type]
+            await touch_last_used(db, token_id)
             await db.commit()
     except Exception:  # noqa: BLE001 - auth must proceed regardless
         logger.warning("mcp_touch_last_used_failed", token_id=str(token_id))

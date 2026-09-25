@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.audit import AuditScope, record_applied_write, refuse
-from app.api.mcp.errors import NOT_FOUND_MESSAGE, McpErrorCode, McpToolError
+from app.api.mcp.errors import NOT_FOUND_MESSAGE, McpErrorCode, McpToolError, reject_nul
 from app.api.mcp.server import agent_tool
 from app.api.v1.endpoints._integrity import is_deadlock
 from app.schemas.mcp_template_draft import (
@@ -181,6 +181,7 @@ def _parse_ops(ops: list[dict[str, Any]]) -> list[DraftOp]:
             raise McpToolError(
                 McpErrorCode.OP_NOT_ALLOWED_VIA_AGENT, _NOT_ALLOWED_MESSAGE, op_index=index
             )
+        reject_nul(raw, op_index=index)
         try:
             parsed.append(model.model_validate(raw))
         except ValidationError as exc:

@@ -170,3 +170,18 @@ async def test_principal_reaches_the_tool_over_http(
     assert r.status_code == 200
     body = r.json()
     assert body["result"]["structuredContent"]["user_sub"] == str(SEED.reviewer_profile)
+
+
+async def test_banned_users_live_token_is_401(
+    mcp_http_client: AsyncClient, db_session: AsyncSession, pat_primary_read: SeededPat
+) -> None:
+    r = await rpc(mcp_http_client, "tools/list", headers=pat_primary_read.headers)
+    assert r.status_code == 200
+
+    await db_session.execute(
+        text("UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = :id"),
+        {"id": str(SEED.primary_profile)},
+    )
+    r = await rpc(mcp_http_client, "tools/list", headers=pat_primary_read.headers)
+    assert r.status_code == 401
+    assert r.headers["www-authenticate"] == "Bearer"

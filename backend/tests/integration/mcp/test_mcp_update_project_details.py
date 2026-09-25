@@ -318,6 +318,9 @@ async def test_update_project_details_requires_user_interaction_meta(mcp_client,
         tools = {t.name: t for t in (await client.list_tools()).tools}
     t = tools["update_project_details"]
     assert t.meta["anthropic/requiresUserInteraction"] is True
+    # F12: confirmation is client-dependent; the audit is not.
+    assert "Clients that support it (e.g. Claude Code) ask" in t.description
+    assert "audited" in t.description
     a = t.annotations
     assert a.destructive_hint is True
     assert a.idempotent_hint is True
@@ -326,3 +329,28 @@ async def test_update_project_details_requires_user_interaction_meta(mcp_client,
     assert t.title
     assert t.output_schema is not None
     assert set(t.output_schema["properties"]) == {"project_id", "before", "after", "note"}
+
+
+async def test_nul_in_a_string_is_invalid_argument_before_any_write(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+):
+    """F10 (final review): Postgres text cannot hold U+0000 -- refused as the
+    caller's INVALID_ARGUMENT naming the field (and audited), never an
+    INTERNAL_ERROR from the UPDATE."""
+    current = await _current(db_session, "description")
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "update_project_details",
+        {
+            "project_id": str(P),
+            "fields": {"description": "bad\u0000value"},
+            "expected": {"description": current["description"]},
+        },
+    )
+    error = error_payload(result)
+    assert error["code"] == "INVALID_ARGUMENT"
+    assert error["field"] == "fields.description"
+    assert (await _current(db_session, "description")) == current
+    assert (await _audit_count(db_session, outcome="refused", error_code="INVALID_ARGUMENT")) == 1

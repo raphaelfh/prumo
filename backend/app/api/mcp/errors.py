@@ -2,7 +2,8 @@
 
 These codes never reach the REST envelope (``app/core/error_handler.py``);
 they are the MCP tool-call error shape only. ``to_tool_error`` maps ONLY
-pass-through ``McpToolError``, the five not-found classes, and everything
+pass-through ``McpToolError``, the not-found classes (the five tool
+guards' own plus the app-wide ``NotFoundError``), and everything
 else -> ``INTERNAL_ERROR``: every audited code (``INVALID_ARGUMENT``,
 ``DRAFT_LOCK_HELD``, ``NO_PUBLISHED_VERSION``, ``DUPLICATE_NAME``,
 ``RETRY``, …) is mapped once, in the write tool next to its audit row
@@ -14,12 +15,14 @@ bug and is logged as ``INTERNAL_ERROR``, never reported as the caller's
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
 from mcp.types import CallToolResult, TextContent
 
+from app.core.error_handler import NotFoundError
 from app.schemas.mcp_errors import McpToolErrorPayload
 from app.services.article_read_service import ArticleNotFoundError
 from app.services.article_text_block_read_service import ArticleFileNotFoundError
@@ -125,10 +128,47 @@ def to_tool_error(exc: BaseException) -> McpToolError:
             ProjectTemplateNotFoundError,
             EntityTypeNotFoundError,
             FieldNotFoundError,
+            NotFoundError,  # app-wide, e.g. a project deleted mid-call
         ),
     ):
         return McpToolError(McpErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE)
     return McpToolError(McpErrorCode.INTERNAL_ERROR, "Internal error.")
+
+
+def _nul_path(value: Any, path: tuple[str | int, ...] = ()) -> tuple[str | int, ...] | None:
+    """Where the first U+0000 sits in a tool argument tree, or ``None``.
+
+    Postgres ``text``/``jsonb`` cannot store it, so a NUL that reached SQL
+    would surface as an INTERNAL_ERROR instead of the caller's mistake."""
+    if isinstance(value, str):
+        return path if "\x00" in value else None
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            found = _nul_path(key, (*path, key))
+            if found is None:
+                found = _nul_path(item, (*path, key))
+            if found is not None:
+                return found
+    elif isinstance(value, list | tuple):
+        for index, item in enumerate(value):
+            found = _nul_path(item, (*path, index))
+            if found is not None:
+                return found
+    return None
+
+
+def reject_nul(arguments: Mapping[str, Any], **extras: Any) -> None:
+    """INVALID_ARGUMENT naming the dotted path of the first NUL-bearing string
+    (``extras`` ride along, e.g. a write op's ``op_index``). The dispatcher
+    calls it for read tools; a write tool calls it inside its audited try."""
+    found = _nul_path(arguments)
+    if found is not None:
+        raise McpToolError(
+            McpErrorCode.INVALID_ARGUMENT,
+            "Strings must not contain the NUL character (U+0000).",
+            field=".".join(str(part) for part in found),
+            **extras,
+        )
 
 
 def error_result(err: McpToolError) -> CallToolResult:

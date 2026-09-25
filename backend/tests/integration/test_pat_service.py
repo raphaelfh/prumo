@@ -277,3 +277,25 @@ async def test_touch_last_used_is_throttled(db_session: AsyncSession) -> None:
         {"id": str(created.token.id)},
     )
     assert await touch_last_used(db_session, created.token.id) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("update_user", "resolves"),
+    [
+        ("UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = :id", False),
+        ("UPDATE auth.users SET deleted_at = now() WHERE id = :id", False),
+        ("UPDATE auth.users SET banned_until = now() - interval '1 day' WHERE id = :id", True),
+    ],
+    ids=["banned", "soft-deleted", "ban-expired"],
+)
+async def test_resolve_principal_refuses_banned_or_deleted_user(
+    db_session: AsyncSession, update_user: str, resolves: bool
+) -> None:
+    """F8 (final review): a ban or a (soft) delete of the owning user ends
+    every PAT at once; revocation stays the per-token kill switch."""
+    created = await create_token(db_session, user_id=SEED.reviewer_profile, payload=_req())
+    assert await resolve_principal(db_session, created.secret) is not None
+
+    await db_session.execute(text(update_user), {"id": str(SEED.reviewer_profile)})
+    assert (await resolve_principal(db_session, created.secret) is not None) is resolves
