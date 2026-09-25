@@ -133,10 +133,10 @@ async def edit_template_draft(
             ),
         )
     except DraftOpError as exc:
-        error = _op_failure(exc)
-        if error is None:
+        mapped_error = _op_failure(exc)
+        if mapped_error is None:
             raise exc.cause from exc  # unmapped: INTERNAL_ERROR via the choke point, no row
-        await refuse(db, scope, error)
+        await refuse(db, scope, mapped_error)
     except DBAPIError as exc:  # the lock claim's UPDATE or the commit can lose a deadlock too
         if not is_deadlock(exc):
             raise
@@ -175,7 +175,8 @@ def _parse_ops(ops: list[dict[str, Any]]) -> list[DraftOp]:
         )
     parsed: list[DraftOp] = []
     for index, raw in enumerate(ops):
-        model = _OPS.get(raw.get("op"))
+        op_name = raw.get("op")
+        model = _OPS.get(op_name) if isinstance(op_name, str) else None
         if model is None or (model is UpdateQuestionOp and {"type", "options"} & raw.keys()):
             raise McpToolError(
                 McpErrorCode.OP_NOT_ALLOWED_VIA_AGENT, _NOT_ALLOWED_MESSAGE, op_index=index
