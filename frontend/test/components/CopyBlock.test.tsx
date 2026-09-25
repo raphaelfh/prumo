@@ -27,4 +27,16 @@ describe('CopyBlock', () => {
     render(<CopyBlock label="Secret" code="prumo_pat_SECRET" copyAriaLabel={t('personalAccessTokens', 'copyTokenAria')} />);
     expect(screen.getByRole('button', {name: t('personalAccessTokens', 'copyTokenAria')})).toBeInTheDocument();
   });
+
+  it('announces "copied" through a polite status region', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {clipboard: {writeText}});
+    render(<CopyBlock label="Claude Code" code="claude mcp add prumo" />);
+    const status = screen.getByRole('status');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(status).toHaveTextContent('');
+
+    await userEvent.click(screen.getByRole('button', {name: t('personalAccessTokens', 'copy')}));
+    await waitFor(() => expect(status).toHaveTextContent(t('personalAccessTokens', 'copied')));
+  });
 });

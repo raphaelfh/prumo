@@ -44,4 +44,9 @@ describe('McpClientSnippetSelector', () => {
     await userEvent.click(screen.getByRole('button', {name: t('personalAccessTokens', 'copy')}));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(buildClientSnippet('cursor', {url: URL, token: TOKEN})));
   });
+
+  it('names the client picker for assistive tech', () => {
+    render(<McpClientSnippetSelector token={TOKEN} />);
+    expect(screen.getByRole('radiogroup', {name: t('personalAccessTokens', 'clientPickerAria')})).toBeInTheDocument();
+  });
 });

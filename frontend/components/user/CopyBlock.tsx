@@ -13,6 +13,10 @@ export function CopyBlock({label, code, copyAriaLabel}: {label: string; code: st
           {copied ? t('personalAccessTokens', 'copied') : t('personalAccessTokens', 'copy')}
         </Button>
       </div>
+      {/* The button keeps its name; the swap to "Copied" is announced here. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {copied ? t('personalAccessTokens', 'copied') : ''}
+      </span>
     </div>
   );
 }

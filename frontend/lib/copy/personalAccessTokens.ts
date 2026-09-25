@@ -31,6 +31,8 @@ export const personalAccessTokens = {
     copy: 'Copy',
     copied: 'Copied',
     copyTokenAria: 'Copy token',
+    tokenLabel: 'Your token',
+    clientPickerAria: 'AI client',
     revealDone: 'I copied it',
     expiresOn: 'Expires {{date}}',
     lastUsed: 'Last used {{when}}',

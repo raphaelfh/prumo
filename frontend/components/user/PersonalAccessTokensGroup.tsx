@@ -72,8 +72,8 @@ function TokenRow({row}: {row: PersonalAccessTokenRead}) {
         row.status !== 'active' && 'text-muted-foreground',
       )}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="min-w-0 truncate font-medium">{row.name}</span>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="min-w-[12ch] max-w-full truncate font-medium">{row.name}</span>
         <code className="shrink-0 text-[12px] text-muted-foreground">{row.token_prefix}…</code>
         <Badge variant="secondary" className="shrink-0">{t('personalAccessTokens', SCOPE_COPY[row.scope])}</Badge>
         {row.status === 'expired' && (
@@ -268,7 +268,7 @@ export function PersonalAccessTokensGroup() {
             <DialogDescription>{t('personalAccessTokens', 'revealWarning')}</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-3">
-            {secret && <CopyBlock label={t('personalAccessTokens', 'copyTokenAria')} code={secret} copyAriaLabel={t('personalAccessTokens', 'copyTokenAria')} />}
+            {secret && <CopyBlock label={t('personalAccessTokens', 'tokenLabel')} code={secret} copyAriaLabel={t('personalAccessTokens', 'copyTokenAria')} />}
             {secret && <McpClientSnippetSelector token={secret} />}
           </DialogBody>
           <DialogFooter>

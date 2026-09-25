@@ -99,6 +99,11 @@ describe('PersonalAccessTokensGroup', () => {
     expect(within(expiredRow).getByText('Expired 1/2/2026')).toBeInTheDocument();
     expect(within(expiredRow).queryByRole('button', {name: t('personalAccessTokens', 'revokeAria')})).not.toBeInTheDocument();
 
+    // Narrow widths: the badges wrap under the name instead of squeezing it to "R…".
+    const expiredName = within(expiredRow).getByText('Old agent');
+    expect(expiredName).toHaveClass('min-w-[12ch]');
+    expect(expiredName.parentElement).toHaveClass('flex-wrap');
+
     const revokedRow = rows[2];
     expect(revokedRow).toHaveAttribute('data-muted', 'true');
     expect(within(revokedRow).getByText('Revoked 2/3/2026')).toBeInTheDocument();
@@ -146,6 +151,8 @@ describe('PersonalAccessTokensGroup', () => {
     await waitFor(() => expect(screen.getByText(t('personalAccessTokens', 'revealTitle'))).toBeInTheDocument());
     expect(screen.getByText('prumo_pat_SECRET')).toBeInTheDocument();
     expect(screen.getByText(t('personalAccessTokens', 'revealWarning'))).toBeInTheDocument();
+    expect(screen.getByText(t('personalAccessTokens', 'tokenLabel'))).toBeInTheDocument();
+    expect(screen.getByRole('button', {name: t('personalAccessTokens', 'copyTokenAria')})).toBeInTheDocument();
 
     for (const key of ['chipClaudeCode', 'chipCursor', 'chipVsCode', 'chipGeminiCli', 'chipCodex', 'chipWindsurf'] as const) {
       expect(screen.getByRole('radio', {name: t('personalAccessTokens', key)})).toBeInTheDocument();
@@ -217,5 +224,23 @@ describe('PersonalAccessTokensGroup', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('gone'));
     expect(screen.getByText('Claude Code')).toBeInTheDocument();
+  });
+
+  it('reveal closed over a populated list: only the prefix stays on screen', async () => {
+    const created = {...(ACTIVE as object), id: 'new-1', name: 'cli', token_prefix: 'prumo_pat_new456'} as never;
+    vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [ACTIVE]});
+    vi.mocked(svc.createMyToken).mockResolvedValue({ok: true, data: {secret: 'prumo_pat_new456SECRETTAIL', token: created}});
+    renderGroup();
+    await waitFor(() => expect(screen.getByText('Claude Code')).toBeInTheDocument());
+
+    const dialog = await openCreateDialog();
+    await userEvent.type(within(dialog).getByLabelText(t('personalAccessTokens', 'nameLabel')), 'cli');
+    vi.mocked(svc.fetchMyTokens).mockResolvedValue({ok: true, data: [created, ACTIVE]});
+    await userEvent.click(within(dialog).getByRole('button', {name: t('personalAccessTokens', 'createSubmit')}));
+    await waitFor(() => expect(screen.getByText('prumo_pat_new456SECRETTAIL')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', {name: t('personalAccessTokens', 'revealDone')}));
+    await waitFor(() => expect(screen.getByText('prumo_pat_new456…')).toBeInTheDocument());
+    expect(document.body.textContent).not.toContain('SECRETTAIL');
   });
 });
