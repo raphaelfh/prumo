@@ -73,7 +73,7 @@ from app.utils.opaque_cursor import (
     decode_cursor,
     encode_cursor,
 )
-from app.utils.text_caps import cap_text
+from app.utils.text_caps import cap_text, join_capped
 from app.utils.untrusted import wrap_untrusted
 
 _PAGE_BUDGET = 28_000
@@ -81,11 +81,7 @@ _CONCISE_VALUE_CAP = 80
 _DETAILED_VALUE_CAP = 1_000
 _EVIDENCE_QUOTE_CAP = 300
 _EVIDENCE_PER_ROW_CAP = 3
-#: A concise cell joins one `_CONCISE_VALUE_CAP` value per instance; the
-#: join itself is bounded too, so a many-instance section cannot grow one
-#: cell without limit (final review F4).
-_CONCISE_JOIN_CAP = 1_000
-_TRUNCATION_MARK = "…"
+_CONCISE_JOIN_CAP = 1_000  # one value per instance: the join is bounded too (F4)
 #: Reserved for `next_cursor` itself, same reasoning as `templates.py`: the
 #: envelope is measured with it `None`, but a non-last page replaces that
 #: with an opaque base64 cursor string a few chars longer.
@@ -463,15 +459,6 @@ def _bounded_questions(
     return kept, cost, True
 
 
-def _join_concise_values(values: list[str]) -> str:
-    """One concise cell: the per-instance values joined with `" | "`, cut to
-    `_CONCISE_JOIN_CAP` chars plus a visible truncation mark."""
-    joined = " | ".join(values)
-    if len(joined) <= _CONCISE_JOIN_CAP:
-        return joined
-    return joined[:_CONCISE_JOIN_CAP] + _TRUNCATION_MARK
-
-
 def _envelope_header_cost(
     article_pk: UUID, meta: dict[str, Any], response_format: Literal["concise", "detailed"]
 ) -> int:
@@ -587,8 +574,7 @@ async def list_agent_extractions(
                         ExtractionInstance.template_id == template_id,
                         ExtractionInstance.article_id.in_(articles_with_run),
                     )
-                    # Deterministic concise joins (final review F5).
-                    .order_by(ExtractionInstance.sort_order, ExtractionInstance.id)
+                    .order_by(ExtractionInstance.sort_order, ExtractionInstance.id)  # stable joins
                 )
             )
             .scalars()
@@ -693,8 +679,10 @@ async def list_agent_extractions(
                 if not resolved_lists:
                     continue
                 cells = [_concise_cell(group) for group in resolved_lists]
-                value_str = _join_concise_values(
-                    [_short(c.value, limit=_CONCISE_VALUE_CAP) for c in cells]
+                value_str = join_capped(
+                    [_short(c.value, limit=_CONCISE_VALUE_CAP) for c in cells],
+                    sep=" | ",
+                    cap=_CONCISE_JOIN_CAP,
                 )
                 human_groups = [group for group in resolved_lists if group[0].decider == "human"]
                 disagreement = None

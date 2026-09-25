@@ -17,3 +17,9 @@ def cap_text(value: str, cap: int = TITLE_CAP) -> tuple[str, bool]:
     if len(value) <= cap:
         return value, False
     return value[:cap], True
+
+
+def join_capped(values: list[str], *, sep: str, cap: int) -> str:
+    """`values` joined by `sep`, cut to `cap` chars plus a visible "…" mark."""
+    joined = sep.join(values)
+    return joined if len(joined) <= cap else joined[:cap] + "…"
