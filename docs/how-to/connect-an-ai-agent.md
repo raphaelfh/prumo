@@ -18,8 +18,8 @@ need OAuth and are not supported.
 1. Go to Settings → Integrations → Personal access tokens.
 2. Click **Create token**, give it a name (for example "Claude Code on my
    laptop"), pick a scope (`read`, or `read_write` if the agent needs to
-   make edits — use `read` unless you need edits), and an expiry from 1 to
-   365 days.
+   make edits — use `read` unless you need edits), and an expiry of 30, 90
+   or 365 days.
 3. The secret is shown once, in the reveal dialog. Copy it immediately —
    prumo never shows it again.
 4. You can hold at most 10 active tokens at a time.

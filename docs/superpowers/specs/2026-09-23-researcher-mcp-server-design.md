@@ -158,8 +158,8 @@ agent ──HTTP POST (Bearer prumo_pat_…)──▶ FastAPI  Route("/mcp")
   allowed_hosts=settings.mcp_allowed_hosts,
   allowed_origins=settings.mcp_allowed_origins))`, which builds a **new**
   session manager (SDK 2.2.0 `lowlevel/server.py:749-760`).
-  - `create_app()` mounts the ASGI app (wrapped by `asgi_auth`) at `/mcp`
-    and stores the manager on `app.state.mcp_session_manager`.
+  - `create_app()` serves the ASGI app (wrapped by `asgi_auth`) at the
+    exact route `/mcp` (a Starlette `Route`, not a `Mount`) and stores the manager on `app.state.mcp_session_manager`.
   - The `lifespan` in `app/main.py` wraps
     `async with app.state.mcp_session_manager.run()`. Never read
     `mcp.session_manager`: the SDK overwrites it on every build, so with
@@ -492,8 +492,9 @@ house style.
     already uses — no second copy file).
   - The one-time reveal dialog after creating a token reuses the same
     chip selector and snippet rendering, with the real secret in place of
-    `<YOUR_PRUMO_TOKEN>` (`buildClientSnippet(client, {url:
-    getApiBaseUrl(), token: secret})`), alongside its existing "copy
+    `<YOUR_PRUMO_TOKEN>`
+    (``buildClientSnippet(client, {url: `${getApiBaseUrl()}/mcp`, token: secret})``),
+    alongside its existing "copy
     token" block and "shown once" warning.
 - **Not adopted** (explicit non-goals):
   - **Token in the URL path** — a query or path segment leaks into
@@ -558,7 +559,8 @@ layer's status enum allows `accepted` (`docs/README.md:75`). It records:
   (`personal_access_tokens.user_id`) via the `McpPrincipal` contextvar. It
   is still never accepted from a body, query or path.
 - **`/mcp` rate limiting** uses the shared limiter's non-decorator API
-  (§7), because `@limiter.limit` cannot attach to a mounted ASGI app.
+  (§7), because `@limiter.limit` cannot attach to the raw ASGI app behind
+  the `/mcp` route.
 - **MCP envelope exception** to §VIII: `/mcp` speaks JSON-RPC/MCP
   (`isError` results, protocol errors), not `ApiResponse`, and bypasses
   `register_exception_handlers`. The §7 error table is its contract.
@@ -575,9 +577,9 @@ note.
 - §IV encryption bullet appends: "Credentials that are only verified,
   never recovered (personal access tokens), are stored as a SHA-256 hash
   instead (ADR 0020)."
-- §IV rate-limit bullet appends: "The mounted `/mcp` app applies the same
+- §IV rate-limit bullet appends: "The `/mcp` route's ASGI app applies the same
   limiter through its non-decorator API (ADR 0020)."
-- §VIII appends: "Exception: the `/mcp` mount speaks the MCP protocol
+- §VIII appends: "Exception: the `/mcp` route speaks the MCP protocol
   (JSON-RPC results with `isError`), not the `ApiResponse` envelope
   (ADR 0020)."
 
@@ -687,6 +689,10 @@ tests:
   (role from the existing `ProjectMemberRepository.get_member` — the
   choke point already proved membership; typed `details`; article
   counts; templates with `snapshot_is_narrow` of the active version).
+  **Soft-cap exception:** `get_project`'s `details` are returned uncapped,
+  on purpose — `update_project_details` compares its `expected` against
+  them by exact equality, so a truncated read would make every later
+  write of a long field fail `STALE_VALUE`.
 - `app/services/article_list_read_service.py`: `list_project_articles`
   (keyset on `(title, id)`, `query` = `ILIKE` on title/authors capped at
   200 chars, `has_pdf` / `has_text` filters as `EXISTS` subqueries on
@@ -1225,7 +1231,8 @@ backend-only pattern.
 
 ## 7. Limits, errors, prompt injection
 
-- **Rate limits.** `slowapi` decorators do not attach to a mounted ASGI app,
+- **Rate limits.** `slowapi` decorators do not attach to the raw ASGI app
+  behind the `/mcp` route,
   so the dispatcher calls the non-decorator API of the **shared** limiter,
   `app.utils.rate_limiter.limiter` (no new instance): its underlying
   `limits` strategy, `limiter.limiter.hit(item, "pat", str(token_id))`
@@ -1593,7 +1600,7 @@ After UI publish, the change appears. On a narrow template, both ops →
   foreign `file_id` → `NOT_FOUND`.
 - No span or log contains the bearer or a signed URL.
 
-**Frontend (Vitest + MSW)**
+**Frontend (Vitest; services stubbed with `vi.mock`)**
 - The secret is shown once, then only the prefix.
 - Revoke asks for confirmation, then works; revoke error → toast, row
   unchanged.

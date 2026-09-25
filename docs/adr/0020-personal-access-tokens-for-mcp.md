@@ -12,7 +12,7 @@ adr_number: '0020'
 
 ## Context and Problem Statement
 
-The researcher MCP server mounts at `/mcp` and is consumed by header-capable
+The researcher MCP server is served at the exact route `/mcp` and is consumed by header-capable
 agent clients (CLIs, IDE integrations, scripted researchers) rather than the
 browser. Every existing prumo endpoint authenticates with a Supabase JWT, but
 a JWT is short-lived and minted through a browser-oriented OAuth/session
@@ -87,9 +87,9 @@ for every other consumer.
   `test_pat_cannot_call_token_routes` proves a PAT is refused (401) on the
   very routes that mint and revoke PATs — the "a PAT never mints a PAT"
   guarantee below.
-- A later task (`/mcp` bearer lookup) adds the principal-resolution and
-  rate-limit probes this ADR's items 3 and 4 describe; this task validates
-  only the token lifecycle.
+- `backend/tests/integration/mcp/test_mcp_auth.py`: principal resolution
+  (missing, unknown, expired, revoked and banned-user tokens answer 401)
+  and the failed-auth rate limit that spares valid tokens.
 
 ## Pros and Cons of the Options
 
@@ -139,19 +139,26 @@ weakness.
 
 On `/mcp`, `user_sub` for a PAT-authenticated call comes from the verified
 token row (`personal_access_tokens.user_id`, resolved from the bearer secret
-via `find_active_token`, added with its only caller in a later task) via the
-`McpPrincipal` contextvar — never from request input, matching §IV's
-existing JWT rule that `user_id` is never accepted from a body, query or path
-parameter.
+by `pat_service.resolve_principal`) via the `McpPrincipal` contextvar —
+never from request input, matching §IV's existing JWT rule that `user_id` is
+never accepted from a body, query or path parameter.
+
+A token resolves only while its owner is neither banned
+(`auth.users.banned_until` in the future) nor soft-deleted (`deleted_at`
+set), checked in the same lookup query; a hard delete cascades through
+`profiles` to the token rows. Banning or deleting a user therefore ends
+every PAT they hold at once. Revocation remains the per-token kill switch.
 
 ### `/mcp` rate limiting
 
-`@limiter.limit(...)` is a FastAPI route decorator; `/mcp` is mounted as a
-raw ASGI application (the MCP SDK's transport), so no FastAPI route exists to
-decorate. `/mcp` instead calls the shared limiter's non-decorator API
-(`limiter.limiter.hit(...)`) directly inside its ASGI handler, keyed the same
-way (`get_remote_address`, informed by the resolved principal) so the same
-budget applies without a route to attach a decorator to.
+`@limiter.limit(...)` is a FastAPI route decorator; `/mcp` is an exact
+Starlette `Route` (not a mount) whose endpoint is the raw ASGI application of
+the MCP SDK's transport, so no FastAPI route exists to decorate. `/mcp`
+instead calls the shared limiter's non-decorator API
+(`limiter.limiter.hit(...)`) with two keys: `pat:<token_id>` per tool call
+(120/minute for reads, 20/minute for writes, in the tool dispatcher) and
+`mcp401:<ip>` for failed authentication (30/minute, in the auth wrapper), so
+a flood of bad bearers never spends a valid token's budget.
 
 ### MCP envelope exception to §VIII
 
