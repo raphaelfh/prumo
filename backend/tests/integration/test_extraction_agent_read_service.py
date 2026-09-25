@@ -296,23 +296,35 @@ async def test_query_count_bounded_per_page(db_session: AsyncSession) -> None:
     run_id, _reviewer_a, _reviewer_b = await _built_or_skip(db_session)
     template_id = await _template_id_of_run(db_session, run_id)
 
-    lone = await insert_article(db_session, SEED.primary_project, title="run-less 1")
+    # Deterministic, lexically-LOW article ids: `Article.id` keyset pagination
+    # orders ascending, and the seed's own articles/`SEED.primary_article`
+    # (id prefix "ffffffff-...", near the top of the UUID range) sort AFTER
+    # anything below -- an id crafted here always lands on page 1 regardless
+    # of how many other articles the shared DB happens to hold.
+    async def _low_id_article(suffix: str, title: str) -> UUID:
+        article_id = UUID(f"00000000-0000-0000-0000-0000000000{suffix}")
+        await db_session.execute(
+            text(
+                "INSERT INTO public.articles (id, project_id, title, row_version) "
+                "VALUES (:id, :pid, :title, 1)"
+            ),
+            {"id": str(article_id), "pid": str(SEED.primary_project), "title": title},
+        )
+        await db_session.flush()
+        return article_id
+
+    for i in range(1):
+        await _low_id_article(f"{i:02d}", f"run-less {i}")
     c1 = await _count("concise", None, template_id)
 
-    for i in range(4):
-        await insert_article(db_session, SEED.primary_project, title=f"run-less extra {i}")
+    for i in range(1, 5):
+        await _low_id_article(f"{i:02d}", f"run-less {i}")
     c5 = await _count("concise", None, template_id)
-    assert c1 == c5, (lone, c1, c5)
-
-    # One-run baseline, still via the SAME project-listing code path as the
-    # two/three-run measurements below (an `article_id`-scoped call takes a
-    # structurally different query path -- see `_article_page` -- so it is
-    # not a valid comparison point here).
-    c_one_run = await _count("detailed", None, template_id)
+    assert c1 == c5, (c1, c5)
 
     lifecycle = RunLifecycleService(db_session)
 
-    async def _extra_run(article_id) -> None:
+    async def _extra_run(article_id: UUID) -> None:
         run = await lifecycle.create_run(
             project_id=SEED.primary_project,
             article_id=article_id,
@@ -323,12 +335,16 @@ async def test_query_count_bounded_per_page(db_session: AsyncSession) -> None:
             run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=SEED.primary_profile
         )
 
-    article_2 = await insert_article(db_session, SEED.primary_project, title="run article 2")
-    await _extra_run(article_2)
+    run_article_1 = await _low_id_article("10", "run article 1")
+    await _extra_run(run_article_1)
+    c_one_run = await _count("detailed", None, template_id)
+
+    run_article_2 = await _low_id_article("11", "run article 2")
+    await _extra_run(run_article_2)
     c_two_runs = await _count("detailed", None, template_id)
 
-    article_3 = await insert_article(db_session, SEED.primary_project, title="run article 3")
-    await _extra_run(article_3)
+    run_article_3 = await _low_id_article("12", "run article 3")
+    await _extra_run(run_article_3)
     c_three_runs = await _count("detailed", None, template_id)
 
     assert c_two_runs - c_one_run == c_three_runs - c_two_runs
