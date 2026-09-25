@@ -19,6 +19,7 @@ from app.services.template_version_read_service import (
     get_active_version_tree,
     get_template_config_diff,
 )
+from app.utils.opaque_cursor import encode_cursor
 from tests.integration.conftest import SEED
 from tests.integration.helpers.template_fixtures import (
     add_field,
@@ -257,6 +258,33 @@ async def test_get_template_bad_cursor(mcp_client, pat_primary_read):
     assert payload["field"] == "cursor"
 
 
+async def test_get_template_cursor_out_of_range(mcp_client, pat_primary_read):
+    # A1: a well-formed opaque cursor whose decoded positions are
+    # non-numeric, negative, or past the tree's actual bounds must answer
+    # INVALID_ARGUMENT -- never an uncaught exception (INTERNAL_ERROR) or a
+    # silent Python negative-index wrap-around.
+    for bad_cursor in (
+        encode_cursor(["not-a-number", 0]),
+        encode_cursor([-1, 0]),
+        encode_cursor([0, -1]),
+        encode_cursor([9_999, 0]),
+        encode_cursor([0, 9_999]),
+    ):
+        result = await call_tool(
+            mcp_client,
+            pat_primary_read,
+            "get_template",
+            {
+                "project_id": str(SEED.primary_project),
+                "template_id": str(SEED.primary_template),
+                "cursor": bad_cursor,
+            },
+        )
+        payload = error_payload(result)
+        assert payload["code"] == "INVALID_ARGUMENT", bad_cursor
+        assert payload["field"] == "cursor", bad_cursor
+
+
 async def test_get_template_metadata(mcp_client, pat_primary_read):
     async with mcp_client(pat_primary_read) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
@@ -269,3 +297,70 @@ async def test_get_template_metadata(mcp_client, pat_primary_read):
         True,
         False,
     )
+
+
+async def _walk_all_pages(mcp_client, pat, project_id, template_id) -> list[dict]:
+    pages: list[dict] = []
+    cursor: str | None = None
+    while True:
+        args = {"project_id": str(project_id), "template_id": str(template_id)}
+        if cursor is not None:
+            args["cursor"] = cursor
+        body = structured(await call_tool(mcp_client, pat, "get_template", args))
+        pages.append(body)
+        cursor = body["next_cursor"]
+        if cursor is None:
+            break
+    return pages
+
+
+async def test_response_size_cap_get_template(mcp_client, pat_primary_read, db_session):
+    # B1, diff-heavy shape: 45 new sections with long labels open a draft
+    # with 45 ADDITIVE rows (capped at 40 by _DIFF_ROW_CAP, still filling
+    # page 1's diff close to its max size), plus a few fields with long
+    # `llm_description` ("instructions") text on page 1's questions too.
+    project_id, template_id, schema = await fresh_charms(db_session)
+    for i in range(45):
+        await add_section(db_session, template_id, f"Diff-heavy-section-{i}-" + ("X" * 150))
+    first_entity_id = UUID(schema["entity_types"][0]["id"])
+    for i in range(5):
+        field_id = await add_field(db_session, first_entity_id, f"long-instructions-field-{i}")
+        await db_session.execute(
+            text("UPDATE public.extraction_fields SET llm_description = :d WHERE id = :id"),
+            {"d": "y" * 600, "id": str(field_id)},
+        )
+    await db_session.flush()
+
+    pages = await _walk_all_pages(mcp_client, pat_primary_read, project_id, template_id)
+    for page in pages:
+        assert len(json.dumps(page)) <= 32_000
+
+    # B1, many-sections shape: 400 one-question sections.
+    project_id2, template_id2, _schema2 = await fresh_charms(db_session)
+    for i in range(400):
+        section_id = await add_section(db_session, template_id2, f"Many-section-{i}")
+        await add_field(db_session, section_id, f"field-{i}")
+    # The published snapshot is frozen at fresh_charms's republish and does
+    # not see these live-only additions; deactivate the version so
+    # get_template falls back to the live tree (same fallback exercised by
+    # test_get_template_live_tree_matches_fallback), which does.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_template_versions SET is_active = false "
+            "WHERE project_template_id = :tid"
+        ),
+        {"tid": str(template_id2)},
+    )
+    await db_session.flush()
+    live = await live_entity_types(db_session, template_id=template_id2)
+    expected_covered = sum(len(et.fields) for et in live)
+
+    pages2 = await _walk_all_pages(mcp_client, pat_primary_read, project_id2, template_id2)
+    assert len(pages2) > 1
+    covered = 0
+    for page in pages2:
+        assert len(json.dumps(page)) <= 32_000
+        for section in page["sections"]:
+            assert section["questions"], f"section emitted with zero questions: {section}"
+            covered += len(section["questions"])
+    assert covered == expected_covered
