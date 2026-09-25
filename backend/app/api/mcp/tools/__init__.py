@@ -9,5 +9,6 @@ from app.api.mcp.tools import (  # noqa: F401
     project_details,
     projects,
     search,
+    template_draft,
     templates,
 )

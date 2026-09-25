@@ -145,6 +145,60 @@ BOLA_CASES = [
         "SCOPE_INSUFFICIENT",
         id="update_project_details-read-token",
     ),
+    pytest.param(
+        "pat_outsider_rw",
+        "edit_template_draft",
+        {
+            "project_id": str(SEED.primary_project),
+            "template_id": str(SEED.primary_template),
+            "ops": [
+                {
+                    "op": "add_question",
+                    "section_id": str(SEED.primary_entity_type),
+                    "label": "Q",
+                    "type": "text",
+                }
+            ],
+        },
+        "NOT_FOUND",
+        id="edit_template_draft-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_reviewer_rw",
+        "edit_template_draft",
+        {
+            "project_id": str(SEED.primary_project),
+            "template_id": str(SEED.primary_template),
+            "ops": [
+                {
+                    "op": "add_question",
+                    "section_id": str(SEED.primary_entity_type),
+                    "label": "Q",
+                    "type": "text",
+                }
+            ],
+        },
+        "MANAGER_REQUIRED",
+        id="edit_template_draft-reviewer-not-manager",
+    ),
+    pytest.param(
+        "pat_primary_read",
+        "edit_template_draft",
+        {
+            "project_id": str(SEED.primary_project),
+            "template_id": str(SEED.primary_template),
+            "ops": [
+                {
+                    "op": "add_question",
+                    "section_id": str(SEED.primary_entity_type),
+                    "label": "Q",
+                    "type": "text",
+                }
+            ],
+        },
+        "SCOPE_INSUFFICIENT",
+        id="edit_template_draft-read-token",
+    ),
 ]
 
 
@@ -360,3 +414,95 @@ async def test_get_extractions_article_id_of_another_project_is_not_found(
         },
     )
     assert error_payload(result)["code"] == "NOT_FOUND"
+
+
+async def test_edit_template_draft_absent_from_tools_list_for_read_token(
+    mcp_client, pat_primary_read
+) -> None:
+    async with mcp_client(pat_primary_read) as client:
+        names = {t.name for t in (await client.list_tools()).tools}
+    assert "edit_template_draft" not in names
+
+
+async def test_edit_template_draft_section_of_another_template_is_not_found(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    # `SEED.primary_entity_type` belongs to `SEED.primary_template`, not the
+    # fresh CHARMS clone under test -- a foreign row, not a missing one.
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "edit_template_draft",
+        {
+            "project_id": str(project_id),
+            "template_id": str(template_id),
+            "ops": [
+                {
+                    "op": "add_question",
+                    "section_id": str(SEED.primary_entity_type),
+                    "label": "Q",
+                    "type": "text",
+                }
+            ],
+        },
+    )
+    assert error_payload(result)["code"] == "NOT_FOUND"
+
+
+async def test_edit_template_draft_bola_writes_no_row(
+    mcp_client,
+    pat_outsider_rw,
+    pat_reviewer_rw,
+    pat_primary_read,
+    pat_primary_rw,
+    db_session: AsyncSession,
+) -> None:
+    project_id, template_id, _schema = await fresh_charms(db_session)
+    ops = [
+        {
+            "op": "add_question",
+            "section_id": str(SEED.primary_entity_type),
+            "label": "Q",
+            "type": "text",
+        }
+    ]
+    before = (
+        await db_session.execute(text("SELECT count(*) FROM public.agent_actions"))
+    ).scalar_one()
+    for pat, args in (
+        (
+            pat_outsider_rw,
+            {
+                "project_id": str(SEED.primary_project),
+                "template_id": str(SEED.primary_template),
+                "ops": ops,
+            },
+        ),
+        (
+            pat_reviewer_rw,
+            {
+                "project_id": str(SEED.primary_project),
+                "template_id": str(SEED.primary_template),
+                "ops": ops,
+            },
+        ),
+        (
+            pat_primary_read,
+            {
+                "project_id": str(SEED.primary_project),
+                "template_id": str(SEED.primary_template),
+                "ops": ops,
+            },
+        ),
+        (
+            pat_primary_rw,
+            {"project_id": str(project_id), "template_id": str(template_id), "ops": ops},
+        ),
+    ):
+        result = await call_tool(mcp_client, pat, "edit_template_draft", args)
+        assert result.is_error
+    after = (
+        await db_session.execute(text("SELECT count(*) FROM public.agent_actions"))
+    ).scalar_one()
+    assert after == before

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
+from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.template_structure import AllowedValues, FieldType
 
 
@@ -58,3 +59,25 @@ class UpdateQuestionOp(BaseModel):
 
 
 DraftOp = AddQuestionOp | UpdateQuestionOp
+
+
+class AppliedQuestion(BaseModel):
+    """One op the tool applied, for the reply (spec §5.2)."""
+
+    op_index: int
+    op: Literal["add_question", "update_question"]
+    field_id: UUID
+    section_id: UUID
+    name: str
+    label: str
+
+
+class EditTemplateDraftResult(BaseModel):
+    """``edit_template_draft``'s reply: always an unpublished, invisible draft."""
+
+    status: Literal["draft_saved_unpublished"]
+    visible_to_reviewers_and_ai: Literal[False]
+    applied: list[AppliedQuestion]
+    diff: TemplateConfigDiffRead
+    editor_path: str
+    next_step: str
