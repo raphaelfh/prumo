@@ -114,6 +114,12 @@ export function TemplateConfigPublishControls({
     configStatus?.draft_holder_id != null &&
     configStatus.is_draft_holder !== true;
 
+  // Researcher MCP (spec §6.2): the chip's agent-edit line. `configStatus`
+  // is undefined while loading and on error, so the line hides along with
+  // the chip in those states.
+  const agentEdits =
+    hasPendingChanges && configStatus?.has_agent_edits === true;
+
   let chip = null;
   if (hasPendingChanges) {
     // B-9b2a: the draft chip is now the diff sheet's trigger. It was a
@@ -175,6 +181,16 @@ export function TemplateConfigPublishControls({
   return (
     <>
       {chip}
+      {agentEdits && (
+        <span className="text-xs text-muted-foreground">
+          {configStatus?.agent_edit_token_name != null
+            ? t("templateConfig", "draftAgentEditsBy").replace(
+                "{{token}}",
+                configStatus.agent_edit_token_name,
+              )
+            : t("templateConfig", "draftAgentEdits")}
+        </span>
+      )}
       {heldByOther && (
         <>
           <span className="text-xs text-muted-foreground">

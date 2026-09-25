@@ -249,6 +249,10 @@ export const templateConfig = {
   // unattributed draft (pre-0053, or a raw PostgREST write) reads as a
   // plain draft with no owner and offers no takeover, because there is
   // nobody to take it from.
+  // Researcher MCP (spec §6.2): an MCP agent applied a write inside the open
+  // draft. The token name is the one its owner chose in Settings.
+  draftAgentEdits: 'includes edits via AI agent',
+  draftAgentEditsBy: 'includes edits via AI agent · {{token}}',
   draftHeldBy: 'Being edited by {{who}}',
   draftTakeOver: 'Take over',
   draftTakeOverTooltip:

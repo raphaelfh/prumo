@@ -276,6 +276,48 @@ describe('TemplateConfigPublishControls', () => {
     expect(screen.queryByText('Unpublished changes')).not.toBeInTheDocument();
   });
 
+  // Researcher MCP (spec §6.2) — the draft chip's agent-edit line.
+  it('agent edits with a token name → names the token beside the draft chip', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({has_pending_changes: true, has_agent_edits: true, agent_edit_token_name: 'Claude laptop'}),
+    );
+    renderControls();
+    expect(await screen.findByText('includes edits via AI agent · Claude laptop')).toBeInTheDocument();
+  });
+
+  it('agent edits whose token is gone → nameless line', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(
+      status({has_pending_changes: true, has_agent_edits: true, agent_edit_token_name: null}),
+    );
+    renderControls();
+    expect(await screen.findByText('includes edits via AI agent')).toBeInTheDocument();
+  });
+
+  it('draft without agent edits → no agent line', async () => {
+    loadTemplateConfigStatus.mockResolvedValue(status({has_pending_changes: true}));
+    renderControls();
+    expect(await screen.findByText('Unpublished changes')).toBeInTheDocument();
+    expect(screen.queryByText(/edits via AI agent/)).not.toBeInTheDocument();
+  });
+
+  it('status still loading → no agent line', () => {
+    loadTemplateConfigStatus.mockImplementation(() => new Promise(() => {}));
+    renderControls();
+    expect(screen.queryByText(/edits via AI agent/)).not.toBeInTheDocument();
+  });
+
+  it('status failed → no agent line', async () => {
+    loadTemplateConfigStatus.mockResolvedValue({
+      ok: false,
+      error: {message: 'boom'},
+    });
+    renderControls();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeDisabled(),
+    );
+    expect(screen.queryByText(/edits via AI agent/)).not.toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------
