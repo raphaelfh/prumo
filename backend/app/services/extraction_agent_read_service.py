@@ -11,6 +11,17 @@ lockstep copy of migration 0025). There is no ALL_USERS path here (unlike
 the export's `managers_see_reviewers`-blind CSV): an agent call is a single
 caller's view, so it always renders through that caller's own blind
 boundary, never an unblinded aggregate.
+
+Fix round 1 (B1): every page's real JSON size is measured through
+`compact_json` (`app/utils/compact_json.py`, task 2c's one serializer,
+moved out of `app/api/mcp/` so a service may import it) -- never
+`BaseModel.model_dump_json()`, which is both more compact (no separators)
+and renders non-ASCII as raw UTF-8 instead of an escaped sequence, so it
+silently under-counts a page with long non-ASCII values far enough to blow
+the 32,000-char cap. The budget also reserves room for `next_cursor` itself
+(`_CURSOR_RESERVE`, mirroring `templates.py`) and for a per-article
+envelope -- `article_id`/`title`/`run`/`reason`/`peer_values_hidden` cost
+real bytes too, not just the packed `values`/`rows`.
 """
 
 from __future__ import annotations
@@ -23,7 +34,7 @@ from typing import Any, Literal, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
@@ -56,7 +67,8 @@ from app.services.template_version_read_service import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
 )
-from app.utils.opaque_cursor import decode_cursor, encode_cursor
+from app.utils.compact_json import compact_json
+from app.utils.opaque_cursor import InvalidCursorError, decode_cursor, encode_cursor
 from app.utils.untrusted import wrap_untrusted
 
 _PAGE_BUDGET = 28_000
@@ -64,6 +76,19 @@ _CONCISE_VALUE_CAP = 80
 _DETAILED_VALUE_CAP = 1_000
 _EVIDENCE_QUOTE_CAP = 300
 _EVIDENCE_PER_ROW_CAP = 3
+#: Reserved for `next_cursor` itself, same reasoning as `templates.py`: the
+#: envelope is measured with it `None`, but a non-last page replaces that
+#: with an opaque base64 cursor string a few chars longer.
+_CURSOR_RESERVE = 64
+#: The question list rides on page 1 only (never paged, per this tool's own
+#: contract) -- BOUNDED, not paged, to a fixed sub-budget so an oversized
+#: questionnaire can never alone starve page 1's `budget` down to
+#: `max(1, ...)` and overflow it (fix round 1, reviewer minor 3). A
+#: questionnaire whose flattened JSON exceeds this drops its tail questions
+#: from page 1's `questions` list; the article data for those same fields
+#: still appears (concise cells / detailed rows are keyed by `field_id`, not
+#: gated on the field's presence in `questions`).
+_QUESTIONS_CAP = 20_000
 
 T = TypeVar("T")
 
@@ -88,6 +113,17 @@ def pack_items(
     single wedged-in item); an already-started article's own later items use
     inclusive room (`used + cost > budget` stops) so one run's fields don't
     fragment one at a time at the exact boundary.
+
+    Contract on `items` vs. `start`: the caller's own keyset query already
+    filters `items` to articles at-or-after `start`'s article (real callers
+    resume their DB query with `Article.id >= start[0]`) -- `pack_items`
+    itself never re-orders or filters by article id. When `start`'s exact
+    article is present, resume mid-article at `start[1]`; when it is absent
+    (deleted since the page that issued this cursor), `items[0]` -- by that
+    same caller contract -- is already the next surviving article, so
+    resume there at position 0 (fix round 1, M2: this used to fall through
+    to "nothing left", silently dropping every article that sorted after
+    the deleted one).
     """
     start_idx = 0
     start_pos = 0
@@ -98,7 +134,7 @@ def pack_items(
                 start_idx = idx
                 break
         else:
-            return [], None
+            start_pos = 0  # exact article gone; items[0] is the next survivor
 
     out: list[tuple[UUID, int, list[T]]] = []
     used = 0
@@ -392,6 +428,46 @@ async def _article_page(
     return page_rows, overflow_id
 
 
+def _bounded_questions(
+    all_questions: list[McpExtractionQuestion],
+) -> tuple[list[McpExtractionQuestion], int]:
+    """Bound (never page -- this tool returns the question list once, on
+    page 1 only) the flattened question list to `_QUESTIONS_CAP` bytes of
+    `compact_json`. A questionnaire whose full list already fits is
+    returned whole; one that does not has its tail dropped, one question at
+    a time, until it does -- an oversized `questions` list can never alone
+    push page 1's remaining item budget down to `max(1, ...)` and overflow
+    (fix round 1, reviewer minor 3)."""
+    cost = len(compact_json([q.model_dump(mode="json") for q in all_questions]))
+    if cost <= _QUESTIONS_CAP or not all_questions:
+        return all_questions, cost
+    kept = list(all_questions)
+    while len(kept) > 1 and cost > _QUESTIONS_CAP:
+        kept.pop()
+        cost = len(compact_json([q.model_dump(mode="json") for q in kept]))
+    return kept, cost
+
+
+def _envelope_header_cost(
+    article_pk: UUID, meta: dict[str, Any], response_format: Literal["concise", "detailed"]
+) -> int:
+    """JSON weight of an article's own envelope fields, excluding `values`/
+    `rows` (mirrors `templates.py::_section_header_cost`): `+2` for the
+    `", "` separator joining this article to its neighbour in the
+    `articles` array."""
+    empty = McpExtractionArticle(
+        article_id=article_pk,
+        title=meta["title"],
+        run=meta["run"],
+        reason=meta["reason"],
+        peer_values_hidden=meta["peer_values_hidden"],
+        continued=False,
+        values={} if response_format == "concise" else None,
+        rows=[] if response_format == "detailed" else None,
+    )
+    return len(compact_json(empty.model_dump(mode="json"))) + 2
+
+
 async def list_agent_extractions(
     db: AsyncSession,
     *,
@@ -404,9 +480,19 @@ async def list_agent_extractions(
     cursor: str | None,
     limit: int,
 ) -> McpExtractionsPage:
-    raw_cursor = decode_cursor(cursor, arity=2)
+    # Cursor arity 4: (article_id, item position, response_format,
+    # article_id filter or "" for none) -- M4 (fix round 1): a cursor is
+    # bound to the call shape it was issued for. Reusing one under a
+    # different `response_format` or a different `article_id` filter would
+    # resume mid-page-1-format-A's item position against page-1-format-B's
+    # DIFFERENT item list (concise cells vs detailed rows page differently),
+    # so a mismatch is an opaque-cursor error, not a silent reinterpretation.
+    article_filter_token = str(article_id) if article_id is not None else ""
+    raw_cursor = decode_cursor(cursor, arity=4)
     start: tuple[UUID, int] | None = None
     if raw_cursor is not None:
+        if raw_cursor[2] != response_format or raw_cursor[3] != article_filter_token:
+            raise InvalidCursorError("cursor was issued for a different response_format/article_id")
         start = (UUID(str(raw_cursor[0])), int(raw_cursor[1]))
 
     try:
@@ -421,17 +507,13 @@ async def list_agent_extractions(
     questions_cost = 0
     if cursor is None:
         label_by_et = {et.id: et.label for et in tree}
-        questions = [
+        all_questions = [
             McpExtractionQuestion(
                 field_id=field_id, section_label=label_by_et[et_id], label=label, type=field_type
             )
             for field_id, et_id, label, field_type in field_rows
         ]
-        # Same rendering as `compact_json` (task 2c's one serializer, api-layer
-        # only): `json.dumps` default separators. Services cannot import
-        # `app.api.mcp.*` (layering), so this budget accounting duplicates the
-        # ONE-LINE call rather than the module.
-        questions_cost = len(json.dumps([q.model_dump(mode="json") for q in questions]))
+        questions, questions_cost = _bounded_questions(all_questions)
 
     article_rows, overflow_article_id = await _article_page(
         db,
@@ -496,9 +578,21 @@ async def list_agent_extractions(
     if response_format == "detailed" and details:
         visible_proposal_ids = {p.id for d in details.values() for p in d.proposals}
         visible_decision_ids = {rd.id for d in details.values() for rd in d.decisions}
+        # M1 (fix round 1): a row carrying BOTH a proposal_record_id and a
+        # reviewer_decision_id (the model's CHECK constraint permits it) must
+        # never surface through its proposal side alone when its decision
+        # belongs to a hidden peer -- `reviewer_decision_id IS SET` makes
+        # visibility turn on THAT id, full stop; only a row with no decision
+        # id at all falls back to the proposal id (an AI-proposal's own
+        # evidence, which never carries a decision id).
         conditions = []
         if visible_proposal_ids:
-            conditions.append(ExtractionEvidence.proposal_record_id.in_(visible_proposal_ids))
+            conditions.append(
+                and_(
+                    ExtractionEvidence.reviewer_decision_id.is_(None),
+                    ExtractionEvidence.proposal_record_id.in_(visible_proposal_ids),
+                )
+            )
         if visible_decision_ids:
             conditions.append(ExtractionEvidence.reviewer_decision_id.in_(visible_decision_ids))
         if conditions:
@@ -626,10 +720,37 @@ async def list_agent_extractions(
                         )
             items_by_article.append((article_pk, d_items))
 
-    budget = max(1, _PAGE_BUDGET - questions_cost)
-    packed, next_start = pack_items(
-        items_by_article, start=start, budget=budget, cost=lambda item: len(item.model_dump_json())
-    )
+    # Fold each article's own envelope weight (article_id/title/run/reason/
+    # peer_values_hidden -- everything BUT `values`/`rows`) into the cost of
+    # the first item this call would place from it: pack_items' own
+    # "does the next article's first item fit" check then already accounts
+    # for the header riding along with it, so an article whose header alone
+    # is expensive defers as a whole (fix round 1, B1: article envelope
+    # fields used to cost 0, so a page of many articles with long titles
+    # could clear the item budget while the real JSON still overflowed).
+    # Zero-item (no-run) articles are NOT charged here -- pack_items always
+    # emits them for free (forced-progress contract) -- but their envelope
+    # is a UUID + short title + null run, a few hundred bytes at most; ten
+    # of them on one page cannot approach the 32,000-char cap on their own.
+    header_extra_cost: dict[int, int] = {}
+    for article_pk, article_items in items_by_article:
+        if article_items:
+            header_extra_cost[id(article_items[0])] = _envelope_header_cost(
+                article_pk, article_meta[article_pk], response_format
+            )
+
+    def _item_cost(item: Any) -> int:
+        # +2: the `", "` separator joining this item to its neighbour in the
+        # surrounding JSON array (default `json.dumps` separators) -- summing
+        # each item's own compact_json length under-counts the joined array
+        # by exactly that, once per item (same reasoning as
+        # `templates.py::_page_sections`).
+        return (
+            len(compact_json(item.model_dump(mode="json"))) + 2 + header_extra_cost.get(id(item), 0)
+        )
+
+    budget = max(1, _PAGE_BUDGET - questions_cost - _CURSOR_RESERVE)
+    packed, next_start = pack_items(items_by_article, start=start, budget=budget, cost=_item_cost)
 
     articles_out: list[McpExtractionArticle] = []
     for article_pk, first_pos, chosen in packed:
@@ -654,9 +775,13 @@ async def list_agent_extractions(
         )
 
     if next_start is not None:
-        next_cursor = encode_cursor([str(next_start[0]), next_start[1]])
+        next_cursor = encode_cursor(
+            [str(next_start[0]), next_start[1], response_format, article_filter_token]
+        )
     elif overflow_article_id is not None:
-        next_cursor = encode_cursor([str(overflow_article_id), 0])
+        next_cursor = encode_cursor(
+            [str(overflow_article_id), 0, response_format, article_filter_token]
+        )
     else:
         next_cursor = None
 

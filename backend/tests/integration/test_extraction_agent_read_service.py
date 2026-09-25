@@ -19,6 +19,8 @@ from app.services.extraction_agent_read_service import list_agent_extractions
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_run_read_service import get_run_with_workflow_history
 from app.services.run_lifecycle_service import RunLifecycleService
+from app.utils.compact_json import compact_json
+from app.utils.opaque_cursor import InvalidCursorError, encode_cursor
 from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED
 from tests.integration.helpers.template_fixtures import add_field, add_section
@@ -183,6 +185,46 @@ async def test_manager_hidden_before_consensus(db_session: AsyncSession) -> None
 
     page = await _page(db_session, SEED.primary_profile, template_id=template_id)
     assert page.articles[0].peer_values_hidden is True
+    # B2 (fix round 1): the OFF default must actually withhold peer B's
+    # value from the manager, not just flip the flag -- the flag alone
+    # doesn't prove the blob is clean.
+    assert "REVIEWER-B-SECRET" not in _blob(page)
+
+
+async def test_manager_parity_managers_see_reviewers_on(db_session: AsyncSession) -> None:
+    """B2 (fix round 1): with the project's live `managers_see_reviewers`
+    setting ON for this template's kind, a manager sees BOTH reviewers'
+    secrets even before consensus -- `caller_can_see_peers` is the ONLY
+    thing that changed; `get_run_with_workflow_history` is still the sole
+    filter, never re-implemented here."""
+    run_id, _reviewer_a, _reviewer_b = await _built_or_skip(db_session)
+    template_id = await _template_id_of_run(db_session, run_id)
+    project_id = (
+        await db_session.execute(
+            text("SELECT project_id FROM public.extraction_runs WHERE id = :id"),
+            {"id": str(run_id)},
+        )
+    ).scalar_one()
+    # A direct overwrite, not `jsonb_set`: `jsonb_set` only ever creates the
+    # FINAL path key, never a missing intermediate object -- the seeded
+    # row's `settings` is `{}` (no `managers_see_reviewers` key at all), so
+    # a 2-level `jsonb_set` path silently no-ops on it.
+    await db_session.execute(
+        text(
+            "UPDATE public.projects SET settings = "
+            '\'{"managers_see_reviewers": {"extraction": true, "quality_assessment": false}}\'::jsonb '
+            "WHERE id = :pid"
+        ),
+        {"pid": str(project_id)},
+    )
+    await db_session.flush()
+    db_session.expire_all()
+
+    page = await _page(db_session, SEED.primary_profile, template_id=template_id)
+    blob = _blob(page)
+    assert "REVIEWER-A-SECRET" in blob
+    assert "REVIEWER-B-SECRET" in blob
+    assert page.articles[0].peer_values_hidden is False
 
 
 async def test_ai_only_flag(db_session: AsyncSession) -> None:
@@ -422,3 +464,310 @@ async def test_detailed_evidence_is_wrapped_and_scoped(db_session: AsyncSession)
 
     blob = _blob(page)
     assert "PEER-EVIDENCE" not in blob
+
+
+async def test_evidence_hidden_when_decision_id_belongs_to_hidden_peer(
+    db_session: AsyncSession,
+) -> None:
+    """M1 (fix round 1): a row can carry BOTH a proposal_record_id and a
+    reviewer_decision_id (the model's CHECK constraint allows it). Even when
+    its proposal_record_id points at a VISIBLE (AI) proposal, a
+    reviewer_decision_id that belongs to a HIDDEN peer's decision must
+    still hide the row -- never surfaced through the proposal side alone.
+    Constructs that row directly, as the finding asks."""
+    run_id, reviewer_a, _reviewer_b = await _built_or_skip(db_session)
+    template_id = await _template_id_of_run(db_session, run_id)
+    instance_id, field_id = await _ai_only_coordinate(
+        db_session, run_id=run_id, template_id=template_id
+    )
+    ai_proposal_id = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_proposal_records "
+                "WHERE run_id = :rid AND instance_id = :iid AND field_id = :fid"
+            ),
+            {"rid": str(run_id), "iid": str(instance_id), "fid": str(field_id)},
+        )
+    ).scalar_one()
+    hidden_decision_row = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_reviewer_decisions "
+                "WHERE run_id = :rid AND reviewer_id != :a LIMIT 1"
+            ),
+            {"rid": str(run_id), "a": str(reviewer_a)},
+        )
+    ).first()
+    assert hidden_decision_row is not None
+
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_evidence "
+            "(id, project_id, article_id, run_id, proposal_record_id, reviewer_decision_id, "
+            "page_number, text_content, rank, created_by) "
+            "VALUES (gen_random_uuid(), :pid, :aid, :rid, :propid, :did, 5, "
+            "'LEAKED-VIA-DUAL-FK', 0, :uid)"
+        ),
+        {
+            "pid": str(SEED.primary_project),
+            "aid": str(SEED.primary_article),
+            "rid": str(run_id),
+            "propid": str(ai_proposal_id),
+            "did": str(hidden_decision_row[0]),
+            "uid": str(SEED.primary_profile),
+        },
+    )
+    await db_session.flush()
+
+    page = await _page(db_session, reviewer_a, template_id=template_id)
+    ai_row = next(
+        r
+        for r in (page.articles[0].rows or [])
+        if r.instance_id == instance_id and r.field_id == field_id and r.decider == "ai"
+    )
+    assert ai_row.evidence == []
+    assert "LEAKED-VIA-DUAL-FK" not in _blob(page)
+
+
+async def test_cursor_article_deleted_resumes_at_next_article(db_session: AsyncSession) -> None:
+    """M2 (fix round 1): a cursor naming an article deleted since the page
+    that issued it must resume at the next surviving article -- not lose
+    the whole rest of the listing."""
+    run_id, _reviewer_a, _reviewer_b = await _built_or_skip(db_session)
+    template_id = await _template_id_of_run(db_session, run_id)
+
+    async def _low_id_article(suffix: str, title: str) -> UUID:
+        article_id = UUID(f"00000000-0000-0000-0000-0000000001{suffix}")
+        await db_session.execute(
+            text(
+                "INSERT INTO public.articles (id, project_id, title, row_version) "
+                "VALUES (:id, :pid, :title, 1)"
+            ),
+            {"id": str(article_id), "pid": str(SEED.primary_project), "title": title},
+        )
+        await db_session.flush()
+        return article_id
+
+    a1 = await _low_id_article("01", "cursor-victim-1")
+    a2 = await _low_id_article("02", "cursor-victim-2")
+
+    page1 = await list_agent_extractions(
+        db_session,
+        project_id=SEED.primary_project,
+        template_id=template_id,
+        template_kind="extraction",
+        caller_id=SEED.primary_profile,
+        article_id=None,
+        response_format="concise",
+        cursor=None,
+        limit=1,
+    )
+    assert [a.article_id for a in page1.articles] == [a1]
+    assert page1.next_cursor is not None
+
+    await db_session.execute(text("DELETE FROM public.articles WHERE id = :id"), {"id": str(a1)})
+    await db_session.flush()
+
+    page2 = await list_agent_extractions(
+        db_session,
+        project_id=SEED.primary_project,
+        template_id=template_id,
+        template_kind="extraction",
+        caller_id=SEED.primary_profile,
+        article_id=None,
+        response_format="concise",
+        cursor=page1.next_cursor,
+        limit=1,
+    )
+    assert [a.article_id for a in page2.articles] == [a2]
+
+
+async def test_cursor_rejects_mismatched_response_format(db_session: AsyncSession) -> None:
+    """M4 (fix round 1): a cursor issued under one `response_format` must
+    not be honored under a different one -- item lists page differently
+    per format, so resuming with a mismatched format would replay a
+    position that means something else."""
+    run_id, _reviewer_a, _reviewer_b = await _built_or_skip(db_session)
+    template_id = await _template_id_of_run(db_session, run_id)
+
+    # A well-formed cursor, issued for concise + no article filter, replayed
+    # against detailed -- never a real page's `next_cursor` (which article
+    # the shared seed DB happens to land on page 1 is not this test's
+    # concern; only the format/article binding is).
+    forged = encode_cursor([str(SEED.primary_article), 0, "concise", ""])
+    with pytest.raises(InvalidCursorError):
+        await list_agent_extractions(
+            db_session,
+            project_id=SEED.primary_project,
+            template_id=template_id,
+            template_kind="extraction",
+            caller_id=SEED.primary_profile,
+            article_id=None,
+            response_format="detailed",
+            cursor=forged,
+            limit=10,
+        )
+
+
+async def test_cursor_rejects_mismatched_article_filter(db_session: AsyncSession) -> None:
+    """M4 (fix round 1): a cursor issued for a project-wide listing must not
+    be honored when replayed with an `article_id` filter (or a different
+    one), which pages a completely different article set."""
+    run_id, _reviewer_a, _reviewer_b = await _built_or_skip(db_session)
+    template_id = await _template_id_of_run(db_session, run_id)
+
+    forged = encode_cursor([str(SEED.primary_article), 0, "detailed", ""])
+    with pytest.raises(InvalidCursorError):
+        await list_agent_extractions(
+            db_session,
+            project_id=SEED.primary_project,
+            template_id=template_id,
+            template_kind="extraction",
+            caller_id=SEED.primary_profile,
+            article_id=SEED.primary_article,
+            response_format="detailed",
+            cursor=forged,
+            limit=10,
+        )
+
+
+async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) -> None:
+    """B1 (fix round 1): the reviewer's probe measured 34,506 chars on a
+    pt-BR detailed page -- long non-ASCII values plus evidence, escaped by
+    `compact_json`, blew the old `model_dump_json()`-based budget. Ten
+    articles, three long non-ASCII rows with evidence each: every page must
+    stay <= 32,000 chars of `compact_json`, and paging must cover every
+    row exactly once."""
+    run_id, _reviewer_a, _reviewer_b = await _built_or_skip(db_session)
+    template_id = await _template_id_of_run(db_session, run_id)
+
+    # Create every article + run FIRST, while the template's published
+    # version is still active (`RunLifecycleService.create_run` requires
+    # exactly one). Only THEN deactivate it and add the section/fields this
+    # test needs, the same forced live-fallback precedent `_ai_only_coordinate`
+    # uses -- `get_active_version_tree` reads a FROZEN published snapshot, so
+    # a live-only addition needs the version inactive to be seen at all.
+    lifecycle = RunLifecycleService(db_session)
+    runs: list[tuple[UUID, UUID]] = []  # (article_id, run_id)
+    for i in range(10):
+        article_id = await insert_article(
+            db_session, SEED.primary_project, title=f"worst-case-article-{i}"
+        )
+        run = await lifecycle.create_run(
+            project_id=SEED.primary_project,
+            article_id=article_id,
+            project_template_id=template_id,
+            user_id=SEED.primary_profile,
+        )
+        await lifecycle.advance_stage(
+            run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=SEED.primary_profile
+        )
+        runs.append((article_id, run.id))
+
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_template_versions SET is_active = false "
+            "WHERE project_template_id = :tid"
+        ),
+        {"tid": str(template_id)},
+    )
+    entity_type_id = await add_section(db_session, template_id, "Worst-case section")
+    field_ids = [
+        await add_field(db_session, entity_type_id, f"worst-case-field-{i}") for i in range(3)
+    ]
+
+    long_value = (
+        "Pacientes com insuficiencia cardiaca cronica e fracao de ejecao reduzida foram "
+        "randomizados; a mortalidade por causa cardiovascular nao diferiu entre os grupos. "
+        "Ensaio clinico randomizado com desfecho composto e intervalo de confianca de 95%. "
+    ) * 6  # >1000 non-ASCII-adjacent chars once truncation/escaping is accounted for
+    long_value = long_value.replace("a", "ã").replace("o", "õ")  # force real non-ASCII
+    quote_text = long_value[:400]
+
+    expected_rows: set[tuple[UUID, UUID, UUID]] = set()
+    for article_id, run_pk in runs:
+        instance_id = (
+            await db_session.execute(
+                text(
+                    "INSERT INTO public.extraction_instances "
+                    "(id, project_id, article_id, template_id, entity_type_id, label, sort_order, "
+                    "metadata, created_by) "
+                    "VALUES (gen_random_uuid(), :pid, :aid, :tid, :etid, 'entry', 1, '{}'::jsonb, :uid) "
+                    "RETURNING id"
+                ),
+                {
+                    "pid": str(SEED.primary_project),
+                    "aid": str(article_id),
+                    "tid": str(template_id),
+                    "etid": str(entity_type_id),
+                    "uid": str(SEED.primary_profile),
+                },
+            )
+        ).scalar_one()
+        for fld in field_ids:
+            expected_rows.add((article_id, instance_id, fld))
+            await ExtractionProposalService(db_session).record_proposal(
+                run_id=run_pk,
+                instance_id=instance_id,
+                field_id=fld,
+                source=ExtractionProposalSource.AI,
+                proposed_value={"value": long_value},
+            )
+            proposal_id = (
+                await db_session.execute(
+                    text(
+                        "SELECT id FROM public.extraction_proposal_records "
+                        "WHERE run_id = :rid AND instance_id = :iid AND field_id = :fid"
+                    ),
+                    {"rid": str(run_pk), "iid": str(instance_id), "fid": str(fld)},
+                )
+            ).scalar_one()
+            for rank in range(3):
+                await db_session.execute(
+                    text(
+                        "INSERT INTO public.extraction_evidence "
+                        "(id, project_id, article_id, run_id, proposal_record_id, page_number, "
+                        "text_content, rank, created_by) "
+                        "VALUES (gen_random_uuid(), :pid, :aid, :rid, :propid, :pg, :txt, :rank, :uid)"
+                    ),
+                    {
+                        "pid": str(SEED.primary_project),
+                        "aid": str(article_id),
+                        "rid": str(run_pk),
+                        "propid": str(proposal_id),
+                        "pg": rank + 1,
+                        "txt": quote_text,
+                        "rank": rank,
+                        "uid": str(SEED.primary_profile),
+                    },
+                )
+        await db_session.flush()
+
+    seen_rows: set[tuple[UUID, UUID, UUID]] = set()
+    cursor: str | None = None
+    pages = 0
+    while True:
+        page = await list_agent_extractions(
+            db_session,
+            project_id=SEED.primary_project,
+            template_id=template_id,
+            template_kind="extraction",
+            caller_id=SEED.primary_profile,
+            article_id=None,
+            response_format="detailed",
+            cursor=cursor,
+            limit=10,
+        )
+        pages += 1
+        assert len(compact_json(page.model_dump(mode="json"))) <= 32_000
+        for article in page.articles:
+            for row in article.rows or []:
+                key = (article.article_id, row.instance_id, row.field_id)
+                assert key not in seen_rows, "row paged twice"
+                seen_rows.add(key)
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+        assert pages < 200  # runaway-loop guard, not a real expectation
+
+    assert expected_rows <= seen_rows

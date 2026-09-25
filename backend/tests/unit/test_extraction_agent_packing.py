@@ -57,3 +57,27 @@ def test_pack_items_start_resumes_mid_article() -> None:
         (a2, 0, 1),
     ]
     assert nxt is None
+
+
+def test_pack_items_start_article_deleted_resumes_at_next_survivor() -> None:
+    """Fix round 1, M2: a page's `next_cursor` names the article the next
+    call should resume at. The real caller's own keyset query already
+    filters the `items` it passes to only articles at-or-after that cursor
+    (`Article.id >= start[0]`), so when the cursor's own article was
+    deleted since the page that issued it, `items` simply no longer
+    contains it -- `items[0]` is already the next surviving article, and
+    packing must resume there (position 0), never treat the missing exact
+    match as "nothing left"."""
+    a2, a3 = uuid4(), uuid4()
+    deleted_a1 = uuid4()
+    # `a1` is GONE from `items` (as if deleted) but `start` still names it --
+    # exactly what a stale cursor looks like to the next call.
+    items: list[tuple[UUID, list[int]]] = [(a2, [1, 1]), (a3, [1])]
+
+    page, nxt = pack_items(items, start=(deleted_a1, 0), budget=1_000, cost=_flat_cost)
+
+    assert [(aid, pos, len(chosen)) for aid, pos, chosen in page] == [
+        (a2, 0, 2),
+        (a3, 0, 1),
+    ]
+    assert nxt is None
