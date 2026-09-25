@@ -7,7 +7,6 @@ frontend/hooks/extraction/helpers/getModelChildSections.ts|extraction_instances:
 frontend/hooks/extraction/helpers/queryEntityTypes.ts|extraction_entity_types:2
 frontend/hooks/extraction/useTemplateEntityTypes.ts|extraction_entity_types:1
 frontend/lib/supabase/baseRepository.ts|<dynamic>:1
-frontend/services/articlesExportService.ts|VITE_API_URL:1
 frontend/services/articlesService.ts|article_files:7
 frontend/services/articlesService.ts|articles:6
 frontend/services/extractionDataService.ts|articles:2

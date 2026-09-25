@@ -1468,6 +1468,102 @@
         "title": "ApiResponse[ParserSettingsRead]",
         "type": "object"
       },
+      "ApiResponse_PersonalAccessTokenCreated_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonalAccessTokenCreated"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[PersonalAccessTokenCreated]",
+        "type": "object"
+      },
+      "ApiResponse_PersonalAccessTokenRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonalAccessTokenRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[PersonalAccessTokenRead]",
+        "type": "object"
+      },
       "ApiResponse_PortableTemplate_": {
         "properties": {
           "data": {
@@ -3294,6 +3390,58 @@
           "ok"
         ],
         "title": "ApiResponse[list[LlmConnectionRead]]",
+        "type": "object"
+      },
+      "ApiResponse_list_PersonalAccessTokenRead__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[PersonalAccessTokenRead]]",
         "type": "object"
       },
       "ApiResponse_list_ProjectTemplateRead__": {
@@ -6877,6 +7025,198 @@
         "title": "ParserSettingsRead",
         "type": "object"
       },
+      "PersonalAccessTokenCreateRequest": {
+        "additionalProperties": false,
+        "description": "Body of ``POST /api/v1/me/tokens``.",
+        "properties": {
+          "expires_in_days": {
+            "description": "Token lifetime, in days, from creation.",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Expires In Days",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Caller-chosen label for the token.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scope": {
+            "description": "Which MCP tool tier the token may call.",
+            "enum": [
+              "read",
+              "read_write"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "scope",
+          "expires_in_days"
+        ],
+        "title": "PersonalAccessTokenCreateRequest",
+        "type": "object"
+      },
+      "PersonalAccessTokenCreated": {
+        "description": "Response of ``POST /api/v1/me/tokens``.\n\nThe only response that ever carries the secret: it is shown once, at\ncreation, and never again \u2014 only its SHA-256 hash is stored.",
+        "properties": {
+          "secret": {
+            "description": "The bearer secret. Shown once; store it now.",
+            "title": "Secret",
+            "type": "string"
+          },
+          "token": {
+            "$ref": "#/components/schemas/PersonalAccessTokenRead"
+          }
+        },
+        "required": [
+          "token",
+          "secret"
+        ],
+        "title": "PersonalAccessTokenCreated",
+        "type": "object"
+      },
+      "PersonalAccessTokenRead": {
+        "description": "A token row, never including the secret.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "scope": {
+            "enum": [
+              "read",
+              "read_write"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "token_prefix": {
+            "description": "First characters of the secret, shown for identification.",
+            "title": "Token Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "token_prefix",
+          "scope",
+          "status",
+          "expires_at",
+          "last_used_at",
+          "revoked_at",
+          "created_at"
+        ],
+        "title": "PersonalAccessTokenRead",
+        "type": "object"
+      },
+      "PersonalAccessTokenRefusalCode": {
+        "description": "Why ``POST /api/v1/me/tokens`` returned 409.\n\nSlice-local, like ``TemplateDraftLockRefusalCode``\n(``app/schemas/hitl_session.py``): one endpoint's outcome, not part of\nthe cross-cutting ``ApiErrorCode`` vocabulary.",
+        "enum": [
+          "TOKEN_LIMIT_REACHED"
+        ],
+        "title": "PersonalAccessTokenRefusalCode",
+        "type": "string"
+      },
+      "PersonalAccessTokenRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/PersonalAccessTokenRefusalCode"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "PersonalAccessTokenRefusalError",
+        "type": "object"
+      },
+      "PersonalAccessTokenRefusalResponse": {
+        "description": "The 409 body, declared so the generated client types the refusal.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/PersonalAccessTokenRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "PersonalAccessTokenRefusalResponse",
+        "type": "object"
+      },
       "PicotsSlot": {
         "description": "One PICOTS slot. Flat since migration 0063 \u2014 ``timing`` included.",
         "properties": {
@@ -10151,6 +10491,17 @@
             ],
             "title": "Active Version"
           },
+          "agent_edit_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Edit Token Name"
+          },
           "discard_available": {
             "default": false,
             "title": "Discard Available",
@@ -10177,6 +10528,11 @@
               }
             ],
             "title": "Draft Holder Name"
+          },
+          "has_agent_edits": {
+            "default": false,
+            "title": "Has Agent Edits",
+            "type": "boolean"
           },
           "has_pending_changes": {
             "title": "Has Pending Changes",
@@ -13476,6 +13832,139 @@
           }
         ],
         "summary": "List Providers",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/tokens": {
+      "get": {
+        "operationId": "list_my_tokens_api_v1_me_tokens_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_PersonalAccessTokenRead__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List My Tokens",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "operationId": "create_my_token_api_v1_me_tokens_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalAccessTokenCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PersonalAccessTokenCreated_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalAccessTokenRefusalResponse"
+                }
+              }
+            },
+            "description": "Refused: 10 active tokens is the limit"
+          },
+          "422": {
+            "description": "Invalid name, scope or expires_in_days"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create My Token",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/tokens/{token_id}": {
+      "delete": {
+        "operationId": "revoke_my_token_api_v1_me_tokens__token_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Token Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PersonalAccessTokenRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          },
+          "404": {
+            "description": "Token not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Revoke My Token",
         "tags": [
           "me"
         ]

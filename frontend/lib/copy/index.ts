@@ -23,6 +23,7 @@ import {templateConfig} from './templateConfig';
 import {llmConnections} from './llmConnections';
 import {aiContext} from './aiContext';
 import {aiBatch} from './aiBatch';
+import {personalAccessTokens} from './personalAccessTokens';
 
 export {
     common,
@@ -57,6 +58,7 @@ const copy = {
     llmConnections,
     aiContext,
     aiBatch,
+    personalAccessTokens,
 } as const;
 
 export type CopyNamespace = keyof typeof copy;

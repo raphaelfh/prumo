@@ -22,6 +22,7 @@ from app.api.v1.endpoints import (
     llm_engine,
     manager_review_visibility,
     parser_settings,
+    personal_access_tokens,
     project_archive,
     project_connections,
     project_delete,
@@ -66,6 +67,12 @@ api_router.include_router(
 
 api_router.include_router(
     user_connections.router,
+    prefix="/me",
+    tags=["me"],
+)
+
+api_router.include_router(
+    personal_access_tokens.router,
     prefix="/me",
     tags=["me"],
 )

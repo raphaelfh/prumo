@@ -27,10 +27,7 @@ app/infrastructure/parsing/docling_parser.py:attribute:do_table_structure
 app/infrastructure/parsing/docling_parser.py:attribute:table_structure_options
 app/llm/registry.py:function:provider_ids
 app/repositories/article_repository.py:attribute:last_synced_at
-app/repositories/article_repository.py:attribute:removed_at_source_at
 app/services/article_file_service.py:attribute:extraction_error
-app/services/article_file_service.py:attribute:extraction_status
-app/services/document_parsing_service.py:attribute:extraction_status
 app/services/exports/extraction/sheet_spec.py:attribute:freeze_panes
 app/services/exports/extraction/sheet_spec.py:attribute:tabColor
 app/services/extraction_export_service.py:variable:ai_proposed_value
@@ -48,4 +45,3 @@ app/worker/tasks/feedback_tasks.py:attribute:forwarded_at
 app/worker/tasks/feedback_tasks.py:attribute:linear_identifier
 app/worker/tasks/feedback_tasks.py:attribute:linear_url
 app/worker/tasks/parsing_tasks.py:attribute:extraction_error
-app/worker/tasks/parsing_tasks.py:attribute:extraction_status

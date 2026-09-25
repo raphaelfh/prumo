@@ -231,9 +231,18 @@ async def entity_types_for_version(
     if not snapshot_is_narrow(snapshot_types):
         return [RunViewEntityType.model_validate(et) for et in snapshot_types]
 
-    # Live fallback — one statement, fields eager-loaded (selectinload).
-    # The relationship is not guaranteed field-ordered, so sort the
-    # validated fields by sort_order to match the snapshot path.
+    return await live_entity_types(db, template_id=template_id)
+
+
+async def live_entity_types(db: AsyncSession, *, template_id: UUID) -> list[RunViewEntityType]:
+    """The live entity-types tree for a template, straight from the tables.
+
+    One statement, fields eager-loaded (``selectinload``). The relationship
+    is not guaranteed field-ordered, so the validated fields are sorted by
+    ``sort_order`` to match the snapshot path. Shared by
+    ``entity_types_for_version``'s live fallback and any reader that has no
+    pinned version to fall back from (an MCP template read).
+    """
     et_rows = (
         (
             await db.execute(

@@ -13,6 +13,8 @@ marker-set-but-identical state a republish still has to clear.
 
 from __future__ import annotations
 
+from uuid import UUID, uuid4
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,7 @@ from app.services.project_template_active_service import ProjectTemplateNotFound
 from app.services.template_instruction_service import set_template_instruction
 from app.services.template_version_read_service import get_template_config_status
 from tests.integration.conftest import SEED, set_config_draft_marker
+from tests.integration.helpers.pat_rows import insert_pat_row as _pat
 from tests.integration.helpers.template_fixtures import force_narrow_baseline
 
 
@@ -281,3 +284,108 @@ async def test_instruction_only_draft_counts_one(db_session: AsyncSession) -> No
     status = await _status(db_session)
     assert status.has_pending_changes is True
     assert status.pending_change_count == 1
+
+
+async def _agent_action(
+    db: AsyncSession, token_id: UUID | None, *, outcome: str = "applied", offset_seconds: int = 0
+) -> None:
+    await db.execute(
+        text(
+            "INSERT INTO public.agent_actions "
+            "(id, created_at, token_id, user_id, project_id, template_id, tool, input, "
+            "before, after, outcome, error_code) "
+            "VALUES (:id, now() + make_interval(secs => :s), :tok, :uid, :pid, :tid, "
+            "'edit_template_draft', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, :outcome, :code)"
+        ),
+        {
+            "id": str(uuid4()),
+            "s": offset_seconds,
+            "tok": str(token_id) if token_id else None,
+            "uid": str(SEED.primary_profile),
+            "pid": str(SEED.primary_project),
+            "tid": str(SEED.primary_template),
+            "outcome": outcome,
+            "code": None if outcome == "applied" else "STALE_VALUE",
+        },
+    )
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_agent_edit_inside_the_draft_lights_the_chip(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (agent)")
+    await _agent_action(db_session, await _pat(db_session, "Claude laptop"))
+
+    status = await _status(db_session)
+    assert status.has_agent_edits is True
+    assert status.agent_edit_token_name == "Claude laptop"
+
+
+@pytest.mark.asyncio
+async def test_refused_agent_row_does_not_light_the_chip(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (agent)")
+    await _agent_action(db_session, await _pat(db_session), outcome="refused")
+
+    status = await _status(db_session)
+    assert status.has_agent_edits is False
+    assert status.agent_edit_token_name is None
+
+
+@pytest.mark.asyncio
+async def test_chip_absent_when_row_predates_draft(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (agent)")
+    await _agent_action(db_session, await _pat(db_session), offset_seconds=-3600)
+
+    status = await _status(db_session)
+    assert status.has_agent_edits is False
+
+
+@pytest.mark.asyncio
+async def test_chip_clears_after_publish(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (agent)")
+    await _agent_action(db_session, await _pat(db_session))
+    await _publish_primary(db_session)
+
+    status = await _status(db_session)
+    assert status.has_pending_changes is False
+    assert status.has_agent_edits is False
+
+
+@pytest.mark.asyncio
+async def test_chip_survives_a_deleted_token_without_a_name(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (agent)")
+    token_id = await _pat(db_session)
+    await _agent_action(db_session, token_id)
+    await db_session.execute(
+        text("DELETE FROM public.personal_access_tokens WHERE id = :id"), {"id": str(token_id)}
+    )
+    await db_session.flush()
+
+    status = await _status(db_session)
+    assert status.has_agent_edits is True
+    assert status.agent_edit_token_name is None
+
+
+@pytest.mark.asyncio
+async def test_latest_applied_row_names_the_token(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _edit_primary_field_label(db_session, " (agent)")
+    await _agent_action(db_session, await _pat(db_session, "Old"), offset_seconds=0)
+    await _agent_action(db_session, await _pat(db_session, "New"), offset_seconds=1)
+
+    status = await _status(db_session)
+    assert status.agent_edit_token_name == "New"
+
+
+@pytest.mark.asyncio
+async def test_clean_template_builds_no_agent_query(db_session: AsyncSession) -> None:
+    await set_config_draft_marker(db_session, SEED.primary_template, None)
+    await _agent_action(db_session, await _pat(db_session))
+
+    status = await _status(db_session)
+    assert status.has_agent_edits is False

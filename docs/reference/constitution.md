@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-09-15
+last_reviewed: 2026-09-24
 owner: '@raphaelfh'
 ---
 
@@ -88,10 +88,10 @@ database level.
 
 Security controls are mandatory, not optional additions.
 
-- Authentication: JWT validation via Supabase Auth (RS256/JWKS in production, HS256 in local development).
+- Authentication: JWT validation via Supabase Auth (RS256/JWKS in production, HS256 in local development). `/mcp` alone also accepts personal access tokens (ADR 0020); their `user_id` comes from the verified token row, never from request input.
 - `user_id` MUST always be extracted from `user.sub` (JWT payload). It MUST NEVER be accepted from request bodies, query parameters, or path parameters.
-- Sensitive data (API keys, tokens) MUST be encrypted at rest using per-user or per-row derived keys (`PBKDF2-HMAC-SHA256` with `ENCRYPTION_KEY` env var).
-- Every endpoint MUST apply rate limiting via `@limiter.limit("N/minute")`.
+- Sensitive data (API keys, tokens) MUST be encrypted at rest using per-user or per-row derived keys (`PBKDF2-HMAC-SHA256` with `ENCRYPTION_KEY` env var). Credentials that are only verified, never recovered (personal access tokens), are stored as a SHA-256 hash instead (ADR 0020).
+- Every endpoint MUST apply rate limiting via `@limiter.limit("N/minute")`. The `/mcp` ASGI route applies the same limiter through its non-decorator API (ADR 0020).
 - CORS origins MUST be explicitly listed; wildcard origins (`*`) are forbidden in production.
 - Exposed response headers are limited to `X-Trace-Id` and `X-Response-Time`.
 
@@ -142,6 +142,7 @@ All API responses MUST use a uniform envelope format.
 - Global exception handlers (`register_exception_handlers`) catch `AppError`, `HTTPException`, and unhandled `Exception` uniformly.
 - Every endpoint MUST generate and propagate a `trace_id` (UUID) for request tracing.
 - Middleware stack order: `RequestIdMiddleware` → `LoggingMiddleware` → `TimingMiddleware`.
+- Exception: the `/mcp` route speaks the MCP protocol (JSON-RPC results with `isError`), not the `ApiResponse` envelope (ADR 0020).
 
 **Rationale**: A uniform response envelope simplifies frontend error handling, enables centralized logging, and makes API behavior predictable for consumers.
 
@@ -238,8 +239,15 @@ This constitution is the authoritative reference for all architectural and proce
 - Added complexity beyond what a principle prescribes MUST be justified in the PR description.
 - Use `AGENTS.md` as the runtime development guidance companion to this constitution.
 
-**Version**: 2.2.2 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-09-15
+**Version**: 2.3.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-09-24
 
+> 2.3.0: §IV and §VIII materially expanded for personal-access-token
+> authentication on `/mcp` (ADR 0020) — a second bearer credential accepted
+> only on that route, hashed (not encrypted) at rest because it is only ever
+> verified, never recovered, and an MCP-protocol exception to the
+> `ApiResponse` envelope for that same route. Neither §IV nor §VIII is
+> NON-NEGOTIABLE, so no migration plan accompanies this MINOR bump.
+>
 > 2.2.2: §IX mechanism bullet re-pointed from the run-level
 > `extraction_runs.results['provenance']` snapshot to the per-call
 > `extraction_proposal_records.generation_snapshot`. The generation facts

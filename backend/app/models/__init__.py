@@ -12,6 +12,7 @@ IMPORTANTE: A ordem de importacao importa!
 
 # Base models primeiro
 # Modelos que dependem of the anteriores
+from app.models.agent_action import AgentAction
 from app.models.article import Article, ArticleFile, FileRole
 from app.models.article_author import (
     ArticleAuthor,
@@ -57,6 +58,7 @@ from app.models.extraction_workflow import (
 from app.models.feedback import FeedbackAttachment, FeedbackReport  # noqa: F401
 from app.models.integration import ZoteroIntegration
 from app.models.llm_connection import LlmConnection, UserProjectEngine
+from app.models.personal_access_token import PersonalAccessToken
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
 
 # Modelos sem dependencias (ou with dependencias minimas)
@@ -108,6 +110,7 @@ __all__ = [
     "BaseModel",
     "TimestampMixin",
     "UUIDMixin",
+    "AgentAction",
     # User
     "Profile",
     # Project
@@ -116,6 +119,7 @@ __all__ = [
     "ProjectMemberRole",
     "ReviewType",
     "LlmConnection",
+    "PersonalAccessToken",
     # Article
     "Article",
     "ArticleFile",

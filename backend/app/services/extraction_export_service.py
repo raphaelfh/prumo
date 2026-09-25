@@ -76,6 +76,7 @@ from app.services.exports.extraction_snapshot_reader import (
     load_export_sections,
 )
 from app.services.exports.value_envelope import resolve_value
+from app.services.extraction_current_run import select_current_runs_by_article
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
@@ -946,7 +947,7 @@ class ExtractionExportService(LoggerMixin):
             .all()
         )
 
-        runs_by_article = _select_current_runs_by_article(run_rows)
+        runs_by_article = select_current_runs_by_article(run_rows)
         omitted: dict[str, int] = {}
         kept_run_ids: list[UUID] = []
         kept_articles: list[UUID] = []
@@ -1150,7 +1151,7 @@ class ExtractionExportService(LoggerMixin):
             .scalars()
             .all()
         )
-        runs_by_article = _select_current_runs_by_article(run_rows)
+        runs_by_article = select_current_runs_by_article(run_rows)
 
         if not runs_by_article:
             return [], {"no_run": len(candidate_ids)}
@@ -1397,7 +1398,7 @@ class ExtractionExportService(LoggerMixin):
             .scalars()
             .all()
         )
-        runs_by_article = _select_current_runs_by_article(run_rows)
+        runs_by_article = select_current_runs_by_article(run_rows)
 
         omitted: dict[str, int] = {}
         kept_article_ids: list[UUID] = []
@@ -2076,56 +2077,6 @@ def _infer_reviewer_outcome(
 
     # 6/7. a terminal decision touched the key → 'not selected'; else 'pending'.
     return "not selected" if decisions else "pending"
-
-
-_ACTIVE_EXPORT_RUN_STAGES = {
-    ExtractionRunStage.PENDING.value,
-    ExtractionRunStage.EXTRACT.value,
-    ExtractionRunStage.CONSENSUS.value,
-}
-
-
-def _select_current_runs_by_article(
-    run_rows: list[ExtractionRun],
-) -> dict[UUID, ExtractionRun]:
-    """Choose the same current run the HITL session path exposes.
-
-    Reopen creates multiple runs for the same article/template. Export must
-    never let PostgreSQL row order decide whether it sees the old finalized
-    run or the active revision. Prefer the latest non-terminal run, otherwise
-    the latest finalized run, otherwise the latest cancelled run for omission
-    accounting.
-    """
-
-    active_by_article: dict[UUID, ExtractionRun] = {}
-    finalized_by_article: dict[UUID, ExtractionRun] = {}
-    cancelled_by_article: dict[UUID, ExtractionRun] = {}
-
-    for run in sorted(run_rows, key=_run_recency_key, reverse=True):
-        if run.stage in _ACTIVE_EXPORT_RUN_STAGES:
-            active_by_article.setdefault(run.article_id, run)
-        elif run.stage == ExtractionRunStage.FINALIZED.value:
-            finalized_by_article.setdefault(run.article_id, run)
-        elif run.stage == ExtractionRunStage.CANCELLED.value:
-            cancelled_by_article.setdefault(run.article_id, run)
-
-    selected: dict[UUID, ExtractionRun] = {}
-    for article_id in {
-        *active_by_article.keys(),
-        *finalized_by_article.keys(),
-        *cancelled_by_article.keys(),
-    }:
-        selected[article_id] = (
-            active_by_article.get(article_id)
-            or finalized_by_article.get(article_id)
-            or cancelled_by_article[article_id]
-        )
-    return selected
-
-
-def _run_recency_key(run: ExtractionRun) -> tuple[datetime, str]:
-    created_at = run.created_at or datetime.min.replace(tzinfo=UTC)
-    return created_at, str(run.id)
 
 
 #: Lowercase surname particles (nobiliary / patronymic prefixes). When a
