@@ -15,15 +15,63 @@ from sqlalchemy import exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article, ArticleFile
+from app.models.extraction import ExtractionRun
 from app.repositories.article_repository import ArticleFileRepository
 from app.schemas.mcp_articles import (
     McpArticleDetail,
     McpArticleFileRow,
     McpArticleList,
     McpArticleRow,
+    McpArticleTemplateStatus,
 )
 from app.services.article_read_service import ArticleNotFoundError
+from app.services.extraction_current_run import select_current_runs_by_article
+from app.services.project_read_service import template_summaries
 from app.utils.opaque_cursor import decode_cursor, encode_cursor
+
+
+async def article_template_status(
+    db: AsyncSession, *, project_id: UUID, article_id: UUID
+) -> list[McpArticleTemplateStatus]:
+    """Per-template extraction status for one article (spec §5.1's `get_article`
+    extraction status). Reuses the shared current-run rule so this answer never
+    disagrees with export or the HITL session path about which run is current."""
+    templates = await template_summaries(db, project_id=project_id)
+    run_rows = (
+        (
+            await db.execute(
+                select(ExtractionRun).where(
+                    ExtractionRun.article_id == article_id,
+                    ExtractionRun.project_id == project_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    runs_by_template: dict[tuple[UUID, str], list[ExtractionRun]] = {}
+    for run in run_rows:
+        runs_by_template.setdefault((run.template_id, run.kind), []).append(run)
+
+    statuses: list[McpArticleTemplateStatus] = []
+    for summary in templates:
+        template_runs = runs_by_template.get((summary.template_id, summary.kind), [])
+        current = (
+            select_current_runs_by_article(template_runs).get(article_id) if template_runs else None
+        )
+        statuses.append(
+            McpArticleTemplateStatus(
+                template_id=summary.template_id,
+                template_name=summary.name,
+                kind=summary.kind,
+                run_id=current.id if current is not None else None,
+                stage=current.stage if current is not None else None,
+                reason=None if current is not None else "no_run",
+            )
+        )
+    return statuses
+
 
 # Module constants (spec §5.1 size caps).
 _TITLE_CAP = 200
@@ -167,4 +215,5 @@ async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticl
             for f in files
         ],
         outline=None,
+        extraction_status=[],  # filled by the get_article tool via article_template_status
     )

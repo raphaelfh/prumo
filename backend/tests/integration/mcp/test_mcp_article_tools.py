@@ -2,6 +2,7 @@
 client, so handler lines register coverage (the ASGI blind spot)."""
 
 import json
+from uuid import uuid4
 
 from sqlalchemy import text
 
@@ -168,6 +169,89 @@ async def test_get_article_without_pdf(mcp_client, pat_primary_rw, db_session):
     body = structured(result)
     assert body["outline"] is None
     assert body["files"] == []
+
+
+async def test_get_article_extraction_status(mcp_client, pat_primary_rw, db_session):
+    article_id = await insert_article(
+        db_session, SEED.primary_project, title="ZQ-Extraction-Status"
+    )
+    version_id = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active"
+            ),
+            {"tid": str(SEED.primary_template)},
+        )
+    ).scalar_one()
+
+    finalized_id = uuid4()
+    live_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_runs "
+            "(id, project_id, article_id, template_id, version_id, kind, stage, "
+            " status, created_by, created_at) "
+            "VALUES (:id, :pid, :aid, :tid, :vid, 'extraction', 'finalized', "
+            " 'completed', :cb, now())"
+        ),
+        {
+            "id": str(finalized_id),
+            "pid": str(SEED.primary_project),
+            "aid": str(article_id),
+            "tid": str(SEED.primary_template),
+            "vid": str(version_id),
+            "cb": str(SEED.primary_profile),
+        },
+    )
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_runs "
+            "(id, project_id, article_id, template_id, version_id, kind, stage, "
+            " status, created_by, created_at) "
+            "VALUES (:id, :pid, :aid, :tid, :vid, 'extraction', 'extract', "
+            " 'running', :cb, now() + interval '1 second')"
+        ),
+        {
+            "id": str(live_id),
+            "pid": str(SEED.primary_project),
+            "aid": str(article_id),
+            "tid": str(SEED.primary_template),
+            "vid": str(version_id),
+            "cb": str(SEED.primary_profile),
+        },
+    )
+    other_template_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.project_extraction_templates "
+            "(id, project_id, name, description, framework, version, kind, "
+            " schema, is_active, created_by) "
+            "VALUES (:id, :pid, 'ZQ-No-Run-Template', NULL, 'CUSTOM', '1.0', "
+            " 'extraction', '{}'::jsonb, false, :cb)"
+        ),
+        {
+            "id": str(other_template_id),
+            "pid": str(SEED.primary_project),
+            "cb": str(SEED.primary_profile),
+        },
+    )
+    await db_session.flush()
+
+    body = structured(
+        await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
+    )
+    McpArticleDetail.model_validate(body)
+    by_template = {row["template_id"]: row for row in body["extraction_status"]}
+
+    primary_entry = by_template[str(SEED.primary_template)]
+    assert primary_entry["run_id"] == str(live_id)
+    assert primary_entry["stage"] == "extract"
+    assert primary_entry["reason"] is None
+
+    no_run_entry = by_template[str(other_template_id)]
+    assert no_run_entry["run_id"] is None
+    assert no_run_entry["reason"] == "no_run"
 
 
 async def test_article_tools_metadata(mcp_client, pat_primary_read):

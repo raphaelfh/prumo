@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.conftest import SEED
+from tests.integration.helpers.template_fixtures import fresh_charms
 from tests.integration.mcp.article_seed import insert_article, insert_pdf
 from tests.integration.mcp.tool_calls import call_tool, error_payload
 
@@ -71,6 +72,20 @@ BOLA_CASES = [
         {"article_id": str(SEED.primary_article)},
         "NOT_FOUND",
         id="get_article_pdf-outsider-on-foreign-article",
+    ),
+    pytest.param(
+        "pat_outsider_rw",
+        "get_template",
+        {"project_id": str(SEED.primary_project), "template_id": str(SEED.primary_template)},
+        "NOT_FOUND",
+        id="get_template-outsider-on-foreign-project",
+    ),
+    pytest.param(
+        "pat_primary_rw",
+        "get_template",
+        {"project_id": str(SEED.primary_project), "template_id": str(uuid4())},
+        "NOT_FOUND",
+        id="get_template-random-uuid",
     ),
 ]
 
@@ -201,5 +216,20 @@ async def test_get_article_pdf_file_id_of_an_article_in_another_project_is_not_f
         pat_primary_rw,
         "get_article_pdf",
         {"article_id": str(SEED.primary_article), "file_id": str(foreign_file)},
+    )
+    assert error_payload(result)["code"] == "NOT_FOUND"
+
+
+async def test_get_template_of_another_project_is_not_found(
+    mcp_client, pat_reviewer_rw, db_session: AsyncSession
+) -> None:
+    # pat_reviewer_rw is a member of SEED.primary_project only; the
+    # template `fresh_charms` clones lives in SEED.secondary_project.
+    _project_id, foreign_template_id, _schema = await fresh_charms(db_session)
+    result = await call_tool(
+        mcp_client,
+        pat_reviewer_rw,
+        "get_template",
+        {"project_id": str(SEED.primary_project), "template_id": str(foreign_template_id)},
     )
     assert error_payload(result)["code"] == "NOT_FOUND"

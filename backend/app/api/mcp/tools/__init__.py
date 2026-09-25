@@ -7,4 +7,5 @@ from app.api.mcp.tools import (  # noqa: F401
     articles,
     projects,
     search,
+    templates,
 )

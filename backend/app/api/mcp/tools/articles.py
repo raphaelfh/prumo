@@ -80,6 +80,9 @@ async def get_article(
     db: AsyncSession, article_id: UUID, file_id: UUID | None = None
 ) -> McpArticleDetail:
     detail = await article_list_read_service.get_article_detail(db, article_id=article_id)
+    extraction_status = await article_list_read_service.article_template_status(
+        db, project_id=detail.project_id, article_id=article_id
+    )
     # A foreign or missing file_id raises ArticleFileNotFoundError: the dispatcher maps it to NOT_FOUND.
     file = await article_read_service.resolve_article_file(
         db, article_id=article_id, file_id=file_id
@@ -102,5 +105,6 @@ async def get_article(
         update={
             "abstract": wrap_untrusted(detail.abstract) if detail.abstract else None,
             "outline": outline,
+            "extraction_status": extraction_status,
         }
     )

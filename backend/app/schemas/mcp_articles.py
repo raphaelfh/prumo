@@ -5,6 +5,7 @@ field beyond what the model needs."""
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -51,6 +52,15 @@ class McpArticleFileRow(BaseModel):
     created_at: datetime
 
 
+class McpArticleTemplateStatus(BaseModel):
+    template_id: UUID
+    template_name: str
+    kind: str
+    run_id: UUID | None
+    stage: str | None
+    reason: Literal["no_run"] | None
+
+
 class McpArticleDetail(BaseModel):
     article_id: UUID
     project_id: UUID
@@ -66,4 +76,5 @@ class McpArticleDetail(BaseModel):
     abstract_truncated: bool
     files: list[McpArticleFileRow]
     outline: McpFileOutline | None
+    extraction_status: list[McpArticleTemplateStatus]
     untrusted_content: bool = True
