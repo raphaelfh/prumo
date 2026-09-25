@@ -13,6 +13,7 @@ from app.api.mcp.errors import (
     McpErrorCode,
     McpToolError,
     error_result,
+    reject_nul,
     to_tool_error,
 )
 from app.core.error_handler import NotFoundError
@@ -115,3 +116,14 @@ def test_app_not_found_error_maps_to_not_found() -> None:
     err = to_tool_error(NotFoundError("Project", "x"))
     assert err.code == McpErrorCode.NOT_FOUND
     assert err.message == NOT_FOUND_MESSAGE
+
+
+def test_field_never_echoes_a_nul_or_an_unbounded_key() -> None:
+    """A NUL-bearing (or huge) argument KEY is named by `field` escaped and
+    capped: the error must not carry the very character it refuses."""
+    with pytest.raises(McpToolError) as caught:
+        reject_nul({"fields": {"bad\x00key" + "k" * 5_000: "v"}})
+    field = caught.value.extras["field"]
+    assert "\x00" not in field
+    assert field.startswith("fields.bad\\u0000key")
+    assert len(field) <= 200

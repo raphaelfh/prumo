@@ -27,7 +27,7 @@ from app.schemas.mcp_articles import (
 from app.services.article_read_service import ArticleNotFoundError
 from app.services.extraction_current_run import select_current_runs_by_article
 from app.services.project_read_service import template_summaries
-from app.utils.opaque_cursor import cursor_uuid, decode_cursor, encode_cursor
+from app.utils.opaque_cursor import cursor_text, cursor_uuid, decode_cursor, encode_cursor
 from app.utils.text_caps import cap_text
 
 
@@ -147,7 +147,7 @@ async def list_project_articles(
 
     values = decode_cursor(cursor, arity=2)
     if values is not None:
-        cursor_title, cursor_id = str(values[0]), cursor_uuid(values[1])
+        cursor_title, cursor_id = cursor_text(values[0]), cursor_uuid(values[1])
         stmt = stmt.where(tuple_(Article.title, Article.id) > (cursor_title, cursor_id))
 
     stmt = stmt.order_by(Article.title, Article.id).limit(limit + 1)
