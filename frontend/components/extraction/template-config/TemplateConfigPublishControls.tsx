@@ -272,8 +272,16 @@ export function TemplateConfigPublishControls({
               disabled={!hasPendingChanges}
               aria-label={t("extraction", "configPublishTooltip")}
             >
-              <UploadCloud className="mr-2 h-4 w-4" aria-hidden />
-              {t("extraction", "configPublishButton")}
+              {/* The LAST rung, below Discard's: on a phone the labelled
+                  bar overflows by ~42px. Only the word folds — the control,
+                  its primary fill and its accessible name all stay. */}
+              <UploadCloud
+                className="h-4 w-4 @[28rem]/configbar:mr-2"
+                aria-hidden
+              />
+              <span className="sr-only @[28rem]/configbar:not-sr-only">
+                {t("extraction", "configPublishButton")}
+              </span>
             </Button>
           </span>
         </TooltipTrigger>
