@@ -9,7 +9,7 @@
  *   loading/error  → no chip + Publish DISABLED
  */
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {render, screen, waitFor} from '@testing-library/react';
+import {render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {ReactNode} from 'react';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
@@ -152,6 +152,19 @@ describe('TemplateConfigPublishControls', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', {name: extraction.configPublishTooltip})).toBeEnabled(),
     );
+  });
+
+  it('Publish label folds to sr-only on a narrow configbar, keeping its name', async () => {
+    // A 390px viewport overflowed the bar by ~42px with the label always
+    // shown. jsdom cannot evaluate container queries, so this pins the
+    // idiom: the label folds to sr-only (never `hidden`) below a rung.
+    loadTemplateConfigStatus.mockResolvedValue(status({has_pending_changes: true}));
+    renderControls();
+
+    const button = await screen.findByRole('button', {name: extraction.configPublishTooltip});
+    const label = within(button).getByText(extraction.configPublishButton);
+    expect(label).toHaveClass('sr-only');
+    expect(label.className).toMatch(/@\[[\d.]+rem\]\/configbar:not-sr-only/);
   });
 
   it('published → version chip and Publish disabled', async () => {
