@@ -6440,6 +6440,8 @@ export interface components {
         TemplateConfigStatusRead: {
             /** Active Version */
             active_version: number | null;
+            /** Agent Edit Token Name */
+            agent_edit_token_name?: string | null;
             /**
              * Discard Available
              * @default false
@@ -6449,6 +6451,11 @@ export interface components {
             draft_holder_id?: string | null;
             /** Draft Holder Name */
             draft_holder_name?: string | null;
+            /**
+             * Has Agent Edits
+             * @default false
+             */
+            has_agent_edits: boolean;
             /** Has Pending Changes */
             has_pending_changes: boolean;
             /**

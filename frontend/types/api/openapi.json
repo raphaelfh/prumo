@@ -10491,6 +10491,17 @@
             ],
             "title": "Active Version"
           },
+          "agent_edit_token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Edit Token Name"
+          },
           "discard_available": {
             "default": false,
             "title": "Discard Available",
@@ -10517,6 +10528,11 @@
               }
             ],
             "title": "Draft Holder Name"
+          },
+          "has_agent_edits": {
+            "default": false,
+            "title": "Has Agent Edits",
+            "type": "boolean"
           },
           "has_pending_changes": {
             "title": "Has Pending Changes",

@@ -18,20 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services import agent_action_service
 from app.services.agent_action_service import record_applied, record_refused
 from tests.integration.conftest import SEED
-
-
-async def _token(db: AsyncSession) -> UUID:
-    token_id = uuid4()
-    await db.execute(
-        text(
-            "INSERT INTO public.personal_access_tokens "
-            "(id, user_id, name, token_prefix, token_hash, scope, expires_at) "
-            "VALUES (:id, :uid, 'audit-probe', 'prumo_pat_abcdef', :hash, "
-            "'read_write', now() + interval '30 days')"
-        ),
-        {"id": str(token_id), "uid": str(SEED.primary_profile), "hash": uuid4().hex},
-    )
-    return token_id
+from tests.integration.helpers.pat_rows import insert_pat_row as _token
 
 
 async def _throwaway_project(db: AsyncSession) -> UUID:
