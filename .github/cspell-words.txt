@@ -39,10 +39,12 @@ Cochrane
 codegen
 codeium
 conftest
+contextvar
 contextvars
 coro
 covidence
 cspell
+CSPRNG
 customised
 CVPR
 Damen
@@ -213,6 +215,8 @@ sota
 specialise
 SPECKIT
 sqlalchemy
+sslmode
+Starlette
 structlog
 studylevel
 supabase
@@ -263,4 +267,3 @@ worktrees
 xdist
 XPASS
 zotero
-sslmode
