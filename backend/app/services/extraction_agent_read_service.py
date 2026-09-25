@@ -26,7 +26,6 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.mcp.result_json import compact_json
 from app.models.article import Article
 from app.models.extraction import ExtractionEvidence, ExtractionInstance, ExtractionRun
 from app.models.extraction_workflow import ExtractionProposalSource, ExtractionReviewerDecisionType
@@ -428,7 +427,11 @@ async def list_agent_extractions(
             )
             for field_id, et_id, label, field_type in field_rows
         ]
-        questions_cost = len(compact_json([q.model_dump(mode="json") for q in questions]))
+        # Same rendering as `compact_json` (task 2c's one serializer, api-layer
+        # only): `json.dumps` default separators. Services cannot import
+        # `app.api.mcp.*` (layering), so this budget accounting duplicates the
+        # ONE-LINE call rather than the module.
+        questions_cost = len(json.dumps([q.model_dump(mode="json") for q in questions]))
 
     article_rows, overflow_article_id = await _article_page(
         db,
