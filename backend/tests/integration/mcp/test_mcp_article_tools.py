@@ -332,3 +332,28 @@ async def test_get_article_caps_unbounded_metadata(mcp_client, pat_primary_rw, d
     assert all(len(a) == 200 for a in body["authors"])
     assert len(body["journal_title"]) == 200
     assert len(body["files"][0]["original_filename"]) == 200
+
+
+async def test_get_article_caps_cjk_metadata_by_serialized_size(
+    mcp_client, pat_primary_rw, db_session
+):
+    """The 32,000-char cap is measured on `compact_json`, which renders each
+    CJK character as a 6-char `\\uXXXX` escape: a 6,000-char CJK abstract and
+    20 CJK authors must be cut by serialized weight, not by character count."""
+    article_id = await insert_article(
+        db_session, SEED.primary_project, title="ZQ-CJK", authors=["作者" * 150 for _ in range(20)]
+    )
+    await db_session.execute(
+        text("UPDATE public.articles SET abstract = :abstract WHERE id = :id"),
+        {"abstract": "研究" * 3_000, "id": str(article_id)},
+    )
+
+    body = structured(
+        await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
+    )
+    assert len(compact_json(body)) <= 32_000
+    assert body["abstract_truncated"] is True
+    assert "研究" in body["abstract"]
+    assert len(compact_json(body["authors"])) <= 4_100
+    assert len(body["authors"]) == 20
+    assert all(a.startswith("作者") for a in body["authors"])
