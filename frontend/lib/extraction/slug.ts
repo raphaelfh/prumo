@@ -28,8 +28,9 @@ const FIELD_KEY_BASE_MAX = 46;
  * `/^[a-z][a-z0-9_]*$/` + length rules so a chain never dead-ends on a
  * digit-leading or too-short label. The suffix walks `_2`, `_3`, … past
  * every name in `taken` — the caller must include IN-QUEUE names, not
- * just committed ones: there is NO DB unique constraint on
- * `(entity_type_id, name)`, so a stale set inserts duplicates silently.
+ * just committed ones: the unique index `uq_extraction_fields_entity_type_name`
+ * on `(entity_type_id, name)` (alembic 0050) refuses a duplicate, so a stale
+ * set makes the insert fail with a 409 instead of saving the field.
  */
 export function uniqueFieldKey(label: string, taken: ReadonlySet<string>): string {
   let base = generateSnakeCaseName(label);
