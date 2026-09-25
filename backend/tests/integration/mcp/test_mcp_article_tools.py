@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.schemas.mcp_articles import McpArticleDetail, McpArticleList
+from app.utils.compact_json import compact_json
 from app.utils.opaque_cursor import decode_cursor, encode_cursor
 from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED
@@ -298,3 +299,36 @@ async def test_response_size_cap_list_articles(mcp_client, pat_primary_rw, db_se
         await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
     )
     assert len(json.dumps(detail_body)) <= 32_000
+
+
+async def test_get_article_caps_unbounded_metadata(mcp_client, pat_primary_rw, db_session):
+    """F2 (final review): `articles.title` / `journal_title` / authors and a
+    file's `original_filename` are unbounded Text -- a 40,000-char title must
+    not push the result past the 32,000-char cap, and the cut is flagged."""
+    article_id = await insert_article(
+        db_session,
+        SEED.primary_project,
+        title="T" * 40_000,
+        authors=["A" * 5_000 for _ in range(30)],
+    )
+    await db_session.execute(
+        text("UPDATE public.articles SET journal_title = :j WHERE id = :id"),
+        {"j": "J" * 20_000, "id": str(article_id)},
+    )
+    pdf = await insert_pdf(db_session, SEED.primary_project, article_id)
+    await db_session.execute(
+        text("UPDATE public.article_files SET original_filename = :f WHERE id = :id"),
+        {"f": "F" * 20_000 + ".pdf", "id": str(pdf)},
+    )
+
+    result = await call_tool(
+        mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)}
+    )
+    body = structured(result)
+    assert len(compact_json(body)) <= 32_000
+    assert body["title"] == "T" * 200
+    assert body["title_truncated"] is True
+    assert len(body["authors"]) == 20
+    assert all(len(a) == 200 for a in body["authors"])
+    assert len(body["journal_title"]) == 200
+    assert len(body["files"][0]["original_filename"]) == 200

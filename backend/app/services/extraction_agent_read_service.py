@@ -66,7 +66,14 @@ from app.services.template_version_read_service import (
     get_active_version_tree,
 )
 from app.utils.compact_json import compact_json
-from app.utils.opaque_cursor import InvalidCursorError, decode_cursor, encode_cursor
+from app.utils.opaque_cursor import (
+    InvalidCursorError,
+    cursor_position,
+    cursor_uuid,
+    decode_cursor,
+    encode_cursor,
+)
+from app.utils.text_caps import cap_text
 from app.utils.untrusted import wrap_untrusted
 
 _PAGE_BUDGET = 28_000
@@ -74,10 +81,11 @@ _CONCISE_VALUE_CAP = 80
 _DETAILED_VALUE_CAP = 1_000
 _EVIDENCE_QUOTE_CAP = 300
 _EVIDENCE_PER_ROW_CAP = 3
-#: `public.articles.title` is unbounded `Text` -- capped the same way
-#: `article_list_read_service.py::_TITLE_CAP` caps it, plus a
-#: `title_truncated` flag on the article (fix round 2, B1-r).
-_TITLE_CAP = 200
+#: A concise cell joins one `_CONCISE_VALUE_CAP` value per instance; the
+#: join itself is bounded too, so a many-instance section cannot grow one
+#: cell without limit (final review F4).
+_CONCISE_JOIN_CAP = 1_000
+_TRUNCATION_MARK = "…"
 #: Reserved for `next_cursor` itself, same reasoning as `templates.py`: the
 #: envelope is measured with it `None`, but a non-last page replaces that
 #: with an opaque base64 cursor string a few chars longer.
@@ -455,13 +463,13 @@ def _bounded_questions(
     return kept, cost, True
 
 
-def _cap_title(title: str) -> tuple[str, bool]:
-    """Bound an article's `title` (`public.articles.title` is unbounded
-    `Text`) to `_TITLE_CAP` chars, flagging the cut (fix round 2, B1-r) --
-    an agent citing it verbatim deserves to know it is not the real title."""
-    if len(title) <= _TITLE_CAP:
-        return title, False
-    return title[:_TITLE_CAP], True
+def _join_concise_values(values: list[str]) -> str:
+    """One concise cell: the per-instance values joined with `" | "`, cut to
+    `_CONCISE_JOIN_CAP` chars plus a visible truncation mark."""
+    joined = " | ".join(values)
+    if len(joined) <= _CONCISE_JOIN_CAP:
+        return joined
+    return joined[:_CONCISE_JOIN_CAP] + _TRUNCATION_MARK
 
 
 def _envelope_header_cost(
@@ -469,7 +477,7 @@ def _envelope_header_cost(
 ) -> int:
     """JSON weight of an article's own envelope fields, excluding
     `values`/`rows` (mirrors `templates.py::_section_header_cost`), `+2` for
-    the array separator. `meta["title"]` must already be `_cap_title`-bounded."""
+    the array separator. `meta["title"]` must already be `cap_text`-bounded."""
     empty = McpExtractionArticle(
         article_id=article_pk,
         title=meta["title"],
@@ -506,7 +514,7 @@ async def list_agent_extractions(
     if raw_cursor is not None:
         if raw_cursor[2] != response_format or raw_cursor[3] != article_filter_token:
             raise InvalidCursorError("cursor was issued for a different response_format/article_id")
-        start = (UUID(str(raw_cursor[0])), int(raw_cursor[1]))
+        start = (cursor_uuid(raw_cursor[0]), cursor_position(raw_cursor[1]))
 
     try:
         tree = (
@@ -574,10 +582,13 @@ async def list_agent_extractions(
         instance_rows = (
             (
                 await db.execute(
-                    select(ExtractionInstance).where(
+                    select(ExtractionInstance)
+                    .where(
                         ExtractionInstance.template_id == template_id,
                         ExtractionInstance.article_id.in_(articles_with_run),
                     )
+                    # Deterministic concise joins (final review F5).
+                    .order_by(ExtractionInstance.sort_order, ExtractionInstance.id)
                 )
             )
             .scalars()
@@ -634,7 +645,7 @@ async def list_agent_extractions(
     items_by_article: list[tuple[UUID, list[Any]]] = []
 
     for article_pk, raw_title in article_rows:
-        title, title_truncated = _cap_title(raw_title)
+        title, title_truncated = cap_text(raw_title)
         run = current_by_article.get(article_pk)
         if run is None:
             article_meta[article_pk] = {
@@ -682,7 +693,9 @@ async def list_agent_extractions(
                 if not resolved_lists:
                     continue
                 cells = [_concise_cell(group) for group in resolved_lists]
-                value_str = " | ".join(_short(c.value, limit=_CONCISE_VALUE_CAP) for c in cells)
+                value_str = _join_concise_values(
+                    [_short(c.value, limit=_CONCISE_VALUE_CAP) for c in cells]
+                )
                 human_groups = [group for group in resolved_lists if group[0].decider == "human"]
                 disagreement = None
                 if revealed and human_groups:

@@ -65,6 +65,7 @@ class McpArticleDetail(BaseModel):
     article_id: UUID
     project_id: UUID
     title: str
+    title_truncated: bool
     authors: list[str]
     year: int | None
     journal_title: str | None

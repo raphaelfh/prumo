@@ -27,7 +27,8 @@ from app.schemas.mcp_articles import (
 from app.services.article_read_service import ArticleNotFoundError
 from app.services.extraction_current_run import select_current_runs_by_article
 from app.services.project_read_service import template_summaries
-from app.utils.opaque_cursor import decode_cursor, encode_cursor
+from app.utils.opaque_cursor import cursor_uuid, decode_cursor, encode_cursor
+from app.utils.text_caps import cap_text
 
 
 async def article_template_status(
@@ -73,8 +74,7 @@ async def article_template_status(
     return statuses
 
 
-# Module constants (spec §5.1 size caps).
-_TITLE_CAP = 200
+# Module constants (spec §5.1 size caps; the title cap is `text_caps.TITLE_CAP`).
 _LIST_AUTHORS_CAP = 3
 _LIST_AUTHOR_CAP = 60
 _DETAIL_AUTHORS_CAP = 20
@@ -147,7 +147,7 @@ async def list_project_articles(
 
     values = decode_cursor(cursor, arity=2)
     if values is not None:
-        cursor_title, cursor_id = str(values[0]), UUID(str(values[1]))
+        cursor_title, cursor_id = str(values[0]), cursor_uuid(values[1])
         stmt = stmt.where(tuple_(Article.title, Article.id) > (cursor_title, cursor_id))
 
     stmt = stmt.order_by(Article.title, Article.id).limit(limit + 1)
@@ -162,7 +162,7 @@ async def list_project_articles(
         articles.append(
             McpArticleRow(
                 article_id=row.id,
-                title=row.title[:_TITLE_CAP],
+                title=cap_text(row.title)[0],
                 authors=authors,
                 authors_total=authors_total,
                 year=row.publication_year,
@@ -175,6 +175,11 @@ async def list_project_articles(
 
     next_cursor = encode_cursor([page[-1].title, str(page[-1].id)]) if has_more and page else None
     return McpArticleList(articles=articles, next_cursor=next_cursor)
+
+
+def _capped(value: str | None) -> str | None:
+    """An optional unbounded-Text field, cut like a title (spec §5.1)."""
+    return cap_text(value)[0] if value is not None else None
 
 
 async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticleDetail:
@@ -190,13 +195,15 @@ async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticl
         abstract = abstract[:_ABSTRACT_CAP]
         abstract_truncated = True
 
+    title, title_truncated = cap_text(row.title)
     return McpArticleDetail(
         article_id=row.id,
         project_id=row.project_id,
-        title=row.title,
-        authors=(row.authors or [])[:_DETAIL_AUTHORS_CAP],
+        title=title,
+        title_truncated=title_truncated,
+        authors=[cap_text(a)[0] for a in (row.authors or [])[:_DETAIL_AUTHORS_CAP]],
         year=row.publication_year,
-        journal_title=row.journal_title,
+        journal_title=_capped(row.journal_title),
         doi=row.doi,
         pmid=row.pmid,
         publication_status=row.publication_status,
@@ -208,7 +215,7 @@ async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticl
                 article_file_id=f.id,
                 role=f.file_role,
                 file_type=f.file_type,
-                original_filename=f.original_filename,
+                original_filename=_capped(f.original_filename),
                 extraction_status=f.extraction_status,
                 created_at=f.created_at,
             )

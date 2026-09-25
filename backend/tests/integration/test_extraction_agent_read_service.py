@@ -813,3 +813,60 @@ async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) ->
     assert expected_rows <= seen_rows
     assert no_run_article_ids <= seen_no_run_articles
     assert pages > 1  # 19 articles at limit=10 alone forces multiple pages
+
+
+async def test_concise_join_is_bounded_and_ordered(db_session: AsyncSession) -> None:
+    """F4 + F5 (final review): a concise cell joins one short value per
+    instance -- that join is capped (1,000 chars + a marker), and the
+    instances are read in `sort_order`, so the same data always renders the
+    same cell. Instances are inserted in REVERSE sort order: an unordered
+    instances query returns them in insertion order and fails the prefix."""
+    run_id, reviewer_a, _reviewer_b = await _built_or_skip(db_session)
+    template_id = await _template_id_of_run(db_session, run_id)
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_template_versions SET is_active = false "
+            "WHERE project_template_id = :tid"
+        ),
+        {"tid": str(template_id)},
+    )
+    entity_type_id = await add_section(
+        db_session, template_id, "Many-instance section", cardinality="many", entry_label="Entry"
+    )
+    field_id = await add_field(db_session, entity_type_id, "many-instance-field")
+
+    for position in reversed(range(30)):
+        instance_id = (
+            await db_session.execute(
+                text(
+                    "INSERT INTO public.extraction_instances "
+                    "(id, project_id, article_id, template_id, entity_type_id, label, "
+                    "sort_order, metadata, created_by) "
+                    "VALUES (gen_random_uuid(), :pid, :aid, :tid, :etid, :label, :pos, "
+                    "'{}'::jsonb, :uid) RETURNING id"
+                ),
+                {
+                    "pid": str(SEED.primary_project),
+                    "aid": str(SEED.primary_article),
+                    "tid": str(template_id),
+                    "etid": str(entity_type_id),
+                    "label": f"entry {position}",
+                    "pos": position,
+                    "uid": str(SEED.primary_profile),
+                },
+            )
+        ).scalar_one()
+        await ExtractionProposalService(db_session).record_proposal(
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.AI,
+            proposed_value={"value": f"v{position:02d}-" + "x" * 70},
+        )
+    await db_session.flush()
+
+    concise = await _page(db_session, reviewer_a, fmt="concise", template_id=template_id)
+    cell = concise.articles[0].values[str(field_id)]
+    assert cell.value.startswith("v00-")
+    assert cell.value.endswith("…")
+    assert len(cell.value) <= 1_001

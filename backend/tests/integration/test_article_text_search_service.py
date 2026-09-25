@@ -7,6 +7,7 @@ from __future__ import annotations
 import pytest
 
 from app.services.article_text_search_service import search_project_text
+from app.utils.compact_json import compact_json
 from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
@@ -126,3 +127,36 @@ async def test_snippet_is_wrapped_and_capped(db_session) -> None:
     assert snippet.endswith(UNTRUSTED_CLOSE)
     inner = snippet[len(UNTRUSTED_OPEN) : -len(UNTRUSTED_CLOSE)]
     assert len(inner) <= 400
+
+
+async def test_search_hit_titles_are_capped(db_session) -> None:
+    """F1 (final review): `articles.title` is unbounded Text -- 20 hits on
+    1,024-char titles must stay under the 32,000-char result cap, each title
+    cut to 200 chars and flagged."""
+    for i in range(21):
+        article_id = await insert_article(
+            db_session, SEED.primary_project, title=f"{i:02d}" + "Ã" * 1_022
+        )
+        file_id = await insert_pdf(db_session, SEED.primary_project, article_id)
+        await insert_blocks(
+            db_session,
+            file_id,
+            [(1, 0, "titlecapkeyword " + "é" * 380, "paragraph")],
+        )
+
+    seen: list[str] = []
+    cursor = None
+    while True:
+        result = await search_project_text(
+            db_session, project_id=SEED.primary_project, query="titlecapkeyword", cursor=cursor
+        )
+        # Non-ASCII renders 6x longer escaped: the page is cut on weight, not count.
+        assert len(compact_json(result.model_dump(mode="json"))) <= 32_000
+        for hit in result.hits:
+            assert len(hit.title) == 200
+            assert hit.title_truncated is True
+            seen.append(hit.title[:2])
+        cursor = result.next_cursor
+        if cursor is None:
+            break
+    assert sorted(seen) == [f"{i:02d}" for i in range(21)]  # every hit once, none lost

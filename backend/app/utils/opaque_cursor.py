@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 from collections.abc import Sequence
+from uuid import UUID
 
 
 class InvalidCursorError(ValueError):
@@ -37,3 +39,32 @@ def decode_cursor(cursor: str | None, *, arity: int) -> list[str | int] | None:
         if isinstance(value, bool) or not isinstance(value, str | int):
             raise InvalidCursorError("cursor is not a valid opaque cursor")
     return values
+
+
+# Typed readers for ONE decoded cursor value: a malformed value inside a
+# well-formed cursor is the caller's `InvalidCursorError` (-> INVALID_ARGUMENT),
+# never a `ValueError` from a cast or a Postgres CAST error (-> INTERNAL_ERROR).
+
+
+def cursor_uuid(value: str | int) -> UUID:
+    try:
+        return UUID(str(value))
+    except ValueError as exc:
+        raise InvalidCursorError("cursor is not a valid opaque cursor") from exc
+
+
+def cursor_position(value: str | int) -> int:
+    """A non-negative int: a negative position would wrap a Python index."""
+    if not isinstance(value, int) or value < 0:
+        raise InvalidCursorError("cursor is not a valid opaque cursor")
+    return value
+
+
+def cursor_rank(value: str | int) -> float:
+    try:
+        rank = float(value)
+    except ValueError as exc:
+        raise InvalidCursorError("cursor is not a valid opaque cursor") from exc
+    if not math.isfinite(rank):
+        raise InvalidCursorError("cursor is not a valid opaque cursor")
+    return rank

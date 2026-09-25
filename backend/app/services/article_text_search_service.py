@@ -22,11 +22,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.mcp_search import McpSearchHit, McpSearchResult
-from app.utils.opaque_cursor import decode_cursor, encode_cursor
+from app.utils.compact_json import compact_json
+from app.utils.opaque_cursor import cursor_rank, cursor_uuid, decode_cursor, encode_cursor
+from app.utils.text_caps import cap_text
 from app.utils.untrusted import wrap_untrusted
 
 _PAGE_SIZE = 20
 _SNIPPET_CAP = 400
+#: The 32,000-char result cap less the envelope (`next_cursor`, `note`, keys).
+_HITS_BUDGET = 31_500
 _NO_HITS_NOTE = (
     "No hits. The search does not stem or strip accents: try variant spellings "
     "(plural, pt/en, accented)."
@@ -86,8 +90,8 @@ async def search_project_text(
             "OR (ts_rank(to_tsvector('simple', b.text), q) = CAST(CAST(:rank AS text) AS real) "
             "AND b.id > CAST(:bid AS uuid)))"
         )
-        params["rank"] = str(rank_value)
-        params["bid"] = str(block_id_value)
+        params["rank"] = repr(cursor_rank(rank_value))
+        params["bid"] = str(cursor_uuid(block_id_value))
 
     page_query = text(
         _PAGE_QUERY_TEMPLATE.format(article_filter=article_filter, cursor_filter=cursor_filter)
@@ -100,11 +104,6 @@ async def search_project_text(
     if not page_rows:
         return McpSearchResult(hits=[], next_cursor=None, note=_NO_HITS_NOTE)
 
-    next_cursor: str | None = None
-    if has_more:
-        last = page_rows[-1]
-        next_cursor = encode_cursor([repr(last.rank), str(last.id)])
-
     headline_rows = (
         await db.execute(
             _HEADLINE_QUERY,
@@ -113,10 +112,19 @@ async def search_project_text(
     ).all()
     headline_by_id = {row.id: (row.title, row.headline) for row in headline_rows}
 
-    hits = [
-        McpSearchHit(
+    # Hits are packed under the result cap on their `compact_json` weight, not
+    # counted: a non-ASCII title/snippet renders up to 6x longer escaped, so 20
+    # hits can exceed 32,000 chars (final review F1). A page cut short resumes
+    # after its last kept hit, exactly like a full page does.
+    hits: list[McpSearchHit] = []
+    used = 0
+    last_kept = None
+    for row in page_rows:
+        title, title_truncated = cap_text(headline_by_id[row.id][0])
+        hit = McpSearchHit(
             article_id=row.article_id,
-            title=headline_by_id[row.id][0],
+            title=title,
+            title_truncated=title_truncated,
             article_file_id=row.article_file_id,
             page=row.page_number,
             block_id=row.id,
@@ -125,7 +133,16 @@ async def search_project_text(
             locator=f"p{row.page_number}·b{row.block_index}",
             snippet=wrap_untrusted(headline_by_id[row.id][1][:_SNIPPET_CAP]),
         )
-        for row in page_rows
-    ]
+        cost = len(compact_json(hit.model_dump(mode="json"))) + 2  # + the ", " separator
+        if hits and used + cost > _HITS_BUDGET:
+            has_more = True
+            break
+        hits.append(hit)
+        used += cost
+        last_kept = row
+
+    next_cursor: str | None = None
+    if has_more and last_kept is not None:
+        next_cursor = encode_cursor([repr(last_kept.rank), str(last_kept.id)])
 
     return McpSearchResult(hits=hits, next_cursor=next_cursor, note=None)

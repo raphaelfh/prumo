@@ -13,6 +13,7 @@ from pydantic import BaseModel
 class McpSearchHit(BaseModel):
     article_id: UUID
     title: str
+    title_truncated: bool
     article_file_id: UUID
     page: int
     block_id: UUID

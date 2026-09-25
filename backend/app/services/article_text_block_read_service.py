@@ -17,7 +17,7 @@ from app.models.article import ArticleFile, ArticleTextBlock
 from app.repositories.article_text_block_repository import ArticleTextBlockRepository
 from app.schemas.mcp_article_text import McpTextChunk, McpTextPage, chunk_locator_prefix
 from app.schemas.mcp_articles import McpFileOutline, McpOutlineHeading
-from app.utils.opaque_cursor import decode_cursor, encode_cursor
+from app.utils.opaque_cursor import cursor_position, decode_cursor, encode_cursor
 
 # Module constants (spec §5.1 size caps): an outline keeps at most this many
 # headings, each capped in length.
@@ -51,8 +51,8 @@ async def page_text_blocks(
     resume_offset = 0
     if decoded is not None:
         page_val, idx_val, offset_val = decoded
-        window_start = (int(page_val), int(idx_val))
-        resume_offset = int(offset_val)
+        window_start = (cursor_position(page_val), cursor_position(idx_val))
+        resume_offset = cursor_position(offset_val)
 
     repo = ArticleTextBlockRepository(db)
     chunks: list[McpTextChunk] = []

@@ -60,7 +60,12 @@ from app.services.template_version_read_service import (
     get_template_config_diff,
 )
 from app.utils.compact_json import compact_json
-from app.utils.opaque_cursor import InvalidCursorError, decode_cursor, encode_cursor
+from app.utils.opaque_cursor import (
+    InvalidCursorError,
+    cursor_position,
+    decode_cursor,
+    encode_cursor,
+)
 
 _RESULT_CAP = 32_000
 _DIFF_ROW_CAP = 40
@@ -165,12 +170,12 @@ def _validated_start(raw: list[str | int] | None, tree: list[RunViewEntityType])
     if raw is None:
         return (0, 0)
     try:
-        s_pos, q_pos = int(raw[0]), int(raw[1])
-    except (TypeError, ValueError) as exc:
+        s_pos, q_pos = cursor_position(raw[0]), cursor_position(raw[1])
+    except InvalidCursorError as exc:
         raise McpToolError(
             McpErrorCode.INVALID_ARGUMENT, "cursor is not valid; restart without it", field="cursor"
         ) from exc
-    valid = 0 <= s_pos < len(tree) and 0 <= q_pos < len(tree[s_pos].fields)
+    valid = s_pos < len(tree) and q_pos < len(tree[s_pos].fields)
     if not valid:
         raise McpToolError(
             McpErrorCode.INVALID_ARGUMENT, "cursor is not valid; restart without it", field="cursor"
