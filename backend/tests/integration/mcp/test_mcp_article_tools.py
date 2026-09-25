@@ -357,3 +357,30 @@ async def test_get_article_caps_cjk_metadata_by_serialized_size(
     assert len(compact_json(body["authors"])) <= 4_100
     assert len(body["authors"]) == 20
     assert all(a.startswith("作者") for a in body["authors"])
+
+
+async def test_get_article_fits_the_cap_with_cjk_everywhere(mcp_client, pat_primary_rw, db_session):
+    """Every per-field cap at its CJK worst case (title, journal, 20 authors,
+    abstract, 60 CJK headings) still sums past 32,000: the outline gives way,
+    dropping trailing headings and flagging `headings_truncated`."""
+    article_id = await insert_article(
+        db_session,
+        SEED.primary_project,
+        title="題" * 400,
+        authors=["作者" * 150 for _ in range(20)],
+    )
+    await db_session.execute(
+        text("UPDATE public.articles SET abstract = :a, journal_title = :j WHERE id = :id"),
+        {"a": "研究" * 5_000, "j": "誌" * 400, "id": str(article_id)},
+    )
+    file_id = await insert_pdf(db_session, SEED.primary_project, article_id)
+    await insert_blocks(db_session, file_id, [(1, i, "見出" * 100, "heading") for i in range(60)])
+
+    body = structured(
+        await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
+    )
+    assert len(compact_json(body)) <= 32_000
+    headings = body["outline"]["headings"]
+    assert 0 < len(headings) < 60
+    assert body["outline"]["headings_truncated"] is True
+    assert [h["block_index"] for h in headings] == list(range(len(headings)))

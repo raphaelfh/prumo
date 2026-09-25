@@ -17,6 +17,7 @@ from app.api.mcp.server import agent_tool
 from app.schemas.mcp_articles import McpArticleDetail, McpArticleList
 from app.services import article_list_read_service, article_read_service
 from app.services.article_text_block_read_service import get_file_outline
+from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.opaque_cursor import InvalidCursorError
 from app.utils.untrusted import wrap_untrusted
 
@@ -101,10 +102,35 @@ async def get_article(
                 ]
             }
         )
-    return detail.model_copy(
-        update={
-            "abstract": wrap_untrusted(detail.abstract) if detail.abstract else None,
-            "outline": outline,
-            "extraction_status": extraction_status,
-        }
+    return _fit_outline(
+        detail.model_copy(
+            update={
+                "abstract": wrap_untrusted(detail.abstract) if detail.abstract else None,
+                "outline": outline,
+                "extraction_status": extraction_status,
+            }
+        )
     )
+
+
+def _json_len(value: object) -> int:
+    return len(compact_json(value))
+
+
+def _fit_outline(detail: McpArticleDetail) -> McpArticleDetail:
+    """Drop trailing outline headings until the result fits `RESULT_CAP`.
+
+    Each field is capped on its own, but their CJK worst cases (every char a
+    6-char escape) still sum past the cap; the outline is the one part with
+    a truncation flag and a follow-up read (`get_article_text`), so it gives
+    way. Measured like the dispatcher renders it: `compact_json` of the
+    by-alias dump."""
+    over = _json_len(detail.model_dump(mode="json", by_alias=True)) - RESULT_CAP
+    if over <= 0 or detail.outline is None or not detail.outline.headings:
+        return detail
+    headings = list(detail.outline.headings)
+    while over > 0 and headings:
+        # a list item costs its own rendering plus the ", " separator
+        over -= _json_len(headings.pop().model_dump(mode="json", by_alias=True)) + 2
+    outline = detail.outline.model_copy(update={"headings": headings, "headings_truncated": True})
+    return detail.model_copy(update={"outline": outline})
