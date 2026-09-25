@@ -46,6 +46,7 @@ class McpDetailedRow(BaseModel):
 class McpExtractionArticle(BaseModel):
     article_id: UUID
     title: str
+    title_truncated: bool
     run: McpRunRef | None
     reason: Literal["no_run", "blind_review"] | None
     peer_values_hidden: bool
@@ -58,6 +59,8 @@ class McpExtractionsPage(BaseModel):
     template_id: UUID
     response_format: str
     questions: list[McpExtractionQuestion] | None
+    questions_truncated: bool
+    next_step: str | None
     articles: list[McpExtractionArticle]
     next_cursor: str | None
     untrusted_content: bool = True

@@ -12,16 +12,14 @@ the export's `managers_see_reviewers`-blind CSV): an agent call is a single
 caller's view, so it always renders through that caller's own blind
 boundary, never an unblinded aggregate.
 
-Fix round 1 (B1): every page's real JSON size is measured through
-`compact_json` (`app/utils/compact_json.py`, task 2c's one serializer,
-moved out of `app/api/mcp/` so a service may import it) -- never
-`BaseModel.model_dump_json()`, which is both more compact (no separators)
-and renders non-ASCII as raw UTF-8 instead of an escaped sequence, so it
-silently under-counts a page with long non-ASCII values far enough to blow
-the 32,000-char cap. The budget also reserves room for `next_cursor` itself
-(`_CURSOR_RESERVE`, mirroring `templates.py`) and for a per-article
-envelope -- `article_id`/`title`/`run`/`reason`/`peer_values_hidden` cost
-real bytes too, not just the packed `values`/`rows`.
+Fix rounds 1-2 (page-size cap): every page's real JSON size is measured
+through `compact_json` (`app/utils/compact_json.py`), never
+`BaseModel.model_dump_json()` (more compact, and escapes non-ASCII as raw
+UTF-8 instead of `\\uXXXX`, so it under-counts long non-ASCII values). The
+budget reserves room for `next_cursor` (`_CURSOR_RESERVE`) and charges
+every article's own envelope -- `title`/`run`/`reason`/`peer_values_hidden`
+-- once per page it appears on, populated, resumed or run-less alike
+(`pack_items`'s `header_cost`), not just the packed `values`/`rows`.
 """
 
 from __future__ import annotations
@@ -76,6 +74,10 @@ _CONCISE_VALUE_CAP = 80
 _DETAILED_VALUE_CAP = 1_000
 _EVIDENCE_QUOTE_CAP = 300
 _EVIDENCE_PER_ROW_CAP = 3
+#: `public.articles.title` is unbounded `Text` -- capped the same way
+#: `article_list_read_service.py::_TITLE_CAP` caps it, plus a
+#: `title_truncated` flag on the article (fix round 2, B1-r).
+_TITLE_CAP = 200
 #: Reserved for `next_cursor` itself, same reasoning as `templates.py`: the
 #: envelope is measured with it `None`, but a non-last page replaces that
 #: with an opaque base64 cursor string a few chars longer.
@@ -99,31 +101,33 @@ def pack_items(
     start: tuple[UUID, int] | None,
     budget: int,
     cost: Callable[[T], int],
+    header_cost: Callable[[UUID], int] | None = None,
 ) -> tuple[list[tuple[UUID, int, list[T]]], tuple[UUID, int] | None]:
     """Pack per-article item lists into one page under a byte budget.
 
     `start` is a prior page's cursor: `(article_id, item position)`. Every
-    call guarantees forward progress -- the very first item touched this
-    call always ships regardless of its own cost (an oversized single item
-    ships alone rather than starving the page forever), and an article with
-    zero items is always emitted for free (a run-less article is never
-    silently dropped). Once the page already holds something, crossing into
-    a not-yet-touched article needs STRICTLY more headroom than its next
-    item costs (`used + cost >= budget` defers the WHOLE article, not a
-    single wedged-in item); an already-started article's own later items use
-    inclusive room (`used + cost > budget` stops) so one run's fields don't
-    fragment one at a time at the exact boundary.
+    call guarantees forward progress -- the first article touched always
+    ships (its header, plus its first item if it has one) regardless of
+    cost. Once the page holds something, crossing into a not-yet-touched
+    (or resumed) article needs strictly more headroom than its header costs
+    (`used + header_cost(article_id) > budget` defers the WHOLE article);
+    an already-started article's later items use inclusive room
+    (`used + cost > budget` stops) so fields don't fragment at the boundary.
+
+    `header_cost`, when given, is charged ONCE per article THIS CALL EMITS
+    -- before its items and regardless of whether it has any (fix round 2,
+    B1-r: a zero-item/no-run article's own envelope costs real bytes too,
+    and so does a resumed article's, re-rendered on every page it appears
+    on). `None` charges nothing (old callers keep their exact behavior).
 
     Contract on `items` vs. `start`: the caller's own keyset query already
     filters `items` to articles at-or-after `start`'s article (real callers
-    resume their DB query with `Article.id >= start[0]`) -- `pack_items`
-    itself never re-orders or filters by article id. When `start`'s exact
-    article is present, resume mid-article at `start[1]`; when it is absent
-    (deleted since the page that issued this cursor), `items[0]` -- by that
-    same caller contract -- is already the next surviving article, so
-    resume there at position 0 (fix round 1, M2: this used to fall through
-    to "nothing left", silently dropping every article that sorted after
-    the deleted one).
+    resume with `Article.id >= start[0]`) -- `pack_items` never re-orders or
+    filters by article id itself. When `start`'s exact article is present,
+    resume mid-article at `start[1]`; when it is absent (deleted since the
+    page that issued this cursor), `items[0]` is already the next surviving
+    article, so resume there at position 0 (fix round 1, M2), rather than
+    dropping every article that sorted after the deleted one.
     """
     start_idx = 0
     start_pos = 0
@@ -141,6 +145,12 @@ def pack_items(
     for idx in range(start_idx, len(items)):
         article_id, article_items = items[idx]
         first_pos = start_pos if idx == start_idx else 0
+
+        h = header_cost(article_id) if header_cost is not None else 0
+        if out and used + h > budget:
+            return out, (article_id, first_pos)
+        used += h  # charged whether or not this article has any items below
+
         chosen: list[T] = []
         for pos in range(first_pos, len(article_items)):
             item = article_items[pos]
@@ -241,15 +251,13 @@ def _resolve_reviewer_values(
 ) -> list[_Resolved]:
     """The Value rule (spec §5.1), per (instance, field): a published
     (consensus) row wins outright, as the sole entry; else every VISIBLE
-    reviewer's own resolved value (the latest decision that is not reject,
-    else that reviewer's latest human proposal) -- one entry per reviewer,
-    never merged, so detailed mode can show a divergence as separate rows
-    and concise mode can still pick one displayed value + a disagreement
-    flag from the same list; else the latest AI proposal, flagged
-    `ai_only`. An empty list means the coordinate has no information at all
-    (no row/cell is emitted for it -- never a manufactured "no information"
-    for a coordinate nobody ever touched). Visibility itself is never
-    re-decided here: `decisions_by_coord`/`human_by_coord` are already
+    reviewer's own resolved value (the latest non-reject decision, else
+    that reviewer's latest human proposal) -- one entry per reviewer, never
+    merged, so detailed mode can show a divergence as separate rows and
+    concise mode can still pick one value + a disagreement flag from the
+    same list; else the latest AI proposal, flagged `ai_only`. An empty
+    list means no information at all (no row/cell emitted). Visibility
+    itself is never re-decided here: the `*_by_coord` dicts are already
     blind-filtered by `get_run_with_workflow_history`."""
     coord = (instance_id, field_id)
 
@@ -430,34 +438,42 @@ async def _article_page(
 
 def _bounded_questions(
     all_questions: list[McpExtractionQuestion],
-) -> tuple[list[McpExtractionQuestion], int]:
-    """Bound (never page -- this tool returns the question list once, on
-    page 1 only) the flattened question list to `_QUESTIONS_CAP` bytes of
-    `compact_json`. A questionnaire whose full list already fits is
-    returned whole; one that does not has its tail dropped, one question at
-    a time, until it does -- an oversized `questions` list can never alone
-    push page 1's remaining item budget down to `max(1, ...)` and overflow
-    (fix round 1, reviewer minor 3)."""
+) -> tuple[list[McpExtractionQuestion], int, bool]:
+    """Bound (never page -- returned once, on page 1) the flattened question
+    list to `_QUESTIONS_CAP` bytes of `compact_json`, dropping its tail one
+    question at a time until it fits, so an oversized list can never alone
+    starve page 1's item budget (fix round 1). The third element is
+    `questions_truncated` (fix round 2, Q-trunc): the caller uses it for a
+    `next_step` hint pointing the agent at `get_template`'s full list."""
     cost = len(compact_json([q.model_dump(mode="json") for q in all_questions]))
     if cost <= _QUESTIONS_CAP or not all_questions:
-        return all_questions, cost
+        return all_questions, cost, False
     kept = list(all_questions)
     while len(kept) > 1 and cost > _QUESTIONS_CAP:
         kept.pop()
         cost = len(compact_json([q.model_dump(mode="json") for q in kept]))
-    return kept, cost
+    return kept, cost, True
+
+
+def _cap_title(title: str) -> tuple[str, bool]:
+    """Bound an article's `title` (`public.articles.title` is unbounded
+    `Text`) to `_TITLE_CAP` chars, flagging the cut (fix round 2, B1-r) --
+    an agent citing it verbatim deserves to know it is not the real title."""
+    if len(title) <= _TITLE_CAP:
+        return title, False
+    return title[:_TITLE_CAP], True
 
 
 def _envelope_header_cost(
     article_pk: UUID, meta: dict[str, Any], response_format: Literal["concise", "detailed"]
 ) -> int:
-    """JSON weight of an article's own envelope fields, excluding `values`/
-    `rows` (mirrors `templates.py::_section_header_cost`): `+2` for the
-    `", "` separator joining this article to its neighbour in the
-    `articles` array."""
+    """JSON weight of an article's own envelope fields, excluding
+    `values`/`rows` (mirrors `templates.py::_section_header_cost`), `+2` for
+    the array separator. `meta["title"]` must already be `_cap_title`-bounded."""
     empty = McpExtractionArticle(
         article_id=article_pk,
         title=meta["title"],
+        title_truncated=meta["title_truncated"],
         run=meta["run"],
         reason=meta["reason"],
         peer_values_hidden=meta["peer_values_hidden"],
@@ -482,11 +498,8 @@ async def list_agent_extractions(
 ) -> McpExtractionsPage:
     # Cursor arity 4: (article_id, item position, response_format,
     # article_id filter or "" for none) -- M4 (fix round 1): a cursor is
-    # bound to the call shape it was issued for. Reusing one under a
-    # different `response_format` or a different `article_id` filter would
-    # resume mid-page-1-format-A's item position against page-1-format-B's
-    # DIFFERENT item list (concise cells vs detailed rows page differently),
-    # so a mismatch is an opaque-cursor error, not a silent reinterpretation.
+    # bound to the call shape it was issued for, since concise/detailed and
+    # a different article filter page a DIFFERENT item list.
     article_filter_token = str(article_id) if article_id is not None else ""
     raw_cursor = decode_cursor(cursor, arity=4)
     start: tuple[UUID, int] | None = None
@@ -505,6 +518,7 @@ async def list_agent_extractions(
 
     questions: list[McpExtractionQuestion] | None = None
     questions_cost = 0
+    questions_truncated = False
     if cursor is None:
         label_by_et = {et.id: et.label for et in tree}
         all_questions = [
@@ -513,7 +527,7 @@ async def list_agent_extractions(
             )
             for field_id, et_id, label, field_type in field_rows
         ]
-        questions, questions_cost = _bounded_questions(all_questions)
+        questions, questions_cost, questions_truncated = _bounded_questions(all_questions)
 
     article_rows, overflow_article_id = await _article_page(
         db,
@@ -578,13 +592,12 @@ async def list_agent_extractions(
     if response_format == "detailed" and details:
         visible_proposal_ids = {p.id for d in details.values() for p in d.proposals}
         visible_decision_ids = {rd.id for d in details.values() for rd in d.decisions}
-        # M1 (fix round 1): a row carrying BOTH a proposal_record_id and a
-        # reviewer_decision_id (the model's CHECK constraint permits it) must
-        # never surface through its proposal side alone when its decision
-        # belongs to a hidden peer -- `reviewer_decision_id IS SET` makes
-        # visibility turn on THAT id, full stop; only a row with no decision
-        # id at all falls back to the proposal id (an AI-proposal's own
-        # evidence, which never carries a decision id).
+        # M1 (fix round 1): a row can carry BOTH a proposal_record_id and a
+        # reviewer_decision_id (the CHECK constraint permits it) -- must
+        # never surface via a visible proposal id when its decision id
+        # belongs to a hidden peer, so a SET decision id alone decides
+        # visibility; only a row with none falls back to the proposal id
+        # (an AI proposal's own evidence never carries a decision id).
         conditions = []
         if visible_proposal_ids:
             conditions.append(
@@ -620,11 +633,13 @@ async def list_agent_extractions(
     article_meta: dict[UUID, dict[str, Any]] = {}
     items_by_article: list[tuple[UUID, list[Any]]] = []
 
-    for article_pk, title in article_rows:
+    for article_pk, raw_title in article_rows:
+        title, title_truncated = _cap_title(raw_title)
         run = current_by_article.get(article_pk)
         if run is None:
             article_meta[article_pk] = {
                 "title": title,
+                "title_truncated": title_truncated,
                 "run": None,
                 "reason": "no_run",
                 "peer_values_hidden": False,
@@ -637,6 +652,7 @@ async def list_agent_extractions(
         peer_hidden = not revealed
         article_meta[article_pk] = {
             "title": title,
+            "title_truncated": title_truncated,
             "run": McpRunRef(run_id=run.id, stage=run.stage),
             "reason": "blind_review" if peer_hidden else None,
             "peer_values_hidden": peer_hidden,
@@ -720,37 +736,21 @@ async def list_agent_extractions(
                         )
             items_by_article.append((article_pk, d_items))
 
-    # Fold each article's own envelope weight (article_id/title/run/reason/
-    # peer_values_hidden -- everything BUT `values`/`rows`) into the cost of
-    # the first item this call would place from it: pack_items' own
-    # "does the next article's first item fit" check then already accounts
-    # for the header riding along with it, so an article whose header alone
-    # is expensive defers as a whole (fix round 1, B1: article envelope
-    # fields used to cost 0, so a page of many articles with long titles
-    # could clear the item budget while the real JSON still overflowed).
-    # Zero-item (no-run) articles are NOT charged here -- pack_items always
-    # emits them for free (forced-progress contract) -- but their envelope
-    # is a UUID + short title + null run, a few hundred bytes at most; ten
-    # of them on one page cannot approach the 32,000-char cap on their own.
-    header_extra_cost: dict[int, int] = {}
-    for article_pk, article_items in items_by_article:
-        if article_items:
-            header_extra_cost[id(article_items[0])] = _envelope_header_cost(
-                article_pk, article_meta[article_pk], response_format
-            )
-
     def _item_cost(item: Any) -> int:
         # +2: the `", "` separator joining this item to its neighbour in the
         # surrounding JSON array (default `json.dumps` separators) -- summing
         # each item's own compact_json length under-counts the joined array
         # by exactly that, once per item (same reasoning as
         # `templates.py::_page_sections`).
-        return (
-            len(compact_json(item.model_dump(mode="json"))) + 2 + header_extra_cost.get(id(item), 0)
-        )
+        return len(compact_json(item.model_dump(mode="json"))) + 2
+
+    def _header_cost(article_pk: UUID) -> int:
+        return _envelope_header_cost(article_pk, article_meta[article_pk], response_format)
 
     budget = max(1, _PAGE_BUDGET - questions_cost - _CURSOR_RESERVE)
-    packed, next_start = pack_items(items_by_article, start=start, budget=budget, cost=_item_cost)
+    packed, next_start = pack_items(
+        items_by_article, start=start, budget=budget, cost=_item_cost, header_cost=_header_cost
+    )
 
     articles_out: list[McpExtractionArticle] = []
     for article_pk, first_pos, chosen in packed:
@@ -765,6 +765,7 @@ async def list_agent_extractions(
             McpExtractionArticle(
                 article_id=article_pk,
                 title=meta["title"],
+                title_truncated=meta["title_truncated"],
                 run=meta["run"],
                 reason=meta["reason"],
                 peer_values_hidden=meta["peer_values_hidden"],
@@ -789,6 +790,10 @@ async def list_agent_extractions(
         template_id=template_id,
         response_format=response_format,
         questions=questions,
+        questions_truncated=questions_truncated,
+        next_step="the question list was truncated; call get_template for the full list"
+        if questions_truncated
+        else None,
         articles=articles_out,
         next_cursor=next_cursor,
     )

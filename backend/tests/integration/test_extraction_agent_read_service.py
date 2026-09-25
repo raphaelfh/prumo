@@ -309,6 +309,12 @@ async def test_no_run_row(db_session: AsyncSession) -> None:
     assert article.run is None
     assert article.reason == "no_run"
     assert not (article.rows or [])
+    assert article.title == "Run-less article"
+    assert article.title_truncated is False
+    # Q-trunc (fix round 2): the OFF case -- a small questionnaire is never
+    # flagged truncated, and carries no next_step hint.
+    assert page.questions_truncated is False
+    assert page.next_step is None
 
 
 async def test_query_count_bounded_per_page(db_session: AsyncSession) -> None:
@@ -632,12 +638,17 @@ async def test_cursor_rejects_mismatched_article_filter(db_session: AsyncSession
 
 
 async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) -> None:
-    """B1 (fix round 1): the reviewer's probe measured 34,506 chars on a
-    pt-BR detailed page -- long non-ASCII values plus evidence, escaped by
-    `compact_json`, blew the old `model_dump_json()`-based budget. Ten
-    articles, three long non-ASCII rows with evidence each: every page must
-    stay <= 32,000 chars of `compact_json`, and paging must cover every
-    row exactly once."""
+    """B1 (fix round 1) + B1-r (fix round 2): the reviewer's probes measured
+    34,506 and 32,728-37,328 chars on pt-BR/no-run-heavy pages -- long
+    non-ASCII values plus evidence (round 1), then unbounded no-run-article
+    titles never charged against the budget at all (round 2). This is the
+    combined worst case round 2 asked for: page 1 carries a question list
+    forced past `_QUESTIONS_CAP` (so it truncates), several run-less
+    articles with long (300-600 char) titles, AND ten articles with three
+    long non-ASCII detailed rows plus evidence each (heavy enough to force
+    at least one article to resume mid-way on a later page). Every page
+    must stay <= 32,000 chars of `compact_json`, and paging must cover
+    every row -- and every no-run article -- exactly once."""
     run_id, _reviewer_a, _reviewer_b = await _built_or_skip(db_session)
     template_id = await _template_id_of_run(db_session, run_id)
 
@@ -675,6 +686,23 @@ async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) ->
     field_ids = [
         await add_field(db_session, entity_type_id, f"worst-case-field-{i}") for i in range(3)
     ]
+    # Question-only fields (fix round 2, B1-r + Q-trunc): a second section
+    # with no instances at all -- these inflate `questions` past
+    # `_QUESTIONS_CAP` without producing any rows to page, isolating the
+    # question-list truncation from the row-packing worst case above.
+    questions_only_et = await add_section(db_session, template_id, "Question-only section")
+    for i in range(220):
+        await add_field(db_session, questions_only_et, f"question-only-field-{i}")
+
+    # Several run-less articles with long (unbounded-Text) titles, mixed in
+    # by project-wide listing order alongside the ten run articles.
+    long_title = "Associação entre exposição ambiental e função pulmonar em coortes " * 10
+    no_run_article_ids: set[UUID] = set()
+    for i in range(9):
+        aid = await insert_article(
+            db_session, SEED.primary_project, title=f"[{i}] {long_title[: 300 + i * 30]}"
+        )
+        no_run_article_ids.add(aid)
 
     long_value = (
         "Pacientes com insuficiencia cardiaca cronica e fracao de ejecao reduzida foram "
@@ -744,6 +772,7 @@ async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) ->
         await db_session.flush()
 
     seen_rows: set[tuple[UUID, UUID, UUID]] = set()
+    seen_no_run_articles: set[UUID] = set()
     cursor: str | None = None
     pages = 0
     while True:
@@ -760,7 +789,18 @@ async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) ->
         )
         pages += 1
         assert len(compact_json(page.model_dump(mode="json"))) <= 32_000
+        if pages == 1:
+            # Q-trunc (fix round 2): the 220 question-only fields plus the 3
+            # real ones push `questions` well past `_QUESTIONS_CAP` -- page 1
+            # must say so and point the agent at the full list.
+            assert page.questions_truncated is True
+            assert page.next_step is not None
         for article in page.articles:
+            if article.article_id in no_run_article_ids:
+                seen_no_run_articles.add(article.article_id)
+                assert article.reason == "no_run"
+                assert len(article.title) <= 200
+                assert article.title_truncated is True  # every seeded title is > 200 chars
             for row in article.rows or []:
                 key = (article.article_id, row.instance_id, row.field_id)
                 assert key not in seen_rows, "row paged twice"
@@ -771,3 +811,5 @@ async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) ->
         assert pages < 200  # runaway-loop guard, not a real expectation
 
     assert expected_rows <= seen_rows
+    assert no_run_article_ids <= seen_no_run_articles
+    assert pages > 1  # 19 articles at limit=10 alone forces multiple pages
