@@ -77,6 +77,7 @@ guard that drifted or was never made.
 - **Row-in-parent** → the named guard for that pair:
   `project_template_active_service.owned_template`,
   `template_section_service.owned_section`,
+  `template_field_service.owned_field` (a field in a section of its template),
   `article_read_service.owned_articles` (and `owned_article`, which delegates),
   `article_read_service.owned_article_file` (an article file in its article;
   `resolve_article_file` wraps it with the latest-PDF fallback),

@@ -144,7 +144,7 @@ async def test_delete_field_maps_a_pinned_field_to_409_on_both_servers(
         "app.services.template_field_service._owned_template", AsyncMock(return_value=None)
     )
     monkeypatch.setattr(
-        "app.services.template_field_service._owned_field", AsyncMock(return_value=field)
+        "app.services.template_field_service.owned_field", AsyncMock(return_value=field)
     )
     exc = _restrict_violation(driver_error, _PROPOSAL_FK)
     assert _pgcode(exc) == driver_error.sqlstate  # precondition, not decoration
@@ -163,7 +163,7 @@ async def test_delete_field_reraises_an_unrelated_integrity_error(monkeypatch) -
         "app.services.template_field_service._owned_template", AsyncMock(return_value=None)
     )
     monkeypatch.setattr(
-        "app.services.template_field_service._owned_field", AsyncMock(return_value=field)
+        "app.services.template_field_service.owned_field", AsyncMock(return_value=field)
     )
     db = AsyncMock()
     db.flush = AsyncMock(side_effect=_restrict_violation(RestrictViolationError, "some_other_fkey"))
