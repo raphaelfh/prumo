@@ -79,9 +79,10 @@ _LIST_AUTHORS_CAP = 3
 _LIST_AUTHOR_CAP = 60
 _DETAIL_AUTHORS_CAP = 20
 # A char cap alone lets non-ASCII text through at up to 6x its length once
-# `compact_json` escapes it: each author and the abstract are also cut by
-# serialized weight. 20 authors x 202 (200 ASCII chars + quotes) ~ 4k.
+# `compact_json` escapes it: each author, each file's name and the abstract
+# are cut by serialized weight. 202 = 200 ASCII chars + quotes; 20 authors ~ 4k.
 _DETAIL_AUTHOR_WEIGHT = 202
+_FILENAME_WEIGHT = 202
 _ABSTRACT_CAP = 6_000
 _ABSTRACT_WEIGHT = 12_000
 
@@ -224,7 +225,11 @@ async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticl
                 article_file_id=f.id,
                 role=f.file_role,
                 file_type=f.file_type,
-                original_filename=_capped(f.original_filename),
+                original_filename=(
+                    cap_json_weight(f.original_filename, _FILENAME_WEIGHT)[0]
+                    if f.original_filename is not None
+                    else None
+                ),
                 extraction_status=f.extraction_status,
                 created_at=f.created_at,
             )
