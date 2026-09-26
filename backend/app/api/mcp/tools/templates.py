@@ -59,7 +59,7 @@ from app.services.template_version_read_service import (
     get_active_version_tree,
     get_template_config_diff,
 )
-from app.utils.compact_json import compact_json
+from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.opaque_cursor import (
     InvalidCursorError,
     cursor_position,
@@ -67,7 +67,6 @@ from app.utils.opaque_cursor import (
     encode_cursor,
 )
 
-_RESULT_CAP = 32_000
 _DIFF_ROW_CAP = 40
 _TIER_ORDER = ("additive", "cosmetic", "semantic", "destructive")
 #: Reserved for `next_cursor` itself: the envelope is measured with it
@@ -152,7 +151,7 @@ async def get_template(
         draft_diff=diff,
         next_cursor=None,
     )
-    section_budget = max(1, _RESULT_CAP - _json_len(envelope) - _CURSOR_RESERVE)
+    section_budget = max(1, RESULT_CAP - _json_len(envelope) - _CURSOR_RESERVE)
     sections, nxt = _page_sections(tree, start, budget=section_budget)
 
     return envelope.model_copy(

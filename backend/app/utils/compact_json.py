@@ -22,6 +22,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+RESULT_CAP = 32_000
+"""Spec §5.0: every structured tool result, measured as `compact_json`."""
+
 
 def compact_json(data: Any) -> str:
     """``json.dumps`` default separators (``", "`` / ``": "``), one line."""

@@ -332,3 +332,87 @@ async def test_get_article_caps_unbounded_metadata(mcp_client, pat_primary_rw, d
     assert all(len(a) == 200 for a in body["authors"])
     assert len(body["journal_title"]) == 200
     assert len(body["files"][0]["original_filename"]) == 200
+
+
+async def test_get_article_caps_cjk_metadata_by_serialized_size(
+    mcp_client, pat_primary_rw, db_session
+):
+    """The 32,000-char cap is measured on `compact_json`, which renders each
+    CJK character as a 6-char `\\uXXXX` escape: a 6,000-char CJK abstract and
+    20 CJK authors must be cut by serialized weight, not by character count."""
+    article_id = await insert_article(
+        db_session, SEED.primary_project, title="ZQ-CJK", authors=["作者" * 150 for _ in range(20)]
+    )
+    await db_session.execute(
+        text("UPDATE public.articles SET abstract = :abstract WHERE id = :id"),
+        {"abstract": "研究" * 3_000, "id": str(article_id)},
+    )
+
+    body = structured(
+        await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
+    )
+    assert len(compact_json(body)) <= 32_000
+    assert body["abstract_truncated"] is True
+    assert "研究" in body["abstract"]
+    assert len(compact_json(body["authors"])) <= 4_100
+    assert len(body["authors"]) == 20
+    assert all(a.startswith("作者") for a in body["authors"])
+
+
+async def test_get_article_fits_the_cap_with_cjk_everywhere(mcp_client, pat_primary_rw, db_session):
+    """Every per-field cap at its CJK worst case (title, journal, 20 authors,
+    abstract, 60 CJK headings) still sums past 32,000: the outline gives way,
+    dropping trailing headings and flagging `headings_truncated`."""
+    article_id = await insert_article(
+        db_session,
+        SEED.primary_project,
+        title="題" * 400,
+        authors=["作者" * 150 for _ in range(20)],
+    )
+    await db_session.execute(
+        text("UPDATE public.articles SET abstract = :a, journal_title = :j WHERE id = :id"),
+        {"a": "研究" * 5_000, "j": "誌" * 400, "id": str(article_id)},
+    )
+    file_id = await insert_pdf(db_session, SEED.primary_project, article_id)
+    await insert_blocks(db_session, file_id, [(1, i, "見出" * 100, "heading") for i in range(60)])
+
+    body = structured(
+        await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
+    )
+    assert len(compact_json(body)) <= 32_000
+    headings = body["outline"]["headings"]
+    assert 0 < len(headings) < 60
+    assert body["outline"]["headings_truncated"] is True
+    assert [h["block_index"] for h in headings] == list(range(len(headings)))
+
+
+async def test_get_article_caps_cjk_filenames_by_serialized_size(
+    mcp_client, pat_primary_rw, db_session
+):
+    """A CJK `original_filename` renders ~6x its char cap; 25 of them on top
+    of CJK-everywhere metadata must still fit, every file listed."""
+    article_id = await insert_article(
+        db_session,
+        SEED.primary_project,
+        title="題" * 400,
+        authors=["作者" * 150 for _ in range(20)],
+    )
+    await db_session.execute(
+        text("UPDATE public.articles SET abstract = :a, journal_title = :j WHERE id = :id"),
+        {"a": "研究" * 5_000, "j": "誌" * 400, "id": str(article_id)},
+    )
+    for _ in range(25):
+        pdf = await insert_pdf(db_session, SEED.primary_project, article_id)
+        await db_session.execute(
+            text("UPDATE public.article_files SET original_filename = :f WHERE id = :id"),
+            {"f": "論文" * 300 + ".pdf", "id": str(pdf)},
+        )
+
+    body = structured(
+        await call_tool(mcp_client, pat_primary_rw, "get_article", {"article_id": str(article_id)})
+    )
+    assert len(compact_json(body)) <= 32_000
+    assert len(body["files"]) == 25
+    for f in body["files"]:
+        assert f["original_filename"].startswith("論文")
+        assert len(compact_json(f["original_filename"])) <= 202

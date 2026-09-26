@@ -29,6 +29,7 @@ from app.services.article_text_block_read_service import ArticleFileNotFoundErro
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_field_service import EntityTypeNotFoundError, FieldNotFoundError
 from app.utils.compact_json import compact_json
+from app.utils.text_caps import cap_text
 
 
 class McpErrorCode(StrEnum):
@@ -114,7 +115,16 @@ class McpToolError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+        if isinstance(extras.get("field"), str):
+            extras["field"] = _safe_field(extras["field"])
         self.extras = extras
+
+
+def _safe_field(field: str) -> str:
+    """`field` names a caller-supplied key path: echo it with NUL spelled
+    out (the payload must not carry the character it may be refusing) and
+    capped, so an unbounded key cannot bloat the error."""
+    return cap_text(field.replace("\x00", "\\u0000"))[0]
 
 
 def to_tool_error(exc: BaseException) -> McpToolError:

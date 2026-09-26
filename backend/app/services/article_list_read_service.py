@@ -27,8 +27,8 @@ from app.schemas.mcp_articles import (
 from app.services.article_read_service import ArticleNotFoundError
 from app.services.extraction_current_run import select_current_runs_by_article
 from app.services.project_read_service import template_summaries
-from app.utils.opaque_cursor import cursor_uuid, decode_cursor, encode_cursor
-from app.utils.text_caps import cap_text
+from app.utils.opaque_cursor import cursor_text, cursor_uuid, decode_cursor, encode_cursor
+from app.utils.text_caps import cap_json_weight, cap_text
 
 
 async def article_template_status(
@@ -78,7 +78,13 @@ async def article_template_status(
 _LIST_AUTHORS_CAP = 3
 _LIST_AUTHOR_CAP = 60
 _DETAIL_AUTHORS_CAP = 20
+# A char cap alone lets non-ASCII text through at up to 6x its length once
+# `compact_json` escapes it: each author, each file's name and the abstract
+# are cut by serialized weight. 202 = 200 ASCII chars + quotes; 20 authors ~ 4k.
+_DETAIL_AUTHOR_WEIGHT = 202
+_FILENAME_WEIGHT = 202
 _ABSTRACT_CAP = 6_000
+_ABSTRACT_WEIGHT = 12_000
 
 
 def _escape_ilike(value: str) -> str:
@@ -147,7 +153,7 @@ async def list_project_articles(
 
     values = decode_cursor(cursor, arity=2)
     if values is not None:
-        cursor_title, cursor_id = str(values[0]), cursor_uuid(values[1])
+        cursor_title, cursor_id = cursor_text(values[0]), cursor_uuid(values[1])
         stmt = stmt.where(tuple_(Article.title, Article.id) > (cursor_title, cursor_id))
 
     stmt = stmt.order_by(Article.title, Article.id).limit(limit + 1)
@@ -191,9 +197,10 @@ async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticl
 
     abstract = row.abstract
     abstract_truncated = False
-    if abstract is not None and len(abstract) > _ABSTRACT_CAP:
-        abstract = abstract[:_ABSTRACT_CAP]
-        abstract_truncated = True
+    if abstract is not None:
+        abstract, cut_by_chars = cap_text(abstract, _ABSTRACT_CAP)
+        abstract, cut_by_weight = cap_json_weight(abstract, _ABSTRACT_WEIGHT)
+        abstract_truncated = cut_by_chars or cut_by_weight
 
     title, title_truncated = cap_text(row.title)
     return McpArticleDetail(
@@ -201,7 +208,10 @@ async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticl
         project_id=row.project_id,
         title=title,
         title_truncated=title_truncated,
-        authors=[cap_text(a)[0] for a in (row.authors or [])[:_DETAIL_AUTHORS_CAP]],
+        authors=[
+            cap_json_weight(a, _DETAIL_AUTHOR_WEIGHT)[0]
+            for a in (row.authors or [])[:_DETAIL_AUTHORS_CAP]
+        ],
         year=row.publication_year,
         journal_title=_capped(row.journal_title),
         doi=row.doi,
@@ -215,7 +225,11 @@ async def get_article_detail(db: AsyncSession, *, article_id: UUID) -> McpArticl
                 article_file_id=f.id,
                 role=f.file_role,
                 file_type=f.file_type,
-                original_filename=_capped(f.original_filename),
+                original_filename=(
+                    cap_json_weight(f.original_filename, _FILENAME_WEIGHT)[0]
+                    if f.original_filename is not None
+                    else None
+                ),
                 extraction_status=f.extraction_status,
                 created_at=f.created_at,
             )
