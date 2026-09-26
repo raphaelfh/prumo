@@ -1,6 +1,6 @@
 /**
  * Centralized UI copy (English). Consumed via t(ns, key) or direct namespace import.
- * @see specs/004-frontend-i18n/contracts/copy-api.md
+ * @see docs/superpowers/specs/archive/legacy-spec-kit/004-frontend-i18n/contracts/copy-api.md
  */
 import {common} from './common';
 import {pages} from './pages';
