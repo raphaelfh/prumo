@@ -62,6 +62,7 @@ __all__ = [
     "create_field",
     "delete_field",
     "move_field",
+    "owned_field",
     "reorder_fields",
     "update_field",
 ]
@@ -185,7 +186,7 @@ async def _owned_entity_type(
     return entity_type
 
 
-async def _owned_field(db: AsyncSession, *, template_id: UUID, field_id: UUID) -> ExtractionField:
+async def owned_field(db: AsyncSession, *, template_id: UUID, field_id: UUID) -> ExtractionField:
     """The field must live in a section of THIS template."""
     field = (
         await db.execute(
@@ -253,7 +254,7 @@ async def update_field(
     already forbids nulling non-nullable columns and smuggling
     ``entity_type_id``: relocation is ``move_field``'s job)."""
     await _owned_template(db, project_id=project_id, template_id=template_id)
-    field = await _owned_field(db, template_id=template_id, field_id=field_id)
+    field = await owned_field(db, template_id=template_id, field_id=field_id)
     changes = payload.model_dump(exclude_unset=True)
     if changes.get("is_entity_key") and await _entity_key_taken(
         db, entity_type_id=field.entity_type_id, exclude_field_id=field.id
@@ -287,7 +288,7 @@ async def delete_field(
     reviewer decisions/states, consensus, published states) surface as
     ``FieldInUseError`` — the endpoint maps it to 409."""
     await _owned_template(db, project_id=project_id, template_id=template_id)
-    field = await _owned_field(db, template_id=template_id, field_id=field_id)
+    field = await owned_field(db, template_id=template_id, field_id=field_id)
     await db.delete(field)
     try:
         await db.flush()
@@ -324,7 +325,7 @@ async def move_field(
     are indistinguishable — no existence oracle).
     """
     await _owned_template(db, project_id=project_id, template_id=template_id)
-    field = await _owned_field(db, template_id=template_id, field_id=field_id)
+    field = await owned_field(db, template_id=template_id, field_id=field_id)
     destination = await db.get(ExtractionEntityType, payload.entity_type_id)
     if destination is None or destination.project_template_id != template_id:
         raise CrossTemplateMoveError(

@@ -569,6 +569,14 @@ class TemplateConfigStatusRead(BaseModel):
     """Whether the CALLER holds it. Derived server-side so the chip never
     has to compare ids, and so "Take over" is offered only when there is
     someone to take over from."""
+    has_agent_edits: bool = False
+    """Whether an MCP agent applied a write to this template inside the open
+    draft (an ``agent_actions`` row with ``outcome = 'applied'`` and
+    ``created_at >= config_draft_since``). Always false without a draft."""
+    agent_edit_token_name: str | None = None
+    """Name of the personal access token behind the latest such write; None
+    when there is none or the token row was deleted (the chip then shows the
+    nameless variant)."""
 
 
 class TemplateChangeRowRead(BaseModel):

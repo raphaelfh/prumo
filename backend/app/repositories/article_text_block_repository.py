@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.parsing.base import ParsedBlock, normalize_block_type
@@ -109,4 +109,37 @@ class ArticleTextBlockRepository(BaseRepository[ArticleTextBlock]):
                 ArticleTextBlock.block_index.asc(),
             )
         )
+        return list(result.scalars().all())
+
+    async def list_ordered_window(
+        self,
+        article_file_id: UUID,
+        *,
+        start: tuple[int, int] | None,
+        page_from: int | None,
+        page_to: int | None,
+        limit: int,
+    ) -> list[ArticleTextBlock]:
+        """The keyset window of the same reading order as
+        :meth:`list_ordered_for_file`: rows with
+        ``(page_number, block_index) >= start`` (when given), page in
+        ``[page_from, page_to]`` (either bound optional), ordered
+        ``page_number ASC, block_index ASC``, capped at *limit* rows.
+
+        Used by the read service to page article text by character budget
+        (spec §5.1) without loading every block into memory.
+        """
+        stmt = select(ArticleTextBlock).where(ArticleTextBlock.article_file_id == article_file_id)
+        if start is not None:
+            stmt = stmt.where(
+                tuple_(ArticleTextBlock.page_number, ArticleTextBlock.block_index) >= start
+            )
+        if page_from is not None:
+            stmt = stmt.where(ArticleTextBlock.page_number >= page_from)
+        if page_to is not None:
+            stmt = stmt.where(ArticleTextBlock.page_number <= page_to)
+        stmt = stmt.order_by(
+            ArticleTextBlock.page_number.asc(), ArticleTextBlock.block_index.asc()
+        ).limit(limit)
+        result = await self.db.execute(stmt)
         return list(result.scalars().all())

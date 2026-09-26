@@ -311,7 +311,12 @@ async def import_project_template(
 
 @router.delete(
     "/{project_id}/templates/{template_id}",
-    responses={status.HTTP_409_CONFLICT: {"model": TemplateDeleteRefusalResponse}},
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": TemplateDeleteRefusalResponse,
+            "description": "Refused: template is active or in use",
+        }
+    },
 )
 @limiter.limit("10/minute")
 async def delete_project_template(
@@ -398,7 +403,12 @@ async def update_template_llm_instruction(
     # B-9b0 D1: the 409 body is a contract, not prose. Declared so the
     # generated client types ``error.details.section_labels`` instead of the
     # ``unknown`` that ``ErrorDetail.details: dict[str, Any]`` produces.
-    responses={status.HTTP_409_CONFLICT: {"model": TemplatePublishRefusalResponse}},
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": TemplatePublishRefusalResponse,
+            "description": "Refused: draft cannot be published",
+        }
+    },
 )
 # B-9b2b made a refused publish expensive: the contract re-check builds the
 # whole snapshot and unions the five workflow tables WHILE holding the
@@ -472,7 +482,12 @@ async def republish_template_version(
     # B-9c2 D1: the 409 body is a contract, not prose. Declared so the
     # generated client types ``error.details.orphans`` instead of the
     # ``unknown`` that ``ErrorDetail.details: dict[str, Any]`` produces.
-    responses={status.HTTP_409_CONFLICT: {"model": TemplateDiscardRefusalResponse}},
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": TemplateDiscardRefusalResponse,
+            "description": "Refused: the draft cannot be discarded as requested",
+        }
+    },
 )
 async def discard_template_draft(
     project_id: UUID,
@@ -727,7 +742,12 @@ async def restore_template_version(
 
 @router.post(
     "/{project_id}/templates/{template_id}/draft-lock/take-over",
-    responses={status.HTTP_409_CONFLICT: {"model": TemplateDraftLockRefusalResponse}},
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": TemplateDraftLockRefusalResponse,
+            "description": "Refused: draft lock conflict",
+        }
+    },
 )
 async def take_over_draft_lock_endpoint(
     project_id: UUID,

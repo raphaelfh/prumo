@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-08-23
+last_reviewed: 2026-09-25
 owner: '@raphaelfh'
 ---
 
@@ -84,7 +84,7 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | `ENCRYPTION_KEY` | rotated by hand; MUST be the same value across web + worker (Zotero credentials are cross-process) |
 | `SUPABASE_URL` | Supabase project settings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase project settings |
-| `DATABASE_URL` | Supabase pooler (used for app traffic) |
+| `DATABASE_URL` | Supabase Session pooler (used for app traffic; see [Reaching prod Postgres](#reaching-prod-postgres)) |
 | `DIRECT_DATABASE_URL` | Supabase direct (used by Alembic at boot) |
 | `OPENAI_API_KEY` | OpenAI dashboard |
 | `LLM_DEFAULT_MODEL` | `gpt-4o-mini` — set with `LLM_PROVIDER`; since C1b this pair is the FALLBACK for projects with no stored `llm_engine` setting (the ⚙ popover writes `projects.settings.llm_engine`, which wins). MUST still be the same value across web + worker: unset projects resolve it independently in each service (`/api/v1/extraction/models` in **web**, `/api/v1/extraction/sections` in the **worker**) — a per-service mismatch silently runs two different engines for those projects. The former `OPENAI_DEFAULT_MODEL` was defined but never read at runtime |
@@ -94,11 +94,23 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | `API_V1_PREFIX` | `/api/v1` |
 | `SUPABASE_ENV` | `production` |
 
+### Reaching prod Postgres
+
+Connect only through the Session pooler:
+`postgresql://postgres.<project-ref>:<password>@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require`.
+The direct host `db.<project-ref>.supabase.co` is IPv6-only and refuses
+IPv4 clients. The password is the one in Railway `web`'s `DATABASE_URL`;
+pass it inline (`DATABASE_URL=... uv run ...`), never by editing
+`backend/.env`. Never use Supabase's "Reset database password": `web` and
+`worker` both hold the current one.
+
 ### Service-level overrides
 
 | Service | Key | Value |
 | --- | --- | --- |
 | `web` | `CORS_ORIGINS` | Comma-separated allow-list that **extends** the always-allowed defaults baked into [`backend/app/core/config.py`](../../backend/app/core/config.py) (already pins `prumoai.vercel.app` + localhost). The live value lives in the Railway `web` env — the running env is the source of truth, not this table. |
+| `web` | `MCP_ALLOWED_HOSTS` | Comma-separated `Host` allow-list for the `/mcp` mount (`web-production-48b398.up.railway.app` in production). Default `localhost:*,127.0.0.1:*,[::1]:*,test`; a host not listed gets 421, so leaving it unset in production fails closed. |
+| `web` | `MCP_ALLOWED_ORIGINS` | Comma-separated browser `Origin` allow-list for `/mcp`. Default empty: no browser origin may call it (CLI agents send no `Origin` and pass). |
 | `web` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable, resolves to private network) |
 | `worker` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable) |
 
@@ -228,7 +240,13 @@ service via Celery startup. To add a migration:
 2. Test locally: `alembic upgrade head` against the local stack.
 3. Open a PR to `dev`. Once merged, promote `dev → main` via a merge-commit PR, not a fast-forward push (see the deploy-release skill runbook for the commands). Railway then deploys `web`, which runs Alembic before booting gunicorn.
 
-Auth/storage migrations still go through Supabase CLI (see `docs/reference/migrations.md`).
+Auth/storage migrations (`supabase/migrations/`) are authored with the
+Supabase CLI (see `docs/reference/migrations.md`) and deployed by the same
+`main` push, through the Supabase GitHub integration. Its `Supabase Preview`
+check on the `main` commit is not a required context, so read it after any
+promotion that touches `supabase/`. Never apply one through the Supabase MCP
+`apply_migration`: it records a generated version that does not match the
+file, and every later integration deploy fails on the mismatch.
 
 ## Rollback
 

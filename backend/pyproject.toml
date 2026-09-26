@@ -48,6 +48,7 @@ dependencies = [
     "structlog>=24.0.0",
     # Rate Limiting
     "slowapi>=0.1.9",
+    "mcp>=2.2,<3",  # researcher MCP server (/mcp mount)
     # Utils
     "python-multipart>=0.0.9",
     # Floor raised for PYSEC-2026-3552/3553/3554 (fix: 50.0.0). Do not lower.
@@ -142,6 +143,7 @@ markers = [
     "performance: performance-sensitive or long-running tests",
     "integration: integration test requiring db_session + seeded fixtures from tests/integration/conftest.py",
     "llm: live LLM smoke test; deselected by default via addopts, run with -m llm and PRUMO_LLM_SMOKE=1",
+    "mcp_real_sessions: MCP test whose tool sessions get their own connections and real commits (race tests); the test deletes its own rows",
 ]
 
 
@@ -199,6 +201,7 @@ ignore_decorators = [
     "@validates",
     "@event.listens_for",
     "@*.connect",
+    "@agent_tool",
 ]
 # `cls` is the classmethod receiver Pydantic's @field_validator mandates —
 # a validator that ignores it still cannot drop the parameter, so the

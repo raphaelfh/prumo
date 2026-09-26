@@ -1,10 +1,11 @@
 """Publish the live template structure as a new active version.
 
-Template configuration edits (sections/fields/flags) are written by the
-frontend through the Supabase client, so they never pass through the API
-— and until this service existed, nothing ever refreshed
-``extraction_template_versions.schema_``. Every run (including brand-new
-ones) kept rendering the schema frozen at clone time.
+Template configuration edits (sections/fields/flags) land on the LIVE
+structure tables through the typed endpoints (``template_structure.py``)
+and the MCP ``edit_template_draft`` tool; neither touches
+``extraction_template_versions.schema_``. Until this service existed,
+nothing refreshed it, so every run (including brand-new ones) kept
+rendering the schema frozen at clone time.
 
 ``republish`` closes that gap: it snapshots the live structure into a NEW
 version row (v+1, active), leaves prior rows untouched (runs from

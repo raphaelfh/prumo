@@ -299,18 +299,20 @@ export function TemplateConfigEditor({
           lives on the worklist gear and the review question in Project →
           Configuration. Priority tracks
           (RunHeader's contract): the identity track is the only elastic one,
-          every command is shrink-0, and Publish never collapses. */}
+          every command is shrink-0, and Publish is the last label to fold
+          (never the control). */}
       <div
         className={cn(
           "@container/configbar flex shrink-0 items-center gap-2 rounded-md border border-border/40 bg-card px-3",
           // Fixed 48px chrome at every width a manager configures a template
-          // at. Below the last collapse rung the commands genuinely do not
-          // fit; wrapping was tried and read worse (the elastic identity
-          // track claims a whole first line), so the cluster scrolls inside
-          // its own bar instead — every control stays reachable and the
-          // chrome stays 48px. Viewport, not container: an element cannot
-          // query the container IT declares, so `@max-*/configbar` here
-          // never matches.
+          // at. With every label folded the draft cluster fits a 390px
+          // phone; only the rare lock-takeover state (holder name + Take
+          // over) still outgrows it. Wrapping was tried and read worse (the
+          // elastic identity track claims a whole first line), so that
+          // state scrolls inside its own bar — every control stays
+          // reachable and the chrome stays 48px. Viewport, not container:
+          // an element cannot query the container IT declares, so
+          // `@max-*/configbar` here never matches.
           "h-12 max-sm:overflow-x-auto",
         )}
       >

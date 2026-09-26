@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-06-20
+last_reviewed: 2026-09-25
 owner: '@raphaelfh'
 ---
 
 # Documentation Index
 
-> **Status:** Stable · Last reviewed: 2026-06-20 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-09-25 · Owner: @raphaelfh
 
 This tree follows the [Diátaxis](https://diataxis.fr) framework. Pick the
 quadrant that matches what you need.
@@ -25,6 +25,7 @@ tutorial lives here.*
 | --- | --- |
 | [Seed the database](./how-to/seed-database.md) | After `make reset-db` or when bootstrapping a new env |
 | [Use the agent skills](./how-to/use-agent-skills.md) | Choosing which Claude Code skill to run at each step of a change |
+| [Connect an AI agent](./how-to/connect-an-ai-agent.md) | Pairing Claude Code, Cursor, VS Code or Gemini CLI with your prumo projects through a personal access token |
 
 ## Reference — *information lookup*
 

@@ -8,9 +8,13 @@ current god files is a separate cleanup effort.
 
 Baseline format: one `path:max_lines` per currently-oversized file.
 
+Re-baselining is per path: only the named entries are rewritten (set to the
+current size, or dropped once under the ceiling). A whole-tree rewrite would
+also tighten files other PRs shrank and break those PRs when they rebase.
+
 Usage:
   python check_file_size.py [--repo-root P] [--max-lines N] [--baseline P]
-  python check_file_size.py --update-baseline   # rewrite baseline from tree
+  python check_file_size.py --update-baseline PATH [PATH ...]
 
 Exit codes: 0 (no growth, no new offender) | 1 (regression) | 2 (internal).
 """
@@ -82,10 +86,48 @@ def load_baseline(path: Path) -> dict[str, int]:
     return out
 
 
-def write_baseline(path: Path, offenders: dict[str, int]) -> None:
-    header = "# file-size ratchet baseline — oversized files frozen at current size.\n# May shrink (re-run --update-baseline to tighten), never grow. Cleanup is a separate effort.\n"
-    body = "\n".join(f"{rel}:{n}" for rel, n in sorted(offenders.items()))
+def write_baseline(path: Path, entries: dict[str, int]) -> None:
+    header = "# file-size ratchet baseline — oversized files frozen at current size.\n# May shrink (re-run --update-baseline <path> to tighten), never grow. Cleanup is a separate effort.\n"
+    body = "\n".join(f"{rel}:{n}" for rel, n in sorted(entries.items()))
     path.write_text(header + body + ("\n" if body else ""))
+
+
+def update_baseline(
+    repo_root: Path, baseline_path: Path, offenders: dict[str, int], paths: list[str]
+) -> int:
+    baseline = load_baseline(baseline_path)
+    rels: list[str] = []
+    for raw in paths:
+        p = Path(raw)
+        rel = (p.resolve().relative_to(repo_root) if p.is_absolute() else p).as_posix()
+        if rel not in offenders and rel not in baseline and not (repo_root / rel).is_file():
+            print(
+                f"check_file_size.py: {rel} is neither a file nor a baseline entry; nothing written"
+            )
+            return 2
+        rels.append(rel)
+    for rel in rels:
+        if rel in offenders:
+            baseline[rel] = offenders[rel]
+            print(f"  {rel}: baselined at {offenders[rel]} lines")
+        elif baseline.pop(rel, None) is not None:
+            print(f"  {rel}: under the ceiling, entry removed")
+        else:
+            print(f"  {rel}: under the ceiling and not baselined, nothing to do")
+    write_baseline(baseline_path, baseline)
+    print(f"file-size baseline updated for {len(rels)} path(s) -> {baseline_path}")
+    return 0
+
+
+def update_command(rel: str, args: argparse.Namespace) -> str:
+    cmd = "python3 scripts/fitness/check_file_size.py"
+    if args.repo_root.resolve() != DEFAULT_REPO_ROOT:
+        cmd += f" --repo-root {args.repo_root}"
+    if args.baseline.resolve() != DEFAULT_BASELINE:
+        cmd += f" --baseline {args.baseline}"
+    if args.max_lines != MAX_LINES_DEFAULT:
+        cmd += f" --max-lines {args.max_lines}"
+    return f"{cmd} --update-baseline {rel}"
 
 
 def main() -> int:
@@ -93,25 +135,33 @@ def main() -> int:
     parser.add_argument("--repo-root", type=Path, default=DEFAULT_REPO_ROOT)
     parser.add_argument("--max-lines", type=int, default=MAX_LINES_DEFAULT)
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
-    parser.add_argument("--update-baseline", action="store_true")
+    parser.add_argument(
+        "--update-baseline",
+        nargs="+",
+        metavar="PATH",
+        help="re-baseline only these repo-relative paths; other entries are left untouched",
+    )
     args = parser.parse_args()
 
     started = time.time()
-    offenders = scan(args.repo_root.resolve(), args.max_lines)
+    repo_root = args.repo_root.resolve()
+    offenders = scan(repo_root, args.max_lines)
 
     if args.update_baseline:
-        write_baseline(args.baseline, offenders)
-        print(f"file-size baseline written: {len(offenders)} oversized files -> {args.baseline}")
-        return 0
+        return update_baseline(repo_root, args.baseline, offenders, args.update_baseline)
 
     baseline = load_baseline(args.baseline)
     regressions: list[str] = []
+    offending: list[str] = []
     for rel, n in sorted(offenders.items(), key=lambda kv: -kv[1]):
         cap = baseline.get(rel)
         if cap is None:
             regressions.append(f"NEW over-ceiling file: {rel} has {n} lines (> {args.max_lines})")
         elif n > cap:
             regressions.append(f"GREW: {rel} has {n} lines (baseline cap {cap})")
+        else:
+            continue
+        offending.append(rel)
 
     duration_ms = int((time.time() - started) * 1000)
     exit_code = 1 if regressions else 0
@@ -137,8 +187,11 @@ def main() -> int:
         for r in regressions:
             print(f"  {r}")
         print(
-            f"Shrink the file, or (only if intentional) run --update-baseline and commit {args.baseline.name}."
+            f"Shrink the file(s). Only if the growth is intentional, re-baseline just that file"
+            f" and commit {args.baseline.name} (other entries stay untouched):"
         )
+        for rel in offending:
+            print(f"  {update_command(rel, args)}")
     else:
         print(
             f"file-size: OK ({duration_ms} ms; {len(offenders)} oversized, none grew, no new offenders)"

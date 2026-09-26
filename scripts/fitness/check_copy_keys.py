@@ -7,7 +7,7 @@ consumer is deleted or rewritten, and nothing notices: knip reports unused
 *exports*, never unused *members* of an exported object literal, so a copy
 catalogue can rot indefinitely. ``extraction.ts`` reached 768 keys with 192
 unreferenced before a manual sweep, which is what this check exists to prevent
-recurring (CLAUDE.md, "No dead code ships — CI gates it").
+recurring (AGENTS.md, "No dead code ships — CI gates it").
 
 A key is LIVE when its name appears in ``frontend/**/*.{ts,tsx}`` either quoted
 (``'key'`` — the ``t(ns, 'key')`` and map-value forms) or as a property access

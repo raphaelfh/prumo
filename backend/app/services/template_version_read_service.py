@@ -19,6 +19,7 @@
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -26,8 +27,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.template_change import ChangeTier, DiffStatus
+from app.models.agent_action import AgentAction
 from app.models.extraction import ExtractionRun, ProjectExtractionTemplate
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.models.personal_access_token import PersonalAccessToken
 from app.models.user import Profile
 from app.repositories.extraction_field_reference_repository import (
     ExtractionFieldReferenceRepository,
@@ -160,6 +163,11 @@ async def get_template_config_status(
     template = await _scoped_template(db, project_id=project_id, template_id=template_id)
     active = await ExtractionTemplateVersionRepository(db).get_active(template_id)
     has_pending_changes = template.config_draft_since is not None
+    has_agent_edits, agent_edit_token_name = (
+        await _agent_edit_marker(db, template_id=template_id, since=template.config_draft_since)
+        if template.config_draft_since is not None
+        else (False, None)
+    )
     return TemplateConfigStatusRead(
         project_template_id=template.id,
         has_pending_changes=has_pending_changes,
@@ -186,7 +194,34 @@ async def get_template_config_status(
         if template.config_draft_by is not None
         else None,
         is_draft_holder=(viewer_id is not None and template.config_draft_by == viewer_id),
+        has_agent_edits=has_agent_edits,
+        agent_edit_token_name=agent_edit_token_name,
     )
+
+
+async def _agent_edit_marker(
+    db: AsyncSession, *, template_id: UUID, since: datetime
+) -> tuple[bool, str | None]:
+    """The draft chip's agent line (researcher MCP spec §6.2): the latest APPLIED agent
+    write inside the open draft window, and its token's name. ``since`` is the draft
+    marker; the agent's first draft write shares its transaction's ``now()`` with the
+    0048 trigger stamp, so ``>=`` counts the write that opened the draft. Served by
+    the ``(template_id, created_at) WHERE outcome = 'applied'`` index."""
+    row = (
+        await db.execute(
+            select(PersonalAccessToken.name)
+            .select_from(AgentAction)
+            .outerjoin(PersonalAccessToken, PersonalAccessToken.id == AgentAction.token_id)
+            .where(
+                AgentAction.template_id == template_id,
+                AgentAction.outcome == "applied",
+                AgentAction.created_at >= since,
+            )
+            .order_by(AgentAction.created_at.desc(), AgentAction.id.desc())
+            .limit(1)
+        )
+    ).first()
+    return (row is not None, row[0] if row is not None else None)
 
 
 async def _pending_change_count(

@@ -2,5 +2,6 @@
 export const meKeys = {
   all: ['me'] as const,
   connections: () => [...meKeys.all, 'connections'] as const,
+  tokens: () => [...meKeys.all, 'tokens'] as const,
   providers: () => [...meKeys.all, 'providers'] as const,
 } as const;

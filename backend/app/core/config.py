@@ -14,6 +14,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config_validators import validate_linear_team_id
 
+API_VERSION = "0.1.0"
+"""The published API version: ``FastAPI(version=…)``, ``/health``, ``/`` and the MCP server."""
+
 
 class Settings(BaseSettings):
     """
@@ -83,6 +86,24 @@ class Settings(BaseSettings):
         if not self.DEBUG:
             return None
         return r"^http://(localhost|127\.0\.0\.1):\d+$"
+
+    # =================== MCP (/mcp mount) ===================
+    # Comma-separated, like CORS_ORIGINS. "test" is the Host httpx sends for the
+    # suite's base_url="http://test". Production sets MCP_ALLOWED_HOSTS to its
+    # public host; unset there, every request gets 421 (fails closed).
+    MCP_ALLOWED_HOSTS: str = "localhost:*,127.0.0.1:*,[::1]:*,test"
+    # Empty: no browser Origin may call /mcp. CLI agents send no Origin and pass.
+    MCP_ALLOWED_ORIGINS: str = ""
+
+    @property
+    def mcp_allowed_hosts(self) -> list[str]:
+        """Host header allow-list for the MCP transport's DNS-rebinding guard."""
+        return [h.strip() for h in self.MCP_ALLOWED_HOSTS.split(",") if h.strip()]
+
+    @property
+    def mcp_allowed_origins(self) -> list[str]:
+        """Origin allow-list for /mcp; an absent Origin always passes."""
+        return [o.strip() for o in self.MCP_ALLOWED_ORIGINS.split(",") if o.strip()]
 
     # =================== DEPLOY IDENTITY ===================
     # Injected by Railway on every deploy. Surfaced by /health so the

@@ -21,9 +21,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import create_engine, text
+from starlette.routing import Route
 
+from app.api.mcp.asgi_auth import with_pat_auth
+from app.api.mcp.server import build_mcp_asgi
 from app.api.v1.router import api_router
-from app.core.config import settings
+from app.core.config import API_VERSION, settings
 from app.core.deps import AsyncSessionLocal, get_supabase_client
 from app.core.error_handler import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
@@ -118,7 +121,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             error=str(e),
         )
 
-    yield
+    async with app.state.mcp_session_manager.run():
+        yield
 
     # Shutdown
     logger.info("application_shutdown")
@@ -134,7 +138,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.PROJECT_NAME,
         description="Backend API for Prumo - Systematic Review Platform",
-        version="0.1.0",
+        version=API_VERSION,
         openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
         docs_url=f"{settings.API_V1_PREFIX}/docs",
         redoc_url=f"{settings.API_V1_PREFIX}/redoc",
@@ -168,12 +172,27 @@ def create_app() -> FastAPI:
     # API Routes
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
+    # MCP (spec §3): excluded from the JWT dependency, the ApiResponse envelope and
+    # the REST error handler; its manager runs in `lifespan`. An exact Route, not
+    # app.mount: a Mount answers POST /mcp with a 307 to /mcp/. Starlette treats a
+    # non-function endpoint as a raw ASGI app (starlette/routing.py Route.__init__).
+    mcp_app, mcp_session_manager = build_mcp_asgi()
+    app.state.mcp_session_manager = mcp_session_manager
+    app.router.routes.append(
+        Route(
+            "/mcp",
+            endpoint=with_pat_auth(mcp_app),
+            methods=["GET", "POST", "DELETE"],
+            include_in_schema=False,
+        )
+    )
+
     @app.get("/health", tags=["Health"])
     async def health_check() -> dict[str, object]:
         """Health check endpoint."""
         return {
             "status": "healthy",
-            "version": "0.1.0",
+            "version": API_VERSION,
             # The deployed commit (Railway-injected); "unknown" off-platform.
             "commit": settings.RAILWAY_GIT_COMMIT_SHA or "unknown",
             "checks": {
@@ -192,7 +211,7 @@ def create_app() -> FastAPI:
         """
         return {
             "name": settings.PROJECT_NAME,
-            "version": "0.1.0",
+            "version": API_VERSION,
             "docs": f"{settings.API_V1_PREFIX}/docs",
         }
 

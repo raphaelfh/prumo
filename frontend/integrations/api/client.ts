@@ -12,9 +12,10 @@ import {supabase} from "@/integrations/supabase/client";
 import {t} from "@/lib/copy";
 import type {components} from "@/types/api/schema";
 
-// API base URL (configurable via env)
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+/** The FastAPI origin (VITE_API_URL, else the local dev server). The ONE reader of the env var. */
+export function getApiBaseUrl(): string {
+  return import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+}
 
 function createTraceId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -155,7 +156,7 @@ export async function apiClient<T>(
     : null;
 
   try {
-    const url = `${API_BASE_URL}${endpoint}`;
+    const url = `${getApiBaseUrl()}${endpoint}`;
 
     if (import.meta.env.DEV) {
         console.warn(`[API] ${fetchOptions.method || "GET"} ${endpoint}`);
@@ -271,7 +272,7 @@ export async function apiBlobClient(
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
     ...fetchOptions,
     headers,
     body: body ? JSON.stringify(body) : undefined,

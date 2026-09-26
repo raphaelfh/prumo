@@ -87,9 +87,7 @@ def _build_ris(articles: list[Article]) -> bytes:
         if a.journal_title:
             lines.append(f"JO  - {(a.journal_title or '').replace(chr(10), ' ')}")
         if a.abstract:
-            lines.append(
-                f"AB  - {(a.abstract or '').replace(chr(10), ' ').replace(chr(13), '')[:255]}"
-            )
+            lines.append(f"AB  - {(a.abstract or '').replace(chr(10), ' ').replace(chr(13), '')}")
         if a.doi:
             lines.append(f"DO  - {a.doi}")
         if a.pmid:

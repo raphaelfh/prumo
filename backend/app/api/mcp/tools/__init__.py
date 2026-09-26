@@ -1,0 +1,14 @@
+"""Importing this package registers every MCP tool (each module's @agent_tool
+runs at import). A new tool module is added to this import line."""
+
+from app.api.mcp.tools import (  # noqa: F401
+    article_pdf,
+    article_text,
+    articles,
+    extractions,
+    project_details,
+    projects,
+    search,
+    template_draft,
+    templates,
+)

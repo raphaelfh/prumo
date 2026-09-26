@@ -114,6 +114,34 @@ export function TemplateConfigPublishControls({
     configStatus?.draft_holder_id != null &&
     configStatus.is_draft_holder !== true;
 
+  // Researcher MCP (spec §6.2): the chip's agent-edit line. `configStatus`
+  // is undefined while loading and on error, so the line hides along with
+  // the chip in those states.
+  const agentEdits =
+    hasPendingChanges && configStatus?.has_agent_edits === true;
+  const agentEditsText =
+    configStatus?.agent_edit_token_name != null
+      ? t("templateConfig", "draftAgentEditsBy").replace(
+          "{{token}}",
+          configStatus.agent_edit_token_name,
+        )
+      : t("templateConfig", "draftAgentEdits");
+  const heldByText = t("templateConfig", "draftHeldBy").replace(
+    "{{who}}",
+    configStatus?.draft_holder_name ?? t("templateConfig", "historyUnknownAuthor"),
+  );
+  // Design review 11 P0: at <640px this cluster is the bar's own
+  // horizontal-scroll track (TemplateConfigEditor.tsx:303-315), and it
+  // has no scroll affordance — an annotation line that never folds pushes
+  // Discard/Publish clean off-canvas with no visual cue that they still
+  // exist. Same idiom as the section-count span (TemplateConfigEditor.tsx:320),
+  // the first thing to fold when space runs out; the text stays reachable
+  // below the fold threshold via the always-visible trigger's own tooltip
+  // (the draft chip below, the Take-over button further down), never
+  // dropped with no alternative.
+  const annotationLineClassName =
+    "hidden whitespace-nowrap text-[13px] text-muted-foreground @[52rem]/configbar:inline";
+
   let chip = null;
   if (hasPendingChanges) {
     // B-9b2a: the draft chip is now the diff sheet's trigger. It was a
@@ -140,7 +168,11 @@ export function TemplateConfigPublishControls({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {t("templateConfig", "diffTriggerTooltip")}
+          <div>{t("templateConfig", "diffTriggerTooltip")}</div>
+          {/* Design review 11 P0: the always-visible chip's tooltip is
+              where the agent-edit line stays reachable once the bar folds
+              it away below @[52rem]/configbar. */}
+          {agentEdits && <div>{agentEditsText}</div>}
         </TooltipContent>
       </Tooltip>
     );
@@ -175,15 +207,12 @@ export function TemplateConfigPublishControls({
   return (
     <>
       {chip}
+      {agentEdits && (
+        <span className={annotationLineClassName}>{agentEditsText}</span>
+      )}
       {heldByOther && (
         <>
-          <span className="text-xs text-muted-foreground">
-            {t("templateConfig", "draftHeldBy").replace(
-              "{{who}}",
-              configStatus?.draft_holder_name ??
-                t("templateConfig", "historyUnknownAuthor"),
-            )}
-          </span>
+          <span className={annotationLineClassName}>{heldByText}</span>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -197,7 +226,11 @@ export function TemplateConfigPublishControls({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {t("templateConfig", "draftTakeOverTooltip")}
+              {/* Design review 11 P0: this button never folds, so it is
+                  where "who" stays reachable once the annotation line
+                  above folds away below @[52rem]/configbar. */}
+              <div>{heldByText}</div>
+              <div>{t("templateConfig", "draftTakeOverTooltip")}</div>
             </TooltipContent>
           </Tooltip>
         </>
@@ -239,8 +272,16 @@ export function TemplateConfigPublishControls({
               disabled={!hasPendingChanges}
               aria-label={t("extraction", "configPublishTooltip")}
             >
-              <UploadCloud className="mr-2 h-4 w-4" aria-hidden />
-              {t("extraction", "configPublishButton")}
+              {/* The LAST rung, below Discard's: on a phone the labelled
+                  bar overflows by ~42px. Only the word folds — the control,
+                  its primary fill and its accessible name all stay. */}
+              <UploadCloud
+                className="h-4 w-4 @[28rem]/configbar:mr-2"
+                aria-hidden
+              />
+              <span className="sr-only @[28rem]/configbar:not-sr-only">
+                {t("extraction", "configPublishButton")}
+              </span>
             </Button>
           </span>
         </TooltipTrigger>

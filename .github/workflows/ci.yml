@@ -648,7 +648,16 @@ jobs:
         with:
           version: latest
       - name: Start Supabase (auth/storage migrations auto-applied)
-        run: supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector
+        # ghcr.io rate-limits bursts of image pulls (toomanyrequests); retry
+        # with backoff, and skip containers the E2E stack never calls.
+        run: |
+          for attempt in 1 2 3 4; do
+            supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,realtime,postgres-meta && exit 0
+            echo "supabase start failed (attempt $attempt); retrying in $((attempt * 30))s"
+            supabase stop --no-backup || true
+            sleep $((attempt * 30))
+          done
+          exit 1
 
       - name: Export Supabase keys
         run: |
