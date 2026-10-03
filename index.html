@@ -16,6 +16,24 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Prumo - Sistema de Gerenciamento de Revisões Sistemáticas" />
     <meta name="twitter:description" content="Sistema completo para gerenciamento de revisões sistemáticas e meta-análises." />
+
+    <script>
+      // Apply the stored theme before first paint so a reload never flashes
+      // the light theme. frontend/contexts/ThemeContext.tsx owns the class
+      // afterwards and reads the same key; its test pins both sides.
+      (function () {
+        try {
+          var stored = localStorage.getItem('prumo:theme');
+          var dark =
+            stored === 'dark' ||
+            (stored !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {
+          /* storage or matchMedia unavailable: the provider applies it after mount */
+        }
+      })();
+    </script>
   </head>
 
   <body>

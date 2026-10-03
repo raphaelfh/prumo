@@ -1,12 +1,13 @@
 import {describe, it, expect, beforeEach} from 'vitest';
 import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {ThemeProvider} from 'next-themes';
+import {ThemeProvider} from '@/contexts/ThemeContext';
 import {ThemeToggle} from './ThemeToggle';
 
 function renderWithTheme(initial: 'light' | 'dark' | 'system') {
+  localStorage.setItem('prumo:theme', initial);
   return render(
-    <ThemeProvider attribute="class" defaultTheme={initial} enableSystem storageKey="prumo:theme">
+    <ThemeProvider>
       <ThemeToggle />
     </ThemeProvider>,
   );

@@ -18,7 +18,7 @@ Files you touch most: `frontend/index.css` (theme, tokens, utilities), `componen
 5. **Icon-only controls are `IconButton`** (`components/patterns/IconButton.tsx`, props `label` and `icon`): the label is the accessible name and the tooltip. `check_ui_primitives.py` bans an icon-sized `<Button>` anywhere else.
 6. **No cursor utilities.** `index.css` owns the cursor (arrow everywhere, a hand only on `a[href]`); `cursor-pointer`, `cursor-default` and `cursor-not-allowed` fail `check_ui_primitives.py`. The base rule matches roles, not handlers, so a `<div>`, `<td>` or Card with only `onClick` shows the text I-beam and no gate catches it. Give it real semantics: a `<button type="button">`, or, when it holds other controls, a stretched `absolute inset-0` overlay button with the nested controls raised to `relative z-10`, plus a visible focus style.
 7. **Focus is never invisible**: interactive elements keep `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden`. Prefer a Radix primitive (Dialog, Popover, Select, DropdownMenu, Tabs) to a `div` with `onClick`.
-8. **Dark mode goes through `next-themes`** (`frontend/contexts/ThemeContext.tsx`: `attribute="class"`, `storageKey="prumo:theme"`, `useTheme().cycle`), never by poking the `dark` class, which it re-syncs from storage.
+8. **Dark mode goes through `ThemeContext`** (`frontend/contexts/ThemeContext.tsx`: `useTheme().cycle`, storage key `prumo:theme`, the `dark` class on `<html>`, which `index.html` applies before first paint), never by poking the `dark` class, which the provider overwrites on the next theme change.
 9. **Copy goes through `frontend/lib/copy/`**, never an inline English string.
 
 ## Tailwind v4 wiring
