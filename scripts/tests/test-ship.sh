@@ -7,9 +7,11 @@
 set -uo pipefail
 SHIP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/ship.sh"
 pass=0; fail=0
-SANDBOX=$(mktemp -d); trap 'rm -rf "$SANDBOX"' EXIT
-git -C "$SANDBOX" init -q
-git -C "$SANDBOX" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+# shellcheck source=scripts/tests/lib/scratch-repo.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/scratch-repo.sh"
+scratch_mkdir ship-test
+scratch_init "$SANDBOX"
+sgit "$SANDBOX" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 cd "$SANDBOX" || exit 1
 
 ok() { if [ "$2" = "$3" ]; then pass=$((pass+1)); echo "ok   $1"; else fail=$((fail+1)); echo "FAIL $1: want '$3' got '$2'"; fi; }
@@ -91,7 +93,7 @@ echo "# gate"
 bash "$SHIP" phase harden >/dev/null
 LOG="$SANDBOX/.superpowers/ship-spec/demo/gate.log"
 SHIP_GATE_CMD="true" bash "$SHIP" gate >/dev/null 2>&1
-ok "gate log first line is the HEAD sha" "$(sed -n '1s/^sha=//p' "$LOG")" "$(git -C "$SANDBOX" rev-parse HEAD)"
+ok "gate log first line is the HEAD sha" "$(sed -n '1s/^sha=//p' "$LOG")" "$(sgit "$SANDBOX" rev-parse HEAD)"
 ok "gate log ends with its marker"       "$(tail -1 "$LOG")"                "GATE_EXIT=0"
 
 SHIP_GATE_CMD="false" bash "$SHIP" gate >/dev/null 2>&1
@@ -102,19 +104,19 @@ SHIP_GATE_CMD="echo hello; true" bash "$SHIP" gate >/dev/null 2>&1
 ok "gate captures command output" "$(grep -c '^hello$' "$LOG")" "1"
 
 echo "# dev (the refusals — the gh calls need a network and are not exercised here)"
-git -C "$SANDBOX" checkout -q -b feature/x
+sgit "$SANDBOX" checkout -q -b feature/x
 echo dirty > "$SANDBOX/dirty.txt"
 bash "$SHIP" dev "feat: x" >/dev/null 2>&1
 ok "dirty tree refused" "$?" "1"
 rm -f "$SANDBOX/dirty.txt"
 
-git -C "$SANDBOX" checkout -q -B dev
+sgit "$SANDBOX" checkout -q -B dev
 bash "$SHIP" dev "feat: x" >/dev/null 2>&1
 ok "refuses to ship from dev itself" "$?" "1"
-git -C "$SANDBOX" checkout -q -B main
+sgit "$SANDBOX" checkout -q -B main
 bash "$SHIP" dev "feat: x" >/dev/null 2>&1
 ok "refuses to ship from main"       "$?" "1"
-git -C "$SANDBOX" checkout -q feature/x
+sgit "$SANDBOX" checkout -q feature/x
 
 bash "$SHIP" dev >/dev/null 2>&1
 ok "a title is required" "$?" "2"
@@ -142,8 +144,8 @@ ok   "facts reports a measured commit count" "$(bash "$SHIP" facts | sed -n 's/^
 yes_ "facts echoes the recorded ceiling" "$(bash "$SHIP" facts | sed -n 's/^ceiling=//p')"
 
 echo "# promote needs its evidence at the phase boundary, not just at the gh call"
-git -C "$SANDBOX" update-ref refs/remotes/origin/dev HEAD
-DEV_SHA=$(git -C "$SANDBOX" rev-parse origin/dev)
+sgit "$SANDBOX" update-ref refs/remotes/origin/dev HEAD
+DEV_SHA=$(sgit "$SANDBOX" rev-parse origin/dev)
 bash "$SHIP" phase ship >/dev/null
 bash "$SHIP" phase promote >/dev/null 2>&1
 ok "promote refused: preflight is for another sha" "$?" "1"
