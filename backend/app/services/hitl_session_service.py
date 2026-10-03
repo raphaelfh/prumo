@@ -28,7 +28,6 @@ from app.models.extraction import (
 from app.services.article_read_service import ArticleNotFoundError, owned_article
 from app.services.instance_seeding import ensure_instances
 from app.services.run_lifecycle_service import (
-    NON_TERMINAL_STAGES,
     RunLifecycleService,
     last_human_activity_order,
 )
@@ -259,7 +258,7 @@ class HITLSessionService:
                 ExtractionRun.project_id == project_id,
                 ExtractionRun.article_id == article_id,
                 ExtractionRun.template_id == project_template_id,
-                ExtractionRun.stage.in_(NON_TERMINAL_STAGES),
+                ExtractionRun.stage.in_(ExtractionRunStage.live()),
             )
             .order_by(
                 last_human_activity_order().desc().nulls_last(),

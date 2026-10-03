@@ -576,7 +576,7 @@ async def reopen_run(
             # 0045). reopen_run's idempotency guard only recognises children
             # of THIS parent, but `resolve_or_create_extract_run` (the
             # "Run AI" path) can create an UNPARENTED live run over a
-            # finalized coordinate — its lookup filters NON_TERMINAL_STAGES,
+            # finalized coordinate — its lookup filters ExtractionRunStage.live(),
             # so the finalized parent is invisible to it. The fork then
             # collides. Report the conflict the way the sibling create_run
             # does, instead of letting it escape as a 500.

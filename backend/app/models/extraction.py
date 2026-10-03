@@ -71,14 +71,56 @@ class ExtractionCardinality(str, PyEnum):
 DEFAULT_ENTRY_LABEL = "entry"
 
 
+#: A set of ``ExtractionRunStage`` values, as the ``stage`` column stores them.
+StageSet = frozenset[str]
+
+
 class ExtractionRunStage(str, PyEnum):
-    """Stage of the extraction execution (HITL lifecycle)."""
+    """Stage of the extraction execution (HITL lifecycle).
+
+    The named sets below are the READ side of stage semantics — the one place
+    "which stages count as X" is spelled out. The forward edges live in
+    ``run_lifecycle_service._ALLOWED_TRANSITIONS``; the write gate that
+    consumes these sets is ``extraction_run_write.open_run_for_write``.
+    """
 
     PENDING = "pending"
     EXTRACT = "extract"
     CONSENSUS = "consensus"
     FINALIZED = "finalized"
     CANCELLED = "cancelled"
+
+    def only(self) -> StageSet:
+        """The set holding just this stage: the ``expect=`` of a one-stage gate."""
+        return frozenset({self.value})
+
+    @classmethod
+    def live(cls) -> StageSet:
+        """Stages a run is live in. The one-live-run invariant (partial unique
+        index ``uq_one_live_extraction_run_per_coord``, migration 0045) allows
+        at most ONE run in these per (project, article, template, kind)
+        coordinate; finalized / cancelled are terminal and unconstrained."""
+        return frozenset({cls.PENDING.value, cls.EXTRACT.value, cls.CONSENSUS.value})
+
+    @classmethod
+    def editable(cls) -> StageSet:
+        """Stages whose template pin a republish may still move: the run has
+        not entered consensus."""
+        return frozenset({cls.PENDING.value, cls.EXTRACT.value})
+
+    @classmethod
+    def reviewing(cls) -> StageSet:
+        """Reviewers extracting or the manager in consensus — the stages where
+        the "N/M reviewers ready" hint means something; for pending /
+        finalized / cancelled runs it is noise and the read is skipped."""
+        return frozenset({cls.EXTRACT.value, cls.CONSENSUS.value})
+
+    @classmethod
+    def with_current_values(cls) -> StageSet:
+        """Stages whose form hydrates from the materialized reviewer states
+        and decisions (``current_values``). In ``extract`` the client also
+        reads ``proposals[]``; pending / cancelled show nothing."""
+        return frozenset({cls.EXTRACT.value, cls.CONSENSUS.value, cls.FINALIZED.value})
 
 
 class ExtractionRunStatus(str, PyEnum):

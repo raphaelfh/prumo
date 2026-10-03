@@ -90,17 +90,6 @@ class DivergenceRationaleError(InvalidStageTransitionError):
     """A published judgment overrides its derived default with no rationale."""
 
 
-# Stages during which a run is "live": the one-live-run invariant (partial
-# unique index ``uq_one_live_extraction_run_per_coord``, migration 0045)
-# allows at most ONE run in these stages per (project, article, template,
-# kind) coordinate. finalized / cancelled are terminal and unconstrained.
-NON_TERMINAL_STAGES: tuple[str, ...] = (
-    ExtractionRunStage.PENDING.value,
-    ExtractionRunStage.EXTRACT.value,
-    ExtractionRunStage.CONSENSUS.value,
-)
-
-
 def last_human_activity_order() -> Any:
     """Correlated ORDER BY expression: a run's most recent HUMAN activity.
 
@@ -254,7 +243,7 @@ class RunLifecycleService:
                 ExtractionRun.project_id == project_id,
                 ExtractionRun.article_id == article_id,
                 ExtractionRun.template_id == project_template_id,
-                ExtractionRun.stage.in_(NON_TERMINAL_STAGES),
+                ExtractionRun.stage.in_(ExtractionRunStage.live()),
             )
             .order_by(
                 last_human_activity_order().desc().nulls_last(),

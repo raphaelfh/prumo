@@ -10,12 +10,6 @@ from uuid import UUID
 
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 
-ACTIVE_RUN_STAGES = {
-    ExtractionRunStage.PENDING.value,
-    ExtractionRunStage.EXTRACT.value,
-    ExtractionRunStage.CONSENSUS.value,
-}
-
 
 def select_current_runs_by_article(
     run_rows: list[ExtractionRun],
@@ -34,7 +28,7 @@ def select_current_runs_by_article(
     cancelled_by_article: dict[UUID, ExtractionRun] = {}
 
     for run in sorted(run_rows, key=run_recency_key, reverse=True):
-        if run.stage in ACTIVE_RUN_STAGES:
+        if run.stage in ExtractionRunStage.live():
             active_by_article.setdefault(run.article_id, run)
         elif run.stage == ExtractionRunStage.FINALIZED.value:
             finalized_by_article.setdefault(run.article_id, run)

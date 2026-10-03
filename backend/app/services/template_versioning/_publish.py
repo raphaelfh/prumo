@@ -139,12 +139,6 @@ class PublishMissingAcknowledgementError(AppError):
         )
 
 
-_EDITABLE_STAGES = (
-    ExtractionRunStage.PENDING.value,
-    ExtractionRunStage.EXTRACT.value,
-)
-
-
 class RepublishResult:
     """Result envelope returned by ``TemplateVersionService.republish``."""
 
@@ -412,7 +406,7 @@ class TemplateVersionService:
                     select(ExtractionRun.project_id, ExtractionRun.article_id)
                     .where(
                         ExtractionRun.template_id == project_template_id,
-                        ExtractionRun.stage.in_(_EDITABLE_STAGES),
+                        ExtractionRun.stage.in_(ExtractionRunStage.editable()),
                     )
                     .distinct()
                 )
@@ -486,7 +480,7 @@ class TemplateVersionService:
             update(ExtractionRun)
             .where(
                 ExtractionRun.template_id == project_template_id,
-                ExtractionRun.stage.in_(_EDITABLE_STAGES),
+                ExtractionRun.stage.in_(ExtractionRunStage.editable()),
                 ExtractionRun.version_id != version_id,
             )
             .values(version_id=version_id)

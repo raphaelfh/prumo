@@ -12,10 +12,7 @@ from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 from app.models.extraction import ExtractionRun, ExtractionRunStage
-from app.services.extraction_current_run import (
-    ACTIVE_RUN_STAGES,
-    select_current_runs_by_article,
-)
+from app.services.extraction_current_run import select_current_runs_by_article
 
 
 def _make_run(
@@ -91,7 +88,3 @@ def test_tie_broken_by_id() -> None:
     expected = max([run_a, run_b], key=lambda r: str(r.id))
     selected = select_current_runs_by_article([run_a, run_b])
     assert selected[article_id] is expected
-
-
-def test_active_stages() -> None:
-    assert {"pending", "extract", "consensus"} == ACTIVE_RUN_STAGES
