@@ -165,9 +165,7 @@ class SectionExtractionService(LoggerMixin):
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
-        self._credentials = llm_credentials or EngineCredentials(
-            api_key=None, key_scope=None, base_url=None, connection_id=None, output_mode=None
-        )
+        self._credentials = llm_credentials or EngineCredentials(None, None, None, None, None)
         self._key_provider = key_provider
         self._repin = repin
         self.attempt_id = attempt_id
@@ -254,9 +252,8 @@ class SectionExtractionService(LoggerMixin):
     def _wire_model(self) -> Any:
         """The model client for the frozen engine on the resolved
         credentials — ONE site, because key, host and probed output mode
-        must travel together (passing only the key posts an endpoint key to
-        the cloud; dropping the mode sends a host a response_format its
-        probe showed it ignores)."""
+        travel together (a key alone posts an endpoint key to the cloud; a
+        dropped mode sends a host a response_format its probe showed it ignores)."""
         return build_model(
             self._engine.provider,
             self._engine.model,

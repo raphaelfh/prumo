@@ -19,6 +19,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import AppError
+from app.llm.registry import get_provider
 from app.models.llm_connection import UserProjectEngine
 from app.services.llm_connection_service import availability_map
 from app.services.llm_engine_service import (
@@ -75,10 +76,9 @@ async def set_user_engine(
     default = await LlmEngineService(db).get_for_project(project_id)  # ProjectNotFoundError → 404
     if not default.user_choice_allowed and not is_manager:
         raise EngineLockedError()
-    if (connection_id is not None) != (provider == "openai_compatible"):
-        raise ValueError(
-            "A connection_id is required for, and only for, provider 'openai_compatible'"
-        )
+    spec = get_provider(provider)
+    if (connection_id is not None) != (spec is not None and spec.needs_host):
+        raise ValueError("A connection_id is required for, and only for, a host-bearing provider")
     row = UserProjectEngine(
         user_id=user_id,
         project_id=project_id,
