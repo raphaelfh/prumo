@@ -1,6 +1,9 @@
 """The provider registry (§1) — the only file that names a provider.
 
-Drift tests: anything that lists providers elsewhere must equal this.
+Drift tests: anything that lists providers elsewhere must equal this. The
+row carries the provider's behaviour too (``build``, ``probe``,
+``output_mode``); the invariants below are what lets ``build_model`` and
+``probe_hosted_key`` dispatch without naming anyone.
 """
 
 from __future__ import annotations
@@ -110,3 +113,27 @@ def test_key_optional_is_exactly_the_host_bearing_rule() -> None:
     """§1: keyless is legal only where a host is (a local Ollama)."""
     for spec in REGISTRY:
         assert spec.key_optional == spec.needs_host, spec.id
+
+
+@pytest.mark.parametrize("spec", REGISTRY, ids=lambda s: s.id)
+def test_behaviour_sits_on_the_row(spec: ProviderSpec) -> None:
+    """A completions row builds a model on a declared output mode; a hosted
+    row carries its key probe; a host-bearing row leaves probing to the
+    endpoint ladder."""
+    assert (spec.build is not None) == (spec.serves == "llm"), spec.id
+    assert (spec.output_mode is not None) == (spec.serves == "llm"), spec.id
+    assert (spec.probe is not None) == (not spec.needs_host), spec.id
+
+
+def test_output_modes_are_per_the_spec_table() -> None:
+    """OpenAI and Gemini enforce a json_schema response_format; Anthropic has
+    none and Ollama Cloud accepts one without enforcing it, so both use
+    tool-calling. A custom host's row default is overridden by its probe."""
+    assert {spec.id: spec.output_mode for spec in REGISTRY} == {
+        "openai": "native",
+        "anthropic": "tool",
+        "google": "native",
+        "ollama": "tool",
+        "openai_compatible": "native",
+        "llama_cloud": None,
+    }

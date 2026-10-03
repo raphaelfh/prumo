@@ -1,13 +1,16 @@
-"""One cheap authenticated call per hosted provider (§4 verify)."""
+"""One cheap authenticated call per hosted provider (§4 verify), through
+``probe_hosted_key`` — the registry row's ``probe`` is the call."""
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.llm.registry import REGISTRY
-from app.services.provider_key_probe import _PROBES, probe_hosted_key
+import app.llm.registry as registry
+from app.llm.registry import REGISTRY, ProviderSpec
+from app.services.provider_key_probe import probe_hosted_key
 
 
 def _client_returning(status_code: int, *, method: str) -> MagicMock:
@@ -60,10 +63,11 @@ async def test_key_travels_in_a_header_never_the_url() -> None:
     )
 
 
-def test_every_hosted_provider_has_a_probe() -> None:
-    # A hosted provider without a probe makes verify raise KeyError (a 500).
-    hosted = {spec.id for spec in REGISTRY if not spec.needs_host}
-    assert hosted == set(_PROBES)
+@pytest.mark.parametrize("spec", REGISTRY, ids=lambda s: s.id)
+def test_exactly_the_hosted_rows_carry_a_key_probe(spec: ProviderSpec) -> None:
+    # A hosted row without a probe would make verify raise (a 500); a host
+    # row's connections run the endpoint ladder instead.
+    assert (spec.probe is not None) == (not spec.needs_host)
 
 
 @pytest.mark.asyncio
@@ -80,3 +84,32 @@ async def test_ollama_key_travels_in_a_bearer_header() -> None:
 async def test_host_bearing_provider_is_not_probed_here() -> None:
     with pytest.raises(ValueError, match="hosted"):
         await probe_hosted_key("openai_compatible", "k")
+
+
+@pytest.mark.asyncio
+async def test_the_rows_probe_is_the_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fake hosted row: ``probe_hosted_key`` hands the key to ITS probe and
+    returns its verdict — no table keyed by provider id in between."""
+    seen: list[str] = []
+
+    async def probe(_client: Any, api_key: str) -> tuple[Any, str | None]:
+        seen.append(api_key)
+        return ("failed", "http_418")
+
+    fake = ProviderSpec(
+        id="fake",
+        label="Fake",
+        description="a row under test",
+        serves="llm",
+        needs_host=False,
+        key_optional=False,
+        global_key_setting="OPENAI_API_KEY",
+        docs_url="https://fake.example",
+        scopes=frozenset({"user"}),
+        build=None,
+        probe=probe,
+        output_mode="tool",
+    )
+    monkeypatch.setattr(registry, "REGISTRY", (*REGISTRY, fake))
+    assert await probe_hosted_key("fake", "sk-fake") == ("failed", "http_418")
+    assert seen == ["sk-fake"]

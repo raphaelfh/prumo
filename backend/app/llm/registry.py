@@ -1,12 +1,24 @@
 """The provider registry (§1) — the ONLY file that names a provider.
 
-Every layer derives from this tuple: ``build_model``, the catalogue's
-provider ids, the key schema validator, the provider metadata the API
-returns, the global-key lookup, and the DB CHECK literals on
-``llm_connections.provider`` and the ``scopes`` CHECK (asserted equal by
+Every layer derives from this tuple: ``build_model``, the hosted-key probe,
+the catalogue's provider ids, the key schema validator, the provider
+metadata the API returns, the global-key lookup, and the DB CHECK literals
+on ``llm_connections.provider`` and the ``scopes`` CHECK (asserted equal by
 ``tests/unit/llm/test_llm_connection_model.py`` and
-``test_migration_roundtrip.py``) — adding a provider is one entry here
-plus one migration, and forgetting the migration fails both.
+``test_migration_roundtrip.py``) — adding a provider is one entry here, its
+two adapters in ``app.llm.adapters``, plus one migration, and forgetting
+the migration fails both.
+
+Behaviour sits on the row, not in satellite tables keyed by provider id:
+
+* ``build`` — credentials → pydantic-ai model (``None`` for a provider that
+  serves no completions).
+* ``probe`` — the cheap authenticated key check (``None`` for a host-bearing
+  provider, whose connections run the endpoint ladder instead).
+* ``output_mode`` — how structured output travels by default: ``native``
+  (json_schema ``response_format``), ``tool`` (tool-calling) or
+  ``prompted``. A custom host's probed ``capabilities.output_mode``
+  overrides it at run time (``build_model``).
 
 Rules encoded as data, not comments elsewhere:
 
@@ -19,10 +31,20 @@ Rules encoded as data, not comments elsewhere:
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from app.core.config import settings
+from app.llm import adapters
+from app.llm.adapters import Outcome, OutputMode
+
+if TYPE_CHECKING:
+    import httpx
+    from pydantic_ai.models import Model
+
+ModelBuilder = Callable[[str, str, "str | None", OutputMode], "Model"]
+KeyProbe = Callable[["httpx.AsyncClient", str], Awaitable[Outcome]]
 
 
 @dataclass(frozen=True)
@@ -36,6 +58,9 @@ class ProviderSpec:
     global_key_setting: str | None
     docs_url: str | None
     scopes: frozenset[str]
+    build: ModelBuilder | None
+    probe: KeyProbe | None
+    output_mode: OutputMode | None
 
 
 REGISTRY: tuple[ProviderSpec, ...] = (
@@ -49,6 +74,9 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         global_key_setting="OPENAI_API_KEY",
         docs_url="https://platform.openai.com/api-keys",
         scopes=frozenset({"user", "project"}),
+        build=adapters.build_openai,
+        probe=adapters.probe_openai,
+        output_mode="native",
     ),
     ProviderSpec(
         id="anthropic",
@@ -60,6 +88,9 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         global_key_setting="ANTHROPIC_API_KEY",
         docs_url="https://console.anthropic.com/settings/keys",
         scopes=frozenset({"user", "project"}),
+        build=adapters.build_anthropic,
+        probe=adapters.probe_anthropic,
+        output_mode="tool",  # no response_format on the Messages API
     ),
     ProviderSpec(
         id="google",
@@ -71,6 +102,9 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         global_key_setting="GOOGLE_API_KEY",
         docs_url="https://aistudio.google.com/app/apikey",
         scopes=frozenset({"user", "project"}),
+        build=adapters.build_google,
+        probe=adapters.probe_google,
+        output_mode="native",
     ),
     ProviderSpec(
         id="ollama",
@@ -82,6 +116,9 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         global_key_setting="OLLAMA_API_KEY",
         docs_url="https://ollama.com/settings/keys",
         scopes=frozenset({"user", "project"}),
+        build=adapters.build_ollama,
+        probe=adapters.probe_ollama,
+        output_mode="tool",  # accepts json_schema, never enforces it
     ),
     ProviderSpec(
         id="openai_compatible",
@@ -93,6 +130,9 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         global_key_setting=None,
         docs_url=None,
         scopes=frozenset({"user"}),
+        build=adapters.build_openai_compatible,
+        probe=None,
+        output_mode="native",  # the connection's probed mode overrides this
     ),
     ProviderSpec(
         id="llama_cloud",
@@ -104,6 +144,9 @@ REGISTRY: tuple[ProviderSpec, ...] = (
         global_key_setting="LLAMA_CLOUD_API_KEY",
         docs_url="https://cloud.llamaindex.ai",
         scopes=frozenset({"user", "project"}),
+        build=None,
+        probe=adapters.probe_llama_cloud,
+        output_mode=None,
     ),
 )
 

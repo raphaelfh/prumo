@@ -5,6 +5,13 @@ template, and per-run output_type is incompatible with agent-level
 validators in pydantic-ai v1. Agents are cheap objects; this also keeps
 BYOK fully state-free.
 
+How structured output travels (json_schema ``response_format``,
+tool-calling or a prompted schema) is the MODEL's fact, not this module's:
+``build_model`` pins the registry row's ``output_mode`` — or the custom
+host's probed one — into the model profile's
+``default_structured_output_mode``, and pydantic-ai resolves the bare
+``output_type`` against it per request. Nothing here names a provider.
+
 Callers should catch ``pydantic_ai.exceptions.AgentRunError`` — it covers
 both ``UnexpectedModelBehavior`` (reask budget exhausted) and
 ``UsageLimitExceeded`` (request ceiling hit)."""
@@ -15,7 +22,7 @@ from typing import Any, TypeVar
 
 import logfire
 from pydantic import BaseModel
-from pydantic_ai import Agent, NativeOutput, ToolOutput, UsageLimits
+from pydantic_ai import Agent, UsageLimits
 from pydantic_ai.models import Model
 
 from app.core.config import settings
@@ -57,22 +64,6 @@ class LlmUsage:
         )
 
 
-def _output_for(
-    model: Model, output_model: type[OutputT]
-) -> NativeOutput[OutputT] | ToolOutput[OutputT]:
-    """OpenAI supports JSON-schema response_format (NativeOutput); Anthropic
-    has no response_format, and Ollama Cloud accepts one without enforcing it
-    (``build_model`` only yields an "ollama" model for Cloud routes: the hosted
-    ``ollama`` provider and custom hosts on ollama.com), so both use
-    tool-calling (ToolOutput). ``model.system`` is the provider name carried by
-    every pydantic-ai model ("openai"/"anthropic"/"ollama"/"function"...) —
-    robust to subclasses/wrappers, and it leaves OpenAI and test models on
-    NativeOutput."""
-    if getattr(model, "system", "") in ("anthropic", "ollama"):
-        return ToolOutput(output_model)
-    return NativeOutput(output_model)
-
-
 async def extract_structured(
     *,
     output_model: type[OutputT],
@@ -87,7 +78,7 @@ async def extract_structured(
 ) -> tuple[OutputT, LlmUsage]:
     agent: Agent[None, OutputT] = Agent(
         model,
-        output_type=_output_for(model, output_model),
+        output_type=output_model,
         instructions=system_prompt,
         retries={"output": output_retries},
         model_settings={
