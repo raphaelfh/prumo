@@ -44,8 +44,8 @@ import { Badge } from "@/components/ui/badge";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { useQATemplateResolution } from "@/hooks/qa/useQATemplateResolution";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
-import { useQAWorklist } from "@/hooks/qa/useQAWorklist";
 import { useQAReopen } from "@/hooks/qa/useQAReopen";
+import { useProjectWorklist } from "@/hooks/shared/useProjectArticlesQuery";
 import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
 import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
 import { countActionableSuggestions } from "@/lib/ai-extraction/suggestionUtils";
@@ -146,7 +146,7 @@ export default function QualityAssessmentFullScreen() {
   });
 
   // The project's article list, so finishing a form can open the next one.
-  const worklist = useQAWorklist(projectId);
+  const { worklist } = useProjectWorklist(projectId);
 
   const advanceMutation = useAdvanceRun(session?.runId ?? "");
   const consensusMutation = useCreateConsensus(session?.runId ?? "");

@@ -42,8 +42,7 @@ import { QualityAssessmentConfiguration } from "@/components/quality/QualityAsse
 import { useCallerArticleProgress } from "@/hooks/extraction/useCallerArticleProgress";
 import { useProjectTemplates } from "@/hooks/hitl/useProjectTemplates";
 import { useProjectMemberRole } from "@/hooks/useProjectMemberRole";
-import { useQAWorklist } from "@/hooks/qa/useQAWorklist";
-import { useProjectArticlesQuery } from "@/hooks/shared/useProjectArticlesQuery";
+import { useProjectArticlesQuery, useProjectWorklist } from "@/hooks/shared/useProjectArticlesQuery";
 
 type QaTab = "assessment" | "dashboard" | "configuration";
 
@@ -69,9 +68,9 @@ export function QualityAssessmentInterface({ projectId }: Props) {
   const { activeTemplate, selectTemplate } = useActiveTemplateSelection(templates);
 
   // Export needs the project's article ids and the caller's role. The worklist
-  // hook is the QA screen's existing read of the same list the table shows
+  // is the run screens' read of the same list the table shows
   // (``fetchProjectArticles``, created_at desc), so this adds no new fetcher.
-  const worklist = useQAWorklist(projectId);
+  const { worklist } = useProjectWorklist(projectId);
   const { isManager } = useProjectMemberRole(projectId);
   const [showExportDialog, setShowExportDialog] = useState(false);
 
