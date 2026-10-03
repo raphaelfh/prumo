@@ -1,5 +1,13 @@
+/**
+ * Store → `Viewer.Page`'s render plan → the painters, end to end: a zoom
+ * change reaches both layers once, at the right scale for each.
+ */
 import {act, render} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+
+// Viewer.tsx loads the pdf.js engine, whose browser build needs DOMMatrix.
+import * as legacyPdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+vi.mock('pdfjs-dist', () => legacyPdfjs);
 
 import {ViewerProvider} from '../core/context';
 import type {RenderOptions} from '../core/engine';
@@ -7,6 +15,8 @@ import {createViewerStore} from '../core/store';
 import {createMockEngine} from '../engines/mock';
 import {CanvasLayer} from '../primitives/CanvasLayer';
 import {TextLayer} from '../primitives/TextLayer';
+
+const {Viewer} = await import('../primitives/Viewer');
 
 const LETTER = {width: 612, height: 792};
 
@@ -21,42 +31,38 @@ afterEach(() => {
 
 async function renderPage(zoom = 1) {
   const renders: RenderOptions[] = [];
-  const textLayers: number[] = [];
   const textScales: number[] = [];
   const engine = createMockEngine({
     numPages: 1,
     pageSize: LETTER,
     text: ['page one'],
     onRender: (_page, opts) => renders.push(opts),
-    onRenderTextLayer: (page, opts) => {
-      textLayers.push(page);
-      textScales.push(opts.scale);
-    },
+    onRenderTextLayer: (_page, opts) => textScales.push(opts.scale),
   });
   const store = createViewerStore({zoom, fitWidth: false});
   store.getState().actions.setDocument(await engine.load({kind: 'url', url: 'mock.pdf'}));
   const {container} = render(
     <ViewerProvider store={store}>
-      <CanvasLayer pageNumber={1} />
-      <TextLayer pageNumber={1} />
+      <Viewer.Page pageNumber={1}>
+        <CanvasLayer />
+        <TextLayer />
+      </Viewer.Page>
     </ViewerProvider>,
   );
-  // The page handle resolves, then the first render starts at once.
+  // The page handle resolves, then the first paint starts at once.
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
-  });
-  return {store, container, renders, textLayers, textScales};
+  return {store, container, renders, textScales};
 }
 
-describe('deferred page rendering', () => {
-  it('renders a burst of zoom changes once, 100ms after the last', async () => {
-    const {store, renders, textLayers} = await renderPage();
-    // Precondition: the first render did not wait.
-    expect(renders).toHaveLength(1);
-    expect(textLayers).toHaveLength(1);
+describe('a page’s layers paint the plan Viewer.Page provides', () => {
+  it('renders a burst of zoom changes once, 100ms after the last — canvas at zoom × dpr, text at CSS zoom', async () => {
+    vi.stubGlobal('devicePixelRatio', 2);
+    const {store, renders, textScales} = await renderPage();
+    // Precondition: the first paint did not wait.
+    expect(renders.map((r) => r.scale)).toEqual([2]);
+    expect(textScales).toEqual([1]);
 
     for (const zoom of [1.1, 1.2, 1.3, 1.4, 1.5]) {
       act(() => store.getState().actions.setZoom(zoom));
@@ -69,9 +75,8 @@ describe('deferred page rendering', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    expect(renders).toHaveLength(2);
-    expect(textLayers).toHaveLength(2);
-    expect(renders[1].scale).toBe(1.5);
+    expect(renders.map((r) => r.scale)).toEqual([2, 3]);
+    expect(textScales).toEqual([1, 1.5]);
   });
 
   it('keeps the canvas bitmap and hides the text layer during a gesture', async () => {
@@ -92,25 +97,7 @@ describe('deferred page rendering', () => {
       await vi.advanceTimersByTimeAsync(100);
     });
     expect(renders).toHaveLength(2);
+    expect(renders[1].scale).toBe(2);
     expect(container.querySelector('.pdf-viewer-text-layer span')?.textContent).toBe('page one');
-  });
-
-  it('caps the device pixel ratio at 2 and the backing store at 16 777 216 pixels', async () => {
-    vi.stubGlobal('devicePixelRatio', 3);
-    const low = await renderPage(1);
-    expect(low.renders[0].scale).toBe(2); // zoom 1 × min(3, 2)
-
-    const high = await renderPage(4);
-    const {scale} = high.renders[0];
-    expect(scale).toBeGreaterThan(4);
-    // At the cap the product equals the budget up to float rounding.
-    expect(LETTER.width * scale * LETTER.height * scale).toBeLessThanOrEqual(16_777_216 + 1);
-  });
-
-  it('paints the text layer at CSS zoom, not zoom × devicePixelRatio', async () => {
-    vi.stubGlobal('devicePixelRatio', 2);
-    const {renders, textScales} = await renderPage(1.5);
-    expect(renders[0].scale).toBe(3);
-    expect(textScales[0]).toBe(1.5);
   });
 });

@@ -2,7 +2,7 @@
  * While `fitWidth` is on, the zoom follows the scroller's width: the widest
  * page plus its side gaps fills it. However often the scroller resizes (a
  * split-pane drag), the zoom updates at most once per animation frame;
- * CanvasLayer's re-render delay keeps the drag from re-rendering pages.
+ * the page render plan's settle delay keeps the drag from re-painting pages.
  * Adapted from anaralabs/lector (MIT).
  */
 import {useEffect} from 'react';
