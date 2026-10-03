@@ -78,7 +78,11 @@ def _service(
         storage=MagicMock(),
         trace_id=trace_id,
         llm_credentials=EngineCredentials(
-            api_key=_SECRET_KEY, key_scope=key_scope, base_url=None, connection_id=None
+            api_key=_SECRET_KEY,
+            key_scope=key_scope,
+            base_url=None,
+            connection_id=None,
+            output_mode=None,
         ),
         repin=repin,
     )
@@ -561,17 +565,20 @@ async def test_provenance_key_scope_is_null_when_the_caller_did_not_resolve_one(
 
 def _stub_keyed_build_model(
     monkeypatch: pytest.MonkeyPatch,
-) -> list[tuple[str, str, str | None, str | None]]:
+) -> list[tuple[str, str, str | None, str | None, str | None]]:
     """Re-patch ``build_model`` to also record the credentials it was handed.
 
     Call AFTER ``_stub_llm_seams`` (which wires the other seams); the
-    (provider, model, api_key, base_url) tuple is the ground truth for which
-    engine actually ran, on whose key, against which host.
+    (provider, model, api_key, base_url, output_mode) tuple is the ground
+    truth for which engine actually ran, on whose key, against which host,
+    in the output mode that host was probed for.
     """
-    calls: list[tuple[str, str, str | None, str | None]] = []
+    calls: list[tuple[str, str, str | None, str | None, str | None]] = []
 
     def _fake_build_model(provider: str, model_name: str, **kw: Any) -> MagicMock:
-        calls.append((provider, model_name, kw.get("api_key"), kw.get("base_url")))
+        calls.append(
+            (provider, model_name, kw.get("api_key"), kw.get("base_url"), kw.get("output_mode"))
+        )
         return MagicMock()
 
     monkeypatch.setattr(ses, "build_model", _fake_build_model)
@@ -616,6 +623,7 @@ def _keyed_service(
             key_scope=KeyScope.USER_BYOK,
             base_url=base_url,
             connection_id=connection_id,
+            output_mode=None,
         ),
         key_provider=key_provider,
     )
@@ -765,9 +773,11 @@ async def test_adoption_across_two_hosts_carries_the_pinned_hosts_key_and_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A kickoff keyed for endpoint A that ADOPTS a pin on endpoint B must
-    run on B's key AND B's base_url. Both engines say ``openai_compatible``,
-    so a provider-only trigger would silently ship A's credentials to B's
-    host — the worst possible failure: a key posted to a third party."""
+    run on B's key, B's base_url AND B's probed output mode. Both engines
+    say ``openai_compatible``, so a provider-only trigger would silently
+    ship A's credentials to B's host — the worst possible failure: a key
+    posted to a third party — and the row default (native) would send B a
+    response_format its probe showed it ignores."""
     _stub_llm_seams(monkeypatch)
     keyed_calls = _stub_keyed_build_model(monkeypatch)
     asked = _stub_key_service(monkeypatch, ResolvedKey("cloud-key", KeyScope.GLOBAL_SERVICE))
@@ -785,6 +795,7 @@ async def test_adoption_across_two_hosts_carries_the_pinned_hosts_key_and_url(
         base_url="https://8.8.4.4/v1",
         api_key="sk-endpoint-b",
         allowed_models=["endpoint-model-x"],
+        output_mode="prompted",  # neither A's probe ("tool") nor the row default ("native")
     )
 
     run = await engine_setup.run_in_extract(db_session)
@@ -829,6 +840,9 @@ async def test_adoption_across_two_hosts_carries_the_pinned_hosts_key_and_url(
     )
     assert all(c[3] == "https://8.8.4.4/v1" for c in keyed_calls), (
         f"the call did not go to the PINNED endpoint's host: {keyed_calls}"
+    )
+    assert all(c[4] == "prompted" for c in keyed_calls), (
+        f"the call did not run in the PINNED endpoint's probed output mode: {keyed_calls}"
     )
     assert asked == [], f"an endpoint engine reached the cloud key path: {asked}"
     snapshot = _section_provenance(run, SEED.primary_entity_type)
@@ -882,6 +896,9 @@ async def test_catalog_to_host_adoption_populates_the_base_url(
     )
     assert all(c[2] == "sk-endpoint-only" for c in keyed_calls), (
         f"the stale cloud key survived the endpoint adoption: {keyed_calls}"
+    )
+    assert all(c[4] == "tool" for c in keyed_calls), (
+        f"the adopted endpoint's probed output mode never reached build_model: {keyed_calls}"
     )
     assert asked == [], f"the endpoint adoption asked for a cloud key: {asked}"
 

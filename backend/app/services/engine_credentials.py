@@ -1,7 +1,8 @@
 """The ONE place an engine turns into the credentials it runs on (§3.3).
 
 An :class:`LlmTarget` names WHAT to run; this module answers WITH WHAT —
-key, whose key, and (for a host connection) which host. One path:
+key, whose key, and (for a host connection) which host and in which
+structured-output mode its probe found it working. One path:
 
 * ``connection_id`` set — always the caller's own user-scope host, fetched
   through the ONE ownership predicate (``owned_user_connection``, in the
@@ -18,6 +19,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.adapters import OutputMode
+from app.schemas.llm_endpoint import LlmEndpointCapabilities
 from app.schemas.llm_target import LlmTarget
 from app.services.llm_connection_service import (
     ConnectionUnavailableError,
@@ -33,19 +36,28 @@ __all__ = ["EngineCredentials", "rekey_for_adopted_engine", "resolve_engine_cred
 @dataclass(frozen=True)
 class EngineCredentials:
     """What one engine needs at the wire, plus the identity it was resolved
-    FOR: ``(provider, connection_id)`` — two hosts share the provider string."""
+    FOR: ``(provider, connection_id)`` — two hosts share the provider string.
+
+    ``output_mode`` is the connection's probed ``capabilities.output_mode``
+    (the endpoint ladder's verdict), ``None`` for a catalogue engine: the
+    registry row's default applies. It travels WITH the key and the host
+    because it is a fact about the same connection — ``build_model`` reads
+    it to override the row default, which is how a custom host on
+    ``ollama.com`` runs on tool-calling without anyone sniffing the URL."""
 
     api_key: str | None
     key_scope: KeyScope | None
     base_url: str | None
     connection_id: str | None
+    output_mode: OutputMode | None
 
     def __repr__(self) -> str:
         key = "<redacted>" if self.api_key is not None else "None"
         scope = self.key_scope.value if self.key_scope is not None else None
         return (
             f"EngineCredentials(api_key={key}, key_scope={scope!r}, "
-            f"base_url={self.base_url!r}, connection_id={self.connection_id!r})"
+            f"base_url={self.base_url!r}, connection_id={self.connection_id!r}, "
+            f"output_mode={self.output_mode!r})"
         )
 
 
@@ -68,11 +80,15 @@ async def resolve_engine_credentials(
         row = await owned_user_connection(db, connection_id, caller)
         if row is None:
             raise _unavailable(engine.connection_id)
+        # Re-validated from JSONB: an unknown stored mode degrades to None
+        # (the row default), loudly, never a 500 on the run path.
+        capabilities = LlmEndpointCapabilities.model_validate(row.capabilities or {})
         return EngineCredentials(
             api_key=await LlmConnectionService(db).decrypt_key(row),
             key_scope=KeyScope.USER_BYOK,
             base_url=row.base_url,
             connection_id=engine.connection_id,
+            output_mode=capabilities.output_mode,
         )
     resolved = await resolve_provider_key(
         db, provider=engine.provider, project_id=project_id, user_id=caller
@@ -82,6 +98,7 @@ async def resolve_engine_credentials(
         key_scope=resolved.scope if resolved is not None else None,
         base_url=None,
         connection_id=None,
+        output_mode=None,
     )
 
 

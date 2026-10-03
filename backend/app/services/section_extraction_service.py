@@ -165,7 +165,9 @@ class SectionExtractionService(LoggerMixin):
         self.user_id = user_id
         self.storage = storage
         self.trace_id = trace_id
-        self._credentials = llm_credentials or EngineCredentials(None, None, None, None)
+        self._credentials = llm_credentials or EngineCredentials(
+            api_key=None, key_scope=None, base_url=None, connection_id=None, output_mode=None
+        )
         self._key_provider = key_provider
         self._repin = repin
         self.attempt_id = attempt_id
@@ -251,13 +253,16 @@ class SectionExtractionService(LoggerMixin):
 
     def _wire_model(self) -> Any:
         """The model client for the frozen engine on the resolved
-        credentials — ONE site, because key and host must travel together
-        (passing only the key posts an endpoint key to the cloud)."""
+        credentials — ONE site, because key, host and probed output mode
+        must travel together (passing only the key posts an endpoint key to
+        the cloud; dropping the mode sends a host a response_format its
+        probe showed it ignores)."""
         return build_model(
             self._engine.provider,
             self._engine.model,
             api_key=self._credentials.api_key,
             base_url=self._credentials.base_url,
+            output_mode=self._credentials.output_mode,
         )
 
     async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
@@ -1459,10 +1464,8 @@ class SectionExtractionService(LoggerMixin):
         self._run_provenance = None
         verdicts, usage, snapshot = await verify_and_snapshot(
             engine=self._engine,
-            api_key=self._credentials.api_key,
-            base_url=self._credentials.base_url,
+            credentials=self._credentials,
             kind=kind,
-            key_scope=self._credentials.key_scope,
             ran_by_user_id=self.user_id,
             pdf_text=pdf_text,
             extracted_data=extracted_data,
