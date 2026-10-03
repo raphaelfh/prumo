@@ -15,7 +15,7 @@ DB-level invariant (no ORM representation): migration
 TRIGGER`` (``trg_<table>_article_coherent``) to each of the five tables
 that rejects any row whose ``instance.article_id`` differs from its
 ``run.article_id``. This is the defense-in-depth backstop for the
-service-layer ``assert_coords_coherent`` guard (issue #79, PR #189) —
+service-layer ``open_run_for_write`` coordinate guard (issue #79, PR #189) —
 a direct SQL write or future writer that skips that helper still cannot
 land a cross-article workflow row.
 """

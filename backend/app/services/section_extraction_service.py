@@ -59,6 +59,7 @@ from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_generation import ProposalCandidate, write_candidate
 from app.services.extraction_prompt_input import PromptInputInfo, build_prompt_input
 from app.services.extraction_proposal_service import ExtractionProposalService
+from app.services.extraction_run_write import open_run_for_write
 from app.services.extraction_snapshot import entity_types_for_version
 from app.services.llm_engine_service import resolve_engine
 from app.services.llm_field_filter import LlmFieldFilter, build_llm_field_filter
@@ -318,14 +319,9 @@ class SectionExtractionService(LoggerMixin):
 
         # Existing sessions own lifecycle; standalone calls bind the live coordinate.
         if run_id is not None:
-            existing_run = await self.db.get(ExtractionRun, run_id)
-            if existing_run is None:
-                raise ValueError(f"Run {run_id} not found")
-            if existing_run.stage != ExtractionRunStage.EXTRACT.value:
-                raise ValueError(
-                    f"Run {run_id} stage is {existing_run.stage}; AI extraction requires EXTRACT",
-                )
-            run = existing_run
+            run = await open_run_for_write(
+                self.db, run_id, expect=ExtractionRunStage.EXTRACT.only()
+            )
             manage_lifecycle = False
         else:
             run, manage_lifecycle = await self._lifecycle.resolve_or_create_extract_run(
@@ -510,11 +506,7 @@ class SectionExtractionService(LoggerMixin):
         if engine is None:
             engine = self._engine
 
-        run = await self.db.get(ExtractionRun, run_id)
-        if run is None:
-            raise ValueError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.EXTRACT.value:
-            raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires EXTRACT")
+        run = await open_run_for_write(self.db, run_id, expect=ExtractionRunStage.EXTRACT.only())
 
         template = await self.db.get(ProjectExtractionTemplate, run.template_id)
         framework: str | None = _qa_framework_label(template)
@@ -977,15 +969,9 @@ class SectionExtractionService(LoggerMixin):
         # one run instead of 23505-ing on the second chunk. ``manage_lifecycle``
         # follows CREATION, not the run_id parameter.
         if run_id is not None:
-            existing_run = await self.db.get(ExtractionRun, run_id)
-            if existing_run is None:
-                raise ValueError(f"Run {run_id} not found")
-            if existing_run.stage != ExtractionRunStage.EXTRACT.value:
-                raise ValueError(
-                    f"Run {run_id} stage is {existing_run.stage}; "
-                    "batch section extraction requires EXTRACT"
-                )
-            run = existing_run
+            run = await open_run_for_write(
+                self.db, run_id, expect=ExtractionRunStage.EXTRACT.only()
+            )
             manage_lifecycle = False
         else:
             run, manage_lifecycle = await self._lifecycle.resolve_or_create_extract_run(

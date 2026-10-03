@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage
+from app.models.extraction import ExtractionRun
 from app.schemas.llm_target import LlmTarget
 from app.schemas.run_prompt_context import RunPromptContext
 from app.services.extraction_prompt_input import PromptInputInfo
@@ -49,6 +50,23 @@ def _stub_run_prompt_context():
 def mock_db():
     """Mock da sessão de banco."""
     return AsyncMock(spec=AsyncSession)
+
+
+@pytest.fixture(autouse=True)
+def _run_gate_passthrough():
+    """``open_run_for_write`` over a mocked session: hand back whatever the test
+    stubbed ``db.get`` to return. The gate itself (missing run, wrong stage,
+    coordinate) is covered for real in ``tests/integration/test_extraction_run_write.py``.
+    """
+
+    async def passthrough(db: Any, run_id: Any, **_kwargs: Any) -> Any:
+        return await db.get(ExtractionRun, run_id)
+
+    with patch(
+        "app.services.section_extraction_service.open_run_for_write",
+        AsyncMock(side_effect=passthrough),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -483,47 +501,6 @@ class TestExtractSectionWithExistingRun:
         record_call = service._proposals.record_proposal.await_args
         assert record_call.kwargs["run_id"] == existing_run_id
 
-    @pytest.mark.asyncio
-    async def test_existing_run_id_rejects_non_extract_stage(self, service, mock_storage):
-        """Run already moved past EXTRACT → reject (matches extract_for_run)."""
-        from app.models.extraction import ExtractionRunStage
-
-        existing_run = MagicMock()
-        existing_run.id = uuid4()
-        existing_run.stage = ExtractionRunStage.CONSENSUS.value
-
-        self._wire_pipeline(service, mock_storage, existing_run, uuid4())
-
-        with pytest.raises(ValueError, match="EXTRACT"):
-            await service.extract_section(
-                project_id=uuid4(),
-                article_id=uuid4(),
-                template_id=uuid4(),
-                entity_type_id=uuid4(),
-                run_id=existing_run.id,
-            )
-
-        # No proposals should have been created when the guard fires.
-        service._proposals.record_proposal.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_existing_run_id_fails_when_run_not_found(self, service, mock_storage):
-        """db.get returning None → ValueError, no side-effects."""
-        existing_run_id = uuid4()
-        self._wire_pipeline(service, mock_storage, None, uuid4())
-
-        with pytest.raises(ValueError, match="not found"):
-            await service.extract_section(
-                project_id=uuid4(),
-                article_id=uuid4(),
-                template_id=uuid4(),
-                entity_type_id=uuid4(),
-                run_id=existing_run_id,
-            )
-
-        service._proposals.record_proposal.assert_not_awaited()
-        service._lifecycle.create_run.assert_not_awaited()
-
 
 class TestExtractForRun:
     """Tests for the QA / pre-opened-run extraction path that reuses an
@@ -663,26 +640,6 @@ class TestExtractForRun:
         )
 
         service._lifecycle.advance_stage.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_extract_for_run_rejects_non_extract_stage(self, service, qa_run, qa_template):
-        from app.models.extraction import ExtractionRunStage
-
-        qa_run.stage = ExtractionRunStage.CONSENSUS.value
-        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [])
-
-        with pytest.raises(ValueError, match="EXTRACT"):
-            await service.extract_for_run(run_id=qa_run.id)
-
-    @pytest.mark.asyncio
-    async def test_extract_for_run_fails_when_run_not_found(self, service, qa_run, qa_template):
-        # Wire the pipeline normally, then override db.get to return None for
-        # the Run lookup so the early "Run {id} not found" guard fires.
-        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [])
-        service.db.get = AsyncMock(return_value=None)
-
-        with pytest.raises(ValueError, match="not found"):
-            await service.extract_for_run(run_id=qa_run.id)
 
 
 class TestFieldsWithRecentHumanProposal:

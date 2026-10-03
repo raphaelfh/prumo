@@ -261,7 +261,7 @@ async def test_lifecycle_closure_during_llm_prevents_results(graph, _engine, mon
     from app.llm.extractor import LlmUsage
     from app.models.extraction import ExtractionInstance
     from app.services import section_extraction_service as ses
-    from app.services.extraction_proposal_service import InvalidProposalError
+    from app.services.extraction_run_write import RunWriteError
 
     db, scope, iid, _ = graph
     entity_id = (await db.get(ExtractionInstance, iid)).entity_type_id
@@ -287,7 +287,7 @@ async def test_lifecycle_closure_during_llm_prevents_results(graph, _engine, mon
     service = ses.SectionExtractionService(
         db, str(SEED.primary_profile), MagicMock(), "closure", owns_transactions=True
     )
-    with pytest.raises(InvalidProposalError, match="extract stage"):
+    with pytest.raises(RunWriteError, match="not 'extract'"):
         await service.extract_section(
             project_id=scope.project_id,
             article_id=scope.article_id,
@@ -431,7 +431,7 @@ async def test_run_deleted_during_llm_prevents_results(graph, _engine, monkeypat
     from sqlalchemy import text
 
     from app.models.extraction import ExtractionRun
-    from app.services.extraction_proposal_service import InvalidProposalError
+    from app.services.extraction_run_write import RunWriteError
 
     async def delete_run(other, scope):
         await other.execute(text("DELETE FROM extraction_runs WHERE id=:id"), {"id": scope.run_id})
@@ -440,7 +440,8 @@ async def test_run_deleted_during_llm_prevents_results(graph, _engine, monkeypat
         graph, _engine, monkeypatch, delete_run
     )
     db, scope, _, _ = graph
-    assert isinstance(outcome, InvalidProposalError), outcome
+    assert isinstance(outcome, RunWriteError), outcome
+    assert outcome.reason == "missing"
     assert f"Run {scope.run_id} not found" in str(outcome)
     assert await db.get(ExtractionRun, scope.run_id) is None
     assert counts == {"proposals": 0, "evidence": 0, "instances": 1}
@@ -638,7 +639,7 @@ async def test_cancel_during_identification_does_not_commit_instance(graph, _eng
     from app.llm.prompts.entry_identification import EntryIdentificationOutput, IdentifiedEntry
     from app.models.extraction import ExtractionInstance, ExtractionRun
     from app.services import entry_group_extraction as pipeline
-    from app.services.extraction_proposal_service import InvalidProposalError
+    from app.services.extraction_run_write import RunWriteError
     from app.services.section_extraction_service import SectionExtractionService
 
     db, scope, iid, fid = graph
@@ -681,7 +682,7 @@ async def test_cancel_during_identification_does_not_commit_instance(graph, _eng
     entity = SimpleNamespace(
         id=etid, name="study", label="Study", entry_label="entry", description=None, fields=[field]
     )
-    with pytest.raises(InvalidProposalError, match="extract stage"):
+    with pytest.raises(RunWriteError, match="not 'extract'"):
         await pipeline._extract_entry_group(
             service,
             run=run,

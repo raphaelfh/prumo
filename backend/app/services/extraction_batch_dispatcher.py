@@ -50,6 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from app.core.error_handler import ConflictError, NotFoundError
 from app.core.logging import get_logger
+from app.models.extraction import ExtractionRunStage
 from app.models.extraction_attempt import ExtractionAttempt
 from app.models.extraction_batch import ExtractionBatch, ExtractionBatchItem
 from app.models.extraction_versioning import TemplateKind
@@ -59,7 +60,7 @@ from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.extraction_batch import ATTEMPT_LIVE
 from app.services.article_read_service import ArticleNotFoundError, owned_articles
 from app.services.extraction_attempt_service import ExtractionAttemptService
-from app.services.extraction_run_read_service import get_run_or_raise
+from app.services.extraction_run_write import RunWriteError, open_run_for_write
 from app.services.hitl_session_service import HITLSessionInputError, HITLSessionService
 from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
@@ -265,8 +266,8 @@ class ExtractionBatchDispatcher:
                 user_id=ctx.owner_id,
                 project_template_id=ctx.template_id,
             )
-            run = await get_run_or_raise(self.db, session.run_id)
-            reason = await self._run_reason(ctx, item_id, run.id, run.stage)
+            run_id = session.run_id
+            reason = await self._run_reason(ctx, item_id, run_id)
             if reason is not None:
                 await self._skip(item_id, reason)
                 return
@@ -282,7 +283,7 @@ class ExtractionBatchDispatcher:
                         "project_id": ctx.project_id,
                         "article_id": article_id,
                         "template_id": ctx.template_id,
-                        "run_id": run.id,
+                        "run_id": run_id,
                         "extract_all_sections": kind == TemplateKind.EXTRACTION.value,
                         "skip_fields_with_human_proposals": True,
                     }
@@ -293,7 +294,7 @@ class ExtractionBatchDispatcher:
         except (HITLSessionInputError, NotFoundError, ConflictError):
             await self._skip(item_id, "NO_LONGER_AVAILABLE", discard_writes=True)
             return
-        except InvalidStageTransitionError:
+        except (InvalidStageTransitionError, RunWriteError):
             await self._skip(item_id, "RUN_NOT_EDITABLE", discard_writes=True)
             return
 
@@ -322,13 +323,20 @@ class ExtractionBatchDispatcher:
             return "NO_LONGER_AVAILABLE"
         return None
 
-    async def _run_reason(
-        self, ctx: _BatchContext, item_id: UUID, run_id: UUID, stage: str
-    ) -> str | None:
-        """G8 run stage, G9 owner already running AI, G10 existing AI suggestions."""
-        if stage == "finalized":
-            return "RUN_FINALIZED"
-        if stage != "extract":
+    async def _run_reason(self, ctx: _BatchContext, item_id: UUID, run_id: UUID) -> str | None:
+        """G8 run stage, G9 owner already running AI, G10 existing AI suggestions.
+
+        G8 is the shared write oracle; the row stays locked through the
+        attempt's commit (or the skip's), so the stage it read is the one
+        ``prepare_request`` lands on.
+        """
+        try:
+            await open_run_for_write(self.db, run_id, expect=ExtractionRunStage.EXTRACT.only())
+        except RunWriteError as exc:
+            if exc.reason == "missing":
+                return "NO_LONGER_AVAILABLE"
+            if exc.stage == ExtractionRunStage.FINALIZED.value:
+                return "RUN_FINALIZED"
             return "RUN_NOT_EDITABLE"
         running = (
             await self.db.execute(

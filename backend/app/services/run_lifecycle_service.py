@@ -26,11 +26,11 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecision,
     ExtractionReviewerState,
 )
-from app.services._extraction_run_lock import load_run_for_update
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.article_read_service import ArticleNotFoundError, owned_article
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_review_service import ExtractionReviewService
+from app.services.extraction_run_write import load_run_for_update
 from app.services.hitl_config_service import HitlConfigService
 from app.services.qa_divergence_gate import divergence_rationale_failure
 from app.services.value_semantics import is_value_filled, resolve_reviewer_value, strip_verification

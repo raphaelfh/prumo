@@ -15,8 +15,7 @@ from app.models.extraction_workflow import (
 from app.repositories.extraction_proposal_repository import (
     ExtractionProposalRepository,
 )
-from app.services._extraction_run_lock import load_run_for_update
-from app.services.coordinate_coherence import assert_coords_coherent
+from app.services.extraction_run_write import open_run_for_write
 from app.services.value_semantics import (
     disposition_to_marker,
     is_disposition_candidate,
@@ -25,7 +24,8 @@ from app.services.value_semantics import (
 
 
 class InvalidProposalError(Exception):
-    """Raised when a proposal violates business rules (stage / source / coords)."""
+    """Raised when a proposal violates business rules (source). Stage and
+    coordinate refusals are ``RunWriteError`` from ``open_run_for_write``."""
 
 
 #: The execution facts a verdict heal must carry with it; engine identity
@@ -89,11 +89,15 @@ class ExtractionProposalService:
         extraction_attempt_id: UUID | None = None,
         generation_snapshot: dict[str, Any] | None = None,
     ) -> ProposalWriteResult:
-        run = await load_run_for_update(self.db, run_id)
-        if run is None:
-            raise InvalidProposalError(f"Run {run_id} not found")
-
-        await self.db.refresh(run)
+        # In the collapsed lifecycle (pending -> extract -> consensus ->
+        # finalized) the AI phase and any system seeding both land in ``extract``.
+        await open_run_for_write(
+            self.db,
+            run_id,
+            expect=ExtractionRunStage.EXTRACT.only(),
+            instance_id=instance_id,
+            field_id=field_id,
+        )
         source_value = source.value
         # ``human`` proposals are REJECTED outright for BOTH kinds — humans
         # write via /decisions. HUMAN is a domain-legal enum value refused for
@@ -119,22 +123,6 @@ class ExtractionProposalService:
                 pass
             case _:  # pragma: no cover - mypy proves this unreachable
                 assert_never(source)
-        # Stage gate: in the collapsed lifecycle (pending -> extract ->
-        # consensus -> finalized) the AI phase and any system seeding both
-        # live in ``extract``, now that ``proposal``/``review`` are unified.
-        if run.stage != ExtractionRunStage.EXTRACT.value:
-            raise InvalidProposalError(
-                f"Cannot record proposal: kind={run.kind} run stage is "
-                f"{run.stage}, not {ExtractionRunStage.EXTRACT.value}."
-            )
-
-        await assert_coords_coherent(
-            self.db,
-            run_id=run_id,
-            instance_id=instance_id,
-            field_id=field_id,
-        )
-
         # ADR-0016: normalize a legacy in-band disposition string — a picked
         # dropdown option or an AI ``found``-disposition on an existing run whose
         # frozen domain still carries it — into the coded ``absent_reason`` marker.

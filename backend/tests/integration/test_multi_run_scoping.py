@@ -47,10 +47,8 @@ from app.repositories.extraction_reviewer_state_repository import (
     ExtractionReviewerStateRepository,
 )
 from app.services.extraction_proposal_service import ExtractionProposalService
-from app.services.extraction_review_service import (
-    ExtractionReviewService,
-    InvalidDecisionError,
-)
+from app.services.extraction_review_service import ExtractionReviewService
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
 
@@ -155,7 +153,7 @@ async def test_decision_on_pending_run_is_rejected(db_session: AsyncSession) -> 
     assert pending_run.stage == ExtractionRunStage.PENDING.value
 
     service = ExtractionReviewService(db_session)
-    with pytest.raises(InvalidDecisionError, match="not 'extract'"):
+    with pytest.raises(RunWriteError, match="not 'extract'"):
         await service.record_decision(
             run_id=pending_run.id,
             instance_id=instance_id,

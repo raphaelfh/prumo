@@ -9,10 +9,12 @@ flake in the DB seed can no longer drag the gate below the floor.
 
 Mocking strategy:
 
-- Patch the three module-level imports (``load_run_for_update``,
-  ``assert_coords_coherent``, ``ExtractionProposalRepository``) at the
+- Patch the two module-level imports (``open_run_for_write``,
+  ``ExtractionProposalRepository``) at the
   ``app.services.extraction_consensus_service`` namespace, since the service
-  calls them through that path.
+  calls them through that path. The oracle's own refusals (missing run, wrong
+  stage, incoherent coordinate) are covered for real in
+  ``tests/integration/test_extraction_run_write.py``.
 - Replace ``service._consensus`` / ``service._published`` /
   ``service._decisions`` directly on the instance after construction so the
   repository constructors are not invoked at all.
@@ -31,12 +33,12 @@ from app.models.extraction_workflow import (
     ExtractionConsensusMode,
     ExtractionReviewerDecisionType,
 )
-from app.services.coordinate_coherence import CoordinateMismatchError
 from app.services.extraction_consensus_service import (
     ExtractionConsensusService,
     InvalidConsensusError,
     OptimisticConcurrencyError,
 )
+from app.services.extraction_run_write import RunWriteError
 
 # =================== HELPERS ===================
 
@@ -89,89 +91,40 @@ def _patch_helpers(
     coords_raises: type[Exception] | None = None,
     proposal: SimpleNamespace | None = None,
 ):
-    """Context-manager bundle for the three module-level patches.
+    """Context-manager bundle for the module-level patches.
 
     Returns a tuple of patches to enter with ``contextlib.ExitStack`` — but the
     tests below only ever need one composition, so we expose a single helper
-    instead. ``coords_raises`` is the exception *class* to raise (defaults to
-    no raise); ``proposal`` is what ``ExtractionProposalRepository(...).get``
-    will resolve to (defaults to None, i.e. proposal not found).
+    instead. ``coords_raises`` is the exception *instance* the oracle raises
+    (defaults to no raise, i.e. the run is handed back); ``proposal`` is what
+    ``ExtractionProposalRepository(...).get`` will resolve to (defaults to
+    None, i.e. proposal not found).
     """
     mod = "app.services.extraction_consensus_service"
 
-    load_patch = patch(f"{mod}.load_run_for_update", new=AsyncMock(return_value=run))
     if coords_raises is None:
-        coherent_patch = patch(f"{mod}.assert_coords_coherent", new=AsyncMock(return_value=None))
+        load_patch = patch(f"{mod}.open_run_for_write", new=AsyncMock(return_value=run))
     else:
-        coherent_patch = patch(
-            f"{mod}.assert_coords_coherent",
-            new=AsyncMock(side_effect=coords_raises("incoherent")),
-        )
+        load_patch = patch(f"{mod}.open_run_for_write", new=AsyncMock(side_effect=coords_raises))
     proposal_repo = MagicMock()
     proposal_repo.get = AsyncMock(return_value=proposal)
     repo_class = MagicMock(return_value=proposal_repo)
     repo_patch = patch(f"{mod}.ExtractionProposalRepository", new=repo_class)
-    return load_patch, coherent_patch, repo_patch
+    return load_patch, repo_patch
 
 
 # =================== record_consensus: stage + coord guards ===================
 
 
 @pytest.mark.asyncio
-async def test_record_consensus_raises_when_run_not_found() -> None:
-    service = _make_service()
-    load_p, coh_p, repo_p = _patch_helpers(run=None)
-    with load_p, coh_p, repo_p, pytest.raises(InvalidConsensusError, match="not found"):
-        await service.record_consensus(
-            run_id=uuid4(),
-            instance_id=uuid4(),
-            field_id=uuid4(),
-            consensus_user_id=uuid4(),
-            mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
-            value={"v": "x"},
-            rationale="r",
-        )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "stage",
-    [
-        ExtractionRunStage.PENDING.value,
-        ExtractionRunStage.EXTRACT.value,
-        ExtractionRunStage.FINALIZED.value,
-    ],
-    ids=["pending", "extract", "finalized"],
-)
-async def test_record_consensus_rejects_non_consensus_stage(stage: str) -> None:
-    service = _make_service()
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run(stage=stage))
-    with (
-        load_p,
-        coh_p,
-        repo_p,
-        pytest.raises(InvalidConsensusError, match="not 'consensus'"),
-    ):
-        await service.record_consensus(
-            run_id=uuid4(),
-            instance_id=uuid4(),
-            field_id=uuid4(),
-            consensus_user_id=uuid4(),
-            mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
-            value={"v": "x"},
-            rationale="r",
-        )
-
-
-@pytest.mark.asyncio
 async def test_record_consensus_propagates_coordinate_mismatch() -> None:
-    """``assert_coords_coherent`` raises; the service does not swallow it."""
+    """The oracle raises; the service does not swallow it."""
     service = _make_service()
-    load_p, coh_p, repo_p = _patch_helpers(
+    load_p, repo_p = _patch_helpers(
         run=_make_run(),
-        coords_raises=CoordinateMismatchError,
+        coords_raises=RunWriteError("incoherent", reason="coordinate", run_id=uuid4()),
     )
-    with load_p, coh_p, repo_p, pytest.raises(CoordinateMismatchError):
+    with load_p, repo_p, pytest.raises(RunWriteError):
         await service.record_consensus(
             run_id=uuid4(),
             instance_id=uuid4(),
@@ -189,10 +142,9 @@ async def test_record_consensus_propagates_coordinate_mismatch() -> None:
 @pytest.mark.asyncio
 async def test_select_existing_requires_decision_id() -> None:
     service = _make_service()
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
+    load_p, repo_p = _patch_helpers(run=_make_run())
     with (
         load_p,
-        coh_p,
         repo_p,
         pytest.raises(InvalidConsensusError, match="requires selected_decision_id"),
     ):
@@ -219,10 +171,9 @@ async def test_manual_override_requires_value(
     """A ``manual_override`` still requires a value; rationale is optional
     (Phase B, decision F), so the only rejected case is a missing value."""
     service = _make_service()
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
+    load_p, repo_p = _patch_helpers(run=_make_run())
     with (
         load_p,
-        coh_p,
         repo_p,
         pytest.raises(InvalidConsensusError, match="requires a value"),
     ):
@@ -244,8 +195,8 @@ async def test_manual_override_allows_null_rationale() -> None:
     relaxed in lockstep; that half is covered by the integration twin.)"""
     service = _make_service()
     service._published.insert_first_if_absent.return_value = _make_published(version=1)
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p:
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p:
         consensus, published = await service.record_consensus(
             run_id=uuid4(),
             instance_id=uuid4(),
@@ -267,8 +218,8 @@ async def test_manual_override_allows_null_rationale() -> None:
 async def test_select_existing_rejects_decision_not_in_run() -> None:
     service = _make_service()
     service._decisions.list_by_run.return_value = []  # no matching decision
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p, pytest.raises(InvalidConsensusError, match="not in run"):
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p, pytest.raises(InvalidConsensusError, match="not in run"):
         await service.record_consensus(
             run_id=uuid4(),
             instance_id=uuid4(),
@@ -294,8 +245,8 @@ async def test_select_existing_rejects_cross_coordinate_decision() -> None:
             field_id=field_id,
         )
     ]
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p, pytest.raises(InvalidConsensusError, match="belongs to"):
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p, pytest.raises(InvalidConsensusError, match="belongs to"):
         await service.record_consensus(
             run_id=uuid4(),
             instance_id=instance_id,
@@ -321,8 +272,8 @@ async def test_select_existing_rejects_reject_decision() -> None:
             decision=ExtractionReviewerDecisionType.REJECT.value,
         )
     ]
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p, pytest.raises(InvalidConsensusError, match="reject"):
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p, pytest.raises(InvalidConsensusError, match="reject"):
         await service.record_consensus(
             run_id=uuid4(),
             instance_id=instance_id,
@@ -350,8 +301,8 @@ async def test_select_existing_publishes_decision_value() -> None:
         )
     ]
     service._published.insert_first_if_absent.return_value = _make_published(version=1)
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p:
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p:
         consensus, published = await service.record_consensus(
             run_id=uuid4(),
             instance_id=instance_id,
@@ -388,8 +339,8 @@ async def test_select_existing_falls_back_to_proposal_value() -> None:
     ]
     service._published.insert_first_if_absent.return_value = _make_published(version=1)
     proposal = SimpleNamespace(run_id=run_id, proposed_value={"v": "proposed"})
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run(), proposal=proposal)
-    with load_p, coh_p, repo_p:
+    load_p, repo_p = _patch_helpers(run=_make_run(), proposal=proposal)
+    with load_p, repo_p:
         _, published = await service.record_consensus(
             run_id=run_id,
             instance_id=instance_id,
@@ -420,8 +371,8 @@ async def test_select_existing_rejects_missing_proposal() -> None:
             proposal_record_id=uuid4(),
         )
     ]
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run(), proposal=None)
-    with load_p, coh_p, repo_p, pytest.raises(InvalidConsensusError, match="not found in run"):
+    load_p, repo_p = _patch_helpers(run=_make_run(), proposal=None)
+    with load_p, repo_p, pytest.raises(InvalidConsensusError, match="not found in run"):
         await service.record_consensus(
             run_id=uuid4(),
             instance_id=instance_id,
@@ -452,8 +403,8 @@ async def test_select_existing_rejects_proposal_from_other_run() -> None:
     ]
     other_run = uuid4()
     foreign_proposal = SimpleNamespace(run_id=other_run, proposed_value={"v": "x"})
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run(), proposal=foreign_proposal)
-    with load_p, coh_p, repo_p, pytest.raises(InvalidConsensusError, match="not found in run"):
+    load_p, repo_p = _patch_helpers(run=_make_run(), proposal=foreign_proposal)
+    with load_p, repo_p, pytest.raises(InvalidConsensusError, match="not found in run"):
         await service.record_consensus(
             run_id=run_id,
             instance_id=instance_id,
@@ -481,8 +432,8 @@ async def test_select_existing_rejects_empty_resolved_value() -> None:
             proposal_record_id=None,
         )
     ]
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p, pytest.raises(InvalidConsensusError, match="empty value"):
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p, pytest.raises(InvalidConsensusError, match="empty value"):
         await service.record_consensus(
             run_id=uuid4(),
             instance_id=instance_id,
@@ -500,9 +451,9 @@ async def test_select_existing_rejects_empty_resolved_value() -> None:
 async def test_manual_override_publishes_provided_value() -> None:
     service = _make_service()
     service._published.insert_first_if_absent.return_value = _make_published(version=1)
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
+    load_p, repo_p = _patch_helpers(run=_make_run())
     value = {"v": "manual"}
-    with load_p, coh_p, repo_p:
+    with load_p, repo_p:
         consensus, published = await service.record_consensus(
             run_id=uuid4(),
             instance_id=uuid4(),
@@ -525,8 +476,8 @@ async def test_string_mode_is_accepted() -> None:
     """``mode`` may be passed as a raw string (no enum needed)."""
     service = _make_service()
     service._published.insert_first_if_absent.return_value = _make_published(version=1)
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p:
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p:
         consensus, _ = await service.record_consensus(
             run_id=uuid4(),
             instance_id=uuid4(),
@@ -551,8 +502,8 @@ async def test_publish_internal_falls_through_to_update_on_conflict() -> None:
     latest = _make_published(version=4)
     service._published.get = AsyncMock(side_effect=[existing, latest])
     service._published.update_with_optimistic_lock.return_value = 1
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p:
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p:
         _, published = await service.record_consensus(
             run_id=uuid4(),
             instance_id=uuid4(),
@@ -574,8 +525,8 @@ async def test_publish_internal_raises_when_post_conflict_row_missing() -> None:
     service = _make_service()
     service._published.insert_first_if_absent.return_value = None
     service._published.get = AsyncMock(return_value=None)
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p, pytest.raises(OptimisticConcurrencyError, match="not visible"):
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p, pytest.raises(OptimisticConcurrencyError, match="not visible"):
         await service.record_consensus(
             run_id=uuid4(),
             instance_id=uuid4(),
@@ -594,10 +545,9 @@ async def test_publish_internal_raises_when_update_rowcount_zero() -> None:
     service._published.insert_first_if_absent.return_value = None
     service._published.get = AsyncMock(return_value=_make_published(version=2))
     service._published.update_with_optimistic_lock.return_value = 0
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
+    load_p, repo_p = _patch_helpers(run=_make_run())
     with (
         load_p,
-        coh_p,
         repo_p,
         pytest.raises(OptimisticConcurrencyError, match="changed during consensus write"),
     ):
@@ -619,8 +569,8 @@ async def test_publish_internal_raises_when_post_update_row_vanishes() -> None:
     service._published.insert_first_if_absent.return_value = None
     service._published.get = AsyncMock(side_effect=[_make_published(version=1), None])
     service._published.update_with_optimistic_lock.return_value = 1
-    load_p, coh_p, repo_p = _patch_helpers(run=_make_run())
-    with load_p, coh_p, repo_p, pytest.raises(RuntimeError, match="vanished"):
+    load_p, repo_p = _patch_helpers(run=_make_run())
+    with load_p, repo_p, pytest.raises(RuntimeError, match="vanished"):
         await service.record_consensus(
             run_id=uuid4(),
             instance_id=uuid4(),

@@ -12,6 +12,7 @@ from app.services.extraction_proposal_service import (
     ExtractionProposalService,
     InvalidProposalError,
 )
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.factories.template_factory import TemplateFactory
 from tests.integration.conftest import SEED
@@ -247,7 +248,7 @@ async def test_record_proposal_blocked_outside_extract_stage(
     )
     service = ExtractionProposalService(db_session)
     # Every stage but extract takes this one branch — consensus stands in for all.
-    with pytest.raises(InvalidProposalError, match="stage"):
+    with pytest.raises(RunWriteError, match="not 'extract'"):
         await service.record_proposal(
             run_id=run_id,
             instance_id=instance_id,
@@ -348,10 +349,8 @@ async def test_record_proposal_rejects_incoherent_coordinates(
     if other_field_id is None:
         pytest.skip("Need >=2 entity_types with fields.")
 
-    from app.services.coordinate_coherence import CoordinateMismatchError
-
     service = ExtractionProposalService(db_session)
-    with pytest.raises(CoordinateMismatchError):
+    with pytest.raises(RunWriteError, match="Coordinate mismatch"):
         await service.record_proposal(
             run_id=run_id,
             instance_id=instance_id,

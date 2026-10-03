@@ -22,6 +22,15 @@ from app.services.section_extraction_service import (
     AsyncMock(return_value=RunPromptContext()),
 )
 async def test_extract_for_run_raises_when_all_sections_fail():
+    run = SimpleNamespace(
+        id="r",
+        project_id="p",
+        template_id="tpl",
+        article_id="a",
+        kind="extraction",
+        stage="extract",
+        version_id="v",
+    )
     # LoggerMixin.logger is a stateless read-only property — leave it real.
     svc = SectionExtractionService.__new__(SectionExtractionService)
     svc.trace_id = "t"
@@ -37,20 +46,12 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     svc.attempt_id = None
     svc.user_id = "u"
 
-    run = SimpleNamespace(
-        id="r",
-        project_id="p",
-        template_id="tpl",
-        article_id="a",
-        kind="extraction",
-        stage="extract",
-        version_id="v",
-    )
     template = SimpleNamespace(framework="CHARMS")
-    # db.get is called twice: first the run, then the template. The hoisted
-    # run-constant fetch is stubbed at the decorator (it needs a real run row).
+    # The run comes through the write oracle (patched below); db.get serves
+    # the template. The hoisted run-constant fetch is stubbed at the
+    # decorator (it needs a real run row).
     svc.db = SimpleNamespace(
-        get=AsyncMock(side_effect=[run, template]),
+        get=AsyncMock(side_effect=[template]),
         execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: None)),
     )
     svc._runs = SimpleNamespace(
@@ -68,7 +69,13 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     # Every entity-type extraction fails -> successful == 0.
     svc._extract_one_entity_type_for_run = AsyncMock(side_effect=RuntimeError("llm down"))
 
-    with pytest.raises(BatchAllSectionsFailed):
+    with (
+        patch(
+            "app.services.section_extraction_service.open_run_for_write",
+            AsyncMock(return_value=run),
+        ),
+        pytest.raises(BatchAllSectionsFailed),
+    ):
         await svc.extract_for_run(run_id="r")
 
     svc._runs.complete_run.assert_not_called()

@@ -21,6 +21,7 @@ from app.services.extraction_review_service import (
     ExtractionReviewService,
     InvalidDecisionError,
 )
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
 
@@ -217,10 +218,8 @@ async def test_record_decision_rejects_incoherent_coordinates(
     if other_field_id is None:
         pytest.skip("Need >=2 entity_types with fields.")
 
-    from app.services.coordinate_coherence import CoordinateMismatchError
-
     service = ExtractionReviewService(db_session)
-    with pytest.raises(CoordinateMismatchError):
+    with pytest.raises(RunWriteError, match="Coordinate mismatch"):
         await service.record_decision(
             run_id=run_id,
             instance_id=instance_id,
