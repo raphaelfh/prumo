@@ -157,7 +157,14 @@ export function useBatchAllModelsSectionsExtraction(options?: {
 
             if (sections.length === 0) {
                 console.warn(`[useBatchAllModelsSectionsExtraction] No sections found for model ${model.entryName}`);
-              return { totalSuggestionsCreated: 0, totalTokensUsed: 0, totalDurationMs: 0, skipped: true };
+              return {
+                totalSuggestionsCreated: 0,
+                successfulSections: 0,
+                failedSections: 0,
+                completedSections: 0,
+                totalTokensUsed: 0,
+                totalDurationMs: 0,
+              };
             }
 
               // 2. Process sections in chunks using helper
@@ -184,7 +191,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
               },
             });
 
-            return { ...result, skipped: false };
+            return result;
           })().catch((modelError: unknown) => {
               console.error(`[useBatchAllModelsSectionsExtraction] Error in model ${i + 1}:`, modelError);
             return null; // null signals failure
@@ -193,15 +200,29 @@ export function useBatchAllModelsSectionsExtraction(options?: {
           if (modelResult === null) {
             failedModels++;
           } else {
+            // Tokens and duration are spent whatever the outcome, so they
+            // aggregate before the success test.
             totalSuggestionsCreated += modelResult.totalSuggestionsCreated;
             totalTokensUsed += modelResult.totalTokensUsed;
             totalDurationMs += modelResult.totalDurationMs;
-            successfulModels++;
-              console.warn(`[useBatchAllModelsSectionsExtraction] Model ${i + 1} completed`, {
-              entryName: model.entryName,
-              suggestionsCreated: modelResult.totalSuggestionsCreated,
-              tokensUsed: modelResult.totalTokensUsed,
-            });
+
+            // A model counts as successful only when at least one of its
+            // sections came back successful. Neither "no sections to
+            // dispatch" nor "every section failed inside the chunk loop"
+            // throws — processSectionsInChunks swallows chunk errors and
+            // reports them as failedSections — so counting them as
+            // successes showed the green toast and refreshed caches for a
+            // run that created nothing (#333 on the single-model hook).
+            if (modelResult.successfulSections > 0) {
+              successfulModels++;
+                console.warn(`[useBatchAllModelsSectionsExtraction] Model ${i + 1} completed`, {
+                entryName: model.entryName,
+                suggestionsCreated: modelResult.totalSuggestionsCreated,
+                tokensUsed: modelResult.totalTokensUsed,
+              });
+            } else {
+              failedModels++;
+            }
           }
         }
 
@@ -240,8 +261,10 @@ export function useBatchAllModelsSectionsExtraction(options?: {
           );
         }
 
-          // Call success callback if provided
-        if (options?.onSuccess) {
+          // Success callback — only when at least one model actually
+          // extracted something. Callers refresh instances as if
+          // suggestions had been created (#333).
+        if (options?.onSuccess && successfulModels > 0) {
           Promise.resolve(
             options.onSuccess({
               totalModels: models.length,
