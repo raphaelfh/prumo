@@ -42,7 +42,7 @@ from app.schemas.hitl_session import (
 )
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_snapshot import build_template_version_snapshot
-from app.services.hitl_session_service import HITLSessionService
+from app.services.instance_seeding import ensure_instances
 from app.services.template_clone_service import (
     PendingConfigDraftError,
     TemplateNotFoundError,
@@ -490,9 +490,9 @@ class TemplateVersionService:
     ) -> None:
         """Seed missing cardinality-one instances for every re-pinned run.
 
-        Reuses ``HITLSessionService.ensure_instances`` (the session-open
-        seeding path) per affected article; idempotent, and the advisory
-        lock it re-takes is already held by this transaction.
+        Reuses :func:`ensure_instances` (the session-open seeding path) per
+        affected article; idempotent, and the advisory lock it re-takes is
+        already held by this transaction.
         """
         if not run_pairs:
             return
@@ -507,9 +507,9 @@ class TemplateVersionService:
             .scalars()
             .all()
         )
-        session_service = HITLSessionService(self.db)
         for run_project_id, article_id in run_pairs:
-            await session_service.ensure_instances(
+            await ensure_instances(
+                self.db,
                 project_id=run_project_id,
                 article_id=article_id,
                 project_template_id=project_template_id,
