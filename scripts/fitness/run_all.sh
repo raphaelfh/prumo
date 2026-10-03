@@ -135,6 +135,12 @@ run_check "test-ship.sh" \
 run_check "test-protect-run-state.sh" \
   bash "${REPO_ROOT}/.claude/hooks/tests/test-protect-run-state.sh"
 
+# The sandboxed tests above must abort, leaving the caller's checkout
+# untouched, when they cannot create their scratch repo: an empty $SANDBOX
+# once committed onto the real branch and rm -rf'd the checkout.
+run_check "test-scratch-guard.sh" \
+  bash "${REPO_ROOT}/scripts/tests/test-scratch-guard.sh"
+
 echo ""
 echo "Summary:"
 for line in "${results[@]}"; do
