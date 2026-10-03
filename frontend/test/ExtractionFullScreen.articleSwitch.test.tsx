@@ -51,36 +51,17 @@ vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
   }),
 }));
 
-// Two-article worklist so "]" has somewhere to go. The article id echoes back,
-// so paging swaps the header without touching the (project-level) template.
-vi.mock("@/services/extractionDataService", () => ({
-  loadExtractionPhase1: vi.fn(async (articleId: string) => ({
-    ok: true,
-    data: {
-      article: { id: articleId, title: `Article ${articleId}`, project_id: "p1" },
-      project: { id: "p1", name: "Test project" },
-      template: {
-        id: "tpl-1",
-        name: "CHARMS",
-        kind: "extraction",
-        version: "1.0.0",
-        is_active: true,
-      },
-      articles: [
-        { id: "a1", title: "First article" },
-        { id: "a2", title: "Second article" },
-      ],
-    },
-  })),
-}));
-
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    auth: {
-      getUser: async () => ({ data: { user: { id: "reviewer-1" } }, error: null }),
-    },
-  },
-}));
+// Worklist (header pager + next-article) and the reader's DOI lookup read
+// `articles` through the baselined PostgREST path; the stub serves both.
+vi.mock("@/integrations/supabase/client", async () => {
+  const { makeSupabaseClientMock } = await import("./helpers/extractionFullScreenMocks");
+  return {
+    supabase: makeSupabaseClientMock([
+      { id: "a1", title: "First article" },
+      { id: "a2", title: "Second article" },
+    ]),
+  };
+});
 
 vi.mock("@prumo/pdf-viewer", async () => {
   const core =
@@ -199,6 +180,11 @@ let releaseSessionA2: (() => void) | undefined;
 function mockApi() {
   vi.mocked(apiClient).mockImplementation(
     async (url: string, options?: { body?: object }) => {
+      // Bootstrap: the project's extraction templates, newest first; tpl-1 is the
+      // one active row, so it opens the session.
+      if (url === "/api/v1/projects/p1/templates?kind=extraction") {
+        return [{ id: "tpl-1", name: "CHARMS", kind: "extraction", is_active: true }];
+      }
       if (url === "/api/v1/hitl/sessions") {
         const body = options?.body as { article_id?: string } | undefined;
         const articleId = body?.article_id ?? "";

@@ -41,7 +41,8 @@ import {setManagerReviewVisibility} from '@/services/hitlConfigService';
 import {useSidebar} from '@/contexts/SidebarContext';
 
 // Hooks
-import {useExtractionData} from '@/hooks/extraction/useExtractionData';
+import {useProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
+import {useProjectWorklist} from '@/hooks/shared/useProjectArticlesQuery';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
 import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
 import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
@@ -109,20 +110,31 @@ export default function ExtractionFullScreen() {
   // click-evidence → highlight feature.
   const [viewerStore] = useState(createViewerStore);
 
-  // Load page-bootstrap data using dedicated hook (SRP). Entity types +
-  // instances are NOT read here anymore — they are derived from the
+  // Page bootstrap, through the typed API client (ADR-0007):
+  // - the project's extraction templates, server-ordered newest first and
+  //   narrowed to the active rows, so [0] is the newest active template — the
+  //   same pick as the Configuration view's picker (useActiveTemplateSelection);
+  // - the project's article worklist: header pager, next-article, and the
+  //   title of the article on screen.
+  // Entity types + instances are NOT read here — they are derived from the
   // server RunView (runDetail) below via the adapters.
-  const {
-    article,
-    template,
-    articles,
-    loading,
-    error: dataError,
-  } = useExtractionData({
-    projectId,
-    articleId,
-    enabled: !!projectId && !!articleId,
-  });
+  const templatesQuery = useProjectTemplates({projectId: projectId ?? '', kind: 'extraction'});
+  const template = templatesQuery.data?.[0] ?? null;
+  const {worklist: articles, isLoading: worklistLoading, error: worklistError} =
+    useProjectWorklist(projectId);
+  // Null when the article is not in the project (or not visible to the
+  // caller): the page renders its "not found" state with a Back affordance
+  // instead of redirecting away.
+  const article = articles.find((a) => a.id === articleId) ?? null;
+  const loading = templatesQuery.isLoading || worklistLoading;
+  // A failed read, or a project with no active extraction template, surfaces
+  // one toast and bounces to the project's extraction tab (effect below).
+  const bootstrapError = templatesQuery.error ?? worklistError;
+  const dataError = bootstrapError
+    ? bootstrapError.message || t('extraction', 'errors_loadExtractionData')
+    : templatesQuery.isSuccess && !template
+      ? t('common', 'errors_templateNotFound')
+      : null;
 
   // Local state
   // Current reviewer id from AuthContext (zero network) — was a

@@ -25,7 +25,7 @@ export type ExtractionViewState =
   | {kind: 'ready'};
 
 export interface ExtractionViewStateInput {
-  /** Page bootstrap (article/project/template) is still loading. */
+  /** Page bootstrap (templates/worklist) is still loading. */
   bootstrapLoading: boolean;
   /** Bootstrap finished and produced both an article and a template. */
   hasArticleAndTemplate: boolean;

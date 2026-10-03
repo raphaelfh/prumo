@@ -48,36 +48,14 @@ vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
   useComparisonPermissions: vi.fn(),
 }));
 
-// Phase-1 data (article/project/template/worklist) — service-level mock, the
-// screen's entity types + instances come from the run view below.
-vi.mock("@/services/extractionDataService", () => ({
-  loadExtractionPhase1: vi.fn(async () => ({
-    ok: true,
-    data: {
-      article: { id: "a1", title: "Test article", project_id: "p1" },
-      project: { id: "p1", name: "Test project" },
-      template: {
-        id: "tpl-1",
-        name: "CHARMS",
-        kind: "extraction",
-        version: "1.0.0",
-        is_active: true,
-      },
-      articles: [{ id: "a1", title: "Test article" }],
-    },
-  })),
-}));
-
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    auth: {
-      getUser: async () => ({
-        data: { user: { id: "reviewer-1" } },
-        error: null,
-      }),
-    },
-  },
-}));
+// Worklist (header pager + next-article) and the reader's DOI lookup read
+// `articles` through the baselined PostgREST path; the stub serves both.
+vi.mock("@/integrations/supabase/client", async () => {
+  const { makeSupabaseClientMock } = await import("./helpers/extractionFullScreenMocks");
+  return {
+    supabase: makeSupabaseClientMock([{ id: "a1", title: "Test article" }]),
+  };
+});
 
 // The PDF viewer pulls in worker/canvas globals (pdfjs/DOMMatrix) that crash
 // jsdom — stub the component but use the REAL engine-free core store.
@@ -186,6 +164,11 @@ const FINALIZED_RUN_VIEW = {
 
 vi.mock("@/integrations/api", () => ({
   apiClient: vi.fn(async (url: string) => {
+    // Bootstrap: the project's extraction templates, newest first; tpl-1 is the
+    // one active row, so it opens the session.
+    if (url === "/api/v1/projects/p1/templates?kind=extraction") {
+      return [{ id: "tpl-1", name: "CHARMS", kind: "extraction", is_active: true }];
+    }
     if (url === "/api/v1/hitl/sessions") {
       return {
         run_id: "run-1",
@@ -292,6 +275,11 @@ describe("ExtractionFullScreen — consensus dead affordances (D6)", () => {
 
   function mockStageView(stage: string) {
     vi.mocked(apiClient).mockImplementation(async (url: string) => {
+      // Bootstrap: the project's extraction templates, newest first; tpl-1 is the
+      // one active row, so it opens the session.
+      if (url === "/api/v1/projects/p1/templates?kind=extraction") {
+        return [{ id: "tpl-1", name: "CHARMS", kind: "extraction", is_active: true }];
+      }
       if (url === "/api/v1/hitl/sessions") {
         return {
           run_id: "run-1",

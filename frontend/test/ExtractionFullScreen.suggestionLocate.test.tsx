@@ -48,34 +48,14 @@ vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
   }),
 }));
 
-vi.mock("@/services/extractionDataService", () => ({
-  loadExtractionPhase1: vi.fn(async () => ({
-    ok: true,
-    data: {
-      article: { id: "a1", title: "Test article", project_id: "p1" },
-      project: { id: "p1", name: "Test project" },
-      template: {
-        id: "tpl-1",
-        name: "CHARMS",
-        kind: "extraction",
-        version: "1.0.0",
-        is_active: true,
-      },
-      articles: [{ id: "a1", title: "Test article" }],
-    },
-  })),
-}));
-
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    auth: {
-      getUser: async () => ({
-        data: { user: { id: "reviewer-1" } },
-        error: null,
-      }),
-    },
-  },
-}));
+// Worklist (header pager + next-article) and the reader's DOI lookup read
+// `articles` through the baselined PostgREST path; the stub serves both.
+vi.mock("@/integrations/supabase/client", async () => {
+  const { makeSupabaseClientMock } = await import("./helpers/extractionFullScreenMocks");
+  return {
+    supabase: makeSupabaseClientMock([{ id: "a1", title: "Test article" }]),
+  };
+});
 
 // The PDF viewer pulls in worker/canvas globals (pdfjs/DOMMatrix) that crash
 // jsdom — stub the component but use the REAL engine-free core store.
@@ -241,6 +221,11 @@ const RUN_VIEW = {
 function mockRun(...coordinates: Array<[instanceId: string, fieldId: string]>) {
   const decisions: Array<Record<string, unknown>> = [];
   vi.mocked(apiClient).mockImplementation(async (url: string, options?: { method?: string; body?: unknown }) => {
+    // Bootstrap: the project's extraction templates, newest first; tpl-1 is the
+    // one active row, so it opens the session.
+    if (url === "/api/v1/projects/p1/templates?kind=extraction") {
+      return [{ id: "tpl-1", name: "CHARMS", kind: "extraction", is_active: true }];
+    }
     if (url === "/api/v1/hitl/sessions") {
       return {
         run_id: "run-1",

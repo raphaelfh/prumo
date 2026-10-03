@@ -57,7 +57,7 @@
  * another `pager-probe-*` value is that collision, not the product.
  *
  * Direction is picked at runtime, not hardcoded to "next": the pager's
- * article list is sorted `created_at DESC` (`extractionDataService.ts`), and
+ * article list is sorted `created_at DESC` (`fetchProjectArticles`), and
  * `ensure-fixtures.ts` inserts `F.ARTICLE_ID` (what `E2E_ARTICLE_ID` resolves
  * to) strictly before the four QA articles via sequential awaited calls, so
  * it holds the oldest `created_at` of the group and lands LAST in that
@@ -70,7 +70,7 @@
  *
  * The pager itself is also a load race, not just a fixture-order trap: the
  * ready-state render (and its Back button) can commit before the article
- * worklist array has actually landed in `useExtractionData` state, so
+ * worklist query (`useProjectWorklist`) has actually resolved, so
  * sampling the pager once — right after the Back button becomes visible —
  * can read a transient zero-button state and misreport a multi-article
  * project as "single article". `waitFor({ state: "visible" })` on the pager

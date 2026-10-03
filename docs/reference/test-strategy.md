@@ -156,13 +156,15 @@ Each entry: file → invariant it pins → what breaks if it's removed.
 
 ### 3.6 Frontend — picker symmetry and BUG #7 regression
 
-- **`frontend/test/hooks/useExtractionData.test.tsx`** — pins:
-  - DESC ordering on `created_at` (matches `ExtractionInterface`'s
-    Configuration picker — closes BUG #1 split).
-  - Filters by `project_id` + `kind='extraction'` + `is_active=true`.
-  - Graceful nulls when projectId / articleId are undefined.
-  - `mergeInstancesById` reference stability (refresh without label
-    change reuses the same array, change yields a new one).
+- **`frontend/test/ExtractionFullScreen.bootstrap.test.tsx`** — pins the
+  extraction screen's bootstrap through the typed API (ADR-0007):
+  - The session opens with the newest ACTIVE row of
+    `GET /projects/{id}/templates?kind=extraction` — the same list and pick
+    as `ExtractionInterface`'s Configuration picker (closes BUG #1 split).
+  - The article on screen is named from the project worklist
+    (`useProjectWorklist`); an article outside it renders the not-found
+    state and opens no session.
+  - No active extraction template: one toast, redirect to the extraction tab.
 
 - **`frontend/test/ExtractionFormView.test.tsx`** — pins BUG #7:
   - The parent prediction_models accordion only renders when there's an
