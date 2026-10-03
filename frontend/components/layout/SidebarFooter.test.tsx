@@ -3,6 +3,7 @@ import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {MemoryRouter} from 'react-router';
 import {TooltipProvider} from '@/components/ui/tooltip';
+import {ThemeProvider} from '@/contexts/ThemeContext';
 import {SidebarFooter} from './SidebarFooter';
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -26,7 +27,9 @@ function renderFooter() {
   return render(
     <MemoryRouter>
       <TooltipProvider>
-        <SidebarFooter />
+        <ThemeProvider>
+          <SidebarFooter />
+        </ThemeProvider>
       </TooltipProvider>
     </MemoryRouter>,
   );
