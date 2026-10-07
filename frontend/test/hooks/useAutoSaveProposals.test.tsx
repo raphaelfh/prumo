@@ -56,6 +56,7 @@ const postEdit = async (p: WriteProposalParams): Promise<void> => {
 
 /** The queue's props as these tests vary them; the writer is always ``postEdit``. */
 type QueueProps = Omit<Parameters<typeof useAutoSaveProposals>[0], 'writeValue'>;
+const useQueue = (props: QueueProps) => useAutoSaveProposals({ ...props, writeValue: postEdit });
 
 const DECISION_RESPONSE = {
   id: 'd-1',
@@ -82,8 +83,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
@@ -117,8 +117,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
 
     const { result, rerender } = renderHook(
       ({ values }) =>
-        useAutoSaveProposals({
-          writeValue: postEdit,
+        useQueue({
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -160,8 +159,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
 
     const { result, rerender } = renderHook(
       ({ values }) =>
-        useAutoSaveProposals({
-          writeValue: postEdit,
+        useQueue({
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -193,8 +191,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
 
   it('is a no-op when runId is missing', async () => {
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: null,
         stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
@@ -212,8 +209,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: {
@@ -246,8 +242,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
 
   it('saveNow is a no-op when enabled=false (#51)', async () => {
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
@@ -262,74 +257,16 @@ describe('useAutoSaveProposals — basic write semantics', () => {
   });
 });
 
-describe('useAutoSaveProposals — one shared write path (D8)', () => {
-  // D8: the write target no longer depends on the run kind. Every autosave
-  // write in the editable ``extract`` stage is a per-reviewer ``edit``
-  // decision on /decisions — extraction (the multi-reviewer blind contract)
-  // and quality_assessment (decisions parity) alike. The old ``kind`` prop
-  // and the human /proposals fallback are gone: outside ``extract`` the hook
-  // writes nothing.
-
-  it("writes an 'edit' ReviewerDecision per dirty coord for extraction in 'extract'", async () => {
-    apiClientMock.mockResolvedValue({ ok: true });
-
-    const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
-        runId: 'run-1',
-        stage: 'extract',
-        values: { 'inst-1_field-1': 'reviewer-typed' },
-      }),
-    );
-
-    await act(async () => {
-      await result.current.saveNow();
-    });
-
-    expect(apiClientMock).toHaveBeenCalledTimes(1);
-    expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/runs/run-1/decisions',
-      expect.objectContaining({
-        method: 'POST',
-        keepalive: true,
-        body: {
-          instance_id: 'inst-1',
-          field_id: 'field-1',
-          decision: 'edit',
-          value: { value: 'reviewer-typed' },
-        },
-      }),
-    );
-  });
-
-  it('never posts to /proposals (the human proposal write path is gone)', async () => {
-    apiClientMock.mockResolvedValue({ ok: true });
-
-    const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
-        runId: 'run-1',
-        stage: 'extract',
-        values: { 'inst-1_field-1': 'x' },
-      }),
-    );
-
-    await act(async () => {
-      await result.current.saveNow();
-    });
-
-    expect(apiClientMock).toHaveBeenCalled();
-    for (const call of apiClientMock.mock.calls) {
-      expect(call[0]).not.toMatch(/\/proposals$/);
-    }
-  });
+describe('useAutoSaveProposals — what reaches the writer (D8)', () => {
+  // The writer is injected (useRunValues' guarded decision writer; its suite
+  // owns the request contract). The queue owns what it hands over: clears as
+  // null, and nothing at all outside ``extract``.
 
   it("preserves null/empty as deliberate clears (decision='edit' with value=null)", async () => {
     apiClientMock.mockResolvedValue({ ok: true });
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': '' },
@@ -354,8 +291,7 @@ describe('useAutoSaveProposals — one shared write path (D8)', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         values: { 'inst-1_field-1': 'hello' },
       }),
@@ -369,29 +305,6 @@ describe('useAutoSaveProposals — one shared write path (D8)', () => {
     expect(result.current.saveState).toBe('idle');
   });
 
-  it("writes an 'edit' decision for a QA run in 'extract' (decisions parity)", async () => {
-    // QA passes stage exactly like extraction; the kind is irrelevant to the
-    // write target since D8.
-    apiClientMock.mockResolvedValue(DECISION_RESPONSE);
-
-    const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
-        runId: 'run-1',
-        stage: 'extract',
-        values: { 'inst-1_field-1': 'hello' },
-      }),
-    );
-
-    await act(async () => {
-      await result.current.saveNow();
-    });
-
-    expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/runs/run-1/decisions',
-      expect.objectContaining({ method: 'POST' }),
-    );
-  });
 });
 
 describe('useAutoSaveProposals — non-writable stages are inert', () => {
@@ -406,8 +319,7 @@ describe('useAutoSaveProposals — non-writable stages are inert', () => {
       apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
       const { result } = renderHook(() =>
-        useAutoSaveProposals({
-          writeValue: postEdit,
+        useQueue({
           runId: 'run-1',
           stage,
           values: { 'inst-1_field-1': 'hello' },
@@ -436,8 +348,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     });
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
@@ -465,8 +376,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
     const { result, rerender } = renderHook(
       ({ values }) =>
-        useAutoSaveProposals({
-          writeValue: postEdit,
+        useQueue({
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -518,8 +428,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
     const { result, rerender } = renderHook(
       ({ values }) =>
-        useAutoSaveProposals({
-          writeValue: postEdit,
+        useQueue({
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -571,8 +480,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
       .mockRejectedValueOnce(new Error('network drop'));
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_a': '1', 'inst-1_b': '2' },
@@ -591,8 +499,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     apiClientMock.mockRejectedValue(new Error('network drop'));
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_a': '1' },
@@ -614,8 +521,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     apiClientMock.mockRejectedValue(new Error('network drop'));
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'unsaved-edit' },
@@ -640,8 +546,7 @@ describe('useAutoSaveProposals — state machine', () => {
 
     const { result, rerender } = renderHook(
       ({ values }) =>
-        useAutoSaveProposals({
-          writeValue: postEdit,
+        useQueue({
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -669,8 +574,7 @@ describe('useAutoSaveProposals — state machine', () => {
 
     const { result, rerender } = renderHook(
       ({ values }) =>
-        useAutoSaveProposals({
-          writeValue: postEdit,
+        useQueue({
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -703,8 +607,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { unmount } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'mid-typing' },
@@ -726,8 +629,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result, unmount } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'persisted' },
@@ -751,7 +653,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     const { rerender } = renderHook(
       (props: QueueProps) =>
-        useAutoSaveProposals({ ...props, writeValue: postEdit }),
+        useQueue(props),
       {
         initialProps: {
           runId: 'run-A',
@@ -789,7 +691,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     const { rerender } = renderHook(
       (props: QueueProps) =>
-        useAutoSaveProposals({ ...props, writeValue: postEdit }),
+        useQueue(props),
       {
         initialProps: {
           runId: 'run-A',
@@ -820,7 +722,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     const { result, rerender } = renderHook(
       (props: QueueProps) =>
-        useAutoSaveProposals({ ...props, writeValue: postEdit }),
+        useQueue(props),
       {
         initialProps: {
           runId: 'run-A',
@@ -875,7 +777,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     const { result, rerender } = renderHook(
       (props: QueueProps) =>
-        useAutoSaveProposals({ ...props, writeValue: postEdit }),
+        useQueue(props),
       {
         initialProps: {
           runId: 'run-A',
@@ -913,8 +815,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'about-to-leave' },
@@ -937,8 +838,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'tab-switched' },
@@ -963,8 +863,7 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
     apiClientMock.mockResolvedValue({});
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'ai text' },
@@ -996,8 +895,7 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
     apiClientMock.mockResolvedValue({});
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'typed by hand' },
@@ -1024,7 +922,7 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
       baselineValues: { 'inst-1_field-1': 'same' },
     };
     const { result, rerender } = renderHook(
-      (props: QueueProps) => useAutoSaveProposals({ ...props, writeValue: postEdit }),
+      (props: QueueProps) => useQueue(props),
       { initialProps: baseProps },
     );
 
@@ -1056,8 +954,7 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
     apiClientMock.mockResolvedValue({});
 
     const { result } = renderHook(() =>
-      useAutoSaveProposals({
-        writeValue: postEdit,
+      useQueue({
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'same' },
