@@ -13,8 +13,9 @@ same questions, in this order, under one row lock:
 :func:`open_run_for_write` answers them; the stage sets it takes are the
 classmethods on :class:`ExtractionRunStage`. :func:`load_run_for_update` is
 the lock primitive underneath, kept for the transition writers
-(``run_lifecycle_service``) whose gate is ``_ALLOWED_TRANSITIONS`` rather
-than a stage set. :func:`assert_instance_in_coordinate` is the kickoff-surface
+(``run_lifecycle_service``) whose gate is ``_ALLOWED_TRANSITIONS`` (or the
+one source stage a finalize / reopen leaves) and whose refusals are the
+lifecycle's own errors. :func:`assert_instance_in_coordinate` is the kickoff-surface
 sibling: an instance against an explicit coordinate when no run exists yet.
 
 Lock contract (``SELECT … FOR UPDATE``):
@@ -28,9 +29,10 @@ Lock contract (``SELECT … FOR UPDATE``):
   never a stale one. Sessions run ``autoflush=False``: pending changes on
   that object are overwritten, so callers flush their own run edits first
   (the lifecycle does).
-- Never hold it across external work: ``SectionExtractionService.
-  _before_external_work`` commits first, and ``locked_result_filter`` takes
-  it only for the result transaction.
+- Never hold it across external work: a worker-owned
+  ``SectionExtractionService`` commits (``_before_external_work``) before PDF
+  assembly and every model call, and ``locked_result_filter`` takes it only
+  for the result transaction.
 """
 
 from __future__ import annotations

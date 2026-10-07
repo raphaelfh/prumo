@@ -278,11 +278,22 @@ The result:
 3. Domain writes use a separate session. Retries read the pinned engine
    (`read_attempt_engine`) and re-validate access (`validate_attempt_engine`).
 
-No run-row lock spans an LLM call. `locked_result_filter`
-(`extraction_generation.py`) takes `load_run_for_update` only for the result
-transaction. It rechecks the `extract` stage, project membership and template
+No run-row lock spans an LLM call. Every write against a run — proposal,
+reviewer decision, consensus decision, AI landing, attempt kickoff — opens
+with `open_run_for_write(db, run_id, expect=<StageSet>, instance_id?, field_id?)`
+(`extraction_run_write.py`): `SELECT … FOR UPDATE` refreshed from the locked
+row, a stage gate on a named `ExtractionRunStage` set (`live()`, `editable()`,
+`reviewing()`, `with_current_values()`, `<stage>.only()`), coordinate coherence
+for the (instance, field) pair, one `RunWriteError(reason=missing|stage|coordinate)`.
+`extraction_runs.py` maps a coordinate refusal to 422 and the rest to 400; the
+section-extraction kickoff maps every refusal to 400. The worker's entry gate
+in `SectionExtractionService` commits before PDF assembly, and
+`locked_result_filter` (`extraction_generation.py`) calls the oracle again only
+for the result transaction, then rechecks project membership and template
 exclusions after the model returns. Independent section attempts therefore
-interleave.
+interleave. The transition writers in `run_lifecycle_service` lock with the
+underlying `load_run_for_update`; their gate is `_ALLOWED_TRANSITIONS` (or, for
+finalize and the two reopens, the one source stage they leave), not a stage set.
 
 **Per-call generation snapshots.** Every singleton or repeating-entry LLM call
 builds its own snapshot (`GenerationCallResult`; entry calls pass

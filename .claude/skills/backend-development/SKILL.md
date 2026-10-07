@@ -69,7 +69,7 @@ async def open_hitl_session(
 - Models inherit `BaseModel` (`models/base.py`): uuid `id`, timestamps, `__table_args__ = {"schema": "public"}`. A custom `__table_args__` tuple still ends with `{"schema": "public"}`, and foreign keys are written `ForeignKey("public.<table>.id", ondelete=...)`.
 - A Postgres enum column is `mapped_column(PostgreSQLEnumType("<type_name>"))`, and the type's values are listed in `POSTGRESQL_ENUM_VALUES` in `models/base.py`.
 - `select()` only, never the legacy `Query` API. `selectinload` for collections, `joinedload` for to-one.
-- Locking: `load_run_for_update` (`services/_extraction_run_lock.py`) for a run row; `take_advisory_xact_lock(db, left, right)` (`services/advisory_locks.py`) for a coordinate, keyed exactly as its other callers key it.
+- Locking: `open_run_for_write(db, run_id, expect=ExtractionRunStage.<X>.only(), instance_id?, field_id?)` (`services/extraction_run_write.py`) opens every run write — lock, stage gate, coordinate coherence, one `RunWriteError`; `load_run_for_update` in the same module is the bare lock for the lifecycle's transition writers; `take_advisory_xact_lock(db, left, right)` (`services/advisory_locks.py`) for a coordinate, keyed exactly as its other callers key it.
 - A write that must survive a later failure gets its own commit or a dedicated session (`extraction_attempt_service.py`); `begin_nested()` is only for an atomic sub-step.
 - The workflow tables are append-only. An `ON CONFLICT` target must match a real unique index (`on_conflict_do_nothing(index_elements=["request_id"])` in `repositories/extraction_attempt_repository.py`).
 - Raw SQL uses `text()` with bound parameters, never f-strings.
