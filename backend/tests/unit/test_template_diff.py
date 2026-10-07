@@ -22,9 +22,9 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.domain.template_change import ChangeTier
-from app.services import template_diff
 from app.services.extraction_snapshot import SNAPSHOT_SQL
-from app.services.template_diff import (
+from app.services.template_versioning import _diff
+from app.services.template_versioning._diff import (
     ChangeKind,
     NodeKind,
     diff_snapshots,
@@ -45,7 +45,7 @@ def _strip_from_fields(entity: dict[str, Any], *keys: str) -> dict[str, Any]:
     return dict(entity, fields=[_strip(f, *keys) for f in entity["fields"]])
 
 
-def _only(diff: template_diff.TemplateDiff) -> template_diff.TemplateChange:
+def _only(diff: _diff.TemplateDiff) -> _diff.TemplateChange:
     assert diff.total == 1, [(c.kind, c.node_kind, c.attribute, c.tier) for c in diff.changes]
     return diff.changes[0]
 
@@ -648,26 +648,24 @@ def test_no_information_default_is_true_unlike_its_siblings() -> None:
     baseline diff as "marker turned off" against a live template that still
     offers it.
     """
-    assert template_diff.FIELD_ATTRIBUTE_DEFAULTS["allows_no_information"] is True
-    assert template_diff.FIELD_ATTRIBUTE_DEFAULTS["allows_not_applicable"] is False
-    assert template_diff.FIELD_ATTRIBUTE_DEFAULTS["allows_not_evaluated"] is False
-    assert (
-        template_diff.ATTRIBUTE_TIERS["allows_no_information"] == template_diff.ChangeTier.SEMANTIC
-    )
+    assert _diff.FIELD_ATTRIBUTE_DEFAULTS["allows_no_information"] is True
+    assert _diff.FIELD_ATTRIBUTE_DEFAULTS["allows_not_applicable"] is False
+    assert _diff.FIELD_ATTRIBUTE_DEFAULTS["allows_not_evaluated"] is False
+    assert _diff.ATTRIBUTE_TIERS["allows_no_information"] == _diff.ChangeTier.SEMANTIC
 
 
 def test_tier_map_is_exhaustive_over_the_snapshot_key_set() -> None:
     """A new SNAPSHOT_SQL key must fail here, not default silently (D2)."""
     covered = (
-        set(template_diff.ENTITY_ATTRIBUTE_DEFAULTS)
-        | set(template_diff.FIELD_ATTRIBUTE_DEFAULTS)
-        | {template_diff.OPTION_KEY}
+        set(_diff.ENTITY_ATTRIBUTE_DEFAULTS)
+        | set(_diff.FIELD_ATTRIBUTE_DEFAULTS)
+        | {_diff.OPTION_KEY}
         # Structural keys carry nesting/identity, never an attribute change.
-        | {template_diff.IDENTITY_KEY, template_diff.ORDER_KEY, template_diff.NESTING_KEY}
+        | {_diff.IDENTITY_KEY, _diff.ORDER_KEY, _diff.NESTING_KEY}
     )
     assert covered == _snapshot_sql_keys()
-    assert set(template_diff.ATTRIBUTE_TIERS) == (
-        set(template_diff.ENTITY_ATTRIBUTE_DEFAULTS) | set(template_diff.FIELD_ATTRIBUTE_DEFAULTS)
+    assert set(_diff.ATTRIBUTE_TIERS) == (
+        set(_diff.ENTITY_ATTRIBUTE_DEFAULTS) | set(_diff.FIELD_ATTRIBUTE_DEFAULTS)
     )
 
 
@@ -720,9 +718,7 @@ def test_baseline_without_the_key_reads_as_no_key() -> None:
     mean False (D4), never a phantom "key cleared" change."""
     field = _field(uuid4())
     entity_id = uuid4()
-    baseline = _snapshot(
-        _strip_from_fields(_entity(entity_id, field), template_diff.ENTITY_KEY_KEY)
-    )
+    baseline = _snapshot(_strip_from_fields(_entity(entity_id, field), _diff.ENTITY_KEY_KEY))
     current = _snapshot(_entity(entity_id, field))
 
     assert diff_snapshots(baseline, current, fields_with_values=NO_VALUES).total == 0

@@ -41,12 +41,16 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.extraction_snapshot import build_template_version_snapshot
-from app.services.template_diff import diff_snapshots
-from app.services.template_restore_service import (
+from app.services.template_versioning import (
+    TemplateVersionService,
+)
+from app.services.template_versioning._diff import (
+    diff_snapshots,
+)
+from app.services.template_versioning._restore import (
     RestoreOutcome,
     restore_snapshot,
 )
-from app.services.template_version_service import TemplateVersionService
 from tests.integration.conftest import (
     SEED,
     clean_project_clones,

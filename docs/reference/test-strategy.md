@@ -82,7 +82,7 @@ Each entry: file → invariant it pins → what breaks if it's removed.
   **Why it matters:** BUG #1 (Configuration showed CHARMS, Extraction
   used E2E) only happens when two extraction templates are active. The
   DB-level guard means a future caller that bypasses
-  `TemplateCloneService.clone` (e.g. an ad-hoc Supabase insert) still
+  `template_versioning.clone_template` (e.g. an ad-hoc Supabase insert) still
   can't recreate the bug.
 
 ### 3.2 Session backfill — child singletons

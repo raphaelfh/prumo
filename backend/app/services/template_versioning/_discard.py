@@ -1,6 +1,6 @@
 """Throw away a template's unpublished config draft (B-9c1, T2).
 
-Wraps :func:`template_restore_service.restore_snapshot` — the pure
+Wraps :func:`_restore.restore_snapshot` — the pure
 snapshot→live reconcile — with everything the reconcile deliberately
 refuses to know:
 
@@ -100,14 +100,14 @@ from app.services.extraction_snapshot import (
     build_template_version_snapshot,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_diff import TemplateChange, diff_snapshots
-from app.services.template_restore_service import (
+from app.services.template_section_service import has_multi_entry_parent
+from app.services.template_versioning._diff import TemplateChange, diff_snapshots
+from app.services.template_versioning._publish import TemplateVersionService
+from app.services.template_versioning._read import NoActiveTemplateVersionError
+from app.services.template_versioning._restore import (
     RestoreOutcome,
     restore_snapshot,
 )
-from app.services.template_section_service import has_multi_entry_parent
-from app.services.template_version_read_service import NoActiveTemplateVersionError
-from app.services.template_version_service import TemplateVersionService
 
 logger = get_logger(__name__)
 
@@ -341,7 +341,7 @@ def _name_conflicted_nodes(
 ) -> list[DiscardKeptNode]:
     """Report the baseline fields the writer could not restore because a
     kept field holds their per-section name (see
-    :func:`template_restore_service._name_conflicted`).
+    :func:`_restore._name_conflicted`).
 
     Labelled from the BASELINE: the node may not exist live at all (the
     "delete the field, re-add it with the same name to change its type"

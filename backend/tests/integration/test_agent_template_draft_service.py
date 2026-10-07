@@ -19,7 +19,9 @@ from app.services.agent_template_draft_service import (
 )
 from app.services.template_field_service import FieldNotFoundError
 from app.services.template_section_service import SectionNotFoundError
-from app.services.template_version_read_service import NoActiveTemplateVersionError
+from app.services.template_versioning import (
+    NoActiveTemplateVersionError,
+)
 from tests.integration.conftest import SEED
 from tests.integration.helpers.template_fixtures import (
     add_field,

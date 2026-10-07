@@ -75,14 +75,8 @@ from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     set_template_active,
 )
-from app.services.template_clone_service import (
-    PendingConfigDraftError,
-    TemplateCloneService,
-    TemplateNotFoundError,
-)
 from app.services.template_create_service import create_blank_template
 from app.services.template_delete_service import delete_template
-from app.services.template_discard_service import discard_draft
 from app.services.template_draft_lock_service import take_over_draft_lock
 from app.services.template_instruction_service import (
     get_template_instruction,
@@ -93,20 +87,20 @@ from app.services.template_portable_service import (
     parse_portable_document,
     to_portable,
 )
-from app.services.template_restore_version_service import (
-    VersionNotFoundError,
-    restore_version,
-)
-from app.services.template_version_read_service import (
+from app.services.template_versioning import (
     NoActiveTemplateVersionError,
+    PendingConfigDraftError,
+    PublishBlockedByMultiEntryError,
+    TemplateNotFoundError,
+    TemplateVersionService,
+    VersionNotFoundError,
+    clone_template,
+    discard_draft,
     get_active_version_tree,
     get_template_config_diff,
     get_template_config_status,
     get_template_version_history,
-)
-from app.services.template_version_service import (
-    PublishBlockedByMultiEntryError,
-    TemplateVersionService,
+    restore_version,
 )
 from app.utils.rate_limiter import limiter
 
@@ -161,9 +155,9 @@ async def clone_template_into_project(
     ``project_extraction_templates`` and ``extraction_template_versions``,
     which is project-wide configuration, matching the PATCH endpoint below.
     """
-    service = TemplateCloneService(db)
     try:
-        result = await service.clone(
+        result = await clone_template(
+            db,
             project_id=project_id,
             global_template_id=body.global_template_id,
             user_id=current_user_sub,
@@ -464,7 +458,7 @@ async def republish_template_version(
     # collapsed onto ``HTTP_ERROR`` with no ``details`` at all.
     # ``PendingConfigDraftError`` cannot reach here — ``republish`` raises it
     # only under ``fail_if_pending_draft=True``, passed from exactly one place
-    # (``template_clone_service``), never from this endpoint.
+    # (``template_versioning._clone``), never from this endpoint.
     await db.commit()
     return ApiResponse.success(
         RepublishTemplateVersionResponse(

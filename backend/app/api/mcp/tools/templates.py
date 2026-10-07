@@ -54,7 +54,7 @@ from app.schemas.mcp_templates import (
 from app.services.extraction_snapshot import live_entity_types
 from app.services.project_read_service import template_summaries
 from app.services.project_template_active_service import owned_template
-from app.services.template_version_read_service import (
+from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
     get_template_config_diff,

@@ -1,6 +1,6 @@
 """Which fields the review workflow already references (B-9b2a D5).
 
-Promoted here out of ``template_discard_service`` so its destructive-delete
+Promoted here out of ``template_versioning._discard`` so its destructive-delete
 gate and the config-diff read's ``affects_recorded_data`` flag cannot
 diverge: they are the same question ("has a human or the AI recorded
 anything for this field?") asked by two features, and a second copy of the

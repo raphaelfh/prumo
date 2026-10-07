@@ -26,7 +26,9 @@ from app.services.template_field_service import (
     EntityTypeNotFoundError,
     FieldNotFoundError,
 )
-from app.services.template_version_read_service import NoActiveTemplateVersionError
+from app.services.template_versioning import (
+    NoActiveTemplateVersionError,
+)
 
 
 class _PgLike(Exception):

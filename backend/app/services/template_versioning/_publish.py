@@ -43,12 +43,9 @@ from app.schemas.hitl_session import (
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.instance_seeding import ensure_instances
-from app.services.template_clone_service import (
-    PendingConfigDraftError,
-    TemplateNotFoundError,
-)
+from app.services.template_clone_service import TemplateNotFoundError
 from app.services.template_section_service import has_multi_entry_parent
-from app.services.template_version_read_service import get_template_config_diff
+from app.services.template_versioning._read import get_template_config_diff
 
 __all__ = [
     "PendingConfigDraftError",
@@ -56,9 +53,26 @@ __all__ = [
     "PublishDiffDriftedError",
     "PublishMissingAcknowledgementError",
     "RepublishResult",
-    "TemplateNotFoundError",
     "TemplateVersionService",
 ]
+
+
+class PendingConfigDraftError(Exception):
+    """Publish-adjacent operation refused: unpublished config edits.
+
+    Raised by ``republish(fail_if_pending_draft=True)`` and by both clone
+    heals that would publish a draft: the DRIFT heal on any marker, and the
+    ZERO-STATE heal on a staged instruction (see ``_clone`` for why the two
+    conditions differ). The aligned path publishes nothing and never raises.
+    """
+
+    def __init__(
+        self,
+        msg: str = (
+            "Template has unpublished configuration changes. Publish them before re-importing."
+        ),
+    ) -> None:
+        super().__init__(msg)
 
 
 class PublishBlockedByMultiEntryError(AppError):

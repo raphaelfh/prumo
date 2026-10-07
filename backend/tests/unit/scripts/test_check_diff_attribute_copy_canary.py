@@ -1,6 +1,6 @@
 """Canary for scripts/fitness/check_diff_attribute_copy.py.
 
-Builds the smallest tree the check can read — a stub `template_diff.py`, a
+Builds the smallest tree the check can read — a stub `template_versioning/_diff.py`, a
 stub diff sheet, a stub copy catalogue — and plants each failure mode in
 turn. A check whose canary passes on a broken tree is decorative.
 """
@@ -30,9 +30,9 @@ ATTRIBUTE_TIERS: dict[str, ChangeTier] = {
 
 
 def _setup(root: Path, *, sheet_entries: dict[str, str], copy_keys: list[str]) -> None:
-    service = root / "backend" / "app" / "services"
+    service = root / "backend" / "app" / "services" / "template_versioning"
     service.mkdir(parents=True, exist_ok=True)
-    (service / "template_diff.py").write_text(SERVICE)
+    (service / "_diff.py").write_text(SERVICE)
 
     sheet = root / "frontend" / "components" / "extraction" / "template-config"
     sheet.mkdir(parents=True, exist_ok=True)

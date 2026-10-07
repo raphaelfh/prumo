@@ -63,7 +63,9 @@ from app.services.extraction_export_service import ExportMode, ExtractionExportS
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning import (
+    TemplateVersionService,
+)
 from tests.integration.conftest import SEED
 from tests.integration.test_run_lifecycle_service import _insert_legacy_human_proposal
 

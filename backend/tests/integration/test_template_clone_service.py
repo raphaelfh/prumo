@@ -1,4 +1,4 @@
-"""Integration tests for ``TemplateCloneService``.
+"""Integration tests for ``clone_template``.
 
 Covers the heal path for existing clones. The contract (revised when
 templates became user-editable):
@@ -38,7 +38,7 @@ from app.models.extraction import (
     TemplateKind,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
-from app.services.template_clone_service import TemplateCloneService
+from app.services.template_versioning import clone_template
 from tests.integration.conftest import (
     CHARMS_GLOBAL_ID,
     SEED,
@@ -64,7 +64,8 @@ async def test_clone_creates_full_structure_when_fresh(db_session: AsyncSession)
 
     await clean_project_clones(db_session, project_id)
 
-    result = await TemplateCloneService(db_session).clone(
+    result = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -95,7 +96,8 @@ async def test_clone_copies_llm_template_instruction(db_session: AsyncSession) -
         {"gid": str(CHARMS_GLOBAL_ID)},
     )
 
-    result = await TemplateCloneService(db_session).clone(
+    result = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -131,7 +133,8 @@ async def test_clone_carries_entry_label(db_session: AsyncSession) -> None:
     user_id = SEED.primary_profile
     await clean_project_clones(db_session, project_id)
 
-    result = await TemplateCloneService(db_session).clone(
+    result = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -186,9 +189,9 @@ async def test_clone_selfheals_snapshot_from_live_on_drift(
     user_id = SEED.primary_profile
 
     await clean_project_clones(db_session, project_id)
-    service = TemplateCloneService(db_session)
 
-    initial = await service.clone(
+    initial = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -220,7 +223,8 @@ async def test_clone_selfheals_snapshot_from_live_on_drift(
     # draft now 409s instead — covered separately below).
     await set_config_draft_marker(db_session, project_template_id, None)
 
-    healed = await service.clone(
+    healed = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -282,9 +286,9 @@ async def test_reclone_selfheals_unsnapshotted_edit_without_wiping(
     user_id = SEED.primary_profile
 
     await clean_project_clones(db_session, project_id)
-    service = TemplateCloneService(db_session)
 
-    initial = await service.clone(
+    initial = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -319,7 +323,8 @@ async def test_reclone_selfheals_unsnapshotted_edit_without_wiping(
     global_tpl.schema_ = {"scope_rules": {}}
     await db_session.flush()
 
-    recloned = await service.clone(
+    recloned = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -381,15 +386,16 @@ async def test_clone_is_noop_when_aligned(db_session: AsyncSession) -> None:
     user_id = SEED.primary_profile
 
     await clean_project_clones(db_session, project_id)
-    service = TemplateCloneService(db_session)
 
-    first = await service.clone(
+    first = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
         kind=TemplateKind.EXTRACTION,
     )
-    second = await service.clone(
+    second = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -434,13 +440,13 @@ async def test_reimport_with_pending_draft_and_drift_raises(
     db_session: AsyncSession,
 ) -> None:
     """Marker set + count drift → typed refusal, structure untouched."""
-    from app.services.template_clone_service import PendingConfigDraftError
+    from app.services.template_versioning import PendingConfigDraftError
 
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
     await clean_project_clones(db_session, project_id)
-    service = TemplateCloneService(db_session)
-    initial = await service.clone(
+    initial = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -478,7 +484,8 @@ async def test_reimport_with_pending_draft_and_drift_raises(
     ).scalar_one()
 
     with pytest.raises(PendingConfigDraftError):
-        await service.clone(
+        await clone_template(
+            db_session,
             project_id=project_id,
             global_template_id=CHARMS_GLOBAL_ID,
             user_id=user_id,
@@ -518,8 +525,8 @@ async def test_reimport_aligned_with_pending_draft_succeeds(
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
     await clean_project_clones(db_session, project_id)
-    service = TemplateCloneService(db_session)
-    initial = await service.clone(
+    initial = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -528,7 +535,8 @@ async def test_reimport_aligned_with_pending_draft_succeeds(
 
     await set_config_draft_marker(db_session, initial.project_template_id, datetime.now(UTC))
 
-    again = await service.clone(
+    again = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -553,8 +561,8 @@ async def test_reimport_zero_state_with_marker_still_heals(
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
     await clean_project_clones(db_session, project_id)
-    service = TemplateCloneService(db_session)
-    initial = await service.clone(
+    initial = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -569,7 +577,8 @@ async def test_reimport_zero_state_with_marker_still_heals(
     await db_session.flush()
     assert await get_config_draft_marker(db_session, initial.project_template_id) is not None
 
-    healed = await service.clone(
+    healed = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -590,13 +599,13 @@ async def test_locked_recheck_catches_stamp_after_precheck(
 ) -> None:
     """The authoritative 409 lives INSIDE republish's locked section: a
     marker committed after clone's unlocked pre-check still refuses."""
-    from app.services.template_clone_service import PendingConfigDraftError
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import PendingConfigDraftError, TemplateVersionService
 
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
     await clean_project_clones(db_session, project_id)
-    initial = await TemplateCloneService(db_session).clone(
+    initial = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -639,9 +648,9 @@ async def test_reimport_refreshes_schema_from_global(db_session: AsyncSession) -
     user_id = SEED.primary_profile
 
     await clean_project_clones(db_session, project_id)
-    service = TemplateCloneService(db_session)
 
-    first = await service.clone(
+    first = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -654,7 +663,8 @@ async def test_reimport_refreshes_schema_from_global(db_session: AsyncSession) -
     global_tpl.schema_ = {"scope_rules": {"classifier": {"section": "s", "field": "f"}}}
     await db_session.flush()
 
-    second = await service.clone(
+    second = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -680,9 +690,7 @@ async def test_reimport_refreshes_schema_from_global(db_session: AsyncSession) -
     await db_session.rollback()
 
 
-async def _zero_state_with_instruction_draft(
-    db: AsyncSession, instruction: str
-) -> tuple[TemplateCloneService, object]:
+async def _zero_state_with_instruction_draft(db: AsyncSession, instruction: str) -> object:
     """A CHARMS clone driven to zero state with ``instruction`` staged but
     unpublished — the exact shape the zero-state guard discriminates on.
     Structure is emptied through the live table so the 0048 trigger stamps
@@ -691,8 +699,8 @@ async def _zero_state_with_instruction_draft(
 
     project_id = SEED.secondary_project
     await clean_project_clones(db, project_id)
-    service = TemplateCloneService(db)
-    initial = await service.clone(
+    initial = await clone_template(
+        db,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=SEED.primary_profile,
@@ -709,7 +717,7 @@ async def _zero_state_with_instruction_draft(
         llm_template_instruction=instruction,
     )
     await db.flush()
-    return service, initial
+    return initial
 
 
 @pytest.mark.asyncio
@@ -725,13 +733,14 @@ async def test_reimport_zero_state_with_instruction_draft_refuses(
     both as 409. Distinct from ``..._with_marker_still_heals``: there the
     marker is a delete-trigger byproduct with the instruction untouched.
     """
-    from app.services.template_clone_service import PendingConfigDraftError
+    from app.services.template_versioning import PendingConfigDraftError
 
     draft_text = "UNPUBLISHED DRAFT — must never reach a prompt"
-    service, initial = await _zero_state_with_instruction_draft(db_session, draft_text)
+    initial = await _zero_state_with_instruction_draft(db_session, draft_text)
 
     with pytest.raises(PendingConfigDraftError):
-        await service.clone(
+        await clone_template(
+            db_session,
             project_id=SEED.secondary_project,
             global_template_id=CHARMS_GLOBAL_ID,
             user_id=SEED.primary_profile,
@@ -761,13 +770,11 @@ async def test_zero_state_heal_resumes_once_the_draft_is_published(
 ) -> None:
     """The refusal is recoverable, so the 409's advice is actionable:
     once the manager publishes, the zero-state heal runs as before."""
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
-    service, initial = await _zero_state_with_instruction_draft(
-        db_session, "now deliberately published"
-    )
+    initial = await _zero_state_with_instruction_draft(db_session, "now deliberately published")
 
     # The documented exit: Publish, then re-import.
     await TemplateVersionService(db_session).republish(
@@ -776,7 +783,8 @@ async def test_zero_state_heal_resumes_once_the_draft_is_published(
         user_id=user_id,
     )
 
-    healed = await service.clone(
+    healed = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -807,8 +815,8 @@ async def test_zero_state_heals_when_only_the_pinned_instruction_is_missing(
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
     await clean_project_clones(db_session, project_id)
-    service = TemplateCloneService(db_session)
-    initial = await service.clone(
+    initial = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,
@@ -862,7 +870,8 @@ async def test_zero_state_heals_when_only_the_pinned_instruction_is_missing(
     # Clear AFTER emptying: the delete stamps the marker via the 0048 trigger.
     await set_config_draft_marker(db_session, initial.project_template_id, None)
 
-    healed = await service.clone(
+    healed = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,

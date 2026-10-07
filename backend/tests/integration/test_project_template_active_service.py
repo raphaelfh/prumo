@@ -37,7 +37,7 @@ from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
     set_template_active,
 )
-from app.services.template_clone_service import TemplateCloneService
+from app.services.template_versioning import clone_template
 from tests.integration.conftest import SEED, clean_project_clones, clone_charms
 
 
@@ -248,14 +248,15 @@ async def test_activating_qa_template_deactivates_nothing(db_session: AsyncSessi
     project_id = SEED.secondary_project
     await clean_project_clones(db_session, project_id)
     charms = await clone_charms(db_session, project_id, SEED.primary_profile)
-    cloner = TemplateCloneService(db_session)
-    probast = await cloner.clone(
+    probast = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=uuid.UUID(PROBAST_GLOBAL_ID),
         user_id=SEED.primary_profile,
         kind=TemplateKind.QUALITY_ASSESSMENT,
     )
-    quadas = await cloner.clone(
+    quadas = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=uuid.UUID(QUADAS2_GLOBAL_ID),
         user_id=SEED.primary_profile,

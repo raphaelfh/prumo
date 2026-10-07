@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction_versioning import TemplateKind
 from app.seed_probast_ai import _PROBAST_AI_TEMPLATE_ID, seed_probast_ai
-from app.services.template_clone_service import TemplateCloneService
+from app.services.template_versioning import clone_template
 from tests.integration.conftest import SEED, clean_project_clones
 
 # NOTE: the COLUMN is `schema`; `schema_` is only the Python attribute name
@@ -143,7 +143,8 @@ async def test_convergence_leaves_project_clones_untouched(db_session: AsyncSess
     """
     await seed_probast_ai(db_session)
     await clean_project_clones(db_session, SEED.secondary_project)
-    clone = await TemplateCloneService(db_session).clone(
+    clone = await clone_template(
+        db_session,
         project_id=SEED.secondary_project,
         global_template_id=_PROBAST_AI_TEMPLATE_ID,
         user_id=SEED.primary_profile,
