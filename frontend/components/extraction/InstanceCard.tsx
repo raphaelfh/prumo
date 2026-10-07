@@ -29,6 +29,7 @@ import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {RenameEntryDialog, type EntryIdentityChanges} from './AddEntryDialog';
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
+import {coordKey} from '@/lib/runs/coord';
 
 // =================== INTERFACES ===================
 
@@ -146,7 +147,7 @@ export function InstanceCard(props: InstanceCardProps) {
       <div className={props.presentation === 'review-table' ? "bg-background" : "bg-card rounded-b-lg px-2"}>
         {props.presentation === 'review-table' && props.review ? <ExtractionReviewTable instanceId={instance.id} fields={fields} values={values} onValueChange={props.onValueChange} aiSuggestions={props.aiSuggestions} getSuggestionsHistory={props.getSuggestionsHistory} review={props.review}/> : <>
         {fields.map(field => {
-          const key = `${instance.id}_${field.id}`;
+          const key = coordKey(instance.id, field.id);
           const suggestion = props.aiSuggestions?.[key];
 
           return (

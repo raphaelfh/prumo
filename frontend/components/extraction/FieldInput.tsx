@@ -31,6 +31,7 @@ import {valueAbsentReason} from '@/lib/extraction/valueSemantics';
 import {useJustUpdatedValue} from '@/hooks/extraction/useJustUpdatedValue';
 import {useRunEditability} from '@/components/runs/RunEditabilityContext';
 import {t} from '@/lib/copy';
+import {coordKey} from '@/lib/runs/coord';
 
 // =================== INTERFACES ===================
 
@@ -75,7 +76,7 @@ export function FieldInput(props: FieldInputProps) {
   // Briefly highlights this field when its value was just updated (e.g. by an
   // AI extraction refresh) so the user sees what changed without having to
   // hunt the page for newly-populated cells.
-  const justUpdated = useJustUpdatedValue(`${instanceId}_${field.id}`);
+  const justUpdated = useJustUpdatedValue(coordKey(instanceId, field.id));
 
     // Fixed comfortable spacing
   const containerPadding = 'py-2.5';

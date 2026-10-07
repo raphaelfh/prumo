@@ -14,10 +14,11 @@ import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
 import type {AISuggestion} from '@/types/ai-extraction';
 import type {ExtractionReviewTableProps} from './ExtractionReviewTable';
+import {coordKey} from '@/lib/runs/coord';
 
 export function ExtractionReviewRow({instanceId, field, values, onValueChange, aiSuggestions, getSuggestionsHistory, review, stacked}: ExtractionReviewTableProps & {field: ExtractionField; stacked: boolean}) {
   const coordinate = {instanceId, fieldId: field.id};
-  const key = `${instanceId}_${field.id}`;
+  const key = coordKey(instanceId, field.id);
   const latest = aiSuggestions?.[key];
   const [initialProposalId, setInitialProposalId] = useState<string>();
   const [visited, setVisited] = useState(false);

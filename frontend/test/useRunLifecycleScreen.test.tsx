@@ -351,7 +351,7 @@ describe("useRunLifecycleScreen — the kind-specific terms", () => {
     const { result } = renderLifecycle("extraction", {
       view,
       permissions: ARBITRATOR,
-      requiredCoords: ["i1::f1"],
+      requiredCoords: ["i1_f1"],
     });
     expect(result.current.transition?.gate.ok).toBe(false);
   });

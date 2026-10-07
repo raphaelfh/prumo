@@ -41,7 +41,7 @@ import { runScreenSpec } from '@/lib/runs/runScreenKind';
 export interface RunScreenConsensus {
   entityTypes: ComparisonEntityType[];
   instances: ComparisonInstance[];
-  /** Form values keyed `${instanceId}_${fieldId}`. */
+  /** Form values keyed by `coordKey`. */
   ownValues: Record<string, unknown>;
   /** The screen's AI trace; peer-identity gating is the shell's. */
   aiTrace: Omit<ConsensusTraceContext, 'showPeerIdentity' | 'currentUserId'>;

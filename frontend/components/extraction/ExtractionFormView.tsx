@@ -36,6 +36,7 @@ import type {
 } from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import type {EntryIdentityChanges} from './AddEntryDialog';
+import {coordKey} from '@/lib/runs/coord';
 
 export interface ExtractionFormViewProps {
   presentation?: 'review-table' | 'default';
@@ -120,7 +121,7 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
     const children = props.entityTypes.filter(item => item.parent_entity_type_id === entity.id);
     const active = entries.find(item => item.id === activeEntryId);
     const rendered = entity.cardinality === 'many' && children.length ? (active ? [active] : []) : entries;
-    for (const instance of rendered) for (const field of entity.fields) questions.push({instanceId: instance.id, fieldId: field.id, sectionId: entity.id, label: field.label, allowsNoInformation: field.allows_no_information !== false, pending: field.is_required && isEmptyValue(props.values[`${instance.id}_${field.id}`])});
+    for (const instance of rendered) for (const field of entity.fields) questions.push({instanceId: instance.id, fieldId: field.id, sectionId: entity.id, label: field.label, allowsNoInformation: field.allows_no_information !== false, pending: field.is_required && isEmptyValue(props.values[coordKey(instance.id, field.id)])});
     if (active) for (const child of children) walk(child, active.id);
   };
   for (const root of roots) walk(root, null);
@@ -129,7 +130,7 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
     onNavigate: row => {
       localNavRef.current?.revealSection(row.sectionId, false);
       requestAnimationFrame(() => {
-        const element = document.getElementById(`review-question-${row.instanceId}_${row.fieldId}`);
+        const element = document.getElementById(`review-question-${coordKey(row.instanceId, row.fieldId)}`);
         element?.scrollIntoView({block: 'nearest'});
         element?.focus({preventScroll: true});
       });
@@ -185,7 +186,7 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
           const destination = questions.find(row => row.sectionId === id);
           if (destination) {
             navigation.activate(destination);
-            requestAnimationFrame(() => document.getElementById(`review-question-${destination.instanceId}_${destination.fieldId}`)?.focus({preventScroll: true}));
+            requestAnimationFrame(() => document.getElementById(`review-question-${coordKey(destination.instanceId, destination.fieldId)}`)?.focus({preventScroll: true}));
           }
         }
       }} onActivate={activateSection}

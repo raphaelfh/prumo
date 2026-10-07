@@ -1,4 +1,5 @@
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
+import { parseCoordKey } from '@/lib/runs/coord';
 import { decisionMatchesVersion } from '@/lib/runs/valueEquality';
 import type { AISuggestion } from '@/types/ai-extraction';
 
@@ -15,7 +16,7 @@ export function withReviewDecisionStatus(
 ): Record<string, AISuggestion> {
   return Object.fromEntries(Object.entries(suggestions).map(([key, suggestion]) => {
     if (suggestion.status === 'rejected') return [key, suggestion];
-    const [instanceId, fieldId] = key.split('_');
+    const {instanceId, fieldId} = parseCoordKey(key);
     const accepted = isAccepted({instanceId, fieldId, id: suggestion.id, value: suggestion.value});
     return [key, {...suggestion, status: accepted ? 'accepted' : 'pending'}];
   }));

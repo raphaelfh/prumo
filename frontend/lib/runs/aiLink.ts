@@ -14,7 +14,7 @@
  */
 
 import type {ReviewerDecisionResponse} from '@/hooks/runs/types';
-import {getSuggestionKey} from '@/types/ai-extraction';
+import {coordKey} from '@/lib/runs/coord';
 
 /**
  * Stable empty adoption map for the persisted-links (layer-1-only) memo —
@@ -37,7 +37,7 @@ export function deriveAiLinkByKey(p: {
     for (const d of p.decisions) {
       if (d.reviewer_id !== p.currentUserId) continue;
       // Canonical coord key — must stay aligned with the sessionAdoption map.
-      const key = getSuggestionKey(d.instance_id, d.field_id);
+      const key = coordKey(d.instance_id, d.field_id);
       const prev = newestByCoord.get(key);
       if (!prev || prev.created_at < d.created_at) newestByCoord.set(key, d);
     }

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { deriveConsensusResolution } from './reconciliation';
 
 const dec = (coord: string, created_at: string, mode = 'select_existing') => {
-  const [instance_id, field_id] = coord.split('::');
+  const [instance_id, field_id] = coord.split('_');
   return { instance_id, field_id, created_at, mode, value: { value: 'x' } };
 };
 
@@ -20,11 +20,11 @@ describe('deriveConsensusResolution', () => {
   it('a resolved conflict reports status=resolved (resolution wins over bucket)', () => {
     const v = deriveConsensusResolution({
       ...baseParams,
-      divergentCoords: new Set(['i1::f1']),
-      decisionCountByCoord: new Map([['i1::f1', 2]]),
-      consensusDecisions: [dec('i1::f1', '2026-01-01T00:00:00Z')],
+      divergentCoords: new Set(['i1_f1']),
+      decisionCountByCoord: new Map([['i1_f1', 2]]),
+      consensusDecisions: [dec('i1_f1', '2026-01-01T00:00:00Z')],
     });
-    expect(v.statusByCoord.get('i1::f1')).toBe('resolved');
+    expect(v.statusByCoord.get('i1_f1')).toBe('resolved');
     expect(v.resolvedCount).toBe(1);
     expect(v.needsAttentionCount).toBe(0);
   });
@@ -32,29 +32,29 @@ describe('deriveConsensusResolution', () => {
   it('newest consensus decision wins per coord', () => {
     const v = deriveConsensusResolution({
       ...baseParams,
-      divergentCoords: new Set(['i1::f1']),
-      decisionCountByCoord: new Map([['i1::f1', 2]]),
+      divergentCoords: new Set(['i1_f1']),
+      decisionCountByCoord: new Map([['i1_f1', 2]]),
       consensusDecisions: [
-        dec('i1::f1', '2026-01-01T00:00:00Z', 'select_existing'),
-        dec('i1::f1', '2026-01-02T00:00:00Z', 'manual_override'),
+        dec('i1_f1', '2026-01-01T00:00:00Z', 'select_existing'),
+        dec('i1_f1', '2026-01-02T00:00:00Z', 'manual_override'),
       ],
     });
-    expect(v.resolvedByCoord.get('i1::f1')!.mode).toBe('manual_override');
+    expect(v.resolvedByCoord.get('i1_f1')!.mode).toBe('manual_override');
   });
 
   it('unresolved conflict + required gap + single filler count as needs-attention', () => {
     const v = deriveConsensusResolution({
       ...baseParams,
-      divergentCoords: new Set(['i1::f1']),
+      divergentCoords: new Set(['i1_f1']),
       decisionCountByCoord: new Map([
-        ['i1::f1', 2],
-        ['i1::f3', 1],
+        ['i1_f1', 2],
+        ['i1_f3', 1],
       ]),
-      requiredCoords: ['i1::f2'],
+      requiredCoords: ['i1_f2'],
     });
-    expect(v.statusByCoord.get('i1::f1')).toBe('conflict');
-    expect(v.statusByCoord.get('i1::f2')).toBe('required_gap');
-    expect(v.statusByCoord.get('i1::f3')).toBe('single_filler');
+    expect(v.statusByCoord.get('i1_f1')).toBe('conflict');
+    expect(v.statusByCoord.get('i1_f2')).toBe('required_gap');
+    expect(v.statusByCoord.get('i1_f3')).toBe('single_filler');
     expect(v.needsAttentionCount).toBe(3);
     expect(v.canFinalize).toBe(false);
   });
@@ -62,9 +62,9 @@ describe('deriveConsensusResolution', () => {
   it('canFinalize: conflicts resolved + no required gap + >=1 decision', () => {
     const v = deriveConsensusResolution({
       ...baseParams,
-      divergentCoords: new Set(['i1::f1']),
-      decisionCountByCoord: new Map([['i1::f1', 2]]),
-      consensusDecisions: [dec('i1::f1', '2026-01-01T00:00:00Z')],
+      divergentCoords: new Set(['i1_f1']),
+      decisionCountByCoord: new Map([['i1_f1', 2]]),
+      consensusDecisions: [dec('i1_f1', '2026-01-01T00:00:00Z')],
     });
     expect(v.canFinalize).toBe(true);
   });
@@ -79,20 +79,20 @@ describe('deriveConsensusResolution', () => {
     // requiredGaps must credit the published coord, so the run finalizes.
     const v = deriveConsensusResolution({
       ...baseParams,
-      requiredCoords: ['i1::f2'],
-      publishedCoords: new Set(['i1::f2']),
-      consensusDecisions: [dec('i1::f2', '2026-01-01T00:00:00Z', 'select_existing')],
+      requiredCoords: ['i1_f2'],
+      publishedCoords: new Set(['i1_f2']),
+      consensusDecisions: [dec('i1_f2', '2026-01-01T00:00:00Z', 'select_existing')],
     });
-    expect(v.statusByCoord.get('i1::f2')).toBe('resolved');
+    expect(v.statusByCoord.get('i1_f2')).toBe('resolved');
     expect(v.canFinalize).toBe(true);
   });
 
   it('a required gap blocks finalize even with a consensus decision elsewhere', () => {
     const v = deriveConsensusResolution({
       ...baseParams,
-      requiredCoords: ['i1::f2'],
-      decisionCountByCoord: new Map([['i1::f1', 2]]),
-      consensusDecisions: [dec('i1::f1', '2026-01-01T00:00:00Z')],
+      requiredCoords: ['i1_f2'],
+      decisionCountByCoord: new Map([['i1_f1', 2]]),
+      consensusDecisions: [dec('i1_f1', '2026-01-01T00:00:00Z')],
     });
     expect(v.canFinalize).toBe(false);
   });
@@ -100,9 +100,9 @@ describe('deriveConsensusResolution', () => {
   it('full agreement is status=agreed and not needs-attention', () => {
     const v = deriveConsensusResolution({
       ...baseParams,
-      decisionCountByCoord: new Map([['i1::f1', 2]]),
+      decisionCountByCoord: new Map([['i1_f1', 2]]),
     });
-    expect(v.statusByCoord.get('i1::f1')).toBe('agreed');
+    expect(v.statusByCoord.get('i1_f1')).toBe('agreed');
     expect(v.needsAttentionCount).toBe(0);
   });
 });

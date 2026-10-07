@@ -258,7 +258,7 @@ export interface UseAISuggestionsProps {
  * Return type of useAISuggestions hook
  */
 export interface UseAISuggestionsReturn {
-  suggestions: Record<string, AISuggestion>; // key: `${instanceId}_${fieldId}`
+  suggestions: Record<string, AISuggestion>; // keyed by coordKey (lib/runs/coord)
   loading: boolean;
   /**
    * D0: this session's real adoption events — accept/select set the chosen
@@ -303,16 +303,3 @@ export interface LoadSuggestionsResult {
   suggestions: Record<string, AISuggestion>;
   count: number;
 }
-
-// =================== COMPONENT PROPS ===================
-
-
-// =================== UTILITIES ===================
-
-/**
- * Unique key to identify a suggestion in the map.
- */
-export function getSuggestionKey(instanceId: string, fieldId: string): string {
-  return `${instanceId}_${fieldId}`;
-}
-

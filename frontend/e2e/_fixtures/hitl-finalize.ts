@@ -46,7 +46,7 @@ export async function fillRequiredFieldsAndFinalize(
   };
   const published = new Set<string>(
     (detailBody.data?.published_states ?? []).map(
-      (p) => `${p.instance_id}::${p.field_id}`,
+      (p) => `${p.instance_id}_${p.field_id}`,
     ),
   );
 
@@ -70,7 +70,7 @@ export async function fillRequiredFieldsAndFinalize(
     }
 
     for (const fieldId of requiredFieldIds) {
-      const coord = `${inst.id}::${fieldId}`;
+      const coord = `${inst.id}_${fieldId}`;
       if (published.has(coord)) continue;
       const res = await request.post(
         `${apiUrl}/api/v1/runs/${runId}/consensus`,

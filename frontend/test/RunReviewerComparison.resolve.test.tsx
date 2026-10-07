@@ -39,13 +39,13 @@ const entityTypes = [
 ];
 const instances = [{ id: 'inst-1', entity_type_id: 'et1' }];
 
-// A conflict on inst-1::field-1 (two distinct reviewer values).
+// A conflict on inst-1_field-1 (two distinct reviewer values).
 const conflictDecisions = [
   dec({ id: 'dec-a', reviewer_id: 'user-a', value: { value: 'Yes' } }),
   dec({ id: 'dec-b', reviewer_id: 'user-b', value: { value: 'No' } }),
 ];
 const decisionsByCoord = new Map<string, ReviewerDecisionResponse[]>([
-  ['inst-1::field-1', conflictDecisions],
+  ['inst-1_field-1', conflictDecisions],
 ]);
 const reviewerLabelById = { 'user-a': 'Alice', 'user-b': 'Bob' };
 const reviewerAvatarById = { 'user-a': null, 'user-b': null };
@@ -59,8 +59,8 @@ function buildResolution(
   const view = deriveConsensusResolution({
     consensusDecisions: over.consensusDecisions ?? [],
     publishedCoords: new Set(),
-    divergentCoords: over.divergentCoords ?? new Set(['inst-1::field-1']),
-    decisionCountByCoord: new Map([['inst-1::field-1', 2]]),
+    divergentCoords: over.divergentCoords ?? new Set(['inst-1_field-1']),
+    decisionCountByCoord: new Map([['inst-1_field-1', 2]]),
     participantCount: 2,
     requiredCoords: [],
   });
@@ -117,7 +117,7 @@ describe('RunReviewerComparison — resolve mode', () => {
       'true',
     );
     // The conflict row is visible under the default attention filter.
-    expect(screen.getByTestId('consensus-coord-inst-1::field-1')).toBeInTheDocument();
+    expect(screen.getByTestId('consensus-coord-inst-1_field-1')).toBeInTheDocument();
   });
 
   it('adopt calls onSelectExisting with the chosen decision id', () => {
@@ -134,14 +134,14 @@ describe('RunReviewerComparison — resolve mode', () => {
   it('override expands the typed editor and publishes value + rationale', () => {
     const onManualOverride = vi.fn();
     renderResolve(buildResolution({ onManualOverride }));
-    fireEvent.click(screen.getByTestId('consensus-override-toggle-inst-1::field-1'));
-    const editor = screen.getByTestId('consensus-override-inst-1::field-1');
+    fireEvent.click(screen.getByTestId('consensus-override-toggle-inst-1_field-1'));
+    const editor = screen.getByTestId('consensus-override-inst-1_field-1');
     expect(editor).toBeInTheDocument();
     // First textbox = value editor, second = rationale.
     const textboxes = screen.getAllByRole('textbox');
     fireEvent.change(textboxes[0], { target: { value: 'Maybe' } });
     fireEvent.change(textboxes[1], { target: { value: 'tie-break' } });
-    fireEvent.click(screen.getByTestId('consensus-override-submit-inst-1::field-1'));
+    fireEvent.click(screen.getByTestId('consensus-override-submit-inst-1_field-1'));
     expect(onManualOverride).toHaveBeenCalledWith({
       instanceId: 'inst-1',
       fieldId: 'field-1',
@@ -169,7 +169,7 @@ describe('RunReviewerComparison — resolve mode', () => {
     );
     // Switch to the resolved filter to see it.
     fireEvent.click(screen.getByTestId('consensus-filter-resolved'));
-    const cell = screen.getByTestId('consensus-resolved-inst-1::field-1');
+    const cell = screen.getByTestId('consensus-resolved-inst-1_field-1');
     expect(cell).toHaveTextContent('Yes');
     expect(cell).toHaveTextContent('resolvedFromReviewer');
   });
@@ -192,7 +192,7 @@ describe('RunReviewerComparison — resolve mode', () => {
       }),
     );
     fireEvent.click(screen.getByTestId('consensus-filter-resolved'));
-    const cell = screen.getByTestId('consensus-resolved-inst-1::field-1');
+    const cell = screen.getByTestId('consensus-resolved-inst-1_field-1');
     expect(cell).toHaveTextContent('resolvedCustom');
     expect(cell).not.toHaveTextContent('resolvedFromReviewer');
   });
@@ -215,7 +215,7 @@ describe('RunReviewerComparison — resolve mode', () => {
     // The only coord is resolved ⇒ attention is empty.
     expect(screen.getByTestId('consensus-nothing')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('consensus-filter-resolved'));
-    expect(screen.getByTestId('consensus-resolved-inst-1::field-1')).toBeInTheDocument();
+    expect(screen.getByTestId('consensus-resolved-inst-1_field-1')).toBeInTheDocument();
   });
 
   it('with no reviewer value and nothing resolved, the empty state points at Reopen, not Approve & finalize', () => {
@@ -262,12 +262,12 @@ describe('RunReviewerComparison — resolve mode', () => {
       />,
     );
     fireEvent.click(screen.getByTestId('consensus-filter-all'));
-    const optionalRow = screen.getByTestId('consensus-coord-inst-1::field-2');
+    const optionalRow = screen.getByTestId('consensus-coord-inst-1_field-2');
     // Neutral dash, not the "Agreed" status label, and no override affordance.
     expect(optionalRow).toHaveTextContent('—');
     expect(optionalRow).not.toHaveTextContent('statusAgreed');
     expect(
-      screen.queryByTestId('consensus-override-toggle-inst-1::field-2'),
+      screen.queryByTestId('consensus-override-toggle-inst-1_field-2'),
     ).not.toBeInTheDocument();
   });
 
@@ -275,13 +275,13 @@ describe('RunReviewerComparison — resolve mode', () => {
     renderResolve(buildResolution({ disabled: true }));
     expect(screen.getByTestId('consensus-accept-dec-a')).toBeDisabled();
     expect(
-      screen.getByTestId('consensus-override-toggle-inst-1::field-1'),
+      screen.getByTestId('consensus-override-toggle-inst-1_field-1'),
     ).toBeDisabled();
   });
 });
 
 describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
-  // Key format matches getSuggestionKey: `${instanceId}_${fieldId}`.
+  // Keyed by coordKey (lib/runs/coord).
   const traceWithSuggestion: ConsensusTraceContext = {
     articleId: 'a1',
     getHistory: async () => [],
@@ -303,7 +303,7 @@ describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
   ) =>
     render(
       <RunReviewerComparison
-        decisionsByCoord={new Map([['inst-1::field-1', decisions]])}
+        decisionsByCoord={new Map([['inst-1_field-1', decisions]])}
         entityTypes={entityTypes}
         instances={instances}
         ownValues={{}}
@@ -378,7 +378,7 @@ describe('RunReviewerComparison — per-cell AI trace (D1/D4)', () => {
     );
     // Resolved rows hide under the default attention filter.
     fireEvent.click(screen.getByTestId('consensus-filter-resolved'));
-    const consensusCell = screen.getByTestId('consensus-resolved-inst-1::field-1');
+    const consensusCell = screen.getByTestId('consensus-resolved-inst-1_field-1');
     expect(
       within(consensusCell).queryByRole('button', { name: 'traceTitle' }),
     ).not.toBeInTheDocument();

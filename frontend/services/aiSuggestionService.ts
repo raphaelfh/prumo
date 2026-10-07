@@ -23,7 +23,7 @@ import type {
   RunProvenance,
   VerificationVerdict,
 } from '@/types/ai-extraction';
-import { getSuggestionKey } from '@/types/ai-extraction';
+import { coordKey } from '@/lib/runs/coord';
 import { unwrapProposedValue } from '@/lib/extraction/valueSemantics';
 import type { components } from '@/types/api/schema';
 
@@ -207,7 +207,7 @@ export class AISuggestionService {
     const items = response?.suggestions ?? [];
     const suggestionsMap: Record<string, AISuggestion> = {};
     for (const item of items) {
-      const key = getSuggestionKey(item.instance_id, item.field_id);
+      const key = coordKey(item.instance_id, item.field_id);
       // First-wins guard: server already dedups to latest-per-coord,
       // but keep this harmless if duplicates slip through.
       if (suggestionsMap[key]) continue;

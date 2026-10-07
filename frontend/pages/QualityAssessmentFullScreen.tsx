@@ -53,20 +53,9 @@ import {
 } from "@/lib/extraction/publishedValues";
 import { rationaleGapCoords } from "@/lib/qa/rationaleGaps";
 import { outOfScopeSectionsOnForm } from "@/lib/qa/studyTypeScope";
+import { coordKey } from "@/lib/runs/coord";
 import { isRunEditable } from "@/lib/runs/editability";
 import { firstPendingInstanceId } from "@/lib/runs/suggestionLocate";
-
-interface FieldKey {
-  instanceId: string;
-  fieldId: string;
-}
-
-// Key shape ``${instanceId}_${fieldId}`` is shared with the autosave
-// hook (``useAutoSaveProposals``) which splits on ``_``. UUIDs use
-// hyphens, so the underscore split is unambiguous.
-function keyOf(k: FieldKey): string {
-  return `${k.instanceId}_${k.fieldId}`;
-}
 
 export default function QualityAssessmentFullScreen() {
   const { projectId, articleId, templateId } = useParams<{
@@ -182,7 +171,7 @@ export default function QualityAssessmentFullScreen() {
   // handlers in the hook (unmount flush, ``pagehide``, visibility) carry
   // the write through any navigation that happens mid-debounce.
   const handleValueChange = (instanceId: string, fieldId: string, value: unknown) => {
-    const k = keyOf({ instanceId, fieldId });
+    const k = coordKey(instanceId, fieldId);
     setValues((prev) => ({ ...prev, [k]: value }));
   };
 
@@ -296,7 +285,6 @@ export default function QualityAssessmentFullScreen() {
     domains,
     session?.instancesByEntityType,
     values,
-    (instanceId, fieldId) => keyOf({ instanceId, fieldId }),
   );
 
   // The rendered domains and the section rail over them, shared with extraction.
@@ -304,8 +292,7 @@ export default function QualityAssessmentFullScreen() {
 
   // Compare/consensus inputs derived from the QA template tree: one instance
   // per domain (session.instancesByEntityType), shaped for the shared
-  // comparison table. ownValues is the form's `_`-keyed map; decisions come
-  // in `::`-keyed via the reviewer summary — the table bridges the two.
+  // comparison table.
   const compareEntityTypes: ComparisonEntityType[] = domains.map(
     (domain) => ({
       id: domain.entityType.id,
@@ -425,7 +412,7 @@ export default function QualityAssessmentFullScreen() {
                 {sectionNav.renderedDomains.map(({ domain, instanceId }, idx) => {
                   const valuesForDomain: Record<string, unknown> = {};
                   for (const f of domain.fields) {
-                    const k = keyOf({ instanceId, fieldId: f.id });
+                    const k = coordKey(instanceId, f.id);
                     if (k in values) valuesForDomain[f.id] = values[k];
                   }
                   return (

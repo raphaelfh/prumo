@@ -10,8 +10,9 @@ import type { ReviewerSummary } from '@/hooks/runs/useReviewerSummary';
 import { t } from '@/lib/copy';
 import { computeFinalizeWarning } from '@/lib/runs/finalizeWarning';
 import { classifyReconciliation } from '@/lib/runs/reconciliation';
+import { coordKey } from '@/lib/runs/coord';
 
-/** `instance::field` keys of every required field on the materialised form. */
+/** `coordKey`s of every required field on the materialised form. */
 export function requiredCoordKeys(
   instances: ReadonlyArray<{ id: string; entity_type_id: string }>,
   entityTypes: ReadonlyArray<{ id: string; fields: ReadonlyArray<{ id: string; is_required: boolean }> }>,
@@ -20,7 +21,7 @@ export function requiredCoordKeys(
   for (const inst of instances) {
     const et = entityTypes.find((e) => e.id === inst.entity_type_id);
     for (const f of et?.fields ?? []) {
-      if (f.is_required) keys.push(`${inst.id}::${f.id}`);
+      if (f.is_required) keys.push(coordKey(inst.id, f.id));
     }
   }
   return keys;
@@ -52,7 +53,7 @@ export function assessExtractionFinalize(p: {
     participantCount: reviewerSummary.reviewers.length,
     requiredCoords,
     publishedCoords: new Set(
-      (runDetail?.published_states ?? []).map((s) => `${s.instance_id}::${s.field_id}`),
+      (runDetail?.published_states ?? []).map((s) => coordKey(s.instance_id, s.field_id)),
     ),
   });
 

@@ -61,6 +61,7 @@ import {requiredCoordKeys} from '@/lib/runs/extractionFinalizeGate';
 import {firstPendingInstanceId} from '@/lib/runs/suggestionLocate';
 import {t} from '@/lib/copy';
 import type {ExtractionRunStage} from '@/types/ai-extraction';
+import {coordKey, parseCoordKey} from '@/lib/runs/coord';
 
 export default function ExtractionFullScreen() {
   const { projectId, articleId } = useParams();
@@ -263,7 +264,7 @@ export default function ExtractionFullScreen() {
       allowsNoInformation: field?.allows_no_information !== false});
   };
   const acceptSuggestion = async (instanceId: string, fieldId: string) => {
-    const proposal = aiSuggestions[`${instanceId}_${fieldId}`];
+    const proposal = aiSuggestions[coordKey(instanceId, fieldId)];
     if (proposal) await selectSuggestion(instanceId, fieldId, proposal.id, proposal.value);
   };
 
@@ -322,7 +323,7 @@ export default function ExtractionFullScreen() {
     }
     const fieldsCount = Object.entries(values).filter(
       ([key, value]) =>
-        subtree.has(key.slice(0, key.indexOf('_'))) && !isValueEmpty(value),
+        subtree.has(parseCoordKey(key).instanceId) && !isValueEmpty(value),
     ).length;
     setModelToRemove({
       id: instanceId,

@@ -45,7 +45,7 @@ import { toast } from 'sonner';
 import { AISuggestionService } from '@/services/aiSuggestionService';
 import { useAISuggestions } from '@/hooks/extraction/ai/useAISuggestions';
 import type { AISuggestion } from '@/types/ai-extraction';
-import { getSuggestionKey } from '@/types/ai-extraction';
+import { coordKey } from '@/lib/runs/coord';
 
 function makeSuggestion(
   instanceId: string,
@@ -75,7 +75,7 @@ afterEach(() => {
 describe('useAISuggestions — load', () => {
   it('uses provided instanceIds when available (skips article-wide lookup)', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: { [getSuggestionKey('inst-A', 'f-1')]: makeSuggestion('inst-A', 'f-1') },
+      suggestions: { [coordKey('inst-A', 'f-1')]: makeSuggestion('inst-A', 'f-1') },
       count: 1,
     });
 
@@ -158,10 +158,10 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
   beforeEach(() => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValue({
       suggestions: {
-        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
+        [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
           confidence: 0.95,
         }),
-        [getSuggestionKey('inst-1', 'f-2')]: makeSuggestion('inst-1', 'f-2', {
+        [coordKey('inst-1', 'f-2')]: makeSuggestion('inst-1', 'f-2', {
           confidence: 0.4,
         }),
       },
@@ -188,7 +188,7 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
     });
 
     expect(
-      result.current.suggestions[getSuggestionKey('inst-1', 'f-1')].status,
+      result.current.suggestions[coordKey('inst-1', 'f-1')].status,
     ).toBe('accepted');
     // Callback fired with the suggestion's value
     await waitFor(() =>
@@ -215,7 +215,7 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
     });
 
     expect(
-      result.current.suggestions[getSuggestionKey('inst-1', 'f-1')].status,
+      result.current.suggestions[coordKey('inst-1', 'f-1')].status,
     ).toBe('rejected');
     await waitFor(() =>
       expect(onRejected).toHaveBeenCalledWith('inst-1', 'f-1'),
@@ -252,11 +252,11 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
     // batch; only the real proposal is accepted. On the pre-fix code BOTH would be.
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
       suggestions: {
-        [getSuggestionKey('inst-1', 'f-real')]: makeSuggestion('inst-1', 'f-real', {
+        [coordKey('inst-1', 'f-real')]: makeSuggestion('inst-1', 'f-real', {
           confidence: 0.95,
           value: 'Y',
         }),
-        [getSuggestionKey('inst-1', 'f-abstain')]: makeSuggestion('inst-1', 'f-abstain', {
+        [coordKey('inst-1', 'f-abstain')]: makeSuggestion('inst-1', 'f-abstain', {
           confidence: 0.95,
           value: { value: null, absent_reason: 'no_information' },
         }),
@@ -291,11 +291,11 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
     // one-at-a-time act of recording a non-answer.
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
       suggestions: {
-        [getSuggestionKey('inst-1', 'f-real')]: makeSuggestion('inst-1', 'f-real', {
+        [coordKey('inst-1', 'f-real')]: makeSuggestion('inst-1', 'f-real', {
           confidence: 0.95,
           value: 'Y',
         }),
-        [getSuggestionKey('inst-1', 'f-null')]: makeSuggestion('inst-1', 'f-null', {
+        [coordKey('inst-1', 'f-null')]: makeSuggestion('inst-1', 'f-null', {
           confidence: 0.95,
           value: null,
         }),
@@ -328,7 +328,7 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
     // exclude it.
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
       suggestions: {
-        [getSuggestionKey('inst-1', 'f-empty')]: makeSuggestion('inst-1', 'f-empty', {
+        [coordKey('inst-1', 'f-empty')]: makeSuggestion('inst-1', 'f-empty', {
           confidence: 0.95,
           value: '',
         }),
@@ -359,9 +359,9 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
   it('batchAccept fires ONE success toast, not one per item (#160)', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValue({
       suggestions: {
-        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', { confidence: 0.95 }),
-        [getSuggestionKey('inst-1', 'f-2')]: makeSuggestion('inst-1', 'f-2', { confidence: 0.92 }),
-        [getSuggestionKey('inst-1', 'f-3')]: makeSuggestion('inst-1', 'f-3', { confidence: 0.9 }),
+        [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', { confidence: 0.95 }),
+        [coordKey('inst-1', 'f-2')]: makeSuggestion('inst-1', 'f-2', { confidence: 0.92 }),
+        [coordKey('inst-1', 'f-3')]: makeSuggestion('inst-1', 'f-3', { confidence: 0.9 }),
       },
       count: 3,
     });
@@ -387,7 +387,7 @@ describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => 
   beforeEach(() => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValue({
       suggestions: {
-        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
+        [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
           confidence: 0.5,
         }),
       },
@@ -416,7 +416,7 @@ describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => 
     await waitFor(() =>
       expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 5),
     );
-    const updated = result.current.suggestions[getSuggestionKey('inst-1', 'f-1')];
+    const updated = result.current.suggestions[coordKey('inst-1', 'f-1')];
     expect(updated.status).toBe('accepted');
     // The coord's entry now reflects the CHOSEN version (id + value + its own
     // confidence), so the review popover highlights the right version across
@@ -493,7 +493,7 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
     // plain manual edits), so hydrated status must never seed the link map.
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
       suggestions: {
-        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
+        [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
           status: 'accepted',
         }),
       },
@@ -513,7 +513,7 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
 
   it('accept and select set the coord entry to the chosen proposal id', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: { [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
+      suggestions: { [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
       count: 1,
     });
 
@@ -531,20 +531,20 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
       await result.current.acceptSuggestion('inst-1', 'f-1');
     });
     expect(result.current.sessionAdoption).toEqual({
-      [getSuggestionKey('inst-1', 'f-1')]: 'proposal-inst-1-f-1',
+      [coordKey('inst-1', 'f-1')]: 'proposal-inst-1-f-1',
     });
 
     await act(async () => {
       await result.current.selectSuggestion('inst-1', 'f-1', 'proposal-older', 'Z', 0.7);
     });
     expect(result.current.sessionAdoption).toEqual({
-      [getSuggestionKey('inst-1', 'f-1')]: 'proposal-older',
+      [coordKey('inst-1', 'f-1')]: 'proposal-older',
     });
   });
 
   it('reject tombstones the coord entry with null', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: { [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
+      suggestions: { [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
       count: 1,
     });
 
@@ -562,13 +562,13 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
       await result.current.rejectSuggestion('inst-1', 'f-1');
     });
     expect(result.current.sessionAdoption).toEqual({
-      [getSuggestionKey('inst-1', 'f-1')]: null,
+      [coordKey('inst-1', 'f-1')]: null,
     });
   });
 
   it('drops adoptions from a previous run when runId swaps in place', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValue({
-      suggestions: { [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
+      suggestions: { [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
       count: 1,
     });
 
@@ -589,7 +589,7 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
       await result.current.acceptSuggestion('inst-1', 'f-1');
     });
     expect(result.current.sessionAdoption).toEqual({
-      [getSuggestionKey('inst-1', 'f-1')]: 'proposal-inst-1-f-1',
+      [coordKey('inst-1', 'f-1')]: 'proposal-inst-1-f-1',
     });
 
     // `POST /runs/{id}/reopen` forks a child run over the same
@@ -608,7 +608,7 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
       await result.current.rejectSuggestion('inst-1', 'f-1');
     });
     expect(result.current.sessionAdoption).toEqual({
-      [getSuggestionKey('inst-1', 'f-1')]: null,
+      [coordKey('inst-1', 'f-1')]: null,
     });
     rerender({ runId: 'run-C' });
     expect(result.current.sessionAdoption).toEqual({});
@@ -616,7 +616,7 @@ describe('useAISuggestions — session adoption + readiness (D0)', () => {
 
   it('suggestionsReady flips true→false when a refresh fails (red-green: kills the always-false mutant)', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: { [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
+      suggestions: { [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
       count: 1,
     });
 

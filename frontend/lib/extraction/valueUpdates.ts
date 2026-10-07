@@ -3,7 +3,7 @@
  *
  * Producer: `useExtractedValues.mergeValuesById` calls
  * `dispatchValueUpdates(keys)` when a refresh discovered a new or changed
- * value for an existing field. Each key is `${instanceId}_${fieldId}`.
+ * value for an existing field. Each key is a `coordKey`.
  *
  * Consumer: a small hook (`useJustUpdatedValue`) that extraction inputs use
  * to flip a `data-just-updated` attribute for ~1.5s after the change. The

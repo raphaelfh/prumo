@@ -21,7 +21,7 @@ import type {
     UseAISuggestionsProps,
     UseAISuggestionsReturn,
 } from '@/types/ai-extraction';
-import {getSuggestionKey} from '@/types/ai-extraction';
+import {coordKey, parseCoordKey} from '@/lib/runs/coord';
 import {AISuggestionService} from '@/services/aiSuggestionService';
 import {filterSuggestionsByConfidence, valuelessProposalKind} from '@/lib/ai-extraction/suggestionUtils';
 import {getErrorMessage} from '@/lib/ai-extraction/errors';
@@ -184,7 +184,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     confidence: number,
     silent: boolean,
   ): Promise<boolean> => {
-    const key = getSuggestionKey(instanceId, fieldId);
+    const key = coordKey(instanceId, fieldId);
 
       // Update status in local state to 'accepted' (do not remove!)
       // IMPORTANT: Create new object to ensure re-render
@@ -224,7 +224,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   };
 
   const acceptSuggestionCore = async (instanceId: string, fieldId: string, silent: boolean): Promise<boolean> => {
-    const key = getSuggestionKey(instanceId, fieldId);
+    const key = coordKey(instanceId, fieldId);
     const suggestion = suggestions[key];
     if (!suggestion) return false;
     // Quick-accept = select the latest pending proposal for this coord.
@@ -256,7 +256,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   // accept: the cleared value bubbles via onSuggestionRejected and the
   // screen's autosave persists it (link severed by the tombstone below).
   const rejectSuggestion = async (instanceId: string, fieldId: string) => {
-    const key = getSuggestionKey(instanceId, fieldId);
+    const key = coordKey(instanceId, fieldId);
     const suggestion = suggestions[key];
     if (!suggestion) return;
 
@@ -314,9 +314,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     // every accept actually failed (#160).
     const results = await Promise.all(
       actionable.map(([key]) => {
-        // key format: `${instanceId}_${fieldId}`
-        const [instanceId, ...fieldIdParts] = key.split('_');
-        const fieldId = fieldIdParts.join('_'); // Caso field_id tenha underscores
+        const {instanceId, fieldId} = parseCoordKey(key);
         return acceptSuggestionCore(instanceId, fieldId, /* silent */ true);
       })
     );
@@ -353,7 +351,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     instanceId: string,
     fieldId: string
   ): AISuggestion | undefined => {
-    const key = getSuggestionKey(instanceId, fieldId);
+    const key = coordKey(instanceId, fieldId);
     return suggestions[key];
   };
 

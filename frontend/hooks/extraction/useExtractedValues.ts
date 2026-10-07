@@ -32,6 +32,7 @@ import {
 import { toast } from 'sonner';
 
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
+import { coordKey } from '@/lib/runs/coord';
 import { t } from '@/lib/copy';
 import { currentValuesToValuesMap, publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
 import type {
@@ -69,7 +70,7 @@ interface UseExtractedValuesProps {
 interface UseExtractedValuesReturn {
   values: Record<string, any>;
   /**
-   * The raw server-loaded value map (per ``${instanceId}_${fieldId}``) this
+   * The raw server-loaded value map (per ``coordKey``) this
    * hook last hydrated from. Passed to ``useAutoSaveProposals`` as the
    * baseline so opening a run doesn't re-POST loaded values on mount.
    */
@@ -266,7 +267,7 @@ export function useExtractedValues(
   }, [enabled, loadValues]);
 
   const updateValue = (instanceId: string, fieldId: string, value: any) => {
-    const key = `${instanceId}_${fieldId}`;
+    const key = coordKey(instanceId, fieldId);
     setValues((prev) => ({
       ...prev,
       [key]: value,
@@ -276,7 +277,7 @@ export function useExtractedValues(
   // Explicit workspace decisions reconcile draft and baseline together. The
   // caller checks the captured user/run and preserves any intervening typing.
   const reconcileValue = (instanceId: string, fieldId: string, value: unknown) => {
-    const key = `${instanceId}_${fieldId}`;
+    const key = coordKey(instanceId, fieldId);
     setLoadedValues(prev => ({...prev, [key]: value}));
     setValues(prev => ({...prev, [key]: value}));
   };

@@ -5,6 +5,8 @@
  * Pure — no fetching. Inputs derive from useReviewerSummary + the run's
  * template (required coords) + published_states.
  */
+
+import { coordKey } from '@/lib/runs/coord';
 export interface ClassifyParams {
   /** coordKeys with >=2 materially different reviewer values. */
   divergentCoords: ReadonlySet<string>;
@@ -79,7 +81,7 @@ export function deriveConsensusResolution<C extends ResolvedConsensusLike>(p: {
   // one if an arbitrator re-resolved a field).
   const resolvedByCoord = new Map<string, C>();
   for (const c of p.consensusDecisions) {
-    const key = `${c.instance_id}::${c.field_id}`;
+    const key = coordKey(c.instance_id, c.field_id);
     const prev = resolvedByCoord.get(key);
     if (!prev || prev.created_at < c.created_at) resolvedByCoord.set(key, c);
   }

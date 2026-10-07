@@ -9,6 +9,7 @@ import { toConsensusValueEnvelope, valueAbsentReason } from '@/lib/extraction/va
 import { decisionMatchesVersion, stableStringify } from '@/lib/runs/valueEquality';
 import { t } from '@/lib/copy';
 import { ApiError } from '@/integrations/api/client';
+import { coordKey, parseCoordKey } from '@/lib/runs/coord';
 
 interface Coordinate { instanceId: string; fieldId: string }
 /** `conflict`: the review authority disagrees (409, moved head, run left extract); `failed`: anything else. */
@@ -61,7 +62,7 @@ export function useProposalDecision(props: Props) {
     reviewerCoordinateHistory(rows, reviewerId, runId ?? '', coordinate.instanceId, coordinate.fieldId);
   const allRows = [...decisions.filter(d => !localRows.some(local => local.id === d.id)), ...localRows];
   const acceptedProposalIdFor = (instanceId: string, fieldId: string) =>
-    acceptedProposal(historyFor(allRows, {instanceId, fieldId}), values[`${instanceId}_${fieldId}`]);
+    acceptedProposal(historyFor(allRows, {instanceId, fieldId}), values[coordKey(instanceId, fieldId)]);
 
   const isAccepted = (proposal: Proposal) =>
     acceptedProposalIdFor(proposal.instanceId, proposal.fieldId) === proposal.id &&
@@ -71,7 +72,7 @@ export function useProposalDecision(props: Props) {
   // Unchanged hydrated values keep their link and do not append on mount.
   const linkByKey: Record<string, string> = {};
   for (const key of Object.keys(values)) {
-    const [instanceId, fieldId] = key.split('_');
+    const {instanceId, fieldId} = parseCoordKey(key);
     const link = acceptedProposalIdFor(instanceId, fieldId);
     if (link) linkByKey[key] = link;
   }
@@ -154,7 +155,7 @@ export function useProposalDecision(props: Props) {
 
   const reconcile = (coordinate: Coordinate, decision: ReviewerDecisionResponse, draftAtStart: unknown) => {
     if (!isCurrent()) return;
-    const key = `${coordinate.instanceId}_${coordinate.fieldId}`;
+    const key = coordKey(coordinate.instanceId, coordinate.fieldId);
     const value = currentValuesToValuesMap([{instance_id: coordinate.instanceId, field_id: coordinate.fieldId,
       value: decision.value, decision: 'edit'}])[key];
     // Preserve input made while the explicit request was in flight.
@@ -186,7 +187,7 @@ export function useProposalDecision(props: Props) {
     await autosave.runExclusive(async () => {
       if (!isCurrent()) return;
       const history = latestHistory(proposal);
-      const key = `${proposal.instanceId}_${proposal.fieldId}`;
+      const key = coordKey(proposal.instanceId, proposal.fieldId);
       const draft = valuesRef.current[key];
       const reverse = acceptedProposal(history, draft) === proposal.id &&
         decisionMatchesVersion(history.at(-1)?.value, proposal.value);
@@ -215,7 +216,7 @@ export function useProposalDecision(props: Props) {
       await autosave.runExclusive(async () => {
         const entry = stack.current.at(-1);
         if (!entry || !isCurrent()) return;
-        const draft = valuesRef.current[`${entry.instanceId}_${entry.fieldId}`];
+        const draft = valuesRef.current[coordKey(entry.instanceId, entry.fieldId)];
         // No pre-read: the server's expected-head guard is the check. A conflict
         // freezes queued writes and refreshes history without discarding the draft.
         const result = await appendReviewerDecision(runId!, {

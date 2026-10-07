@@ -38,6 +38,7 @@ import type { RunHeaderValue } from '@/components/runs/header';
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 
 import { runsKeys, type RunViewResponse } from './types';
+import { coordKey } from '@/lib/runs/coord';
 
 // =================== RUN VIEW ===================
 
@@ -180,7 +181,7 @@ export function useRunLifecycleScreen(args: UseRunLifecycleScreenArgs) {
   // no-divergence run is trivially resolved). isReady: the caller already
   // flagged themselves ready.
   const resolvedCoordKeys = new Set(
-    (runDetail?.consensus_decisions ?? []).map((c) => `${c.instance_id}::${c.field_id}`),
+    (runDetail?.consensus_decisions ?? []).map((c) => coordKey(c.instance_id, c.field_id)),
   );
   const divergencesResolved = [...reviewerSummary.divergentCoords].every((c) =>
     resolvedCoordKeys.has(c),

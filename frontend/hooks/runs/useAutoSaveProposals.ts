@@ -8,7 +8,7 @@
  * endpoint remains for AI/system writers only.
  *
  * Used by both Data Extraction and Quality Assessment full-screen
- * pages — anywhere a flat ``Record<`${instanceId}_${fieldId}`, value>``
+ * pages — anywhere a flat ``coordKey``-keyed value
  * map needs to be persisted on a Run.
  *
  * State machine:
@@ -49,6 +49,7 @@ import { writeRunFieldValue, type WriteProposalParams } from '@/services/extract
 import { t } from '@/lib/copy';
 import { extractValueForSave } from '@/lib/validations/selectOther';
 import { fingerprintCoord, selectDirtyEntries } from '@/lib/extraction/autosaveDirty';
+import { coordKey, parseCoordKey } from '@/lib/runs/coord';
 
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
@@ -65,14 +66,14 @@ export interface UseAutoSaveProposalsProps {
    */
   stage?: string | null;
   /**
-   * Server-persisted values per ``${instanceId}_${fieldId}`` (the map the
+   * Server-persisted values per ``coordKey`` (the map the
    * form hydrated from). A coord whose current value still equals its
    * baseline is treated as already saved, so opening a run never re-POSTs
    * loaded values as fresh proposals/decisions on mount.
    */
   baselineValues?: Record<string, unknown>;
   /**
-   * D0 (consensus AI trace): coord key (`${instanceId}_${fieldId}`) →
+   * D0 (consensus AI trace): ``coordKey`` →
    * accepted/selected AI proposal id. When a dirty coord has an entry, its
    * `edit` decision carries `proposal_record_id` so the AI basis survives
    * into the append-only audit trail. Later manual edits keep the link — the
@@ -175,7 +176,7 @@ export function useAutoSaveProposals(
   const revisionsRef = useRef<Record<string, number>>({});
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // Stringified last successful write per `${instanceId}_${fieldId}`, tagged
+  // Stringified last successful write per ``coordKey``, tagged
   // with the run it describes — the diff check against the current values
   // map. The ref is the live cache updated per write; the state mirror below
   // lets render-phase consumers (dirty badge, hasUnsavedChanges) recompute
@@ -259,7 +260,7 @@ export function useAutoSaveProposals(
         currentBaselineLink,
       );
       const scopedDirty = dirty.filter(([key]) =>
-        (!scope || key === `${scope.instanceId}_${scope.fieldId}`) &&
+        (!scope || key === coordKey(scope.instanceId, scope.fieldId)) &&
         (revisions[key] ?? 0) === (revisionsRef.current[key] ?? 0));
       if (scopedDirty.length === 0) return true;
 
@@ -273,7 +274,7 @@ export function useAutoSaveProposals(
       // error path and leave the diff map inconsistent.
       const batchPromise = Promise.allSettled(
         scopedDirty.map(([key, valueData]) => {
-          const [instanceId, fieldId] = key.split('_');
+          const {instanceId, fieldId} = parseCoordKey(key);
           const {
             value: actualValue,
             unit,

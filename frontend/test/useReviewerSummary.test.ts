@@ -118,7 +118,7 @@ describe("useReviewerSummary", () => {
         }),
       ),
     );
-    const current = result.current.currentDecisions.get("i1::f1");
+    const current = result.current.currentDecisions.get("i1_f1");
     expect(current?.id).toBe("newer");
   });
 
@@ -156,8 +156,8 @@ describe("useReviewerSummary", () => {
         }),
       ),
     );
-    expect(result.current.divergentCoords.has("i1::f1")).toBe(true);
-    expect(result.current.divergentCoords.has("i1::f2")).toBe(false);
+    expect(result.current.divergentCoords.has("i1_f1")).toBe(true);
+    expect(result.current.divergentCoords.has("i1_f2")).toBe(false);
   });
 
   it("compares the full value envelope: a differing unit is divergence, an identical envelope is agreement", () => {
@@ -196,8 +196,8 @@ describe("useReviewerSummary", () => {
         }),
       ),
     );
-    expect(result.current.divergentCoords.has("i1::f1")).toBe(true);
-    expect(result.current.divergentCoords.has("i1::f2")).toBe(false);
+    expect(result.current.divergentCoords.has("i1_f1")).toBe(true);
+    expect(result.current.divergentCoords.has("i1_f2")).toBe(false);
   });
 
   it("keys marker agreement/divergence on the absent_reason code (regression guard)", () => {
@@ -249,9 +249,9 @@ describe("useReviewerSummary", () => {
         }),
       ),
     );
-    expect(result.current.divergentCoords.has("i1::same")).toBe(false);
-    expect(result.current.divergentCoords.has("i1::diff")).toBe(true);
-    expect(result.current.divergentCoords.has("i1::mv")).toBe(true);
+    expect(result.current.divergentCoords.has("i1_same")).toBe(false);
+    expect(result.current.divergentCoords.has("i1_diff")).toBe(true);
+    expect(result.current.divergentCoords.has("i1_mv")).toBe(true);
   });
 
   it("production-fidelity: real double-wrapped form shape diverges on unit, agrees when identical", () => {
@@ -292,8 +292,8 @@ describe("useReviewerSummary", () => {
         }),
       ),
     );
-    expect(result.current.divergentCoords.has("i1::f1")).toBe(true);
-    expect(result.current.divergentCoords.has("i1::f2")).toBe(false);
+    expect(result.current.divergentCoords.has("i1_f1")).toBe(true);
+    expect(result.current.divergentCoords.has("i1_f2")).toBe(false);
   });
 
   it("ignores object key order when comparing envelopes (canonical, matches backend sort_keys)", () => {
@@ -317,7 +317,7 @@ describe("useReviewerSummary", () => {
         }),
       ),
     );
-    expect(result.current.divergentCoords.has("i1::f1")).toBe(false);
+    expect(result.current.divergentCoords.has("i1_f1")).toBe(false);
   });
 
   it("treats reject as not equal to a positive value but equal to another reject", () => {
@@ -357,8 +357,8 @@ describe("useReviewerSummary", () => {
         }),
       ),
     );
-    expect(result.current.divergentCoords.has("i1::f1")).toBe(true);
-    expect(result.current.divergentCoords.has("i1::f2")).toBe(false);
+    expect(result.current.divergentCoords.has("i1_f1")).toBe(true);
+    expect(result.current.divergentCoords.has("i1_f2")).toBe(false);
   });
 
   it("includes reject coords in touched but not in filled", () => {
@@ -384,9 +384,9 @@ describe("useReviewerSummary", () => {
         }),
       ),
     );
-    expect(result.current.touchedCoords.has("i1::f1")).toBe(true);
-    expect(result.current.filledCoords.has("i1::f1")).toBe(false);
-    expect(result.current.touchedCoords.has("i1::f2")).toBe(true);
-    expect(result.current.filledCoords.has("i1::f2")).toBe(true);
+    expect(result.current.touchedCoords.has("i1_f1")).toBe(true);
+    expect(result.current.filledCoords.has("i1_f1")).toBe(false);
+    expect(result.current.touchedCoords.has("i1_f2")).toBe(true);
+    expect(result.current.filledCoords.has("i1_f2")).toBe(true);
   });
 });

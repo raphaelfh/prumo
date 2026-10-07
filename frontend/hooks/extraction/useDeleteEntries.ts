@@ -29,6 +29,7 @@ import {toast} from 'sonner';
 import {deleteEntries} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
+import {parseCoordKey} from '@/lib/runs/coord';
 
 export interface UseDeleteEntriesArgs {
   projectId: string | undefined;
@@ -36,7 +37,7 @@ export interface UseDeleteEntriesArgs {
   templateId: string | undefined;
   /** Re-derives the instances after a delete (the run view refetch). */
   onDeleted: () => Promise<unknown>;
-  /** Reviewer values, keyed `${instanceId}_${fieldId}` — the single delete
+  /** Reviewer values, keyed by `coordKey` — the single delete
    * asks for confirmation only when the entry actually holds some. */
   values: Record<string, unknown>;
   /**
@@ -85,7 +86,7 @@ export function useDeleteEntries(args: UseDeleteEntriesArgs): DeleteEntriesActio
   };
 
   const deleteOne = async (instanceId: string): Promise<void> => {
-    const holdsAnswers = Object.keys(values).some((key) => key.startsWith(`${instanceId}_`));
+    const holdsAnswers = Object.keys(values).some((key) => parseCoordKey(key).instanceId === instanceId);
     if (holdsAnswers && !window.confirm(t('pages', 'extractionScreenConfirmRemoveInstance'))) {
       return;
     }

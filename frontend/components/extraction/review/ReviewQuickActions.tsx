@@ -7,12 +7,13 @@ import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 import type {AISuggestion} from '@/types/ai-extraction';
 import type {ReviewWorkspace} from './ExtractionReviewTable';
+import {coordKey} from '@/lib/runs/coord';
 
 export function ReviewQuickActions({review, rows, suggestions, guideOpen, onToggleGuide}: {review: ReviewWorkspace; rows: ReviewQuestion[]; suggestions: Record<string, AISuggestion>; guideOpen: boolean; onToggleGuide: () => void}) {
   const {navigation: nav, decisions} = review;
   const current = nav.current;
   const active = current && sameReviewCoordinate(review.activeProposal, current) && sameReviewCoordinate(nav.open, current) ? review.activeProposal?.proposal : undefined;
-  const proposal = active ?? (current ? suggestions[`${current.instanceId}_${current.fieldId}`] : undefined);
+  const proposal = active ?? (current ? suggestions[coordKey(current.instanceId, current.fieldId)] : undefined);
   const blocked = decisions.saving || decisions.conflicted;
   const undo = () => {if (decisions.canUndo && !blocked) void decisions.undoLatestLocalDecision();};
   const redo = () => {if (decisions.canRedo && !blocked) void decisions.redoLatestLocalDecision();};
