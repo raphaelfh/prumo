@@ -32,7 +32,7 @@ def build_model(
 ) -> Model:
     if not model_name or not model_name.strip():
         raise ValueError("model_name must be a non-empty string.")
-    provider = (provider or "openai").lower()
+    provider = provider.lower()
     spec = get_provider(provider)
     if spec is None or spec.build is None or spec.output_mode is None:
         raise ValueError(f"Unsupported LLM provider: {provider!r}")

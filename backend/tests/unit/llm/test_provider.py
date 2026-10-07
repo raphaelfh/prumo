@@ -137,9 +137,11 @@ def test_host_name_never_decides_the_output_mode(model_name: str, base_url: str)
 # --- guards -------------------------------------------------------------------
 
 
-def test_unknown_provider_raises() -> None:
+@pytest.mark.parametrize("provider", ["grok", ""])
+def test_unknown_provider_raises(provider: str) -> None:
+    # A blank provider is unknown too: no fallback names a default provider.
     with pytest.raises(ValueError, match="Unsupported LLM provider"):
-        build_model("grok", "grok-2", api_key="x")
+        build_model(provider, "grok-2", api_key="x")
 
 
 def test_rejects_blank_model_name() -> None:
