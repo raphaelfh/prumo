@@ -42,13 +42,25 @@ async def test_mark_parse_failed_persists_in_its_own_transaction(
     db_session_real: AsyncSession,
 ) -> None:
     file_id = await _seed_pending_file(db_session_real)
+    try:
+        await _mark_parse_failed(str(file_id), "boom: parser exploded")
 
-    await _mark_parse_failed(str(file_id), "boom: parser exploded")
-
-    # Read back via a brand-new session to prove the write was committed.
-    async with worker_session() as verify:
-        row = (
-            await verify.execute(select(ArticleFile).where(ArticleFile.id == file_id))
-        ).scalar_one()
-        assert row.extraction_status == "parse_failed"
-        assert "boom" in (row.extraction_error or "")
+        # Read back via a brand-new session to prove the write was committed.
+        async with worker_session() as verify:
+            row = (
+                await verify.execute(select(ArticleFile).where(ArticleFile.id == file_id))
+            ).scalar_one()
+            assert row.extraction_status == "parse_failed"
+            assert "boom" in (row.extraction_error or "")
+    finally:
+        # db_session_real commits for real: a leaked article shifts every
+        # later page-composition assertion over the seeded project.
+        await db_session_real.rollback()
+        await db_session_real.execute(
+            text(
+                "DELETE FROM public.articles WHERE id = "
+                "(SELECT article_id FROM public.article_files WHERE id = :fid)"
+            ),
+            {"fid": str(file_id)},
+        )
+        await db_session_real.commit()
