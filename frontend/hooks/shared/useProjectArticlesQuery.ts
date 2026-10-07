@@ -58,13 +58,15 @@ const EMPTY_WORKLIST: WorklistItem[] = [];
  * navigation garnish, and losing it must not disturb finishing a form — the
  * caller falls back to its end-of-queue destination and the header pager
  * (which self-guards below two articles) renders nothing. The error and the
- * loading flag are still exposed for a screen whose bootstrap reads the list.
+ * loading flag are still exposed for a screen whose bootstrap reads the list;
+ * `error` means "no list": a failed background refetch keeps the rows already
+ * loaded and reports none.
  */
 export function useProjectWorklist(projectId: string | undefined) {
   const query = useProjectArticlesQuery(projectId ?? '', {select: TO_WORKLIST});
   return {
     worklist: query.data ?? EMPTY_WORKLIST,
     isLoading: query.isLoading,
-    error: query.error,
+    error: query.data === undefined ? query.error : null,
   };
 }

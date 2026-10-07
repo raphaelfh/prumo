@@ -123,4 +123,24 @@ describe('useProjectWorklist', () => {
     expect(result.current.worklist).toEqual([]);
     expect(fetchProjectArticles).not.toHaveBeenCalled();
   });
+
+  // A screen whose bootstrap reads the list treats `error` as "no list": a
+  // failed background refetch keeps the rows it already has and is no error.
+  it('keeps the list and reports no error when a refetch fails', async () => {
+    fetchProjectArticles.mockResolvedValue({ok: true, data: [{id: 'a1', title: 'First'}]});
+    const {wrapper} = setup();
+    const {result} = renderHook(
+      () => ({worklist: useProjectWorklist('p1'), query: useProjectArticlesQuery('p1')}),
+      {wrapper},
+    );
+    await waitFor(() => expect(result.current.worklist.worklist).toHaveLength(1));
+
+    fetchProjectArticles.mockResolvedValue({ok: false, error: {message: 'boom'}});
+    await result.current.query.refetch();
+    // Precondition: the refetch really failed.
+    await waitFor(() => expect(result.current.query.isError).toBe(true));
+
+    expect(result.current.worklist.error).toBeNull();
+    expect(result.current.worklist.worklist).toEqual([{id: 'a1', title: 'First'}]);
+  });
 });

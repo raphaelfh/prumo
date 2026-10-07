@@ -176,6 +176,7 @@ function mockApi(templates: unknown[]) {
     }
     if (url === "/api/v1/runs/run-1/view") return RUN_VIEW;
     if (url.includes("/finalized-run")) return null;
+    if (url.includes("/instance-ids")) return [];
     if (url.includes("/reviewers")) return { reviewers: [] };
     if (url.includes("/suggestions")) return { suggestions: [], count: 0 };
     if (url.includes("/files") || url.includes("/text-blocks")) return [];
@@ -192,7 +193,7 @@ function renderPage(path = "/projects/p1/extraction/a1") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <LocationProbe />
@@ -209,6 +210,7 @@ function renderPage(path = "/projects/p1/extraction/a1") {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...view, queryClient };
 }
 
 /** The bodies of every session open so far — the seam the template pick is read through. */
@@ -280,5 +282,31 @@ describe("ExtractionFullScreen — bootstrap through the API", () => {
     expect(toast.error).toHaveBeenCalledWith(common.errors_templateNotFound);
     // Nothing to open a session with.
     expect(sessionOpens()).toEqual([]);
+  });
+
+  // The bootstrap reads are TanStack queries now, so they refetch in the
+  // background (focus, staleness). A refetch that fails keeps the rows the
+  // screen opened with: it must not read as a failed bootstrap and throw the
+  // reviewer out of a form mid-edit.
+  it("keeps the open form when a background refetch of the templates fails", async () => {
+    const { queryClient } = renderPage();
+    expect(await screen.findByRole("textbox", { name: "Source of Data" })).toBeInTheDocument();
+
+    const served = vi.mocked(apiClient).getMockImplementation()!;
+    vi.mocked(apiClient).mockImplementation(async (url: string, ...rest) => {
+      if (url === TEMPLATES_URL) throw new Error("network down");
+      return served(url, ...rest);
+    });
+    await queryClient.refetchQueries({ type: "active" });
+    // Precondition: the refetch really failed.
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryCache().findAll({ predicate: (q) => q.state.status === "error" }).length,
+      ).toBeGreaterThan(0),
+    );
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByTestId("probe-location")).toHaveTextContent("/projects/p1/extraction/a1");
+    expect(screen.getByRole("textbox", { name: "Source of Data" })).toBeInTheDocument();
   });
 });

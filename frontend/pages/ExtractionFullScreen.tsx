@@ -129,7 +129,11 @@ export default function ExtractionFullScreen() {
   const loading = templatesQuery.isLoading || worklistLoading;
   // A failed read, or a project with no active extraction template, surfaces
   // one toast and bounces to the project's extraction tab (effect below).
-  const bootstrapError = templatesQuery.error ?? worklistError;
+  // Only a read that left NO rows counts: both queries refetch in the
+  // background, and a failed refetch keeps the rows the form opened with —
+  // it must not throw the reviewer out mid-edit.
+  const templatesError = templatesQuery.data === undefined ? templatesQuery.error : null;
+  const bootstrapError = templatesError ?? worklistError;
   const dataError = bootstrapError
     ? bootstrapError.message || t('extraction', 'errors_loadExtractionData')
     : templatesQuery.isSuccess && !template
