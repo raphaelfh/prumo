@@ -232,21 +232,3 @@ export function isSuggestionAccepted(suggestion: AISuggestion): boolean {
 export function isSuggestionPending(suggestion: AISuggestion): boolean {
   return suggestion.status === 'pending';
 }
-
-/**
- * Filters suggestions by confidence threshold
- *
- * @param suggestions - Record of suggestions
- * @param threshold - Minimum confidence threshold (0-1, default: 0.8)
- * @returns Filtered array of [key, suggestion]
- */
-export function filterSuggestionsByConfidence(
-  suggestions: Record<string, AISuggestion>,
-  threshold: number = 0.8
-): Array<[string, AISuggestion]> {
-  return Object.entries(suggestions).filter(
-    ([, suggestion]) => suggestion.confidence >= threshold
-  );
-}
-
-

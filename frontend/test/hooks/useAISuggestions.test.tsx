@@ -2,15 +2,11 @@
  * Tests for the ``useAISuggestions`` hook.
  *
  * Locks down the contract that:
- *  - Accept / select / reject NEVER write to the backend from the hook —
- *    they only bubble via the ``onSuggestion*`` callbacks (the screens'
- *    autosave persists the value; the old ``acceptStrategy`` service
- *    chain was removed in the 2026-07-05 verify-then-prune).
- *  - Accept / reject flip the local status of the affected suggestion so
- *    the UI can show ✓ / ✕ feedback without a refetch.
- *  - ``batchAccept`` only acts on suggestions above the threshold.
- *  - ``sessionAdoption`` records only real session events (D0) and is
- *    never seeded from server-rehydrated status.
+ *  - Loading is scoped to the run and the caller's instances.
+ *  - Reject NEVER writes to the backend from the hook — it flips the local
+ *    status (✕ feedback without a refetch) and bubbles via
+ *    ``onSuggestionRejected``; accepting is ``useRunValues``' decision.
+ *  - ``suggestionsReady`` reports only a successful load.
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -39,8 +35,6 @@ vi.mock('sonner', () => ({
 vi.mock('@/lib/copy', () => ({
   t: (_ns: string, key: string) => key,
 }));
-
-import { toast } from 'sonner';
 
 import { AISuggestionService } from '@/services/aiSuggestionService';
 import { useAISuggestions } from '@/hooks/extraction/ai/useAISuggestions';
@@ -154,7 +148,7 @@ describe('useAISuggestions — load', () => {
   });
 });
 
-describe('useAISuggestions — accept/reject (bubble-only)', () => {
+describe('useAISuggestions — reject (bubble-only)', () => {
   beforeEach(() => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValue({
       suggestions: {
@@ -167,33 +161,6 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
       },
       count: 2,
     });
-  });
-
-  it('flips local status to "accepted" so the UI can render ✓', async () => {
-    const onAccepted = vi.fn();
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-        onSuggestionAccepted: onAccepted,
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(2),
-    );
-
-    await act(async () => {
-      await result.current.acceptSuggestion('inst-1', 'f-1');
-    });
-
-    expect(
-      result.current.suggestions[coordKey('inst-1', 'f-1')].status,
-    ).toBe('accepted');
-    // Callback fired with the suggestion's value
-    await waitFor(() =>
-      expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 'Y'),
-    );
   });
 
   it('flips local status to "rejected" and fires onSuggestionRejected', async () => {
@@ -222,233 +189,6 @@ describe('useAISuggestions — accept/reject (bubble-only)', () => {
     );
   });
 
-  it('batchAccept honours the confidence threshold', async () => {
-    const onAccepted = vi.fn();
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-        onSuggestionAccepted: onAccepted,
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(2),
-    );
-
-    await act(async () => {
-      await result.current.batchAccept(0.8);
-    });
-
-    // Only the 0.95-confidence suggestion is above 0.8.
-    await waitFor(() => expect(onAccepted).toHaveBeenCalledTimes(1));
-    expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 'Y');
-  });
-
-  it('batchAccept never accepts an abstention, even above the confidence threshold', async () => {
-    // ADR-0016 decision #3: an AI abstention ("no information") must not be
-    // silently swept into a bulk accept-all — a reviewer accepts it deliberately.
-    // Even with an (artificially) high confidence, the marker is excluded from the
-    // batch; only the real proposal is accepted. On the pre-fix code BOTH would be.
-    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: {
-        [coordKey('inst-1', 'f-real')]: makeSuggestion('inst-1', 'f-real', {
-          confidence: 0.95,
-          value: 'Y',
-        }),
-        [coordKey('inst-1', 'f-abstain')]: makeSuggestion('inst-1', 'f-abstain', {
-          confidence: 0.95,
-          value: { value: null, absent_reason: 'no_information' },
-        }),
-      },
-      count: 2,
-    });
-    const onAccepted = vi.fn();
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-        onSuggestionAccepted: onAccepted,
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(2),
-    );
-
-    await act(async () => {
-      await result.current.batchAccept(0.8);
-    });
-
-    await waitFor(() => expect(onAccepted).toHaveBeenCalledTimes(1));
-    expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-real', 'Y');
-  });
-
-  it('batchAccept never accepts a MARKERLESS abstention either (bare null)', async () => {
-    // Migration 0062 makes this the routine abstention shape, and an
-    // `ambiguous` proposal keeps a real, possibly high confidence — so the
-    // threshold alone would sweep it in. Accepting it is a deliberate,
-    // one-at-a-time act of recording a non-answer.
-    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: {
-        [coordKey('inst-1', 'f-real')]: makeSuggestion('inst-1', 'f-real', {
-          confidence: 0.95,
-          value: 'Y',
-        }),
-        [coordKey('inst-1', 'f-null')]: makeSuggestion('inst-1', 'f-null', {
-          confidence: 0.95,
-          value: null,
-        }),
-      },
-      count: 2,
-    });
-    const onAccepted = vi.fn();
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-        onSuggestionAccepted: onAccepted,
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(2),
-    );
-
-    await act(async () => {
-      await result.current.batchAccept(0.8);
-    });
-
-    await waitFor(() => expect(onAccepted).toHaveBeenCalledTimes(1));
-    expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-real', 'Y');
-  });
-
-  it('batchAccept still accepts a genuine empty-string extraction', async () => {
-    // The counterpart guard: '' is a value, so excluding null must not also
-    // exclude it.
-    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: {
-        [coordKey('inst-1', 'f-empty')]: makeSuggestion('inst-1', 'f-empty', {
-          confidence: 0.95,
-          value: '',
-        }),
-      },
-      count: 1,
-    });
-    const onAccepted = vi.fn();
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-        onSuggestionAccepted: onAccepted,
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
-    );
-
-    await act(async () => {
-      await result.current.batchAccept(0.8);
-    });
-
-    await waitFor(() => expect(onAccepted).toHaveBeenCalledTimes(1));
-    expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-empty', '');
-  });
-
-  it('batchAccept fires ONE success toast, not one per item (#160)', async () => {
-    (AISuggestionService.loadSuggestions as any).mockResolvedValue({
-      suggestions: {
-        [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', { confidence: 0.95 }),
-        [coordKey('inst-1', 'f-2')]: makeSuggestion('inst-1', 'f-2', { confidence: 0.92 }),
-        [coordKey('inst-1', 'f-3')]: makeSuggestion('inst-1', 'f-3', { confidence: 0.9 }),
-      },
-      count: 3,
-    });
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-      }),
-    );
-    await waitFor(() => expect(Object.keys(result.current.suggestions)).toHaveLength(3));
-
-    await act(async () => {
-      await result.current.batchAccept(0.8);
-    });
-
-    // The per-item accepts run silently; only the batch summary toasts.
-    expect(toast.success).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('useAISuggestions — selectSuggestion (accept-by-proposal-id)', () => {
-  beforeEach(() => {
-    (AISuggestionService.loadSuggestions as any).mockResolvedValue({
-      suggestions: {
-        [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
-          confidence: 0.5,
-        }),
-      },
-      count: 1,
-    });
-  });
-
-  it('pins the CHOSEN version locally and bubbles its value', async () => {
-    const onAccepted = vi.fn();
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-        runId: 'run-active',
-        onSuggestionAccepted: onAccepted,
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
-    );
-
-    await act(async () => {
-      await result.current.selectSuggestion('inst-1', 'f-1', 'p-older', 5, 0.7);
-    });
-
-    await waitFor(() =>
-      expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', 5),
-    );
-    const updated = result.current.suggestions[coordKey('inst-1', 'f-1')];
-    expect(updated.status).toBe('accepted');
-    // The coord's entry now reflects the CHOSEN version (id + value + its own
-    // confidence), so the review popover highlights the right version across
-    // close+reopen — not the newest one. (Was 'proposal-inst-1-f-1' / 'Y' / 0.5.)
-    expect(updated.id).toBe('p-older');
-    expect(updated.value).toBe(5);
-    expect(updated.confidence).toBe(0.7);
-  });
-
-  it('bubbles a (possibly null) "no information" selection', async () => {
-    const onAccepted = vi.fn();
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-        runId: 'qa-run',
-        onSuggestionAccepted: onAccepted,
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
-    );
-
-    await act(async () => {
-      // Selecting a "no information" version → null value, no confidence.
-      await result.current.selectSuggestion('inst-1', 'f-1', 'p-noinfo', null, 0);
-    });
-
-    await waitFor(() =>
-      expect(onAccepted).toHaveBeenCalledWith('inst-1', 'f-1', null),
-    );
-  });
 });
 
 describe('useAISuggestions — getSuggestionsHistory', () => {
@@ -487,133 +227,7 @@ describe('useAISuggestions — getSuggestionsHistory', () => {
   });
 });
 
-describe('useAISuggestions — session adoption + readiness (D0)', () => {
-  it('fabrication regression: a server-rehydrated "accepted" status produces NO adoption entry', async () => {
-    // The backend marks any non-reject caller decision 'accepted' (including
-    // plain manual edits), so hydrated status must never seed the link map.
-    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: {
-        [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', {
-          status: 'accepted',
-        }),
-      },
-      count: 1,
-    });
-
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-      }),
-    );
-
-    await waitFor(() => expect(result.current.suggestionsReady).toBe(true));
-    expect(result.current.sessionAdoption).toEqual({});
-  });
-
-  it('accept and select set the coord entry to the chosen proposal id', async () => {
-    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: { [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
-      count: 1,
-    });
-
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
-    );
-
-    await act(async () => {
-      await result.current.acceptSuggestion('inst-1', 'f-1');
-    });
-    expect(result.current.sessionAdoption).toEqual({
-      [coordKey('inst-1', 'f-1')]: 'proposal-inst-1-f-1',
-    });
-
-    await act(async () => {
-      await result.current.selectSuggestion('inst-1', 'f-1', 'proposal-older', 'Z', 0.7);
-    });
-    expect(result.current.sessionAdoption).toEqual({
-      [coordKey('inst-1', 'f-1')]: 'proposal-older',
-    });
-  });
-
-  it('reject tombstones the coord entry with null', async () => {
-    (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
-      suggestions: { [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
-      count: 1,
-    });
-
-    const { result } = renderHook(() =>
-      useAISuggestions({
-        articleId: 'art-1',
-        instanceIds: ['inst-1'],
-      }),
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
-    );
-
-    await act(async () => {
-      await result.current.rejectSuggestion('inst-1', 'f-1');
-    });
-    expect(result.current.sessionAdoption).toEqual({
-      [coordKey('inst-1', 'f-1')]: null,
-    });
-  });
-
-  it('drops adoptions from a previous run when runId swaps in place', async () => {
-    (AISuggestionService.loadSuggestions as any).mockResolvedValue({
-      suggestions: { [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },
-      count: 1,
-    });
-
-    const { result, rerender } = renderHook(
-      (props: { runId: string }) =>
-        useAISuggestions({
-          articleId: 'art-1',
-          instanceIds: ['inst-1'],
-          runId: props.runId,
-        }),
-      { initialProps: { runId: 'run-A' } },
-    );
-    await waitFor(() =>
-      expect(Object.keys(result.current.suggestions)).toHaveLength(1),
-    );
-
-    await act(async () => {
-      await result.current.acceptSuggestion('inst-1', 'f-1');
-    });
-    expect(result.current.sessionAdoption).toEqual({
-      [coordKey('inst-1', 'f-1')]: 'proposal-inst-1-f-1',
-    });
-
-    // `POST /runs/{id}/reopen` forks a child run over the same
-    // (article, template) coordinate and both full-screen pages swap runId in
-    // place. Instances carry over verbatim, so the coord key is unchanged —
-    // but the adoption is an event that happened on run-A. Leaking it stamps
-    // run-B's `edit` decisions with a proposal the reviewer never chose there
-    // (the backend accepts a cross-run `proposal_record_id` on an `edit`), so
-    // autosave would fabricate AI provenance in the append-only trail.
-    rerender({ runId: 'run-B' });
-    expect(result.current.sessionAdoption).toEqual({});
-
-    // A reject tombstone leaks the same way, and worse: it would delete
-    // run-B's own persisted link in `deriveAiLinkByKey`.
-    await act(async () => {
-      await result.current.rejectSuggestion('inst-1', 'f-1');
-    });
-    expect(result.current.sessionAdoption).toEqual({
-      [coordKey('inst-1', 'f-1')]: null,
-    });
-    rerender({ runId: 'run-C' });
-    expect(result.current.sessionAdoption).toEqual({});
-  });
-
+describe('useAISuggestions — readiness', () => {
   it('suggestionsReady flips true→false when a refresh fails (red-green: kills the always-false mutant)', async () => {
     (AISuggestionService.loadSuggestions as any).mockResolvedValueOnce({
       suggestions: { [coordKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1') },

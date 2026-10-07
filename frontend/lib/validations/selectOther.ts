@@ -81,7 +81,7 @@ export interface ExtractedValueResult {
   isOther: boolean;
   // ADR-0016: the coded `absent_reason` disposition sibling, carried out of the
   // `{value}` envelope so a resolved "no information" marker round-trips through
-  // writeRunFieldValue instead of being stripped to a bare null. null when the
+  // the run values' decision writer instead of being stripped to a bare null. null when the
   // value is a real value / "other" / bare scalar.
   absentReason: string | null;
 }

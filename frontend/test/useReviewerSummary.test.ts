@@ -256,8 +256,8 @@ describe("useReviewerSummary", () => {
 
   it("production-fidelity: real double-wrapped form shape diverges on unit, agrees when identical", () => {
     // The form stores unit values double-wrapped: useAutoSaveProposals builds
-    // {value, unit}, then writeRunFieldValue wraps again → decision.value =
-    // {value: {value, unit}} (extractionRunService.ts). Confirm decisionsAgree
+    // {value, unit}, then useRunValues' writer wraps again → decision.value =
+    // {value: {value, unit}} (hooks/runs/useRunValues.ts). Confirm decisionsAgree
     // (via divergentCoords) handles that real shape: unit differs → divergence;
     // identical double-wrapped envelope → agreement.
     const { result } = renderHook(() =>

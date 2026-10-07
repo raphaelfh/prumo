@@ -37,7 +37,7 @@ import { acceptedProposal, reversalPayload, reviewerCoordinateHistory } from '@/
 import { currentValuesToValuesMap, publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
 import { toConsensusValueEnvelope, valueAbsentReason } from '@/lib/extraction/valueSemantics';
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
-import { deriveAiLinkByKey, EMPTY_SESSION_ADOPTION } from '@/lib/runs/aiLink';
+import { deriveAiLinkByKey } from '@/lib/runs/aiLink';
 import { coordKey, parseCoordKey, type Coord } from '@/lib/runs/coord';
 import { decisionMatchesVersion, stableStringify } from '@/lib/runs/valueEquality';
 import { appendReviewerDecision, readDecisionAuthority, type WriteProposalParams } from '@/services/extractionRunService';
@@ -167,7 +167,7 @@ export function useRunValues(args: UseRunValuesArgs) {
     const link = acceptedProposalIdFor(instanceId, fieldId);
     if (link) linkByKey[key] = link;
   }
-  const baselineLinkByKey = useMemo(() => deriveAiLinkByKey({decisions, currentUserId, sessionAdoption: EMPTY_SESSION_ADOPTION}), [decisions, currentUserId]);
+  const baselineLinkByKey = useMemo(() => deriveAiLinkByKey({decisions, currentUserId}), [decisions, currentUserId]);
 
   /** The confirmed rows as of now (the ref is written with every confirmation), so async writes never read a stale render. */
   const setRows = (rows: ReviewerDecisionResponse[]) => {

@@ -139,6 +139,36 @@ RETIRED: tuple[Retired, ...] = (
         "borderless density pass PR 1",
         "SettingsRow owns the label/value row, its hint and its aria-describedby",
     ),
+    Retired(
+        "useExtractedValues",
+        "run values module",
+        "useRunValues hydrates both run screens by stage; one invariant, one hook",
+    ),
+    Retired(
+        "useProposalDecision",
+        "run values module",
+        "the accept path, undo/redo and the guarded writer live in useRunValues",
+    ),
+    Retired(
+        "useAiLinkMaps",
+        "run values module",
+        "useRunValues derives the AI link from the caller's own decisions",
+    ),
+    Retired(
+        "sessionAdoption",
+        "run values module",
+        "accepting is a recorded decision; session adoption events no longer stamp links",
+    ),
+    Retired(
+        "writeRunFieldValue",
+        "run values module",
+        "the autosave queue writes through useRunValues' guarded decision writer",
+    ),
+    Retired(
+        "getSuggestionKey",
+        "run values module",
+        "lib/runs/coord.ts coordKey is the one coordinate encoding",
+    ),
 )
 
 # Where a LIVE reference could sit. Everything else — migrations, docs, this

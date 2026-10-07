@@ -205,6 +205,29 @@ describe('the baseline: hydrated values are never re-written', () => {
     expect(requests).toHaveLength(0);
   });
 
+  it('typing waits for the debounce, across re-renders, and is written once', async () => {
+    const view = renderValues(makeRunView({run: {id: 'run'}, current_values: [current('a', 'Y')]}), {debounceMs: 150});
+    act(() => view.result.current.updateValue('i', 'a', 'N'));
+    act(() => view.result.current.updateValue('i', 'b', 'other'));
+    // Re-renders before the debounce elapses must not flush the queue early.
+    view.rerender({currentUserId: 'me', runDetail: makeRunView({run: {id: 'run'}, current_values: [current('a', 'Y')]})});
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 60));});
+    expect(requests).toHaveLength(0);
+    await waitFor(() => expect(requests).toHaveLength(2));
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 200));});
+    expect(requests).toHaveLength(2);
+  });
+
+  it('writes a disposition marker as the flat envelope, and a plain value with no absent_reason key', async () => {
+    const view = renderValues(makeRunView({run: {id: 'run'}}));
+    act(() => view.result.current.updateValue('i', 'a', {value: null, absent_reason: 'no_information'}));
+    act(() => view.result.current.updateValue('i', 'b', 'plain'));
+    await act(async () => {await view.result.current.saveNow();});
+    const byField = Object.fromEntries(requests.map(r => [r.field_id, r]));
+    expect(byField.a).toMatchObject({decision: 'edit', value: {value: null, absent_reason: 'no_information'}});
+    expect(byField.b.value).toEqual({value: 'plain'});
+  });
+
   it('an edit after mount is written by the debounce', async () => {
     const view = renderValues(makeRunView({run: {id: 'run'}, current_values: [current('a', 'Y')]}), {debounceMs: 20});
     act(() => view.result.current.updateValue('i', 'a', 'N'));

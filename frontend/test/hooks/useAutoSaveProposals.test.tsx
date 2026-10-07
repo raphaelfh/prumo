@@ -1,5 +1,5 @@
 /**
- * Tests for the unified ``useAutoSaveProposals`` hook.
+ * Tests for the ``useAutoSaveProposals`` queue (``useRunValues``' autosave).
  *
  * Coverage:
  *   - Diff-aware POSTs (only changed coords)
@@ -31,8 +31,31 @@ vi.mock('@/lib/copy', () => ({
 
 import { apiClient } from '@/integrations/api';
 import { useAutoSaveProposals } from '@/hooks/runs/useAutoSaveProposals';
+import type { WriteProposalParams } from '@/services/extractionRunService';
 
 const apiClientMock = apiClient as unknown as ReturnType<typeof vi.fn>;
+
+/**
+ * The queue's injected writer, as a plain ``edit`` decision POST: the queue is
+ * under test here, not the guarded writer ``useRunValues`` supplies (its own
+ * suite covers that one).
+ */
+const postEdit = async (p: WriteProposalParams): Promise<void> => {
+  await apiClient(`/api/v1/runs/${p.runId}/decisions`, {
+    method: 'POST',
+    keepalive: true,
+    body: {
+      instance_id: p.instanceId,
+      field_id: p.fieldId,
+      decision: 'edit',
+      value: p.absentReason ? { value: p.normalizedValue, absent_reason: p.absentReason } : { value: p.normalizedValue },
+      ...(p.proposalRecordId ? { proposal_record_id: p.proposalRecordId } : {}),
+    },
+  });
+};
+
+/** The queue's props as these tests vary them; the writer is always ``postEdit``. */
+type QueueProps = Omit<Parameters<typeof useAutoSaveProposals>[0], 'writeValue'>;
 
 const DECISION_RESPONSE = {
   id: 'd-1',
@@ -60,6 +83,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
@@ -94,6 +118,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
+          writeValue: postEdit,
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -136,6 +161,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
+          writeValue: postEdit,
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -168,6 +194,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
   it('is a no-op when runId is missing', async () => {
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: null,
         stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
@@ -186,6 +213,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: {
@@ -219,6 +247,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
   it('saveNow is a no-op when enabled=false (#51)', async () => {
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
@@ -246,6 +275,7 @@ describe('useAutoSaveProposals — one shared write path (D8)', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'reviewer-typed' },
@@ -277,6 +307,7 @@ describe('useAutoSaveProposals — one shared write path (D8)', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'x' },
@@ -298,6 +329,7 @@ describe('useAutoSaveProposals — one shared write path (D8)', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': '' },
@@ -323,6 +355,7 @@ describe('useAutoSaveProposals — one shared write path (D8)', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         values: { 'inst-1_field-1': 'hello' },
       }),
@@ -343,6 +376,7 @@ describe('useAutoSaveProposals — one shared write path (D8)', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
@@ -373,6 +407,7 @@ describe('useAutoSaveProposals — non-writable stages are inert', () => {
 
       const { result } = renderHook(() =>
         useAutoSaveProposals({
+          writeValue: postEdit,
           runId: 'run-1',
           stage,
           values: { 'inst-1_field-1': 'hello' },
@@ -402,6 +437,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'hello' },
@@ -430,6 +466,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
+          writeValue: postEdit,
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -482,6 +519,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
+          writeValue: postEdit,
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -534,6 +572,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_a': '1', 'inst-1_b': '2' },
@@ -553,6 +592,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_a': '1' },
@@ -575,6 +615,7 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'unsaved-edit' },
@@ -600,6 +641,7 @@ describe('useAutoSaveProposals — state machine', () => {
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
+          writeValue: postEdit,
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -628,6 +670,7 @@ describe('useAutoSaveProposals — state machine', () => {
     const { result, rerender } = renderHook(
       ({ values }) =>
         useAutoSaveProposals({
+          writeValue: postEdit,
           runId: 'run-1',
           stage: 'extract',
           values,
@@ -661,6 +704,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     const { unmount } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'mid-typing' },
@@ -683,6 +727,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     const { result, unmount } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'persisted' },
@@ -705,8 +750,8 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { rerender } = renderHook(
-      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
-        useAutoSaveProposals(props),
+      (props: QueueProps) =>
+        useAutoSaveProposals({ ...props, writeValue: postEdit }),
       {
         initialProps: {
           runId: 'run-A',
@@ -743,8 +788,8 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { rerender } = renderHook(
-      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
-        useAutoSaveProposals(props),
+      (props: QueueProps) =>
+        useAutoSaveProposals({ ...props, writeValue: postEdit }),
       {
         initialProps: {
           runId: 'run-A',
@@ -774,8 +819,8 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result, rerender } = renderHook(
-      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
-        useAutoSaveProposals(props),
+      (props: QueueProps) =>
+        useAutoSaveProposals({ ...props, writeValue: postEdit }),
       {
         initialProps: {
           runId: 'run-A',
@@ -829,8 +874,8 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
     apiClientMock.mockResolvedValue(DECISION_RESPONSE);
 
     const { result, rerender } = renderHook(
-      (props: Parameters<typeof useAutoSaveProposals>[0]) =>
-        useAutoSaveProposals(props),
+      (props: QueueProps) =>
+        useAutoSaveProposals({ ...props, writeValue: postEdit }),
       {
         initialProps: {
           runId: 'run-A',
@@ -869,6 +914,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'about-to-leave' },
@@ -892,6 +938,7 @@ describe('useAutoSaveProposals — lifecycle survivability', () => {
 
     renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'tab-switched' },
@@ -917,6 +964,7 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'ai text' },
@@ -949,6 +997,7 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'typed by hand' },
@@ -968,14 +1017,14 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
   it('a link-only adoption on an unchanged value still writes the linked decision', async () => {
     apiClientMock.mockResolvedValue({});
 
-    const baseProps: Parameters<typeof useAutoSaveProposals>[0] = {
+    const baseProps: QueueProps = {
       runId: 'run-1',
       stage: 'extract',
       values: { 'inst-1_field-1': 'same' },
       baselineValues: { 'inst-1_field-1': 'same' },
     };
     const { result, rerender } = renderHook(
-      (props: Parameters<typeof useAutoSaveProposals>[0]) => useAutoSaveProposals(props),
+      (props: QueueProps) => useAutoSaveProposals({ ...props, writeValue: postEdit }),
       { initialProps: baseProps },
     );
 
@@ -1008,6 +1057,7 @@ describe('useAutoSaveProposals — AI link stamping (D0)', () => {
 
     const { result } = renderHook(() =>
       useAutoSaveProposals({
+        writeValue: postEdit,
         runId: 'run-1',
         stage: 'extract',
         values: { 'inst-1_field-1': 'same' },

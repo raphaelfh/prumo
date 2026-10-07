@@ -26,7 +26,7 @@ export function stableStringify(value: unknown): string {
 
 /**
  * A decision's `value` is an envelope (`{value: X}` or
- * `{value: null, absent_reason}` — see writeRunFieldValue), while a history
+ * `{value: null, absent_reason}` — see useRunValues' writer), while a history
  * version's `value` is the raw proposal value (which for an abstention is
  * itself marker-shaped). Wrap the version to envelope shape, then compare.
  */

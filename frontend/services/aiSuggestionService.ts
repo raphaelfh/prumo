@@ -1,7 +1,7 @@
 /**
  * AI suggestions service — reads AI proposals via the typed API client.
- * Read-only: accept/select/reject persistence happens through the screens'
- * autosave (`writeRunFieldValue` with a D0 AI link), not from here — the old
+ * Read-only: accepting is the reviewer's decision (`useRunValues`, carrying
+ * the D0 AI link) and a reject's clear is autosaved there — the old
  * direct accept/reject writers were removed with the dead `acceptStrategy`
  * chain (2026-07-05 verify-then-prune).
  *

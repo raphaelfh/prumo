@@ -1,8 +1,7 @@
 /**
  * Extraction value service — run-reference reads for the extraction
  * surfaces (reopen detection). All decision
- * WRITES live in `extractionRunService.writeRunFieldValue` (the autosave
- * path); the old direct accept/reject/save writers were removed with the
+ * WRITES live in `useRunValues` (the autosave and accept paths); the old direct accept/reject/save writers were removed with the
  * dead `acceptStrategy` chain, and the `unwrapValue` peel went with its
  * last consumer (the QA proposals read path, D8 2026-07-05).
  */
