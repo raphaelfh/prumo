@@ -47,7 +47,6 @@ from app.repositories.extraction_reviewer_decision_repository import (
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
 from app.schemas.extraction_run import (
-    ArticleRunRef,
     ConsensusDecisionResponse,
     ProposalRecordResponse,
     PublishedStateResponse,
@@ -615,66 +614,3 @@ async def find_finalized_run(
 
     run = (await db.execute(stmt)).scalars().first()
     return RunSummaryResponse.model_validate(run) if run is not None else None
-
-
-async def resolve_form_runs(
-    db: AsyncSession,
-    article_ids: list[UUID],
-    *,
-    project_id: UUID,
-    template_id: UUID,
-) -> list[ArticleRunRef]:
-    """Resolve the latest relevant run per article for the extraction form.
-
-    Form-run rule (the article-progress read applies it set-based in SQL):
-    - Per article: latest non-terminal run; else latest finalized run.
-    - Cancelled runs are excluded.
-    - Returns one ArticleRunRef per input article_id (run_id=None when no run).
-
-    Scoped by ``project_id`` (BOLA): the caller's membership is gated on
-    ``project_id``, so runs must be resolved within that project. Without this
-    filter a member of project P could pass ``article_ids`` belonging to a
-    different project Q and read back Q's run ids (confused-deputy IDOR).
-    """
-    if not article_ids:
-        return []
-
-    # Fetch all candidate runs in one query, ordered so that non-terminal
-    # stages sort before finalized (within each article, newest first).
-    stmt = (
-        select(ExtractionRun)
-        .where(
-            ExtractionRun.project_id == project_id,
-            ExtractionRun.article_id.in_(article_ids),
-            ExtractionRun.template_id == template_id,
-            ExtractionRun.kind == "extraction",
-            ExtractionRun.stage.in_(
-                [*ExtractionRunStage.live(), ExtractionRunStage.FINALIZED.value]
-            ),
-        )
-        .order_by(
-            ExtractionRun.article_id,
-            ExtractionRun.created_at.desc(),
-        )
-    )
-    rows = (await db.execute(stmt)).scalars().all()
-
-    # Build a per-article result: prefer non-terminal over finalized, newest first.
-    # The ORDER BY created_at DESC means within each article the newest appears first.
-    best: dict[UUID, ExtractionRun] = {}
-    for row in rows:
-        aid = row.article_id
-        if aid not in best:
-            best[aid] = row
-            continue
-        existing = best[aid]
-        # Prefer non-terminal over finalized
-        existing_active = existing.stage in ExtractionRunStage.live()
-        row_active = row.stage in ExtractionRunStage.live()
-        if row_active and not existing_active:
-            best[aid] = row
-
-    return [
-        ArticleRunRef(article_id=aid, run_id=best[aid].id if aid in best else None)
-        for aid in article_ids
-    ]
