@@ -3,7 +3,7 @@
 (#9) AI extraction must leave the run in EXTRACT so its proposals hydrate in
 the extract-stage form. Auto-advancing to CONSENSUS here would skip
 extract-stage hydration and leave the form empty (the documented ``#bug``).
-Run resolution lives in ``RunLifecycleService.resolve_or_create_extract_run``
+Run resolution lives in ``CurrentRunResolver.resolve_or_create_extract``
 — the extraction package performs NO stage advance, and the shared gate only
 ever targets EXTRACT.
 
@@ -19,7 +19,7 @@ import re
 from importlib import import_module
 
 from app.services import ai_extraction
-from app.services.run_lifecycle_service import RunLifecycleService
+from app.services.current_run import CurrentRunResolver
 
 _TARGET_RE = r"target_stage=ExtractionRunStage\.(\w+)"
 
@@ -51,7 +51,7 @@ def test_the_package_never_advances_stages():
 
 
 def test_extract_gate_only_ever_targets_extract_stage():
-    src = inspect.getsource(RunLifecycleService.resolve_or_create_extract_run)
+    src = inspect.getsource(CurrentRunResolver.resolve_or_create_extract)
     targets = set(re.findall(_TARGET_RE, src))
     assert targets == {"EXTRACT"}, (
         f"the extract gate must only advance to EXTRACT, but found {targets} — "

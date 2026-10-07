@@ -45,10 +45,10 @@ from app.services.ai_extraction._results import (
     SectionExtractionResult,
 )
 from app.services.ai_extraction._sections import extract_into_instances
+from app.services.current_run import CurrentRunResolver
 from app.services.engine_credentials import EngineCredentials
 from app.services.extraction_run_write import open_run_for_write
 from app.services.llm_engine_service import resolve_engine
-from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.run_prompt_context import resolve_run_prompt_context
 
 
@@ -113,7 +113,7 @@ class AiExtraction:
             owns_transactions=owns_transactions,
             llm=llm,
         )
-        self._lifecycle = RunLifecycleService(db)
+        self._current_run = CurrentRunResolver(db)
 
     async def run_from_request(
         self,
@@ -180,10 +180,10 @@ class AiExtraction:
             )
             manage_lifecycle = False
         else:
-            run, manage_lifecycle = await self._lifecycle.resolve_or_create_extract_run(
+            run, manage_lifecycle = await self._current_run.resolve_or_create_extract(
                 project_id=payload.project_id,
                 article_id=payload.article_id,
-                project_template_id=payload.template_id,
+                template_id=payload.template_id,
                 user_id=UUID(self._user_id),
                 parameters={
                     "model": engine.model,

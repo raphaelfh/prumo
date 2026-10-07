@@ -581,7 +581,7 @@ async def reopen_run(
         if is_one_live_run_conflict(e):
             # One-live-run invariant (uq_one_live_extraction_run_per_coord,
             # 0045). reopen_run's idempotency guard only recognises children
-            # of THIS parent, but `resolve_or_create_extract_run` (the
+            # of THIS parent, but `resolve_or_create_extract` (the
             # "Run AI" path) can create an UNPARENTED live run over a
             # finalized coordinate — its lookup filters ExtractionRunStage.live(),
             # so the finalized parent is invisible to it. The fork then

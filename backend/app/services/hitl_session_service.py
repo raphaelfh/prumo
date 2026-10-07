@@ -20,17 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
     ExtractionEntityType,
-    ExtractionRun,
-    ExtractionRunStage,
     ProjectExtractionTemplate,
     TemplateKind,
 )
 from app.services.article_read_service import ArticleNotFoundError, owned_article
+from app.services.current_run import CurrentRunResolver
 from app.services.instance_seeding import ensure_instances
-from app.services.run_lifecycle_service import (
-    RunLifecycleService,
-    last_human_activity_order,
-)
 from app.services.template_clone_service import (
     TemplateCloneService,
     TemplateNotFoundError,
@@ -75,7 +70,6 @@ class HITLSessionService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self._clone = TemplateCloneService(db)
-        self._lifecycle = RunLifecycleService(db)
 
     async def open_or_resume(
         self,
@@ -111,12 +105,12 @@ class HITLSessionService:
             user_id=user_id,
         )
 
-        run, created = await self._reuse_or_create_run(
+        run, created = await CurrentRunResolver(self.db).open_for_session(
             project_id=project_id,
             article_id=article_id,
-            project_template_id=project_template_id,
-            kind=kind,
+            template_id=project_template_id,
             user_id=user_id,
+            parameters={"opened_via": "hitl_session", "kind": kind.value},
         )
 
         return HITLSession(
@@ -209,95 +203,6 @@ class HITLSessionService:
             .order_by(ExtractionEntityType.sort_order)
         )
         return list((await self.db.execute(stmt)).scalars().all())
-
-    async def _reuse_or_create_run(
-        self,
-        *,
-        project_id: UUID,
-        article_id: UUID,
-        project_template_id: UUID,
-        kind: TemplateKind,
-        user_id: UUID,
-    ) -> tuple[ExtractionRun, bool]:
-        """Resolve the run to expose to the UI.
-
-        Lookup order:
-          1. Latest *non-terminal* run for (project, article, template) —
-             still editable, advance pending → extract if needed.
-          2. Latest *finalized* run — read-only; the UI shows it with a
-             "Reopen for revision" button. We do NOT auto-create a new
-             run here because that would silently abandon the previously
-             published values. Reopen is an explicit action with its own
-             endpoint that seeds the new run from the published state.
-          3. No run at all → create a fresh one and advance to EXTRACT.
-
-        Returns ``(run, created)`` where ``created`` is True only when a
-        brand-new Run row was inserted (path 3); both reuse paths return
-        ``False`` so the endpoint can emit 200 instead of 201.
-
-        Concurrency note (issue #70): callers always go through
-        ``open_or_resume`` so the (article, template) advisory lock taken
-        in ``ensure_instances`` is already held for this transaction;
-        the active-run SELECT below cannot race with itself.
-        """
-
-        # Prefer the non-terminal run that HOLDS HUMAN WORK — the one whose most
-        # recent human activity (reviewer decision, consensus decision, or
-        # human proposal) is latest — falling back to the newest by created_at
-        # when no run carries any. Ordering by created_at alone silently
-        # orphans saved work the moment a newer (e.g. AI/model-extraction) run
-        # appears for the same coordinate: the opener would resume the newer
-        # empty run and the earlier run's work would vanish on refresh.
-        # ``last_human_activity_order`` is the shared ranking (also used by the
-        # standalone-extraction gate) — see run_lifecycle_service for the
-        # NULLS-LAST semantics. Under the one-live-run index (0045) at most one
-        # row matches; the ranking is the pre-heal / defense-in-depth ordering.
-        active_stmt = (
-            select(ExtractionRun)
-            .where(
-                ExtractionRun.project_id == project_id,
-                ExtractionRun.article_id == article_id,
-                ExtractionRun.template_id == project_template_id,
-                ExtractionRun.stage.in_(ExtractionRunStage.live()),
-            )
-            .order_by(
-                last_human_activity_order().desc().nulls_last(),
-                ExtractionRun.created_at.desc(),
-            )
-        )
-        run = (await self.db.execute(active_stmt)).scalars().first()
-        created = False
-
-        if run is None:
-            finalized_stmt = (
-                select(ExtractionRun)
-                .where(
-                    ExtractionRun.project_id == project_id,
-                    ExtractionRun.article_id == article_id,
-                    ExtractionRun.template_id == project_template_id,
-                    ExtractionRun.stage == ExtractionRunStage.FINALIZED.value,
-                )
-                .order_by(ExtractionRun.created_at.desc())
-            )
-            run = (await self.db.execute(finalized_stmt)).scalars().first()
-
-        if run is None:
-            run = await self._lifecycle.create_run(
-                project_id=project_id,
-                article_id=article_id,
-                project_template_id=project_template_id,
-                user_id=user_id,
-                parameters={"opened_via": "hitl_session", "kind": kind.value},
-            )
-            created = True
-
-        if run.stage == ExtractionRunStage.PENDING.value:
-            run = await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.EXTRACT,
-                user_id=user_id,
-            )
-        return run, created
 
 
 # Re-export so callers that need to handle the not-found case can do so by

@@ -18,8 +18,8 @@ from app.schemas.run_prompt_context import RunPromptContext
 from app.services.ai_extraction._pipeline import Pipeline
 from app.services.ai_extraction._results import BatchAllSectionsFailed, BatchExtractionResult
 from app.services.ai_extraction._sections import extract_into_instances
+from app.services.current_run import CurrentRunResolver
 from app.services.extraction_run_write import open_run_for_write
-from app.services.run_lifecycle_service import RunLifecycleService
 from app.services.run_prompt_context import resolve_run_prompt_context
 
 #: Summary length a section contributes to the memory of the next ones.
@@ -52,10 +52,10 @@ async def extract_all_sections(
         run = await open_run_for_write(p.db, run_id, expect=ExtractionRunStage.EXTRACT.only())
         manage_lifecycle = False
     else:
-        run, manage_lifecycle = await RunLifecycleService(p.db).resolve_or_create_extract_run(
+        run, manage_lifecycle = await CurrentRunResolver(p.db).resolve_or_create_extract(
             project_id=project_id,
             article_id=article_id,
-            project_template_id=template_id,
+            template_id=template_id,
             user_id=UUID(p.user_id),
             parameters={
                 "model": engine.model,

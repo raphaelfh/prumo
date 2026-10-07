@@ -4,7 +4,8 @@ The one-live-run invariant is a partial unique index
 (``uq_one_live_extraction_run_per_coord``, migration 0045): at most one
 non-terminal run per (project, article, template, kind). Run creators normally
 serialize on the (article, template) advisory lock taken in
-``RunLifecycleService.resolve_or_create_extract_run`` and reuse the live run,
+``CurrentRunResolver`` (``open_for_session`` / ``resolve_or_create_extract``)
+and reuse the live run,
 so the index fires only as a DB-level backstop on a path that skipped the lock.
 
 When it *does* fire it must surface as **409 Conflict** — a run is already live

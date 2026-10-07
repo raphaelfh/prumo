@@ -841,7 +841,7 @@ async def test_session_open_captures_hitl_config_snapshot(
     db_session: AsyncSession,
     home_project_fixture: tuple[UUID, UUID, UUID, UUID, UUID],
 ) -> None:
-    """Covers f_005: every Run created via ``_reuse_or_create_run`` must
+    """Covers f_005: every Run created via ``CurrentRunResolver.open_for_session`` must
     carry a ``hitl_config_snapshot`` populated from ``HitlConfigService``.
     Without this snapshot, replaying old runs would silently inherit the
     project's *current* HITL config — defeating the whole point of pinning

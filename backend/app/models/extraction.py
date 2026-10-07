@@ -103,6 +103,13 @@ class ExtractionRunStage(str, PyEnum):
         return frozenset({cls.PENDING.value, cls.EXTRACT.value, cls.CONSENSUS.value})
 
     @classmethod
+    def resolvable(cls) -> StageSet:
+        """Stages a coordinate's resolved run may be in (live, else finalized;
+        never cancelled): what the HITL session opens and the extraction form
+        shows. Ranked once in ``app.services.current_run``."""
+        return cls.live() | {cls.FINALIZED.value}
+
+    @classmethod
     def editable(cls) -> StageSet:
         """Stages whose template pin a republish may still move: the run has
         not entered consensus."""
@@ -753,7 +760,7 @@ class ExtractionRun(Base, UUIDMixin):
         # (pending/extract/consensus) run per (project, article, template,
         # kind). A second live run silently shadows the first one's reviewer
         # decisions on session open — the run-orphaning data-loss bug. Writers
-        # go through RunLifecycleService.resolve_or_create_extract_run (or the
+        # go through CurrentRunResolver.resolve_or_create_extract (or the
         # session opener), which reuses the live run under the (article,
         # template) advisory lock; this index is the DB-level backstop.
         # ``kind`` is implied by template_id (composite FK below) — included
