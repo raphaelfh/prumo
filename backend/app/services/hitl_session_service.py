@@ -33,10 +33,10 @@ from app.services.run_lifecycle_service import (
     last_human_activity_order,
 )
 from app.services.template_clone_service import (
-    PendingConfigDraftError,
     TemplateCloneService,
     TemplateNotFoundError,
 )
+from app.services.template_versioning import PendingConfigDraftError, clone_template
 
 
 class HITLSessionInputError(Exception):
@@ -171,7 +171,8 @@ class HITLSessionService:
                     "or global_template_id"
                 )
             try:
-                clone = await self._clone.clone(
+                clone = await clone_template(
+                    self.db,
                     project_id=project_id,
                     global_template_id=global_template_id,
                     user_id=user_id,

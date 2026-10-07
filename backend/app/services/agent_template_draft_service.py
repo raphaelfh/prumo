@@ -30,7 +30,9 @@ from app.services.template_field_service import (
     FieldNotFoundError,
 )
 from app.services.template_section_service import SectionNotFoundError, owned_section
-from app.services.template_version_read_service import NoActiveTemplateVersionError
+from app.services.template_versioning import (
+    NoActiveTemplateVersionError,
+)
 
 _OP_ERRORS = (
     SectionNotFoundError,

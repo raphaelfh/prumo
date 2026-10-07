@@ -82,7 +82,7 @@ async def test_skip_flag_does_not_delete_human_settled_field(
 
     # The Configuration UI republishes after every edit; without it the new
     # field would (correctly, B-2) be invisible to the pinned prompt tree.
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     await TemplateVersionService(db_session).republish(
         project_id=project_id,

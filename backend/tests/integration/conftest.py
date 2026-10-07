@@ -536,9 +536,10 @@ async def clean_project_clones(db: AsyncSession, project_id: UUID) -> None:
 async def clone_charms(db: AsyncSession, project_id: UUID, user_id: UUID):
     """Clone the seeded CHARMS global template into ``project_id``."""
     from app.models.extraction import TemplateKind
-    from app.services.template_clone_service import TemplateCloneService
+    from app.services.template_versioning import clone_template
 
-    return await TemplateCloneService(db).clone(
+    return await clone_template(
+        db,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,

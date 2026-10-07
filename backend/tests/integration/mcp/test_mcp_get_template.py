@@ -15,7 +15,7 @@ from sqlalchemy import event, text
 from app.api.mcp.tools import templates as templates_tool
 from app.schemas.mcp_templates import McpTemplateView
 from app.services.extraction_snapshot import live_entity_types
-from app.services.template_version_read_service import (
+from app.services.template_versioning import (
     get_active_version_tree,
     get_template_config_diff,
 )

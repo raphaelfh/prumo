@@ -23,14 +23,12 @@ from app.schemas.hitl_session import (
     TemplatePublishRefusalCode,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_clone_service import (
+from app.services.template_versioning import (
     PendingConfigDraftError,
-    TemplateNotFoundError,
-)
-from app.services.template_version_service import (
     PublishBlockedByMultiEntryError,
     PublishDiffDriftedError,
     PublishMissingAcknowledgementError,
+    TemplateNotFoundError,
 )
 
 
@@ -68,17 +66,9 @@ def _clone_result() -> MagicMock:
     return result
 
 
-def _service_raising(exc: Exception) -> MagicMock:
-    service = MagicMock()
-    service.clone = AsyncMock(side_effect=exc)
-    return service
-
-
 @pytest.mark.asyncio
 async def test_clone_commits_and_wraps(monkeypatch) -> None:
-    service = MagicMock()
-    service.clone = AsyncMock(return_value=_clone_result())
-    monkeypatch.setattr(endpoint_module, "TemplateCloneService", MagicMock(return_value=service))
+    monkeypatch.setattr(endpoint_module, "clone_template", AsyncMock(return_value=_clone_result()))
     db = AsyncMock()
     response = await endpoint_module.clone_template_into_project(
         project_id=uuid.uuid4(),
@@ -97,9 +87,7 @@ async def test_clone_maps_pending_draft_to_409(monkeypatch) -> None:
     """B-4: a pending config draft refuses the re-import with a 409 and
     commits nothing."""
     monkeypatch.setattr(
-        endpoint_module,
-        "TemplateCloneService",
-        MagicMock(return_value=_service_raising(PendingConfigDraftError("pending"))),
+        endpoint_module, "clone_template", AsyncMock(side_effect=PendingConfigDraftError("pending"))
     )
     db = AsyncMock()
     with pytest.raises(HTTPException) as exc:
@@ -117,9 +105,7 @@ async def test_clone_maps_pending_draft_to_409(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_clone_maps_not_found_to_404(monkeypatch) -> None:
     monkeypatch.setattr(
-        endpoint_module,
-        "TemplateCloneService",
-        MagicMock(return_value=_service_raising(TemplateNotFoundError("nope"))),
+        endpoint_module, "clone_template", AsyncMock(side_effect=TemplateNotFoundError("nope"))
     )
     db = AsyncMock()
     with pytest.raises(HTTPException) as exc:
@@ -141,8 +127,8 @@ async def test_clone_maps_publish_blocked_to_409(monkeypatch) -> None:
     refusal instead of a 500."""
     monkeypatch.setattr(
         endpoint_module,
-        "TemplateCloneService",
-        MagicMock(return_value=_service_raising(PublishBlockedByMultiEntryError("blocked"))),
+        "clone_template",
+        AsyncMock(side_effect=PublishBlockedByMultiEntryError("blocked")),
     )
     db = AsyncMock()
     with pytest.raises(HTTPException) as exc:
