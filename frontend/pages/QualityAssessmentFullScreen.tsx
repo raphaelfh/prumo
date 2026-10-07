@@ -11,11 +11,11 @@
  *    Run in `extract`.
  * 2. Render the cloned template tree as domain accordions (entity_types +
  *    fields use the cloned ids, so writes coordinate-cohere with the Run).
- * 3. Each field change autosaves as the reviewer's decision; reloading
- *    rehydrates from the caller-scoped `current_values`.
+ * 3. Values — hydration by stage, autosave, the one accept path — are
+ *    `useRunValues`, the same module extraction uses.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useRef } from "react";
 import { useParams } from "react-router";
 import { Loader2 } from "lucide-react";
 
@@ -35,22 +35,19 @@ import { useQATemplateResolution } from "@/hooks/qa/useQATemplateResolution";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
 import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
 import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
-import { useAutoSaveProposals, useRefetchOnSave } from "@/hooks/runs";
-import { useAiLinkMaps } from "@/hooks/runs/useAiLinkMaps";
+import { useRefetchOnSave } from "@/hooks/runs";
 import { useRunReader } from "@/hooks/runs/useRunReader";
 import {
   useRunLifecycleScreen,
   useRunView,
   useRunWorklist,
 } from "@/hooks/runs/useRunLifecycleScreen";
+import { useRunValues } from "@/hooks/runs/useRunValues";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { countActionableSuggestions } from "@/lib/ai-extraction/suggestionUtils";
 import { t } from "@/lib/copy";
-import {
-  currentValuesToValuesMap,
-  publishedStatesToValuesMap,
-} from "@/lib/extraction/publishedValues";
+import { withReviewDecisionStatus } from "@/lib/extraction/proposalDecisionState";
 import { rationaleGapCoords } from "@/lib/qa/rationaleGaps";
 import { outOfScopeSectionsOnForm } from "@/lib/qa/studyTypeScope";
 import { coordKey } from "@/lib/runs/coord";
@@ -113,126 +110,56 @@ export default function QualityAssessmentFullScreen() {
     "quality_assessment",
   );
 
-  // Local input state for the form. Hydrated from the caller-scoped
-  // ``current_values`` per (instance, field) once the Run detail loads.
-  const [values, setValues] = useState<Record<string, unknown>>({});
+  // What the form shows and how it is written (hydrate by stage, autosave,
+  // the one accept path) — the same module the extraction screen uses.
+  // Viewer writes 403 server-side; the form renders read-only and this gate
+  // keeps the flush paths from firing them.
+  const runValues = useRunValues({
+    runDetail,
+    currentUserId: userId,
+    enabled: permissions.userRole !== "viewer",
+  });
+  const { values, updateValue, saveState, lastSavedAt, saveNow } = runValues;
 
-  // The ONE ``current_values`` map (D8): hydration merges from it below and
-  // autosave receives the same object as ``baselineValues``, so a hydrated
-  // coord is never re-POSTed as a fresh decision on mount — sameness by
-  // construction, not by parallel derivation.
-  const loadedValues = useMemo(
-    () => currentValuesToValuesMap(runDetail?.current_values),
-    [runDetail?.current_values],
-  );
-
-  // Hydrate during render when a new Run detail lands (instead of a
-  // synchronous setState in an effect).
-  const [prevRunDetail, setPrevRunDetail] = useState(runDetail);
-  // The run whose values the form currently holds. The #657/#671 pagers
-  // navigate WITHOUT remounting this page, so hydration must tell "same
-  // run, fresher detail" (merge — local unsaved edits win) from "another
-  // run" (replace — useExtractedValues' hydratedRunIdRef semantics).
-  // Carrying run-A coords into run-B's state made them look dirty against
-  // the new baseline, and autosave POSTed them at the wrong run (spec
-  // 2026-08-22 §7b, Q1). The old run's pending edit is carried by the
-  // autosave hook's run-keyed flush, never by state bleed-through.
-  const [hydratedRunId, setHydratedRunId] = useState<string | null>(null);
-  if (runDetail !== prevRunDetail) {
-    setPrevRunDetail(runDetail);
-    if (runDetail) {
-      const isNewRun = hydratedRunId !== runDetail.run.id;
-      if (isNewRun) setHydratedRunId(runDetail.run.id);
-      if (runDetail.run.stage === "finalized") {
-        // Published truth replaces any local/proposal state (spec
-        // 2026-07-02 D3): the read-only form shows what was published,
-        // never the latest decision stream.
-        setValues(publishedStatesToValuesMap(runDetail.published_states));
-      } else if (isNewRun) {
-        setValues({ ...loadedValues });
-      } else {
-        // D8: hydrate from the caller-scoped ``current_values`` resolution
-        // (own decisions over own human proposals over system seeds) — the
-        // backend's Layer-1 keeps old proposals-only runs hydrating, so no
-        // frontend fallback branch on raw proposals exists.
-        setValues((prev) => {
-          const next: Record<string, unknown> = { ...prev };
-          for (const [k, v] of Object.entries(loadedValues)) {
-            if (!(k in next)) next[k] = v;
-          }
-          return next;
-        });
-      }
-    }
-  }
-
-  // The autosave hook below watches ``values`` and debounces writes;
-  // ``handleValueChange`` only needs to update local state. Lifecycle
-  // handlers in the hook (unmount flush, ``pagehide``, visibility) carry
-  // the write through any navigation that happens mid-debounce.
-  const handleValueChange = (instanceId: string, fieldId: string, value: unknown) => {
-    const k = coordKey(instanceId, fieldId);
-    setValues((prev) => ({ ...prev, [k]: value }));
-  };
-
-  // AI suggestions wiring — kind-agnostic hooks reused from Data
-  // Extraction. ``runId`` scopes the suggestion query so a parallel
-  // extraction run on the same article doesn't leak in. Accept/reject
-  // never write from the hook: the value bubbles to ``handleValueChange``,
-  // and autosave persists it as a per-reviewer ``edit`` decision (D8) —
-  // linked to its AI basis via ``linkByKey`` below. Declared BEFORE
-  // useAutoSaveProposals: autosave consumes the sessionAdoption-derived
-  // link maps.
-  const sessionInstanceIds = Object.values(session?.instancesByEntityType ?? {});
-
+  // AI suggestions over the session's instances. ``runId`` scopes the
+  // suggestion query so a parallel extraction run on the same article doesn't
+  // leak in. A rejected suggestion clears the field; autosave writes the clear.
   const {
-    suggestions: aiSuggestions,
+    suggestions: loadedSuggestions,
     suggestionsReady: aiSuggestionsReady,
-    sessionAdoption,
-    acceptSuggestion: acceptAISuggestion,
-    selectSuggestion: selectAISuggestion,
     rejectSuggestion: rejectAISuggestion,
     getSuggestionsHistory: getAISuggestionsHistory,
     refresh: refreshAISuggestions,
   } = useAISuggestions({
     articleId: articleId ?? "",
     runId: session?.runId,
-    instanceIds: sessionInstanceIds,
+    instanceIds: Object.values(session?.instancesByEntityType ?? {}),
     enabled: !!session,
-    onSuggestionAccepted: (instanceId, fieldId, value) => {
-      handleValueChange(instanceId, fieldId, value);
-    },
-    onSuggestionRejected: (instanceId, fieldId) => {
-      // Clear the field locally — does not need a backend write because
-      // QA hides AI suggestions from the form on reject.
-      handleValueChange(instanceId, fieldId, null);
-    },
+    onSuggestionRejected: runValues.rejectProposal,
   });
-
-  // D0 on QA (D8 parity): coords whose value has a traceable AI basis — see
-  // useAiLinkMaps for the layer semantics and the never-from-status invariant.
-  const { aiLinkByKey, persistedAiLinkByKey } = useAiLinkMaps({
-    decisions: runDetail?.decisions,
-    currentUserId: userId,
-    sessionAdoption,
-  });
-
-  const { saveState, lastSavedAt, saveNow } =
-    useAutoSaveProposals({
-      runId: session?.runId ?? null,
-      stage: runDetail?.run.stage ?? null,
-      values,
-      baselineValues: loadedValues,
-      linkByKey: aiLinkByKey,
-      baselineLinkByKey: persistedAiLinkByKey,
-      enabled:
-        !!session &&
-        !!runDetail &&
-        isRunEditable(runDetail.run.stage) &&
-        // Viewer writes 403 server-side; never fire them (forms render
-        // read-only via forceReadOnly, this is the flush-path belt).
-        permissions.userRole !== "viewer",
+  // While the reviewer can write, their confirmed decisions own which
+  // suggestion is accepted (the server's caller-scoped status cannot express
+  // a reversal) — the same reading extraction's review table makes.
+  const editable = !!runDetail && isRunEditable(runDetail.run.stage) && permissions.userRole !== "viewer";
+  const aiSuggestions = editable
+    ? withReviewDecisionStatus(loadedSuggestions, runValues.isAccepted)
+    : loadedSuggestions;
+  // Accepting a suggestion (latest, or a version picked in the review
+  // popover) is the reviewer's decision, recorded at once.
+  const selectAISuggestion = async (instanceId: string, fieldId: string, id: string, value: unknown) => {
+    const field = domains.flatMap((domain) => domain.fields).find((item) => item.id === fieldId);
+    await runValues.acceptProposal({
+      instanceId,
+      fieldId,
+      id,
+      value,
+      allowsNoInformation: field?.allows_no_information !== false,
     });
+  };
+  const acceptAISuggestion = async (instanceId: string, fieldId: string) => {
+    const proposal = aiSuggestions[coordKey(instanceId, fieldId)];
+    if (proposal) await selectAISuggestion(instanceId, fieldId, proposal.id, proposal.value);
+  };
 
   // The overall-judgment banner is computed SERVER-side from the persisted
   // domain judgments, and autosave deliberately never invalidates
@@ -272,8 +199,6 @@ export default function QualityAssessmentFullScreen() {
     // lib/qa/rationaleGaps.
     requiredCoords: rationaleGapCoords(runDetail?.derived_judgments, session?.instancesByEntityType),
     refetchSession,
-    // The forked revision carries its own seeded values.
-    onRevisionOpened: () => setValues({}),
   });
 
   // Step-2 scope (PROBAST+AI v2): the template's own `scope_rules` name the
@@ -426,7 +351,7 @@ export default function QualityAssessmentFullScreen() {
                         domain={domain}
                         values={valuesForDomain}
                         onValueChange={(fieldId, value) =>
-                          handleValueChange(instanceId, fieldId, value)
+                          updateValue(instanceId, fieldId, value)
                         }
                         projectId={projectId}
                         articleId={articleId}

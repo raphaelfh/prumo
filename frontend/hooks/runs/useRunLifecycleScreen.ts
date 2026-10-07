@@ -137,8 +137,6 @@ export type UseRunLifecycleScreenArgs = KindTerms & {
   refreshReaders?: () => Promise<unknown>;
   /** A finalized run found by a separate lookup — the reopen target when the open run is not it. */
   finalizedRunId?: string | null;
-  /** Runs before the session re-resolves to a forked revision. */
-  onRevisionOpened?: () => void;
   /** Extra affordance on a blocked primary click (the toast is shared). */
   onBlocked?: () => void;
 };
@@ -310,7 +308,6 @@ export function useRunLifecycleScreen(args: UseRunLifecycleScreenArgs) {
           invalidateRun(reopenTargetId),
           invalidateRun((child as { id: string }).id),
         ]);
-        args.onRevisionOpened?.();
         await refetchSession();
         await refreshReaders?.();
         toast.success(spec.reopenSuccess);

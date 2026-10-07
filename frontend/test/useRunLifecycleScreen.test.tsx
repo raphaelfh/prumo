@@ -72,7 +72,6 @@ function renderLifecycle(kind: RunScreenKind, opts: Options = {}) {
     goToNextArticle: vi.fn(),
     refetchSession: vi.fn(async () => undefined),
     refreshReaders: vi.fn(async () => undefined),
-    onRevisionOpened: vi.fn(),
     saveNow: vi.fn(
       opts.saveNow ??
         (async () => {
@@ -275,7 +274,7 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
   });
 
   it("Reopen for revision forks a child of the finalized run and re-resolves the session", async () => {
-    const { result, invalidate, onRevisionOpened, refetchSession } = renderLifecycle(kind, {
+    const { result, invalidate, refetchSession } = renderLifecycle(kind, {
       view: makeRunView({ run: { stage: "finalized" } }),
     });
     expect(result.current.reopen.canReopen).toBe(true);
@@ -284,7 +283,6 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
     expect(posted("reopen")?.[1]).toEqual({ method: "POST" });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1") });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-2") });
-    expect(onRevisionOpened).toHaveBeenCalledOnce();
     expect(refetchSession).toHaveBeenCalledOnce();
     expect(result.current.reopen.reopening).toBe(false);
   });

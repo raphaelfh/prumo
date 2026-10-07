@@ -1,6 +1,9 @@
 /**
- * QualityAssessmentFullScreen — finalized read-only state, extract hydration
- * from current_values (D8), and the header suggestion locate.
+ * QualityAssessmentFullScreen — the assessment form's page-level chrome: the
+ * finalized read-only state, accepting an AI suggestion (the one accept path
+ * both run screens share, through useRunValues) and the header suggestion
+ * locate. What the form SHOWS per stage is useRunValues' contract, tested at
+ * that seam (test/hooks/useRunValues.test.tsx).
  */
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -68,6 +71,7 @@ import { apiClient } from "@/integrations/api";
 
 import {
   BLIND_PERMISSIONS,
+  makeDecision,
   makeQaRunView,
   qaApi,
 } from "./helpers/runScreenFixtures";
@@ -138,14 +142,6 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
     vi.restoreAllMocks();
   });
 
-  it("finalized: form shows published values, not latest proposals", async () => {
-    renderQaPage();
-    const domain = await screen.findByTestId("qa-domain-participants");
-    // Published code renders on the select trigger; the stale proposal does not.
-    await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
-    expect(within(domain).queryByText("PY")).not.toBeInTheDocument();
-  });
-
   it("finalized: shows the published banner with a reopen button, hides edit chrome", async () => {
     renderQaPage();
     expect(await screen.findByTestId("qa-finalized-badge")).toBeInTheDocument();
@@ -165,12 +161,11 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
     expect(trigger).toBeDisabled();
   });
 });
-describe("QualityAssessmentFullScreen — extract hydration from current_values (D8)", () => {
+describe("QualityAssessmentFullScreen — accepting an AI suggestion", () => {
   beforeEach(() => {
     mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
-    // Decision-backed run: proposals stay EMPTY — post-D8 the reviewer's
-    // answers live in decisions, surfaced caller-scoped via current_values.
-    vi.mocked(apiClient).mockImplementation(async (url: string) => {
+    // The reviewer already answered inst-1/f-1 ("N"); the AI proposes "Y".
+    vi.mocked(apiClient).mockImplementation(async (url: string, opts?: { method?: string; body?: unknown }) => {
       if (url === "/api/v1/hitl/sessions") {
         return {
           run_id: "run-1",
@@ -182,31 +177,31 @@ describe("QualityAssessmentFullScreen — extract hydration from current_values 
       if (url === "/api/v1/runs/run-1/view") {
         return makeQaRunView({
           decisions: [
+            makeDecision({ id: "dec-own-1", reviewer_id: "qa-test-reviewer-id", instance_id: "inst-1", field_id: "f-1", value: { value: "N" } }),
+          ],
+          current_values: [{ instance_id: "inst-1", field_id: "f-1", value: { value: "N" }, decision: "edit" }],
+        });
+      }
+      if (url === "/api/v1/runs/run-1/decisions" && opts?.method === "POST") {
+        return makeDecision({ id: "dec-own-2", reviewer_id: "qa-test-reviewer-id", instance_id: "inst-1", field_id: "f-1", value: { value: "Y" }, proposal_record_id: "sug-1", ...(opts.body as object) });
+      }
+      if (url.includes("/suggestions") && !url.includes("history")) {
+        return {
+          suggestions: [
             {
-              id: "dec-own-1",
+              id: "sug-1",
               run_id: "run-1",
               instance_id: "inst-1",
               field_id: "f-1",
-              reviewer_id: "qa-test-reviewer-id",
-              decision: "edit",
-              proposal_record_id: null,
-              value: { value: "Y" },
-              rationale: null,
+              proposed_value: { value: "Y" },
+              confidence_score: 0.9,
+              rationale: "",
               created_at: new Date().toISOString(),
+              evidence: [],
             },
           ],
-          current_values: [
-            {
-              instance_id: "inst-1",
-              field_id: "f-1",
-              value: { value: "Y" },
-              decision: "edit",
-            },
-          ],
-        });
-      }
-      if (url.includes("/suggestions")) {
-        return { suggestions: [], count: 0 };
+          count: 1,
+        };
       }
       if (url.includes("/files") || url.includes("/text-blocks")) {
         return [];
@@ -219,34 +214,29 @@ describe("QualityAssessmentFullScreen — extract hydration from current_values 
     vi.restoreAllMocks();
   });
 
-  it("hydrates from current_values (not proposals) and does not re-post on mount", async () => {
+  it("records the acceptance at once as the reviewer's linked decision, guarded on their current one", async () => {
     renderQaPage();
     const domain = await screen.findByTestId("qa-domain-participants");
-    // The decision-backed value renders even though proposals is empty.
-    await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
-    // The autosave baseline derives from the SAME current_values map, so the
-    // hydrated coord is clean — zero decision writes may fire on mount. The
-    // hook only ever writes through its 600ms debounce, so the assertion must
-    // wait PAST that window or it is vacuous (verified: with baselineValues
-    // deliberately broken the immediate assertion still passed).
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    const decisionPosts = vi
-      .mocked(apiClient)
-      .mock.calls.filter(
-        ([url, opts]) =>
-          typeof url === "string" &&
-          /\/decisions$/.test(url) &&
-          (opts as { method?: string } | undefined)?.method === "POST",
-      );
-    expect(decisionPosts).toHaveLength(0);
+    await userEvent.click(await within(domain).findByRole("button", { name: "Accept suggestion" }));
+    await waitFor(() =>
+      expect(vi.mocked(apiClient)).toHaveBeenCalledWith(
+        "/api/v1/runs/run-1/decisions",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.objectContaining({
+            instance_id: "inst-1",
+            field_id: "f-1",
+            decision: "edit",
+            proposal_record_id: "sug-1",
+            value: { value: "Y" },
+            expected_current_decision_id: "dec-own-1",
+          }),
+        }),
+      ),
+    );
+    // The confirmed decision, not a local status flip, marks the suggestion accepted.
+    expect(await within(domain).findByRole("button", { name: "Suggestion accepted" })).toBeInTheDocument();
   });
-
-  // The ADR-0016 marker-publish double-wrap test that lived here is retired
-  // with the one-shot publish: the frontend no longer wraps form values for
-  // publishing. Markers now travel as reviewer-decision envelopes and the
-  // backend publishes them VERBATIM via approve-finalize
-  // (test_run_lifecycle_service.test_approve_and_finalize_qa_*); the panel
-  // override's wrapping stays covered by the valueSemantics unit tests.
 });
 describe("QualityAssessmentFullScreen — header suggestion locate", () => {
   // Self-contained fixture (the finalized describe's restoreAllMocks wipes
@@ -336,10 +326,3 @@ describe("QualityAssessmentFullScreen — header suggestion locate", () => {
     ).toBeInTheDocument();
   });
 });
-
-/**
- * Where a QA screen sends you when you are done with it (2026-08-22):
- * finishing a form opens the NEXT article in the worklist, and both the back
- * arrow and the end-of-queue fallback land on the project's quality tab —
- * not the Articles tab the bare /projects/:id URL defaults to.
- */
