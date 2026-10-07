@@ -28,19 +28,17 @@ import {
 
 import {useProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
-import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
 import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
-import {useProposalDecision} from '@/hooks/extraction/useProposalDecision';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {useAddEntry} from '@/hooks/extraction/useAddEntry';
 import {useDeleteEntries} from '@/hooks/extraction/useDeleteEntries';
 import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
-import {useAiLinkMaps} from '@/hooks/runs/useAiLinkMaps';
 import {useRunReader} from '@/hooks/runs/useRunReader';
+import {useRunValues} from '@/hooks/runs/useRunValues';
 import {
   useRunLifecycleScreen,
   useRunView,
@@ -144,23 +142,19 @@ export default function ExtractionFullScreen() {
   const stage = (runDetail?.run.stage ?? null) as ExtractionRunStage | null;
   const isFinalized = stage === 'finalized';
 
-  // Extracted values — the read path branches on stage.
-  const {
-    values,
-    loadedValues,
-    updateValue,
-    reconcileValue,
-    loading: valuesLoading,
-    initialized: valuesInitialized,
-    refresh: refreshValues,
-  } = useExtractedValues({
-    runId: activeRunId,
-    stage,
-    currentValues: runDetail?.current_values,
-    publishedStates: runDetail?.published_states,
+  // The comparison access + the viewer write gate.
+  const permissions = useComparisonPermissions(projectId || '', currentUserId, 'extraction');
+
+  // What the form shows and how it is written (hydrate by stage, autosave,
+  // the one accept path, local undo) — the same module the QA screen uses.
+  // Viewer writes 403 server-side; the form renders read-only and this gate
+  // keeps the flush paths from firing them.
+  const runValues = useRunValues({
+    runDetail,
     currentUserId,
-    enabled: !!activeRunId,
+    enabled: permissions.userRole !== 'viewer',
   });
+  const { values, updateValue, saveState, lastSavedAt, saveNow } = runValues;
 
   // The finalized run of this article, when the open run is not it: the
   // reopen target.
@@ -178,15 +172,10 @@ export default function ExtractionFullScreen() {
   const { completedFields, totalFields, completionPercentage, isComplete } =
     useExtractionProgress(values, entityTypes, instances);
 
-  // Comparison access + the viewer write gate.
-  const permissions = useComparisonPermissions(projectId || '', currentUserId, 'extraction');
-
   // AI suggestions over the run's own instances. A rejected suggestion clears
-  // the field: updateValue writes null and autosave persists it (the coord's
-  // AI link severed via the sessionAdoption tombstone).
+  // the field and autosave persists the clear.
   const {
     suggestions: aiSuggestions,
-    sessionAdoption,
     suggestionsReady: aiSuggestionsReady,
     rejectSuggestion,
     getSuggestionsHistory,
@@ -197,39 +186,8 @@ export default function ExtractionFullScreen() {
     instanceIds: instances.map((i) => i.id),
     // Wait for the run view: a lookup before it lands would be superseded at once.
     enabled: !!articleId && !!projectId && !!activeRunId && !!runDetail,
-    onSuggestionRejected: (instanceId, fieldId) => updateValue(instanceId, fieldId, null),
+    onSuggestionRejected: runValues.rejectProposal,
   });
-
-  // D0: coords whose value has a traceable AI basis — see useAiLinkMaps.
-  const { persistedAiLinkByKey } = useAiLinkMaps({
-    decisions: runDetail?.decisions,
-    currentUserId,
-    sessionAdoption,
-  });
-
-  // Reviewer decisions autosave in EXTRACT. Pending edits flush on run
-  // switches and unmount using the outgoing session's authority.
-  const proposalDecisions = useProposalDecision({
-    reviewerId: currentUserId,
-    decisions: runDetail?.decisions,
-    onConfirmed: ({instanceId, fieldId}, value) => reconcileValue(instanceId, fieldId, value),
-    runId: activeRunId,
-    stage,
-    values,
-    // Server-loaded values are the baseline — opening a run must not re-POST them.
-    baselineValues: loadedValues,
-    baselineLinkByKey: persistedAiLinkByKey,
-    // Only the editable EXTRACT stage accepts writes; viewer writes 403
-    // server-side (forms render read-only — this is the flush-path belt).
-    // Bootstrap loading stays out of this gate: the outgoing run-switch flush
-    // must keep its captured writable state while the next run loads.
-    enabled:
-      !!activeRunId &&
-      valuesInitialized &&
-      isRunEditable(stage) &&
-      permissions.userRole !== 'viewer',
-  });
-  const { saveState, lastSavedAt, saveNow } = proposalDecisions;
 
   // The editable review table: an editing reviewer's surface.
   const reviewTable = runDetail?.run.kind === 'extraction' && isRunEditable(stage) && permissions.userRole !== 'viewer';
@@ -249,7 +207,7 @@ export default function ExtractionFullScreen() {
     goToNextArticle: worklist.goToNextArticle,
     requiredCoords: requiredCoordKeys(instances, entityTypes),
     refetchSession: sessionResult.refetch,
-    refreshReaders: () => Promise.all([refreshValues(), refreshFinalizedRun()]),
+    refreshReaders: refreshFinalizedRun,
     finalizedRunId: finalizedRun?.id ?? null,
     // A blocked primary click scrolls the form back to its top.
     onBlocked: () => {
@@ -260,7 +218,7 @@ export default function ExtractionFullScreen() {
 
   const selectSuggestion = async (instanceId: string, fieldId: string, id: string, value: unknown) => {
     const field = entityTypes.flatMap(entity => entity.fields).find(item => item.id === fieldId);
-    await proposalDecisions.toggle({instanceId, fieldId, id, value,
+    await runValues.acceptProposal({instanceId, fieldId, id, value,
       allowsNoInformation: field?.allows_no_information !== false});
   };
   const acceptSuggestion = async (instanceId: string, fieldId: string) => {
@@ -270,7 +228,7 @@ export default function ExtractionFullScreen() {
 
   // Shared actionable count (ADR-0016 Phase 4): unresolved AI proposals awaiting
   // a human decision; in the review table, confirmed decisions resolve them.
-  const pendingSuggestions = reviewTable ? withReviewDecisionStatus(aiSuggestions, proposalDecisions.isAccepted) : aiSuggestions;
+  const pendingSuggestions = reviewTable ? withReviewDecisionStatus(aiSuggestions, runValues.isAccepted) : aiSuggestions;
   const aiPendingCount = countActionableSuggestions(pendingSuggestions);
 
   // After an AI extraction job completes, reload suggestions at once: the job
@@ -427,7 +385,6 @@ export default function ExtractionFullScreen() {
     sessionError: sessionResult.error,
     runError: runIsError,
     runErrorMessage: runErrorObj instanceof Error ? runErrorObj.message : null,
-    valuesLoading,
     entityTypesCount: entityTypes.length,
   });
 
@@ -514,7 +471,7 @@ export default function ExtractionFullScreen() {
       viewMode={lifecycle.compare.active ? 'compare' : 'extract'}
       formViewProps={{
         presentation: reviewTable ? 'review-table' : 'default',
-        reviewDecisions: proposalDecisions,
+        reviewDecisions: runValues,
         reviewProposals: runDetail?.proposals,
         reviewerId: currentUserId,
         instances,

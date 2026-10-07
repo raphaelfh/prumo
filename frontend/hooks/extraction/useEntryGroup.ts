@@ -29,7 +29,6 @@ import {
 import type {
   ExtractionEntityTypeWithFields,
   ExtractionInstance,
-  ExtractionValue,
 } from '@/types/extraction';
 
 export interface UseEntryGroupArgs {
@@ -39,7 +38,7 @@ export interface UseEntryGroupArgs {
   parentInstanceId: string | null;
   /** Every instance of the article, from the run view. */
   instances: ExtractionInstance[];
-  values: Record<string, ExtractionValue>;
+  values: Record<string, unknown>;
   entityTypes: ExtractionEntityTypeWithFields[];
   /**
    * Which entry is active, per `(group, parent)` slot. Held ABOVE the hook

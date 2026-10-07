@@ -51,7 +51,7 @@ export interface ExtractionFormViewProps {
   /** Absent for non-managers — see `handleDeleteEntries`. */
   handleOpenRemoveDialog?: (instanceId: string) => void;
   instances: ExtractionInstance[];
-  values: Record<string, ExtractionValue>;
+  values: Record<string, unknown>;
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
   aiSuggestions: Record<string, AISuggestion>;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;

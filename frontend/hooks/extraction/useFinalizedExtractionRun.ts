@@ -3,13 +3,10 @@
  * (article × project_template).
  *
  * Used purely for the "Reopen for revision" button on the extraction
- * page — when `useExtractedValues` returns `runId: null` (no
- * non-terminal run) but there *was* a previously finalized run, we
- * surface this hook's result so the user can re-open it.
- *
- * Reads/writes go through the existing `runId` from `useExtractedValues`
- * — this hook is read-only and does not interfere with the active-run
- * resolver.
+ * page — when the open session has no run (or the open run is the
+ * finalized one) but there *was* a previously finalized run, we surface
+ * this hook's result so the user can re-open it. Read-only: the form's
+ * reads and writes go through `useRunValues` on the session run.
  */
 
 import { useEffect, useRef, useState } from "react";

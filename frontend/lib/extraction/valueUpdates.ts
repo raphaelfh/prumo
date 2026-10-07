@@ -1,9 +1,8 @@
 /**
  * Tiny event bus for "this extracted value just changed" notifications.
  *
- * Producer: `useExtractedValues.mergeValuesById` calls
- * `dispatchValueUpdates(keys)` when a refresh discovered a new or changed
- * value for an existing field. Each key is a `coordKey`.
+ * Producer: `useRunValues` calls `dispatchValueUpdates(keys)` for the
+ * coordinates a hydration added to the form. Each key is a `coordKey`.
  *
  * Consumer: a small hook (`useJustUpdatedValue`) that extraction inputs use
  * to flip a `data-just-updated` attribute for ~1.5s after the change. The

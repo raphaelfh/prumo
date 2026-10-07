@@ -32,7 +32,7 @@ export function ExtractionReviewRow({instanceId, field, values, onValueChange, a
   const busy = !!review?.decisions.saving || !!review?.decisions.conflicted;
   const isAccepted = (proposal: AISuggestion) => review?.decisions.isAccepted({...coordinate, id: proposal.id, value: proposal.value}) ?? false;
   const acceptedOlder = history.find(item => item.id === acceptedId && item.id !== latest?.id && review?.decisions.isAccepted({...coordinate, id: item.id, value: unwrapProposedValue(item.proposed_value)}));
-  const toggle = (proposal: AISuggestion) => {void review?.decisions.toggle({...coordinate, id: proposal.id, value: proposal.value, allowsNoInformation: field.allows_no_information !== false});};
+  const toggle = (proposal: AISuggestion) => {void review?.decisions.acceptProposal({...coordinate, id: proposal.id, value: proposal.value, allowsNoInformation: field.allows_no_information !== false});};
   const rowRef = useRef<HTMLTableRowElement>(null);
   // The panel always opens directly below this row; what used to move was the
   // row itself, because opening here collapses whichever question was open

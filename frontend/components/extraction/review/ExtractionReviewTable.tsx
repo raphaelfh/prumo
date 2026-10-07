@@ -1,6 +1,6 @@
 import type {RunDetailResponse} from '@/hooks/runs/types';
 import {useEffect, useRef, useState} from 'react';
-import type {useProposalDecision} from '@/hooks/extraction/useProposalDecision';
+import type {RunValues} from '@/hooks/runs/useRunValues';
 import type {useReviewNavigation} from '@/hooks/extraction/useReviewNavigation';
 import type {useResizableTableColumns} from '@/components/shared/list/useResizableTableColumns';
 import {ColumnResizeHandle} from '@/components/shared/list/ColumnResizeHandle';
@@ -13,7 +13,7 @@ import {ExtractionReviewRow} from './ExtractionReviewRow';
 export interface ReviewWorkspace {
   proposals: RunDetailResponse['proposals'];
   navigation: ReturnType<typeof useReviewNavigation>;
-  decisions: Pick<ReturnType<typeof useProposalDecision>, 'isAccepted' | 'acceptedProposalIdFor' | 'toggle' | 'saving' | 'pendingDecision' | 'error' | 'canUndo' | 'undoTarget' | 'undoLatestLocalDecision' | 'canRedo' | 'redoTarget' | 'redoLatestLocalDecision' | 'conflicted' | 'resumeDraftAfterConflict'>;
+  decisions: Pick<RunValues, 'isAccepted' | 'acceptedProposalIdFor' | 'acceptProposal' | 'saving' | 'pendingDecision' | 'error' | 'canUndo' | 'undoTarget' | 'undoLatestLocalDecision' | 'canRedo' | 'redoTarget' | 'redoLatestLocalDecision' | 'conflicted' | 'resumeDraftAfterConflict'>;
   widths: Record<string, number>;
   columns: ReturnType<typeof useResizableTableColumns>;
   activeProposal: {instanceId: string; fieldId: string; proposal: AISuggestion} | null;
