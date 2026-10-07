@@ -2689,6 +2689,33 @@ async def test_build_prompt_input_called_with_correct_kwargs(mock_db, mock_stora
     assert kwargs["storage"] is mock_storage
 
 
+@pytest.mark.asyncio
+async def test_worker_releases_the_run_lock_before_pdf_assembly(mock_db, mock_storage):
+    """The entry gate (``open_run_for_write``) takes the run row FOR UPDATE.
+    A worker-owned session commits before the PDF download / parse, so a
+    reviewer's decision or a stage advance never waits on storage."""
+    order: list[str] = []
+    mock_db.commit = AsyncMock(side_effect=lambda: order.append("commit"))
+
+    async def bpi(**_kwargs: Any) -> tuple[str, PromptInputInfo]:
+        order.append("assemble")
+        return "md", PromptInputInfo(
+            anchor_blocks=[], anchor_file_id=None, file_name=None, truncated=False, est_tokens=1
+        )
+
+    with patch("app.services.section_extraction_service.build_prompt_input", bpi):
+        svc = SectionExtractionService(
+            db=mock_db,
+            user_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            storage=mock_storage,
+            trace_id="trace-lock-release",
+            owns_transactions=True,
+        )
+        await svc._assemble_prompt_text(uuid4(), "gpt-4o-mini")
+
+    assert order == ["commit", "assemble"]
+
+
 class TestLlmExclusion:
     """§3 (spec 2026-08-22): assessor-owned coordinates — every derived-spec
     entry's target/rationale/summary — never reach the model. The filter

@@ -264,7 +264,11 @@ class SectionExtractionService(LoggerMixin):
         )
 
     async def _assemble_prompt_text(self, article_id: UUID, model: str) -> str:
-        """Budgeted block-markdown prompt input; stashes assembly info on self."""
+        """Budgeted block-markdown prompt input; stashes assembly info on self.
+
+        Storage download and parsing are external work: the run row the entry
+        gate locked (``open_run_for_write``) is released first."""
+        await self._before_external_work()
         text, info = await build_prompt_input(
             db=self.db,
             article_files=self._article_files,
