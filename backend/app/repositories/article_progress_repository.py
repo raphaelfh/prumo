@@ -40,13 +40,6 @@ class CallerValueRow:
     id: UUID
 
 
-_LIVE = (
-    ExtractionRunStage.PENDING.value,
-    ExtractionRunStage.EXTRACT.value,
-    ExtractionRunStage.CONSENSUS.value,
-)
-
-
 def _form_runs(*, project_id: UUID, template_id: UUID) -> CTE:
     """Each article's form run with resolve_form_runs semantics: the newest live run, else the newest finalized run,
     never a cancelled one (parity: test_form_run_scoping_agrees_with_resolve_form_runs). Set-based: no id list is bound."""
@@ -55,12 +48,13 @@ def _form_runs(*, project_id: UUID, template_id: UUID) -> CTE:
         select(run.id.label("run_id"))
         .where(run.project_id == project_id, run.template_id == template_id)
         .where(
-            run.kind == "extraction", run.stage.in_([*_LIVE, ExtractionRunStage.FINALIZED.value])
+            run.kind == "extraction",
+            run.stage.in_([*ExtractionRunStage.live(), ExtractionRunStage.FINALIZED.value]),
         )
         .distinct(run.article_id)
         .order_by(
             run.article_id,
-            case((run.stage.in_(_LIVE), 0), else_=1),
+            case((run.stage.in_(ExtractionRunStage.live()), 0), else_=1),
             run.created_at.desc(),
             run.id.desc(),
         )

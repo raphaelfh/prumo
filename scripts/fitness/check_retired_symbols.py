@@ -139,6 +139,48 @@ RETIRED: tuple[Retired, ...] = (
         "borderless density pass PR 1",
         "SettingsRow owns the label/value row, its hint and its aria-describedby",
     ),
+    # One stage/lock oracle for run writes: stage sets are named once, on
+    # ExtractionRunStage; every run-write prologue is open_run_for_write.
+    Retired(
+        "NON_TERMINAL_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.live()",
+    ),
+    Retired(
+        "_ACTIVE_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.live()",
+    ),
+    Retired(
+        "ACTIVE_RUN_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.live()",
+    ),
+    Retired(
+        "_EDITABLE_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.editable()",
+    ),
+    Retired(
+        "_CURRENT_VALUE_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.with_current_values()",
+    ),
+    Retired(
+        "_READY_HINT_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.reviewing()",
+    ),
+    Retired(
+        "CoordinateMismatchError",
+        "run write oracle",
+        "coordinate refusals are RunWriteError(reason='coordinate')",
+    ),
+    Retired(
+        "assert_coords_coherent",
+        "run write oracle",
+        "open_run_for_write(..., instance_id=, field_id=) binds the coordinate under the run lock",
+    ),
 )
 
 # Where a LIVE reference could sit. Everything else — migrations, docs, this
