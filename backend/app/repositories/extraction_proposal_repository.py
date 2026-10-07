@@ -24,24 +24,6 @@ class ExtractionProposalRepository:
         stmt = select(ExtractionProposalRecord).where(ExtractionProposalRecord.id == proposal_id)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def list_by_item(
-        self,
-        run_id: UUID,
-        instance_id: UUID,
-        field_id: UUID,
-    ) -> list[ExtractionProposalRecord]:
-        stmt = (
-            select(ExtractionProposalRecord)
-            .where(
-                ExtractionProposalRecord.run_id == run_id,
-                ExtractionProposalRecord.instance_id == instance_id,
-                ExtractionProposalRecord.field_id == field_id,
-            )
-            .order_by(ExtractionProposalRecord.created_at.asc())
-        )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
-
     async def list_by_run(self, run_id: UUID) -> list[ExtractionProposalRecord]:
         stmt = (
             select(ExtractionProposalRecord)

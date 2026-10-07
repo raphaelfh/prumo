@@ -16,7 +16,7 @@
  *   5. Verify the published value matches what AI proposed.
  *
  * This is the missing piece that was previously only tested via the
- * `section_extraction_service` unit tests; it ensures a stored
+ * backend `ai_extraction` integration tests; it ensures a stored
  * `source='ai'` proposal + its `confidence_score` round-trip through the
  * read API and the decision/consensus chain.
  */

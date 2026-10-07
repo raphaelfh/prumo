@@ -29,14 +29,14 @@ Lock contract (``SELECT … FOR UPDATE``):
   never a stale one. Sessions run ``autoflush=False``: pending changes on
   that object are overwritten, so callers flush their own run edits first
   (the lifecycle does).
-- Never hold it across external work: a worker-owned
-  ``SectionExtractionService`` commits (``_before_external_work``) before PDF
-  assembly and every model call, and ``locked_result_filter`` takes it only
-  for the result transaction.
+- Never hold it across external work: a worker-owned ``AiExtraction``
+  commits (``before_external_work``) before PDF assembly and every model
+  call, and ``ProposalLanding`` takes it only for the result transaction.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Literal
 from uuid import UUID
 
@@ -105,7 +105,9 @@ async def open_run_for_write(
             _stage_message(run, expect), reason="stage", run_id=run_id, stage=run.stage
         )
     if instance_id is not None and field_id is not None:
-        await _assert_coordinate(db, run_id=run_id, instance_id=instance_id, field_id=field_id)
+        await assert_on_coordinate(
+            db, run_id=run_id, instance_id=instance_id, field_ids=(field_id,)
+        )
     return run
 
 
@@ -117,17 +119,23 @@ def _stage_message(run: ExtractionRun, expect: StageSet) -> str:
     return f"Run {run.id} stage is '{run.stage}', not one of {listed}"
 
 
-async def _assert_coordinate(
-    db: AsyncSession, *, run_id: UUID, instance_id: UUID, field_id: UUID
+async def assert_on_coordinate(
+    db: AsyncSession, *, run_id: UUID, instance_id: UUID, field_ids: Collection[UUID]
 ) -> None:
-    """Coherent means the instance belongs to the run's template AND article
+    """Every field in ``field_ids`` sits on the run's coordinate through ``instance_id``.
+
+    Coherent means the instance belongs to the run's template AND article
     (runs and instances are both per-article, so a template-coherent instance
-    from another article is still refused — #79), and the field belongs to
-    the instance's entity type."""
+    from another article is still refused — #79), and each field belongs to
+    the instance's entity type. :func:`open_run_for_write` binds one field;
+    ``ProposalLanding`` binds a section's fields in this one read, under the
+    run lock it already holds.
+    """
+    wanted = set(field_ids)
     result = await db.execute(
         text(
             """
-            SELECT 1
+            SELECT count(DISTINCT f.id)
             FROM public.extraction_runs r
             JOIN public.extraction_instances i
               ON i.id = :instance_id
@@ -136,15 +144,16 @@ async def _assert_coordinate(
             JOIN public.extraction_entity_types et
               ON et.id = i.entity_type_id
             JOIN public.extraction_fields f
-              ON f.id = :field_id AND f.entity_type_id = et.id
+              ON f.id = ANY(:field_ids) AND f.entity_type_id = et.id
             WHERE r.id = :run_id
             """
         ),
-        {"run_id": run_id, "instance_id": instance_id, "field_id": field_id},
+        {"run_id": run_id, "instance_id": instance_id, "field_ids": list(wanted)},
     )
-    if result.scalar() is None:
+    if result.scalar() != len(wanted):
         raise RunWriteError(
-            f"Coordinate mismatch: run={run_id} instance={instance_id} field={field_id}",
+            f"Coordinate mismatch: run={run_id} instance={instance_id} "
+            f"field={', '.join(sorted(str(f) for f in wanted))}",
             reason="coordinate",
             run_id=run_id,
         )

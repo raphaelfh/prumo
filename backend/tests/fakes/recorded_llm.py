@@ -14,12 +14,13 @@ makes from scripted data, keyed by the prompt that asked:
 
 The reply is validated into the caller's ``output_model``, so a script the
 real schema would refuse fails here too. Every call is recorded; ``fail``
-makes the calls of one prompt raise instead.
+makes the calls of one prompt raise instead, and ``during`` runs while a call
+is in flight (another session cancelling the run, revoking a membership...).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -71,7 +72,10 @@ class RecordedLlm:
     verdicts: dict[str, str] = field(default_factory=dict)
     entailment: str = "entailed"
     usage: LlmUsage = field(default_factory=lambda: LlmUsage(prompt_tokens=10, completion_tokens=5))
+    #: Per-prompt usage overriding ``usage`` (e.g. a cheaper verify pass).
+    usages: dict[str, LlmUsage] = field(default_factory=dict)
     fail: dict[str, BaseException] = field(default_factory=dict)
+    during: Callable[[Call], Awaitable[None]] | None = None
     calls: list[Call] = field(default_factory=list)
 
     async def __call__(
@@ -89,9 +93,12 @@ class RecordedLlm:
     ) -> tuple[Any, LlmUsage]:
         call = Call(prompt_name, prompt_version, system_prompt, user_prompt, output_model, model)
         self.calls.append(call)
+        if self.during is not None:
+            await self.during(call)
         if prompt_name in self.fail:
             raise self.fail[prompt_name]
-        return output_model.model_validate(self._reply(call)), self.usage
+        usage = self.usages.get(prompt_name, self.usage)
+        return output_model.model_validate(self._reply(call)), usage
 
     def prompts(self, prompt_name: str) -> list[str]:
         """The user prompts sent under ``prompt_name``, in call order."""

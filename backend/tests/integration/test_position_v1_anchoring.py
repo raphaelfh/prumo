@@ -8,8 +8,8 @@ Three cases:
   2. table_cell quote → HybridCitationAnchor (kind="hybrid", rect present)
   3. unmatched quote / no blocks → position == {} (safe fallback, run continues)
 
-Uses db_session_real because ExtractionEvidence is inserted inside
-_create_suggestions, which calls flush() (not commit()); we commit at
+Uses db_session_real because ExtractionEvidence is inserted by the landing,
+which calls flush() (not commit()); we commit at
 the end of each test body and clean up in finally blocks.
 """
 

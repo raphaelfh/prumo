@@ -46,11 +46,10 @@ from app.models.extraction_workflow import (
 from app.repositories.extraction_reviewer_state_repository import (
     ExtractionReviewerStateRepository,
 )
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 
 async def _reviewer_state(
@@ -230,7 +229,8 @@ async def test_decision_targets_specific_run_even_with_siblings(
         target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
-    proposal = await ExtractionProposalService(db_session).record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=target_run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -315,7 +315,6 @@ async def test_reviewer_state_cannot_point_at_decision_in_other_run(
 
     lifecycle = RunLifecycleService(db_session)
     review_service = ExtractionReviewService(db_session)
-    proposals = ExtractionProposalService(db_session)
 
     # Build two EXTRACT-stage runs, each with one decision on the same coordinate.
     async def _build_extract_run() -> tuple[UUID, UUID]:
@@ -331,7 +330,8 @@ async def test_reviewer_state_cannot_point_at_decision_in_other_run(
             target_stage=ExtractionRunStage.EXTRACT,
             user_id=profile_id,
         )
-        proposal = await proposals.record_proposal(
+        proposal = await land_ai_proposal(
+            db_session,
             run_id=run.id,
             instance_id=instance_id,
             field_id=field_id,

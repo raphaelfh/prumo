@@ -22,6 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
+from app.llm.prompts import entry_identification
 from app.main import app
 from app.services.instance_identity_service import (
     InstanceNotFoundError,
@@ -31,11 +32,11 @@ from tests.integration.conftest import SEED
 from tests.integration.test_entry_group_extraction import (
     _coord,
     _entries,
-    _fake_identification,
+    _extract,
+    _fake,
     _group,
     _instance,
     _run_in_extract,
-    _service,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -116,16 +117,13 @@ async def test_a_foreign_coordinate_is_not_found_not_forbidden(db_session: Async
     assert (await _metadata(db_session, instance_id))["entity_key"] == "apparent"
 
 
-async def test_a_rerun_matches_the_rekeyed_instance(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_rerun_matches_the_rekeyed_instance(db_session: AsyncSession) -> None:
     """The point of re-keying: the next AI pass lands on the row the reviewer
     pointed it at, instead of adding a second entry for the same thing."""
     entity_type_id, _key_id, value_id = await _group(db_session)
     run = await _run_in_extract(db_session)
-    service, _fake = _service(db_session)
-    identification = _fake_identification(monkeypatch, ["apparent"])
-    await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+    fake = _fake(["apparent"])
+    await _extract(db_session, fake, entity_type_id=entity_type_id, run_id=run.id)
     ((instance_id, _key),) = await _entries(db_session, entity_type_id)
 
     await update_instance_identity(
@@ -137,12 +135,14 @@ async def test_a_rerun_matches_the_rekeyed_instance(
         entity_key="internal",
     )
 
-    identification["names"][:] = ["internal"]
-    await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+    fake.entries[:] = ["internal"]
+    await _extract(db_session, fake, entity_type_id=entity_type_id, run_id=run.id)
 
     entries = await _entries(db_session, entity_type_id)
     assert entries == [(instance_id, "internal")], "matched the re-keyed row, no fork"
-    assert "internal" in identification["prompts"][1], "grounding lists the re-keyed identity"
+    assert "internal" in fake.prompts(entry_identification.NAME)[1], (
+        "grounding lists the re-keyed identity"
+    )
     del value_id
 
 

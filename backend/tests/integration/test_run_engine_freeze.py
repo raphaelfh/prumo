@@ -17,15 +17,17 @@ the server writes. ``run.parameters`` is client-writable — a project reviewer
 can hand-write it (the hole #610 closed on the export side) — so it can never
 hold provenance.
 
-Only the LLM seams are faked (``build_model`` / ``extract_structured``); the
-run row, the freeze write and the provenance merge are real Postgres.
+Only the model is faked (``RecordedLlm``) and ``build_model`` — the one
+place the engine and its credentials reach the wire — records what it was
+handed; the run row, the freeze write and the provenance merge are real
+Postgres.
 """
 
 from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -33,14 +35,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.llm import verify
 from app.llm.extractor import LlmUsage
 from app.models.extraction import ExtractionRun
 from app.repositories import ExtractionRunRepository
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.llm_target import LlmTarget
 from app.services import engine_credentials as ec
-from app.services import section_extraction_service as ses
-from app.services import verified_mode as vm
+from app.services.ai_extraction import AiExtraction
+from app.services.ai_extraction import _pipeline as wire
 from app.services.engine_credentials import EngineCredentials
 from app.services.llm_connection_service import KeyScope, ResolvedKey
 from app.services.run_engine_freeze import (
@@ -48,8 +51,10 @@ from app.services.run_engine_freeze import (
     read_pinned_engine,
     resolve_engine_for_run,
 )
+from tests.fakes.recorded_llm import RecordedLlm
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
+from tests.integration.helpers.ai_extraction import seed_article_text
 
 #: Stands in for real key material. It must never reach the run row.
 _SECRET_KEY = "sk-must-never-be-recorded"
@@ -64,7 +69,8 @@ def _service(
     trace_id: str,
     key_scope: KeyScope | None = None,
     repin: bool = True,
-) -> ses.SectionExtractionService:
+    llm: RecordedLlm | None = None,
+) -> AiExtraction:
     """A service built the way the worker builds one — fresh per attempt.
 
     ``repin`` mirrors what the worker derives from ``self.request.retries``:
@@ -72,12 +78,12 @@ def _service(
     every retry. It defaults to True because that is the common path — the
     tests that model a retry say so explicitly.
     """
-    return ses.SectionExtractionService(
-        db=db,
-        user_id=str(SEED.primary_profile),
-        storage=MagicMock(),
-        trace_id=trace_id,
-        llm_credentials=EngineCredentials(
+    return AiExtraction(
+        db,
+        str(SEED.primary_profile),
+        MagicMock(),
+        trace_id,
+        EngineCredentials(
             api_key=_SECRET_KEY,
             key_scope=key_scope,
             base_url=None,
@@ -85,11 +91,37 @@ def _service(
             output_mode=None,
         ),
         repin=repin,
+        llm=llm or _llm(),
+    )
+
+
+#: The canned answer: one field, found with a null value — the real
+#: provenance merge runs without needing evidence anchors or the judge.
+_ANSWER = {
+    "sample_size": {
+        "value": None,
+        "confidence": 0.0,
+        "reasoning": "not reported",
+        "status": "found",
+    }
+}
+
+
+def _llm(*, fields: dict[str, Any] | None = None, verify_ok: bool = True) -> RecordedLlm:
+    """The model: extraction costs 1+1 tokens, a verify pass 3+2 and confirms
+    every proposal — or, with ``verify_ok=False``, fails (the verifier then
+    degrades to fast BY DESIGN, so a verified test must assert it ran)."""
+    return RecordedLlm(
+        fields=fields or _ANSWER,
+        verdicts={"sample_size": "confirmed"},
+        usage=LlmUsage(prompt_tokens=1, completion_tokens=1),
+        usages={verify.NAME: LlmUsage(prompt_tokens=3, completion_tokens=2)},
+        fail={} if verify_ok else {verify.NAME: RuntimeError("verify flaked")},
     )
 
 
 def _stub_llm_seams(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
-    """Fake every outbound LLM seam; return the (provider, model) call log.
+    """Record every model construction; return the (provider, model) log.
 
     ``build_model`` is the single place the engine reaches the wire, so its
     arguments are the ground truth for "which engine actually ran".
@@ -100,60 +132,8 @@ def _stub_llm_seams(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
         calls.append((provider, model_name))
         return MagicMock()
 
-    async def _fake_extract_structured(**_kw: Any) -> tuple[Any, LlmUsage]:
-        return MagicMock(), LlmUsage(prompt_tokens=1, completion_tokens=1)
-
-    monkeypatch.setattr(ses, "build_model", _fake_build_model)
-    monkeypatch.setattr(ses, "extract_structured", _fake_extract_structured)
-    # The canned "LLM answer": one abstaining field, so the real provenance
-    # merge runs without needing evidence anchors or the entailment gate.
-    monkeypatch.setattr(
-        ses,
-        "dump_extraction",
-        lambda _out: {
-            "sample_size": {
-                "value": None,
-                "confidence": 0.0,
-                "reasoning": "not reported",
-                "evidence": [],
-                "status": "found",
-            }
-        },
-    )
-    # Verified-mode seams (glue module): its build_model must not demand a
-    # key, and run_verify_pass must never reach the wire. Unstubbed, the
-    # verifier swallows every exception to None BY DESIGN, so a verified test
-    # would degrade silently and go vacuously green. Default stub confirms
-    # every proposal; tests needing a call log or the failure path re-stub
-    # via _stub_verify_pass.
-    monkeypatch.setattr(vm, "build_model", _fake_build_model)
-    _stub_verify_pass(monkeypatch)
+    monkeypatch.setattr(wire, "build_model", _fake_build_model)
     return calls
-
-
-def _stub_verify_pass(
-    monkeypatch: pytest.MonkeyPatch,
-    outcome: str | None = "confirm-all",
-) -> list[dict[str, Any]]:
-    """Patch the glue's ``run_verify_pass`` seam; return the call log.
-
-    Default: echo-confirm every proposal with a fixed usage (3+2 tokens).
-    ``outcome=None`` simulates the degrade path (the verifier swallowed an
-    exception and returned ``None``).
-    """
-    log: list[dict[str, Any]] = []
-
-    async def _fake_run_verify_pass(**kw: Any) -> tuple[dict[str, str], LlmUsage] | None:
-        log.append(kw)
-        if outcome is None:
-            return None
-        return (
-            {key: "confirmed" for key, _label, _value in kw["proposals"]},
-            LlmUsage(prompt_tokens=3, completion_tokens=2),
-        )
-
-    monkeypatch.setattr(vm, "run_verify_pass", _fake_run_verify_pass)
-    return log
 
 
 async def _proposal_values(db: AsyncSession, run_id: UUID) -> list[dict[str, Any]]:
@@ -184,18 +164,18 @@ async def _extract_once(
     trace_id: str,
     key_scope: KeyScope | None = None,
     repin: bool = True,
-) -> ses.SectionExtractionService:
+    llm: RecordedLlm | None = None,
+) -> RecordedLlm:
     """One worker attempt against ``run``, entered exactly like the Celery task.
 
     ``run_from_request`` is the retried entry point: the payload carries no
     model, so this is where a settings change would leak into attempt 2.
-    Pass ``repin=False`` to model a RETRY (see :func:`_service`).
+    Pass ``repin=False`` to model a RETRY (see :func:`_service`). Returns the
+    model fake it ran on.
     """
-    service = _service(db, trace_id, key_scope, repin=repin)
-    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
-        return_value="ARTICLE BODY"
-    )
-    await service.run_from_request(
+    llm = llm or _llm()
+    await seed_article_text(db, "ARTICLE BODY")
+    await _service(db, trace_id, key_scope, repin=repin, llm=llm).run_from_request(
         SectionExtractionRequest(
             projectId=SEED.primary_project,
             articleId=SEED.primary_article,
@@ -204,7 +184,7 @@ async def _extract_once(
             runId=run.id,
         )
     )
-    return service
+    return llm
 
 
 # ---------------------------------------------------------------------------
@@ -581,7 +561,7 @@ def _stub_keyed_build_model(
         )
         return MagicMock()
 
-    monkeypatch.setattr(ses, "build_model", _fake_build_model)
+    monkeypatch.setattr(wire, "build_model", _fake_build_model)
     return calls
 
 
@@ -606,26 +586,28 @@ def _keyed_service(
     base_url: str | None = None,
     connection_id: str | None = None,
 ) -> Any:
-    """A service built the way the worker builds one AFTER resolving
+    """A service — and the article it reads — built the way the worker builds
+    one AFTER resolving
     credentials for ``key_provider`` (the freshly-resolved project engine).
 
     ``base_url``/``connection_id`` describe a HOST-CONNECTION engine — the identity
     the credentials were resolved FOR, which the rekey compares against the
     adopted pin.
     """
-    return ses.SectionExtractionService(
-        db=db,
-        user_id=str(SEED.primary_profile),
-        storage=MagicMock(),
-        trace_id=trace_id,
-        llm_credentials=EngineCredentials(
+    return AiExtraction(
+        db,
+        str(SEED.primary_profile),
+        MagicMock(),
+        trace_id,
+        EngineCredentials(
             api_key=api_key or f"key-for-{key_provider}",
             key_scope=KeyScope.USER_BYOK,
             base_url=base_url,
             connection_id=connection_id,
             output_mode=None,
         ),
-        key_provider=key_provider,
+        key_provider,
+        llm=_llm(),
     )
 
 
@@ -651,9 +633,7 @@ async def test_standalone_kickoff_rekeys_for_the_adopted_pinned_provider(
     await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-5")
 
     service = _keyed_service(db_session, "f1-standalone-rekey", key_provider="anthropic")
-    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
-        return_value="ARTICLE BODY"
-    )
+    await seed_article_text(db_session, "ARTICLE BODY")
     await service.run_from_request(
         SectionExtractionRequest(
             projectId=SEED.primary_project,
@@ -695,9 +675,7 @@ async def test_pinned_run_kickoff_with_matching_key_provider_never_rekeys(
     await engine_setup.pin_run(db_session, run, "openai", "gpt-4o-mini")
 
     service = _keyed_service(db_session, "f1-no-double-key", key_provider="openai")
-    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
-        return_value="ARTICLE BODY"
-    )
+    await seed_article_text(db_session, "ARTICLE BODY")
     await service.run_from_request(
         SectionExtractionRequest(
             projectId=SEED.primary_project,
@@ -734,9 +712,7 @@ async def test_rekey_with_no_key_for_the_adopted_provider_degrades_to_none(
     await engine_setup.set_project_engine(db_session, "anthropic", "claude-sonnet-5")
 
     service = _keyed_service(db_session, "f1-rekey-none", key_provider="anthropic")
-    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
-        return_value="ARTICLE BODY"
-    )
+    await seed_article_text(db_session, "ARTICLE BODY")
     await service.run_from_request(
         SectionExtractionRequest(
             projectId=SEED.primary_project,
@@ -815,9 +791,7 @@ async def test_adoption_across_two_hosts_carries_the_pinned_hosts_key_and_url(
         base_url="https://8.8.8.8/v1",
         connection_id=str(endpoint_a),
     )
-    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
-        return_value="ARTICLE BODY"
-    )
+    await seed_article_text(db_session, "ARTICLE BODY")
     await service.run_from_request(
         SectionExtractionRequest(
             projectId=SEED.primary_project,
@@ -877,9 +851,7 @@ async def test_catalog_to_host_adoption_populates_the_base_url(
     )
 
     service = _keyed_service(db_session, "b9-catalog-to-endpoint", key_provider="openai")
-    service._assemble_prompt_text = AsyncMock(  # type: ignore[method-assign]
-        return_value="ARTICLE BODY"
-    )
+    await seed_article_text(db_session, "ARTICLE BODY")
     await service.run_from_request(
         SectionExtractionRequest(
             projectId=SEED.primary_project,
@@ -922,15 +894,15 @@ async def test_verified_pin_runs_verify_and_annotates_proposals(
     SECTION snapshot records verified/2, and the verify usage sums into the
     section token totals."""
     _stub_llm_seams(monkeypatch)
-    verify_log = _stub_verify_pass(monkeypatch)
     run = await _run_with_verified_project_engine(db_session)
 
-    await _extract_once(db_session, run, "verified-success")
+    llm = await _extract_once(db_session, run, "verified-success")
+    verify_log = llm.prompts(verify.NAME)
     await db_session.refresh(run)
 
     assert len(verify_log) == 1, "the verifier must run exactly once per section"
     # F6a: the verify prompt grounds in the entity's human LABEL, not the name.
-    assert verify_log[0]["entity_type_label"] == "Participants"
+    assert 'ENTITY: "Participants"' in verify_log[0]
     snapshot = _section_provenance(run, SEED.primary_entity_type)
     assert snapshot["mode_requested"] == "verified"
     assert snapshot["mode_executed"] == "verified"
@@ -953,11 +925,11 @@ async def test_fresh_run_freezes_the_stored_verified_mode(
     the engine dict (exact dict — a request-echo) and the section snapshot
     records the executed verify pass."""
     _stub_llm_seams(monkeypatch)
-    verify_log = _stub_verify_pass(monkeypatch)
     await engine_setup.set_project_engine(db_session, "openai", "gpt-5.6-terra", mode="verified")
     run = await engine_setup.run_in_extract(db_session)
 
-    await _extract_once(db_session, run, "freeze-stored-verified")
+    llm = await _extract_once(db_session, run, "freeze-stored-verified")
+    verify_log = llm.prompts(verify.NAME)
     await db_session.refresh(run)
 
     assert engine_setup.pinned_engine_of(run) == {
@@ -983,10 +955,10 @@ async def test_verified_pin_verify_failure_degrades_to_fast(
     UNANNOTATED and the section snapshot says mode_executed fast, passes 1,
     while mode_requested still records the ask."""
     _stub_llm_seams(monkeypatch)
-    verify_log = _stub_verify_pass(monkeypatch, outcome=None)
     run = await _run_with_verified_project_engine(db_session)
 
-    await _extract_once(db_session, run, "verified-degrade")
+    llm = await _extract_once(db_session, run, "verified-degrade", llm=_llm(verify_ok=False))
+    verify_log = llm.prompts(verify.NAME)
     await db_session.refresh(run)
 
     assert len(verify_log) == 1
@@ -1011,10 +983,10 @@ async def test_fast_run_never_calls_the_verifier(
     """Fast project: the verify seam is NEVER reached (must-not-be-called
     guard) and the section snapshot records fast/1."""
     _stub_llm_seams(monkeypatch)
-    verify_log = _stub_verify_pass(monkeypatch)
     run = await engine_setup.run_in_extract(db_session)
 
-    await _extract_once(db_session, run, "fast-guard")
+    llm = await _extract_once(db_session, run, "fast-guard")
+    verify_log = llm.prompts(verify.NAME)
     await db_session.refresh(run)
 
     assert verify_log == [], f"the verifier ran on a fast project: {verify_log}"
@@ -1034,23 +1006,19 @@ async def test_verified_no_info_proposal_carries_no_verification_key(
     snapshot says verified/1 — ``passes`` counts LLM passes that RAN, and
     "nothing needed verifying" is not a degrade."""
     _stub_llm_seams(monkeypatch)
-    verify_log = _stub_verify_pass(monkeypatch)
-    monkeypatch.setattr(
-        ses,
-        "dump_extraction",
-        lambda _out: {
-            "sample_size": {
-                "value": None,
-                "confidence": None,
-                "reasoning": "not stated",
-                "evidence": [],
-                "status": "not_found",
-            }
-        },
-    )
     run = await _run_with_verified_project_engine(db_session)
 
-    await _extract_once(db_session, run, "verified-no-info")
+    llm = await _extract_once(
+        db_session,
+        run,
+        "verified-no-info",
+        llm=_llm(
+            fields={
+                "sample_size": {"value": None, "reasoning": "not stated", "status": "not_found"}
+            }
+        ),
+    )
+    verify_log = llm.prompts(verify.NAME)
     await db_session.refresh(run)
 
     # Zero found fields -> the verify pass is skipped BEFORE any call.
@@ -1080,7 +1048,6 @@ async def test_verified_qa_run_skips_the_verifier(
     from structlog.testing import capture_logs
 
     _stub_llm_seams(monkeypatch)
-    verify_log = _stub_verify_pass(monkeypatch)
     # Flip the TEMPLATE to the QA kind BEFORE the run exists: create_run
     # derives run.kind from the template, and the composite FK
     # fk_extraction_runs_template_kind_coherence forbids flipping either
@@ -1096,8 +1063,9 @@ async def test_verified_qa_run_skips_the_verifier(
     assert run.kind == "quality_assessment", "the run must derive the QA kind"
 
     with capture_logs() as entries:
-        await _extract_once(db_session, run, "verified-qa-skip")
+        llm = await _extract_once(db_session, run, "verified-qa-skip")
     await db_session.refresh(run)
+    verify_log = llm.prompts(verify.NAME)
 
     assert verify_log == [], f"the verifier ran on a QA run: {verify_log}"
     snapshot = _section_provenance(run, SEED.primary_entity_type)
@@ -1158,30 +1126,19 @@ async def test_each_proposal_keeps_its_own_execution_record(
     snapshot legitimately keeps only the latest — that is its job.
     """
     _stub_llm_seams(monkeypatch)
-    # Attempt 1: the verifier swallows an exception and returns None, so the
-    # run degrades to fast/1 even though verified was requested. Stub BEFORE the
-    # run exists, matching test_verified_pin_verify_failure_degrades_to_fast.
-    _stub_verify_pass(monkeypatch, outcome=None)
+    # Attempt 1: the verifier fails and degrades, so the run executes fast/1
+    # even though verified was requested.
     run = await _run_with_verified_project_engine(db_session)
-    await _extract_once(db_session, run, "degraded-pass")
+    await _extract_once(db_session, run, "degraded-pass", llm=_llm(verify_ok=False))
 
     # Attempt 2: a genuinely different value (so it appends rather than hitting
     # the idempotent early return) and a verify pass that succeeds.
-    monkeypatch.setattr(
-        ses,
-        "dump_extraction",
-        lambda _out: {
-            "sample_size": {
-                "value": 412,
-                "confidence": 0.9,
-                "reasoning": "table 2",
-                "evidence": [],
-                "status": "found",
-            }
-        },
+    await _extract_once(
+        db_session,
+        run,
+        "verified-pass",
+        llm=_llm(fields={"sample_size": {"value": 412, "confidence": 0.9, "reasoning": "table 2"}}),
     )
-    _stub_verify_pass(monkeypatch, outcome="confirm-all")
-    await _extract_once(db_session, run, "verified-pass")
 
     by_value = await _provenance_by_value(db_session, run.id)
     assert len(by_value) == 2, f"expected two appended versions, got: {by_value}"
@@ -1250,16 +1207,14 @@ async def test_replay_that_heals_a_verdict_keeps_the_row_self_consistent(
     """
     _stub_llm_seams(monkeypatch)
     # Attempt 1: verify flakes -> no annotation, execution recorded as fast/1.
-    _stub_verify_pass(monkeypatch, outcome=None)
     run = await _run_with_verified_project_engine(db_session)
-    await _extract_once(db_session, run, "heal-attempt-1")
+    await _extract_once(db_session, run, "heal-attempt-1", llm=_llm(verify_ok=False))
 
     values = await _proposal_values(db_session, run.id)
     assert values and "verification" not in values[0], values
 
     # Attempt 2: SAME value (fixed temperature makes this the normal outcome),
     # but verify succeeds -> the idempotent branch heals the annotation.
-    _stub_verify_pass(monkeypatch, outcome="confirm-all")
     await _extract_once(db_session, run, "heal-attempt-2")
 
     values = await _proposal_values(db_session, run.id)

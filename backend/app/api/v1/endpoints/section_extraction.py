@@ -141,7 +141,7 @@ async def _check_request_scope(
     # ``ExtractionInstance`` against it. That FK is ON DELETE RESTRICT, so
     # the row silently stops the boot-time catalogue replace from
     # converging. Missing and foreign ids answer identically — existence
-    # never leaks. ``section_extraction_service`` re-scopes its own live
+    # never leaks. ``ai_extraction`` re-scopes its own live
     # lookup: this gate spares the caller a job that would die in the worker.
     if payload.entity_type_id is not None:
         try:

@@ -13,9 +13,8 @@ asked: the AI fills the whole instrument, and the layers that decide what a
 value counts for (the QA form, the derived judgments, the export) evaluate the
 template's rules on their own.
 
-Lives outside ``section_extraction_service`` deliberately: that module is at
-its file-size ratchet cap, and construction (which needs the DB) has no reason
-to sit next to consumption (which does not).
+Construction (which needs the DB) lives here; consumption is the model-call
+step of ``app.services.ai_extraction`` and its ``ProposalLanding`` re-read.
 """
 
 from __future__ import annotations

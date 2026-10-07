@@ -9,36 +9,35 @@ article describes, the resolver reuses or creates one instance per entry at
 its ``(article, entity_type, parent_instance)`` coordinate, and the fields
 are extracted once per entry with the prompt scoped to that entry.
 
-Drives the real ``SectionExtractionService`` against the database through
-all three of its paths. The two LLM seams are faked: identification through
-``extract_structured`` in the pipeline module, field extraction through
-``_extract_with_llm`` — whose fake answers from the entry scope it was
-handed, so a value landing on the wrong instance shows up as the wrong
-number rather than passing by coincidence.
+Drives ``AiExtraction.run_from_request`` against the database through all
+three of its paths, with the one model seam faked (``RecordedLlm``):
+identification answers a scripted list, and field extraction answers
+``c_statistic`` from the entry the prompt is scoped to — so a value landing
+on the wrong instance shows up as the wrong number rather than passing by
+coincidence.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.llm.extractor import LlmUsage
-from app.llm.prompts import Ancestor, Scope, render_entry_scope_section
-from app.llm.prompts.entry_identification import EntryIdentificationOutput, IdentifiedEntry
+from app.llm.prompts import entry_identification
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.schemas.extraction import ExtractionErrorCode
-from app.services import entry_group_extraction as pipeline
-from app.services import section_extraction_service as ses
+from app.services.ai_extraction import BatchExtractionResult, SectionExtractionResult
 from app.services.entity_key import MissingEntityKeyError, normalize_key, stamp
 from app.services.extraction_errors import classify_extraction_error
 from app.services.run_lifecycle_service import RunLifecycleService
+from tests.fakes.recorded_llm import Call, RecordedLlm
 from tests.integration.conftest import SEED, first_entity_type_id
+from tests.integration.helpers.ai_extraction import extraction, request, seed_article_text
 from tests.integration.helpers.template_fixtures import add_instance, fresh_charms
 from tests.integration.test_pinned_prompt_structure import _pin_run_to_snapshot
 
@@ -255,72 +254,56 @@ def _pinned_container(entity_type_id: UUID) -> dict:
 
 
 # --------------------------------------------------------------------------
-# The two LLM seams
+# The model seam
 # --------------------------------------------------------------------------
 
-
-class _FakeExtractor:
-    """Stands in for ``_extract_with_llm``: answers ``c_statistic`` from the
-    entry scope it is handed (plus ``offset``, so a re-run can be made to
-    produce a genuinely new value — ``record_proposal`` treats a replayed
-    identical value as a no-op, by design) and records every scope so a
-    test can assert what each call was told."""
-
-    def __init__(self) -> None:
-        self.scopes: list[Scope | None] = []
-        self.offset = 0.0
+_KEY_LINE = re.compile(r'^- Validation type: "(?P<key>[^"]*)"$', re.M)
 
 
-def _service(db: AsyncSession) -> tuple[ses.SectionExtractionService, _FakeExtractor]:
-    """The real service with the article text and the field extraction faked."""
-    service = ses.SectionExtractionService(
-        db=db, user_id=str(SEED.primary_profile), storage=MagicMock(), trace_id="entry-group"
-    )
-    service._assemble_prompt_text = AsyncMock(return_value="ARTICLE")  # type: ignore[method-assign]
-    fake = _FakeExtractor()
+def _fake(names: list[str], offset: float = 0.0) -> RecordedLlm:
+    """Identification answers ``names`` (mutable — a test edits it between
+    runs); field extraction answers each entry's key and its ``c_statistic``
+    from the entry the prompt is scoped to (plus ``offset``, so a re-run can produce a genuinely new
+    value — an identical replay lands no new row, by design). A singleton's
+    prompt names no key: the flat 0.5."""
+    fake = RecordedLlm(entries=names)
 
-    async def fake_extract(**kwargs: Any) -> tuple[dict[str, Any], LlmUsage]:
-        scope: Scope | None = kwargs.get("entry_scope")
-        fake.scopes.append(scope)
-        # A singleton's scope has no key: the flat 0.5. An entry's key still maps
-        # through C_STAT — a mis-scoped entry must stay a wrong number.
+    def answer(call: Call) -> dict[str, dict[str, Any]]:
+        key = _KEY_LINE.search(call.user_prompt)
         value = (
-            round(C_STAT[normalize_key(scope.key_value)] + fake.offset, 2)
-            if scope and scope.key_value
+            round(C_STAT[normalize_key(key["key"])] + getattr(fake, "offset", offset), 2)
+            if key
             else 0.5
         )
-        return (
-            {
-                "c_statistic": {
-                    "value": value,
-                    "confidence": 0.9,
-                    "reasoning": "r",
-                    "evidence": None,
-                    "status": "found",
-                }
-            },
-            LlmUsage(prompt_tokens=10, completion_tokens=5),
+        answer = {"c_statistic": {"value": value, "reasoning": "r"}}
+        if key:
+            answer["validation_type"] = {"value": normalize_key(key["key"])}
+        return answer
+
+    fake.fields = answer
+    return fake
+
+
+def _scopes(fake: RecordedLlm) -> list[str]:
+    """The entry-scope block of every field call, in order."""
+    blocks = []
+    for call in fake.field_calls():
+        lines = call.user_prompt.splitlines()
+        blocks.append(
+            "\n".join(
+                line
+                for line in lines
+                if line.startswith(("This section ", "- Validation type:", "- Within:"))
+            )
         )
-
-    service._extract_with_llm = fake_extract  # type: ignore[method-assign]
-    return service, fake
+    return blocks
 
 
-def _fake_identification(monkeypatch: pytest.MonkeyPatch, names: list[str]) -> dict[str, Any]:
-    """Identification answers ``names`` (mutable — a test edits it between
-    runs) and records each prompt it was sent."""
-    state: dict[str, Any] = {"names": names, "prompts": []}
-
-    async def fake_structured(**kwargs: Any) -> tuple[EntryIdentificationOutput, LlmUsage]:
-        state["prompts"].append(kwargs["user_prompt"])
-        return (
-            EntryIdentificationOutput(entries=[IdentifiedEntry(name=n) for n in state["names"]]),
-            LlmUsage(prompt_tokens=7, completion_tokens=3),
-        )
-
-    monkeypatch.setattr(pipeline, "extract_structured", fake_structured)
-    monkeypatch.setattr(ses, "build_model", lambda *_a, **_k: MagicMock())
-    return state
+async def _extract(
+    db: AsyncSession, fake: RecordedLlm, **kwargs: Any
+) -> SectionExtractionResult | BatchExtractionResult:
+    await seed_article_text(db)
+    return await extraction(db, fake).run_from_request(request(**kwargs))
 
 
 # --------------------------------------------------------------------------
@@ -372,33 +355,33 @@ def _coord(**overrides: Any) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------
-# extract_section — the per-section ✨ button
+# One section — the per-section ✨ button
 # --------------------------------------------------------------------------
+
+IDENTIFY = entry_identification.NAME
 
 
 async def test_repeats_get_their_own_instances_and_a_rerun_matches_them(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     """Spec §8: a select-keyed repeating section fills repeats 2..N on their
     own instances, and a re-run lands on the instances it already created."""
     entity_type_id, _key_id, value_id = await _group(db_session)
     run = await _run_in_extract(db_session)
-    service, fake = _service(db_session)
-    identification = _fake_identification(monkeypatch, ["apparent", "internal"])
+    fake = _fake(["apparent", "internal"])
 
-    result = await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+    result = await _extract(db_session, fake, entity_type_id=entity_type_id, run_id=run.id)
 
     first = await _entries(db_session, entity_type_id)
     assert [key for _, key in first] == ["apparent", "internal"], "one instance per entry"
-    assert result.suggestions_created == 2
+    assert result.suggestions_created == 4, "key + value, per entry"
     # Each entry's value landed on ITS instance: the prompt was scoped per entry.
     assert await _proposed(db_session, first[0][0], value_id) == [C_STAT["apparent"]]
     assert await _proposed(db_session, first[1][0], value_id) == [C_STAT["internal"]]
-    assert [s.key_value for s in fake.scopes if s] == ["apparent", "internal"]
-    assert all(s.key_label == "Validation type" for s in fake.scopes if s)
+    assert [_KEY_LINE.search(b)["key"] for b in _scopes(fake)] == ["apparent", "internal"]
     # Identification was parameterized by THIS group: its label, its key
     # field and the key's choices — not by the model container's wording.
-    first_prompt = identification["prompts"][0]
+    first_prompt = fake.prompts(IDENTIFY)[0]
     assert 'for the section "Numeric performance"' in first_prompt
     assert "return its Validation type" in first_prompt
     assert "must be one of: apparent, internal, external" in first_prompt
@@ -408,9 +391,9 @@ async def test_repeats_get_their_own_instances_and_a_rerun_matches_them(
 
     # Run 2: the model spells two entries differently, finds a third, and
     # reads a slightly different number this time.
-    identification["names"][:] = ["  Internal ", "APPARENT", "external"]
+    fake.entries[:] = ["  Internal ", "APPARENT", "external"]
     fake.offset = 0.01
-    await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+    await _extract(db_session, fake, entity_type_id=entity_type_id, run_id=run.id)
 
     second = await _entries(db_session, entity_type_id)
     assert [key for _, key in second] == ["apparent", "internal", "external"]
@@ -419,13 +402,13 @@ async def test_repeats_get_their_own_instances_and_a_rerun_matches_them(
         [C_STAT["internal"], round(C_STAT["internal"] + 0.01, 2)]
     ), "the re-run appended to the same instance"
     # Grounding: the second identification saw what the article already had.
-    assert "already been identified" in identification["prompts"][1].lower()
-    assert "apparent" in identification["prompts"][1]
-    assert "already been identified" not in identification["prompts"][0].lower()
+    assert "already been identified" in fake.prompts(IDENTIFY)[1].lower()
+    assert "apparent" in fake.prompts(IDENTIFY)[1]
+    assert "already been identified" not in first_prompt.lower()
 
 
 async def test_the_authored_noun_reaches_the_identification_prompt(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     """The pinned group's ``entry_label`` names the entry in the prompt; only
     a NULL noun falls back to ``DEFAULT_ENTRY_LABEL``."""
@@ -443,30 +426,26 @@ async def test_the_authored_noun_reaches_the_identification_prompt(
         },
     )
     await db_session.refresh(run)
-    service, _fake = _service(db_session)
-    identification = _fake_identification(monkeypatch, ["external"])
+    fake = _fake(["external"])
 
-    await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+    await _extract(db_session, fake, entity_type_id=entity_type_id, run_id=run.id)
 
-    assert "identify every validation it describes" in identification["prompts"][0]
-    assert "identify every entry" not in identification["prompts"][0]
+    assert "identify every validation it describes" in fake.prompts(IDENTIFY)[0]
+    assert "identify every entry" not in fake.prompts(IDENTIFY)[0]
 
 
-async def test_nested_group_entries_are_scoped_by_their_parent(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_nested_group_entries_are_scoped_by_their_parent(db_session: AsyncSession) -> None:
     """Two models each own an 'internal' validation: two instances, one per parent."""
     container = await _container(db_session)
     parent_a = await _instance(db_session, container, "XGBoost")
     parent_b = await _instance(db_session, container, "LightGBM")
     child, _key_id, _value_id = await _group(db_session, parent=container)
     run = await _run_in_extract(db_session)
-    service, fake = _service(db_session)
-    identification = _fake_identification(monkeypatch, ["internal"])
+    fake = _fake(["internal"])
 
     for parent in (parent_a, parent_b):
-        await service.extract_section(
-            **_coord(), entity_type_id=child, parent_instance_id=parent, run_id=run.id
+        await _extract(
+            db_session, fake, entity_type_id=child, parent_instance_id=parent, run_id=run.id
         )
 
     under_a = await _entries(db_session, child, parent=parent_a)
@@ -477,25 +456,25 @@ async def test_nested_group_entries_are_scoped_by_their_parent(
     # Identification is scoped to the parent too, not only the grounding
     # list: asked under A, the prompt rules out what the article reports
     # for anything but A — or B's validations would land under A.
-    asked_a, asked_b = identification["prompts"]
+    asked_a, asked_b = fake.prompts(IDENTIFY)
     assert 'belong to model "XGBoost"' in asked_a and "LightGBM" not in asked_a
     assert 'belong to model "LightGBM"' in asked_b and "XGBoost" not in asked_b
     # The per-entry prompt names the parent so the model reads the right block.
-    assert [s.ancestors for s in fake.scopes if s] == [
-        (Ancestor("model", "XGBoost"),),
-        (Ancestor("model", "LightGBM"),),
+    assert [b.splitlines()[-1] for b in _scopes(fake)] == [
+        '- Within: model "XGBoost"',
+        '- Within: model "LightGBM"',
     ]
 
     # Re-running under A matches A's repeat — never B's.
-    await service.extract_section(
-        **_coord(), entity_type_id=child, parent_instance_id=parent_a, run_id=run.id
+    await _extract(
+        db_session, fake, entity_type_id=child, parent_instance_id=parent_a, run_id=run.id
     )
     assert len(await _entries(db_session, child, parent=parent_a)) == 1
     assert len(await _entries(db_session, child, parent=parent_b)) == 1
 
 
 async def test_a_singleton_under_an_entry_is_scoped_to_that_entry(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     """Trees spec §1: 'Model Development' for model B used to be extracted
     from a prompt that never mentioned model B. The singleton's call now
@@ -510,34 +489,32 @@ async def test_a_singleton_under_an_entry_is_scoped_to_that_entry(
         label="Model development",
     )
     run = await _run_in_extract(db_session)
-    service, fake = _service(db_session)
-    identification = _fake_identification(monkeypatch, [])
+    fake = _fake([])
 
-    result = await service.extract_section(
-        **_coord(), entity_type_id=development, parent_instance_id=xgboost, run_id=run.id
+    result = await _extract(
+        db_session, fake, entity_type_id=development, parent_instance_id=xgboost, run_id=run.id
     )
 
-    assert result.suggestions_created == 1
-    (scope,) = fake.scopes
-    assert scope == Scope(entry_label="model", ancestors=(Ancestor("model", "XGBoost"),))
-    assert identification["prompts"] == [], "a singleton is never identified"
+    # c_statistic, plus the unanswered (inert) key as a no-information proposal.
+    assert result.suggestions_created == 2
+    assert _scopes(fake) == [
+        "This section belongs to the model identified below. Extract ONLY the values "
+        "that describe that model; ignore values that describe a different model.\n"
+        '- Within: model "XGBoost"'
+    ]
+    assert fake.prompts(IDENTIFY) == [], "a singleton is never identified"
     (materialized,) = await _entries(db_session, development, parent=xgboost)
     assert await _proposed(db_session, materialized[0], value_id) == [0.5]
 
 
-async def test_a_section_at_depth_three_names_the_whole_chain(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_section_at_depth_three_names_the_whole_chain(db_session: AsyncSession) -> None:
     """A singleton under a validation under a model: the block reads
     ``model "XGBoost" › validation "external"``, outermost first, and a
     group asked under that validation is identified within the same chain.
 
-    Trees B5: rebuild as a real entity-type chain once
-    ``ck_extraction_entity_types_role_parent`` is dropped — until then the
-    leaf and the subgroup are role-legal children of the container whose
-    INSTANCES hang under the validation entry (nothing on
-    ``extraction_instances`` couples the two), which is the path the walk
-    reads.
+    The leaf and the subgroup are children of the container whose INSTANCES
+    hang under the validation entry (nothing on ``extraction_instances``
+    couples the two), which is the path the walk reads.
     """
     container = await _container(db_session)
     validations, _key_id, _value_id = await _group(
@@ -552,20 +529,17 @@ async def test_a_section_at_depth_three_names_the_whole_chain(
         label="Calibration plot",
     )
     run = await _run_in_extract(db_session)
-    service, fake = _service(db_session)
-    identification = _fake_identification(monkeypatch, ["apparent"])
+    fake = _fake(["apparent"])
 
-    await service.extract_section(
-        **_coord(), entity_type_id=leaf, parent_instance_id=external, run_id=run.id
+    await _extract(
+        db_session, fake, entity_type_id=leaf, parent_instance_id=external, run_id=run.id
     )
-    (scope,) = fake.scopes
-    assert scope == Scope(
-        entry_label="validation",
-        ancestors=(Ancestor("model", "XGBoost"), Ancestor("validation", "external")),
-    )
-    block = render_entry_scope_section(scope)
+    (block,) = _scopes(fake)
     assert "This section belongs to the validation identified below." in block
     assert '- Within: model "XGBoost" › validation "external"' in block
+    # The chain is in the text the model receives, ahead of the article.
+    prompt = fake.field_calls()[0].user_prompt
+    assert prompt.index("XGBoost") < prompt.index("Article text:")
     (calibration,) = await _entries(db_session, leaf, parent=external)
     assert await _proposed(db_session, calibration[0], leaf_value) == [0.5]
 
@@ -575,64 +549,19 @@ async def test_a_section_at_depth_three_names_the_whole_chain(
     subgroups, _sub_key, sub_value = await _group(
         db_session, parent=container, entry_label="subgroup"
     )
-    await service.extract_section(
-        **_coord(), entity_type_id=subgroups, parent_instance_id=external, run_id=run.id
+    await _extract(
+        db_session, fake, entity_type_id=subgroups, parent_instance_id=external, run_id=run.id
     )
-    assert len(identification["prompts"]) == 1
-    assert 'belong to model "XGBoost" › validation "external"' in identification["prompts"][0]
-    assert fake.scopes[-1] is not None
-    assert fake.scopes[-1].key_value == "apparent"
-    assert fake.scopes[-1].ancestors == scope.ancestors
+    assert len(fake.prompts(IDENTIFY)) == 1
+    assert 'belong to model "XGBoost" › validation "external"' in fake.prompts(IDENTIFY)[0]
+    last = _scopes(fake)[-1]
+    assert '- Validation type: "apparent"' in last
+    assert '- Within: model "XGBoost" › validation "external"' in last
     (entry,) = await _entries(db_session, subgroups, parent=external)
     assert await _proposed(db_session, entry[0], sub_value) == [C_STAT["apparent"]]
 
 
-class _PromptCaptured(Exception):
-    """Raised by the prompt-capturing fake so the call stops at the seam."""
-
-
-async def test_the_chain_reaches_the_prompt_the_model_receives(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The seam the fake elsewhere replaces: ``_extract_with_llm`` renders the
-    section prompt with the scope the pipeline built, so the block is in the
-    text the model receives — not only in a test-side re-render."""
-    container = await _container(db_session)
-    xgboost = await _instance(db_session, container, "XGBoost")
-    development, _key_id, _value_id = await _group(
-        db_session,
-        parent=container,
-        cardinality="one",
-        label="Model development",
-    )
-    run = await _run_in_extract(db_session)
-    service = ses.SectionExtractionService(
-        db=db_session, user_id=str(SEED.primary_profile), storage=MagicMock(), trace_id="chain"
-    )
-    service._assemble_prompt_text = AsyncMock(return_value="ARTICLE")  # type: ignore[method-assign]
-    captured: dict[str, str] = {}
-
-    async def capture(**kwargs: Any) -> None:
-        captured["user_prompt"] = kwargs["user_prompt"]
-        raise _PromptCaptured
-
-    monkeypatch.setattr(ses, "extract_structured", capture)
-    monkeypatch.setattr(ses, "build_model", lambda *_a, **_k: MagicMock())
-
-    with pytest.raises(_PromptCaptured):
-        await service.extract_section(
-            **_coord(), entity_type_id=development, parent_instance_id=xgboost, run_id=run.id
-        )
-
-    prompt = captured["user_prompt"]
-    assert "This section belongs to the model identified below." in prompt
-    assert '- Within: model "XGBoost"' in prompt
-    assert prompt.index("XGBoost") < prompt.index("Article text:")
-
-
-async def test_a_stranger_parent_is_refused_before_any_llm_call(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_a_stranger_parent_is_refused_before_any_llm_call(db_session: AsyncSession) -> None:
     """BOLA on the walk: a parent instance from another project's coordinate
     is refused by the run-scoped getter — for a singleton child and a group
     child alike — before identification or extraction spends a call, and
@@ -653,30 +582,53 @@ async def test_a_stranger_parent_is_refused_before_any_llm_call(
         entity_type_id=await first_entity_type_id(db_session, foreign_template),
     )
     run = await _run_in_extract(db_session)
-    service, fake = _service(db_session)
-    identification = _fake_identification(monkeypatch, ["apparent"])
+    fake = _fake(["apparent"])
 
     for child in (development, validations):
         with pytest.raises(ValueError, match=f"Parent instance not found: {stranger}"):
-            await service.extract_section(
-                **_coord(), entity_type_id=child, parent_instance_id=stranger, run_id=run.id
+            await _extract(
+                db_session, fake, entity_type_id=child, parent_instance_id=stranger, run_id=run.id
             )
 
-    assert fake.scopes == [], "no extraction call was spent"
-    assert identification["prompts"] == [], "no identification call was spent"
+    assert fake.calls == [], "no identification or extraction call was spent"
     assert await _entries(db_session, validations, parent=stranger) == []
 
 
+async def test_a_cycle_in_the_parent_graph_is_refused_not_walked_forever(
+    db_session: AsyncSession,
+) -> None:
+    """Nothing in the schema stops an instance pointing at its own descendant:
+    the walk refuses the cycle like a stranger, before any model call — never
+    a RecursionError."""
+    container = await _container(db_session)
+    first = await _instance(db_session, container, "XGBoost")
+    second = await _instance(db_session, container, "LightGBM", parent=first)
+    await db_session.execute(
+        text("UPDATE extraction_instances SET parent_instance_id = :p WHERE id = :id"),
+        {"p": second, "id": first},
+    )
+    development, _k, _v = await _group(
+        db_session, parent=container, cardinality="one", label="Model development"
+    )
+    run = await _run_in_extract(db_session)
+    fake = _fake([])
+
+    with pytest.raises(ValueError, match="Parent instance not found"):
+        await _extract(
+            db_session, fake, entity_type_id=development, parent_instance_id=first, run_id=run.id
+        )
+    assert fake.calls == []
+
+
 async def test_a_keyless_repeating_group_is_refused_before_any_write_or_llm_call(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     entity_type_id, _key_id, _value_id = await _group(db_session, with_key=False)
     run = await _run_in_extract(db_session)
-    service, fake = _service(db_session)
-    identification = _fake_identification(monkeypatch, ["apparent"])
+    fake = _fake(["apparent"])
 
     with pytest.raises(MissingEntityKeyError) as excinfo:
-        await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+        await _extract(db_session, fake, entity_type_id=entity_type_id, run_id=run.id)
 
     assert "'Numeric performance'" in str(excinfo.value)
     # The code the single-section job carries for this exact raise: the task
@@ -685,12 +637,11 @@ async def test_a_keyless_repeating_group_is_refused_before_any_write_or_llm_call
     # real-pipeline half of the section-path proof.
     assert classify_extraction_error(excinfo.value)[0] is ExtractionErrorCode.MISSING_ENTITY_KEY
     assert await _entries(db_session, entity_type_id) == []
-    assert identification["prompts"] == [], "no identification call was spent"
-    assert fake.scopes == [], "no extraction call was spent"
+    assert fake.calls == [], "no model call was spent"
 
 
 async def test_the_key_is_read_from_the_pinned_snapshot_not_the_live_row(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     """Closes the #798 residual: the run extracts against its pinned tree, so
     the key it honours is the pinned one. Live keyless + pinned keyed runs."""
@@ -704,16 +655,14 @@ async def test_the_key_is_read_from_the_pinned_snapshot_not_the_live_row(
         schema={"entity_types": [_pinned_group(entity_type_id, key_id, value_id, key=True)]},
     )
     await db_session.refresh(run)
-    service, _fake = _service(db_session)
-    _fake_identification(monkeypatch, ["external"])
 
-    await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+    await _extract(db_session, _fake(["external"]), entity_type_id=entity_type_id, run_id=run.id)
 
     assert [key for _, key in await _entries(db_session, entity_type_id)] == ["external"]
 
 
 async def test_a_live_key_does_not_rescue_a_pinned_keyless_group(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     """The inverse: a key added in an unpublished draft gates nothing until Publish."""
     entity_type_id, key_id, value_id = await _group(db_session, with_key=True)
@@ -726,23 +675,23 @@ async def test_a_live_key_does_not_rescue_a_pinned_keyless_group(
         schema={"entity_types": [_pinned_group(entity_type_id, key_id, value_id, key=False)]},
     )
     await db_session.refresh(run)
-    service, _fake = _service(db_session)
-    _fake_identification(monkeypatch, ["external"])
 
     with pytest.raises(MissingEntityKeyError):
-        await service.extract_section(**_coord(), entity_type_id=entity_type_id, run_id=run.id)
+        await _extract(
+            db_session, _fake(["external"]), entity_type_id=entity_type_id, run_id=run.id
+        )
     assert await _entries(db_session, entity_type_id) == []
 
 
 # --------------------------------------------------------------------------
-# extract_for_run — the full-run sweep (top-level sections)
+# The full-run sweep (top-level sections)
 # --------------------------------------------------------------------------
 
 
 async def test_the_full_run_sweep_fills_every_repeat_of_a_top_level_group(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
-    """``_find_instance_for_entity_type`` used to hand this path ``instances[0]``."""
+    """The sweep used to hand a repeating group ``instances[0]``."""
     entity_type_id, key_id, value_id = await _group(db_session)
     run = await _run_in_extract(db_session)
     await _pin_run_to_snapshot(
@@ -753,24 +702,65 @@ async def test_the_full_run_sweep_fills_every_repeat_of_a_top_level_group(
         schema={"entity_types": [_pinned_group(entity_type_id, key_id, value_id, key=True)]},
     )
     await db_session.refresh(run)
-    service, _fake = _service(db_session)
-    _fake_identification(monkeypatch, ["apparent", "external"])
 
-    result = await service.extract_for_run(run_id=run.id, skip_fields_with_human_proposals=True)
+    result = await _extract(
+        db_session,
+        _fake(["apparent", "external"]),
+        run_id=run.id,
+        skip_fields_with_human_proposals=True,
+    )
 
     entries = await _entries(db_session, entity_type_id)
     assert [key for _, key in entries] == ["apparent", "external"]
-    assert result.total_suggestions_created == 2
+    assert result.total_suggestions_created == 4, "key + value, per entry"
     assert await _proposed(db_session, entries[1][0], value_id) == [C_STAT["external"]]
 
 
+async def test_a_settled_field_is_skipped_on_its_own_entry_only(
+    db_session: AsyncSession,
+) -> None:
+    """The skip set is per INSTANCE: a reviewer who settled ``c_statistic`` on
+    the 'apparent' entry keeps that entry's field off the re-run, while the
+    'external' entry is still asked."""
+    from app.models.extraction_workflow import ExtractionReviewerDecisionType
+    from app.services.extraction_review_service import ExtractionReviewService
+
+    entity_type_id, key_id, value_id = await _group(db_session)
+    run = await _run_in_extract(db_session)
+    await _pin_run_to_snapshot(
+        db_session,
+        run_id=run.id,
+        template_id=SEED.primary_template,
+        profile_id=SEED.primary_profile,
+        schema={"entity_types": [_pinned_group(entity_type_id, key_id, value_id, key=True)]},
+    )
+    await db_session.refresh(run)
+    await _extract(db_session, _fake(["apparent", "external"]), run_id=run.id)
+    apparent, _external = await _entries(db_session, entity_type_id)
+    await ExtractionReviewService(db_session).record_decision(
+        run_id=run.id,
+        instance_id=apparent[0],
+        field_id=value_id,
+        reviewer_id=SEED.primary_profile,
+        decision=ExtractionReviewerDecisionType.EDIT,
+        value={"value": 0.5},
+    )
+
+    rerun = _fake(["apparent", "external"])
+    await _extract(db_session, rerun, run_id=run.id, skip_fields_with_human_proposals=True)
+
+    asked = {_KEY_LINE.search(c.user_prompt)["key"]: c.field_names for c in rerun.field_calls()}
+    assert "c_statistic" not in asked.get("apparent", [])
+    assert "c_statistic" in asked["external"]
+
+
 # --------------------------------------------------------------------------
-# extract_all_sections — the per-model batch (child sections)
+# The per-entry batch (child sections)
 # --------------------------------------------------------------------------
 
 
 async def test_the_per_model_batch_routes_a_nested_group_through_the_pipeline(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     container = await _container(db_session)
     parent_a = await _instance(db_session, container, "XGBoost")
@@ -789,15 +779,12 @@ async def test_the_per_model_batch_routes_a_nested_group_through_the_pipeline(
         },
     )
     await db_session.refresh(run)
-    service, fake = _service(db_session)
-    _fake_identification(monkeypatch, ["internal", "external"])
+    fake = _fake(["internal", "external"])
 
-    result = await service.extract_all_sections(
-        **_coord(), parent_instance_id=parent_a, run_id=run.id
-    )
+    result = await _extract(db_session, fake, parent_instance_id=parent_a, run_id=run.id)
 
     entries = await _entries(db_session, child, parent=parent_a)
     assert [key for _, key in entries] == ["internal", "external"]
-    assert result.total_suggestions_created == 2
-    assert [s.ancestors for s in fake.scopes if s] == [(Ancestor("model", "XGBoost"),)] * 2
+    assert result.total_suggestions_created == 4, "key + value, per entry"
+    assert [b.splitlines()[-1] for b in _scopes(fake)] == ['- Within: model "XGBoost"'] * 2
     assert await _proposed(db_session, entries[0][0], value_id) == [C_STAT["internal"]]

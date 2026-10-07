@@ -176,6 +176,6 @@ def build_output_models(
 
 
 def dump_extraction(output: BaseModel) -> dict[str, Any]:
-    """Typed output → the dict shape ``_create_suggestions`` consumes:
+    """Typed output → the dict shape the candidate build consumes:
     ``{field_name: {value, confidence, reasoning, evidence}}``."""
     return output.model_dump(by_alias=True)

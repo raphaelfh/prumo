@@ -16,13 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import ExtractionRunStage
 from app.models.extraction_workflow import ExtractionProposalSource
 from app.services.extraction_agent_read_service import list_agent_extractions
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_run_read_service import get_run_with_workflow_history
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.utils.compact_json import compact_json
 from app.utils.opaque_cursor import InvalidCursorError, encode_cursor
 from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 from tests.integration.helpers.template_fixtures import add_field, add_section
 from tests.integration.mcp.article_seed import insert_article
 from tests.integration.test_blind_review_isolation import _build_two_reviewer_review_run
@@ -101,7 +100,8 @@ async def _ai_only_coordinate(
         )
     ).scalar_one()
 
-    await ExtractionProposalService(db).record_proposal(
+    await land_ai_proposal(
+        db,
         run_id=run_id,
         instance_id=new_instance_id,
         field_id=field_id,
@@ -278,7 +278,8 @@ async def test_picks_live_run_over_finalized_after_reopen(db_session: AsyncSessi
     await lifecycle.advance_stage(
         run_id=new_run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=SEED.primary_profile
     )
-    await ExtractionProposalService(db_session).record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=new_run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -734,7 +735,8 @@ async def test_worst_case_page_size_stays_under_cap(db_session: AsyncSession) ->
         ).scalar_one()
         for fld in field_ids:
             expected_rows.add((article_id, instance_id, fld))
-            await ExtractionProposalService(db_session).record_proposal(
+            await land_ai_proposal(
+                db_session,
                 run_id=run_pk,
                 instance_id=instance_id,
                 field_id=fld,
@@ -856,7 +858,8 @@ async def test_concise_join_is_bounded_and_ordered(db_session: AsyncSession) -> 
                 },
             )
         ).scalar_one()
-        await ExtractionProposalService(db_session).record_proposal(
+        await land_ai_proposal(
+            db_session,
             run_id=run_id,
             instance_id=instance_id,
             field_id=field_id,

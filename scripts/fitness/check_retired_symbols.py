@@ -95,7 +95,7 @@ RETIRED: tuple[Retired, ...] = (
     Retired(
         "ModelExtractionService",
         "entry-group trees B6",
-        "generalized into entry_group_extraction.extract_into_instances",
+        "generalized into ai_extraction._sections.extract_into_instances",
     ),
     Retired(
         "ModelExtractionRequest",
@@ -180,6 +180,33 @@ RETIRED: tuple[Retired, ...] = (
         "assert_coords_coherent",
         "run write oracle",
         "open_run_for_write(..., instance_id=, field_id=) binds the coordinate under the run lock",
+    ),
+    # One AI-extraction module: run_from_request in, every candidate landed
+    # through ProposalLanding (one lock, one stage gate, one coordinate bind).
+    Retired(
+        "ExtractionProposalService",
+        "ai extraction module",
+        "proposal rows land through ProposalLanding, the one writer and its per-row rules",
+    ),
+    Retired(
+        "record_proposal_result",
+        "ai extraction module",
+        "a per-row gate re-locked the run once per field; ProposalLanding.land gates once",
+    ),
+    Retired(
+        "locked_result_filter",
+        "ai extraction module",
+        "the post-model re-read lives inside ProposalLanding's one gate",
+    ),
+    Retired(
+        "GenerationCallResult",
+        "ai extraction module",
+        "a pass-through wrapper; ai_extraction.Generation carries engine, snapshot and attempt",
+    ),
+    Retired(
+        "_create_suggestions",
+        "ai extraction module",
+        "split into the candidate build (_candidates) and ProposalLanding.land",
     ),
 )
 

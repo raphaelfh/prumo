@@ -132,7 +132,7 @@ class ExtractionReviewService:
         #    marker before it is persisted (the consensus agreement key hashes
         #    this value verbatim, so two different codes must stay distinct).
         #    An ``accept_proposal`` carries value=None and is left as-is — its
-        #    proposal was already normalized at record_proposal time. Scoped by
+        #    proposal was already normalized when it landed (``ProposalLanding``). Scoped by
         #    the field's live domain so a coincidental value is untouched.
         # 2. An ALREADY-CODED ``no_information`` marker is REFUSED on a field
         #    that opts out (``allows_no_information``, migration 0062).

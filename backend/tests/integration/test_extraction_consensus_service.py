@@ -16,11 +16,10 @@ from app.services.extraction_consensus_service import (
     ExtractionConsensusService,
     InvalidConsensusError,
 )
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 
 async def _setup_consensus_run(
@@ -94,7 +93,8 @@ async def _setup_consensus_run(
         target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
-    proposal = await ExtractionProposalService(db).record_proposal(
+    proposal = await land_ai_proposal(
+        db,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -356,7 +356,8 @@ async def test_select_existing_rejects_reject_decision(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=profile_id
     )
-    await ExtractionProposalService(db_session).record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,

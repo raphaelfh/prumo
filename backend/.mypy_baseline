@@ -55,9 +55,6 @@ app/services/model_extraction_service.py:assignment
 app/services/project_template_active_service.py:attr-defined
 app/services/run_lifecycle_service.py:arg-type
 app/services/run_lifecycle_service.py:attr-defined
-app/services/section_extraction_service.py:type-arg
-app/services/section_extraction_service.py:union-attr
-app/services/section_extraction_service.py:unused-ignore
 app/services/template_clone_service.py:attr-defined
 app/services/zotero_import_service.py:arg-type
 app/services/zotero_service.py:arg-type

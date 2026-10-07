@@ -106,7 +106,7 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
 
         MERGE (not REPLACE) so run-level data already recorded — notably the
         ``provenance`` snapshot the proposal choke-point
-        (``_create_suggestions`` → ``merge_provenance_section``) writes —
+        (``ProposalLanding.land`` → ``merge_provenance_section``) writes —
         survives completion. A REPLACE would clobber it. Callers whose run still has empty ``results`` (model extraction, the
         batch primary run) are unaffected: merging into ``{}`` equals a replace.
 

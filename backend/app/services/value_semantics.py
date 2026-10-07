@@ -76,7 +76,7 @@ def strip_verification(raw: Any) -> Any:
     The verdict is server-written provenance that belongs to the PROPOSAL row
     only — published values, agreement keys, replay-dedupe compares and export
     cells are always clean. The ONE strip shared by every read/resolution seam
-    (``extraction_proposal_service`` dedupe, ``run_lifecycle_service``
+    (``ai_extraction.landing`` dedupe, ``run_lifecycle_service``
     resolution + reopen carry-over, ``extraction_consensus_service`` publish,
     ``exports/value_envelope``), so an annotated accept and a clean edit of the
     same value can never diverge. Non-dict values pass through untouched.
