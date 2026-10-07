@@ -37,8 +37,8 @@ const membersFixture = vi.hoisted(() => ({
 }));
 
 vi.mock("@/integrations/supabase/client", async () => {
-  const { makeSupabaseClientMock } = await import("./helpers/qaFullScreenMocks");
-  return { supabase: makeSupabaseClientMock(membersFixture) };
+  const { makeSupabaseClientMock } = await import("./helpers/runScreenFixtures");
+  return { supabase: makeSupabaseClientMock({ members: membersFixture, userId: "qa-test-reviewer-id" }) };
 });
 
 // The PDF viewer pulls in worker/canvas globals (pdfjs/DOMMatrix) not worth
@@ -60,8 +60,8 @@ vi.mock("@prumo/pdf-viewer", async () => {
 });
 
 vi.mock("@/integrations/api", async () => {
-  const { makeApiClientDefault } = await import("./helpers/qaFullScreenMocks");
-  return { apiClient: vi.fn(makeApiClientDefault()) };
+  const { qaApi } = await import("./helpers/runScreenFixtures");
+  return { apiClient: vi.fn(qaApi()) };
 });
 
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
@@ -69,13 +69,14 @@ import { apiClient } from "@/integrations/api";
 
 import {
   BLIND_PERMISSIONS,
-  makeApiClientDefault,
-} from "./helpers/qaFullScreenMocks";
-import { renderPage } from "./helpers/qaFullScreenRender";
+  makeQaRunView,
+  qaApi,
+} from "./helpers/runScreenFixtures";
+import { renderQaPage } from "./helpers/runScreenRender";
 
 // A per-test apiClient override answers its own URLs and hands every other
 // one to the shared default (template lists, files, suggestions).
-const answerByDefault = makeApiClientDefault();
+const answerByDefault = qaApi();
 
 const mockedPermissions = vi.mocked(useComparisonPermissions);
 
@@ -89,7 +90,7 @@ describe("QualityAssessmentFullScreen — worklist navigation", () => {
   });
 
   it("back arrow returns to the project's quality tab", async () => {
-    renderPage();
+    renderQaPage();
     await userEvent.click(await screen.findByRole("button", { name: /^back$/i }));
     await waitFor(() =>
       expect(screen.getByTestId("probe-location")).toHaveTextContent(
@@ -99,7 +100,7 @@ describe("QualityAssessmentFullScreen — worklist navigation", () => {
   });
 
   it("Finish assessment opens the next article in the worklist", async () => {
-    renderPage();
+    renderQaPage();
     const button = await screen.findByRole("button", { name: /finish assessment/i });
     await waitFor(() => expect(button).not.toHaveAttribute("disabled"));
     await userEvent.click(button);
@@ -112,7 +113,7 @@ describe("QualityAssessmentFullScreen — worklist navigation", () => {
 
   it("Finish assessment on the LAST article falls back to the quality tab", async () => {
     // "a2" is last in WORKLIST_ARTICLES — there is no next article to open.
-    renderPage("/projects/p1/articles/a2/quality-assessment/tpl-1");
+    renderQaPage("/projects/p1/articles/a2/quality-assessment/tpl-1");
     const button = await screen.findByRole("button", { name: /finish assessment/i });
     await waitFor(() => expect(button).not.toHaveAttribute("disabled"));
     await userEvent.click(button);
@@ -151,29 +152,7 @@ describe("QualityAssessmentFullScreen — header pager, [ / ] and ⌘K", () => {
         };
       }
       if (url === "/api/v1/runs/run-1/view") {
-        return {
-          run: {
-            id: "run-1",
-            project_id: "p1",
-            article_id: "a1",
-            template_id: "tpl-1",
-            kind: "quality_assessment",
-            version_id: "v-1",
-            stage: "extract",
-            status: "running",
-            hitl_config_snapshot: {},
-            parameters: {},
-            results: {},
-            created_at: new Date().toISOString(),
-            created_by: "u-1",
-          },
-          proposals: [],
-          decisions: [],
-          consensus_decisions: [],
-          published_states: [],
-          entity_types: [],
-          current_values: [],
-        };
+        return makeQaRunView();
       }
       if (url.includes("/suggestions")) {
         return { suggestions: [], count: 0 };
@@ -190,7 +169,7 @@ describe("QualityAssessmentFullScreen — header pager, [ / ] and ⌘K", () => {
   });
 
   it("mounts the pager in the header's centre track", async () => {
-    renderPage();
+    renderQaPage();
     const centre = await screen.findByTestId("run-header-center");
     await waitFor(() =>
       expect(
@@ -206,7 +185,7 @@ describe("QualityAssessmentFullScreen — header pager, [ / ] and ⌘K", () => {
   });
 
   it("the next arrow opens the next article, carrying :templateId verbatim", async () => {
-    renderPage();
+    renderQaPage();
     const next = await screen.findByRole("button", { name: /next article/i });
     await waitFor(() => expect(next).not.toBeDisabled());
     await userEvent.click(next);
@@ -218,7 +197,7 @@ describe("QualityAssessmentFullScreen — header pager, [ / ] and ⌘K", () => {
   });
 
   it("] opens the next article — the binding the help panel already promised", async () => {
-    renderPage();
+    renderQaPage();
     // Wait for the worklist read to land; below two articles [ / ] is inert.
     await screen.findByRole("button", { name: /next article/i });
     await userEvent.keyboard("]");
@@ -230,7 +209,7 @@ describe("QualityAssessmentFullScreen — header pager, [ / ] and ⌘K", () => {
   });
 
   it("] on the LAST article stays put (end-of-list guard, no wrap); [ still walks back", async () => {
-    renderPage("/projects/p1/articles/a2/quality-assessment/tpl-1");
+    renderQaPage("/projects/p1/articles/a2/quality-assessment/tpl-1");
     await screen.findByRole("button", { name: /next article/i });
     // "a2" is last, so ] has nowhere to go; [ walks back to "a1".
     await userEvent.keyboard("]");
@@ -246,7 +225,7 @@ describe("QualityAssessmentFullScreen — header pager, [ / ] and ⌘K", () => {
   });
 
   it("⌘K opens the command palette with the run's actions", async () => {
-    renderPage();
+    renderQaPage();
     await screen.findByTestId("run-stage-current");
     // jsdom's userAgent is not a Mac, so ⌘K is Ctrl+K here.
     await userEvent.keyboard("{Control>}k{/Control}");
@@ -273,29 +252,10 @@ describe("QualityAssessmentFullScreen — run-switch hydration (in-place article
     articleId: string,
     currentValues: Array<Record<string, unknown>>,
   ) {
-    return {
-      run: {
-        id: runId,
-        project_id: "p1",
-        article_id: articleId,
-        template_id: "tpl-1",
-        kind: "quality_assessment",
-        version_id: "v-1",
-        stage: "extract",
-        status: "running",
-        hitl_config_snapshot: {},
-        parameters: {},
-        results: {},
-        created_at: new Date().toISOString(),
-        created_by: "u-1",
-      },
-      proposals: [],
-      decisions: [],
-      consensus_decisions: [],
-      published_states: [],
-      entity_types: [],
+    return makeQaRunView({
+      run: { id: runId, article_id: articleId },
       current_values: currentValues,
-    };
+    });
   }
 
   beforeEach(() => {
@@ -348,7 +308,7 @@ describe("QualityAssessmentFullScreen — run-switch hydration (in-place article
   });
 
   it("REPLACES values on a run change — run-1 coords never dirty-POST against run-2", async () => {
-    renderPage();
+    renderQaPage();
     const domain = await screen.findByTestId("qa-domain-participants");
     await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
 
@@ -426,25 +386,10 @@ describe("QualityAssessmentFullScreen — status popover reviewer denominator", 
         };
       }
       if (url === "/api/v1/runs/run-1/view") {
-        return {
-          run: {
-            id: "run-1",
-            project_id: "p1",
-            article_id: "a1",
-            template_id: "tpl-1",
-            kind: "quality_assessment",
-            version_id: "v-1",
-            stage: "extract",
-            status: "running",
-            // The snapshot deliberately has NO reviewer_count — the header
-            // must not fall back to the config default of 1.
-            hitl_config_snapshot: {},
-            parameters: {},
-            results: {},
-            created_at: new Date().toISOString(),
-            created_by: "u-1",
-          },
-          proposals: [],
+        return makeQaRunView({
+          // The snapshot deliberately has NO reviewer_count — the header
+          // must not fall back to the config default of 1.
+          run: { hitl_config_snapshot: {} },
           // Two distinct reviewers have submitted → participant count 2.
           decisions: ["peer-a", "peer-b"].map((reviewer, i) => ({
             id: `dec-${i}`,
@@ -458,11 +403,7 @@ describe("QualityAssessmentFullScreen — status popover reviewer denominator", 
             rationale: null,
             created_at: new Date().toISOString(),
           })),
-          consensus_decisions: [],
-          published_states: [],
-          entity_types: [],
-          current_values: [],
-        };
+        });
       }
       if (url.includes("/suggestions")) {
         return { suggestions: [], count: 0 };
@@ -480,7 +421,7 @@ describe("QualityAssessmentFullScreen — status popover reviewer denominator", 
   });
 
   it("derives the denominator from project roles, not the run's config snapshot", async () => {
-    renderPage();
+    renderQaPage();
     await userEvent.click(await screen.findByTestId("run-stage-current"));
     const popover = await screen.findByTestId("run-status-popover");
     expect(

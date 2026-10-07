@@ -36,8 +36,8 @@ const membersFixture = vi.hoisted(() => ({
 }));
 
 vi.mock("@/integrations/supabase/client", async () => {
-  const { makeSupabaseClientMock } = await import("./helpers/qaFullScreenMocks");
-  return { supabase: makeSupabaseClientMock(membersFixture) };
+  const { makeSupabaseClientMock } = await import("./helpers/runScreenFixtures");
+  return { supabase: makeSupabaseClientMock({ members: membersFixture, userId: "qa-test-reviewer-id" }) };
 });
 
 // The PDF viewer pulls in worker/canvas globals (pdfjs/DOMMatrix) not worth
@@ -59,8 +59,8 @@ vi.mock("@prumo/pdf-viewer", async () => {
 });
 
 vi.mock("@/integrations/api", async () => {
-  const { makeApiClientDefault } = await import("./helpers/qaFullScreenMocks");
-  return { apiClient: vi.fn(makeApiClientDefault()) };
+  const { qaApi } = await import("./helpers/runScreenFixtures");
+  return { apiClient: vi.fn(qaApi()) };
 });
 
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
@@ -68,13 +68,14 @@ import { apiClient } from "@/integrations/api";
 
 import {
   BLIND_PERMISSIONS,
-  makeApiClientDefault,
-} from "./helpers/qaFullScreenMocks";
-import { renderPage } from "./helpers/qaFullScreenRender";
+  makeQaRunView,
+  qaApi,
+} from "./helpers/runScreenFixtures";
+import { renderQaPage } from "./helpers/runScreenRender";
 
 // A per-test apiClient override answers its own URLs and hands every other
 // one to the shared default (template lists, files, suggestions).
-const answerByDefault = makeApiClientDefault();
+const answerByDefault = qaApi();
 
 const mockedPermissions = vi.mocked(useComparisonPermissions);
 
@@ -93,22 +94,8 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
         };
       }
       if (url === "/api/v1/runs/run-1/view") {
-        return {
-          run: {
-            id: "run-1",
-            project_id: "p1",
-            article_id: "a1",
-            template_id: "tpl-1",
-            kind: "quality_assessment",
-            version_id: "v-1",
-            stage: "finalized",
-            status: "completed",
-            hitl_config_snapshot: {},
-            parameters: {},
-            results: {},
-            created_at: new Date().toISOString(),
-            created_by: "u-1",
-          },
+        return makeQaRunView({
+          run: { stage: "finalized", status: "completed" },
           proposals: [
             {
               id: "p-stale",
@@ -123,8 +110,6 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
               created_at: new Date().toISOString(),
             },
           ],
-          decisions: [],
-          consensus_decisions: [],
           published_states: [
             {
               id: "ps-1",
@@ -137,9 +122,7 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
               version: 1,
             },
           ],
-          entity_types: [],
-          current_values: [],
-        };
+        });
       }
       if (url.includes("/suggestions")) {
         return { suggestions: [], count: 0 };
@@ -156,7 +139,7 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
   });
 
   it("finalized: form shows published values, not latest proposals", async () => {
-    renderPage();
+    renderQaPage();
     const domain = await screen.findByTestId("qa-domain-participants");
     // Published code renders on the select trigger; the stale proposal does not.
     await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
@@ -164,7 +147,7 @@ describe("QualityAssessmentFullScreen — finalized (published, read-only)", () 
   });
 
   it("finalized: shows the published banner with a reopen button, hides edit chrome", async () => {
-    renderPage();
+    renderQaPage();
     expect(await screen.findByTestId("qa-finalized-badge")).toBeInTheDocument();
     expect(screen.getByText(/read-only/i)).toBeInTheDocument();
     expect(screen.getByTestId("qa-reopen-button")).toBeInTheDocument();
@@ -197,23 +180,7 @@ describe("QualityAssessmentFullScreen — extract hydration from current_values 
         };
       }
       if (url === "/api/v1/runs/run-1/view") {
-        return {
-          run: {
-            id: "run-1",
-            project_id: "p1",
-            article_id: "a1",
-            template_id: "tpl-1",
-            kind: "quality_assessment",
-            version_id: "v-1",
-            stage: "extract",
-            status: "running",
-            hitl_config_snapshot: {},
-            parameters: {},
-            results: {},
-            created_at: new Date().toISOString(),
-            created_by: "u-1",
-          },
-          proposals: [],
+        return makeQaRunView({
           decisions: [
             {
               id: "dec-own-1",
@@ -228,9 +195,6 @@ describe("QualityAssessmentFullScreen — extract hydration from current_values 
               created_at: new Date().toISOString(),
             },
           ],
-          consensus_decisions: [],
-          published_states: [],
-          entity_types: [],
           current_values: [
             {
               instance_id: "inst-1",
@@ -239,7 +203,7 @@ describe("QualityAssessmentFullScreen — extract hydration from current_values 
               decision: "edit",
             },
           ],
-        };
+        });
       }
       if (url.includes("/suggestions")) {
         return { suggestions: [], count: 0 };
@@ -256,7 +220,7 @@ describe("QualityAssessmentFullScreen — extract hydration from current_values 
   });
 
   it("hydrates from current_values (not proposals) and does not re-post on mount", async () => {
-    renderPage();
+    renderQaPage();
     const domain = await screen.findByTestId("qa-domain-participants");
     // The decision-backed value renders even though proposals is empty.
     await waitFor(() => expect(within(domain).getByText("Y")).toBeInTheDocument());
@@ -301,29 +265,7 @@ describe("QualityAssessmentFullScreen — header suggestion locate", () => {
         };
       }
       if (url === "/api/v1/runs/run-1/view") {
-        return {
-          run: {
-            id: "run-1",
-            project_id: "p1",
-            article_id: "a1",
-            template_id: "tpl-1",
-            kind: "quality_assessment",
-            version_id: "v-1",
-            stage: "extract",
-            status: "running",
-            hitl_config_snapshot: {},
-            parameters: {},
-            results: {},
-            created_at: new Date().toISOString(),
-            created_by: "u-1",
-          },
-          proposals: [],
-          decisions: [],
-          consensus_decisions: [],
-          published_states: [],
-          entity_types: [],
-          current_values: [],
-        };
+        return makeQaRunView();
       }
       if (url.includes("/suggestions") && !url.includes("history")) {
         // One pending AI suggestion for inst-1/f-1 (no status → pending).
@@ -365,7 +307,7 @@ describe("QualityAssessmentFullScreen — header suggestion locate", () => {
   }
 
   it("Review-pending menu item scrolls to the domain of the first pending suggestion", async () => {
-    renderPage();
+    renderQaPage();
     const domain = await screen.findByTestId("qa-domain-participants");
     await reviewPendingSuggestions();
     // inst-1 belongs to et-1 (session.instancesByEntityType reverse lookup); the
@@ -376,7 +318,7 @@ describe("QualityAssessmentFullScreen — header suggestion locate", () => {
   });
 
   it("Review-pending menu item opens the domain when it is closed", async () => {
-    renderPage();
+    renderQaPage();
     const domain = await screen.findByTestId("qa-domain-participants");
     const row = "qa-field-row-q1_1_appropriate_data_sources";
     // Precondition: the first domain renders open, showing the suggestion's row.

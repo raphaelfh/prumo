@@ -8,9 +8,7 @@
  * screen harness): URL-keyed apiClient mock, engine-free pdf-viewer core,
  * data-service mock instead of a supabase chain builder.
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("sonner", () => ({
@@ -32,18 +30,6 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
-const BLIND_PERMISSIONS = {
-  userRole: "reviewer" as const,
-  isBlindMode: true,
-  canSeeOthers: false,
-  canResolveConflicts: false,
-  canManageBlindMode: false,
-  canExport: false,
-  canEditTemplate: false,
-  loading: false,
-  error: null,
-  refresh: vi.fn(),
-};
 vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
   useComparisonPermissions: vi.fn(),
 }));
@@ -51,9 +37,9 @@ vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
 // Worklist (header pager + next-article) and the reader's DOI lookup read
 // `articles` through the baselined PostgREST path; the stub serves both.
 vi.mock("@/integrations/supabase/client", async () => {
-  const { makeSupabaseClientMock } = await import("./helpers/extractionFullScreenMocks");
+  const { makeSupabaseClientMock } = await import("./helpers/runScreenFixtures");
   return {
-    supabase: makeSupabaseClientMock([{ id: "a1", title: "Test article" }]),
+    supabase: makeSupabaseClientMock({ articles: [{ id: "a1", title: "Test article" }] }),
   };
 });
 
@@ -73,25 +59,23 @@ vi.mock("@prumo/pdf-viewer", async () => {
   };
 });
 
-const FINALIZED_RUN_VIEW = {
-  run: {
-    id: "run-1",
-    project_id: "p1",
-    article_id: "a1",
-    template_id: "tpl-1",
-    kind: "extraction",
-    version_id: "v-1",
-    stage: "finalized",
-    status: "completed",
-    hitl_config_snapshot: {},
-    parameters: {},
-    results: {},
-    created_at: new Date().toISOString(),
-    created_by: "u-1",
-  },
-  proposals: [],
-  decisions: [],
-  consensus_decisions: [],
+vi.mock("@/integrations/api", () => ({ apiClient: vi.fn() }));
+
+import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
+import { renderExtractionPage } from "./helpers/runScreenRender";
+import { apiClient } from "@/integrations/api";
+import {
+  ARBITRATOR,
+  BLIND_PERMISSIONS,
+  extractionApi,
+  makeDecision,
+  makeRunView,
+  sourceOfDataForm,
+} from "./helpers/runScreenFixtures";
+
+const FINALIZED_RUN_VIEW = makeRunView({
+  run: { stage: "finalized", status: "completed" },
+  ...sourceOfDataForm(),
   published_states: [
     {
       id: "ps-1",
@@ -104,53 +88,6 @@ const FINALIZED_RUN_VIEW = {
       version: 1,
     },
   ],
-  entity_types: [
-    {
-      id: "et-1",
-      name: "source_of_data",
-      label: "Source of Data",
-      description: null,
-      parent_entity_type_id: null,
-      cardinality: "one",
-      sort_order: 0,
-      is_required: true,
-      fields: [
-        {
-          id: "f1",
-          name: "source",
-          label: "Source of Data",
-          description: null,
-          field_type: "text",
-          is_required: true,
-          validation_schema: null,
-          allowed_values: null,
-          unit: null,
-          allowed_units: null,
-          llm_description: null,
-          sort_order: 0,
-          allow_other: false,
-          other_label: null,
-          other_placeholder: null,
-        },
-      ],
-    },
-  ],
-  instances: [
-    {
-      id: "i1",
-      project_id: "p1",
-      article_id: "a1",
-      template_id: "tpl-1",
-      entity_type_id: "et-1",
-      parent_instance_id: null,
-      label: "Source of Data",
-      sort_order: 0,
-      metadata: {},
-      created_by: "u-1",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ],
   // The viewer's own draft — must NOT surface on a published run.
   current_values: [
     {
@@ -160,79 +97,22 @@ const FINALIZED_RUN_VIEW = {
       decision: "edit",
     },
   ],
-};
-
-vi.mock("@/integrations/api", () => ({
-  apiClient: vi.fn(async (url: string) => {
-    // Bootstrap: the project's extraction templates, newest first; tpl-1 is the
-    // one active row, so it opens the session.
-    if (url === "/api/v1/projects/p1/templates?kind=extraction") {
-      return [{ id: "tpl-1", name: "CHARMS", kind: "extraction", is_active: true }];
-    }
-    if (url === "/api/v1/hitl/sessions") {
-      return {
-        run_id: "run-1",
-        kind: "extraction",
-        project_template_id: "tpl-1",
-        instances_by_entity_type: { "et-1": "i1" },
-      };
-    }
-    if (url === "/api/v1/runs/run-1/view") {
-      return FINALIZED_RUN_VIEW;
-    }
-    if (url.includes("/finalized-run")) {
-      return {
-        id: "run-1",
-        stage: "finalized",
-        status: "completed",
-        template_id: "tpl-1",
-      };
-    }
-    if (url.includes("/reviewers")) {
-      return { reviewers: [] };
-    }
-    if (url.includes("/suggestions")) {
-      return { suggestions: [], count: 0 };
-    }
-    if (url.includes("/files") || url.includes("/text-blocks")) {
-      return [];
-    }
-    return {};
-  }),
-}));
-
-import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
-import { SidebarProvider } from "@/contexts/SidebarContext";
-import ExtractionFullScreen from "@/pages/ExtractionFullScreen";
-import { apiClient } from "@/integrations/api";
+});
 
 const mockedPermissions = vi.mocked(useComparisonPermissions);
-
-function renderPage(path = "/projects/p1/extraction/a1") {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route
-            path="/projects/:projectId/extraction/:articleId"
-            element={
-              <SidebarProvider>
-                <ExtractionFullScreen />
-              </SidebarProvider>
-            }
-          />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-}
 
 describe("ExtractionFullScreen — finalized (published, read-only)", () => {
   beforeEach(() => {
     mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
+    vi.mocked(apiClient).mockImplementation(
+      extractionApi({
+        view: () => FINALIZED_RUN_VIEW,
+        routes: (url) =>
+          url.includes("/finalized-run")
+            ? { id: "run-1", stage: "finalized", status: "completed", template_id: "tpl-1" }
+            : undefined,
+      }),
+    );
   });
 
   afterEach(() => {
@@ -240,7 +120,7 @@ describe("ExtractionFullScreen — finalized (published, read-only)", () => {
   });
 
   it("published run renders read-only with published values", async () => {
-    renderPage();
+    renderExtractionPage();
 
     // Published value hydrates (not the viewer draft) and the input disables.
     const input = await screen.findByDisplayValue("published-final");
@@ -263,82 +143,30 @@ describe("ExtractionFullScreen — finalized (published, read-only)", () => {
 });
 
 describe("ExtractionFullScreen — consensus dead affordances (D6)", () => {
-  // Identity-granted arbitrator: canCompare's data preconditions all hold, so
-  // only the D6 stage guard can hide the toggle.
-  const REVEALED_ARBITRATOR = {
-    ...BLIND_PERMISSIONS,
-    userRole: "manager" as const,
-    isBlindMode: false,
-    canSeeOthers: true,
-    canResolveConflicts: true,
-  };
-
+  // Identity-granted arbitrator (ARBITRATOR): canCompare's data preconditions
+  // all hold, so only the D6 stage guard can hide the toggle.
   function mockStageView(stage: string) {
-    vi.mocked(apiClient).mockImplementation(async (url: string) => {
-      // Bootstrap: the project's extraction templates, newest first; tpl-1 is the
-      // one active row, so it opens the session.
-      if (url === "/api/v1/projects/p1/templates?kind=extraction") {
-        return [{ id: "tpl-1", name: "CHARMS", kind: "extraction", is_active: true }];
-      }
-      if (url === "/api/v1/hitl/sessions") {
-        return {
-          run_id: "run-1",
-          kind: "extraction",
-          project_template_id: "tpl-1",
-          instances_by_entity_type: { "et-1": "i1" },
-        };
-      }
-      if (url === "/api/v1/runs/run-1/view") {
-        return {
-          ...FINALIZED_RUN_VIEW,
-          run: { ...FINALIZED_RUN_VIEW.run, stage, status: "running" },
-          published_states: [],
-          current_values: [],
-          peers_revealed: true,
-          // Two divergent peer decisions: decisionsByCoord.size > 0.
-          decisions: [
-            {
-              id: "dec-a",
-              run_id: "run-1",
-              instance_id: "i1",
-              field_id: "f1",
-              reviewer_id: "peer-a",
-              decision: "edit",
-              proposal_record_id: null,
-              value: { value: "Yes" },
-              rationale: null,
-              created_at: new Date().toISOString(),
-            },
-            {
-              id: "dec-b",
-              run_id: "run-1",
-              instance_id: "i1",
-              field_id: "f1",
-              reviewer_id: "peer-b",
-              decision: "edit",
-              proposal_record_id: null,
-              value: { value: "No" },
-              rationale: null,
-              created_at: new Date().toISOString(),
-            },
-          ],
-        };
-      }
-      if (url.includes("/reviewers")) {
-        return { reviewers: [] };
-      }
-      if (url.includes("/suggestions")) {
-        return { suggestions: [], count: 0 };
-      }
-      if (url.includes("/files") || url.includes("/text-blocks")) {
-        return [];
-      }
-      return {};
-    });
+    vi.mocked(apiClient).mockImplementation(
+      extractionApi({
+        view: () =>
+          makeRunView({
+            ...FINALIZED_RUN_VIEW,
+            run: { ...FINALIZED_RUN_VIEW.run, stage, status: "running" },
+            published_states: [],
+            current_values: [],
+            peers_revealed: true,
+            // Two divergent peer decisions: decisionsByCoord.size > 0.
+            decisions: [
+              makeDecision({ id: "dec-a", reviewer_id: "peer-a", value: { value: "Yes" } }),
+              makeDecision({ id: "dec-b", reviewer_id: "peer-b", value: { value: "No" } }),
+            ],
+          }),
+      }),
+    );
   }
 
   beforeEach(() => {
-    mockedPermissions.mockReturnValue(REVEALED_ARBITRATOR);
+    mockedPermissions.mockReturnValue(ARBITRATOR);
   });
 
   afterEach(() => {
@@ -347,7 +175,7 @@ describe("ExtractionFullScreen — consensus dead affordances (D6)", () => {
 
   it("extract stage (positive control): the Compare toggle renders", async () => {
     mockStageView("extract");
-    renderPage();
+    renderExtractionPage();
     expect(
       await screen.findByRole("button", { name: /^compare$/i }),
     ).toBeInTheDocument();
@@ -355,7 +183,7 @@ describe("ExtractionFullScreen — consensus dead affordances (D6)", () => {
 
   it("consensus stage: no Compare toggle — the resolve table is the only surface", async () => {
     mockStageView("consensus");
-    renderPage();
+    renderExtractionPage();
     // Wait until the consensus surface is up so the header is fully settled.
     await waitFor(() =>
       expect(screen.getByTestId("extraction-consensus-area")).toBeInTheDocument(),
@@ -388,7 +216,7 @@ describe("ExtractionFullScreen — consensus dead affordances (D6)", () => {
 
     it("extract stage (positive control): the reader opens docked", async () => {
       mockStageView("extract");
-      renderPage();
+      renderExtractionPage();
       await waitFor(async () =>
         expect(await sourcePanelToggle()).toHaveAttribute("aria-pressed", "true"),
       );
@@ -396,7 +224,7 @@ describe("ExtractionFullScreen — consensus dead affordances (D6)", () => {
 
     it("consensus stage: the reader stays collapsed", async () => {
       mockStageView("consensus");
-      renderPage();
+      renderExtractionPage();
       await waitFor(() =>
         expect(screen.getByTestId("extraction-consensus-area")).toBeInTheDocument(),
       );

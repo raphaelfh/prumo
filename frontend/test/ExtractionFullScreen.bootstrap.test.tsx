@@ -12,9 +12,7 @@
  *
  * Harness cloned from ExtractionFullScreen.readonly.test.tsx.
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("sonner", () => ({
@@ -34,28 +32,20 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
-vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
-  useComparisonPermissions: () => ({
-    userRole: "reviewer" as const,
-    isBlindMode: true,
-    canSeeOthers: false,
-    canResolveConflicts: false,
-    canManageBlindMode: false,
-    canExport: false,
-    canEditTemplate: false,
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-  }),
-}));
+vi.mock("@/hooks/shared/useComparisonPermissions", async () => {
+  const { BLIND_PERMISSIONS } = await import("./helpers/runScreenFixtures");
+  return { useComparisonPermissions: () => BLIND_PERMISSIONS };
+});
 
 vi.mock("@/integrations/supabase/client", async () => {
-  const { makeSupabaseClientMock } = await import("./helpers/extractionFullScreenMocks");
+  const { makeSupabaseClientMock } = await import("./helpers/runScreenFixtures");
   return {
-    supabase: makeSupabaseClientMock([
-      { id: "a1", title: "First article" },
-      { id: "a2", title: null },
-    ]),
+    supabase: makeSupabaseClientMock({
+      articles: [
+        { id: "a1", title: "First article" },
+        { id: "a2", title: null },
+      ],
+    }),
   };
 });
 
@@ -76,11 +66,11 @@ vi.mock("@prumo/pdf-viewer", async () => {
 vi.mock("@/integrations/api", () => ({ apiClient: vi.fn() }));
 
 import { toast } from "sonner";
-import { SidebarProvider } from "@/contexts/SidebarContext";
 import { apiClient } from "@/integrations/api";
 import { common } from "@/lib/copy/common";
 import { pages } from "@/lib/copy/pages";
-import ExtractionFullScreen from "@/pages/ExtractionFullScreen";
+import { renderExtractionPage } from "./helpers/runScreenRender";
+import { extractionApi, makeRunView, sourceOfDataForm } from "./helpers/runScreenFixtures";
 
 const TEMPLATES_URL = "/api/v1/projects/p1/templates?kind=extraction";
 
@@ -92,125 +82,30 @@ const TEMPLATES = [
   { id: "tpl-old", name: "CHARMS v1", kind: "extraction", is_active: true },
 ];
 
-const RUN_VIEW = {
-  run: {
-    id: "run-1",
-    project_id: "p1",
-    article_id: "a1",
-    template_id: "tpl-new",
-    kind: "extraction",
-    version_id: "v-1",
-    stage: "extract",
-    status: "running",
-    hitl_config_snapshot: {},
-    parameters: {},
-    results: {},
-    created_at: new Date().toISOString(),
-    created_by: "u-1",
-  },
-  proposals: [],
-  decisions: [],
-  consensus_decisions: [],
-  published_states: [],
-  entity_types: [
-    {
-      id: "et-1",
-      name: "source_of_data",
-      label: "Source of Data",
-      description: null,
-      parent_entity_type_id: null,
-      cardinality: "one",
-      sort_order: 0,
-      is_required: false,
-      fields: [
-        {
-          id: "f1",
-          name: "source",
-          label: "Source of Data",
-          description: null,
-          field_type: "text",
-          is_required: false,
-          validation_schema: null,
-          allowed_values: null,
-          unit: null,
-          allowed_units: null,
-          llm_description: null,
-          sort_order: 0,
-          allow_other: false,
-          other_label: null,
-          other_placeholder: null,
-        },
-      ],
-    },
-  ],
-  instances: [
-    {
-      id: "i1",
-      project_id: "p1",
-      article_id: "a1",
-      template_id: "tpl-new",
-      entity_type_id: "et-1",
-      parent_instance_id: null,
-      label: "Source of Data",
-      sort_order: 0,
-      metadata: {},
-      created_by: "u-1",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ],
-  current_values: [],
-};
+const FORM = sourceOfDataForm({ required: false });
+const RUN_VIEW = makeRunView({
+  run: { template_id: "tpl-new" },
+  entity_types: FORM.entity_types,
+  instances: FORM.instances.map((i) => ({ ...i, template_id: "tpl-new" })),
+});
 
 function mockApi(templates: unknown[]) {
-  vi.mocked(apiClient).mockImplementation(async (url: string) => {
-    if (url === TEMPLATES_URL) return templates;
-    if (url === "/api/v1/hitl/sessions") {
-      return {
-        run_id: "run-1",
-        kind: "extraction",
-        project_template_id: "tpl-new",
-        instances_by_entity_type: { "et-1": "i1" },
-        run_view: RUN_VIEW,
-      };
-    }
-    if (url === "/api/v1/runs/run-1/view") return RUN_VIEW;
-    if (url.includes("/finalized-run")) return null;
-    if (url.includes("/instance-ids")) return [];
-    if (url.includes("/reviewers")) return { reviewers: [] };
-    if (url.includes("/suggestions")) return { suggestions: [], count: 0 };
-    if (url.includes("/files") || url.includes("/text-blocks")) return [];
-    return {};
-  });
-}
-
-function LocationProbe() {
-  const loc = useLocation();
-  return <div data-testid="probe-location">{`${loc.pathname}${loc.search}`}</div>;
-}
-
-function renderPage(path = "/projects/p1/extraction/a1") {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  const view = render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <LocationProbe />
-        <Routes>
-          <Route
-            path="/projects/:projectId/extraction/:articleId"
-            element={
-              <SidebarProvider>
-                <ExtractionFullScreen />
-              </SidebarProvider>
+  vi.mocked(apiClient).mockImplementation(
+    extractionApi({
+      templates,
+      view: () => RUN_VIEW,
+      routes: (url) =>
+        url === "/api/v1/hitl/sessions"
+          ? {
+              run_id: "run-1",
+              kind: "extraction",
+              project_template_id: "tpl-new",
+              instances_by_entity_type: { "et-1": "i1" },
+              run_view: RUN_VIEW,
             }
-          />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+          : undefined,
+    }),
   );
-  return { ...view, queryClient };
 }
 
 /** The bodies of every session open so far — the seam the template pick is read through. */
@@ -241,7 +136,7 @@ describe("ExtractionFullScreen — bootstrap through the API", () => {
   });
 
   it("opens the session with the newest ACTIVE extraction template and names the article from the worklist", async () => {
-    renderPage();
+    renderExtractionPage();
     expect(await screen.findByRole("textbox", { name: "Source of Data" })).toBeInTheDocument();
 
     const opens = sessionOpens();
@@ -259,13 +154,13 @@ describe("ExtractionFullScreen — bootstrap through the API", () => {
   });
 
   it("names an untitled article in the header instead of a blank", async () => {
-    renderPage("/projects/p1/extraction/a2");
+    renderExtractionPage("/projects/p1/extraction/a2");
     expect(await screen.findByRole("textbox", { name: "Source of Data" })).toBeInTheDocument();
     expect(breadcrumb().getByText("Untitled article")).toBeInTheDocument();
   });
 
   it("renders the not-found state for an article outside the project's worklist", async () => {
-    renderPage("/projects/p1/extraction/a-foreign");
+    renderExtractionPage("/projects/p1/extraction/a-foreign");
     expect(await screen.findByText(pages.extractionScreenErrorLoad)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^back$/i })).toBeInTheDocument();
     // Not a redirect: the user stays on the route with the Back affordance.
@@ -275,7 +170,7 @@ describe("ExtractionFullScreen — bootstrap through the API", () => {
 
   it("with no active extraction template: a toast, then back to the project's extraction tab", async () => {
     mockApi([TEMPLATES[0]]);
-    renderPage();
+    renderExtractionPage();
     await waitFor(() =>
       expect(screen.getByTestId("probe-location")).toHaveTextContent("/projects/p1?tab=extraction"),
     );
@@ -289,7 +184,7 @@ describe("ExtractionFullScreen — bootstrap through the API", () => {
   // screen opened with: it must not read as a failed bootstrap and throw the
   // reviewer out of a form mid-edit.
   it("keeps the open form when a background refetch of the templates fails", async () => {
-    const { queryClient } = renderPage();
+    const { queryClient } = renderExtractionPage();
     expect(await screen.findByRole("textbox", { name: "Source of Data" })).toBeInTheDocument();
 
     const served = vi.mocked(apiClient).getMockImplementation()!;

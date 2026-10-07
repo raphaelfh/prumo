@@ -33,11 +33,11 @@ import { runsKeys, type RunViewResponse } from "@/hooks/runs/types";
 import type { RunScreenKind } from "@/lib/runs/runScreenKind";
 import {
   ARBITRATOR,
-  BLIND_REVIEWER,
+  BLIND_PERMISSIONS,
   makeConsensusDecision,
   makeDecision,
   makeRunView,
-} from "./helpers/runViewFixture";
+} from "./helpers/runScreenFixtures";
 
 const api = vi.mocked(apiClient);
 const order: string[] = [];
@@ -56,7 +56,7 @@ function routeApi(failing: Record<string, Error> = {}) {
 
 interface Options {
   view?: RunViewResponse;
-  permissions?: typeof BLIND_REVIEWER;
+  permissions?: typeof BLIND_PERMISSIONS;
   saveNow?: () => Promise<unknown>;
   finalizedRunId?: string | null;
   formProgress?: { isComplete: boolean; completed: number; total: number };
@@ -90,7 +90,7 @@ function renderLifecycle(kind: RunScreenKind, opts: Options = {}) {
     projectId: "p1",
     runId: view ? view.run.id : null,
     runDetail: view,
-    permissions: opts.permissions ?? BLIND_REVIEWER,
+    permissions: opts.permissions ?? BLIND_PERMISSIONS,
     currentUserId: "reviewer-1",
     requiredCoords: opts.requiredCoords ?? [],
     finalizedRunId: opts.finalizedRunId,
@@ -290,7 +290,7 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
   });
 
   describe("reveal (ADR-0012)", () => {
-    const blindManager: typeof BLIND_REVIEWER = { ...BLIND_REVIEWER, userRole: "manager" };
+    const blindManager: typeof BLIND_PERMISSIONS = { ...BLIND_PERMISSIONS, userRole: "manager" };
 
     it("is offered to a blind manager during extract only", () => {
       expect(renderLifecycle(kind, { permissions: blindManager }).result.current.reveal.canReveal).toBe(true);

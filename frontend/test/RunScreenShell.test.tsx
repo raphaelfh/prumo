@@ -44,7 +44,7 @@ import { useRunLifecycleScreen, type RunWorklist } from "@/hooks/runs/useRunLife
 import { useRunReader } from "@/hooks/runs/useRunReader";
 import type { RunViewResponse } from "@/hooks/runs/types";
 import type { RunScreenKind } from "@/lib/runs/runScreenKind";
-import { ARBITRATOR, BLIND_REVIEWER, makeRunView } from "./helpers/runViewFixture";
+import { ARBITRATOR, BLIND_PERMISSIONS, makeRunView } from "./helpers/runScreenFixtures";
 
 // cmdk scrolls the active item into view, which jsdom does not implement.
 Element.prototype.scrollIntoView = vi.fn();
@@ -58,7 +58,7 @@ const ARTICLES = [
 interface HarnessProps {
   kind: RunScreenKind;
   view: RunViewResponse;
-  permissions: typeof BLIND_REVIEWER;
+  permissions: typeof BLIND_PERMISSIONS;
   worklist: RunWorklist;
 }
 
@@ -118,7 +118,7 @@ function renderShell(
   kind: RunScreenKind,
   {
     view = makeRunView(),
-    permissions = BLIND_REVIEWER,
+    permissions = BLIND_PERMISSIONS,
     worklist = makeWorklist(),
   }: Partial<HarnessProps> = {},
 ) {
@@ -186,7 +186,7 @@ describe.each(["extraction", "qa"] as const)("RunScreenShell (%s)", (kind) => {
 
     it("lets a blind manager reveal reviewers", async () => {
       vi.mocked(setManagerReviewVisibility).mockResolvedValue({} as never);
-      renderShell(kind, { permissions: { ...BLIND_REVIEWER, userRole: "manager" } });
+      renderShell(kind, { permissions: { ...BLIND_PERMISSIONS, userRole: "manager" } });
       await userEvent.click(screen.getByTestId("run-stage-current"));
       await userEvent.click(await screen.findByRole("button", { name: /reveal reviewers/i }));
       expect(setManagerReviewVisibility).toHaveBeenCalledWith(
