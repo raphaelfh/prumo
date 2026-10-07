@@ -8,7 +8,7 @@ import {useSectionExtraction} from '@/hooks/extraction/useSectionExtraction';
 import {sectionJobKey, useSectionExtractionJobs} from '@/stores/sectionExtractionJobs';
 import {extractionKeys} from '@/lib/query-keys';
 import {runsKeys} from '@/hooks/runs/types';
-import {useRun} from '@/hooks/runs/useRun';
+import {useRunView} from '@/hooks/runs/useRunLifecycleScreen';
 import {toast} from 'sonner';
 
 vi.mock('@/contexts/AuthContext', () => ({useAuth: () => ({user: {id: 'user-a'}})}));
@@ -208,15 +208,15 @@ describe('session section jobs', () => {
     expect(success).toHaveBeenCalledTimes(1);
   });
 
-  it('refetches the run view the screens read (useRun) once the job completes', async () => {
+  it('refetches the run view the screens read (useRunView) once the job completes', async () => {
     // The job writes its proposals server-side; the screen sees them only if
-    // completion refetches the key useRun reads.
+    // completion refetches the key useRunView reads.
     server.use(http.get('*/api/v1/runs/:runId/view', ({params}) => {
       const done = [...statuses.values()].includes('completed');
       return HttpResponse.json({ok: true, data: {run: {id: String(params.runId), stage: 'extract'}, proposals: done ? [{id: 'ai-proposal'}] : []}});
     }));
     const {wrapper, client} = setup();
-    const run = renderHook(() => useRun(A.runId), {wrapper});
+    const run = renderHook(() => useRunView(A.runId), {wrapper});
     await waitFor(() => expect(run.result.current.data?.proposals).toEqual([]));
     const hook = renderHook(() => useSectionExtraction({params: A}), {wrapper});
     await act(() => hook.result.current.extractSection(A));

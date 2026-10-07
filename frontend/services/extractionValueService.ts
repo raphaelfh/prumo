@@ -22,7 +22,7 @@ export const ExtractionValueService = {
    * Used purely for reopen detection on the extraction page — the
    * "Reopen for revision" button only renders when this returns a row
    * and the HITL session exposes no active run. The returned id is then
-   * passed to `useReopenRun` which spawns a fresh extract-stage run that
+   * the reopen target (useRunLifecycleScreen), which spawns a fresh extract-stage run that
    * seeds proposals from the published values. Filters by
    * `kind='extraction'` so a QA run on the same article never leaks in.
    */

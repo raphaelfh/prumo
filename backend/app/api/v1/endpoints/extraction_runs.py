@@ -314,7 +314,7 @@ async def create_consensus(
     # privileged adjudicator write for BOTH kinds. QA mirrors extraction as of
     # 2026-07-09: resolving divergence / publishing canonical values is a
     # manager (arbitrator) action, not a reviewer one — the QA staged flow moved
-    # finalize authority to the manager (see frontend lib/qa/qaTransition). The
+    # finalize authority to the manager (see frontend lib/runs/buildTransition). The
     # gate lives at the API layer because the service-role session bypasses RLS;
     # without it any project member — including a read-only viewer — could
     # publish consensus + canonical values.
