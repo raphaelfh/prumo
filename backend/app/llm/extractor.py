@@ -18,7 +18,7 @@ both ``UnexpectedModelBehavior`` (reask budget exhausted) and
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import logfire
 from pydantic import BaseModel
@@ -62,6 +62,31 @@ class LlmUsage:
             prompt_tokens=self.prompt_tokens + other.prompt_tokens,
             completion_tokens=self.completion_tokens + other.completion_tokens,
         )
+
+
+class StructuredCall(Protocol):
+    """The typed LLM call as a seam.
+
+    :func:`extract_structured` is the production adapter (pydantic-ai); tests
+    pass a recorded fake (``tests/fakes/recorded_llm.py``). Every model call
+    the AI-extraction pipeline makes — field extraction, entry identification,
+    the verify pass, the entailment judge — goes through one of these, so a
+    test swaps ONE seam to drive the whole pipeline.
+    """
+
+    async def __call__(
+        self,
+        *,
+        output_model: type[OutputT],
+        system_prompt: str,
+        user_prompt: str,
+        model: Model,
+        prompt_name: str,
+        prompt_version: str,
+        validators: Sequence[Callable[..., Any]] = (),
+        output_retries: int = ...,
+        usage_limits: UsageLimits | None = None,
+    ) -> tuple[OutputT, LlmUsage]: ...
 
 
 async def extract_structured(
