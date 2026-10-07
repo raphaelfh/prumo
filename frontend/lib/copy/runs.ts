@@ -35,7 +35,7 @@ export const runs = {
   statusRevisionNote: 'This run is a revision of a published version.',
   // PrimaryAction
   requiredOfTotal: '{{done}} of {{total}} required',
-  // Transition label (QA's buildQaTransition uses this shared key)
+  // Transition label
   finalize: 'Finalize',
   // Reviewers
   reviewersDiffer: '{{count}} differ',

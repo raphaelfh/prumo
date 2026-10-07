@@ -70,7 +70,7 @@ import { RunHeader } from "@/components/runs/header";
 // Imported directly (not via the RunHeader compound) so the shared compound
 // stays free of the supabase-reaching NotificationCenter/feedback deps.
 import { Utility } from "@/components/runs/header/Utility";
-import { buildQaTransition } from "@/lib/qa/qaTransition";
+import { buildTransition } from "@/lib/runs/buildTransition";
 import { deriveCanReopenExtraction } from "@/lib/extraction/reopenExtraction";
 import { ReopenExtractionDialog } from "@/components/extraction/dialogs/ReopenExtractionDialog";
 import { rationaleGapCoords } from "@/lib/qa/rationaleGaps";
@@ -589,12 +589,12 @@ export default function QualityAssessmentFullScreen() {
   const isReady = (runDetail?.reviewers_ready ?? []).includes(userId ?? "");
   // Nothing filled and nothing resolved: approve-finalize would 400 (EmptyFinalizeError).
   const nothingRecorded = reviewerSummary.filledCoords.size === 0 && resolvedCoordKeys.size === 0;
-  const qaTransition = buildQaTransition({
+  const qaTransition = buildTransition({
     stage: runStage,
     canResolveConflicts: permissions.canResolveConflicts,
     isReady,
     divergencesResolved,
-    nothingRecorded,
+    gate: { kind: "qa", nothingRecorded },
     onMarkReady,
     onOpenConsensus,
     onApproveFinalize: handleApproveFinalize,

@@ -77,7 +77,7 @@ export interface ExtractionHeaderProps {
   /** Current run stage. When provided, the RunStatus cluster is shown. */
   stage?: ExtractionRunStage;
 
-  /** Pre-built stage transition from buildExtractionTransition(). */
+  /** Pre-built stage transition from buildTransition(). */
   transition?: StageTransition | null;
 
   /** True when this run is a revision of a finalized run. */

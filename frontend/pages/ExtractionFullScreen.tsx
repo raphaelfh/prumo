@@ -35,7 +35,7 @@ import {usePdfPanel} from '@/hooks/usePdfPanel';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
 import {HITLPublishedBanner} from '@/components/runs/HITLStatusBadges';
-import {buildExtractionTransition} from '@/lib/extraction/stageTransition';
+import {buildTransition} from '@/lib/runs/buildTransition';
 import {nextArticleTarget} from '@/lib/extraction/worklistNav';
 import {setManagerReviewVisibility} from '@/services/hitlConfigService';
 import {useSidebar} from '@/contexts/SidebarContext';
@@ -885,7 +885,7 @@ export default function ExtractionFullScreen() {
   };
 
   // Stage-driven transition for the RunHeader PrimaryAction slot.
-  // buildExtractionTransition() owns all label/gate logic (Finish extraction /
+  // buildTransition() owns all label/gate logic (Finish extraction /
   // Start consensus / Approve & finalize). The legacy header finalize path is gone.
   //
   // divergencesResolved: every diverging coord carries a consensus decision (a
@@ -900,13 +900,16 @@ export default function ExtractionFullScreen() {
     resolvedCoordKeys.has(c),
   );
   const isReady = (runDetail?.reviewers_ready ?? []).includes(currentUserId);
-  const transition = buildExtractionTransition({
+  const transition = buildTransition({
     stage,
     canResolveConflicts: permissions.canResolveConflicts,
-    isComplete,
-    completed: completedFields,
-    total: totalFields,
-    consensusComplete: requiredFieldsResolved,
+    gate: {
+      kind: 'extraction',
+      isComplete,
+      completed: completedFields,
+      total: totalFields,
+      consensusComplete: requiredFieldsResolved,
+    },
     divergencesResolved,
     isReady,
     onMarkReady,
