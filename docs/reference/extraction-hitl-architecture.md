@@ -147,11 +147,20 @@ template_id, kind)` — enforced by the partial unique index
 (article × project_template × kind)" is therefore a DB guarantee, not
 service-layer folklore: a second live run used to silently shadow the first
 one's reviewer decisions on session open (the run-orphaning data-loss bug).
-Standalone AI-extraction creators go through
-`RunLifecycleService.resolve_or_create_extract_run` (reuse-the-live-run gate,
-serialized by the `(article, template)` advisory lock); the session opener
-ranks by human-work recency (`last_human_activity_order`) as
-defense-in-depth. The 0045 heal cancelled pre-existing duplicate live runs
+Every run creator and reader resolves the coordinate's run through
+`CurrentRunResolver` (`app/services/current_run.py`); the ranking is one
+ORDER BY in `app/repositories/current_run_repository.py`: live before
+finalized before cancelled, newest `created_at`, then `id` descending (runs
+written in one transaction share `now()`). The live tier holds at most one
+run, so it needs no finer ranking. The **current** run is the top-ranked one,
+a cancelled run included (export, agent reads, MCP article status); the
+**resolved** run is the current run unless cancelled
+(`ExtractionRunStage.resolvable()`: the session, the extraction form, article
+progress). The two writers take the `(article, template)` advisory lock:
+`open_for_session` reuses the resolved run (a finalized run is shown
+read-only) or creates one; `resolve_or_create_extract` (standalone AI
+extraction) reuses the live run or creates one, and refuses a run in
+consensus (`RunBusyError`). The 0045 heal cancelled pre-existing duplicate live runs
 non-destructively (canonical = most recent human work; shadows flipped to
 `cancelled`/`failed`, all workflow rows kept).
 
@@ -249,7 +258,7 @@ last transport outcome was uncertain. After kickoff scope authorization,
 1. Uses a server `uuid4()` when the id is absent.
 2. Picks the run: a client-sent `run_id` takes precedence; otherwise it reuses
    the run of an attempt the caller already owns, or resolves the live extract
-   run (`resolve_or_create_extract_run`).
+   run (`CurrentRunResolver.resolve_or_create_extract`).
 3. Refuses a run outside the `extract` stage (`InvalidStageTransitionError`,
    400).
 4. Inserts through `ExtractionAttemptRepository.get_or_create`

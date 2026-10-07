@@ -208,6 +208,48 @@ RETIRED: tuple[Retired, ...] = (
         "ai extraction module",
         "split into the candidate build (_candidates) and ProposalLanding.land",
     ),
+    # One current-run resolver: the ranking lives in current_run_repository,
+    # the seam in app.services.current_run.CurrentRunResolver.
+    Retired(
+        "resolve_or_create_extract_run",
+        "current run resolver",
+        "CurrentRunResolver.resolve_or_create_extract",
+    ),
+    Retired(
+        "_reuse_or_create_run",
+        "current run resolver",
+        "CurrentRunResolver.open_for_session; its created_at-only finalized order lost id ties",
+    ),
+    Retired(
+        "resolve_form_runs",
+        "current run resolver",
+        "CurrentRunResolver.resolve_by_article; its created_at-only order lost id ties",
+    ),
+    Retired(
+        "_form_runs",
+        "current run resolver",
+        "a parity copy of the form-run rule; current_run_repository.resolved_run_ids",
+    ),
+    Retired(
+        "extraction_current_run",
+        "current run resolver",
+        "the Python re-ranking of loaded rows; CurrentRunResolver.current_by_article",
+    ),
+    Retired(
+        "select_current_runs_by_article",
+        "current run resolver",
+        "CurrentRunResolver.current_by_article / current_by_template",
+    ),
+    Retired(
+        "run_recency_key",
+        "current run resolver",
+        "the ranking is one ORDER BY in current_run_repository.current_runs",
+    ),
+    Retired(
+        "last_human_activity_order",
+        "current run resolver",
+        "dead under the one-live-run index (0045): the live tier holds one run",
+    ),
 )
 
 # Where a LIVE reference could sit. Everything else — migrations, docs, this
