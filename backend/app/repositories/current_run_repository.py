@@ -39,15 +39,26 @@ def current_runs(partition: Any, *where: Any) -> Select[tuple[ExtractionRun]]:
     )
 
 
+def resolved_runs(partition: Any, *where: Any) -> Select[tuple[ExtractionRun]]:
+    """The resolved run per ``partition`` value: the current run unless it is
+    cancelled. Filtered in SQL, never on loaded objects — an identity-mapped
+    run can carry a stage another statement has since changed."""
+    current = current_runs(partition, *where).subquery()
+    return (
+        select(ExtractionRun)
+        .join(current, ExtractionRun.id == current.c.id)
+        .where(current.c.stage.in_(ExtractionRunStage.resolvable()))
+    )
+
+
 def resolved_run_ids(*, project_id: UUID, template_id: UUID) -> CTE:
     """Each article's resolved run id on the template; binds no id list."""
-    current = current_runs(
-        ExtractionRun.article_id,
-        ExtractionRun.project_id == project_id,
-        ExtractionRun.template_id == template_id,
-    ).subquery()
     return (
-        select(current.c.id.label("run_id"))
-        .where(current.c.stage.in_(ExtractionRunStage.resolvable()))
+        resolved_runs(
+            ExtractionRun.article_id,
+            ExtractionRun.project_id == project_id,
+            ExtractionRun.template_id == template_id,
+        )
+        .with_only_columns(ExtractionRun.id.label("run_id"))
         .cte("resolved_runs")
     )

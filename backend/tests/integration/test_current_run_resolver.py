@@ -238,3 +238,40 @@ async def test_extract_gate_refuses_a_run_in_consensus(db_session: AsyncSession,
 
     with pytest.raises(RunBusyError, match="consensus"):
         await _gate(db_session, aid)
+
+
+async def test_a_stale_loaded_run_never_decides(db_session: AsyncSession, aid: UUID) -> None:
+    """A run already in the identity map whose stage a raw UPDATE changed: the
+    resolver ranks the row, not the stale object (the gate forked no run over
+    a cancelled one before the cancellation was visible to it)."""
+    run_id = await _run(db_session, aid, stage=EXTRACT, minute=0)
+    loaded = await _resolver(db_session).resolve(  # held: the identity map is weak
+        project_id=SEED.primary_project, article_id=aid, template_id=SEED.primary_template
+    )
+    assert loaded is not None and loaded.id == run_id
+    await db_session.execute(
+        text("UPDATE public.extraction_runs SET stage = 'cancelled' WHERE id = :id"),
+        {"id": str(run_id)},
+    )
+
+    assert await _resolved(db_session, aid) is None
+    run, created = await _gate(db_session, aid)
+    assert (run.id != run_id, created) == (True, True)
+
+
+async def test_a_stale_loaded_stage_is_refreshed(db_session: AsyncSession, aid: UUID) -> None:
+    """The gate's busy check reads the stage the ranking saw: a held object
+    still saying EXTRACT does not let AI work into a run now in consensus."""
+    run_id = await _run(db_session, aid, stage=EXTRACT, minute=0)
+    loaded = await _resolver(db_session).resolve(  # held: the identity map is weak
+        project_id=SEED.primary_project, article_id=aid, template_id=SEED.primary_template
+    )
+    assert loaded is not None and loaded.id == run_id
+    await db_session.execute(
+        text("UPDATE public.extraction_runs SET stage = 'consensus' WHERE id = :id"),
+        {"id": str(run_id)},
+    )
+
+    with pytest.raises(RunBusyError):
+        await _gate(db_session, aid)
+    assert loaded.stage == CONSENSUS

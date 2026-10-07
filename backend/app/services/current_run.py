@@ -26,10 +26,11 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRun, ExtractionRunStage
-from app.repositories.current_run_repository import current_runs
+from app.repositories.current_run_repository import current_runs, resolved_runs
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.run_lifecycle_service import RunLifecycleService
 
@@ -43,6 +44,14 @@ class CurrentRunResolver:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def _load(self, stmt: Select[tuple[ExtractionRun]]) -> Sequence[ExtractionRun]:
+        # populate_existing: a run already in the identity map is refreshed, so
+        # the caller's stage checks see the row the ranking saw, not a copy a
+        # raw UPDATE (or another statement) has since made stale.
+        return (
+            (await self.db.execute(stmt.execution_options(populate_existing=True))).scalars().all()
+        )
+
     async def current_by_article(
         self, *, project_id: UUID, template_id: UUID, article_ids: Sequence[UUID]
     ) -> dict[UUID, ExtractionRun]:
@@ -55,7 +64,7 @@ class CurrentRunResolver:
             ExtractionRun.template_id == template_id,
             ExtractionRun.article_id.in_(article_ids),
         )
-        return {run.article_id: run for run in (await self.db.execute(stmt)).scalars().all()}
+        return {run.article_id: run for run in await self._load(stmt)}
 
     async def current_by_template(
         self, *, project_id: UUID, article_id: UUID
@@ -66,20 +75,21 @@ class CurrentRunResolver:
             ExtractionRun.project_id == project_id,
             ExtractionRun.article_id == article_id,
         )
-        return {run.template_id: run for run in (await self.db.execute(stmt)).scalars().all()}
+        return {run.template_id: run for run in await self._load(stmt)}
 
     async def resolve_by_article(
         self, *, project_id: UUID, template_id: UUID, article_ids: Sequence[UUID]
     ) -> dict[UUID, ExtractionRun]:
         """The resolved run (live, else finalized) per article that has one."""
-        current = await self.current_by_article(
-            project_id=project_id, template_id=template_id, article_ids=article_ids
+        if not article_ids:
+            return {}
+        stmt = resolved_runs(
+            ExtractionRun.article_id,
+            ExtractionRun.project_id == project_id,
+            ExtractionRun.template_id == template_id,
+            ExtractionRun.article_id.in_(article_ids),
         )
-        return {
-            article_id: run
-            for article_id, run in current.items()
-            if run.stage in ExtractionRunStage.resolvable()
-        }
+        return {run.article_id: run for run in await self._load(stmt)}
 
     async def resolve(
         self, *, project_id: UUID, article_id: UUID, template_id: UUID
