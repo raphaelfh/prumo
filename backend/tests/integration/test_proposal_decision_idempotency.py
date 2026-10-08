@@ -14,10 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRunStage
 from app.models.extraction_workflow import ExtractionProposalSource
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 
 async def _coord(db: AsyncSession):
@@ -69,8 +68,6 @@ async def test_identical_proposal_rerecord_is_a_noop(db_session: AsyncSession) -
         user_id=user_id,
     )
     await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id)
-
-    svc = ExtractionProposalService(db_session)
     # AI source: human extraction writes go through /decisions now, but the
     # idempotent re-record guard is source-agnostic, so we exercise it via an
     # AI proposal (allowed on extraction runs in extract).
@@ -81,8 +78,8 @@ async def test_identical_proposal_rerecord_is_a_noop(db_session: AsyncSession) -
         "source": ExtractionProposalSource.AI,
         "proposed_value": {"value": "v"},
     }
-    first = await svc.record_proposal(**args)
-    second = await svc.record_proposal(**args)  # identical re-record (mount replay)
+    first = await land_ai_proposal(db_session, **args)
+    second = await land_ai_proposal(db_session, **args)  # identical re-record (mount replay)
     await db_session.flush()
 
     count = (
@@ -97,7 +94,7 @@ async def test_identical_proposal_rerecord_is_a_noop(db_session: AsyncSession) -
     assert count == 1, "identical re-record must not append a duplicate proposal"
     assert second.id == first.id
 
-    changed = await svc.record_proposal(**{**args, "proposed_value": {"value": "v2"}})
+    changed = await land_ai_proposal(db_session, **{**args, "proposed_value": {"value": "v2"}})
     assert changed.id != first.id, "a changed value must still append"
 
 
@@ -122,8 +119,6 @@ async def test_verification_sibling_is_ignored_by_the_replay_dedupe(
         user_id=user_id,
     )
     await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id)
-
-    svc = ExtractionProposalService(db_session)
     args = {
         "run_id": run.id,
         "instance_id": instance_id,
@@ -131,14 +126,15 @@ async def test_verification_sibling_is_ignored_by_the_replay_dedupe(
         "source": ExtractionProposalSource.AI,
         "proposed_value": {"value": "v", "verification": {"verdict": "confirmed"}},
     }
-    first = await svc.record_proposal(**args)
+    first = await land_ai_proposal(db_session, **args)
     # Re-extract, verify flaked: same value, no annotation. Must dedupe.
-    second = await svc.record_proposal(**{**args, "proposed_value": {"value": "v"}})
+    second = await land_ai_proposal(db_session, **{**args, "proposed_value": {"value": "v"}})
     assert second.id == first.id, "a flaked verify must not create a duplicate row"
 
     # A genuinely changed value still appends, annotation or not.
-    changed = await svc.record_proposal(
-        **{**args, "proposed_value": {"value": "v2", "verification": {"verdict": "unsupported"}}}
+    changed = await land_ai_proposal(
+        db_session,
+        **{**args, "proposed_value": {"value": "v2", "verification": {"verdict": "unsupported"}}},
     )
     assert changed.id != first.id
 
@@ -166,8 +162,6 @@ async def test_verdict_change_updates_the_annotation_in_place(
         user_id=user_id,
     )
     await lc.advance_stage(run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id)
-
-    svc = ExtractionProposalService(db_session)
     args = {
         "run_id": run.id,
         "instance_id": instance_id,
@@ -175,24 +169,26 @@ async def test_verdict_change_updates_the_annotation_in_place(
         "source": ExtractionProposalSource.AI,
         "proposed_value": {"value": "v"},
     }
-    first = await svc.record_proposal(**args)  # verify flaked: no annotation
+    first = await land_ai_proposal(db_session, **args)  # verify flaked: no annotation
 
     # Heal: the re-extract's verify succeeded — annotate the EXISTING row.
-    healed = await svc.record_proposal(
-        **{**args, "proposed_value": {"value": "v", "verification": {"verdict": "confirmed"}}}
+    healed = await land_ai_proposal(
+        db_session,
+        **{**args, "proposed_value": {"value": "v", "verification": {"verdict": "confirmed"}}},
     )
     assert healed.id == first.id, "a heal must not append a duplicate row"
     assert healed.proposed_value.get("verification") == {"verdict": "confirmed"}
 
     # Flip: the verdict moved on the same value — the stored chip updates.
-    flipped = await svc.record_proposal(
-        **{**args, "proposed_value": {"value": "v", "verification": {"verdict": "unsupported"}}}
+    flipped = await land_ai_proposal(
+        db_session,
+        **{**args, "proposed_value": {"value": "v", "verification": {"verdict": "unsupported"}}},
     )
     assert flipped.id == first.id
     assert flipped.proposed_value.get("verification") == {"verdict": "unsupported"}
 
     # A verdict-less replay (fast re-run / flaked verify) never clears.
-    replay = await svc.record_proposal(**args)
+    replay = await land_ai_proposal(db_session, **args)
     assert replay.id == first.id
     assert replay.proposed_value.get("verification") == {"verdict": "unsupported"}
 

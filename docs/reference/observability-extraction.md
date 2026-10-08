@@ -112,8 +112,8 @@ Captured:
 
 ### Service phase timings
 
-- `backend/app/services/model_extraction_service.py`
-- `backend/app/services/section_extraction_service.py`
+- `backend/app/services/ai_extraction/service.py`
+- `backend/app/services/ai_extraction/_batch.py`
 
 Captured phases include:
 

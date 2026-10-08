@@ -16,13 +16,13 @@ from app.models.extraction_workflow import (
 from app.repositories.extraction_reviewer_state_repository import (
     ExtractionReviewerStateRepository,
 )
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import (
     ExtractionReviewService,
     InvalidDecisionError,
 )
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 
 async def _reviewer_state(
@@ -108,7 +108,8 @@ async def _setup_review_run(
         target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
-    proposal = await ExtractionProposalService(db).record_proposal(
+    proposal = await land_ai_proposal(
+        db,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -217,10 +218,8 @@ async def test_record_decision_rejects_incoherent_coordinates(
     if other_field_id is None:
         pytest.skip("Need >=2 entity_types with fields.")
 
-    from app.services.coordinate_coherence import CoordinateMismatchError
-
     service = ExtractionReviewService(db_session)
-    with pytest.raises(CoordinateMismatchError):
+    with pytest.raises(RunWriteError, match="Coordinate mismatch"):
         await service.record_decision(
             run_id=run_id,
             instance_id=instance_id,

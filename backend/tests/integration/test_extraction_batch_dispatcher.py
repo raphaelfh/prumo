@@ -20,9 +20,11 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
+from app.models.extraction import ExtractionRunStage
 from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.extraction_batch_dispatcher import ExtractionBatchDispatcher, batch_request_id
 from app.services.hitl_session_service import HITLSessionInputError, HITLSessionService
+from app.services.run_lifecycle_service import RunLifecycleService
 from tests.integration.conftest import SEED
 from tests.integration.helpers.batch_fixtures import make_article, make_batch
 
@@ -197,12 +199,29 @@ async def test_disabled_tool_skips(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_run_stage_reasons(db_session: AsyncSession) -> None:
+    """G8 reads the stage through the write oracle, on the locked row."""
     dispatcher = ExtractionBatchDispatcher(db_session, enqueue=FakeQueue())
     batch = SimpleNamespace(owner_id=SEED.primary_profile, skip_articles_with_ai_suggestions=False)
+    run = await RunLifecycleService(db_session).create_run(
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+        project_template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
 
-    assert await dispatcher._run_reason(batch, uuid4(), uuid4(), "finalized") == "RUN_FINALIZED"
-    assert await dispatcher._run_reason(batch, uuid4(), uuid4(), "consensus") == "RUN_NOT_EDITABLE"
-    assert await dispatcher._run_reason(batch, uuid4(), uuid4(), "extract") is None
+    async def park(stage: ExtractionRunStage) -> None:
+        await db_session.execute(
+            text("UPDATE public.extraction_runs SET stage = :stage WHERE id = :id"),
+            {"stage": stage.value, "id": run.id},
+        )
+
+    await park(ExtractionRunStage.FINALIZED)
+    assert await dispatcher._run_reason(batch, uuid4(), run.id) == "RUN_FINALIZED"
+    await park(ExtractionRunStage.CONSENSUS)
+    assert await dispatcher._run_reason(batch, uuid4(), run.id) == "RUN_NOT_EDITABLE"
+    await park(ExtractionRunStage.EXTRACT)
+    assert await dispatcher._run_reason(batch, uuid4(), run.id) is None
+    assert await dispatcher._run_reason(batch, uuid4(), uuid4()) == "NO_LONGER_AVAILABLE"
 
 
 @pytest.mark.asyncio

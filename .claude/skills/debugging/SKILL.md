@@ -38,7 +38,7 @@ request (Pydantic) → endpoint (guard) → service → SQLAlchemy session (flus
 | Class | What to capture |
 |---|---|
 | BOLA / authorization | Which guard from `.claude/rules/backend.md` § Ownership guards binds each client-supplied id? The API bypasses RLS, so a missing guard is the bug. RLS matters only for browser reads: `select policyname, cmd, qual, with_check from pg_policies where tablename = '<table>'`. |
-| Run-state race (TOCTOU) | Is the check-then-write under `load_run_for_update` or `take_advisory_xact_lock`, in one transaction? Stages are `pending → extract → consensus → finalized`, plus `cancelled`. |
+| Run-state race (TOCTOU) | Is the check-then-write under `open_run_for_write` (or `load_run_for_update` in the lifecycle) or `take_advisory_xact_lock`, in one transaction? Stages are `pending → extract → consensus → finalized`, plus `cancelled`. |
 | Async | Every call to an `async def` is awaited: a bare coroutine is truthy and tests pass (mypy's `unused-coroutine` catches it). `asyncio.gather` without `return_exceptions=True` raises the first error while its siblings keep running and writing. |
 | Session | Did the endpoint commit (`get_db` never does)? Is an ORM object crossing sessions or a Celery boundary, detached or stale? |
 | Celery | `task_acks_late` is global: is the task idempotent on retry? Does the worker consume the task's queue (`--queues`)? |

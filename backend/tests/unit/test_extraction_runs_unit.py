@@ -32,11 +32,11 @@ from app.schemas.extraction_run import (
     CreateConsensusRequest,
     MarkReadyRequest,
 )
-from app.services.coordinate_coherence import CoordinateMismatchError
 from app.services.extraction_consensus_service import (
     InvalidConsensusError,
     OptimisticConcurrencyError,
 )
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import (
     InvalidStageTransitionError,
     RunLifecycleService,
@@ -139,7 +139,8 @@ async def test_approve_finalize_endpoint_success_returns_count() -> None:
 @pytest.mark.parametrize(
     ("exc", "expected_status"),
     [
-        (CoordinateMismatchError("x"), 422),
+        (RunWriteError("x", reason="coordinate", run_id=None), 422),
+        (RunWriteError("x", reason="stage", run_id=None, stage="extract"), 400),
         (InvalidConsensusError("x"), 400),
         (OptimisticConcurrencyError("x"), 409),
         (InvalidStageTransitionError("x"), 400),

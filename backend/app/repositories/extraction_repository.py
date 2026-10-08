@@ -81,42 +81,24 @@ class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, ExtractionInstance)
 
-    async def get_by_article(
+    async def first_of_section(
         self,
-        article_id: UUID | str,
-        entity_type_id: UUID | str | None = None,
-    ) -> list[ExtractionInstance]:
-        """
-        List extraction instances for an article.
-
-        Args:
-            article_id: Article ID.
-            entity_type_id: Optional entity type filter.
-
-        Returns:
-            Instance list.
-        """
-        if isinstance(article_id, str):
-            article_id = UUID(article_id)
-
-        query = select(ExtractionInstance).where(ExtractionInstance.article_id == article_id)
-
-        if entity_type_id:
-            if isinstance(entity_type_id, str):
-                entity_type_id = UUID(entity_type_id)
-            query = query.where(ExtractionInstance.entity_type_id == entity_type_id)
-
-        query = query.order_by(ExtractionInstance.sort_order)
-
-        query_start = perf_counter()
-        result = await self.db.execute(query)
-        logger.debug(
-            "repository_query_db_latency",
-            repository=self.__class__.__name__,
-            operation="get_by_article",
-            db_duration_ms=(perf_counter() - query_start) * 1000,
+        article_id: UUID,
+        entity_type_id: UUID,
+        *,
+        parent_instance_id: UUID | None = None,
+    ) -> ExtractionInstance | None:
+        """The article's first instance of a section, by ``sort_order`` —
+        under ``parent_instance_id`` when one is given. A singleton section has
+        at most one per parent, so this is its instance."""
+        query = select(ExtractionInstance).where(
+            ExtractionInstance.article_id == article_id,
+            ExtractionInstance.entity_type_id == entity_type_id,
         )
-        return list(result.scalars().all())
+        if parent_instance_id is not None:
+            query = query.where(ExtractionInstance.parent_instance_id == parent_instance_id)
+        query = query.order_by(ExtractionInstance.sort_order).limit(1)
+        return (await self.db.execute(query)).scalars().first()
 
     async def get_in_coordinate(
         self,

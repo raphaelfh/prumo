@@ -56,7 +56,7 @@ def run_section_extraction_task(
     """Run AI section extraction from a serialised SectionExtractionRequest.
 
     Covers all three dispatch branches (single-section, extract-for-run,
-    extract-all-sections) via ``SectionExtractionService.run_from_request``.
+    extract-all-sections) via ``AiExtraction.run_from_request``.
     Intended as the async-safe replacement for firing extraction on the
     synchronous web request (which causes gunicorn worker timeouts on real PDFs).
 
@@ -80,12 +80,12 @@ def run_section_extraction_task(
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.schemas.extraction import SectionExtractionRequest
-        from app.services.engine_credentials import resolve_engine_credentials
-        from app.services.section_extraction_service import (
+        from app.services.ai_extraction import (
+            AiExtraction,
             BatchAllSectionsFailed,
             BatchExtractionResult,
-            SectionExtractionService,
         )
+        from app.services.engine_credentials import resolve_engine_credentials
         from app.worker._session import worker_session
 
         async with worker_session() as session:
@@ -133,7 +133,7 @@ def run_section_extraction_task(
                     engine=engine,
                 )
 
-                service = SectionExtractionService(
+                service = AiExtraction(
                     db=session,
                     user_id=user_id,
                     storage=storage,

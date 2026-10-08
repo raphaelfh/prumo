@@ -23,15 +23,14 @@ write decisions directly), so the tests that exercised it are gone.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
-    ExtractionEntityType,
+    ExtractionField,
     ExtractionRun,
     ExtractionRunStage,
     ExtractionRunStatus,
@@ -42,16 +41,34 @@ from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecisionType,
 )
+from app.services.ai_extraction import InvalidProposalError
 from app.services.extraction_consensus_service import ExtractionConsensusService
-from app.services.extraction_proposal_service import (
-    ExtractionProposalService,
-    InvalidProposalError,
-)
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
-from app.services.section_extraction_service import SectionExtractionService
-from tests.integration.conftest import SEED
+from tests.fakes.recorded_llm import RecordedLlm
+from tests.integration.conftest import SEED, land_ai_proposal
+from tests.integration.helpers.ai_extraction import extraction, request, seed_article_text
+
+
+async def _asked_on_rerun(
+    db: AsyncSession, run: ExtractionRun, field_id: UUID, user_id: UUID
+) -> bool:
+    """Whether an AI re-run with the skip flag asks the model for ``field_id``
+    — the full-run sweep a reviewer's "Run AI" fires."""
+    field = await db.get(ExtractionField, field_id)
+    assert field is not None
+    fake = RecordedLlm()
+    await extraction(db, fake, user_id=user_id).run_from_request(
+        request(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            template_id=run.template_id,
+            run_id=run.id,
+            skip_fields_with_human_proposals=True,
+        )
+    )
+    return any(field.name in call.field_names for call in fake.field_calls())
 
 
 async def _coords(
@@ -213,7 +230,7 @@ async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
 async def test_human_decision_blocks_ai_skip_flag(db_session: AsyncSession) -> None:
     """Post-collapse port of the deleted ``test_human_proposal_blocks_ai_skip_flag``.
 
-    The hybrid re-run safety used by ``extract_for_run``
+    The hybrid re-run safety of the full-run sweep
     (``skip_fields_with_human_proposals``) must still protect a field the
     human has already settled. In the collapsed ``extract`` lifecycle the
     human's extraction value is a per-reviewer ``ReviewerDecision`` (the
@@ -223,8 +240,8 @@ async def test_human_decision_blocks_ai_skip_flag(db_session: AsyncSession) -> N
     real schema: after a human ``edit`` decision lands,
 
     * a ``human`` proposal on the same coord is rejected (gate), so the
-      proposal probe can never see the value, and
-    * the decision probe DOES include the field, so AI re-runs skip it.
+      proposal track can never hold the value, and
+    * the decision track protects the field, so the AI re-run never asks it.
     """
     fx = await _coords(db_session)
     if fx is None:
@@ -265,37 +282,17 @@ async def test_human_decision_blocks_ai_skip_flag(db_session: AsyncSession) -> N
     # a frontend bypass (curl / agent client) cannot resurrect it. This is
     # why the skip set must read the decision track, not the proposal track.
     with pytest.raises(InvalidProposalError):
-        await ExtractionProposalService(db_session).record_proposal(
+        await land_ai_proposal(
+            db_session,
             run_id=run.id,
             instance_id=instance_id,
             field_id=field_id,
             source=ExtractionProposalSource.HUMAN,
-            source_user_id=profile_id,
             proposed_value={"value": "should-be-rejected"},
         )
 
-    service = SectionExtractionService(
-        db=db_session,
-        user_id=str(profile_id),
-        storage=MagicMock(),
-        trace_id="test-trace",
-    )
-
-    via_proposal = await service._fields_with_recent_human_proposal(
-        run_id=run.id,
-        instance_id=instance_id,
-        field_ids=[field_id],
-    )
-    via_decision = await service._fields_with_human_decision(
-        run_id=run.id,
-        instance_id=instance_id,
-        field_ids=[field_id],
-    )
-
-    # No human proposal exists for extraction → proposal probe is blind to it.
-    assert field_id not in via_proposal
-    # The decision probe protects the field → the AI re-run excludes it.
-    assert field_id in via_decision
+    await seed_article_text(db_session, project_id=project_id, article_id=article_id)
+    assert not await _asked_on_rerun(db_session, run, field_id, profile_id)
 
     await db_session.rollback()
 
@@ -304,19 +301,21 @@ async def test_human_decision_blocks_ai_skip_flag(db_session: AsyncSession) -> N
 async def test_human_decision_skip_probe_scoping_and_types(
     db_session: AsyncSession,
 ) -> None:
-    """Pin the real-SQL invariants of ``_fields_with_human_decision`` that the
-    single ``edit`` happy-path leaves unverified (adversarial-review hardening):
+    """Pin the real-SQL invariants of the decision track of the skip set that
+    the single ``edit`` happy-path leaves unverified (adversarial-review
+    hardening), observed through what the AI re-run asks the model:
 
     * ``reject`` is excluded, ``edit`` / ``accept_proposal`` are included — all
       asserted against the REAL join (the unit tests only feed mocked rows).
     * Reviewer-id-agnostic: ANY reviewer who settles the shared coord protects
       it. A manager ``reject`` does NOT veto a second reviewer's ``edit`` — so a
       future ``reviewer_id == …`` predicate on the probe would flip this red.
-    * The ``run_id`` / ``instance_id`` / ``field_ids`` predicates actually bind
-      (foreign-id decoys return empty, catching a widened-scope regression).
-    * End-to-end: a settled field is filtered out of the AI re-run, so
-      ``_extract_one_entity_type_for_run`` short-circuits with ``skipped=True``
-      and never reaches the LLM.
+    * End-to-end: with the only field settled, the section is skipped and the
+      model is never called.
+
+    The run / instance / field predicates are pinned by
+    ``test_ai_extraction_flows`` (run, field) and
+    ``test_entry_group_extraction`` (instance).
     """
     fx = await _coords(db_session)
     if fx is None:
@@ -356,22 +355,10 @@ async def test_human_decision_skip_probe_scoping_and_types(
     assert run.stage == ExtractionRunStage.EXTRACT.value
 
     review = ExtractionReviewService(db_session)
-    service = SectionExtractionService(
-        db=db_session,
-        user_id=str(manager_id),
-        storage=MagicMock(),
-        trace_id="test-trace",
-    )
+    await seed_article_text(db_session, project_id=project_id, article_id=article_id)
 
-    async def settled(
-        *,
-        run_id: UUID = run.id,
-        instance: UUID = instance_id,
-        fields: tuple[UUID, ...] = (field_id,),
-    ) -> set[UUID]:
-        return await service._fields_with_human_decision(
-            run_id=run_id, instance_id=instance, field_ids=list(fields)
-        )
+    async def settled() -> bool:
+        return not await _asked_on_rerun(db_session, run, field_id, manager_id)
 
     # reject only (manager) → unresolved, excluded from the skip set.
     await review.record_decision(
@@ -381,7 +368,7 @@ async def test_human_decision_skip_probe_scoping_and_types(
         reviewer_id=manager_id,
         decision=ExtractionReviewerDecisionType.REJECT,
     )
-    assert field_id not in await settled()
+    assert not await settled()
 
     # A SECOND reviewer's edit protects the shared coord even though the
     # manager's current decision is reject — the reviewer-id-agnostic "any
@@ -395,7 +382,7 @@ async def test_human_decision_skip_probe_scoping_and_types(
         decision=ExtractionReviewerDecisionType.EDIT,
         value={"value": "second-reviewer-typed"},
     )
-    assert field_id in await settled()
+    assert await settled()
 
     # When that reviewer also steps back to reject, nothing is settled — both
     # reviewers now hold a (non-settling) reject. Pins reject-exclusion on the
@@ -410,13 +397,14 @@ async def test_human_decision_skip_probe_scoping_and_types(
         reviewer_id=reviewer_b,
         decision=ExtractionReviewerDecisionType.REJECT,
     )
-    assert field_id not in await settled()
+    assert not await settled()
 
     # accept_proposal (manager) over an AI proposal settles the coord again,
     # isolated to the manager (the second reviewer's current decision is
     # reject) — so ``accept_proposal`` is exercised through the REAL join, and a
     # reviewer-scoped probe would wrongly report empty.
-    proposal = await ExtractionProposalService(db_session).record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -431,33 +419,19 @@ async def test_human_decision_skip_probe_scoping_and_types(
         decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
         proposal_record_id=proposal.id,
     )
-    assert field_id in await settled()
+    assert await settled()
 
-    # The run_id / instance_id / field_ids predicates bind: foreign coords see
-    # nothing (a dropped predicate would leak the real decision here).
-    assert field_id not in await settled(run_id=uuid4())
-    assert field_id not in await settled(instance=uuid4())
-    assert await settled(fields=(uuid4(),)) == set()
-
-    # End-to-end: with the only field settled, the AI re-run short-circuits
-    # before the LLM is ever called (no real model / pdf needed).
-    entity_type_id = (
-        await db_session.execute(
-            text("SELECT entity_type_id FROM public.extraction_instances WHERE id = :iid"),
-            {"iid": str(instance_id)},
+    # End-to-end: with the only field settled, the re-run skips the section
+    # before the model is ever called.
+    fake = RecordedLlm()
+    result = await extraction(db_session, fake, user_id=manager_id).run_from_request(
+        request(
+            project_id=project_id,
+            article_id=article_id,
+            template_id=template_id,
+            run_id=run.id,
+            skip_fields_with_human_proposals=True,
         )
-    ).scalar()
-    entity_type = await db_session.get(ExtractionEntityType, entity_type_id)
-    assert entity_type is not None
-    result = await service._extract_one_entity_type_for_run(
-        run=run,
-        entity_type=entity_type,
-        pdf_text="",
-        framework=None,
-        kind="extraction",
-        skip_fields_with_human_proposals=True,
     )
-    assert result.get("skipped") is True
-    assert result.get("suggestions_created") == 0
-
-    await db_session.rollback()
+    assert fake.calls == []
+    assert [s["skipped"] for s in result.sections] == [True]

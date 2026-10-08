@@ -32,13 +32,9 @@ from app.schemas.extraction import (
     ExtractionJobStatusResponse,
     SectionExtractionRequest,
 )
-from app.services.coordinate_coherence import (
-    CoordinateMismatchError,
-    assert_instance_in_coordinate,
-)
 from app.services.extraction_attempt_service import ExtractionAttemptService
+from app.services.extraction_run_write import RunWriteError, assert_instance_in_coordinate
 from app.services.llm_engine_service import resolve_engine
-from app.services.run_lifecycle_service import InvalidStageTransitionError
 from app.services.template_section_service import SectionNotFoundError, owned_section
 from app.utils.rate_limiter import limiter
 from app.worker.celery_app import REDIS_URL
@@ -145,7 +141,7 @@ async def _check_request_scope(
     # ``ExtractionInstance`` against it. That FK is ON DELETE RESTRICT, so
     # the row silently stops the boot-time catalogue replace from
     # converging. Missing and foreign ids answer identically — existence
-    # never leaks. ``section_extraction_service`` re-scopes its own live
+    # never leaks. ``ai_extraction`` re-scopes its own live
     # lookup: this gate spares the caller a job that would die in the worker.
     if payload.entity_type_id is not None:
         try:
@@ -171,7 +167,7 @@ async def _check_request_scope(
                 article_id=payload.article_id,
                 template_id=payload.template_id,
             )
-        except CoordinateMismatchError as exc:
+        except RunWriteError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="parentInstanceId does not belong to this coordinate",
@@ -252,7 +248,7 @@ async def extract_section(
         attempt = await ExtractionAttemptService(db).prepare_request(
             payload, current_user_sub, job_id=str(uuid.uuid4())
         )
-    except InvalidStageTransitionError as exc:
+    except RunWriteError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     assert attempt.job_id is not None
 

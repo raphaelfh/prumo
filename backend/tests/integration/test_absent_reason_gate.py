@@ -35,11 +35,10 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
 )
 from app.services.extraction_consensus_service import ExtractionConsensusService
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 _MARKER = {"value": None, "absent_reason": "no_information"}
 
@@ -146,7 +145,8 @@ async def test_accepted_marker_round_trips_to_published_and_fills_gate(
     lifecycle = RunLifecycleService(db_session)
 
     # AI records a no_information marker proposal (the Phase-1 recording split).
-    proposal = await ExtractionProposalService(db_session).record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -241,7 +241,8 @@ async def test_unaccepted_marker_proposal_does_not_fill_gate(
     # section → many "not reported" markers cannot self-finalize a run) and the
     # reopen case (a carried marker re-seeds as a source='system' proposal that
     # must be re-accepted before it re-finalizes).
-    await ExtractionProposalService(db_session).record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,

@@ -22,13 +22,13 @@ import pytest
 from app.llm.provider import MissingLLMKeyError
 from app.schemas.extraction import ExtractionErrorCode
 from app.schemas.llm_target import LlmTarget
-from app.services.extraction_errors import ExtractionTaskError
-from app.services.llm_engine_service import EngineRetiredError
-from app.services.section_extraction_service import (
+from app.services.ai_extraction import (
     BatchAllSectionsFailed,
     BatchExtractionResult,
     SectionExtractionResult,
 )
+from app.services.extraction_errors import ExtractionTaskError
+from app.services.llm_engine_service import EngineRetiredError
 from app.worker.celery_app import celery_app
 from app.worker.tasks import extraction_tasks
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
@@ -152,7 +152,7 @@ class TestRunSectionExtractionTaskSingle:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -194,7 +194,7 @@ class TestRunSectionExtractionTaskSingle:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -232,7 +232,7 @@ class TestRunSectionExtractionTaskBatch:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -286,7 +286,7 @@ class TestRunSectionExtractionTaskRollback:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -327,7 +327,7 @@ class TestRunSectionExtractionTaskAllFailed:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -366,7 +366,7 @@ class TestRunSectionExtractionTaskErrorCode:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 return_value=fake_service,
             ),
             patch(
@@ -509,7 +509,7 @@ class TestHumanKickoffVersusRetry:
 
         with (
             patch(
-                "app.services.section_extraction_service.SectionExtractionService",
+                "app.services.ai_extraction.AiExtraction",
                 side_effect=_capture,
             ),
             patch(
@@ -605,9 +605,7 @@ def test_durable_delivery_uses_recorded_owner_payload_and_separate_session():
     with (
         patch("app.worker._session.worker_session", session_factory),
         patch("app.services.extraction_attempt_service.ExtractionAttemptService") as attempts,
-        patch(
-            "app.services.section_extraction_service.SectionExtractionService", return_value=service
-        ) as domain,
+        patch("app.services.ai_extraction.AiExtraction", return_value=service) as domain,
         patch("app.core.deps.get_supabase_client"),
         patch("app.core.factories.create_storage_adapter"),
         patch("app.services.engine_credentials.resolve_engine_credentials", new=AsyncMock()),

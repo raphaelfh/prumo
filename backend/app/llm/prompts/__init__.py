@@ -19,7 +19,7 @@ def content_version(*parts: str) -> str:
 class Ancestor:
     """One enclosing entry of the instance a prompt is about: the noun of its
     group and the entry's label, e.g. ``model "XGBoost"``. Chains read
-    outermost first (see ``app.services.entry_ancestry``)."""
+    outermost first (see ``app.services.ai_extraction._ancestry``)."""
 
     noun: str
     label: str

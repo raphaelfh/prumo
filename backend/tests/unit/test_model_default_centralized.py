@@ -10,9 +10,7 @@ BACKEND = Path(__file__).resolve().parents[2]
 EXTRACTION_FILES = [
     "app/schemas/extraction.py",
     "app/api/v1/endpoints/section_extraction.py",
-    "app/api/v1/endpoints/model_extraction.py",
-    "app/services/section_extraction_service.py",
-    "app/services/model_extraction_service.py",
+    "app/services/ai_extraction",
     "app/worker/tasks/extraction_tasks.py",
 ]
 
@@ -22,8 +20,9 @@ def test_extraction_pipeline_has_no_hardcoded_model_literal():
     never a hardcoded 'gpt-4o-mini' literal."""
     offending: list[str] = []
     for rel in EXTRACTION_FILES:
+        assert (BACKEND / rel).exists(), f"{rel} moved: point this guard at its new home"
         out = subprocess.run(
-            ["grep", "-In", "gpt-4o-mini", str(BACKEND / rel)],
+            ["grep", "-rIn", "gpt-4o-mini", str(BACKEND / rel)],
             capture_output=True,
             text=True,
         ).stdout.strip()

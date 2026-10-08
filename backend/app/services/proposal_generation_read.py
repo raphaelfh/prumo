@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRun
+from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.models.extraction_attempt import ExtractionAttempt
 from app.models.extraction_workflow import ExtractionProposalRecord
 from app.models.user import Profile
@@ -183,7 +183,7 @@ async def suggestion_reveal_context(
         )
         arbitrator = (
             await is_run_arbitrator(db, row.project_id, caller_id)
-            if row.stage == "consensus" and not can_see
+            if row.stage == ExtractionRunStage.CONSENSUS.value and not can_see
             else False
         )
         if run_reveals_peers(row.stage, can_see_peers=can_see, is_arbitrator=arbitrator):

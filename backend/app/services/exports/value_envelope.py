@@ -75,7 +75,7 @@ def resolve_value(raw: Any, *, field: _FieldLike | None = None) -> ResolvedScala
     # --- Recursive single-wrap {"value": inner} ---------------------------
     # Handles {"value": x}, double-wrapped {"value": {"value": x}}, and
     # {"value": {"value": n, "unit": u}} from the decisions/proposals write
-    # path (section_extraction_service wraps {"value": inner}). The single
+    # path (``ai_extraction`` wraps {"value": inner}). The single
     # wrap carries no unit of its own. When the inner is itself an envelope
     # (a {"value"} or {"value", "unit"} dict) it has already resolved any
     # unit, so we must NOT re-decorate it. Only a bare scalar inner takes

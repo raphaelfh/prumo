@@ -12522,7 +12522,7 @@
     },
     "/api/v1/articles/form-runs": {
       "post": {
-        "description": "Resolve the latest relevant run per article for the extraction form.\n\nPer article: returns the latest non-terminal run; falls back to the\nlatest finalized run; returns run_id=null when no run exists.\nCancelled runs are excluded. BOLA-gated via project_id in the body.",
+        "description": "Each article's resolved run for the extraction form (live, else\nfinalized; run_id=null when none \u2014 ``app.services.current_run``).\nBOLA-gated via project_id in the body, which also scopes the resolution:\na member of P passing Q's article ids reads back no Q run ids.",
         "operationId": "post_form_runs_api_v1_articles_form_runs_post",
         "requestBody": {
           "content": {

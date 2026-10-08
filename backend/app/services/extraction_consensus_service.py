@@ -24,8 +24,7 @@ from app.repositories.extraction_published_state_repository import (
 from app.repositories.extraction_reviewer_decision_repository import (
     ExtractionReviewerDecisionRepository,
 )
-from app.services._extraction_run_lock import load_run_for_update
-from app.services.coordinate_coherence import assert_coords_coherent
+from app.services.extraction_run_write import open_run_for_write
 from app.services.value_semantics import strip_verification
 
 
@@ -58,17 +57,10 @@ class ExtractionConsensusService:
         value: dict[str, Any] | None = None,
         rationale: str | None = None,
     ) -> tuple[ExtractionConsensusDecision, ExtractionPublishedState]:
-        run = await load_run_for_update(self.db, run_id)
-        if run is None:
-            raise InvalidConsensusError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.CONSENSUS.value:
-            raise InvalidConsensusError(
-                f"Cannot record consensus: run stage is {run.stage}, not 'consensus'"
-            )
-
-        await assert_coords_coherent(
+        await open_run_for_write(
             self.db,
-            run_id=run_id,
+            run_id,
+            expect=ExtractionRunStage.CONSENSUS.only(),
             instance_id=instance_id,
             field_id=field_id,
         )

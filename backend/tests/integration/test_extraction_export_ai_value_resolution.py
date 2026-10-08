@@ -28,10 +28,9 @@ from app.models.extraction_workflow import (
 )
 from app.services.extraction_consensus_service import ExtractionConsensusService
 from app.services.extraction_export_service import ExportMode, ExtractionExportService
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.hitl_session_service import HITLSessionService
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 pytestmark = pytest.mark.asyncio
 
@@ -76,14 +75,13 @@ async def test_ai_proposed_value_resolves_number_unit(
         project_template_id=template_id,
     )
     run_id: UUID = session.run_id
-
-    proposals = ExtractionProposalService(db_session)
     lifecycle = RunLifecycleService(db_session)
 
     # AI proposals persist when recorded in EXTRACT stage. The
     # double-wrapped number+unit shape is the real write-path payload the
     # §6 bug corrupted; it must surface as "5 mg" in the AI column.
-    await proposals.record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run_id,
         instance_id=instance_id,
         field_id=number_field_id,

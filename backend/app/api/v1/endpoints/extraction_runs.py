@@ -43,7 +43,6 @@ from app.schemas.extraction_run import (
     RunSummaryResponse,
     RunViewResponse,
 )
-from app.services.coordinate_coherence import CoordinateMismatchError
 from app.services.extraction_consensus_service import (
     ExtractionConsensusService,
     InvalidConsensusError,
@@ -64,6 +63,7 @@ from app.services.extraction_run_read_service import (
     list_run_participants,
     scrub_results_ranby,
 )
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import (
     CannotReopenRunError,
     CreateRunInputError,
@@ -80,6 +80,11 @@ router = APIRouter()
 
 def _trace(request: Request) -> str | None:
     return getattr(request.state, "trace_id", None)
+
+
+def _run_write_status(exc: RunWriteError) -> int:
+    """A refused coordinate is an unprocessable id (422); a refused stage is 400."""
+    return 422 if exc.reason == "coordinate" else 400
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -245,16 +250,17 @@ async def create_decision(
             rationale=body.rationale,
             expected_current_decision_id=body.expected_current_decision_id,
         )
-    except CoordinateMismatchError as e:
+    except RunWriteError as e:
         logger.warning(
-            "hitl_decision_coord_mismatch",
+            "hitl_decision_refused",
             trace_id=trace_id,
             run_id=str(run_id),
+            reason=e.reason,
             instance_id=str(body.instance_id),
             field_id=str(body.field_id),
             error=str(e),
         )
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(status_code=_run_write_status(e), detail=str(e)) from e
     except InvalidDecisionError as e:
         logger.warning(
             "hitl_decision_rejected",
@@ -333,16 +339,17 @@ async def create_consensus(
             value=body.value,
             rationale=body.rationale,
         )
-    except CoordinateMismatchError as e:
+    except RunWriteError as e:
         logger.warning(
-            "hitl_consensus_coord_mismatch",
+            "hitl_consensus_refused",
             trace_id=trace_id,
             run_id=str(run_id),
+            reason=e.reason,
             instance_id=str(body.instance_id),
             field_id=str(body.field_id),
             error=str(e),
         )
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(status_code=_run_write_status(e), detail=str(e)) from e
     except InvalidConsensusError as e:
         logger.warning(
             "hitl_consensus_rejected",
@@ -473,8 +480,8 @@ async def approve_and_finalize_run(
         run, published_count = await service.approve_and_finalize(
             run_id=run_id, user_id=current_user_sub
         )
-    except CoordinateMismatchError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+    except RunWriteError as e:
+        raise HTTPException(status_code=_run_write_status(e), detail=str(e)) from e
     except InvalidConsensusError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except OptimisticConcurrencyError as e:
@@ -574,9 +581,9 @@ async def reopen_run(
         if is_one_live_run_conflict(e):
             # One-live-run invariant (uq_one_live_extraction_run_per_coord,
             # 0045). reopen_run's idempotency guard only recognises children
-            # of THIS parent, but `resolve_or_create_extract_run` (the
+            # of THIS parent, but `resolve_or_create_extract` (the
             # "Run AI" path) can create an UNPARENTED live run over a
-            # finalized coordinate — its lookup filters NON_TERMINAL_STAGES,
+            # finalized coordinate — its lookup filters ExtractionRunStage.live(),
             # so the finalized parent is invisible to it. The fork then
             # collides. Report the conflict the way the sibling create_run
             # does, instead of letting it escape as a 500.

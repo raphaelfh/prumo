@@ -7,13 +7,14 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.error_handler import ConflictError, NotFoundError
+from app.models.extraction import ExtractionRunStage
 from app.models.extraction_attempt import ExtractionAttempt
 from app.repositories.extraction_attempt_repository import ExtractionAttemptRepository
 from app.schemas.extraction import SectionExtractionRequest
 from app.schemas.extraction_attempt import AttemptScope
+from app.services.current_run import CurrentRunResolver
 from app.services.extraction_errors import ExtractionTaskError, classify_extraction_error
-from app.services.extraction_run_read_service import get_run_or_raise
-from app.services.run_lifecycle_service import InvalidStageTransitionError, RunLifecycleService
+from app.services.extraction_run_write import open_run_for_write
 
 
 class ExtractionAttemptService:
@@ -31,16 +32,16 @@ class ExtractionAttemptService:
         if existing is not None:
             run_id = run_id or existing.run_id
         if run_id is None:
-            run, _ = await RunLifecycleService(self.db).resolve_or_create_extract_run(
+            run, _ = await CurrentRunResolver(self.db).resolve_or_create_extract(
                 project_id=payload.project_id,
                 article_id=payload.article_id,
-                project_template_id=payload.template_id,
+                template_id=payload.template_id,
                 user_id=owner_id,
             )
             run_id = run.id
-        summary = await get_run_or_raise(self.db, run_id)
-        if summary.stage != "extract":
-            raise InvalidStageTransitionError("AI extraction requires the extract stage")
+        # Locked until the commit below: no stage flip can slip between the
+        # gate and the attempt row.
+        await open_run_for_write(self.db, run_id, expect=ExtractionRunStage.EXTRACT.only())
         normalized = payload.model_dump(mode="json", exclude={"request_id"})
         normalized["run_id"] = str(run_id)
         attempt, _ = await self.attempts.get_or_create(

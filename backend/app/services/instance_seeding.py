@@ -41,7 +41,7 @@ async def ensure_instances(
     # race and produce duplicate singleton instances. The lock is
     # transaction-scoped, so it is released on commit / rollback and
     # does not require explicit cleanup. The same lock also protects
-    # the active-run lookup in ``HITLSessionService._reuse_or_create_run`` (issue #70).
+    # the run resolution in ``CurrentRunResolver.open_for_session`` (issue #70).
     await take_advisory_xact_lock(db, article_id, project_template_id)
 
     existing_stmt = select(ExtractionInstance).where(

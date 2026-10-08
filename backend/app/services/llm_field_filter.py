@@ -13,9 +13,8 @@ asked: the AI fills the whole instrument, and the layers that decide what a
 value counts for (the QA form, the derived judgments, the export) evaluate the
 template's rules on their own.
 
-Lives outside ``section_extraction_service`` deliberately: that module is at
-its file-size ratchet cap, and construction (which needs the DB) has no reason
-to sit next to consumption (which does not).
+Construction (which needs the DB) lives here; consumption is the model-call
+step of ``app.services.ai_extraction`` and its ``ProposalLanding`` re-read.
 """
 
 from __future__ import annotations
@@ -44,17 +43,26 @@ class LlmFieldFilter:
     excluded_coordinates: frozenset[tuple[str, str]] = frozenset()
 
 
-async def build_llm_field_filter(db: AsyncSession, run: ExtractionRun) -> LlmFieldFilter:
-    """Resolve the excluded coordinates for *run* from its template's live schema."""
+def llm_field_filter_of(template: ProjectExtractionTemplate | None) -> LlmFieldFilter:
+    """The excluded coordinates *template*'s schema declares — no I/O.
+
+    ``ProposalLanding`` re-reads the template under the run lock and filters
+    through this; the orphaned-exclusion warning stays with
+    :func:`build_llm_field_filter`, asked once per run.
+    """
     # `template_id` is Mapped[UUID], NOT NULL, FK ON DELETE RESTRICT — it
     # cannot be None and cannot dangle. The getattr default still covers the
     # row being absent, which only a hand-deleted template could produce.
-    template = await db.get(ProjectExtractionTemplate, run.template_id)
     schema = getattr(template, "schema_", None)
-    excluded = frozenset(excluded_field_coordinates(derived_spec(schema)))
-    if excluded:
-        await _warn_orphaned_exclusions(db, run, excluded)
-    return LlmFieldFilter(excluded_coordinates=excluded)
+    return LlmFieldFilter(frozenset(excluded_field_coordinates(derived_spec(schema))))
+
+
+async def build_llm_field_filter(db: AsyncSession, run: ExtractionRun) -> LlmFieldFilter:
+    """Resolve the excluded coordinates for *run* from its template's live schema."""
+    field_filter = llm_field_filter_of(await db.get(ProjectExtractionTemplate, run.template_id))
+    if field_filter.excluded_coordinates:
+        await _warn_orphaned_exclusions(db, run, field_filter.excluded_coordinates)
+    return field_filter
 
 
 async def _warn_orphaned_exclusions(

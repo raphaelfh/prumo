@@ -152,11 +152,10 @@ export interface paths {
         put?: never;
         /**
          * Post Form Runs
-         * @description Resolve the latest relevant run per article for the extraction form.
-         *
-         *     Per article: returns the latest non-terminal run; falls back to the
-         *     latest finalized run; returns run_id=null when no run exists.
-         *     Cancelled runs are excluded. BOLA-gated via project_id in the body.
+         * @description Each article's resolved run for the extraction form (live, else
+         *     finalized; run_id=null when none — ``app.services.current_run``).
+         *     BOLA-gated via project_id in the body, which also scopes the resolution:
+         *     a member of P passing Q's article ids reads back no Q run ids.
          */
         post: operations["post_form_runs_api_v1_articles_form_runs_post"];
         delete?: never;
