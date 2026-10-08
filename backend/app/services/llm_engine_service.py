@@ -31,7 +31,7 @@ from app.core.config import settings
 from app.core.error_handler import AppError
 from app.core.logging import get_logger
 from app.llm.catalog import canonical, find_entry, selectable_catalog
-from app.llm.registry import get_provider, llm_provider_ids
+from app.llm.registry import get_provider, llm_provider_ids, needs_host
 from app.models.llm_connection import UserProjectEngine
 from app.models.project import Project
 from app.repositories.project_repository import ProjectRepository
@@ -269,8 +269,7 @@ class LlmEngineService:
         """Persist the project default (a catalogue pair) and the lock, with
         attribution. ``updated_by`` comes from the auth dependency and
         ``previous_model`` from the stored value — never client-supplied."""
-        spec = get_provider(provider)
-        if spec is not None and spec.needs_host:
+        if needs_host(provider):
             raise ValueError("The project default is a catalogue pair; a host is a per-user engine")
         if find_entry(provider, model) is None:
             raise ValueError(f"Unknown engine {provider}:{model} — not in the server catalogue")

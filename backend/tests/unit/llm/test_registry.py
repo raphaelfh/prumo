@@ -17,6 +17,7 @@ from app.llm.registry import (
     get_provider,
     global_key_for,
     llm_provider_ids,
+    needs_host,
     provider_ids,
 )
 
@@ -33,7 +34,7 @@ def test_registry_ids_are_exactly_the_registered_providers() -> None:
 
 
 def test_llm_providers_exclude_parsing_providers() -> None:
-    assert [s.id for s in REGISTRY if s.serves == "llm"] == [
+    assert [s.id for s in REGISTRY if s.llm is not None] == [
         "openai",
         "anthropic",
         "google",
@@ -116,20 +117,22 @@ def test_key_optional_is_exactly_the_host_bearing_rule() -> None:
 
 
 @pytest.mark.parametrize("spec", REGISTRY, ids=lambda s: s.id)
-def test_behaviour_sits_on_the_row(spec: ProviderSpec) -> None:
-    """A completions row builds a model on a declared output mode; a hosted
-    row carries its key probe; a host-bearing row leaves probing to the
-    endpoint ladder."""
-    assert (spec.build is not None) == (spec.serves == "llm"), spec.id
-    assert (spec.output_mode is not None) == (spec.serves == "llm"), spec.id
+def test_only_hosted_rows_carry_a_key_probe(spec: ProviderSpec) -> None:
+    """A hosted row carries its key probe; a host-bearing row leaves probing
+    to the endpoint ladder."""
     assert (spec.probe is not None) == (not spec.needs_host), spec.id
+
+
+def test_needs_host_reads_the_row_and_rejects_unknown_ids() -> None:
+    assert [s.id for s in REGISTRY if needs_host(s.id)] == ["openai_compatible"]
+    assert needs_host("no-such-provider") is False
 
 
 def test_output_modes_are_per_the_spec_table() -> None:
     """OpenAI and Gemini enforce a json_schema response_format; Anthropic has
     none and Ollama Cloud accepts one without enforcing it, so both use
     tool-calling. A custom host's row default is overridden by its probe."""
-    assert {spec.id: spec.output_mode for spec in REGISTRY} == {
+    assert {spec.id: spec.llm and spec.llm.output_mode for spec in REGISTRY} == {
         "openai": "native",
         "anthropic": "tool",
         "google": "native",

@@ -20,12 +20,12 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.adapters import OutputMode
-from app.schemas.llm_endpoint import LlmEndpointCapabilities
 from app.schemas.llm_target import LlmTarget
 from app.services.llm_connection_service import (
     ConnectionUnavailableError,
     KeyScope,
     LlmConnectionService,
+    capabilities_of,
     owned_user_connection,
     resolve_provider_key,
 )
@@ -80,15 +80,13 @@ async def resolve_engine_credentials(
         row = await owned_user_connection(db, connection_id, caller)
         if row is None:
             raise _unavailable(engine.connection_id)
-        # Re-validated from JSONB: an unknown stored mode degrades to None
-        # (the row default), loudly, never a 500 on the run path.
-        capabilities = LlmEndpointCapabilities.model_validate(row.capabilities or {})
         return EngineCredentials(
             api_key=await LlmConnectionService(db).decrypt_key(row),
             key_scope=KeyScope.USER_BYOK,
             base_url=row.base_url,
             connection_id=engine.connection_id,
-            output_mode=capabilities.output_mode,
+            # None (unknown or never probed) falls back to the row default.
+            output_mode=capabilities_of(row).output_mode,
         )
     resolved = await resolve_provider_key(
         db, provider=engine.provider, project_id=project_id, user_id=caller
