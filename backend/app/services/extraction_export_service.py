@@ -1580,7 +1580,7 @@ class ExtractionExportService(LoggerMixin):
         # any superseded ones for the same (run, instance, field). ``id`` is
         # the deterministic tiebreaker on equal ``created_at`` (same-transaction
         # inserts share the timestamp), matching the canonical
-        # ExtractionProposalRepository.get_latest_for_coord ordering so the
+        # ExtractionProposalRepository.latest_by_field ordering so the
         # FR-037 "superseded" outcome is stable across export builds.
         proposal_rows = (
             await self.db.execute(

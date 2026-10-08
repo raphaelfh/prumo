@@ -9,12 +9,15 @@ and the post-model re-read of authorization and assessor exclusions.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -121,6 +124,22 @@ def _evidence_row(run: ExtractionRun, quote: str, rank: int = 0) -> ExtractionEv
         rank=rank,
         created_by=SEED.primary_profile,
     )
+
+
+@contextmanager
+def _statements(db: AsyncSession) -> Iterator[list[str]]:
+    """Every SQL statement the session sends inside the block."""
+    seen: list[str] = []
+
+    def record(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        seen.append(statement)
+
+    engine = db.bind.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield seen
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
 
 
 async def _attempt(db: AsyncSession, run: ExtractionRun) -> ExtractionAttempt:
@@ -351,6 +370,23 @@ async def test_human_source_is_refused_on_an_extraction_run(db_session: AsyncSes
     assert await _rows(db_session, run.id) == []
 
 
+async def test_human_source_is_refused_before_any_read(db_session: AsyncSession) -> None:
+    """The source refusal is a pure policy check: it precedes the run lock,
+    so even a run that does not exist is refused as a human write."""
+    ghost = SimpleNamespace(id=uuid4())
+    section = await _section(db_session)
+    with _statements(db_session) as sent, pytest.raises(InvalidProposalError, match="/decisions"):
+        await _landing(db_session).land(
+            ghost,  # type: ignore[arg-type]
+            section,
+            SimpleNamespace(id=uuid4()),  # type: ignore[arg-type]
+            [_candidate("leaked")],
+            Generation(ENGINE, None, None),
+            source=ExtractionProposalSource.HUMAN,
+        )
+    assert [s for s in sent if not s.startswith(("SAVEPOINT", "RELEASE", "ROLLBACK"))] == []
+
+
 async def test_human_source_is_refused_on_a_qa_run(db_session: AsyncSession) -> None:
     """Post-D8 the QA form writes /decisions too: a bare human proposal would
     force ``materialize_qa_decisions`` to reconcile it at every advance."""
@@ -404,6 +440,101 @@ async def test_assessor_exclusions_are_reread_at_landing(db_session: AsyncSessio
     )
     assert written == 0
     assert await _rows(db_session, run.id) == []
+
+
+async def test_the_gate_rereads_the_template_once_and_never_walks_the_tree(
+    db_session: AsyncSession,
+) -> None:
+    """The landing gate re-reads the live schema in ONE statement and leaves
+    the orphaned-exclusion warning (a whole-tree join) to the pipeline, which
+    asks it once per run — not on every landing of an extract-all."""
+    run = await run_in_extract(db_session)
+    section = await _section(db_session)
+    await db_session.execute(
+        text("UPDATE project_extraction_templates SET schema = CAST(:s AS jsonb) WHERE id = :id"),
+        {
+            "id": SEED.primary_template,
+            "s": json.dumps(
+                {
+                    "derived_judgments": [
+                        {
+                            "id": "j",
+                            "rule": "signaling_worst",
+                            "target": {"section": section.name, "field": "renamed_away"},
+                            "inputs": [],
+                        }
+                    ]
+                }
+            ),
+        },
+    )
+    with (
+        patch("app.services.llm_field_filter.logger") as log,
+        _statements(db_session) as sent,
+    ):
+        written = await _landing(db_session).land(
+            run,
+            section,
+            await _instance(db_session),
+            [_candidate(1)],
+            Generation(ENGINE, None, None),
+        )
+    assert written == 1
+    assert not log.warning.called
+    assert len([s for s in sent if "FROM public.project_extraction_templates" in s]) == 1
+    assert not [s for s in sent if "project_template_id" in s]
+
+
+async def test_a_section_lands_with_one_read_of_its_prior_rows(
+    db_session: AsyncSession,
+) -> None:
+    """Dedupe and disposition lookups are batched per landing: N candidates
+    cost one read of the coordinate's prior rows and one of the field domains,
+    and a re-landed value still dedupes per field."""
+    run = await run_in_extract(db_session)
+    section_id = await add_section(db_session, SEED.primary_template, f"batch_{uuid4().hex[:6]}")
+    fields = [await add_field(db_session, section_id, f"f{i}") for i in range(3)]
+    await db_session.execute(
+        text(
+            "UPDATE extraction_fields SET field_type='select', "
+            "allowed_values=CAST(:av AS jsonb) WHERE id = ANY(:ids)"
+        ),
+        {"ids": fields, "av": json.dumps(["Yes", "No", "No information"])},
+    )
+    section = await _section(db_session, section_id)
+    landing = _landing(db_session)
+
+    def batch(first: str) -> list[ProposalCandidate]:
+        return [
+            ProposalCandidate(fields[0], "f0", {"value": first}),
+            ProposalCandidate(fields[1], "f1", {"value": "No information"}),
+            ProposalCandidate(fields[2], "f2", {"value": "Yes"}),
+        ]
+
+    await landing.land(
+        run, section, SingletonSlot(None), batch("Yes"), Generation(ENGINE, None, None)
+    )
+    with _statements(db_session) as sent:
+        written = await landing.land(
+            run, section, SingletonSlot(None), batch("No"), Generation(ENGINE, None, None)
+        )
+    assert written == 3
+    reads = [s for s in sent if s.lstrip().startswith("SELECT")]
+    assert len([s for s in reads if "FROM public.extraction_proposal_records" in s]) == 1
+    assert len([s for s in reads if "extraction_fields.allowed_values" in s]) == 1
+    # One transaction: rows tie on created_at, so compare as a multiset.
+    rows = sorted(
+        (str(r.field_id), json.dumps(r.proposed_value)) for r in await _rows(db_session, run.id)
+    )
+    assert rows == sorted(
+        (str(f), json.dumps(v))
+        for f, v in [
+            (fields[0], {"value": "Yes"}),
+            (fields[0], {"value": "No"}),
+            (fields[1], {"value": None, "absent_reason": "no_information"}),
+            (fields[2], {"value": "Yes"}),
+        ]
+    )
 
 
 # --------------------------------------------------------------------------

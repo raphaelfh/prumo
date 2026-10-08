@@ -2,8 +2,8 @@
 
 One :class:`Pipeline` per ``AiExtraction``: the frozen engine and its
 credentials, the article text assembled once per run (with the parsed blocks
-evidence is anchored to), the run-pinned entity tree, and the memoized
-field filter and entry chains. The section steps (``_sections``), the model
+evidence is anchored to), and the memoized run-pinned entity tree, field
+filter and entry chains. The section steps (``_sections``), the model
 calls (``_model_calls``) and the candidate build (``_candidates``) take it
 as their one collaborator; writes go through its :class:`ProposalLanding`.
 """
@@ -97,6 +97,8 @@ class Pipeline:
         self.ancestry: dict[tuple[UUID, UUID], tuple[Ancestor, ...]] = {}
         self._field_filter = LlmFieldFilter()
         self._filter_run_id: UUID | None = None
+        #: The pinned tree per ``(run, version)`` — ``pinned_entity_types``.
+        self._pinned: dict[tuple[UUID, UUID], list[Any]] = {}
 
     @property
     def anchor_blocks(self) -> list[ParsedBlock]:
@@ -184,10 +186,14 @@ class Pipeline:
         return text
 
     async def pinned_entity_types(self, run: ExtractionRun) -> list[Any]:
-        """The frozen tree this run is pinned to (shared B-2 provider)."""
-        return await entity_types_for_version(
-            self.db, version_id=run.version_id, template_id=run.template_id
-        )
+        """The frozen tree this run is pinned to (shared B-2 provider),
+        memoised per pin: the ancestry walk asks once per instance."""
+        key = (run.id, run.version_id)
+        if key not in self._pinned:
+            self._pinned[key] = await entity_types_for_version(
+                self.db, version_id=run.version_id, template_id=run.template_id
+            )
+        return self._pinned[key]
 
     async def entity_type_on_run(
         self, run: ExtractionRun, entity_type_id: UUID

@@ -1,5 +1,6 @@
 """Repository for ExtractionProposalRecord."""
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -14,12 +15,6 @@ class ExtractionProposalRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def add(self, record: ExtractionProposalRecord) -> ExtractionProposalRecord:
-        self.db.add(record)
-        await self.db.flush()
-        await self.db.refresh(record)
-        return record
-
     async def get(self, proposal_id: UUID) -> ExtractionProposalRecord | None:
         stmt = select(ExtractionProposalRecord).where(ExtractionProposalRecord.id == proposal_id)
         return (await self.db.execute(stmt)).scalar_one_or_none()
@@ -33,44 +28,36 @@ class ExtractionProposalRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_latest_for_coord(
-        self,
-        run_id: UUID,
-        instance_id: UUID,
-        field_id: UUID,
-        source: str,
-        source_user_id: UUID | None,
-    ) -> ExtractionProposalRecord | None:
-        """Newest proposal for a coord scoped to source (+ user), for the
-        idempotency check. ``id`` is the deterministic tiebreaker on equal
-        ``created_at`` (same-transaction inserts share the timestamp)."""
+    async def latest_by_field(
+        self, run_id: UUID, instance_id: UUID, field_ids: Sequence[UUID], source: str
+    ) -> dict[UUID, ExtractionProposalRecord]:
+        """Newest unattributed proposal of ``source`` per field of one instance,
+        for the landing's value dedupe. ``id`` is the deterministic tiebreaker
+        on equal ``created_at`` (same-transaction inserts share the timestamp)."""
+        record = ExtractionProposalRecord
         stmt = (
-            select(ExtractionProposalRecord)
+            select(record)
             .where(
-                ExtractionProposalRecord.run_id == run_id,
-                ExtractionProposalRecord.instance_id == instance_id,
-                ExtractionProposalRecord.field_id == field_id,
-                ExtractionProposalRecord.source == source,
-                ExtractionProposalRecord.source_user_id == source_user_id,
+                record.run_id == run_id,
+                record.instance_id == instance_id,
+                record.field_id.in_(field_ids),
+                record.source == source,
+                record.source_user_id.is_(None),
             )
-            .order_by(
-                ExtractionProposalRecord.created_at.desc(),
-                ExtractionProposalRecord.id.desc(),
-            )
-            .limit(1)
+            .distinct(record.field_id)
+            .order_by(record.field_id, record.created_at.desc(), record.id.desc())
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return {row.field_id: row for row in (await self.db.scalars(stmt)).all()}
 
-    async def get_for_attempt(
-        self, attempt_id: UUID, instance_id: UUID, field_id: UUID, source: str
-    ) -> ExtractionProposalRecord | None:
-        return (
-            await self.db.execute(
-                select(ExtractionProposalRecord).where(
-                    ExtractionProposalRecord.extraction_attempt_id == attempt_id,
-                    ExtractionProposalRecord.instance_id == instance_id,
-                    ExtractionProposalRecord.field_id == field_id,
-                    ExtractionProposalRecord.source == source,
-                )
-            )
-        ).scalar_one_or_none()
+    async def for_attempt(
+        self, attempt_id: UUID, instance_id: UUID, field_ids: Sequence[UUID], source: str
+    ) -> dict[UUID, ExtractionProposalRecord]:
+        """An attempt's own rows per field of one instance (replay detection)."""
+        record = ExtractionProposalRecord
+        stmt = select(record).where(
+            record.extraction_attempt_id == attempt_id,
+            record.instance_id == instance_id,
+            record.field_id.in_(field_ids),
+            record.source == source,
+        )
+        return {row.field_id: row for row in (await self.db.scalars(stmt)).all()}

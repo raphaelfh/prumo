@@ -765,10 +765,10 @@ async def land_ai_proposal(
     ).first()
     if appended is not None:
         return appended
-    return await ExtractionProposalRepository(db).get_latest_for_coord(
+    latest = await ExtractionProposalRepository(db).latest_by_field(
         run_id,
         instance_id,
-        field_id,
+        [field_id],
         source.value,  # type: ignore[attr-defined]
-        None,
     )
+    return latest.get(field_id)

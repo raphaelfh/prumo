@@ -52,7 +52,7 @@ from app.repositories.extraction_proposal_repository import ExtractionProposalRe
 from app.schemas.llm_target import LlmTarget
 from app.services.entity_key import resolve_instance
 from app.services.extraction_run_write import assert_on_coordinate, open_run_for_write
-from app.services.llm_field_filter import LlmFieldFilter, build_llm_field_filter
+from app.services.llm_field_filter import LlmFieldFilter, llm_field_filter_of
 from app.services.run_engine_freeze import build_proposal_engine
 from app.services.value_semantics import (
     disposition_to_marker,
@@ -201,6 +201,7 @@ class ProposalLanding:
         catches an error; a worker-owned session commits the result here,
         releasing the run lock before the next model call.
         """
+        _refuse_human(source)
         count = 0
         async with self._db.begin_nested():
             locked, field_filter = await self._gate(run.id, generation.attempt_id)
@@ -219,17 +220,13 @@ class ProposalLanding:
                 instance_id=instance.id,
                 field_ids=[c.field_id for c in kept],
             )
-            _refuse_human(source)
-            provenance = build_proposal_engine(generation.snapshot, generation.engine)
-            for candidate in kept:
-                record, counted = await self._write(
-                    locked.id, instance.id, candidate, source, provenance, generation
-                )
-                if counted:
-                    for evidence in candidate.evidence:
-                        evidence.proposal_record_id = record.id
-                        self._db.add(evidence)
-                    count += 1
+            landed = await self._write(locked.id, instance.id, kept, source, generation)
+            await self._db.flush()
+            for candidate, record in landed:
+                for evidence in candidate.evidence:
+                    evidence.proposal_record_id = record.id
+                    self._db.add(evidence)
+            count = len(landed)
             await self._db.flush()
             if count and generation.snapshot is not None:
                 await ExtractionRunRepository(self._db).merge_provenance_section(
@@ -290,10 +287,10 @@ class ProposalLanding:
             )
             if not member:
                 raise AuthorizationError("Project membership is required for extraction")
-        template = await self._db.get(ProjectExtractionTemplate, run.template_id)
-        if template is not None:
-            await self._db.refresh(template)
-        return run, await build_llm_field_filter(self._db, run)
+        template = await self._db.get(
+            ProjectExtractionTemplate, run.template_id, populate_existing=True
+        )
+        return run, llm_field_filter_of(template)
 
     async def _singleton(
         self, run: ExtractionRun, section: Any, parent_instance_id: UUID | None
@@ -334,50 +331,42 @@ class ProposalLanding:
         self,
         run_id: UUID,
         instance_id: UUID,
-        candidate: ProposalCandidate,
+        candidates: Sequence[ProposalCandidate],
         source: ExtractionProposalSource,
-        provenance: dict[str, Any] | None,
         generation: Generation,
-    ) -> tuple[ExtractionProposalRecord, bool]:
-        """One append-only proposal row; ``(row, counted)``.
+    ) -> list[tuple[ProposalCandidate, ExtractionProposalRecord]]:
+        """Append-only proposal rows; each COUNTED candidate with its row.
 
-        An attempt's replay finds its own row (not counted, evidence not
+        One read of the coordinate's prior rows serves every candidate. An
+        attempt's replay finds its own row (not counted, evidence not
         re-attached). Without an attempt, an unchanged value re-uses the
         latest row — the audit trail records value CHANGES — and still counts,
         the contract jobs queued before attempts were written against.
         """
-        proposed_value = await self._normalized(candidate)
-        if generation.attempt_id is not None:
-            existing = await self._proposals.get_for_attempt(
-                generation.attempt_id, instance_id, candidate.field_id, source.value
+        field_ids = [c.field_id for c in candidates]
+        values = await self._normalized(candidates)
+        provenance = build_proposal_engine(generation.snapshot, generation.engine)
+        attempt_id = generation.attempt_id
+        if attempt_id is not None:
+            prior = await self._proposals.for_attempt(
+                attempt_id, instance_id, field_ids, source.value
             )
-            if existing is not None:
-                return existing, False
-            record = await self._proposals.add(
-                ExtractionProposalRecord(
-                    run_id=run_id,
-                    instance_id=instance_id,
-                    field_id=candidate.field_id,
-                    source=source.value,
-                    proposed_value=proposed_value,
-                    confidence_score=candidate.confidence_score,
-                    rationale=candidate.rationale,
-                    provenance=provenance,
-                    extraction_attempt_id=generation.attempt_id,
-                    generation_snapshot=generation.snapshot,
-                )
+        else:
+            prior = await self._proposals.latest_by_field(
+                run_id, instance_id, field_ids, source.value
             )
-            return record, True
-        latest = await self._proposals.get_latest_for_coord(
-            run_id, instance_id, candidate.field_id, source.value, None
-        )
-        if latest is not None and strip_verification(latest.proposed_value) == strip_verification(
-            proposed_value
-        ):
-            await self._heal_verdict(latest, proposed_value, provenance)
-            return latest, True
-        record = await self._proposals.add(
-            ExtractionProposalRecord(
+        landed: list[tuple[ProposalCandidate, ExtractionProposalRecord]] = []
+        for candidate, proposed_value in zip(candidates, values, strict=True):
+            existing = prior.get(candidate.field_id)
+            if existing is not None and attempt_id is not None:
+                continue
+            if existing is not None and strip_verification(
+                existing.proposed_value
+            ) == strip_verification(proposed_value):
+                _heal_verdict(existing, proposed_value, provenance)
+                landed.append((candidate, existing))
+                continue
+            record = ExtractionProposalRecord(
                 run_id=run_id,
                 instance_id=instance_id,
                 field_id=candidate.field_id,
@@ -386,61 +375,75 @@ class ProposalLanding:
                 confidence_score=candidate.confidence_score,
                 rationale=candidate.rationale,
                 provenance=provenance,
+                extraction_attempt_id=attempt_id,
+                generation_snapshot=generation.snapshot if attempt_id is not None else None,
             )
-        )
-        return record, True
+            self._db.add(record)
+            prior[candidate.field_id] = record
+            landed.append((candidate, record))
+        return landed
 
-    async def _normalized(self, candidate: ProposalCandidate) -> dict[str, Any]:
+    async def _normalized(self, candidates: Sequence[ProposalCandidate]) -> list[dict[str, Any]]:
         """ADR-0016: a legacy in-band disposition string — a picked dropdown
         option or an AI ``found``-disposition on a run whose frozen domain still
         carries it — becomes the coded ``absent_reason`` marker. Scoped by the
         field's live domain so a coincidental value is untouched; the candidacy
-        pre-check skips the lookup for real values and markers."""
-        proposed_value = candidate.proposed_value
-        if not is_disposition_candidate(proposed_value):
-            return proposed_value
-        domain = (
-            await self._db.execute(
-                select(ExtractionField.allowed_values, ExtractionField.allows_no_information).where(
-                    ExtractionField.id == candidate.field_id
+        pre-check skips the lookup for real values and markers, and the
+        domains of the rest are read in one statement."""
+        asked = {c.field_id for c in candidates if is_disposition_candidate(c.proposed_value)}
+        domains = (
+            {
+                row.id: row
+                for row in await self._db.execute(
+                    select(
+                        ExtractionField.id,
+                        ExtractionField.allowed_values,
+                        ExtractionField.allows_no_information,
+                    ).where(ExtractionField.id.in_(asked))
+                )
+            }
+            if asked
+            else {}
+        )
+        values: list[dict[str, Any]] = []
+        for candidate in candidates:
+            domain = domains.get(candidate.field_id)
+            values.append(
+                candidate.proposed_value
+                if domain is None
+                else disposition_to_marker(
+                    candidate.proposed_value,
+                    domain.allowed_values,
+                    allows_no_information=domain.allows_no_information,
                 )
             )
-        ).one_or_none()
-        if domain is None:
-            return proposed_value
-        normalized: dict[str, Any] = disposition_to_marker(
-            proposed_value,
-            domain.allowed_values,
-            allows_no_information=domain.allows_no_information,
-        )
-        return normalized
+        return values
 
-    async def _heal_verdict(
-        self,
-        latest: ExtractionProposalRecord,
-        proposed_value: dict[str, Any],
-        provenance: dict[str, Any] | None,
-    ) -> None:
-        """Same value, but the verify verdict moved (a flip, or a heal after a
-        flaked pass): refresh the server-owned ANNOTATION in place — no new
-        audit row, the value did not change. An incoming value WITHOUT the
-        sibling (fast re-run / flaked verify) never clears a stored verdict.
 
-        The verdict and the execution record describe the SAME pass, so they
-        move together. Engine IDENTITY is deliberately not refreshed: the model
-        recorded here did produce this value, and a corroborating re-run under
-        a different engine is a separate fact (append-only, constitution §IX).
-        """
-        incoming = proposed_value.get("verification")
-        if incoming is None or incoming == latest.proposed_value.get("verification"):
-            return
-        latest.proposed_value = {**latest.proposed_value, "verification": incoming}
-        if provenance:
-            latest.provenance = {
-                **(latest.provenance or {}),
-                **{k: provenance[k] for k in _EXECUTION_KEYS if k in provenance},
-            }
-        await self._db.flush()
+def _heal_verdict(
+    latest: ExtractionProposalRecord,
+    proposed_value: dict[str, Any],
+    provenance: dict[str, Any] | None,
+) -> None:
+    """Same value, but the verify verdict moved (a flip, or a heal after a
+    flaked pass): refresh the server-owned ANNOTATION in place — no new
+    audit row, the value did not change. An incoming value WITHOUT the
+    sibling (fast re-run / flaked verify) never clears a stored verdict.
+
+    The verdict and the execution record describe the SAME pass, so they
+    move together. Engine IDENTITY is deliberately not refreshed: the model
+    recorded here did produce this value, and a corroborating re-run under
+    a different engine is a separate fact (append-only, constitution §IX).
+    """
+    incoming = proposed_value.get("verification")
+    if incoming is None or incoming == latest.proposed_value.get("verification"):
+        return
+    latest.proposed_value = {**latest.proposed_value, "verification": incoming}
+    if provenance:
+        latest.provenance = {
+            **(latest.provenance or {}),
+            **{k: provenance[k] for k in _EXECUTION_KEYS if k in provenance},
+        }
 
 
 def _refuse_human(source: ExtractionProposalSource) -> None:
