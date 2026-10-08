@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-09-21
+last_reviewed: 2026-10-07
 owner: '@raphaelfh'
 ---
 
@@ -546,9 +546,12 @@ module per prompt. Each module exposes:
   system prompt is parameterised by the calling context.
 
 **Structured output** is enforced by the typed call layer
-(`backend/app/llm/extractor.py::extract_structured`, Pydantic AI
-`NativeOutput`; `ToolOutput` for Anthropic and for custom hosts that route
-to Ollama Cloud, which accepts a JSON schema without enforcing it). There
+(`backend/app/llm/extractor.py::extract_structured`). How it travels is
+the model's fact: `build_model` pins the provider registry row's
+`output_mode` (`native` json_schema for OpenAI and Gemini, `tool` for
+Anthropic and Ollama Cloud) into the pydantic-ai model profile, and a custom
+host runs on the `capabilities.output_mode` its endpoint probe stored on the
+connection (carried by `EngineCredentials`). There
 are no `*_RESPONSE_SCHEMA` JSON-schema constants and no tolerant parsers: if the model returns structurally invalid output,
 the call layer reasks (up to `DEFAULT_USAGE_LIMITS.request_limit`) and
 then raises `AgentRunError`, which fails the run. Callers must catch that

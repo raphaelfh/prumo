@@ -11,20 +11,13 @@ import httpx
 import pytest
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_ai import (
-    ModelResponse,
-    ModelRetry,
-    NativeOutput,
-    TextPart,
-    ToolOutput,
-    UnexpectedModelBehavior,
-)
+from pydantic_ai import ModelResponse, ModelRetry, TextPart, UnexpectedModelBehavior
 from pydantic_ai.models import override_allow_model_requests
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from app.llm.extractor import LlmUsage, _output_for, extract_structured
+from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.provider import build_model
 
 
@@ -126,32 +119,6 @@ def test_llm_usage_addition():
     assert (total.prompt_tokens, total.completion_tokens, total.total_tokens) == (11, 7, 18)
 
 
-class _OutModel(BaseModel):
-    value: str
-
-
-class _FakeAnthropic:  # only the .system provider name matters to _output_for
-    system = "anthropic"
-
-
-def test_output_for_uses_native_for_non_anthropic():
-    # Any model whose provider is not "anthropic" (OpenAI, FunctionModel, or a
-    # bare object with no .system) stays on NativeOutput.
-    assert isinstance(_output_for(object(), _OutModel), NativeOutput)
-
-
-def test_output_for_uses_tooloutput_for_anthropic():
-    assert isinstance(_output_for(_FakeAnthropic(), _OutModel), ToolOutput)
-
-
-class _FakeOllama:
-    system = "ollama"
-
-
-def test_output_for_uses_tooloutput_for_ollama():
-    assert isinstance(_output_for(_FakeOllama(), _OutModel), ToolOutput)
-
-
 # ---------------------------------------------------------------------------
 # Provider-usage regression guard (prod incident 2026-08-10 .. 2026-08-30)
 # ---------------------------------------------------------------------------
@@ -238,46 +205,85 @@ async def test_provider_reported_usage_is_never_silently_zeroed():
     assert usage.total_tokens == 21169
 
 
-async def test_ollama_cloud_extraction_uses_tool_calling_on_the_wire():
-    """Ollama Cloud ignores json_schema, so the request must carry a tool, not a
-    response_format — the schema is then validated from the tool arguments."""
-    sent: list[dict] = []
+# ---------------------------------------------------------------------------
+# Output mode on the wire
+# ---------------------------------------------------------------------------
+#
+# How structured output travels is the model's fact, pinned by ``build_model``
+# from the registry row — or, for a custom host, from the connection's probed
+# ``capabilities.output_mode``. These drive the real OpenAI-protocol client
+# over a canned transport and read the REQUEST: a tool-mode call carries the
+# schema as a tool and no ``response_format``; a native-mode call carries a
+# ``json_schema`` response_format and no tools; a prompted-mode call neither.
+
+_TOOL_REPLY = {
+    "role": "assistant",
+    "content": None,
+    "tool_calls": [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "final_result", "arguments": '{"answer": "42"}'},
+        }
+    ],
+}
+_TEXT_REPLY = {"role": "assistant", "content": '{"answer": "42"}'}
+
+
+def _echoing_transport(sent: list[dict]) -> httpx.AsyncClient:
+    """Answers in whatever shape the request asked for, and records the request."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content))
+        body = json.loads(request.content)
+        sent.append(body)
+        message = _TOOL_REPLY if "tools" in body else _TEXT_REPLY
         return httpx.Response(
             200,
             json={
-                "id": "chatcmpl-ollama",
+                "id": "chatcmpl-mode",
                 "object": "chat.completion",
                 "created": 0,
-                "model": "gpt-oss:120b",
-                "choices": [
-                    {
-                        "index": 0,
-                        "finish_reason": "tool_calls",
-                        "message": {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": "call_1",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "final_result",
-                                        "arguments": '{"answer": "42"}',
-                                    },
-                                }
-                            ],
-                        },
-                    }
-                ],
+                "model": body["model"],
+                "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             },
         )
 
-    model = build_model("openai_compatible", "gpt-oss:120b", base_url="https://ollama.com/v1")
-    model.client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+def _wire_shape(request: dict) -> str:
+    response_format = request.get("response_format") or {}
+    if "tools" in request:
+        return "tool"
+    if response_format.get("type") == "json_schema":
+        return "native"
+    return "prompted"
+
+
+@pytest.mark.parametrize(
+    ("provider", "credentials", "probed", "expected"),
+    [
+        ("openai", {"api_key": "sk"}, None, "native"),
+        ("ollama", {"api_key": "ollama-key"}, None, "tool"),
+        ("openai_compatible", {"base_url": "https://ollama.com/v1"}, "tool", "tool"),
+        ("openai_compatible", {"base_url": "http://localhost:11434/v1"}, "native", "native"),
+        ("openai_compatible", {"base_url": "http://localhost:11434/v1"}, "prompted", "prompted"),
+    ],
+    ids=[
+        "openai-row",
+        "ollama-row",
+        "host-probed-tool",
+        "host-probed-native",
+        "host-probed-prompted",
+    ],
+)
+async def test_structured_output_travels_in_the_models_output_mode(
+    provider: str, credentials: dict, probed: str | None, expected: str
+):
+    sent: list[dict] = []
+    model = build_model(provider, "gpt-oss:120b", output_mode=probed, **credentials)
+    model.client._client = _echoing_transport(sent)
 
     with override_allow_model_requests(True):
         output, _ = await extract_structured(
@@ -291,17 +297,6 @@ async def test_ollama_cloud_extraction_uses_tool_calling_on_the_wire():
 
     assert output.answer == "42"
     assert len(sent) == 1
-    assert "response_format" not in sent[0]
-    assert [t["function"]["name"] for t in sent[0]["tools"]] == ["final_result"]
-
-
-def test_ollama_cloud_connection_gets_tooloutput():
-    # Ollama Cloud accepts a json_schema response_format but does not enforce
-    # it, so NativeOutput would yield silently unvalidated JSON.
-    model = build_model("openai_compatible", "gpt-oss:120b", base_url="https://ollama.com/v1")
-    assert isinstance(_output_for(model, _OutModel), ToolOutput)
-
-
-def test_self_hosted_connection_keeps_native_output():
-    model = build_model("openai_compatible", "llama3", base_url="http://localhost:11434/v1")
-    assert isinstance(_output_for(model, _OutModel), NativeOutput)
+    assert _wire_shape(sent[0]) == expected
+    if expected == "tool":
+        assert [t["function"]["name"] for t in sent[0]["tools"]] == ["final_result"]

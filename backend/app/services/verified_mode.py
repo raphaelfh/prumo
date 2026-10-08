@@ -31,6 +31,7 @@ from app.schemas.run_prompt_context import RunPromptContext
 from app.services.run_engine_freeze import build_run_provenance
 
 if TYPE_CHECKING:
+    from app.services.engine_credentials import EngineCredentials
     from app.services.extraction_prompt_input import PromptInputInfo
     from app.services.llm_connection_service import KeyScope
 
@@ -120,8 +121,7 @@ def render_section_prompts(
 async def verify_section(
     *,
     engine: LlmTarget,
-    api_key: str | None,
-    base_url: str | None = None,
+    credentials: EngineCredentials,
     kind: str,
     pdf_text: str,
     extracted_data: dict[str, Any],
@@ -147,10 +147,12 @@ async def verify_section(
     section short-circuits as ``("verified", 1)`` — nothing needed
     verifying, not a degrade, and ``passes`` counts LLM passes that RAN.
     Any failure degrades to ``(None, zero usage, "fast", 1)`` — recorded in
-    the section snapshot, never aborting the run (design 3). ``base_url``
-    rides along with the key: an endpoint engine (C2) has no host without
-    it, and ``build_model`` would raise inside the degrade path — every
-    Verified section on a custom endpoint would silently execute fast.
+    the section snapshot, never aborting the run (design 3). The whole
+    ``credentials`` ride along, not the key alone: an endpoint engine (C2)
+    has no host without its ``base_url``, and ``build_model`` would raise
+    inside the degrade path — every Verified section on a custom endpoint
+    would silently execute fast; and the probed ``output_mode`` is what
+    makes that host's structured output actually arrive.
     """
     if engine.mode_requested != "verified":
         return None, LlmUsage(), engine.mode_requested, 1
@@ -183,7 +185,13 @@ async def verify_section(
         logger.info("verify_skipped_empty", **context)
         return {}, LlmUsage(), "verified", 1
     try:
-        model = build_model(engine.provider, engine.model, api_key=api_key, base_url=base_url)
+        model = build_model(
+            engine.provider,
+            engine.model,
+            api_key=credentials.api_key,
+            base_url=credentials.base_url,
+            output_mode=credentials.output_mode,
+        )
     except Exception as exc:
         logger.warning("verify_pass_failed", error=str(exc), **context)
         return None, LlmUsage(), "fast", 1
@@ -204,10 +212,8 @@ async def verify_section(
 async def verify_and_snapshot(
     *,
     engine: LlmTarget,
-    api_key: str | None,
-    base_url: str | None = None,
+    credentials: EngineCredentials,
     kind: str,
-    key_scope: KeyScope | None,
     ran_by_user_id: str,
     pdf_text: str,
     extracted_data: dict[str, Any],
@@ -230,8 +236,7 @@ async def verify_and_snapshot(
         return None, extract_usage, None
     verdicts, verify_usage, mode_executed, passes = await verify_section(
         engine=engine,
-        api_key=api_key,
-        base_url=base_url,
+        credentials=credentials,
         kind=kind,
         pdf_text=pdf_text,
         extracted_data=extracted_data,
@@ -247,7 +252,7 @@ async def verify_and_snapshot(
         inputs=inputs,
         ran_by_user_id=ran_by_user_id,
         engine=engine,
-        key_scope=key_scope,
+        key_scope=credentials.key_scope,
         usage=usage,
         prompt_input_info=prompt_input_info,
         mode_executed=mode_executed,

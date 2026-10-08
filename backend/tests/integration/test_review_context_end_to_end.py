@@ -103,7 +103,11 @@ async def _extract_once(db: AsyncSession, run: ExtractionRun) -> None:
         storage=object(),
         trace_id="review-context-e2e",
         llm_credentials=EngineCredentials(
-            api_key="sk-never-recorded", key_scope=None, base_url=None, connection_id=None
+            api_key="sk-never-recorded",
+            key_scope=None,
+            base_url=None,
+            connection_id=None,
+            output_mode=None,
         ),
         repin=True,
     )
