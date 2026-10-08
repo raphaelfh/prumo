@@ -144,7 +144,7 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
 
       expect(order.indexOf("flush")).toBeLessThan(order.indexOf("/api/v1/runs/run-1/ready"));
       expect(posted("ready")?.[1]).toEqual({ method: "POST", body: { ready: true } });
-      expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1") });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1"), exact: true });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.reviewers("run-1") });
       expect(goToNextArticle).toHaveBeenCalledOnce();
       // QA confirms the advisory flag; extraction lets the next article say it.
@@ -176,7 +176,7 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
     await act(() => result.current.transition!.onAdvance());
     expect(order.indexOf("flush")).toBeLessThan(order.indexOf("/api/v1/runs/run-1/advance"));
     expect(posted("advance")?.[1]).toEqual({ method: "POST", body: { target_stage: "consensus" } });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1") });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1"), exact: true });
   });
 
   describe("in consensus (arbitrator)", () => {
@@ -195,7 +195,7 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
       expect(result.current.transition?.gate.ok).toBe(true);
       await act(() => result.current.transition!.onAdvance());
       expect(posted("approve-finalize")?.[1]).toEqual({ method: "POST" });
-      expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1") });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1"), exact: true });
       expect(refreshReaders).toHaveBeenCalled();
       expect(toast.success).toHaveBeenCalledWith(
         kind === "qa" ? "finalizationSuccess" : "extractionScreenFinalizeSuccess",
@@ -239,7 +239,7 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
           rationale: "why",
         },
       });
-      expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1") });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1"), exact: true });
     });
 
     it("a refused resolution rejects, so the override editor stays open", async () => {
@@ -281,8 +281,8 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
     expect(result.current.transition).toBeNull();
     await act(() => result.current.reopen.reopenRevision());
     expect(posted("reopen")?.[1]).toEqual({ method: "POST" });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1") });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-2") });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-1"), exact: true });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-2"), exact: true });
     expect(refetchSession).toHaveBeenCalledOnce();
     expect(result.current.reopen.reopening).toBe(false);
   });

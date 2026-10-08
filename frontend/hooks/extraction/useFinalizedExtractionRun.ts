@@ -41,7 +41,10 @@ export function useFinalizedExtractionRun(
   // ProjectView's projectLoadRef.
   const loadGenerationRef = useRef(0);
 
+  // Disabled, the lookup never runs — also when a caller refreshes it after a
+  // stage command on a run that is not (yet) finalized.
   const load = async () => {
+    if (!enabled) return;
     if (!articleId) {
       setFinalizedRun(null);
       return;
@@ -69,7 +72,6 @@ export function useFinalizedExtractionRun(
   };
 
   useEffect(() => {
-    if (!enabled) return;
     // Microtask so the loader's setState calls run in an async callback.
     queueMicrotask(() => void load());
   }, [enabled, load]);

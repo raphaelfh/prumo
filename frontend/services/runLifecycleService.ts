@@ -30,7 +30,10 @@ function post<T>(runId: string, action: string, body?: object): Promise<ErrorRes
   );
 }
 
-/** GET /runs/{id}/view — the run aggregate both screens render from. */
+/**
+ * GET /runs/{id}/view — the run aggregate both screens render from, and the
+ * fresh decision authority `useRunValues` re-reads before a reversal.
+ */
 export function fetchRunView(runId: string): Promise<ErrorResult<RunViewResponse>> {
   return toResult(() => apiClient<RunViewResponse>(runPath(runId, 'view')), 'runLifecycleService.view');
 }

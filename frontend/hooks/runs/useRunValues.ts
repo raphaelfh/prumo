@@ -33,14 +33,15 @@ import { useAutoSaveProposals } from '@/hooks/runs/useAutoSaveProposals';
 import { runsKeys, type ReviewerDecisionResponse, type RunViewResponse } from '@/hooks/runs/types';
 import { ApiError } from '@/integrations/api/client';
 import { t } from '@/lib/copy';
-import { acceptedProposal, reversalPayload, reviewerCoordinateHistory } from '@/lib/extraction/proposalDecisionState';
+import { acceptedProposal, mergeConfirmedRows, reversalPayload, reviewerCoordinateHistory, reviewerHistoriesByCoord } from '@/lib/extraction/proposalDecisionState';
 import { currentValuesToValuesMap, publishedStatesToValuesMap } from '@/lib/extraction/publishedValues';
 import { toConsensusValueEnvelope, valueAbsentReason } from '@/lib/extraction/valueSemantics';
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
 import { deriveAiLinkByKey } from '@/lib/runs/aiLink';
 import { coordKey, parseCoordKey, type Coord } from '@/lib/runs/coord';
 import { decisionMatchesVersion, stableStringify } from '@/lib/runs/valueEquality';
-import { appendReviewerDecision, readDecisionAuthority, type WriteProposalParams } from '@/services/extractionRunService';
+import { appendReviewerDecision, type WriteProposalParams } from '@/services/extractionRunService';
+import { fetchRunView } from '@/services/runLifecycleService';
 
 /** An AI proposal the caller accepts (or, when it is the accepted one, reverses). */
 export interface RunValueProposal extends Coord {
@@ -146,16 +147,20 @@ export function useRunValues(args: UseRunValuesArgs) {
   }, [session, values, currentUserId, decisions]);
 
   const isCurrent = () => scopeRef.current === session;
-  const localRows = confirmed.session === session ? confirmed.rows : [];
+  const sessionRows = (c: typeof confirmed) => (c.session === session ? c.rows : NO_DECISIONS);
   const historyFor = (rows: readonly ReviewerDecisionResponse[], coordinate: Coord) =>
     reviewerCoordinateHistory(rows, currentUserId, runId ?? '', coordinate.instanceId, coordinate.fieldId);
-  const allRows = [...decisions.filter(d => !localRows.some(local => local.id === d.id)), ...localRows];
+  // Grouped once per render: the link loop below looks up every form coordinate.
+  const histories = reviewerHistoriesByCoord(mergeConfirmedRows(decisions, sessionRows(confirmed)), currentUserId, runId ?? '');
+  const currentHistory = (instanceId: string, fieldId: string) => histories.get(coordKey(instanceId, fieldId)) ?? NO_DECISIONS;
   const acceptedProposalIdFor = (instanceId: string, fieldId: string) =>
-    acceptedProposal(historyFor(allRows, {instanceId, fieldId}), values[coordKey(instanceId, fieldId)]);
+    acceptedProposal(currentHistory(instanceId, fieldId), values[coordKey(instanceId, fieldId)]);
 
-  const isAccepted = (proposal: RunValueProposal) =>
-    acceptedProposalIdFor(proposal.instanceId, proposal.fieldId) === proposal.id &&
-    decisionMatchesVersion(historyFor(allRows, proposal).at(-1)?.value, proposal.value);
+  const isAccepted = (proposal: RunValueProposal) => {
+    const history = currentHistory(proposal.instanceId, proposal.fieldId);
+    return acceptedProposal(history, values[coordKey(proposal.instanceId, proposal.fieldId)]) === proposal.id &&
+      decisionMatchesVersion(history.at(-1)?.value, proposal.value);
+  };
 
   // The AI link of each coordinate: the caller's latest decision on it, while
   // that decision still matches the value. The persisted links (the caller's
@@ -175,8 +180,7 @@ export function useRunValues(args: UseRunValuesArgs) {
     setConfirmed(confirmedRef.current);
   };
   const latestHistory = (coordinate: Coord, run = runId ?? '') => {
-    const local = confirmedRef.current.session === session ? confirmedRef.current.rows : [];
-    const rows = [...decisionsRef.current.filter(d => !local.some(item => item.id === d.id)), ...local];
+    const rows = mergeConfirmedRows(decisionsRef.current, sessionRows(confirmedRef.current));
     return reviewerCoordinateHistory(rows, currentUserId, run, coordinate.instanceId, coordinate.fieldId);
   };
   /** Guard on the local head; with no head the append stays unconditional. */
@@ -188,7 +192,7 @@ export function useRunValues(args: UseRunValuesArgs) {
   // Confirmed rows are merged locally: a write never invalidates the run view.
   const record = (decision: ReviewerDecisionResponse, predecessor: Record<string, unknown>, undoable: boolean, predecessorId: string | null = null, redone = false) => {
     if (!isCurrent()) return;
-    setRows([...(confirmedRef.current.session === session ? confirmedRef.current.rows : []), decision]);
+    setRows([...sessionRows(confirmedRef.current), decision]);
     if (undoable) stackRef.current.push({instanceId: decision.instance_id, fieldId: decision.field_id, id: decision.id, expectedId: decision.id, predecessorId, predecessor,
       value: decision.value ?? {value: null}, proposalRecordId: decision.proposal_record_id ?? null});
     // A new action forks the history: what was undone before it can no longer be redone.
@@ -198,7 +202,7 @@ export function useRunValues(args: UseRunValuesArgs) {
 
   const readHistory = async (coordinate: Coord): Promise<ReviewerDecisionResponse[] | Exclude<Outcome, 'saved'>> => {
     if (!runId || !currentUserId || !isCurrent()) return 'failed';
-    const result = await readDecisionAuthority(runId);
+    const result = await fetchRunView(runId);
     if (!result.ok) return 'failed';
     if (!isCurrent() || result.data.run.id !== runId) return 'conflict';
     setRows(result.data.decisions);
@@ -351,7 +355,7 @@ export function useRunValues(args: UseRunValuesArgs) {
     if (!blockedSessionsRef.current.has(session) || lockRef.current || !runId || !currentUserId || !enabled) return false;
     lockRef.current = true;
     setState(prev => ({...prev, session, saving: true}));
-    const authority = await readDecisionAuthority(runId);
+    const authority = await fetchRunView(runId);
     if (!isCurrent()) return false;
     const ok = authority.ok && authority.data.run.id === runId && authority.data.run.stage === 'extract';
     if (ok) {

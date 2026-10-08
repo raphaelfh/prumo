@@ -33,8 +33,7 @@ import { assessExtractionFinalize } from '@/lib/runs/extractionFinalizeGate';
 import { runScreenSpec, type RunScreenKind } from '@/lib/runs/runScreenKind';
 import { fetchRunView, runLifecycleService } from '@/services/runLifecycleService';
 import { setManagerReviewVisibility } from '@/services/hitlConfigService';
-import type { StageTransition } from '@/components/runs/header';
-import type { RunHeaderValue } from '@/components/runs/header';
+import type { RunHeaderValue, StageTransition } from '@/components/runs/header';
 import type { ExtractionRunStage } from '@/types/ai-extraction';
 
 import { runsKeys, type RunViewResponse } from './types';
@@ -199,8 +198,10 @@ export function useRunLifecycleScreen(args: UseRunLifecycleScreenArgs) {
   const run = (op: LifecycleOp, call: () => Promise<ErrorResult<unknown>>) =>
     command.mutateAsync({ op, call });
   const flushed = () => saveNow().then(() => true).catch(() => false);
+  // Exact: the run's reviewers list sits under this key and no command but
+  // Mark ready changes it.
   const invalidateRun = (id: string | null = runId) =>
-    id ? queryClient.invalidateQueries({ queryKey: runsKeys.detail(id) }) : Promise.resolve();
+    id ? queryClient.invalidateQueries({ queryKey: runsKeys.detail(id), exact: true }) : Promise.resolve();
   // A refetch failure after a successful command is not the command's failure.
   const reread = () =>
     Promise.all([invalidateRun(), refreshReaders?.()]).catch(() => undefined);
@@ -363,8 +364,6 @@ export function useRunLifecycleScreen(args: UseRunLifecycleScreenArgs) {
     parentRunId,
     /** Identity-visible callers see "Run by {name}"; blind reviewers stay timestamp-only. */
     showPeerIdentity,
-    isReady,
-    divergencesResolved,
     transition,
     /** Any primary command in flight (the header PrimaryAction spinner). */
     submitting: pendingOp !== null && SUBMITTING_OPS.has(pendingOp),

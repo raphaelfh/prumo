@@ -234,7 +234,6 @@ export default function ExtractionFullScreen() {
   // After an AI extraction job completes, reload suggestions at once: the job
   // reports completed only after the proposals commit, and AI never writes the
   // caller's values. Suggestions keep the previous map until the new one lands.
-  const handleExtractionComplete = () => refreshAISuggestions();
 
   // AI extraction always runs on the OPEN session run (``extractForRun`` reuses
   // it, preserving human decisions) — never a run-less fork that would shadow
@@ -242,7 +241,7 @@ export default function ExtractionFullScreen() {
   // extraction key family, so the run view is re-read here too.
   const { extractForRun, loading: extractingAI } = useRunAIExtraction({
     onSuccess: async () => {
-      await Promise.all([refetchRun(), handleExtractionComplete()]);
+      await Promise.all([refetchRun(), refreshAISuggestions()]);
     },
   });
   const onExtractWithAI = () => {
@@ -499,7 +498,7 @@ export default function ExtractionFullScreen() {
         articleId: articleId || '',
         templateId: template.id,
         runId: activeRunId,
-        onExtractionComplete: handleExtractionComplete,
+        onExtractionComplete: refreshAISuggestions,
         sectionNavRef,
       }}
       compareViewProps={{
