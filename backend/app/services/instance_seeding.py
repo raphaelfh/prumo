@@ -35,6 +35,7 @@ async def ensure_instances(
     entity_types: list[ExtractionEntityType],
     user_id: UUID,
 ) -> dict[UUID, UUID]:
+    """Seed the missing singleton instances; return ``{entity_type_id: instance_id}``."""
     # Issue #64: serialise concurrent open_or_resume calls for the same
     # (article, template) pair so the SELECT-then-INSERT below cannot
     # race and produce duplicate singleton instances. The lock is

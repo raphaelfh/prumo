@@ -18,6 +18,7 @@ instance — would silently skip the new section).
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -139,21 +140,14 @@ class PublishMissingAcknowledgementError(AppError):
         )
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
 class RepublishResult:
     """Result envelope returned by ``TemplateVersionService.republish``."""
 
-    def __init__(
-        self,
-        *,
-        version_id: UUID,
-        version: int,
-        changed: bool,
-        repinned_run_count: int,
-    ) -> None:
-        self.version_id = version_id
-        self.version = version
-        self.changed = changed
-        self.repinned_run_count = repinned_run_count
+    version_id: UUID
+    version: int
+    changed: bool
+    repinned_run_count: int
 
 
 class TemplateVersionService:
