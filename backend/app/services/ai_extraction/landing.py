@@ -298,11 +298,11 @@ class ProposalLanding:
         """The one instance a non-repeating section has at its coordinate,
         auto-created when missing. Repeating groups never reach this — they
         resolve one instance per entry (:meth:`open_entry`)."""
-        instances = await self._instances.get_by_article(run.article_id, section.id)
-        if parent_instance_id:
-            instances = [i for i in instances if i.parent_instance_id == parent_instance_id]
-        if instances:
-            return instances[0]
+        existing = await self._instances.first_of_section(
+            run.article_id, section.id, parent_instance_id=parent_instance_id
+        )
+        if existing is not None:
+            return existing
         # Re-verified here too: last line before a foreign FK.
         if parent_instance_id and not await self._instances.get_on_run(parent_instance_id, run):
             raise ValueError(f"Parent instance not found: {parent_instance_id}")

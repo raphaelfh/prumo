@@ -277,5 +277,4 @@ async def _root_instance(
     """The root singleton's instance — only the full-run sweep skips settled
     fields, and it passes no parent. Repeating groups never reach this: they
     resolve one instance per entry."""
-    instances = await p.instances.get_by_article(run.article_id, entity_type_id)
-    return instances[0] if instances else None
+    return await p.instances.first_of_section(run.article_id, entity_type_id)

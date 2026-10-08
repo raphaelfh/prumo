@@ -160,9 +160,10 @@ progress). The two writers take the `(article, template)` advisory lock:
 `open_for_session` reuses the resolved run (a finalized run is shown
 read-only) or creates one; `resolve_or_create_extract` (standalone AI
 extraction) reuses the live run or creates one, and refuses a run in
-consensus (`RunBusyError`). The 0045 heal cancelled pre-existing duplicate live runs
-non-destructively (canonical = most recent human work; shadows flipped to
-`cancelled`/`failed`, all workflow rows kept).
+consensus with the oracle's `RunWriteError(reason="stage")`. The 0045 heal
+cancelled pre-existing duplicate live runs non-destructively (canonical = most
+recent human work; shadows flipped to `cancelled`/`failed`, all workflow rows
+kept).
 
 ### Value envelope & `absent_reason` marker (ADR-0016)
 

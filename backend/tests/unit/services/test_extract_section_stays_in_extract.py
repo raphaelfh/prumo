@@ -51,7 +51,8 @@ def test_the_package_never_advances_stages():
 
 
 def test_extract_gate_only_ever_targets_extract_stage():
-    src = inspect.getsource(CurrentRunResolver.resolve_or_create_extract)
+    # The whole resolver: its writers share the create/park helpers.
+    src = inspect.getsource(CurrentRunResolver)
     targets = set(re.findall(_TARGET_RE, src))
     assert targets == {"EXTRACT"}, (
         f"the extract gate must only advance to EXTRACT, but found {targets} — "

@@ -17,7 +17,8 @@ skips it):
 * ``open_for_session`` — the HITL session's run: the resolved run (a finalized
   one is shown read-only, never forked), else a new one;
 * ``resolve_or_create_extract`` — standalone AI extraction's run: the live run,
-  else a new one; a live run in consensus raises ``RunBusyError``.
+  else a new one; a live run in consensus is refused with the run-write
+  oracle's ``RunWriteError(reason="stage")``.
 """
 
 from __future__ import annotations
@@ -32,12 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.repositories.current_run_repository import current_runs, resolved_runs
 from app.services.advisory_locks import take_advisory_xact_lock
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
-
-
-class RunBusyError(Exception):
-    """The coordinate's live run cannot accept the requested work (AI
-    extraction against a run already advanced to CONSENSUS)."""
 
 
 class CurrentRunResolver:
@@ -114,24 +111,14 @@ class CurrentRunResolver:
         forking past it would silently abandon its published values; reopen is
         its own explicit action. ``created`` is True only for a new row."""
         await take_advisory_xact_lock(self.db, article_id, template_id)
-        lifecycle = RunLifecycleService(self.db)
         run = await self.resolve(
             project_id=project_id, article_id=article_id, template_id=template_id
         )
-        created = run is None
         if run is None:
-            run = await lifecycle.create_run(
-                project_id=project_id,
-                article_id=article_id,
-                project_template_id=template_id,
-                user_id=user_id,
-                parameters=parameters,
-            )
-        if run.stage == ExtractionRunStage.PENDING.value:
-            run = await lifecycle.advance_stage(
-                run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id
-            )
-        return run, created
+            return await self._create_in_extract(
+                project_id, article_id, template_id, user_id, parameters
+            ), True
+        return await self._park_in_extract(run, user_id), False
 
     async def resolve_or_create_extract(
         self,
@@ -145,28 +132,39 @@ class CurrentRunResolver:
         """The live run in EXTRACT for standalone AI extraction, created only
         when the coordinate has none — AI work lands on the run the reviewer
         is editing instead of forking a shadow run. A live run in CONSENSUS
-        raises ``RunBusyError``: adjudication accepts no new AI proposals.
+        is refused (``RunWriteError``, reason ``stage``): adjudication accepts
+        no new AI proposals.
 
         ``created=True`` → the caller owns the run's lifecycle
         (start/complete/fail); ``created=False`` → session-owned, hands off.
         """
         await take_advisory_xact_lock(self.db, article_id, template_id)
-        lifecycle = RunLifecycleService(self.db)
         run = await self.resolve(
             project_id=project_id, article_id=article_id, template_id=template_id
         )
-        if run is not None and run.stage in ExtractionRunStage.live():
-            if run.stage == ExtractionRunStage.CONSENSUS.value:
-                raise RunBusyError(
-                    f"Run {run.id} is in consensus; AI extraction can only "
-                    "target a run in the extract stage"
-                )
-            if run.stage == ExtractionRunStage.PENDING.value:
-                run = await lifecycle.advance_stage(
-                    run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id
-                )
-            return run, False
+        if run is None or run.stage not in ExtractionRunStage.live():
+            return await self._create_in_extract(
+                project_id, article_id, template_id, user_id, parameters
+            ), True
+        if run.stage == ExtractionRunStage.CONSENSUS.value:
+            raise RunWriteError(
+                f"Run {run.id} is in consensus; AI extraction can only "
+                "target a run in the extract stage",
+                reason="stage",
+                run_id=run.id,
+                stage=run.stage,
+            )
+        return await self._park_in_extract(run, user_id), False
 
+    async def _create_in_extract(
+        self,
+        project_id: UUID,
+        article_id: UUID,
+        template_id: UUID,
+        user_id: UUID,
+        parameters: dict[str, Any] | None,
+    ) -> ExtractionRun:
+        lifecycle = RunLifecycleService(self.db)
         run = await lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
@@ -174,7 +172,14 @@ class CurrentRunResolver:
             user_id=user_id,
             parameters=parameters,
         )
-        run = await lifecycle.advance_stage(
+        return await lifecycle.advance_stage(
             run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id
         )
-        return run, True
+
+    async def _park_in_extract(self, run: ExtractionRun, user_id: UUID) -> ExtractionRun:
+        """A pending run is advanced to EXTRACT; any other stage is returned as is."""
+        if run.stage != ExtractionRunStage.PENDING.value:
+            return run
+        return await RunLifecycleService(self.db).advance_stage(
+            run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=user_id
+        )

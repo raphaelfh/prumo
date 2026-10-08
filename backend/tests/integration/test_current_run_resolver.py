@@ -17,7 +17,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRun, ExtractionRunStage
-from app.services.current_run import CurrentRunResolver, RunBusyError
+from app.services.current_run import CurrentRunResolver
+from app.services.extraction_run_write import RunWriteError
 from tests.integration.conftest import SEED, open_session
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -236,8 +237,9 @@ async def test_extract_gate_refuses_a_run_in_consensus(db_session: AsyncSession,
     the one-live-run invariant forbids: a clear error, never a forked run."""
     await _run(db_session, aid, stage=CONSENSUS, minute=0)
 
-    with pytest.raises(RunBusyError, match="consensus"):
+    with pytest.raises(RunWriteError, match="consensus") as refused:
         await _gate(db_session, aid)
+    assert refused.value.reason == "stage"
 
 
 async def test_a_stale_loaded_run_never_decides(db_session: AsyncSession, aid: UUID) -> None:
@@ -272,6 +274,6 @@ async def test_a_stale_loaded_stage_is_refreshed(db_session: AsyncSession, aid: 
         {"id": str(run_id)},
     )
 
-    with pytest.raises(RunBusyError):
+    with pytest.raises(RunWriteError):
         await _gate(db_session, aid)
     assert loaded.stage == CONSENSUS
