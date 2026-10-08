@@ -29,7 +29,7 @@ async def test_extract_for_run_raises_when_all_sections_fail():
     svc._engine = LlmTarget(provider="openai", model="m")
     # ...and the credentials + identity marker (``_key_provider=None`` is the
     # unknown caller: the injected credentials are never re-resolved).
-    svc._credentials = EngineCredentials(None, None, None, None)
+    svc._credentials = EngineCredentials(None, None, None, None, None)
     svc._key_provider = None
     # A retry-shaped construction: defer to whatever the run is pinned to.
     svc._repin = False

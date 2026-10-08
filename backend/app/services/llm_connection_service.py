@@ -54,6 +54,7 @@ __all__ = [
     "LlmConnectionService",
     "ResolvedKey",
     "availability_map",
+    "capabilities_of",
     "owned_project_connection",
     "owned_user_connection",
     "provider_reads",
@@ -133,6 +134,12 @@ async def owned_project_connection(
     ).scalar_one_or_none()
 
 
+def capabilities_of(row: LlmConnection) -> LlmEndpointCapabilities:
+    """The row's probe verdict, re-validated from JSONB: an unknown stored
+    mode degrades to ``None`` — loudly, never a 500 (see the validator)."""
+    return LlmEndpointCapabilities.model_validate(row.capabilities or {})
+
+
 def _to_read(row: LlmConnection, created_by_name: str | None) -> LlmConnectionRead:
     return LlmConnectionRead.model_validate(
         {
@@ -143,7 +150,7 @@ def _to_read(row: LlmConnection, created_by_name: str | None) -> LlmConnectionRe
             "base_url": row.base_url,
             "has_api_key": row.encrypted_api_key is not None,
             "allowed_models": row.allowed_models,
-            "capabilities": LlmEndpointCapabilities.model_validate(row.capabilities or {}),
+            "capabilities": capabilities_of(row),
             "validation_status": row.validation_status,
             "last_validated_at": row.last_validated_at,
             "last_used_at": row.last_used_at,
