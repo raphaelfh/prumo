@@ -338,33 +338,3 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
                 trace_id=trace_id,
                 run_id=str(run_id),
             )
-
-    async def get_by_article(
-        self,
-        article_id: UUID,
-        stage: ExtractionRunStage | None = None,
-        status: ExtractionRunStatus | None = None,
-    ) -> list[ExtractionRun]:
-        """
-        List runs of an article.
-
-        Args:
-            article_id: article.
-            stage: filter by stage (optional).
-            status: filter by status (optional).
-
-        Returns:
-            List of runs.
-        """
-        query = select(ExtractionRun).where(ExtractionRun.article_id == article_id)
-
-        if stage:
-            query = query.where(ExtractionRun.stage == stage.value)
-
-        if status:
-            query = query.where(ExtractionRun.status == status.value)
-
-        query = query.order_by(ExtractionRun.created_at.desc())
-
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
