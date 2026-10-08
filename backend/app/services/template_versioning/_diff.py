@@ -368,7 +368,7 @@ def normalize_instruction(value: Any) -> str | None:
 
     Mirrors ``template_instruction_service``'s write-side expression so
     ``absent ≡ null ≡ ""`` holds identically wherever an instruction is
-    compared — here and in ``TemplateCloneService``'s zero-state guard.
+    compared — here and in ``_clone``'s zero-state guard.
     Kept in one place because a second copy lets the Draft chip and that
     guard disagree about whether a draft is pending.
     """

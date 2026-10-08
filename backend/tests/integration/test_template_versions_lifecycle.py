@@ -125,13 +125,15 @@ async def test_create_run_never_publishes_a_pending_draft(
     """
     from app.models.extraction import TemplateKind
     from app.services.run_lifecycle_service import RunLifecycleService
-    from app.services.template_clone_service import TemplateCloneService
     from app.services.template_instruction_service import set_template_instruction
 
     project_id = SEED.primary_project
     user_id = SEED.primary_profile
     await clean_project_clones(db_session, project_id)
-    clone = await TemplateCloneService(db_session).clone(
+    from app.services.template_versioning import clone_template
+
+    clone = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,

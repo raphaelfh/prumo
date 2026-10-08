@@ -587,7 +587,7 @@ The template catalogue is read through the API, never PostgREST (constitution §
 | Step | What happens |
 | ------ | ---------------- |
 | **UI** | Calls `POST /api/v1/projects/{project_id}/templates/clone` with `global_template_id` and `kind=extraction` (JWT via `apiClient`), for a template picked from the catalogue listing above. |
-| **Service** | `TemplateCloneService.clone` is **idempotent** on `(project_id, global_template_id)`: first call creates the project row, `extraction_entity_types`, `extraction_fields`, and exactly one active version; later calls return the existing clone and current counts. |
+| **Service** | `template_versioning.clone_template` is **idempotent** on `(project_id, global_template_id)`: first call creates the project row, `extraction_entity_types`, `extraction_fields`, and exactly one active version; later calls return the existing clone and current counts. |
 | **Heal** | Drift is measured against the **active version snapshot**, never the global template. Zero-state clones (empty live structure) rebuild from the global — **except** when the live `llm_template_instruction` differs from the one pinned in the active version, which raises `PendingConfigDraftError` (409). The rebuild resets structure but never that column, and `republish` snapshots it live, so healing would publish prompt text nobody approved — and session-open reaches this branch as any project **member**. `fail_if_pending_draft` cannot guard it: the rebuild's own inserts stamp the marker (0048, `COALESCE` with no `IS NULL` predicate), so the flag would refuse every heal; the marker alone would refuse the documented delete-everything factory recovery, whose marker is a trigger byproduct. Exit = Publish, then re-import. Non-empty drift (e.g. an edit whose republish call was lost) **self-heals by publishing the live structure** as a new version (`TemplateVersionService.republish`) — never wipe-and-rebuild: with user-editable templates a count mismatch is indistinguishable from a deliberate edit, and the historical wipe destroyed customizations. Factory recovery = delete the template and re-import. |
 
 **File import/export (2026-08-23).** The same dialog (now "Switch template")
@@ -889,20 +889,25 @@ publish, AI), keep it in the page-specific component.
   - `app/services/extraction_consensus_service.py` — consensus resolution
     and PublishedState materialization (with optimistic concurrency).
   - `app/services/template_clone_service.py` — kind-parametrized
-    global → project clone (idempotent on
-    `(project_id, global_template_id)`). Validates the global template's
-    `kind` matches what the caller asked for.
+    global → project structure copy. Validates the global template's
+    `kind` matches what the caller asked for. Structure only: it never
+    publishes and never imports `template_versioning`.
   - `app/services/qa_divergence_gate.py` — the finalize-time derived-judgment
     rationale rule; a rule module (pure `divergences_without_rationale` plus
     its async loader), not a service class like the others in this list. Its
     `_rationale_is_empty` deliberately mirrors the client's `rationaleIsEmpty`
     rather than `value_semantics.is_value_filled`, so the backstop is never
     stricter than the form that fed it.
-  - `app/services/template_version_service.py` — `republish`: freezes the
+  - `app/services/template_versioning/` — the draft/published boundary;
+    its `__init__` is the whole public API, the `_`-modules are private
+    (`tests/unit/test_template_versioning_boundary.py`). `clone_template`
+    (idempotent on `(project_id, global_template_id)`) publishes what the
+    clone service copied; `TemplateVersionService.republish` freezes the
     live structure into a new active `ExtractionTemplateVersion` (v+1;
-    prior rows untouched) and re-pins `pending`/`extract` runs to it.
-    Surface for `POST /projects/{id}/templates/{tid}/republish-version`,
-    called by the config UI after every section/field edit.
+    prior rows untouched) and re-pins `pending`/`extract` runs to it —
+    surface for `POST /projects/{id}/templates/{tid}/republish-version`.
+    Plus `discard_draft`, `restore_version` and the read models
+    (config status/diff, active version tree, version history).
   - `app/services/hitl_session_service.py` — one-shot HITL setup for
     both kinds: clones (QA only) + seeds top-level instances + opens
     or resumes a Run + advances to EXTRACT. Surface for

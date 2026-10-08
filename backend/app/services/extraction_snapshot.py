@@ -101,7 +101,7 @@ SNAPSHOT_SQL = text(
 
 
 # WARNING: this is the ONLY template-level live column the snapshot carries,
-# and ``TemplateCloneService._refuse_if_instruction_draft_pending`` depends on
+# and ``template_versioning._clone._refuse_if_instruction_draft_pending`` depends on
 # that being true — its zero-state guard compares exactly this key, because
 # everything else in the snapshot is rebuilt from the global template. Adding
 # a second template-level key here without extending that guard silently

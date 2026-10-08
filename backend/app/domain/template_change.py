@@ -1,6 +1,6 @@
 """Shared vocabulary for the template-config diff engine and its wire read model.
 
-``app.services.template_diff`` computes changes and ``app.services.template_diff_read``
+``app.services.template_versioning._diff`` computes changes and ``app.services.template_versioning._diff_read``
 projects them onto wire rows; both need these enums, and so does
 ``app.schemas.hitl_session`` (the wire model references them directly, so the
 generated client's unions cannot drift from the engine's). Defined here rather

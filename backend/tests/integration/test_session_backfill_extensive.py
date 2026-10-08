@@ -714,7 +714,7 @@ async def test_late_singleton_backfilled_on_session_reopen_and_republish(
     (``ensure_instances`` -> ``_backfill_child_singletons``) and (b) publish
     materialization (``TemplateVersionService.republish`` ->
     ``_materialize_singleton_instances``), with no session open in between."""
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     article = await _pick_article(db_session)
     if article is None:

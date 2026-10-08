@@ -148,7 +148,7 @@ async def test_global_lineage_writes_never_stamp(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_republish_clears_marker_after_change(db_session: AsyncSession) -> None:
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
@@ -181,7 +181,7 @@ async def test_republish_clears_marker_when_snapshot_identical(
     """Marker set + snapshot-identical live tree (e.g. an A→B→A rename):
     Publish must still clear, or the chip sticks on "Unpublished changes"
     with a dead Publish button."""
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     project_id = SEED.secondary_project
     user_id = SEED.primary_profile
@@ -275,7 +275,6 @@ async def test_qa_session_open_survives_pending_draft(db_session: AsyncSession) 
     from app.models.extraction import TemplateKind
     from app.schemas.hitl_session import TemplateKind as SchemaTemplateKind
     from app.services.hitl_session_service import HITLSessionService
-    from app.services.template_clone_service import TemplateCloneService
 
     qa_global = (
         await db_session.execute(
@@ -289,7 +288,10 @@ async def test_qa_session_open_survives_pending_draft(db_session: AsyncSession) 
         pytest.skip("No global QA template seeded")
     qa_global_id = UUID(str(qa_global))
 
-    clone = await TemplateCloneService(db_session).clone(
+    from app.services.template_versioning import clone_template
+
+    clone = await clone_template(
+        db_session,
         project_id=SEED.primary_project,
         global_template_id=qa_global_id,
         user_id=SEED.primary_profile,

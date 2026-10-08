@@ -1,6 +1,6 @@
 """The wire read model over the template-config diff engine (B-9b2a, D4).
 
-:mod:`app.services.template_diff` answers *what changed*; this module answers
+:mod:`app.services.template_versioning._diff` answers *what changed*; this module answers
 *what a client is handed*. It is a sibling rather than more of the engine
 because the engine is at its file-size ceiling, and because the vocabulary
 here — row ids, wire variants, display strings — is presentation, which the
@@ -18,7 +18,7 @@ from uuid import UUID
 
 from app.domain.template_change import ChangeVariant, OpaqueValueState
 from app.schemas.hitl_session import TemplateChangeRowRead
-from app.services.template_diff import (
+from app.services.template_versioning._diff import (
     OPTION_KEY,
     ChangeKind,
     NodeKind,

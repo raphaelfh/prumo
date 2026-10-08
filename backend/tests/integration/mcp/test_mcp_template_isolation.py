@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.llm.extractor import LlmUsage
 from app.services.extraction_run_read_service import build_run_view
 from app.services.section_extraction_service import SectionExtractionService
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning import (
+    TemplateVersionService,
+)
 from tests.integration.conftest import SEED, open_session
 from tests.integration.helpers.template_fixtures import ARTICLE_ID, fresh_charms
 from tests.integration.mcp.tool_calls import call_tool, structured

@@ -61,7 +61,7 @@ from app.services.extraction_run_read_service import (
     is_run_arbitrator,
 )
 from app.services.extraction_snapshot import live_entity_types
-from app.services.template_version_read_service import (
+from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
 )

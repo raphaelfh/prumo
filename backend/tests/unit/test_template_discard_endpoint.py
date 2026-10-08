@@ -22,13 +22,13 @@ from app.schemas.hitl_session import (
     DiscardKeptNode,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_discard_service import (
+from app.services.template_versioning import (
     DiscardBlockedByCardinalityError,
     DiscardRacedError,
     NarrowBaselineError,
+    NoActiveTemplateVersionError,
     OrphanAcknowledgementRequiredError,
 )
-from app.services.template_version_read_service import NoActiveTemplateVersionError
 
 
 def _request() -> MagicMock:

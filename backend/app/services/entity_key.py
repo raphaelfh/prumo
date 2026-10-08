@@ -30,7 +30,7 @@ identity and is not edited by hand.
 published snapshot like every other field column (0067 backfilled the
 snapshots that predate that): the publish diff shows a key move, and
 Discard restores the key the baseline granted (see
-``template_restore_service`` for the per-section slot it parks first).
+``template_versioning._restore`` for the per-section slot it parks first).
 :func:`key_field_of` reads the declaration off the tree the run is PINNED
 to (``entity_types_for_version``), never the live row: a key moved in an
 unpublished draft gates nothing until Publish re-pins the run, exactly like

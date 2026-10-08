@@ -22,14 +22,14 @@ from app.schemas.hitl_session import (
     TemplateConfigDiffBuckets,
     TemplateConfigDiffRead,
 )
-from app.services import template_diff, template_diff_read
-from app.services.template_diff import (
+from app.services.template_versioning import _diff, _diff_read
+from app.services.template_versioning._diff import (
     ChangeKind,
     NodeKind,
     TemplateDiff,
     diff_snapshots,
 )
-from app.services.template_diff_read import (
+from app.services.template_versioning._diff_read import (
     VARIANT_BY_KIND,
     with_recorded_data,
 )
@@ -516,7 +516,7 @@ def _one_row(scenario: Callable[[], _Pair]) -> TemplateChangeRowRead:
 #: This is an assumption pinned by test, not something CI verifies against the
 #: engine: if a future write path ever made the engine emit one of these
 #: pairs, no test here would fail. The runtime guard is
-#: :func:`~app.services.template_diff_read._variant_of` raising ``KeyError``
+#: :func:`~app.services.template_versioning._diff_read._variant_of` raising ``KeyError``
 #: on the ``VARIANT_BY_KIND`` lookup at request time, not this set.
 _UNREACHABLE_KIND_PAIRS = frozenset(
     {
@@ -697,7 +697,7 @@ def test_a_scalar_attribute_holding_a_stored_blob_is_summarized_not_shipped() ->
 # Guards — the wire types, and the attribute partition behind them
 # --------------------------------------------------------------------------
 
-#: The complement of ``template_diff_read.OPAQUE_ATTRIBUTES``: attributes that
+#: The complement of ``_diff_read.OPAQUE_ATTRIBUTES``: attributes that
 #: ship typed for the copy layer to render. Listed literally rather than
 #: derived, so adding a snapshot key to ``ENTITY_ATTRIBUTE_DEFAULTS`` /
 #: ``FIELD_ATTRIBUTE_DEFAULTS`` breaks the partition test below instead of
@@ -749,9 +749,9 @@ def test_no_read_model_field_is_typed_any() -> None:
 
 def test_opaque_and_scalar_attributes_partition_the_snapshot_attributes() -> None:
     """A future JSONB snapshot key cannot silently land in the scalar arm."""
-    opaque = template_diff_read.OPAQUE_ATTRIBUTES
+    opaque = _diff_read.OPAQUE_ATTRIBUTES
     assert opaque | _SCALAR_ATTRIBUTES == (
-        set(template_diff.ENTITY_ATTRIBUTE_DEFAULTS) | set(template_diff.FIELD_ATTRIBUTE_DEFAULTS)
+        set(_diff.ENTITY_ATTRIBUTE_DEFAULTS) | set(_diff.FIELD_ATTRIBUTE_DEFAULTS)
     )
     assert not opaque & _SCALAR_ATTRIBUTES
 

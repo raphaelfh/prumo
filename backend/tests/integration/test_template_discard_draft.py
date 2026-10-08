@@ -37,16 +37,18 @@ from app.repositories.extraction_field_reference_repository import (
 )
 from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_diff import diff_snapshots
-from app.services.template_discard_service import (
+from app.services.template_versioning import (
     DiscardBlockedByCardinalityError,
     DiscardRacedError,
     NarrowBaselineError,
+    NoActiveTemplateVersionError,
     OrphanAcknowledgementRequiredError,
+    TemplateVersionService,
     discard_draft,
 )
-from app.services.template_version_read_service import NoActiveTemplateVersionError
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning._diff import (
+    diff_snapshots,
+)
 from tests.integration.conftest import (
     SEED,
     clean_project_clones,

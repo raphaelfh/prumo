@@ -18,6 +18,7 @@ instance — would silently skip the new section).
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -42,13 +43,10 @@ from app.schemas.hitl_session import (
 )
 from app.services.advisory_locks import take_advisory_xact_lock
 from app.services.extraction_snapshot import build_template_version_snapshot
-from app.services.hitl_session_service import HITLSessionService
-from app.services.template_clone_service import (
-    PendingConfigDraftError,
-    TemplateNotFoundError,
-)
+from app.services.instance_seeding import ensure_instances
+from app.services.template_clone_service import TemplateNotFoundError
 from app.services.template_section_service import has_multi_entry_parent
-from app.services.template_version_read_service import get_template_config_diff
+from app.services.template_versioning._read import get_template_config_diff
 
 __all__ = [
     "PendingConfigDraftError",
@@ -56,9 +54,26 @@ __all__ = [
     "PublishDiffDriftedError",
     "PublishMissingAcknowledgementError",
     "RepublishResult",
-    "TemplateNotFoundError",
     "TemplateVersionService",
 ]
+
+
+class PendingConfigDraftError(Exception):
+    """Publish-adjacent operation refused: unpublished config edits.
+
+    Raised by ``republish(fail_if_pending_draft=True)`` and by both clone
+    heals that would publish a draft: the DRIFT heal on any marker, and the
+    ZERO-STATE heal on a staged instruction (see ``_clone`` for why the two
+    conditions differ). The aligned path publishes nothing and never raises.
+    """
+
+    def __init__(
+        self,
+        msg: str = (
+            "Template has unpublished configuration changes. Publish them before re-importing."
+        ),
+    ) -> None:
+        super().__init__(msg)
 
 
 class PublishBlockedByMultiEntryError(AppError):
@@ -131,21 +146,14 @@ _EDITABLE_STAGES = (
 )
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
 class RepublishResult:
     """Result envelope returned by ``TemplateVersionService.republish``."""
 
-    def __init__(
-        self,
-        *,
-        version_id: UUID,
-        version: int,
-        changed: bool,
-        repinned_run_count: int,
-    ) -> None:
-        self.version_id = version_id
-        self.version = version
-        self.changed = changed
-        self.repinned_run_count = repinned_run_count
+    version_id: UUID
+    version: int
+    changed: bool
+    repinned_run_count: int
 
 
 class TemplateVersionService:
@@ -490,9 +498,9 @@ class TemplateVersionService:
     ) -> None:
         """Seed missing cardinality-one instances for every re-pinned run.
 
-        Reuses ``HITLSessionService.ensure_instances`` (the session-open
-        seeding path) per affected article; idempotent, and the advisory
-        lock it re-takes is already held by this transaction.
+        Reuses :func:`ensure_instances` (the session-open seeding path) per
+        affected article; idempotent, and the advisory lock it re-takes is
+        already held by this transaction.
         """
         if not run_pairs:
             return
@@ -507,9 +515,9 @@ class TemplateVersionService:
             .scalars()
             .all()
         )
-        session_service = HITLSessionService(self.db)
         for run_project_id, article_id in run_pairs:
-            await session_service.ensure_instances(
+            await ensure_instances(
+                self.db,
                 project_id=run_project_id,
                 article_id=article_id,
                 project_template_id=project_template_id,

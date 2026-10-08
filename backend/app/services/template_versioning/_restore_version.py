@@ -41,8 +41,8 @@ from app.models.extraction import ProjectExtractionTemplate
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.services.extraction_snapshot import baseline_is_restorable
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_discard_service import NarrowBaselineError, reconcile_to_baseline
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning._discard import NarrowBaselineError, reconcile_to_baseline
+from app.services.template_versioning._publish import TemplateVersionService
 
 __all__ = ["RestoreVersionResult", "VersionNotFoundError", "restore_version"]
 

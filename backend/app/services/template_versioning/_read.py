@@ -8,7 +8,7 @@
 * B-4: the Configuration tab's Draft chip reads
   ``get_template_config_status`` (marker + active version number).
 * B-9a: that same status calibrates the chip with a change count —
-  ``template_diff.diff_snapshots`` of the stored active snapshot against
+  ``_diff.diff_snapshots`` of the stored active snapshot against
   a fresh build of the live rows, run ONLY while the draft marker is set.
 * B-9b2a: ``get_template_config_diff`` serves the Publish sheet the rows
   behind that count. Same engine, same restorability gate — but it
@@ -52,8 +52,8 @@ from app.services.extraction_snapshot import (
     entity_types_for_version,
 )
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_diff import TemplateDiff, diff_snapshots
-from app.services.template_diff_read import fingerprint, with_recorded_data
+from app.services.template_versioning._diff import TemplateDiff, diff_snapshots
+from app.services.template_versioning._diff_read import fingerprint, with_recorded_data
 
 
 class NoActiveTemplateVersionError(Exception):

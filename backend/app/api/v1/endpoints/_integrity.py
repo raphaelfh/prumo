@@ -70,7 +70,7 @@ def is_deadlock(exc: DBAPIError) -> bool:
     something that will fail identically every time is worse than a 500,
     because it hides a real bug behind a friendly sentence.
 
-    ``template_discard_service`` already makes this call for its own writes
+    ``template_versioning._discard`` already makes this call for its own writes
     (``DiscardRacedError``); the B-7 structure endpoints take the SAME
     advisory locks through ``claim_draft_lock``, so they can lose the same
     race and owe the same answer.

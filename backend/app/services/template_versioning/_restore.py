@@ -45,7 +45,8 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.services.template_clone_service import TemplateCloneService, TemplateNotFoundError
-from app.services.template_diff import (
+from app.services.template_section_service import sweep_empty_instances
+from app.services.template_versioning._diff import (
     ENTITY_ATTRIBUTE_DEFAULTS,
     ENTITY_KEY_KEY,
     FIELD_ATTRIBUTE_DEFAULTS,
@@ -57,8 +58,7 @@ from app.services.template_diff import (
     _normalize_entity,
     _normalize_field,
 )
-from app.services.template_section_service import sweep_empty_instances
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning._publish import TemplateVersionService
 
 __all__ = [
     "RestoreOutcome",
@@ -74,7 +74,7 @@ _PARENT_KEY = "parent_entity_type_id"
 _OWNER_KEY = "entity_type_id"
 _NAME_KEY = "name"
 
-#: The D1 projection: exactly what ``template_diff``'s normalizers emit,
+#: The D1 projection: exactly what ``_diff``'s normalizers emit,
 #: plus the two columns they omit. Kept as tuples so the live side is read
 #: through the same key list the baseline side is built from.
 _ENTITY_KEYS: tuple[str, ...] = (*ENTITY_ATTRIBUTE_DEFAULTS, ORDER_KEY)
@@ -106,7 +106,7 @@ class RestoreOutcome:
 # Identity is the node id. The projection is the snapshot key set PLUS two
 # columns the snapshot does not compare: ``sort_order`` (both node kinds)
 # and a field's owning ``entity_type_id`` (derived from JSON nesting).
-# ``template_diff``'s normalizers supply the canonical defaults for absent
+# ``_diff``'s normalizers supply the canonical defaults for absent
 # keys — including the role-aware ``entry_label`` rule that keeps a
 # pre-0051 baseline from nulling a container's entry noun — but they are
 # NOT the projection, because they omit exactly those two columns. Without
@@ -205,7 +205,7 @@ def _levels(rows: list[ExtractionEntityType]) -> list[list[ExtractionEntityType]
     next one is added (the clone service's two-pass precedent, generalized
     to arbitrary depth).
     """
-    ordered = TemplateCloneService._topologically_sorted(rows)
+    ordered = TemplateCloneService.topologically_sorted(rows)
     in_scope = {row.id for row in ordered}
     depth: dict[UUID, int] = {}
     buckets: dict[int, list[ExtractionEntityType]] = {}

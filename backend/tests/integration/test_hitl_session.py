@@ -1342,7 +1342,7 @@ async def test_member_qa_session_open_cannot_publish_pending_instruction_draft(
     Reachability: ``POST /api/v1/hitl/sessions`` is gated by
     ``ensure_project_member`` — NOT ``require_project_manager`` — and
     ``HITLSessionService._resolve_project_template`` calls
-    ``TemplateCloneService.clone`` on every QA open. When the project
+    ``template_versioning.clone_template`` on every QA open. When the project
     template sits in zero state, the heal republishes, and
     ``build_template_version_snapshot`` reads the LIVE instruction column.
     So before the fix a reviewer's page load pushed the manager's staged
@@ -1354,7 +1354,6 @@ async def test_member_qa_session_open_cannot_publish_pending_instruction_draft(
     """
     from app.models.extraction import TemplateKind
     from app.services.hitl_session_service import HITLSessionService
-    from app.services.template_clone_service import TemplateCloneService
     from app.services.template_instruction_service import set_template_instruction
 
     manager = SEED.primary_profile
@@ -1384,7 +1383,10 @@ async def test_member_qa_session_open_cannot_publish_pending_instruction_draft(
 
     # Manager sets the template up, then leaves it mid-edit: every section
     # deleted (zero state) with instruction text staged but not published.
-    initial = await TemplateCloneService(db_session).clone(
+    from app.services.template_versioning import clone_template
+
+    initial = await clone_template(
+        db_session,
         project_id=project_id,
         global_template_id=qa_global,
         user_id=manager,
