@@ -12,7 +12,6 @@
 import {apiClient} from '@/integrations/api';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {ReviewKind} from '@/lib/comparison/permissions';
-import type {CreateDecisionRequest} from '@/hooks/runs/types';
 import type {components} from '@/types/api/schema';
 
 // ---------------------------------------------------------------------------
@@ -128,7 +127,7 @@ export function openExtractionSession(
 }
 
 // ---------------------------------------------------------------------------
-// useAutoSaveProposals: single-field decision write
+// The autosave queue's single-field write (useRunValues supplies the writer)
 // ---------------------------------------------------------------------------
 
 export interface WriteProposalParams {
@@ -150,56 +149,6 @@ export interface WriteProposalParams {
    * same (instance, field).
    */
   proposalRecordId?: string | null;
-}
-
-/**
- * Write a single field value to the run as a per-reviewer ``edit`` decision
- * (D8: the one write path for BOTH run kinds — human /proposals writes are
- * gone; that endpoint remains for AI/system writers only). Keepalive=true so
- * the request survives route changes and tab closes.
- *
- * NOTE: does not return ErrorResult — the caller (performSave inside
- * useAutoSaveProposals) uses Promise.allSettled to fan out writes and
- * handles failures in aggregate, so individual writes may throw.
- */
-export async function writeRunFieldValue(
-  params: WriteProposalParams,
-): Promise<void> {
-  const {
-    runId,
-    instanceId,
-    fieldId,
-    normalizedValue,
-    absentReason,
-    proposalRecordId,
-  } = params;
-  // Merge the disposition sibling only when present, so an ordinary value never
-  // gains a spurious `absent_reason` key (ADR-0016 write contract).
-  const valueEnvelope = absentReason
-    ? {value: normalizedValue, absent_reason: absentReason}
-    : {value: normalizedValue};
-  // Body typed against the backend mirror so /decisions payload drift fails
-  // the typecheck instead of surfacing as a runtime 422.
-  const body: CreateDecisionRequest = {
-    instance_id: instanceId,
-    field_id: fieldId,
-    decision: 'edit' as const,
-    value: valueEnvelope,
-    ...(proposalRecordId ? {proposal_record_id: proposalRecordId} : {}),
-  };
-  await apiClient(`/api/v1/runs/${runId}/decisions`, {
-    method: 'POST',
-    body,
-    keepalive: true,
-  });
-}
-
-/** Fresh authority and audit history for reversible workspace decisions. */
-export function readDecisionAuthority(runId: string) {
-  return toResult(
-    () => apiClient<import('@/hooks/runs/types').RunViewResponse>(`/api/v1/runs/${runId}/view`),
-    'extractionRunService.readDecisionAuthority',
-  );
 }
 
 /** Append the typed envelope and optional current-decision condition unchanged. */

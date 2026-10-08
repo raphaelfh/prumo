@@ -45,7 +45,7 @@ export interface EntryFormContextValue {
   /** Every instance of the article, from the run view. */
   instances: ExtractionInstance[];
 
-  values: Record<string, ExtractionValue>;
+  values: Record<string, unknown>;
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
 
   aiSuggestions: Record<string, AISuggestion>;

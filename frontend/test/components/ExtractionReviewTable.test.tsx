@@ -19,7 +19,7 @@ const fields = [
 const newer: AISuggestion = {id: 'new', runId: 'run', value: 'New proposal', confidence: .8, reasoning: 'New rationale', status: 'pending', timestamp: new Date('2026-09-02')};
 const older: AISuggestion = {...newer, id: 'old', value: 'Old proposal', reasoning: 'Old rationale', timestamp: new Date('2026-09-01')};
 const getHistory = vi.fn(async () => [newer, older]);
-const toggle = vi.fn(async () => true);
+const accept = vi.fn(async () => true);
 const undo = vi.fn(async () => true);
 const redo = vi.fn(async () => true);
 const resume = vi.fn(async () => true);
@@ -34,7 +34,7 @@ function Harness({saving = false, pendingDecision = null, conflicted = false, er
   const [guideOpen, setGuideOpen] = useState(true);
   const review: ReviewWorkspace = {proposals: [newer, older].map(p => ({id: p.id, run_id: 'run', instance_id: 'i', field_id: 'a', source: 'ai', source_user_id: null, proposed_value: {value: p.value, verification: {verdict: 'confirmed'}}, confidence_score: p.confidence, rationale: p.reasoning, created_at: p.timestamp.toISOString()})), navigation, widths, columns, activeProposal,
     setActiveProposal: (instanceId, fieldId, proposal) => setActiveProposal(previous => previous?.proposal === proposal && previous?.fieldId === fieldId ? previous : proposal ? {instanceId, fieldId, proposal} : null),
-    decisions: externalDecisions ?? {saving, pendingDecision, conflicted, error, canUndo, undoTarget: canUndo ? {instanceId: 'i', fieldId: 'a', id: 'd', expectedId: 'd', predecessorId: null, predecessor: {value: null}, value: {value: 'x'}, proposalRecordId: null} : null, canRedo: false, redoTarget: null, redoLatestLocalDecision: redo, toggle, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => 'old', isAccepted: p => p.id === 'old' && p.value === older.value},
+    decisions: externalDecisions ?? {saving, pendingDecision, conflicted, error, canUndo, undoTarget: canUndo ? {instanceId: 'i', fieldId: 'a', id: 'd', expectedId: 'd', predecessorId: null, predecessor: {value: null}, value: {value: 'x'}, proposalRecordId: null} : null, canRedo: false, redoTarget: null, redoLatestLocalDecision: redo, acceptProposal: accept, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => 'old', isAccepted: p => p.id === 'old' && p.value === older.value},
   };
   const suggestions = {i_a: latest, i_b: {...newer, id: 'b-new', value: 'B proposal'}};
   return <SectionNavLayout items={[{id: 's', label: 'Study', requiredFilled: 1, requiredTotal: 2, state: 'in_progress', level: 0}]} activeId="s" onSelect={() => {}} guideOpen={guideOpen} onGuideOpenChange={setGuideOpen} toolbar={<ReviewQuickActions review={review} rows={rows} suggestions={suggestions} guideOpen={guideOpen} onToggleGuide={() => setGuideOpen(!guideOpen)}/>}>
@@ -106,9 +106,9 @@ describe('ExtractionReviewTable', () => {
     expect(await screen.findByText('Old rationale')).toBeVisible();
     expect(within(screen.getByRole('toolbar')).queryByRole('button', {name: /accept extraction/i})).not.toBeInTheDocument();
     await user.keyboard('a');
-    expect(toggle).toHaveBeenLastCalledWith(expect.objectContaining({instanceId: 'i', fieldId: 'a', id: 'old'}));
+    expect(accept).toHaveBeenLastCalledWith(expect.objectContaining({instanceId: 'i', fieldId: 'a', id: 'old'}));
     await user.click(within(firstRow).getByRole('button', {name: 'Accept extraction'}));
-    expect(toggle).toHaveBeenLastCalledWith(expect.objectContaining({instanceId: 'i', fieldId: 'a', id: 'new'}));
+    expect(accept).toHaveBeenLastCalledWith(expect.objectContaining({instanceId: 'i', fieldId: 'a', id: 'new'}));
   });
   it('guide toggle is first, hiding it reclaims the rail, and undo stays global after navigation', async () => {
     const user = userEvent.setup(); render(<Harness canUndo/>);
@@ -120,11 +120,11 @@ describe('ExtractionReviewTable', () => {
     await user.click(screen.getByRole('button', {name: 'Next pending question'}));
     await user.click(screen.getByRole('button', {name: 'Undo latest local decision'}));
     expect(undo).toHaveBeenCalledWith();
-    expect(toggle).not.toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
   });
   it('undo and redo announce their chords and fire them outside fields only', async () => {
     const user = userEvent.setup();
-    const decisions: ReviewWorkspace['decisions'] = {saving: false, pendingDecision: null, conflicted: false, error: null, canUndo: true, undoTarget: {instanceId: 'i', fieldId: 'a', id: 'd', expectedId: 'd', predecessorId: null, predecessor: {value: null}, value: {value: 'x'}, proposalRecordId: null}, canRedo: true, redoTarget: null, redoLatestLocalDecision: redo, toggle, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => null, isAccepted: () => false};
+    const decisions: ReviewWorkspace['decisions'] = {saving: false, pendingDecision: null, conflicted: false, error: null, canUndo: true, undoTarget: {instanceId: 'i', fieldId: 'a', id: 'd', expectedId: 'd', predecessorId: null, predecessor: {value: null}, value: {value: 'x'}, proposalRecordId: null}, canRedo: true, redoTarget: null, redoLatestLocalDecision: redo, acceptProposal: accept, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => null, isAccepted: () => false};
     render(<Harness externalDecisions={decisions}/>);
     expect(screen.getByRole('button', {name: 'Undo latest local decision'})).toHaveAttribute('aria-keyshortcuts');
     expect(screen.getByRole('button', {name: 'Redo latest undone decision'})).toHaveAttribute('aria-keyshortcuts');
@@ -161,7 +161,7 @@ describe('ExtractionReviewTable', () => {
     expect(cardCheck).toHaveAttribute('aria-busy', 'true');
     expect(otherCheck).not.toHaveAttribute('aria-busy');
     await user.click(rowCheck); await user.click(otherCheck);
-    expect(toggle).not.toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
     view.rerender(<Harness/>);
     // Same nodes: nothing remounted across pending -> settled.
     expect(within(firstRow).getByRole('button', {name: 'Accept extraction'})).toBe(rowCheck);
@@ -202,7 +202,7 @@ import {ExtractionFormView} from '@/components/extraction/ExtractionFormView';
 import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/extraction';
 vi.mock('@/components/extraction/ai/shared/SectionAIExtractButton', () => ({SectionAIExtractButton: ({entityTypeId}: {entityTypeId: string}) => <button aria-label={`Extract section ${entityTypeId}`}/> }));
 vi.mock('@/hooks/extraction/useExtractionFormAIActions', () => ({useExtractionFormAIActions: () => ({})}));
-const inertDecisions: ReviewWorkspace['decisions'] = {saving: false, pendingDecision: null, conflicted: false, error: null, canUndo: false, undoTarget: null, canRedo: false, redoTarget: null, redoLatestLocalDecision: redo, toggle, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => null, isAccepted: () => false};
+const inertDecisions: ReviewWorkspace['decisions'] = {saving: false, pendingDecision: null, conflicted: false, error: null, canUndo: false, undoTarget: null, canRedo: false, redoTarget: null, redoLatestLocalDecision: redo, acceptProposal: accept, undoLatestLocalDecision: undo, resumeDraftAfterConflict: resume, acceptedProposalIdFor: () => null, isAccepted: () => false};
 function FormHarness({nested = false, sorted = false, twoSections = false}: {nested?: boolean; sorted?: boolean; twoSections?: boolean}) {
   const [activeEntries, setActiveEntries] = useState<Record<string, string>>({});
   const study = {id: 's', name: 'study', label: 'Study section', description: 'Section description', cardinality: 'one', parent_entity_type_id: null};
@@ -274,16 +274,21 @@ it('responds to observed pane width: resizes at 900, hides handles below it, ove
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {http, HttpResponse} from 'msw';
 import {server} from '@/test/mocks/server';
-import {useProposalDecision} from '@/hooks/extraction/useProposalDecision';
+import {useRunValues} from '@/hooks/runs/useRunValues';
+import {parseCoordKey} from '@/lib/runs/coord';
+import {makeRunView} from '../helpers/runScreenFixtures';
 import type {ReviewerDecisionResponse} from '@/hooks/runs/types';
 import type {components} from '@/types/api/schema';
 vi.mock('@/integrations/supabase/client', () => ({supabase: {auth: {getSession: vi.fn(async () => ({data: {session: {access_token: 'test'}}}))}}}));
 const baseline = {i_a: 'Original A'};
 let savedHistory: ReviewerDecisionResponse[];
 function WriterHarness({latest, initial = baseline}: {latest?: AISuggestion; initial?: Record<string, unknown>}) {
-  const [values, setValues] = useState<Record<string, unknown>>(initial);
-  const writer = useProposalDecision({runId: 'run', reviewerId: 'me', stage: 'extract', enabled: true, values, baselineValues: initial, decisions: savedHistory, debounceMs: 60000, onConfirmed: (coordinate, value) => {const key = `${coordinate.instanceId}_${coordinate.fieldId}`; setValues(previous => ({...previous, [key]: value}));}});
-  return <Harness externalDecisions={writer} externalValues={values} latest={latest}/>;
+  const [runDetail] = useState(() => makeRunView({run: {id: 'run'}, decisions: savedHistory, current_values: Object.entries(initial).map(([key, value]) => {
+    const {instanceId, fieldId} = parseCoordKey(key);
+    return {instance_id: instanceId, field_id: fieldId, value: {value}, decision: 'edit'};
+  })}));
+  const writer = useRunValues({runDetail, currentUserId: 'me', enabled: true, debounceMs: 60000});
+  return <Harness externalDecisions={writer} externalValues={writer.values} latest={latest}/>;
 }
 it('an older accepted proposal with a verification envelope shows the accepted indicator while the newer pending check stays neutral', async () => {
   // Real decision logic: the run-detail proposal row carries the stored envelope
@@ -385,7 +390,7 @@ describe('restored entry review navigation', () => {
     await user.click(screen.getByRole('button', {name: 'Focus question'}));
     expect(document.getElementById('review-question-p2_nested')).toBeVisible();
     await user.keyboard('a');
-    expect(toggle).toHaveBeenLastCalledWith(expect.objectContaining({instanceId: 'p2', fieldId: 'nested', id: 'new'}));
+    expect(accept).toHaveBeenLastCalledWith(expect.objectContaining({instanceId: 'p2', fieldId: 'nested', id: 'new'}));
   });
 });
 

@@ -1,16 +1,10 @@
 /**
- * Full-screen data extraction interface
- *
- * Main page where the user extracts data from a specific article.
- * Uses full-screen layout with PDF viewer beside extraction form.
- *
- * Features:
- * - PDF viewer with toggle
- * - Section-based extraction form
- * - Automatic auto-save
- * - Multi-user collaboration (popover + grid)
- * - AI suggestions (prefill + badge)
- * - Progress tracking
+ * Full-screen data extraction: the extraction residue of the shared run
+ * screen. The lifecycle (stage commands, consensus, reveal, reopen, compare)
+ * is `useRunLifecycleScreen`, the chrome is `RunScreenShell`; this page owns
+ * what only extraction has — the bootstrap (active template + worklist), the
+ * section/entry form tree with its entry dialogs, values, AI suggestions and
+ * the form's progress.
  *
  * @page
  */
@@ -19,58 +13,11 @@ import {useEffect, useMemo, useRef, useState} from 'react';
 import {flushSync} from 'react-dom';
 import {useNavigate, useParams} from 'react-router';
 import {toast} from 'sonner';
-import {extractionInstanceService} from '@/services/extractionInstanceService';
-import {extractionLogger} from '@/lib/extraction/observability';
-import {DEFAULT_ENTRY_NOUN} from '@/lib/extraction/entryKey';
-import {useAiLinkMaps} from '@/hooks/runs/useAiLinkMaps';
-import {isRunEditable} from '@/lib/runs/editability';
-import {firstPendingInstanceId} from '@/lib/runs/suggestionLocate';
-import type {SectionNavHandle} from '@/components/runs/SectionNavLayout';
-import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
-import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
-import {RunSplitShell} from '@/components/runs/RunSplitShell';
-import {RunEditabilityProvider} from '@/components/runs/RunEditabilityContext';
-import {useIsBelowDesktop, useIsNarrow} from '@/hooks/use-mobile';
-import {usePdfPanel} from '@/hooks/usePdfPanel';
-import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
-import {HITLPublishedBanner} from '@/components/runs/HITLStatusBadges';
-import {buildExtractionTransition} from '@/lib/extraction/stageTransition';
-import {nextArticleTarget} from '@/lib/extraction/worklistNav';
-import {setManagerReviewVisibility} from '@/services/hitlConfigService';
-import {useSidebar} from '@/contexts/SidebarContext';
 
-// Hooks
-import {useExtractionData} from '@/hooks/extraction/useExtractionData';
-import {useCurrentUser} from '@/hooks/useCurrentUser';
-import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
-import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
-import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
-import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
-import {useProposalDecision} from '@/hooks/extraction/useProposalDecision';
-import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
-import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
-import {countActionableSuggestions} from '@/lib/ai-extraction/suggestionUtils';
-import {withReviewDecisionStatus} from '@/lib/extraction/proposalDecisionState';
-import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
-import {
-  useAdvanceRun,
-  useApproveFinalize,
-  useCreateConsensus,
-  useMarkReady,
-  useReopenExtraction,
-  useReopenRun,
-  useReviewerSummary,
-  useRun,
-  useRunReviewers,
-} from '@/hooks/runs';
-import {ConsensusResolutionPanel} from '@/components/runs/ConsensusResolutionPanel';
-import {useConsensusReconciliation} from '@/hooks/extraction/useConsensusReconciliation';
-import {toConsensusValueEnvelope} from '@/lib/extraction/valueSemantics';
-
-// Components
-import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
-import {RunPdfContent} from '@/components/runs/RunPdfContent';
+import {Button} from '@/components/ui/button';
+import {RunScreenShell} from '@/components/runs/RunScreenShell';
+import type {SectionNavHandle} from '@/components/runs/SectionNavLayout';
 import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
 import {RemoveEntryDialog} from '@/components/extraction/entries/RemoveEntryDialog';
 import {
@@ -78,92 +25,93 @@ import {
   RenameEntryDialog,
   type EntryIdentityChanges,
 } from '@/components/extraction/AddEntryDialog';
-import {ReopenExtractionDialog} from '@/components/extraction/dialogs/ReopenExtractionDialog';
-import {deriveCanReopenExtraction} from '@/lib/extraction/reopenExtraction';
 
-// Additional hooks
+import {useProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
+import {useCurrentUser} from '@/hooks/useCurrentUser';
+import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
+import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
+import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
+import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
+import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {useAddEntry} from '@/hooks/extraction/useAddEntry';
 import {useDeleteEntries} from '@/hooks/extraction/useDeleteEntries';
-import {entrySlotKey, entrySlotsShowing} from '@/lib/extraction/entrySlots';
 import {useUpdateInstanceIdentity} from '@/hooks/extraction/useUpdateInstanceIdentity';
-import {displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
-import {t} from '@/lib/copy';
-import {isValueEmpty} from '@/lib/extraction/valueSemantics';
-import {createViewerStore, subscribeReaderLocate} from '@prumo/pdf-viewer';
+import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
+import {useRunReader} from '@/hooks/runs/useRunReader';
+import {useRunValues} from '@/hooks/runs/useRunValues';
+import {
+  useRunLifecycleScreen,
+  useRunView,
+  useRunWorklist,
+} from '@/hooks/runs/useRunLifecycleScreen';
 
-// =================== COMPONENT ===================
+import {extractionInstanceService} from '@/services/extractionInstanceService';
+import {extractionLogger} from '@/lib/extraction/observability';
+import {DEFAULT_ENTRY_NOUN, displayEntryKey, entryKeyOf, keyFieldOf} from '@/lib/extraction/entryKey';
+import {entrySlotKey, entrySlotsShowing} from '@/lib/extraction/entrySlots';
+import {entityTypesFromRunView, instancesFromRunView} from '@/lib/extraction/runViewAdapters';
+import {resolveExtractionViewState} from '@/lib/extraction/extractionViewState';
+import {withReviewDecisionStatus} from '@/lib/extraction/proposalDecisionState';
+import {isValueEmpty} from '@/lib/extraction/valueSemantics';
+import {countActionableSuggestions} from '@/lib/ai-extraction/suggestionUtils';
+import {isRunEditable} from '@/lib/runs/editability';
+import {requiredCoordKeys} from '@/lib/runs/extractionFinalizeGate';
+import {firstPendingInstanceId} from '@/lib/runs/suggestionLocate';
+import {t} from '@/lib/copy';
+import type {ExtractionRunStage} from '@/types/ai-extraction';
+import {coordKey, parseCoordKey} from '@/lib/runs/coord';
 
 export default function ExtractionFullScreen() {
   const { projectId, articleId } = useParams();
-  const navigate = useNavigate();
-  // App navigation sidebar (provided by RunWorkspaceShell). SidebarToggle + ⌘B
-  // collapse the desktop sidebar (lg+); toggleMobile opens the drawer below lg.
-  const { sidebarCollapsed, toggleSidebar, toggleMobile } = useSidebar();
 
-  // ONE stable viewer store shared between the PDF panel and the form panel.
-  // useState lazy initializer creates the store exactly once per mount —
-  // the React-Compiler-approved pattern. RunSplitShell wraps both panels in a
-  // single <ViewerProvider store={viewerStore}>, and RunPdfContent
-  // receives store={viewerStore}, so the form-panel evidence popover and the
-  // PDF reader resolve the SAME store — the prerequisite for the
-  // click-evidence → highlight feature.
-  const [viewerStore] = useState(createViewerStore);
-
-  // Load page-bootstrap data using dedicated hook (SRP). Entity types +
-  // instances are NOT read here anymore — they are derived from the
-  // server RunView (runDetail) below via the adapters.
-  const {
-    article,
-    template,
-    articles,
-    loading,
-    error: dataError,
-  } = useExtractionData({
+  // Page bootstrap, through the typed API client (ADR-0007): the project's
+  // extraction templates, server-ordered newest first and narrowed to the
+  // active rows, so [0] is the newest active template — the same pick as the
+  // Configuration view's picker (useActiveTemplateSelection); and the
+  // project's article worklist (header pager, next-article, the title on
+  // screen). Entity types + instances come from the run view below.
+  const templatesQuery = useProjectTemplates({projectId: projectId ?? '', kind: 'extraction'});
+  const template = templatesQuery.data?.[0] ?? null;
+  const worklist = useRunWorklist({
+    kind: 'extraction',
     projectId,
     articleId,
-    enabled: !!projectId && !!articleId,
+    articleRoute: (id) => `/projects/${projectId}/extraction/${id}`,
   });
+  // Null when the article is not in the project (or not visible to the
+  // caller): the page renders its "not found" state with a Back affordance.
+  const article = worklist.articles.find((a) => a.id === articleId) ?? null;
+  const loading = templatesQuery.isLoading || worklist.isLoading;
+  // A failed read, or a project with no active extraction template, surfaces
+  // one toast and bounces to the project's extraction tab (effect below).
+  // Only a read that left NO rows counts: both queries refetch in the
+  // background, and a failed refetch keeps the rows the form opened with —
+  // it must not throw the reviewer out mid-edit.
+  const templatesError = templatesQuery.data === undefined ? templatesQuery.error : null;
+  const bootstrapError = templatesError ?? worklist.error;
+  const dataError = bootstrapError
+    ? bootstrapError.message || t('extraction', 'errors_loadExtractionData')
+    : templatesQuery.isSuccess && !template
+      ? t('common', 'errors_templateNotFound')
+      : null;
 
-  // Local state
-  // Current reviewer id from AuthContext (zero network) — was a
-  // supabase.auth.getUser() round-trip + a serial gate on run open.
+  // Current reviewer id from AuthContext (zero network).
   const { userId } = useCurrentUser();
   const currentUserId = userId ?? '';
 
-  // UI state
-  const belowDesktop = useIsBelowDesktop();
-  const pdf = usePdfPanel({ initialOpen: false, compact: useIsNarrow() });
-  const readerDefaultApplied = useRef(false);
-  const closePdfRef = useRef(pdf.close);
-  useEffect(() => {closePdfRef.current = pdf.close;}, [pdf.close]);
-  useEffect(() => {if (belowDesktop) closePdfRef.current();}, [belowDesktop]);
-  const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
-
-  // A citation-locate (from an AI-suggestion popover) reveals the document panel
-  // if collapsed, so the reader can scroll + flash the cited passage.
-  // `usePdfPanel.open` is a fresh closure each render; hold it in a ref and
-  // subscribe ONCE per store so a citation-locate reveals the PDF panel without
-  // re-subscribing every render. Cleanup via return (React Compiler).
-  const openPdfRef = useRef(pdf.open);
-  useEffect(() => {
-    openPdfRef.current = pdf.open;
-  }, [pdf.open]);
-  useEffect(() => subscribeReaderLocate(viewerStore, () => openPdfRef.current()), [viewerStore]);
   // The form's section layout: the header's suggestion locate opens a section through it.
   const sectionNavRef = useRef<SectionNavHandle>(null);
 
-  // Hierarchy state
   const [modelToRemove, setModelToRemove] = useState<{
-    id: string; 
+    id: string;
     name: string;
     hasData: boolean;
     fieldsCount: number;
   } | null>(null);
 
-  // Open / resume the HITL session for this (article × project_template).
-  // Mirrors the QA flow: the backend ensures an extraction Run exists,
-  // seeds top-level instances if missing, and parks it in `extract` so
-  // the autosave (which persists the user's own values) can fire immediately.
+  // Open / resume the HITL session for this (article × project_template): the
+  // backend ensures an extraction Run exists, seeds top-level instances, and
+  // parks it in `extract` so autosave can fire immediately.
   const sessionResult = useExtractionSession({
     projectId,
     articleId,
@@ -172,24 +120,16 @@ export default function ExtractionFullScreen() {
   });
   const activeRunId = sessionResult.session?.runId ?? null;
 
-  // Detail fetch on the active run — drives the "Revision" badge when
-  // `parameters.parent_run_id` is present, the stage-aware read path of
-  // useExtractedValues, and the reviewer-summary + ConsensusPanel below.
-  // The view also carries the frozen-snapshot ``entity_types`` + the
-  // materialised ``instances`` — the single source of truth for the form.
-  // The session embed seeds this cache on open, so ``runDetail`` is present
-  // on first paint and the derived memos populate immediately.
+  // The run view: frozen-snapshot entity types + materialised instances (the
+  // form's single source of truth), the stage, reviewers and consensus rows.
+  // The session embed seeds this cache, so it is present on first paint.
   const {
     data: runDetail,
     refetch: refetchRun,
     isError: runIsError,
     error: runErrorObj,
-  } = useRun(activeRunId ?? null, { enabled: !!activeRunId });
+  } = useRunView(activeRunId);
 
-  // Entity types + instances are derived from the view (not direct
-  // Supabase). ``entityTypesFromRunView`` / ``instancesFromRunView`` are
-  // pure adapters; the memos keep references stable across renders that
-  // don't change ``runDetail``.
   const entityTypes = useMemo(
     () => (runDetail ? entityTypesFromRunView(runDetail) : []),
     [runDetail],
@@ -199,30 +139,25 @@ export default function ExtractionFullScreen() {
     [runDetail],
   );
 
-  const stage = (runDetail?.run.stage ?? null) as import('@/types/ai-extraction').ExtractionRunStage | null;
+  const stage = (runDetail?.run.stage ?? null) as ExtractionRunStage | null;
   const isFinalized = stage === 'finalized';
 
-  // Hook to manage extracted values — read path branches on stage.
-  const {
-    values,
-    loadedValues,
-    updateValue,
-    reconcileValue,
-    loading: valuesLoading,
-    initialized: valuesInitialized,
-    refresh: refreshValues,
-  } = useExtractedValues({
-    runId: activeRunId,
-    stage,
-    currentValues: runDetail?.current_values,
-    publishedStates: runDetail?.published_states,
-    currentUserId,
-    enabled: !!activeRunId,
-  });
+  // The comparison access + the viewer write gate.
+  const permissions = useComparisonPermissions(projectId || '', currentUserId, 'extraction');
 
-  // Reopen wiring: when the active run is finalized, surface the reopen
-  // affordance. The reopen mutation creates a new EXTRACT-stage run with
-  // proposals seeded from the published values.
+  // What the form shows and how it is written (hydrate by stage, autosave,
+  // the one accept path, local undo) — the same module the QA screen uses.
+  // Viewer writes 403 server-side; the form renders read-only and this gate
+  // keeps the flush paths from firing them.
+  const runValues = useRunValues({
+    runDetail,
+    currentUserId,
+    enabled: permissions.userRole !== 'viewer',
+  });
+  const { values, updateValue, saveState, lastSavedAt, saveNow } = runValues;
+
+  // The finalized run of this article, when the open run is not it: the
+  // reopen target.
   const {
     finalizedRun,
     refresh: refreshFinalizedRun,
@@ -231,186 +166,16 @@ export default function ExtractionFullScreen() {
     projectTemplateId: template?.id ?? null,
     enabled: !!articleId && !!template?.id && (!activeRunId || isFinalized),
   });
-  const reopenMutation = useReopenRun();
-  const [reopening, setReopening] = useState(false);
-  const reopenExtractionMutation = useReopenExtraction();
-  const [reopenExtractionOpen, setReopenExtractionOpen] = useState(false);
-  const parentRunId =
-    runDetail?.run.parameters &&
-    typeof runDetail.run.parameters === 'object' &&
-    'parent_run_id' in runDetail.run.parameters
-      ? String(runDetail.run.parameters.parent_run_id)
-      : null;
 
-  // Multi-reviewer state: count, divergence, profiles.
-  const reviewerSummary = useReviewerSummary(runDetail);
-  const reviewerProfiles = useRunReviewers(activeRunId ?? null, {
-    enabled: !!activeRunId,
-  });
-
-  // Mutations needed for consensus resolution + finalize.
-  const advanceMutation = useAdvanceRun(activeRunId ?? '');
-  const consensusMutation = useCreateConsensus(activeRunId ?? '');
-  // Per-reviewer ready flag (advisory; does not advance) + the one-action
-  // consensus → finalized (publish-all then advance, backend-atomic).
-  const markReady = useMarkReady(activeRunId ?? '');
-  const approveFinalize = useApproveFinalize(activeRunId ?? '');
-  // The header PrimaryAction spinner reflects any in-flight primary mutation.
-  const submitting =
-    markReady.isPending || advanceMutation.isPending || approveFinalize.isPending;
-
-  const inConsensusStage = runDetail?.run.stage === 'consensus';
-
-  // Consensus-page derived values: required coords, run-level completeness, expected reviewer count, finalize warning.
-  const {
-    requiredCoords,
-    requiredFieldsResolved,
-    expectedReviewerCount,
-    finalizeWarning,
-  } = useConsensusReconciliation({
-    runDetail,
-    reviewerSummary,
-    instances,
-    entityTypes,
-    projectId,
-  });
-
-  const handleSelectExisting = async (params: {
-    instanceId: string;
-    fieldId: string;
-    decisionId: string;
-  }) => {
-    await consensusMutation.mutateAsync({
-      instance_id: params.instanceId,
-      field_id: params.fieldId,
-      mode: 'select_existing',
-      selected_decision_id: params.decisionId,
-    });
-    await refetchRun();
-  };
-
-  const handleManualOverride = async (params: {
-    instanceId: string;
-    fieldId: string;
-    value: unknown;
-    rationale: string;
-  }) => {
-    await consensusMutation.mutateAsync({
-      instance_id: params.instanceId,
-      field_id: params.fieldId,
-      mode: 'manual_override',
-      value: toConsensusValueEnvelope(params.value),
-      rationale: params.rationale,
-    });
-    await refetchRun();
-  };
-
-  // Where a finished form lands: the next article in the worklist, or the
-  // project's extraction tab at end-of-queue. Shared by the reviewer's
-  // mark-ready and the arbitrator's terminal approve-finalize — both mean
-  // "done with this article".
-  const goToNextArticle = () => {
-    const nextId = nextArticleTarget(articles, articleId ?? '');
-    navigate(
-      nextId
-        ? `/projects/${projectId}/extraction/${nextId}`
-        : `/projects/${projectId}?tab=extraction`,
-    );
-  };
-
-  // "Approve & finalize": one action that publishes every agreed coord then
-  // advances consensus → finalized (backend-atomic). The backend gate rejections
-  // (unresolved divergence / incomplete required fields) surface via
-  // useApproveFinalize.onError as a toast; the promise-chain guard (no try/finally)
-  // keeps the React Compiler happy and skips the success path on failure.
-  // Soft-warn: pre-built by useConsensusReconciliation; one line here.
-  const handleApproveFinalize = async () => {
-    if (!activeRunId) return;
-    if (finalizeWarning.shouldWarn && !window.confirm(finalizeWarning.confirmMessage)) return;
-    const ok = await approveFinalize.mutateAsync().then(() => true).catch(() => false);
-    if (!ok) return;
-    await Promise.all([refetchRun(), refreshValues(), refreshFinalizedRun()]);
-    toast.success(t('pages', 'extractionScreenFinalizeSuccess'));
-    goToNextArticle();
-  };
-
-  // Plain-identifier dep so the compiler can track this dep without
-  // optional-chaining (optional-chained deps like `finalizedRun?.id` defeat it).
-  // Fallback to the active run: when the open run IS finalized, it is the
-  // reopen target — clicking the banner button during (or after a failure
-  // of) the separate finalized-run lookup must not silently no-op
-  // (2026-07-02 hardening finding).
-  const finalizedRunId = finalizedRun?.id;
-  const stageIsFinalized = stage === 'finalized';
-  const reopenTargetId = finalizedRunId ?? (stageIsFinalized ? activeRunId : null);
-  const handleReopen = async () => {
-    if (!reopenTargetId) return;
-    setReopening(true);
-    await reopenMutation.mutateAsync(reopenTargetId).then(async () => {
-      // The reopen endpoint creates a fresh EXTRACT-stage run linked via
-      // parameters.parent_run_id. We refetch the HITL session first so
-      // activeRunId points at the new child run; only then do the
-      // value / runDetail / finalized-run reads run against the new
-      // coordinate. Without the session refetch the banner stays stuck
-      // on the finalized run and the revision badge never appears.
-      await sessionResult.refetch();
-      await Promise.all([refreshValues(), refreshFinalizedRun(), refetchRun()]);
-      toast.success(t('pages', 'extractionScreenReopenSuccess'));
-    }).catch((err: unknown) => {
-      toast.error(
-        err instanceof Error ? err.message : t('pages', 'extractionScreenReopenError'),
-      );
-    });
-    setReopening(false);
-  };
-
-  // Consensus -> extract on the SAME run (arbitrator-only). The mutation discards
-  // this run's consensus work server-side; refetch the run detail (stage + cleared
-  // consensus rows) and the form values so the screen re-renders as EXTRACT.
-  const handleReopenExtraction = () => {
-    if (!activeRunId) return;
-    void reopenExtractionMutation
-      .mutateAsync(activeRunId)
-      .then(async () => {
-        await Promise.all([refreshValues(), refetchRun()]);
-        setReopenExtractionOpen(false);
-        toast.success(t('extraction', 'reopenExtractionToast'));
-      })
-      .catch((err: unknown) => {
-        toast.error(
-          err instanceof Error ? err.message : t('pages', 'extractionScreenReopenError'),
-        );
-      });
-  };
-
-  // Hook to compute progress. Pass the materialized instances so optional
-  // cardinality='many' entities with no instances (e.g. no prediction models
-  // added) and their child sections don't strand the form below the finalize
-  // gate — the "40%, can't submit" bug.
+  // Progress over the materialised instances, so optional cardinality='many'
+  // entities with no instances don't strand the form below the gate.
   const { completedFields, totalFields, completionPercentage, isComplete } =
     useExtractionProgress(values, entityTypes, instances);
 
-    // Permissions hook (controls comparison access + the viewer write gate) —
-    // declared before the autosave hook, whose `enabled` reads the role.
-  const permissions = useComparisonPermissions(
-    projectId || '',
-    currentUserId,
-    'extraction'
-  );
-
-  // Suggestion reads remain shared with QA; editable extraction uses the
-  // confirmed writer below for acceptance and reversal.
-  const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
-      // Clear the field when a suggestion is rejected. Same as accept: no
-      // direct backend call — updateValue writes null into form state and
-      // autosave persists the cleared value (with the coord's AI link
-      // severed via the sessionAdoption tombstone).
-    updateValue(instanceId, fieldId, null);
-  };
-
+  // AI suggestions over the run's own instances. A rejected suggestion clears
+  // the field and autosave persists the clear.
   const {
     suggestions: aiSuggestions,
-    sessionAdoption,
     suggestionsReady: aiSuggestionsReady,
     rejectSuggestion,
     getSuggestionsHistory,
@@ -418,161 +183,69 @@ export default function ExtractionFullScreen() {
   } = useAISuggestions({
     articleId: articleId || '',
     runId: activeRunId ?? undefined,
-    // Wait for the session to resolve a run before issuing the
-    // suggestion query — otherwise the first render fires a global
-    // (no runId) lookup that immediately gets superseded by the
-    // run-scoped one. Pure waste; same UX outcome.
-    enabled: !!articleId && !!projectId && !!activeRunId,
-    onSuggestionRejected: handleAISuggestionRejected
+    instanceIds: instances.map((i) => i.id),
+    // Wait for the run view: a lookup before it lands would be superseded at once.
+    enabled: !!articleId && !!projectId && !!activeRunId && !!runDetail,
+    onSuggestionRejected: runValues.rejectProposal,
   });
 
-  // D0: coords whose value has a traceable AI basis — see useAiLinkMaps for
-  // the layer semantics and the never-from-status invariant.
-  const { persistedAiLinkByKey } = useAiLinkMaps({
-    decisions: runDetail?.decisions,
-    currentUserId,
-    sessionAdoption,
-  });
-
-    // Auto-save hook — in the editable `extract` stage this extraction page
-    // Reviewer decisions autosave in EXTRACT. Pending edits flush on run
-    // switches and unmount using the outgoing session's authority.
-  const proposalDecisions = useProposalDecision({
-    reviewerId: currentUserId,
-    decisions: runDetail?.decisions,
-    onConfirmed: ({instanceId, fieldId}, value) => reconcileValue(instanceId, fieldId, value),
-    runId: activeRunId,
-    stage,
-    values,
-    // Server-loaded values are the baseline — opening a run must not re-POST
-    // them as fresh proposals (the re-record-on-mount duplication).
-    baselineValues: loadedValues,
-    // Persisted links are the hydration baseline. The workspace writer clears
-    // the link on a manual edit and explicitly persists proposal selections.
-    baselineLinkByKey: persistedAiLinkByKey,
-    // Only the editable EXTRACT stage accepts autosave writes. Past that
-    // (consensus, finalized, pending) the backend rejects writes, which
-    // surfaced as a spurious "Error saving data automatically" toast on
-    // opening a consolidated run. Mirrors the QA full-screen gate;
-    // ``!isFinalized`` alone let ``consensus`` through.
-    // Keep bootstrap loading out of this gate: the outgoing run-switch
-    // flush must retain its captured writable state while the next run loads.
-    enabled:
-      !!activeRunId &&
-      valuesInitialized &&
-      isRunEditable(stage) &&
-      // Viewer writes 403 server-side; never fire them (forms render
-      // read-only via forceReadOnly, this is the flush-path belt).
-      permissions.userRole !== 'viewer',
-  });
-
-  useEffect(() => {
-    if (!runDetail || permissions.loading || readerDefaultApplied.current) return;
-    readerDefaultApplied.current = true;
-    if (!belowDesktop && runDetail.run.kind === 'extraction' && isRunEditable(stage) && permissions.userRole !== 'viewer') pdf.open();
-  }, [runDetail, permissions.loading, permissions.userRole, belowDesktop, stage, pdf]);
-
-  const { saveState, lastSavedAt, saveNow } = proposalDecisions;
-  const selectSuggestion = async (instanceId: string, fieldId: string, id: string, value: unknown) => {
-    const field = entityTypes.flatMap(entity => entity.fields).find(item => item.id === fieldId);
-    await proposalDecisions.toggle({instanceId, fieldId, id, value,
-      allowsNoInformation: field?.allows_no_information !== false});
-  };
-  const acceptSuggestion = async (instanceId: string, fieldId: string) => {
-    const proposal = aiSuggestions[`${instanceId}_${fieldId}`];
-    if (proposal) await selectSuggestion(instanceId, fieldId, proposal.id, proposal.value);
-  };
-
-    // "Finish extraction" (reviewer) — flush pending autosave, set the per-reviewer
-    // ready flag (advisory; does NOT advance the run), then open the next article
-    // in the worklist. The run stays in EXTRACT — the manager opens consensus
-    // separately. Re-editing after marking ready stays possible (autosave is live
-    // in EXTRACT); the flag is advisory and not auto-cleared. Promise-chain guards
-    // (no try/finally) keep the React Compiler happy. Declared after
-    // `useAutoSaveProposals` so the closure picks up the initialized `saveNow`.
-  const onMarkReady = async () => {
-    if (!activeRunId) return;
-    const saved = await saveNow().then(() => true).catch(() => false);
-    if (!saved) return;
-    const ok = await markReady
-      .mutateAsync({ ready: true })
-      .then(() => true)
-      .catch(() => false);
-    if (!ok) return;
-    goToNextArticle();
-  };
-
-    // "Start consensus" (manager/consensus) — flush autosave, then advance
-    // EXTRACT → CONSENSUS so the evaluate-all surface becomes reachable. A blind
-    // manager is auto-revealed server-side on consensus entry (run-scoped), surfaced
-    // via runDetail.peers_revealed after the refetch below.
-  const onOpenConsensus = async () => {
-    if (!activeRunId) return;
-    const saved = await saveNow().then(() => true).catch(() => false);
-    if (!saved) return;
-    const ok = await advanceMutation
-      .mutateAsync({ target_stage: 'consensus' })
-      .then(() => true)
-      .catch(() => false);
-    if (!ok) return;
-    await refetchRun().catch(() => undefined);
-  };
-
-    // Other reviewers' values for the compare view come from the shared,
-    // server-blinded runDetail (reviewerSummary.decisionsByCoord) — no
-    // separate fetch. Compare is offered only when the caller may see peers
-    // (manager/consensus, per the live setting) AND peers actually exist.
-  // peers_revealed (backend, run-scoped) OR the persistent per-kind setting:
-  // a manager auto-revealed on consensus entry sees the compare surface without
-  // flipping the project toggle. Keep the size>0 guard so we never show an empty grid.
-  const canCompare =
-    (runDetail?.peers_revealed || permissions.canSeeOthers) &&
-    reviewerSummary.decisionsByCoord.size > 0;
-
-  // Manager reveal (the persistent project-toggle): offered only to a blind
-  // manager DURING extract. Once the run reaches consensus the run-scoped
-  // auto-reveal covers it, so the persistent toggle is no longer surfaced.
-  // Promise-chain form (no try/finally) satisfies the React Compiler.
-  const canReveal =
-    permissions.userRole === 'manager' &&
-    permissions.isBlindMode &&
-    stage === 'extract' &&
-    !runDetail?.peers_revealed;
-  const onReveal = () => {
-    void setManagerReviewVisibility(projectId || '', 'extraction', true)
-      .then(() => permissions.refresh())
-      .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
-  };
-
-  // Shared actionable count (ADR-0016 Phase 4): unresolved AI proposals awaiting
-  // a human decision — an abstention ("no information") counts, resolved ones
-  // don't. In the review table, confirmed decisions resolve them.
+  // The editable review table: an editing reviewer's surface.
   const reviewTable = runDetail?.run.kind === 'extraction' && isRunEditable(stage) && permissions.userRole !== 'viewer';
-  const pendingSuggestions = reviewTable ? withReviewDecisionStatus(aiSuggestions, proposalDecisions.isAccepted) : aiSuggestions;
-  const aiPendingCount = countActionableSuggestions(pendingSuggestions);
+  const reader = useRunReader(
+    runDetail && !permissions.loading ? !!reviewTable : null,
+  );
 
-  // AI extraction always runs on the OPEN session run (``extractForRun``
-  // reuses it, preserving human decisions). The old run-less ``extractFullAI``
-  // fallback is gone: it forked a parallel run that shadowed the reviewer's
-  // saved decisions on refresh (the silent data-loss bug). The button is gated
-  // on ``activeRunId`` (see ``canRunAI``), so a session must be open first.
-  const { extractForRun, loading: extractingAI } = useRunAIExtraction({
-    // This job hook invalidates only the extraction key family, not the run
-    // view (``runsKeys``), so the run is re-read here alongside suggestions.
-    onSuccess: async () => {
-      await Promise.all([refetchRun(), handleExtractionComplete()]);
+  const lifecycle = useRunLifecycleScreen({
+    kind: 'extraction',
+    formProgress: { isComplete, completed: completedFields, total: totalFields },
+    projectId,
+    runId: activeRunId,
+    runDetail,
+    permissions,
+    currentUserId,
+    saveNow,
+    goToNextArticle: worklist.goToNextArticle,
+    requiredCoords: requiredCoordKeys(instances, entityTypes),
+    refetchSession: sessionResult.refetch,
+    refreshReaders: refreshFinalizedRun,
+    finalizedRunId: finalizedRun?.id ?? null,
+    // A blocked primary click scrolls the form back to its top.
+    onBlocked: () => {
+      const el = document.querySelector('[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]');
+      if (el) el.scrollTop = 0;
     },
   });
 
-  // Handler wired to RunHeader.AIActions — mirrors HeaderMoreMenu.handleFullAIExtraction.
+  const selectSuggestion = async (instanceId: string, fieldId: string, id: string, value: unknown) => {
+    const field = entityTypes.flatMap(entity => entity.fields).find(item => item.id === fieldId);
+    await runValues.acceptProposal({instanceId, fieldId, id, value,
+      allowsNoInformation: field?.allows_no_information !== false});
+  };
+  const acceptSuggestion = async (instanceId: string, fieldId: string) => {
+    const proposal = aiSuggestions[coordKey(instanceId, fieldId)];
+    if (proposal) await selectSuggestion(instanceId, fieldId, proposal.id, proposal.value);
+  };
+
+  // Shared actionable count (ADR-0016 Phase 4): unresolved AI proposals awaiting
+  // a human decision; in the review table, confirmed decisions resolve them.
+  const pendingSuggestions = reviewTable ? withReviewDecisionStatus(aiSuggestions, runValues.isAccepted) : aiSuggestions;
+  const aiPendingCount = countActionableSuggestions(pendingSuggestions);
+
+  // After an AI extraction job completes, reload suggestions at once: the job
+  // reports completed only after the proposals commit, and AI never writes the
+  // caller's values. Suggestions keep the previous map until the new one lands.
+
+  // AI extraction always runs on the OPEN session run (``extractForRun`` reuses
+  // it, preserving human decisions) — never a run-less fork that would shadow
+  // the reviewer's saved decisions. The job hook invalidates only the
+  // extraction key family, so the run view is re-read here too.
+  const { extractForRun, loading: extractingAI } = useRunAIExtraction({
+    onSuccess: async () => {
+      await Promise.all([refetchRun(), refreshAISuggestions()]);
+    },
+  });
   const onExtractWithAI = () => {
-    if (!articleId || !template?.id) {
-      console.warn('[ExtractionFullScreen] articleId or templateId not provided for AI extraction');
-      return;
-    }
-    // Belt-and-suspenders: never fire a run-less extraction (the orphaning
-    // bug). The button is already disabled until the session run resolves.
-    if (!activeRunId) return;
+    if (!articleId || !template?.id || !activeRunId) return;
     void extractForRun({
       projectId: projectId ?? '',
       articleId,
@@ -583,40 +256,20 @@ export default function ExtractionFullScreen() {
     });
   };
 
-  // No partition, no model hook. The form derives roots from the tree and
-  // each `EntrySection` owns its own entries; what stays here is the small
-  // amount the PAGE still owns — the dialogs, and the active-entry map the
-  // nav rail needs (see `activeEntries` above).
-
-    // Redirect on critical error
+  // Redirect on a critical bootstrap error.
+  const navigate = useNavigate();
+  const exitRoute = worklist.exitRoute;
   useEffect(() => {
     if (dataError && projectId) {
       toast.error(dataError);
-      navigate(`/projects/${projectId}?tab=extraction`);
+      navigate(exitRoute);
     }
-  }, [dataError, projectId, navigate]);
-
-    // Function to reload the run view (and thus the derived instances).
-    // Used after model / instance mutations and AI extraction.
-  const handleRefreshInstances = async () => {
-    await refetchRun();
-  };
-
-  const handleBack = () => {
-    navigate(`/projects/${projectId}?tab=extraction`);
-  };
-
-  const handleNavigateToArticle = (newArticleId: string) => {
-    navigate(`/projects/${projectId}/extraction/${newArticleId}`);
-  };
+  }, [dataError, projectId, navigate, exitRoute]);
 
   /**
-   * Open the remove dialog for one entry of a repeating section.
-   *
-   * Generalized from the model-only handler: any group's entry cascades
-   * through its subtree, so the dialog names how much data goes with it.
-   * The count comes from the values already in memory — the RPC that used
-   * to answer this went with `useModelManagement`.
+   * Open the remove dialog for one entry of a repeating section. Any group's
+   * entry cascades through its subtree, so the dialog names how much data
+   * goes with it — counted from the values in memory.
    */
   const handleOpenRemoveDialog = (instanceId: string) => {
     const instance = instances.find((i) => i.id === instanceId);
@@ -627,7 +280,7 @@ export default function ExtractionFullScreen() {
     }
     const fieldsCount = Object.entries(values).filter(
       ([key, value]) =>
-        subtree.has(key.slice(0, key.indexOf('_'))) && !isValueEmpty(value),
+        subtree.has(parseCoordKey(key).instanceId) && !isValueEmpty(value),
     ).length;
     setModelToRemove({
       id: instanceId,
@@ -639,53 +292,39 @@ export default function ExtractionFullScreen() {
 
   const handleConfirmRemoveModel = async () => {
     if (!modelToRemove) return;
-
+    const { id: modelId, name: entryName } = modelToRemove;
     extractionLogger.info('removeModelHandler', 'Starting model removal', {
-      modelId: modelToRemove.id,
-      entryName: modelToRemove.name,
+      modelId,
+      entryName,
       hasData: modelToRemove.hasData,
       fieldsCount: modelToRemove.fieldsCount,
     });
 
-    const modelIdToRemove = modelToRemove.id;
-    const modelNameToRemove = modelToRemove.name;
-
-    // removeModel resolves/rejects — use .then().catch() so there is no
-    // try/catch or throw in this component function.
-    await extractionInstanceService.removeInstance(modelIdToRemove).then(async () => {
-      extractionLogger.info('removeModelHandler', 'Model removed successfully', {
-        modelId: modelIdToRemove,
-        entryName: modelNameToRemove,
-      });
-
-      // Close dialog immediately after successful removal
+    // .then().catch() — no try/catch or throw-in-try in a component function.
+    await extractionInstanceService.removeInstance(modelId).then(async () => {
+      extractionLogger.info('removeModelHandler', 'Model removed successfully', { modelId, entryName });
       setModelToRemove(null);
-
-      // Do not call refreshModels() - hook already updates local state
-      // Only reload the run view so child instances are removed from UI
+      // Reload the run view so child instances leave the UI; the entry is
+      // already gone, so a failed reload only logs.
       await refetchRun().catch((refreshError: unknown) => {
-        // Log error but do not re-throw - model was already removed successfully
-        extractionLogger.error('removeModelHandler', 'Error reloading run view after removal', refreshError instanceof Error ? refreshError : undefined, {
-          modelId: modelIdToRemove,
-        });
-        // Do not block flow - model was already removed from local state
+        extractionLogger.error('removeModelHandler', 'Error reloading run view after removal', refreshError instanceof Error ? refreshError : undefined, { modelId });
       });
     }).catch((error: unknown) => {
-      extractionLogger.error('removeModelHandler', 'Failed to remove model', error instanceof Error ? error : undefined, {
-        modelId: modelIdToRemove,
-        entryName: modelNameToRemove,
-      });
-      // Re-throw so the dialog can display the error — CONCERN: this
-      // throw is at the top level of handleConfirmRemoveModel (not inside
-      // a try block in this component), so it propagates to the dialog's
-      // onConfirm handler which catches it.
+      extractionLogger.error('removeModelHandler', 'Failed to remove model', error instanceof Error ? error : undefined, { modelId, entryName });
+      // Propagates to the dialog's onConfirm, which displays it.
       throw error;
     });
   };
 
-  // Adding an entry to a repeating section: the dialog (key input labelled
-  // by the section's key field, sibling chips, duplicate block) and the
-  // create live in the hook; the identity is stamped at creation.
+  // Which entry each rendered group is showing. Held here, not inside the
+  // sections, because the nav rail scopes a nested section's progress to the
+  // entry the form is showing.
+  const [activeEntries, setActiveEntries] = useState<Record<string, string>>({});
+  const setActiveEntry = (slot: string, entryId: string) =>
+    setActiveEntries((prev) => (prev[slot] === entryId ? prev : {...prev, [slot]: entryId}));
+
+  // Adding an entry to a repeating section: the dialog and the create live in
+  // the hook; the identity is stamped at creation.
   const addEntry = useAddEntry({
     projectId,
     articleId,
@@ -699,32 +338,20 @@ export default function ExtractionFullScreen() {
         instanceId,
       ),
   });
-  const handleAddInstance = addEntry.open;
 
-  // Entry deletion, single and bulk. Both live in one hook because they
-  // share their failure vocabulary (the published-states pin).
+  // Entry deletion, single and bulk — manager only; undefined hides each affordance.
   const {deleteOne: handleRemoveInstance, deleteSelected: handleDeleteEntries} = useDeleteEntries({
     projectId,
     articleId,
     templateId: template?.id,
     onDeleted: refetchRun,
     values,
-    // Manager only, and the hook enforces it for BOTH deletes — see its
-    // `canDelete`. Undefined is what hides each affordance.
     canDelete: permissions.userRole === 'manager',
   });
 
-  // Rename / re-key — one write for cards and for the active model. The
-  // noun names the entry in the toasts; the run view refetch (invalidated
-  // by the hook) re-derives labels and identities.
+  // Rename / re-key — one write for cards and for the active model.
   const updateIdentity = useUpdateInstanceIdentity(activeRunId);
   const [modelToRename, setModelToRename] = useState<string | null>(null);
-  // Which entry each rendered group is showing. Held here, not inside the
-  // sections, because the nav rail scopes a nested section's progress to the
-  // entry the form is showing and cannot read state that lives inside them.
-  const [activeEntries, setActiveEntries] = useState<Record<string, string>>({});
-  const setActiveEntry = (slot: string, entryId: string) =>
-    setActiveEntries((prev) => (prev[slot] === entryId ? prev : {...prev, [slot]: entryId}));
   const handleRenameInstance = async (instanceId: string, changes: EntryIdentityChanges) => {
     const instance = instances.find((i) => i.id === instanceId);
     const entityType = entityTypes.find((et) => et.id === instance?.entity_type_id);
@@ -741,19 +368,15 @@ export default function ExtractionFullScreen() {
     });
   };
   const modelBeingRenamed = instances.find((i) => i.id === modelToRename) ?? null;
-  // The noun and the key field come from the entry's OWN section, so a
-  // nested group's dialog says "predictor" where the root's says "model".
+  // The noun and the key field come from the entry's OWN section.
   const renamedEntityType = entityTypes.find((et) => et.id === modelBeingRenamed?.entity_type_id);
   const removedEntityType = entityTypes.find(
     (et) => et.id === instances.find((i) => i.id === modelToRemove?.id)?.entity_type_id,
   );
 
-
-  // Single render gate. ``no-fields`` is reported ONLY when the run is loaded
-  // and genuinely carries no entity types — a missing run (open/fetch failed or
-  // still in flight) is an error or a loader, never a false "template has no
-  // fields" empty state (the #324 masking regression). See
-  // ``resolveExtractionViewState``.
+  // Single render gate. ``no-fields`` only when the run is loaded and carries
+  // no entity types — a missing run is an error or a loader, never a false
+  // "template has no fields" (the #324 masking regression).
   const viewState = resolveExtractionViewState({
     bootstrapLoading: loading,
     hasArticleAndTemplate: !!article && !!template,
@@ -761,36 +384,32 @@ export default function ExtractionFullScreen() {
     sessionError: sessionResult.error,
     runError: runIsError,
     runErrorMessage: runErrorObj instanceof Error ? runErrorObj.message : null,
-    valuesLoading,
     entityTypesCount: entityTypes.length,
   });
 
-  // Loading state
   if (viewState.kind === 'loading') {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center space-y-4">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
-            <p className="text-muted-foreground">{t('pages', 'extractionScreenLoading')}</p>
+          <p className="text-muted-foreground">{t('pages', 'extractionScreenLoading')}</p>
         </div>
       </div>
     );
   }
 
-  // Bootstrap (article/template) failed to load.
   if (viewState.kind === 'load-error') {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center space-y-4">
-            <p className="text-destructive">{t('pages', 'extractionScreenErrorLoad')}</p>
-            <Button onClick={handleBack}>{t('common', 'back')}</Button>
+          <p className="text-destructive">{t('pages', 'extractionScreenErrorLoad')}</p>
+          <Button onClick={worklist.exit}>{t('common', 'back')}</Button>
         </div>
       </div>
     );
   }
 
-  // The extraction run could not be opened (session-open or RunView fetch
-  // failed). Surface it with a retry instead of masking it as "No fields".
+  // The run could not be opened: surface it with a retry instead of "No fields".
   if (viewState.kind === 'run-error') {
     return (
       <div className="h-full flex items-center justify-center">
@@ -811,297 +430,136 @@ export default function ExtractionFullScreen() {
             >
               {t('pages', 'extractionScreenRetry')}
             </Button>
-            <Button variant="outline" onClick={handleBack}>{t('common', 'back')}</Button>
+            <Button variant="outline" onClick={worklist.exit}>{t('common', 'back')}</Button>
           </div>
         </div>
       </div>
     );
   }
 
-  // Run is loaded and genuinely has no entity types configured.
   if (viewState.kind === 'no-fields') {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center space-y-6 max-w-md">
           <div className="space-y-2">
-              <h3 className="text-lg font-semibold">{t('pages', 'extractionScreenNoFieldsTitle')}</h3>
-            <p className="text-muted-foreground">
-                {t('pages', 'extractionScreenNoFieldsDesc')}
-            </p>
+            <h3 className="text-lg font-semibold">{t('pages', 'extractionScreenNoFieldsTitle')}</h3>
+            <p className="text-muted-foreground">{t('pages', 'extractionScreenNoFieldsDesc')}</p>
           </div>
-          
           <div className="bg-muted/50 p-4 rounded-lg space-y-2 text-sm">
-              <p className="font-medium">{t('pages', 'extractionScreenToResolve')}</p>
+            <p className="font-medium">{t('pages', 'extractionScreenToResolve')}</p>
             <ul className="text-left space-y-1 text-muted-foreground">
-                <li>• {t('pages', 'extractionScreenContactManager')}</li>
-                <li>• {t('pages', 'extractionScreenRequestConfig')}</li>
-                <li>• {t('pages', 'extractionScreenOrConfigureTemplate')}</li>
+              <li>• {t('pages', 'extractionScreenContactManager')}</li>
+              <li>• {t('pages', 'extractionScreenRequestConfig')}</li>
+              <li>• {t('pages', 'extractionScreenOrConfigureTemplate')}</li>
             </ul>
           </div>
-
-            <Button onClick={handleBack}>{t('common', 'back')}</Button>
+          <Button onClick={worklist.exit}>{t('common', 'back')}</Button>
         </div>
       </div>
     );
   }
 
-  // Only the ``ready`` view-state reaches here. ``article``/``template`` are
-  // guaranteed non-null at this point (a missing one resolves to 'loading' or
-  // 'load-error' above); this guard is unreachable and exists solely to narrow
-  // them for TypeScript after the gate was lifted into resolveExtractionViewState.
+  // Only ``ready`` reaches here, where article and template are non-null;
+  // the guard narrows them for TypeScript.
   if (!article || !template) {
     return null;
   }
 
-  // After an AI extraction job completes, reload suggestions at once: the job
-  // reports completed only after the proposals commit, every caller extracts on
-  // the session run (so the session never needs re-opening — doing so was the
-  // old blink), and AI never writes the caller's values. Suggestions keep the
-  // previous map until the new one lands, so nothing flashes empty.
-  const handleExtractionComplete = () => refreshAISuggestions();
-
-  // P0 guide handler: scroll the form container to top and show a toast.
-  // Jump-to-first-empty-field is a documented P1 refinement — not wired here.
-  const onGuide = (message?: string) => {
-    const el = document.querySelector('[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]');
-    if (el) el.scrollTop = 0;
-    toast.info(message ?? t('extraction', 'runHeaderGateBlocked'));
-  };
-
-  // Stage-driven transition for the RunHeader PrimaryAction slot.
-  // buildExtractionTransition() owns all label/gate logic (Finish extraction /
-  // Start consensus / Approve & finalize). The legacy header finalize path is gone.
-  //
-  // divergencesResolved: every diverging coord carries a consensus decision (a
-  // no-divergence run is trivially resolved). isReady: the caller already marked
-  // themselves ready. Both feed the consensus / extract phase-aware actions.
-  const resolvedCoordKeys = new Set(
-    (runDetail?.consensus_decisions ?? []).map(
-      (c) => `${c.instance_id}::${c.field_id}`,
-    ),
-  );
-  const divergencesResolved = [...reviewerSummary.divergentCoords].every((c) =>
-    resolvedCoordKeys.has(c),
-  );
-  const isReady = (runDetail?.reviewers_ready ?? []).includes(currentUserId);
-  const transition = buildExtractionTransition({
-    stage,
-    canResolveConflicts: permissions.canResolveConflicts,
-    isComplete,
-    completed: completedFields,
-    total: totalFields,
-    consensusComplete: requiredFieldsResolved,
-    divergencesResolved,
-    isReady,
-    onMarkReady,
-    onOpenConsensus,
-    onApproveFinalize: handleApproveFinalize,
-    onGuide,
-  });
-
-  // Reopen is surfaced via the header Menu instead of the orphaned banner.
-  const canReopen = isFinalized || (!activeRunId && !!finalizedRun);
-
-  // Backward reopen (consensus -> extract): arbitrator-only, consensus stage only.
-  // resolvedCoordKeys.size is exactly what the discard removes (drives the dialog copy).
-  const canReopenExtraction = deriveCanReopenExtraction(permissions.canResolveConflicts, stage);
-  const reopenResolvedCount = resolvedCoordKeys.size;
-
-
-  // Published/revision banner between header and panels (shared component,
-  // spec 2026-07-02 D4) — the header-menu Reopen item stays.
-  const extractionSubHeader = (
-    <HITLPublishedBanner
-      kind="extraction"
-      finalized={canReopen}
-      parentRunId={parentRunId}
-      onReopen={() => void handleReopen()}
-      reopening={reopening}
+  const formPanel = (
+    <ExtractionFormPanel
+      viewMode={lifecycle.compare.active ? 'compare' : 'extract'}
+      formViewProps={{
+        presentation: reviewTable ? 'review-table' : 'default',
+        reviewDecisions: runValues,
+        reviewProposals: runDetail?.proposals,
+        reviewerId: currentUserId,
+        instances,
+        values,
+        updateValue,
+        aiSuggestions,
+        acceptSuggestion,
+        selectSuggestion,
+        rejectSuggestion,
+        getSuggestionsHistory,
+        onRefreshInstances: async () => {
+          await refetchRun();
+        },
+        entityTypes,
+        activeEntries,
+        setActiveEntry,
+        handleOpenRenameDialog: setModelToRename,
+        // The dialog only exists to confirm the delete the hook withheld.
+        handleOpenRemoveDialog: handleRemoveInstance ? handleOpenRemoveDialog : undefined,
+        handleAddInstance: addEntry.open,
+        handleRemoveInstance,
+        handleDeleteEntries,
+        handleRenameInstance,
+        projectId: projectId || '',
+        articleId: articleId || '',
+        templateId: template.id,
+        runId: activeRunId,
+        onExtractionComplete: refreshAISuggestions,
+        sectionNavRef,
+      }}
+      compareViewProps={{
+        decisionsByCoord: lifecycle.reviewers.summary.decisionsByCoord,
+        entityTypes,
+        instances,
+        ownValues: values,
+        reviewerLabelById: lifecycle.reviewers.profiles.labelById,
+        reviewerAvatarById: lifecycle.reviewers.profiles.avatarById,
+      }}
     />
-  );
-
-  const extractionFormPanelInner =
-    inConsensusStage && runDetail ? (
-      <div className="h-full min-h-0 overflow-y-auto" data-testid="extraction-consensus-area">
-        <ConsensusResolutionPanel
-          runDetail={runDetail}
-          summary={reviewerSummary}
-          entityTypes={entityTypes}
-          instances={instances}
-          ownValues={values}
-          requiredCoords={requiredCoords}
-          peersRevealed={!!runDetail.peers_revealed}
-          reviewerLabelById={reviewerProfiles.labelById}
-          reviewerAvatarById={reviewerProfiles.avatarById}
-          canResolve={permissions.canResolveConflicts}
-          // Consensus AI trace (D2): a single top-level channel, deeper history
-          // window (50) so adopted versions rarely fall outside it; a not-yet-
-          // loaded/failed suggestions map passes null so no coord mislabels.
-          // showPeerIdentity + currentUserId gate field-level peer cross-marks
-          // to self in blind review (server already strips peer rows).
-          aiTrace={{
-            articleId: articleId || '',
-            getHistory: (i, f) => getSuggestionsHistory(i, f, 50),
-            aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
-            showPeerIdentity: !!runDetail.peers_revealed || permissions.canSeeOthers,
-            currentUserId: currentUserId || null,
-          }}
-          onSelectExisting={handleSelectExisting}
-          onManualOverride={handleManualOverride}
-          onFinalize={handleApproveFinalize}
-          isResolving={consensusMutation.isPending}
-          isFinalizing={advanceMutation.isPending || approveFinalize.isPending}
-          showFinalize={false}
-        />
-      </div>
-    ) : (
-      <ExtractionFormPanel
-        viewMode={viewMode}
-        formViewProps={{
-          presentation: reviewTable ? 'review-table' : 'default',
-          reviewDecisions: proposalDecisions,
-          reviewProposals: runDetail?.proposals,
-          reviewerId: currentUserId,
-          instances,
-          values,
-          updateValue,
-          aiSuggestions,
-          acceptSuggestion,
-          selectSuggestion,
-          rejectSuggestion,
-          getSuggestionsHistory,
-          onRefreshInstances: handleRefreshInstances,
-          entityTypes,
-          activeEntries,
-          setActiveEntry,
-          handleOpenRenameDialog: setModelToRename,
-          // The dialog only exists to confirm the delete the hook withheld.
-          handleOpenRemoveDialog: handleRemoveInstance ? handleOpenRemoveDialog : undefined,
-          handleAddInstance,
-          handleRemoveInstance,
-          handleDeleteEntries,
-          handleRenameInstance,
-          projectId: projectId || '',
-          articleId: articleId || '',
-          templateId: template?.id || '',
-          runId: activeRunId,
-          onExtractionComplete: handleExtractionComplete,
-          sectionNavRef,
-        }}
-        compareViewProps={{
-          decisionsByCoord: reviewerSummary.decisionsByCoord,
-          entityTypes,
-          instances,
-          ownValues: values,
-          reviewerLabelById: reviewerProfiles.labelById,
-          reviewerAvatarById: reviewerProfiles.avatarById,
-        }}
-      />
-    );
-
-  const extractionFormPanel = (
-    // showPeerIdentity (D3): auto-revealed consensus / unblinded or manager
-    // extract callers see "Run by {name}" on popover run headers and the
-    // generation dialog's Ran-by rows; blind reviewers keep timestamp-only.
-    <RunEditabilityProvider
-      stage={stage}
-      showPeerIdentity={!!runDetail?.peers_revealed || permissions.canSeeOthers}
-      forceReadOnly={permissions.userRole === 'viewer'}
-    >
-      {extractionFormPanelInner}
-    </RunEditabilityProvider>
   );
 
   return (
     <div className="h-full bg-background">
-      <RunSplitShell
-        pdfState={pdf}
-        viewerStore={viewerStore}
-        subHeader={extractionSubHeader}
-        formPanel={extractionFormPanel}
-        pdfPanel={
-          <RunPdfContent
-            articleId={articleId || ''}
-            projectId={projectId || ''}
-            store={viewerStore}
-            expanded={pdf.isExpanded}
-            onToggleExpand={pdf.toggleExpanded}
-          />
-        }
-        header={
-          <ExtractionHeader
-        articleTitle={article.title}
-        onBack={handleBack}
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={toggleSidebar}
-        onOpenMobileNav={toggleMobile}
-        articles={articles}
-        currentArticleId={articleId || ''}
-        onNavigateToArticle={handleNavigateToArticle}
-        completedFields={completedFields}
-        totalFields={totalFields}
-        completionPercentage={completionPercentage}
-        showPDF={pdf.isOpen}
-        onTogglePDF={pdf.toggle}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        // D6: during consensus the resolve table is the only compare surface
-        // (viewMode is ignored there) — a live toggle would be a dead control.
-        hasComparison={canCompare && !inConsensusStage}
-        userRole={permissions.userRole}
-        isBlindMode={permissions.isBlindMode}
-        saveState={saveState}
-        lastSavedAt={lastSavedAt}
-        submitting={submitting}
-        // RunHeader feature props
-        stage={stage ?? undefined}
-        transition={transition}
-        isRevision={!!parentRunId}
-        reviewers={{
-          count: reviewerSummary.reviewers.length,
-          required: expectedReviewerCount,
-          // divergentCoords is a Set<string> — .size gives the count
-          divergent: reviewerSummary.divergentCoords.size,
-          // Advisory "N/M ready" hint — only while extracting (helps the
-          // manager decide when to open consensus). Backend always sends these.
-          ...(stage === 'extract' && runDetail
-            ? { ready: runDetail.ready_count ?? 0, readyTotal: expectedReviewerCount }
-            : {}),
+      <RunScreenShell
+        lifecycle={lifecycle}
+        runDetail={runDetail}
+        permissions={permissions}
+        currentUserId={currentUserId}
+        worklist={worklist}
+        reader={reader}
+        projectId={projectId || ''}
+        articleId={articleId || ''}
+        title={article.title}
+        progress={{ completed: completedFields, total: totalFields, pct: completionPercentage }}
+        save={{ state: saveState, lastSavedAt }}
+        ai={{
+          pendingCount: isFinalized ? 0 : aiPendingCount,
+          // AI seeds proposals only in EXTRACT (re-running past it errors), and
+          // only on an OPEN session run — never a parallel run that would
+          // orphan the reviewer's edits.
+          canExtract: !!activeRunId && (stage === 'extract' || stage == null),
+          extracting: extractingAI,
+          onExtract: onExtractWithAI,
+          onOpenSuggestions: () => {
+            // "Review N pending suggestions": select the entries holding the
+            // first pending suggestion and commit that render, so the section
+            // revealed is the one holding it.
+            const pendingId = firstPendingInstanceId(pendingSuggestions);
+            const instance = instances.find((i) => i.id === pendingId);
+            if (!instance) return;
+            const slots = entrySlotsShowing(articleId ?? '', instance.id, instances, entityTypes);
+            flushSync(() => slots.forEach(([slot, entryId]) => setActiveEntry(slot, entryId)));
+            sectionNavRef.current?.revealSection(instance.entity_type_id);
+          },
         }}
-        canReveal={canReveal}
-        onReveal={onReveal}
-        // D6: inert during consensus (the consensus branch ignores viewMode) —
-        // mirror the QA guard so the status-popover jump never dead-clicks.
-        onJumpToDivergence={inConsensusStage ? undefined : () => setViewMode('compare')}
-        // AI extraction seeds proposals and only works in EXTRACT; once the
-        // run advances to consensus it's a one-time-done step (re-running errors).
-        // Gated on an OPEN session run — extraction always targets that run, so
-        // it never forks a parallel run that would orphan the reviewer's edits.
-        canRunAI={!!activeRunId && (stage === 'extract' || stage == null)}
-        aiPendingCount={isFinalized ? 0 : aiPendingCount}
-        onAISuggestionsClick={() => {
-          // Header "Review N pending suggestions": select the entries holding the first pending
-          // suggestion and commit that render, so the section revealed is the one holding it.
-          const pendingId = firstPendingInstanceId(pendingSuggestions);
-          const instance = instances.find((i) => i.id === pendingId);
-          if (!instance) return;
-          const slots = entrySlotsShowing(articleId ?? '', instance.id, instances, entityTypes);
-          flushSync(() => slots.forEach(([slot, entryId]) => setActiveEntry(slot, entryId)));
-          sectionNavRef.current?.revealSection(instance.entity_type_id);
+        formPanel={formPanel}
+        consensus={{
+          entityTypes,
+          instances,
+          ownValues: values,
+          // A deeper history window (50) so adopted versions rarely fall
+          // outside it; a not-yet-loaded/failed map passes null so no coord mislabels.
+          aiTrace: {
+            articleId: articleId || '',
+            getHistory: (i, f) => getSuggestionsHistory(i, f, 50),
+            aiSuggestions: aiSuggestionsReady ? aiSuggestions : null,
+          },
         }}
-        onExtractWithAI={onExtractWithAI}
-        extractingAI={extractingAI}
-        // Reopen moved into the header Menu
-        canReopen={canReopen}
-        onReopen={() => void handleReopen()}
-        reopening={reopening}
-        canReopenExtraction={canReopenExtraction}
-        onReopenExtraction={() => setReopenExtractionOpen(true)}
       />
-        }
-      />
-
-      {/* Dialogs */}
 
       <AddEntryDialog {...addEntry.dialogProps} />
 
@@ -1134,16 +592,6 @@ export default function ExtractionFullScreen() {
         onConfirm={handleConfirmRemoveModel}
         onCancel={() => setModelToRemove(null)}
       />
-
-      <ReopenExtractionDialog
-        kind="extraction"
-        open={reopenExtractionOpen}
-        onOpenChange={setReopenExtractionOpen}
-        resolvedCount={reopenResolvedCount}
-        onConfirm={handleReopenExtraction}
-        pending={reopenExtractionMutation.isPending}
-      />
     </div>
   );
 }
-

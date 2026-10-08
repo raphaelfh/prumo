@@ -391,13 +391,13 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     await page.getByTestId("consensus-filter-all").click();
 
     const row1 = page.getByTestId(
-      `consensus-coord-${coord1.instanceId}::${coord1.fieldId}`,
+      `consensus-coord-${coord1.instanceId}_${coord1.fieldId}`,
     );
     const row2 = page.getByTestId(
-      `consensus-coord-${coord2.instanceId}::${coord2.fieldId}`,
+      `consensus-coord-${coord2.instanceId}_${coord2.fieldId}`,
     );
     const row3 = page.getByTestId(
-      `consensus-coord-${coord3.instanceId}::${coord3.fieldId}`,
+      `consensus-coord-${coord3.instanceId}_${coord3.fieldId}`,
     );
 
     // (i) coord1 renders both reviewer values; A's cell carries the trace.
@@ -575,14 +575,14 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     expect(ownerDecisions.length).toBeGreaterThanOrEqual(2);
     const conflictCoord = ownerDecisions[0];
     const answered = new Set(
-      ownerDecisions.map((d) => `${d.instance_id}::${d.field_id}`),
+      ownerDecisions.map((d) => `${d.instance_id}_${d.field_id}`),
     );
     const qaFields = await adminSelect<{ id: string }>(
       "extraction_fields",
       `select=id&entity_type_id=eq.${fixture.firstEntityTypeId}`,
     );
     const untouchedField = qaFields.find(
-      (f) => !answered.has(`${fixture.firstInstanceId}::${f.id}`),
+      (f) => !answered.has(`${fixture.firstInstanceId}_${f.id}`),
     );
     expect(untouchedField, "PROBAST section has an unanswered field").toBeTruthy();
 
@@ -666,7 +666,7 @@ test.describe("Consensus AI trace (D0→D8 round trip)", () => {
     // The conflict row needs attention (default filter); adopt one side —
     // select_existing must succeed against a real decision row (no 4xx).
     const conflictRow = page.getByTestId(
-      `consensus-coord-${conflictCoord.instance_id}::${conflictCoord.field_id}`,
+      `consensus-coord-${conflictCoord.instance_id}_${conflictCoord.field_id}`,
     );
     await expect(conflictRow).toBeVisible();
     await conflictRow

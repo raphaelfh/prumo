@@ -49,7 +49,7 @@ Browser pane tools (`mcp__Claude_Browser__*`): `preview_start`, `navigate`, `com
 - Screenshot with `computer {action: "screenshot"}`; `read_page` for structure; `javascript_tool` for the computed style or `getBoundingClientRect` of any node you doubt (the header really 48px, the border really `/0.4`, the shadow not `none`); a downscaled screenshot is no measurement.
 - **Density or target-size changes** are measured twice in one browser session: `git stash push -- <dir>`, reload, run the audit JS, `git stash pop`, reload, run it again. `h-full` does nothing inside a `<td>` (it resolves against the cell's auto height); the floor is `min-h-*`.
 - **Dark mode** is `frontend/contexts/ThemeContext.tsx` (storage key `prumo:theme`, applied by `index.html` before first paint): run `localStorage.setItem('prumo:theme','dark'); location.reload()`, capture, then restore `'system'` and reload.
-- **Narrow**: `resize_window` to ~390 (below `sm`), capture, restore. Some chrome (`RunHeader`, `ExtractionHeader`) reflows on its own width through container queries, so resize the panel too, not only the window.
+- **Narrow**: `resize_window` to ~390 (below `sm`), capture, restore. Some chrome (`RunHeader`) reflows on its own width through container queries, so resize the panel too, not only the window.
 
 ## Compare: two anchors
 

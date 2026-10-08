@@ -10,7 +10,10 @@
  * Each test renders the REAL component chain with the REAL `useAISuggestions`
  * hook (so the real `clearLoading` microtask runs), clicks the REAL accept /
  * reject button, and asserts the spinner clears (`Loader2` -> `Check`) instead
- * of sticking. Only network / extraction side-effects are mocked.
+ * of sticking. Accepting is the screens' decision (`useRunValues`); the
+ * harness stands in for it with `useAccept` — the accepted decision marks the
+ * suggestion accepted and fills the field. Only network / extraction
+ * side-effects are mocked.
  *
  * Render paths covered:
  *  - extraction, study-level:  ExtractionFormView(memo gate) -> SectionAccordion -> InstanceCard -> FieldInput
@@ -83,6 +86,7 @@ vi.mock('@/services/aiSuggestionService', () => ({
 }));
 
 import { useAISuggestions } from '@/hooks/extraction/ai/useAISuggestions';
+import { coordKey } from '@/lib/runs/coord';
 import { ExtractionFormView } from '@/components/extraction/ExtractionFormView';
 import { QASectionAccordion } from '@/components/assessment/QASectionAccordion';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -130,10 +134,30 @@ function expandRadixIfClosed(container: HTMLElement): void {
 function useFormValues() {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const fill = (instanceId: string, fieldId: string, value: unknown) => {
-    const key = `${instanceId}_${fieldId}`;
+    const key = coordKey(instanceId, fieldId);
     setValues((prev) => ({ ...prev, [key]: value }));
   };
   return { values, fill };
+}
+
+/** The screens' accept path, reduced: the accepted decision marks the suggestion accepted and fills the field. */
+function useAccept(
+  hook: ReturnType<typeof useAISuggestions>,
+  fill: (instanceId: string, fieldId: string, value: unknown) => void,
+) {
+  const [accepted, setAccepted] = useState<Record<string, true>>({});
+  const suggestions = Object.fromEntries(
+    Object.entries(hook.suggestions).map(([key, s]) => [
+      key,
+      accepted[key] && s.status !== 'rejected' ? { ...s, status: 'accepted' as const } : s,
+    ]),
+  );
+  const accept = async (instanceId: string, fieldId: string) => {
+    const key = coordKey(instanceId, fieldId);
+    setAccepted((prev) => ({ ...prev, [key]: true }));
+    fill(instanceId, fieldId, hook.suggestions[key]?.value);
+  };
+  return { suggestions, accept };
 }
 
 // =================== fixtures ===================
@@ -247,9 +271,9 @@ function ExtractionHarness(cfg: ExtractionHarnessConfig) {
     enabled: true,
     runId: 'r',
     instanceIds: cfg.instanceIds,
-    onSuggestionAccepted: (i, f, v) => fill(i, f, v),
     onSuggestionRejected: (i, f) => fill(i, f, null),
   });
+  const { suggestions, accept } = useAccept(hook, fill);
 
   return (
     <ExtractionFormView
@@ -268,8 +292,8 @@ function ExtractionHarness(cfg: ExtractionHarnessConfig) {
       getInstancesForModel={(cfg.getInstancesForModel ?? (() => [])) as any}
       values={values as any}
       updateValue={fill}
-      aiSuggestions={hook.suggestions}
-      acceptSuggestion={hook.acceptSuggestion}
+      aiSuggestions={suggestions}
+      acceptSuggestion={accept}
       rejectSuggestion={hook.rejectSuggestion}
       getSuggestionsHistory={hook.getSuggestionsHistory}
     />
@@ -283,16 +307,16 @@ function QAHarness() {
     enabled: true,
     runId: 'r',
     instanceIds: ['inst-1'],
-    onSuggestionAccepted: (i, f, v) => fill(i, f, v),
     onSuggestionRejected: (i, f) => fill(i, f, null),
   });
+  const { suggestions, accept } = useAccept(hook, fill);
 
   // QA page keys the per-domain values map by FIELD id (see
   // QualityAssessmentFullScreen `valuesForDomain`); mirror that shape.
   const fieldId: string = QA_DOMAIN.fields[0].id;
-  const coordKey = `inst-1_${fieldId}`;
+  const key = coordKey('inst-1', fieldId);
   const valuesForDomain: Record<string, unknown> = {};
-  if (coordKey in values) valuesForDomain[fieldId] = values[coordKey];
+  if (key in values) valuesForDomain[fieldId] = values[key];
 
   return (
     <QASectionAccordion
@@ -304,8 +328,8 @@ function QAHarness() {
       templateId="t"
       defaultOpen
       instanceId="inst-1"
-      aiSuggestions={hook.suggestions}
-      onAcceptAI={hook.acceptSuggestion}
+      aiSuggestions={suggestions}
+      onAcceptAI={accept}
       onRejectAI={hook.rejectSuggestion}
       getSuggestionsHistory={hook.getSuggestionsHistory}
     />

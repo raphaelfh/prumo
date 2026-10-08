@@ -372,7 +372,7 @@ async def test_qa_consensus_publish_requires_arbitrator(
     value is an adjudicator action, so a plain project reviewer — NOT an
     arbitrator — is rejected. (Previously QA allowed reviewer self-publish; the
     staged flow moved finalize authority to the manager, see
-    frontend lib/qa/qaTransition.)"""
+    frontend lib/runs/buildTransition.)"""
     setup = await _qa_run_in_consensus(db_client, db_session)
     if setup is None:
         pytest.skip("Need a seeded QA template")

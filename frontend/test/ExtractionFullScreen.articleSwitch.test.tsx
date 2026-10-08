@@ -13,10 +13,8 @@
  * The gate (`resolveExtractionViewState`) must treat an in-flight session open
  * as 'loading'. Harness cloned from ExtractionFullScreen.nextArticle.test.tsx.
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("sonner", () => ({
@@ -36,51 +34,19 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
-vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
-  useComparisonPermissions: () => ({
-    userRole: "reviewer" as const,
-    isBlindMode: true,
-    canSeeOthers: false,
-    canResolveConflicts: false,
-    canManageBlindMode: false,
-    canExport: false,
-    canEditTemplate: false,
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-  }),
-}));
+vi.mock("@/hooks/shared/useComparisonPermissions", async () => {
+  const { BLIND_PERMISSIONS } = await import("./helpers/runScreenFixtures");
+  return { useComparisonPermissions: () => BLIND_PERMISSIONS };
+});
 
-// Two-article worklist so "]" has somewhere to go. The article id echoes back,
-// so paging swaps the header without touching the (project-level) template.
-vi.mock("@/services/extractionDataService", () => ({
-  loadExtractionPhase1: vi.fn(async (articleId: string) => ({
-    ok: true,
-    data: {
-      article: { id: articleId, title: `Article ${articleId}`, project_id: "p1" },
-      project: { id: "p1", name: "Test project" },
-      template: {
-        id: "tpl-1",
-        name: "CHARMS",
-        kind: "extraction",
-        version: "1.0.0",
-        is_active: true,
-      },
-      articles: [
-        { id: "a1", title: "First article" },
-        { id: "a2", title: "Second article" },
-      ],
-    },
-  })),
-}));
-
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    auth: {
-      getUser: async () => ({ data: { user: { id: "reviewer-1" } }, error: null }),
-    },
-  },
-}));
+// Worklist (header pager + next-article) and the reader's DOI lookup read
+// `articles` through the baselined PostgREST path; the stub serves both.
+vi.mock("@/integrations/supabase/client", async () => {
+  const { makeSupabaseClientMock } = await import("./helpers/runScreenFixtures");
+  return {
+    supabase: makeSupabaseClientMock(),
+  };
+});
 
 vi.mock("@prumo/pdf-viewer", async () => {
   const core =
@@ -100,86 +66,32 @@ vi.mock("@/integrations/api", () => ({
   apiClient: vi.fn(async () => ({})),
 }));
 
-import { SidebarProvider } from "@/contexts/SidebarContext";
-import ExtractionFullScreen from "@/pages/ExtractionFullScreen";
+import { renderExtractionPage } from "./helpers/runScreenRender";
 import { apiClient } from "@/integrations/api";
 import { pages } from "@/lib/copy/pages";
+import {
+  extractionApi,
+  instance,
+  makeRunView,
+  section,
+  textField,
+} from "./helpers/runScreenFixtures";
 
 /** One field per article, so the rendered label names the run on screen. */
-function entityTypes(label: string) {
-  return [
-    {
-      id: "et-1",
-      name: "source_of_data",
-      label: "Section",
-      description: null,
-      parent_entity_type_id: null,
-      cardinality: "one",
-      sort_order: 0,
-      is_required: true,
-      fields: [
-        {
-          id: "f1",
-          name: "source",
-          label,
-          description: null,
-          field_type: "text",
-          is_required: true,
-          validation_schema: null,
-          allowed_values: null,
-          unit: null,
-          allowed_units: null,
-          llm_description: null,
-          sort_order: 0,
-          allow_other: false,
-          other_label: null,
-          other_placeholder: null,
-        },
-      ],
-    },
-  ];
-}
-
 function runView(runId: string, articleId: string, fieldLabel: string) {
-  return {
-    run: {
-      id: runId,
-      project_id: "p1",
-      article_id: articleId,
-      template_id: "tpl-1",
-      kind: "extraction",
-      version_id: "v-1",
-      stage: "extract",
-      status: "running",
-      hitl_config_snapshot: {},
-      parameters: {},
-      results: {},
-      created_at: new Date().toISOString(),
-      created_by: "u-1",
-    },
-    proposals: [],
-    decisions: [],
-    consensus_decisions: [],
-    published_states: [],
-    entity_types: entityTypes(fieldLabel),
-    instances: [
-      {
-        id: `inst-${runId}`,
-        project_id: "p1",
-        article_id: articleId,
-        template_id: "tpl-1",
-        entity_type_id: "et-1",
-        parent_instance_id: null,
+  return makeRunView({
+    run: { id: runId, article_id: articleId },
+    entity_types: [
+      section({
+        id: "et-1",
+        name: "source_of_data",
         label: "Section",
-        sort_order: 0,
-        metadata: {},
-        created_by: "u-1",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
+        is_required: true,
+        fields: [textField("f1", fieldLabel, { name: "source", is_required: true })],
+      }),
     ],
-    current_values: [],
-  };
+    instances: [instance(`inst-${runId}`, "et-1", { article_id: articleId, label: "Section" })],
+  });
 }
 
 const VIEWS: Record<string, ReturnType<typeof runView>> = {
@@ -198,60 +110,29 @@ let releaseSessionA2: (() => void) | undefined;
 
 function mockApi() {
   vi.mocked(apiClient).mockImplementation(
-    async (url: string, options?: { body?: object }) => {
-      if (url === "/api/v1/hitl/sessions") {
-        const body = options?.body as { article_id?: string } | undefined;
-        const articleId = body?.article_id ?? "";
-        const payload = {
-          run_id: `run-${articleId}`,
-          kind: "extraction",
-          project_template_id: "tpl-1",
-          instances_by_entity_type: { "et-1": `inst-run-${articleId}` },
-        };
-        if (articleId === "a2") {
-          if (sessionA2Mode === "reject") throw new Error("Session open failed: 403");
-          await new Promise<void>((resolve) => {
-            releaseSessionA2 = resolve;
-          });
+    extractionApi({
+      routes: async (url, options) => {
+        if (url === "/api/v1/hitl/sessions") {
+          const body = options?.body as { article_id?: string } | undefined;
+          const articleId = body?.article_id ?? "";
+          const payload = {
+            run_id: `run-${articleId}`,
+            kind: "extraction",
+            project_template_id: "tpl-1",
+            instances_by_entity_type: { "et-1": `inst-run-${articleId}` },
+          };
+          if (articleId === "a2") {
+            if (sessionA2Mode === "reject") throw new Error("Session open failed: 403");
+            await new Promise<void>((resolve) => {
+              releaseSessionA2 = resolve;
+            });
+          }
+          return payload;
         }
-        return payload;
-      }
-      const viewMatch = /^\/api\/v1\/runs\/([^/]+)\/view$/.exec(url);
-      if (viewMatch) return VIEWS[viewMatch[1]];
-      if (url.includes("/finalized-run")) return null;
-      if (url.includes("/reviewers")) return { reviewers: [] };
-      if (url.includes("/suggestions")) return { suggestions: [], count: 0 };
-      if (url.includes("/files") || url.includes("/text-blocks")) return [];
-      return {};
-    },
-  );
-}
-
-function LocationProbe() {
-  const loc = useLocation();
-  return <div data-testid="probe-location">{loc.pathname}</div>;
-}
-
-function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/projects/p1/extraction/a1"]}>
-        <LocationProbe />
-        <Routes>
-          <Route
-            path="/projects/:projectId/extraction/:articleId"
-            element={
-              <SidebarProvider>
-                <ExtractionFullScreen />
-              </SidebarProvider>
-            }
-          />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+        const viewMatch = /^\/api\/v1\/runs\/([^/]+)\/view$/.exec(url);
+        return viewMatch ? VIEWS[viewMatch[1]] : undefined;
+      },
+    }),
   );
 }
 
@@ -276,7 +157,7 @@ describe("ExtractionFullScreen — paging to the next article", () => {
   });
 
   it("shows the loader — not the previous run's form — while the new article's session opens", async () => {
-    renderPage();
+    renderExtractionPage();
     expect(await screen.findByRole("textbox", {name: "First article field"})).toBeInTheDocument();
 
     // "]" — the worklist pager. Same route element, new :articleId.
@@ -307,7 +188,7 @@ describe("ExtractionFullScreen — paging to the next article", () => {
     // in the TanStack cache, so the page rendered a1's form under a2's header
     // AND swallowed the session error entirely — no message, no retry.
     sessionA2Mode = "reject";
-    renderPage();
+    renderExtractionPage();
     expect(await screen.findByRole("textbox", {name: "First article field"})).toBeInTheDocument();
 
     await userEvent.keyboard("]");
@@ -332,7 +213,7 @@ describe("ExtractionFullScreen — paging to the next article", () => {
     // BEFORE the ref-sync effect, so performSave must still capture run-a1 —
     // if it instead bailed on the null run, a mid-debounce edit would be lost.
     // Deliberately no wait for the 600ms debounce: only the flush can save it.
-    renderPage();
+    renderExtractionPage();
     expect(await screen.findByRole("textbox", {name: "First article field"})).toBeInTheDocument();
 
     const editor = screen.getByRole("textbox", {name: "First article field"});

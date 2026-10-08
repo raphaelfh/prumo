@@ -1,7 +1,7 @@
 /**
  * AI suggestions service — reads AI proposals via the typed API client.
- * Read-only: accept/select/reject persistence happens through the screens'
- * autosave (`writeRunFieldValue` with a D0 AI link), not from here — the old
+ * Read-only: accepting is the reviewer's decision (`useRunValues`, carrying
+ * the D0 AI link) and a reject's clear is autosaved there — the old
  * direct accept/reject writers were removed with the dead `acceptStrategy`
  * chain (2026-07-05 verify-then-prune).
  *
@@ -23,7 +23,7 @@ import type {
   RunProvenance,
   VerificationVerdict,
 } from '@/types/ai-extraction';
-import { getSuggestionKey } from '@/types/ai-extraction';
+import { coordKey } from '@/lib/runs/coord';
 import { unwrapProposedValue } from '@/lib/extraction/valueSemantics';
 import type { components } from '@/types/api/schema';
 
@@ -207,7 +207,7 @@ export class AISuggestionService {
     const items = response?.suggestions ?? [];
     const suggestionsMap: Record<string, AISuggestion> = {};
     for (const item of items) {
-      const key = getSuggestionKey(item.instance_id, item.field_id);
+      const key = coordKey(item.instance_id, item.field_id);
       // First-wins guard: server already dedups to latest-per-coord,
       // but keep this harmless if duplicates slip through.
       if (suggestionsMap[key]) continue;

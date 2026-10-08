@@ -10,10 +10,8 @@
  * Harness cloned from ExtractionFullScreen.readonly.test.tsx; the click path is
  * QualityAssessmentFullScreen.hydration.test.tsx's header suggestion locate.
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("sonner", () => ({
@@ -33,49 +31,19 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
-vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
-  useComparisonPermissions: () => ({
-    userRole: "reviewer" as const,
-    isBlindMode: true,
-    canSeeOthers: false,
-    canResolveConflicts: false,
-    canManageBlindMode: false,
-    canExport: false,
-    canEditTemplate: false,
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-  }),
-}));
+vi.mock("@/hooks/shared/useComparisonPermissions", async () => {
+  const { BLIND_PERMISSIONS } = await import("./helpers/runScreenFixtures");
+  return { useComparisonPermissions: () => BLIND_PERMISSIONS };
+});
 
-vi.mock("@/services/extractionDataService", () => ({
-  loadExtractionPhase1: vi.fn(async () => ({
-    ok: true,
-    data: {
-      article: { id: "a1", title: "Test article", project_id: "p1" },
-      project: { id: "p1", name: "Test project" },
-      template: {
-        id: "tpl-1",
-        name: "CHARMS",
-        kind: "extraction",
-        version: "1.0.0",
-        is_active: true,
-      },
-      articles: [{ id: "a1", title: "Test article" }],
-    },
-  })),
-}));
-
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    auth: {
-      getUser: async () => ({
-        data: { user: { id: "reviewer-1" } },
-        error: null,
-      }),
-    },
-  },
-}));
+// Worklist (header pager + next-article) and the reader's DOI lookup read
+// `articles` through the baselined PostgREST path; the stub serves both.
+vi.mock("@/integrations/supabase/client", async () => {
+  const { makeSupabaseClientMock } = await import("./helpers/runScreenFixtures");
+  return {
+    supabase: makeSupabaseClientMock({ articles: [{ id: "a1", title: "Test article" }] }),
+  };
+});
 
 // The PDF viewer pulls in worker/canvas globals (pdfjs/DOMMatrix) that crash
 // jsdom — stub the component but use the REAL engine-free core store.
@@ -95,62 +63,11 @@ vi.mock("@prumo/pdf-viewer", async () => {
 
 vi.mock("@/integrations/api", () => ({ apiClient: vi.fn() }));
 
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { SidebarProvider } from "@/contexts/SidebarContext";
 import { apiClient } from "@/integrations/api";
-import ExtractionFullScreen from "@/pages/ExtractionFullScreen";
+import { renderExtractionPage } from "./helpers/runScreenRender";
+import { extractionApi, instance, makeRunView, section, textField } from "./helpers/runScreenFixtures";
 
 const NOW = new Date().toISOString();
-
-function textField(id: string, label: string) {
-  return {
-    id,
-    name: id,
-    label,
-    description: null,
-    field_type: "text",
-    is_required: false,
-    validation_schema: null,
-    allowed_values: null,
-    unit: null,
-    allowed_units: null,
-    llm_description: null,
-    sort_order: 0,
-    allow_other: false,
-    other_label: null,
-    other_placeholder: null,
-  };
-}
-
-function section(over: Record<string, unknown>) {
-  return {
-    description: null,
-    parent_entity_type_id: null,
-    cardinality: "one",
-    entry_label: null,
-    sort_order: 0,
-    is_required: false,
-    fields: [],
-    ...over,
-  };
-}
-
-function instance(id: string, entityTypeId: string, parent: string | null, label: string, sortOrder = 0) {
-  return {
-    id,
-    project_id: "p1",
-    article_id: "a1",
-    template_id: "tpl-1",
-    entity_type_id: entityTypeId,
-    parent_instance_id: parent,
-    label,
-    sort_order: sortOrder,
-    metadata: {},
-    created_by: "u-1",
-    created_at: NOW,
-    updated_at: NOW,
-  };
-}
 
 function currentValue(instanceId: string, fieldId: string, text: string) {
   return { instance_id: instanceId, field_id: fieldId, value: { value: text }, decision: "edit" };
@@ -161,26 +78,7 @@ function currentValue(instanceId: string, fieldId: string, text: string) {
  * second model has predictors, and each predictor owns a Predictor Detail
  * section. Every instance holds its own value, which tells its copy apart.
  */
-const RUN_VIEW = {
-  run: {
-    id: "run-1",
-    project_id: "p1",
-    article_id: "a1",
-    template_id: "tpl-1",
-    kind: "extraction",
-    version_id: "v-1",
-    stage: "extract",
-    status: "running",
-    hitl_config_snapshot: {},
-    parameters: {},
-    results: {},
-    created_at: NOW,
-    created_by: "u-1",
-  },
-  proposals: [],
-  decisions: [],
-  consensus_decisions: [],
-  published_states: [],
+const RUN_VIEW = makeRunView({
   entity_types: [
     section({
       id: "et-models",
@@ -216,14 +114,14 @@ const RUN_VIEW = {
     }),
   ],
   instances: [
-    instance("m-a", "et-models", null, "Cox Model", 0),
-    instance("m-b", "et-models", null, "XGBoost", 1),
-    instance("d-a", "et-dev", "m-a", "Cox development"),
-    instance("d-b", "et-dev", "m-b", "XGBoost development"),
-    instance("p-b1", "et-pred", "m-b", "Age", 0),
-    instance("p-b2", "et-pred", "m-b", "Smoking", 1),
-    instance("pd-b1", "et-detail", "p-b1", "Age detail"),
-    instance("pd-b2", "et-detail", "p-b2", "Smoking detail"),
+    instance("m-a", "et-models", { label: "Cox Model", sort_order: 0 }),
+    instance("m-b", "et-models", { label: "XGBoost", sort_order: 1 }),
+    instance("d-a", "et-dev", { parent_instance_id: "m-a", label: "Cox development" }),
+    instance("d-b", "et-dev", { parent_instance_id: "m-b", label: "XGBoost development" }),
+    instance("p-b1", "et-pred", { parent_instance_id: "m-b", label: "Age", sort_order: 0 }),
+    instance("p-b2", "et-pred", { parent_instance_id: "m-b", label: "Smoking", sort_order: 1 }),
+    instance("pd-b1", "et-detail", { parent_instance_id: "p-b1", label: "Age detail" }),
+    instance("pd-b2", "et-detail", { parent_instance_id: "p-b2", label: "Smoking detail" }),
   ],
   current_values: [
     currentValue("d-a", "f-dev", "cox-notes"),
@@ -231,7 +129,7 @@ const RUN_VIEW = {
     currentValue("pd-b1", "f-detail", "age-detail"),
     currentValue("pd-b2", "f-detail", "smoking-detail"),
   ],
-};
+});
 
 /**
  * Serves RUN_VIEW with one pending AI suggestion per `[instanceId, fieldId]`
@@ -240,83 +138,50 @@ const RUN_VIEW = {
  */
 function mockRun(...coordinates: Array<[instanceId: string, fieldId: string]>) {
   const decisions: Array<Record<string, unknown>> = [];
-  vi.mocked(apiClient).mockImplementation(async (url: string, options?: { method?: string; body?: unknown }) => {
-    if (url === "/api/v1/hitl/sessions") {
-      return {
-        run_id: "run-1",
-        kind: "extraction",
-        project_template_id: "tpl-1",
-        instances_by_entity_type: {},
-      };
-    }
-    if (url === "/api/v1/runs/run-1/decisions" && options?.method === "POST") {
-      const body = options.body as Record<string, unknown>;
-      const decision = {
-        id: `dec-${decisions.length + 1}`,
-        run_id: "run-1",
-        reviewer_id: "reviewer-1",
-        rationale: null,
-        created_at: new Date(Date.parse(NOW) + decisions.length * 1000).toISOString(),
-        ...body,
-      };
-      decisions.push(decision);
-      return decision;
-    }
-    if (url === "/api/v1/runs/run-1/view") {
-      return { ...RUN_VIEW, decisions: [...decisions] };
-    }
-    if (url === "/api/v1/articles/a1/instance-ids") {
-      return RUN_VIEW.instances.map((i) => i.id);
-    }
-    if (url.includes("/suggestions") && !url.includes("history")) {
-      return {
-        suggestions: coordinates.map(([instanceId, fieldId], index) => ({
-          id: `sug-${index + 1}`,
-          run_id: "run-1",
-          instance_id: instanceId,
-          field_id: fieldId,
-          proposed_value: { value: `AI value ${index + 1}` },
-          confidence_score: 0.9,
-          rationale: "",
-          created_at: NOW,
-          evidence: [],
-        })),
-        count: coordinates.length,
-      };
-    }
-    if (url.includes("/reviewers")) {
-      return { reviewers: [] };
-    }
-    if (url.includes("/files") || url.includes("/text-blocks")) {
-      return [];
-    }
-    return {};
-  });
-}
-
-function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/projects/p1/extraction/a1"]}>
-        <Routes>
-          <Route
-            path="/projects/:projectId/extraction/:articleId"
-            element={
-              // Mirrors the app-level provider in App.tsx: the revealed
-              // suggestion's row renders tooltips.
-              <TooltipProvider>
-                <SidebarProvider>
-                  <ExtractionFullScreen />
-                </SidebarProvider>
-              </TooltipProvider>
-            }
-          />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+  vi.mocked(apiClient).mockImplementation(
+    extractionApi({
+      view: () => ({ ...RUN_VIEW, decisions: [...decisions] }),
+      routes: (url, options) => {
+        if (url === "/api/v1/hitl/sessions") {
+          return {
+            run_id: "run-1",
+            kind: "extraction",
+            project_template_id: "tpl-1",
+            instances_by_entity_type: {},
+          };
+        }
+        if (url === "/api/v1/runs/run-1/decisions" && options?.method === "POST") {
+          const body = options.body as Record<string, unknown>;
+          const decision = {
+            id: `dec-${decisions.length + 1}`,
+            run_id: "run-1",
+            reviewer_id: "reviewer-1",
+            rationale: null,
+            created_at: new Date(Date.parse(NOW) + decisions.length * 1000).toISOString(),
+            ...body,
+          };
+          decisions.push(decision);
+          return decision;
+        }
+        if (url.includes("/suggestions") && !url.includes("history")) {
+          return {
+            suggestions: coordinates.map(([instanceId, fieldId], index) => ({
+              id: `sug-${index + 1}`,
+              run_id: "run-1",
+              instance_id: instanceId,
+              field_id: fieldId,
+              proposed_value: { value: `AI value ${index + 1}` },
+              confidence_score: 0.9,
+              rationale: "",
+              created_at: NOW,
+              evidence: [],
+            })),
+            count: coordinates.length,
+          };
+        }
+        return undefined;
+      },
+    }),
   );
 }
 
@@ -339,7 +204,7 @@ describe("ExtractionFullScreen — header suggestion locate in an entry group", 
 
   it("selects the entry holding the first pending suggestion and opens its section", async () => {
     mockRun(["d-b", "f-dev"]);
-    renderPage();
+    renderExtractionPage();
 
     // Precondition: the first model is active and the section shows ITS copy.
     expect(await screen.findByDisplayValue("cox-notes")).toBeInTheDocument();
@@ -366,7 +231,7 @@ describe("ExtractionFullScreen — header suggestion locate in an entry group", 
     // switch has rendered.
     const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
     mockRun(["pd-b2", "f-detail"]);
-    renderPage();
+    renderExtractionPage();
 
     // Precondition: the first model is active and the section is not mounted.
     expect(await screen.findByRole("tab", { name: /cox model/i, selected: true })).toBeInTheDocument();
@@ -398,7 +263,7 @@ describe("ExtractionFullScreen — pending suggestions follow the review table's
     // Accept, reversal and undo append decisions but write no suggestion status,
     // so a count read from `status` would never move.
     mockRun(["d-a", "f-dev"], ["d-b", "f-dev"]);
-    renderPage();
+    renderExtractionPage();
 
     const trigger = await screen.findByTestId("run-ai-actions");
     await waitFor(() => expect(trigger).toHaveTextContent("2"));

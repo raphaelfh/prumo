@@ -250,7 +250,6 @@ export interface UseAISuggestionsProps {
    * article. QA already has these from the HITL session response.
    */
   instanceIds?: string[];
-  onSuggestionAccepted?: (instanceId: string, fieldId: string, value: any) => void;
   onSuggestionRejected?: (instanceId: string, fieldId: string) => void;
 }
 
@@ -258,44 +257,20 @@ export interface UseAISuggestionsProps {
  * Return type of useAISuggestions hook
  */
 export interface UseAISuggestionsReturn {
-  suggestions: Record<string, AISuggestion>; // key: `${instanceId}_${fieldId}`
+  suggestions: Record<string, AISuggestion>; // keyed by coordKey (lib/runs/coord)
   loading: boolean;
-  /**
-   * D0: this session's real adoption events — accept/select set the chosen
-   * proposal id, reject tombstones with null. Starts empty every mount and is
-   * never hydrated from the read endpoint (whose `status` marks any non-reject
-   * decision 'accepted' and would fabricate AI provenance). Feeds
-   * `deriveAiLinkByKey` together with the caller's persisted decision links.
-   */
-  sessionAdoption: Record<string, string | null>;
   /**
    * True only after a successful suggestions load; false while loading and
    * after a load error. Distinguishes "no AI suggestion exists" from "the
    * AI-existence signal is unavailable" (consensus Manual-chip gating).
    */
   suggestionsReady: boolean;
-  acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
-  /**
-   * Accept a SPECIFIC historical version by its proposal id (not just the
-   * latest pending). Powers the review popover's version switching. `value`
-   * may be null (an explicit "no information" selection); `confidence` is that
-   * chosen version's own confidence.
-   */
-  selectSuggestion: (
-    instanceId: string,
-    fieldId: string,
-    proposalRecordId: string,
-    value: unknown,
-    confidence: number,
-  ) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
-  batchAccept: (threshold?: number) => Promise<void>;
   getSuggestionsHistory: (
     instanceId: string,
     fieldId: string,
     limit?: number,
   ) => Promise<AISuggestionHistoryItem[]>;
-  getLatestSuggestion: (instanceId: string, fieldId: string) => AISuggestion | undefined;
   refresh: () => Promise<LoadSuggestionsResult>; // Returns result directly for efficient polling
 }
 
@@ -303,16 +278,3 @@ export interface LoadSuggestionsResult {
   suggestions: Record<string, AISuggestion>;
   count: number;
 }
-
-// =================== COMPONENT PROPS ===================
-
-
-// =================== UTILITIES ===================
-
-/**
- * Unique key to identify a suggestion in the map.
- */
-export function getSuggestionKey(instanceId: string, fieldId: string): string {
-  return `${instanceId}_${fieldId}`;
-}
-

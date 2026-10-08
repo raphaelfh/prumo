@@ -4,15 +4,6 @@
  * These mirror the FastAPI schemas in backend/app/schemas/extraction_run.py.
  */
 
-export interface CreateDecisionRequest {
-  instance_id: string;
-  field_id: string;
-  decision: "accept_proposal" | "reject" | "edit";
-  proposal_record_id?: string | null;
-  value?: Record<string, unknown> | null;
-  rationale?: string | null;
-}
-
 export interface CreateConsensusRequest {
   instance_id: string;
   field_id: string;

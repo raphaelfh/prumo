@@ -20,6 +20,7 @@
  * mid-assessment reclassification must be reversible with zero cleanup.
  */
 import { unwrapValueEnvelope } from "@/lib/extraction/valueSemantics";
+import { coordKey } from "@/lib/runs/coord";
 
 function scopeRules(templateSchema: unknown): Record<string, unknown> {
   if (typeof templateSchema !== "object" || templateSchema === null) return {};
@@ -54,8 +55,8 @@ export function outOfScopeSections(
 }
 
 /**
- * The classifier's answer as the RUN FORM holds it — `values` keyed by the
- * page's own `keyOf`, instances resolved per entity type.
+ * The classifier's answer as the RUN FORM holds it — `values` keyed by
+ * `coordKey`, instances resolved per entity type.
  */
 function resolveStudyType(
   templateSchema: unknown,
@@ -65,7 +66,6 @@ function resolveStudyType(
   }>,
   instancesByEntityType: Record<string, string> | undefined,
   values: Record<string, unknown>,
-  keyOf: (instanceId: string, fieldId: string) => string,
 ): unknown {
   const coord = scopeClassifierCoordinate(templateSchema);
   if (!coord) return null;
@@ -73,7 +73,7 @@ function resolveStudyType(
   const field = section?.fields.find((f) => f.name === coord.field);
   const instanceId = section && instancesByEntityType?.[section.entityType.id];
   if (!section || !field || !instanceId) return null;
-  return unwrapValueEnvelope(values[keyOf(instanceId, field.id)]);
+  return unwrapValueEnvelope(values[coordKey(instanceId, field.id)]);
 }
 
 /**
@@ -115,11 +115,10 @@ export function outOfScopeSectionsOnForm(
   }>,
   instancesByEntityType: Record<string, string> | undefined,
   values: Record<string, unknown>,
-  keyOf: (instanceId: string, fieldId: string) => string,
 ): Set<string> {
   return outOfScopeSections(
     templateSchema,
-    resolveStudyType(templateSchema, domains, instancesByEntityType, values, keyOf),
+    resolveStudyType(templateSchema, domains, instancesByEntityType, values),
   );
 }
 

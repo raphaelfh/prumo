@@ -27,7 +27,6 @@ function base(overrides: Partial<Input> = {}): Input {
     sessionError: null,
     runError: false,
     runErrorMessage: null,
-    valuesLoading: false,
     entityTypesCount: 14,
     ...overrides,
   };
@@ -84,15 +83,11 @@ describe('resolveExtractionViewState', () => {
     ).toEqual({kind: 'loading'});
   });
 
-  it('shows the loader while values load even though the run is present', () => {
-    expect(resolveExtractionViewState(base({valuesLoading: true}))).toEqual({kind: 'loading'});
-  });
-
   it('shows no-fields only when the run IS loaded and entity_types is genuinely empty', () => {
     expect(resolveExtractionViewState(base({entityTypesCount: 0}))).toEqual({kind: 'no-fields'});
   });
 
-  it('shows ready on the happy path (run loaded, has entity types, values done)', () => {
+  it('shows ready on the happy path (run loaded, has entity types)', () => {
     expect(resolveExtractionViewState(base())).toEqual({kind: 'ready'});
   });
 

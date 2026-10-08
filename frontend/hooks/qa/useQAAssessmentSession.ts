@@ -5,8 +5,8 @@
  * Returns the Run id, the cloned project_template_id, and the
  * (entity_type_id → instance_id) map needed to record proposals.
  *
- * The returned `refetch` triggers a fresh open call. Used after
- * `useReopenRun` so the page can pick up the newly-created
+ * The returned `refetch` triggers a fresh open call. Used after a
+ * reopen for revision so the page can pick up the newly-created
  * non-terminal run without a hard navigate / reload.
  *
  * Accepts either ``globalTemplateId`` (e.g. open-from-header-menu,

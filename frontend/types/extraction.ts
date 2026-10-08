@@ -11,7 +11,6 @@ import {z} from 'zod';
 
 // =================== ENUMS ===================
 
-type ExtractionFramework = 'CHARMS' | 'PICOS' | 'CUSTOM';
 export type ExtractionFieldType = 'text' | 'number' | 'date' | 'select' | 'multiselect' | 'boolean';
 export type ExtractionCardinality = 'one' | 'many';
 /**
@@ -25,23 +24,6 @@ export type ExtractionValue =
   | string[]    // multiselect
   | boolean     // boolean
     | null;       // unfilled values
-
-// =================== TEMPLATES ===================
-
-export interface ProjectExtractionTemplate {
-  id: string;
-  project_id: string;
-  global_template_id: string | null;
-  name: string;
-  description: string | null;
-  framework: ExtractionFramework;
-  version: string;
-  schema: any;
-  is_active: boolean;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
 
 // =================== ENTIDADES E CAMPOS ===================
 

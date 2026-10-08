@@ -42,8 +42,8 @@ const membersFixture = vi.hoisted(() => ({
 const tablesFixture = vi.hoisted(() => ({}) as Record<string, unknown>);
 
 vi.mock("@/integrations/supabase/client", async () => {
-  const { makeSupabaseClientMock } = await import("./helpers/qaFullScreenMocks");
-  return { supabase: makeSupabaseClientMock(membersFixture, tablesFixture) };
+  const { makeSupabaseClientMock } = await import("./helpers/runScreenFixtures");
+  return { supabase: makeSupabaseClientMock({ members: membersFixture, tables: tablesFixture, userId: "qa-test-reviewer-id" }) };
 });
 
 // The PDF viewer pulls in worker/canvas globals (pdfjs/DOMMatrix) not worth
@@ -65,8 +65,8 @@ vi.mock("@prumo/pdf-viewer", async () => {
 });
 
 vi.mock("@/integrations/api", async () => {
-  const { makeApiClientDefault } = await import("./helpers/qaFullScreenMocks");
-  return { apiClient: vi.fn(makeApiClientDefault()) };
+  const { qaApi } = await import("./helpers/runScreenFixtures");
+  return { apiClient: vi.fn(qaApi()) };
 });
 
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
@@ -77,13 +77,14 @@ import {
   PARTICIPANTS_DOMAIN,
   ROB_FIELD,
   SIGNALING_QUESTION,
-  makeApiClientDefault,
-} from "./helpers/qaFullScreenMocks";
-import { renderPage } from "./helpers/qaFullScreenRender";
+  makeQaRunView,
+  qaApi,
+} from "./helpers/runScreenFixtures";
+import { renderQaPage } from "./helpers/runScreenRender";
 
 // A per-test apiClient override answers its own URLs and hands every other
 // one to the shared default (template lists, files, suggestions).
-const answerByDefault = makeApiClientDefault();
+const answerByDefault = qaApi();
 
 const mockedPermissions = vi.mocked(useComparisonPermissions);
 
@@ -99,7 +100,7 @@ describe("QualityAssessmentFullScreen", () => {
   });
 
   it("renders header with QA badge + template name + version", async () => {
-    renderPage();
+    renderQaPage();
     // Kind badge shows the full 'Quality Assessment' label (reverted from short 'QA').
     expect(screen.getByTestId("qa-kind-badge")).toHaveTextContent("Quality Assessment");
     // Template name is now in the Breadcrumb crumb; version is in qa-template-name.
@@ -115,7 +116,7 @@ describe("QualityAssessmentFullScreen", () => {
   it("AssessmentShell shows PDF panel toggle only in header (no in-shell toggle when pdfState provided)", async () => {
     // QA page passes pdfState to AssessmentShell so the RunHeader.PanelToggle
     // is the single PDF control — the in-shell toggle must be absent.
-    renderPage();
+    renderQaPage();
     expect(screen.getByTestId("assessment-shell")).toBeInTheDocument();
     expect(
       screen.queryByTestId("assessment-shell-show-pdf"),
@@ -126,7 +127,7 @@ describe("QualityAssessmentFullScreen", () => {
   });
 
   it("renders one accordion per domain after template loads", async () => {
-    renderPage();
+    renderQaPage();
     await waitFor(() =>
       expect(screen.getByTestId("qa-domains")).toBeInTheDocument(),
     );
@@ -136,7 +137,7 @@ describe("QualityAssessmentFullScreen", () => {
   });
 
   it("gives the assessment form the same section rail as extraction, one entry per domain", async () => {
-    renderPage();
+    renderQaPage();
     const rail = await screen.findByRole("navigation", { name: "Section navigation" });
     expect(within(rail).getByRole("button", { name: /Participants/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Collapse sections" })).toHaveAttribute(
@@ -146,7 +147,7 @@ describe("QualityAssessmentFullScreen", () => {
   });
 
   it("first domain accordion opens by default exposing summary card", async () => {
-    renderPage();
+    renderQaPage();
     await waitFor(() =>
       expect(screen.getByTestId("qa-domains")).toBeInTheDocument(),
     );
@@ -161,12 +162,12 @@ describe("QualityAssessmentFullScreen", () => {
   });
 
   it("renders form-panel container", async () => {
-    renderPage();
+    renderQaPage();
     expect(screen.getByTestId("qa-form-panel")).toBeInTheDocument();
   });
 
   it("renders the shared RunHeader status chip once the run loads", async () => {
-    renderPage();
+    renderQaPage();
     // The RunStatus chip (data-testid=run-stage-current) replaces the old
     // stage rail — its presence is the canonical marker that the RunHeader is
     // mounted.
@@ -181,7 +182,7 @@ describe("QualityAssessmentFullScreen", () => {
 
   it("renders the AI actions menu with Extract with AI once the QA session is open", async () => {
     // RunHeader.AIActions is a menu: the Sparkles trigger opens named items.
-    renderPage();
+    renderQaPage();
     const trigger = await screen.findByTestId("run-ai-actions");
     await userEvent.click(trigger);
     const item = await screen.findByRole("menuitem", {
@@ -198,7 +199,7 @@ describe("QualityAssessmentFullScreen", () => {
     )) as unknown as { apiClient: ReturnType<typeof vi.fn> };
     apiClient.mockClear();
 
-    renderPage();
+    renderQaPage();
     const trigger = await screen.findByTestId("run-ai-actions");
     await userEvent.click(trigger);
     const button = await screen.findByRole("menuitem", {
@@ -230,7 +231,7 @@ describe("QualityAssessmentFullScreen", () => {
     // mark-ready — zero stage moves, zero consensus writes.
     vi.mocked(apiClient).mockClear();
 
-    renderPage();
+    renderQaPage();
     const button = await screen.findByRole("button", { name: /finish assessment/i });
     await waitFor(() => expect(button).not.toHaveAttribute("disabled"));
     await userEvent.click(button);
@@ -261,7 +262,7 @@ describe("QualityAssessmentFullScreen", () => {
     });
     vi.mocked(apiClient).mockClear();
 
-    renderPage();
+    renderQaPage();
     const button = await screen.findByRole("button", { name: /start consensus/i });
     await waitFor(() => expect(button).not.toHaveAttribute("disabled"));
     await userEvent.click(button);
@@ -295,7 +296,7 @@ describe("QualityAssessmentFullScreen", () => {
   it("blind reviewer sees no compare control and stays on the assess view", async () => {
     // Default permissions (BLIND_PERMISSIONS) → canSeeOthers=false →
     // canCompare is false, so the CompareToggle never renders.
-    renderPage();
+    renderQaPage();
     await waitFor(() =>
       expect(screen.getByTestId("qa-domains")).toBeInTheDocument(),
     );
@@ -314,7 +315,7 @@ describe("QualityAssessmentFullScreen", () => {
       canManageBlindMode: true,
     });
 
-    renderPage();
+    renderQaPage();
 
     // Wait for domains to load so canCompare resolves (requires peer decisions).
     await waitFor(() =>
@@ -370,30 +371,10 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
         };
       }
       if (url === "/api/v1/runs/run-1/view") {
-        return {
-          run: {
-            id: "run-1",
-            project_id: "p1",
-            article_id: "a1",
-            template_id: "tpl-1",
-            kind: "quality_assessment",
-            version_id: "v-1",
-            stage,
-            status: stage === "finalized" ? "completed" : "running",
-            hitl_config_snapshot: {},
-            parameters: {},
-            results: {},
-            created_at: new Date().toISOString(),
-            created_by: "u-1",
-          },
-          proposals: [],
-          decisions: [],
-          consensus_decisions: [],
-          published_states: [],
-          entity_types: [],
-          current_values: [],
+        return makeQaRunView({
+          run: { stage, status: stage === "finalized" ? "completed" : "running" },
           peers_revealed: peersRevealed,
-        };
+        });
       }
       if (url.includes("/suggestions")) {
         return { suggestions: [], count: 0 };
@@ -415,7 +396,7 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
 
   it("blind manager during extract sees Reveal inside the status popover", async () => {
     mockRunView({ stage: "extract" });
-    renderPage();
+    renderQaPage();
     // Reveal lives in the RunStatus popover now (run-header declutter).
     await userEvent.click(await screen.findByTestId("run-stage-current"));
     expect(
@@ -427,7 +408,7 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
     "blind manager on a %s run sees no Reveal affordance",
     async (stage) => {
       mockRunView({ stage });
-      renderPage();
+      renderQaPage();
       // The status chip mounts only once the run view has loaded, so
       // canReveal is settled by the time this resolves.
       await userEvent.click(await screen.findByTestId("run-stage-current"));
@@ -440,7 +421,7 @@ describe("QualityAssessmentFullScreen — blind-reveal stage guards", () => {
 
   it("run-scoped auto-reveal (peers_revealed) hides the Reveal affordance even during extract", async () => {
     mockRunView({ stage: "extract", peersRevealed: true });
-    renderPage();
+    renderQaPage();
     await userEvent.click(await screen.findByTestId("run-stage-current"));
     await screen.findByTestId("run-status-popover");
     expect(
@@ -496,30 +477,12 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
         };
       }
       if (url === "/api/v1/runs/run-1/view") {
-        return {
-          run: {
-            id: "run-1",
-            project_id: "p1",
-            article_id: "a1",
-            template_id: "tpl-1",
-            kind: "quality_assessment",
-            version_id: "v-1",
-            stage: "consensus",
-            status: "running",
-            hitl_config_snapshot: {},
-            parameters: {},
-            results: {},
-            created_at: new Date().toISOString(),
-            created_by: "u-1",
-          },
-          proposals: [],
+        return makeQaRunView({
+          run: { stage: "consensus" },
           decisions,
           consensus_decisions: consensusDecisions,
-          published_states: [],
-          entity_types: [],
-          current_values: [],
           peers_revealed: true,
-        };
+        });
       }
       if (url.includes("/suggestions")) {
         return { suggestions: [], count: 0 };
@@ -538,7 +501,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
   it("consensus: no Compare toggle even though canCompare's preconditions hold", async () => {
     mockedPermissions.mockReturnValue(SEEING_REVIEWER);
     mockConsensusView();
-    renderPage();
+    renderQaPage();
     // The consensus resolve surface is up (its data preconditions hold)…
     await waitFor(() =>
       expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
@@ -555,7 +518,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
       canResolveConflicts: true,
     });
     mockConsensusView();
-    renderPage();
+    renderQaPage();
     await waitFor(() =>
       expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
     );
@@ -571,7 +534,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
     // must not get resolve buttons whose /consensus click the backend 403s.
     mockedPermissions.mockReturnValue(SEEING_REVIEWER);
     mockConsensusView();
-    renderPage();
+    renderQaPage();
     await waitFor(() =>
       expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
     );
@@ -591,7 +554,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
       canResolveConflicts: true,
     });
     mockConsensusView();
-    renderPage();
+    renderQaPage();
     await waitFor(() =>
       expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
     );
@@ -609,7 +572,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
   it("consensus: a plain reviewer is not offered Reopen assessment", async () => {
     mockedPermissions.mockReturnValue(SEEING_REVIEWER);
     mockConsensusView();
-    renderPage();
+    renderQaPage();
     await waitFor(() =>
       expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
     );
@@ -630,7 +593,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
       canResolveConflicts: true,
     });
     mockConsensusView([], []);
-    renderPage();
+    renderQaPage();
     await waitFor(() =>
       expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
     );
@@ -649,7 +612,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
       userRole: "viewer" as never,
     });
     mockConsensusView();
-    renderPage();
+    renderQaPage();
     await waitFor(() =>
       expect(screen.getByTestId("consensus-panel")).toBeInTheDocument(),
     );
@@ -666,7 +629,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
       canResolveConflicts: true,
     });
     mockConsensusView();
-    renderPage();
+    renderQaPage();
     const button = await screen.findByRole("button", { name: /approve & finalize/i });
     await userEvent.click(button);
     await waitFor(() => {
@@ -700,7 +663,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
         created_at: new Date().toISOString(),
       },
     ]);
-    renderPage();
+    renderQaPage();
     const button = await screen.findByRole("button", { name: /approve & finalize/i });
     await userEvent.click(button);
     await waitFor(() => {
@@ -742,7 +705,7 @@ describe("QualityAssessmentFullScreen — consensus dead affordances (D6)", () =
         created_at: new Date().toISOString(),
       },
     ]);
-    renderPage();
+    renderQaPage();
     await userEvent.click(
       await screen.findByRole("button", { name: /approve & finalize/i }),
     );
@@ -774,11 +737,11 @@ describe("QualityAssessmentFullScreen — jump to the next pending item", () => 
 
   afterEach(() => {
     delete tablesFixture.extraction_entity_types;
-    vi.mocked(apiClient).mockImplementation(makeApiClientDefault());
+    vi.mocked(apiClient).mockImplementation(qaApi());
   });
 
   it("a jump to the next pending item marks the section it lands in active", async () => {
-    renderPage();
+    renderQaPage();
     const rail = await screen.findByRole("navigation", { name: "Section navigation" });
     const analysis = await within(rail).findByRole("button", { name: /Analysis/ });
     const participants = within(rail).getByRole("button", { name: /Participants/ });

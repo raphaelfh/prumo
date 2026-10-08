@@ -261,6 +261,7 @@ verifiability
 vite
 vitest
 VLM
+worklist
 workos
 worktree
 worktrees

@@ -1,8 +1,7 @@
 /**
  * Extraction value service — run-reference reads for the extraction
  * surfaces (reopen detection). All decision
- * WRITES live in `extractionRunService.writeRunFieldValue` (the autosave
- * path); the old direct accept/reject/save writers were removed with the
+ * WRITES live in `useRunValues` (the autosave and accept paths); the old direct accept/reject/save writers were removed with the
  * dead `acceptStrategy` chain, and the `unwrapValue` peel went with its
  * last consumer (the QA proposals read path, D8 2026-07-05).
  */
@@ -22,7 +21,7 @@ export const ExtractionValueService = {
    * Used purely for reopen detection on the extraction page — the
    * "Reopen for revision" button only renders when this returns a row
    * and the HITL session exposes no active run. The returned id is then
-   * passed to `useReopenRun` which spawns a fresh extract-stage run that
+   * the reopen target (useRunLifecycleScreen), which spawns a fresh extract-stage run that
    * seeds proposals from the published values. Filters by
    * `kind='extraction'` so a QA run on the same article never leaks in.
    */
