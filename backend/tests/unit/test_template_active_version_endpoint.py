@@ -10,7 +10,9 @@ from fastapi import HTTPException
 import app.api.v1.endpoints.project_templates as endpoint_module
 from app.schemas.hitl_session import TemplateActiveVersionRead
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_version_read_service import NoActiveTemplateVersionError
+from app.services.template_versioning import (
+    NoActiveTemplateVersionError,
+)
 
 
 def _request() -> MagicMock:

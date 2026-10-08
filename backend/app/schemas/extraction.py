@@ -116,7 +116,7 @@ class SectionExtractionRequest(BaseModel):
     # there is no separate ``review`` stage to auto-advance to, so the run
     # stays in ``extract`` after AI extraction and reviewers act there
     # directly. QA's publish flow walks the run from ``extract`` to
-    # ``finalized`` itself. See ADR-0013 / section_extraction_service.
+    # ``finalized`` itself. See ADR-0013 / ai_extraction.
     auto_advance_to_review: bool = Field(default=True, alias="autoAdvanceToReview")
 
     # When True, fields a human has already settled are excluded from the

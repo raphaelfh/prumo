@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_version_read_service import (
+from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
 )

@@ -48,6 +48,7 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
+from app.services.current_run import CurrentRunResolver
 from app.services.derived_judgment_service import (
     compute_derived_judgments,
     derived_spec,
@@ -76,7 +77,6 @@ from app.services.exports.extraction_snapshot_reader import (
     load_export_sections,
 )
 from app.services.exports.value_envelope import resolve_value
-from app.services.extraction_current_run import select_current_runs_by_article
 from app.services.value_semantics import ABSENT_REASON_LABELS, AbsentReason
 
 # ----------------------------------------------------------------------
@@ -469,7 +469,6 @@ class ExtractionExportService(LoggerMixin):
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
-                run_kind=template.kind,
             )
             value_map = await self._build_consensus_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -483,7 +482,6 @@ class ExtractionExportService(LoggerMixin):
                 project_id=project_id,
                 candidate_ids=article_ids,
                 reviewer_id=reviewer_id,
-                run_kind=template.kind,
             )
             value_map = await self._build_single_user_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -495,7 +493,6 @@ class ExtractionExportService(LoggerMixin):
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
-                run_kind=template.kind,
             )
             reviewers = await self._list_reviewers_for_runs(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -918,36 +915,19 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
-        run_kind: str = "extraction",
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick finalized articles + collect omitted-stage counts (FR-013).
 
-        ``run_kind`` is the exported template's kind (``extraction`` or
-        ``quality_assessment``): a run's kind is copied from its template
-        at creation, so filtering on the template's own kind keeps the QA
-        appraisal export (§7) on the same finalized-run path while still
-        rejecting a foreign-kind run that happens to share the article.
+        Each article's current run (``CurrentRunResolver``) on the exported
+        template; a run's kind is its template's (composite FK), so the QA
+        appraisal export (§7) takes the same finalized-run path.
         """
         if not candidate_ids:
             return [], {}
 
-        # Bulk-fetch runs for the candidate articles on this template.
-        run_rows = (
-            (
-                await self.db.execute(
-                    select(ExtractionRun).where(
-                        ExtractionRun.template_id == template_id,
-                        ExtractionRun.project_id == project_id,
-                        ExtractionRun.article_id.in_(candidate_ids),
-                        ExtractionRun.kind == run_kind,
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        runs_by_article = await CurrentRunResolver(self.db).current_by_article(
+            project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
-
-        runs_by_article = select_current_runs_by_article(run_rows)
         omitted: dict[str, int] = {}
         kept_run_ids: list[UUID] = []
         kept_articles: list[UUID] = []
@@ -1120,14 +1100,12 @@ class ExtractionExportService(LoggerMixin):
         project_id: UUID,
         candidate_ids: list[UUID],
         reviewer_id: UUID,
-        run_kind: str = "extraction",
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick articles where the target reviewer has ≥ 1 non-reject decision (FR-014).
 
         Single-user mode tolerates any non-terminal Run stage (the reviewer
         may have started before consensus). ``cancelled`` runs and runs
-        with no decisions from this reviewer are omitted. ``run_kind`` is
-        the exported template's kind (see ``_resolve_articles_for_consensus``).
+        with no decisions from this reviewer are omitted.
         """
         from app.models.extraction_workflow import (
             ExtractionReviewerDecision,
@@ -1137,21 +1115,9 @@ class ExtractionExportService(LoggerMixin):
         if not candidate_ids:
             return [], {}
 
-        run_rows = (
-            (
-                await self.db.execute(
-                    select(ExtractionRun).where(
-                        ExtractionRun.template_id == template_id,
-                        ExtractionRun.project_id == project_id,
-                        ExtractionRun.article_id.in_(candidate_ids),
-                        ExtractionRun.kind == run_kind,
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        runs_by_article = await CurrentRunResolver(self.db).current_by_article(
+            project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
-        runs_by_article = select_current_runs_by_article(run_rows)
 
         if not runs_by_article:
             return [], {"no_run": len(candidate_ids)}
@@ -1167,7 +1133,7 @@ class ExtractionExportService(LoggerMixin):
                 )
                 .where(
                     ExtractionReviewerState.reviewer_id == reviewer_id,
-                    ExtractionReviewerState.run_id.in_([r.id for r in run_rows]),
+                    ExtractionReviewerState.run_id.in_([r.id for r in runs_by_article.values()]),
                     ExtractionReviewerDecision.decision != "reject",
                 )
                 .distinct()
@@ -1283,8 +1249,8 @@ class ExtractionExportService(LoggerMixin):
         # Key the run filter on the exported template's own kind so a
         # quality_assessment template surfaces its reviewers; scoped by
         # project_id (defense-in-depth, like the reviewer query) and
-        # falling back to ``extraction`` when absent (mirrors the
-        # ``run_kind`` default on ``_resolve_articles_for_consensus``).
+        # falling back to ``extraction`` when absent (the
+        # ``list_reviewers_with_decisions`` default).
         run_kind = (
             await self.db.execute(
                 select(ProjectExtractionTemplate.kind).where(
@@ -1320,8 +1286,7 @@ class ExtractionExportService(LoggerMixin):
         ``run_kind`` is the exported template's kind (``extraction`` or
         ``quality_assessment``): a run's kind is copied from its template
         at creation, so filtering on the template's own kind surfaces the
-        QA picker's reviewers (see ``_resolve_articles_for_consensus``)
-        instead of a hard-coded ``extraction`` that hides them.
+        QA picker's reviewers instead of a hard-coded ``extraction`` that hides them.
         """
         from app.models.extraction_workflow import (
             ExtractionReviewerDecision,
@@ -1371,34 +1336,19 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
-        run_kind: str = "extraction",
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick finalized + in-review articles for All-users mode.
 
         Both `consensus` and `finalized` runs contribute reviewer columns;
         plus consensus and earlier-stage runs may contribute reviewer
         sub-columns (the reviewer-axis column is empty for pre-review runs).
-        ``run_kind`` is the exported template's kind (see
-        ``_resolve_articles_for_consensus``).
         """
         if not candidate_ids:
             return [], {}
 
-        run_rows = (
-            (
-                await self.db.execute(
-                    select(ExtractionRun).where(
-                        ExtractionRun.template_id == template_id,
-                        ExtractionRun.project_id == project_id,
-                        ExtractionRun.article_id.in_(candidate_ids),
-                        ExtractionRun.kind == run_kind,
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        runs_by_article = await CurrentRunResolver(self.db).current_by_article(
+            project_id=project_id, template_id=template_id, article_ids=candidate_ids
         )
-        runs_by_article = select_current_runs_by_article(run_rows)
 
         omitted: dict[str, int] = {}
         kept_article_ids: list[UUID] = []
@@ -1630,7 +1580,7 @@ class ExtractionExportService(LoggerMixin):
         # any superseded ones for the same (run, instance, field). ``id`` is
         # the deterministic tiebreaker on equal ``created_at`` (same-transaction
         # inserts share the timestamp), matching the canonical
-        # ExtractionProposalRepository.get_latest_for_coord ordering so the
+        # ExtractionProposalRepository.latest_by_field ordering so the
         # FR-037 "superseded" outcome is stable across export builds.
         proposal_rows = (
             await self.db.execute(

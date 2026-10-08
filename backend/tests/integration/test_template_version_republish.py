@@ -25,12 +25,12 @@ from app.main import app
 from app.models.extraction import ExtractionEntityType, TemplateKind
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.schemas.template_structure import SectionUpdateRequest
-from app.services.template_clone_service import TemplateCloneService
 from app.services.template_section_service import update_section
-from app.services.template_version_service import (
+from app.services.template_versioning import (
     PublishBlockedByMultiEntryError,
     TemplateNotFoundError,
     TemplateVersionService,
+    clone_template,
 )
 from tests.integration.conftest import SEED, get_config_draft_marker
 
@@ -45,7 +45,8 @@ async def _clean_project_clones(db: AsyncSession, project_id: UUID) -> None:
 
 
 async def _clone_charms(db: AsyncSession, project_id: UUID, user_id: UUID):
-    return await TemplateCloneService(db).clone(
+    return await clone_template(
+        db,
         project_id=project_id,
         global_template_id=CHARMS_GLOBAL_ID,
         user_id=user_id,

@@ -14,7 +14,7 @@ BOLA enforcement (all endpoints):
   - article-scoped: derive project_id from the article row via
     get_article_project_id, then call ensure_project_member.
   - form-runs: project_id is supplied in the request body; call
-    ensure_project_member directly.
+    ensure_project_member directly, and scope the resolution by it.
 """
 
 from uuid import UUID
@@ -29,10 +29,8 @@ from app.schemas.extraction_run import ArticleRunRef, FormRunsRequest, RunSummar
 from app.schemas.extraction_suggestion import AISuggestionHistoryItem, AISuggestionsResponse
 from app.services.article_file_service import ArticleFileService
 from app.services.article_read_service import ArticleNotFoundError, get_article_project_id
-from app.services.extraction_run_read_service import (
-    find_finalized_run,
-    resolve_form_runs,
-)
+from app.services.current_run import CurrentRunResolver
+from app.services.extraction_run_read_service import find_finalized_run
 from app.services.extraction_suggestion_read_service import (
     get_article_instance_ids,
     get_suggestion_history,
@@ -109,17 +107,20 @@ async def post_form_runs(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[list[ArticleRunRef]]:
-    """Resolve the latest relevant run per article for the extraction form.
-
-    Per article: returns the latest non-terminal run; falls back to the
-    latest finalized run; returns run_id=null when no run exists.
-    Cancelled runs are excluded. BOLA-gated via project_id in the body.
+    """Each article's resolved run for the extraction form (live, else
+    finalized; run_id=null when none — ``app.services.current_run``).
+    BOLA-gated via project_id in the body, which also scopes the resolution:
+    a member of P passing Q's article ids reads back no Q run ids.
     """
     await ensure_project_member(db, body.project_id, current_user_sub)
 
-    refs = await resolve_form_runs(
-        db, body.article_ids, project_id=body.project_id, template_id=body.template_id
+    resolved = await CurrentRunResolver(db).resolve_by_article(
+        project_id=body.project_id, template_id=body.template_id, article_ids=body.article_ids
     )
+    refs = [
+        ArticleRunRef(article_id=aid, run_id=run.id if (run := resolved.get(aid)) else None)
+        for aid in body.article_ids
+    ]
     return ApiResponse.success(refs, trace_id=_trace(request))
 
 

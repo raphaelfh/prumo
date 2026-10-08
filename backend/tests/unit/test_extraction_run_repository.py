@@ -1,7 +1,7 @@
 """Unit tests for ExtractionRunRepository.rollback_and_fail.
 
-The rollback-then-fail recovery (#21/#88) lives on the repository so both
-SectionExtractionService and ModelExtractionService share one implementation.
+The rollback-then-fail recovery (#21/#88) lives on the repository so every
+AI-extraction flow shares one implementation.
 A DB-level error leaves the asyncpg session in a failed-transaction state, so
 the repo rolls back before calling fail_run (which would otherwise raise
 InFailedSQLTransactionError and leave the run stuck at status='running'). Both
@@ -89,7 +89,7 @@ class TestRollbackAndFail:
 class TestCompleteRunMerge:
     """``complete_run`` MERGES results into the run's existing ``results`` JSONB
     (not REPLACE), so the provenance written at the proposal choke-point
-    (``_create_suggestions`` → ``merge_provenance_section``) survives completion.
+    (``ProposalLanding.land`` → ``merge_provenance_section``) survives completion.
     A REPLACE
     would clobber it — the bug class this guards against.
     """

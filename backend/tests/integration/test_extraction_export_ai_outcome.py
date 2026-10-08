@@ -610,7 +610,7 @@ async def test_ai_evidence_ordered_and_deduped(
 def _provenance_results(*sections: tuple[UUID, str]) -> dict[str, object]:
     """A run ``results`` payload shaped exactly like the server writes it.
 
-    Mirrors ``SectionExtractionService._build_run_provenance`` merged through
+    Mirrors the AI-extraction section snapshot merged through
     ``ExtractionRunRepository.merge_provenance_section``: one snapshot per
     entity type under ``provenance.sections``, keyed by the stringified id.
     Only ``model`` is populated — the sibling keys are irrelevant here.

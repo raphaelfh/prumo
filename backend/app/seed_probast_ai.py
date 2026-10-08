@@ -642,7 +642,7 @@ async def _catalogue_is_referenced(session: AsyncSession) -> bool:
     make the replace below raise on ``extraction_instances``' RESTRICT FK.
     Checking instances is sufficient: every proposal / decision / published
     state hangs off an instance whose coordinate coherence is enforced
-    (``assert_coords_coherent``), so none of them can reach a global field
+    (``open_run_for_write``), so none of them can reach a global field
     without an instance reaching a global entity type first.
     """
     referenced = (

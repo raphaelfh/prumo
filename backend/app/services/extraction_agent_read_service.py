@@ -36,7 +36,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
-from app.models.extraction import ExtractionEvidence, ExtractionInstance, ExtractionRun
+from app.models.extraction import ExtractionEvidence, ExtractionInstance
 from app.models.extraction_workflow import ExtractionProposalSource, ExtractionReviewerDecisionType
 from app.schemas.extraction_run import (
     ProposalRecordResponse,
@@ -54,14 +54,14 @@ from app.schemas.mcp_extractions import (
     McpExtractionsPage,
     McpRunRef,
 )
-from app.services.extraction_current_run import select_current_runs_by_article
+from app.services.current_run import CurrentRunResolver
 from app.services.extraction_run_read_service import (
     caller_can_see_peers,
     get_run_with_workflow_history,
     is_run_arbitrator,
 )
 from app.services.extraction_snapshot import live_entity_types
-from app.services.template_version_read_service import (
+from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_active_version_tree,
 )
@@ -533,20 +533,9 @@ async def list_agent_extractions(
     )
     article_ids = [a for a, _ in article_rows]
 
-    run_rows = (
-        (
-            await db.execute(
-                select(ExtractionRun).where(
-                    ExtractionRun.project_id == project_id,
-                    ExtractionRun.template_id == template_id,
-                    ExtractionRun.article_id.in_(article_ids),
-                )
-            )
-        )
-        .scalars()
-        .all()
+    current_by_article = await CurrentRunResolver(db).current_by_article(
+        project_id=project_id, template_id=template_id, article_ids=article_ids
     )
-    current_by_article = select_current_runs_by_article(list(run_rows))
 
     can_see = await caller_can_see_peers(
         db, project_id=project_id, user_id=caller_id, kind=template_kind

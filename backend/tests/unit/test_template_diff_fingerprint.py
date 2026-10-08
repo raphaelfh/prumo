@@ -25,7 +25,9 @@ from uuid import UUID
 
 from app.domain.template_change import ChangeTier, ChangeVariant, OpaqueValueState
 from app.schemas.hitl_session import TemplateChangeRowRead
-from app.services.template_diff_read import fingerprint
+from app.services.template_versioning._diff_read import (
+    fingerprint,
+)
 
 ACTIVE_VERSION = UUID("11111111-1111-4111-8111-111111111111")
 OTHER_VERSION = UUID("22222222-2222-4222-8222-222222222222")
@@ -125,7 +127,7 @@ def test_hash_is_stable_across_processes() -> None:
         "from uuid import UUID;"
         "from app.domain.template_change import ChangeTier, ChangeVariant;"
         "from app.schemas.hitl_session import TemplateChangeRowRead;"
-        "from app.services.template_diff_read import fingerprint;"
+        "from app.services.template_versioning._diff_read import fingerprint;"
         "row = TemplateChangeRowRead("
         "id='removed:entity_type:x:-:-',"
         "variant=ChangeVariant.ENTITY_TYPE_REMOVED,"

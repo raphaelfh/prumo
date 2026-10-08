@@ -30,9 +30,9 @@ from app.core.deps import get_db, get_supabase
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
 from app.schemas.extraction import ExtractionErrorCode, SectionExtractionRequest
-from app.services.coordinate_coherence import CoordinateMismatchError
 from app.services.extraction_errors import ExtractionTaskError
 from app.services.extraction_run_read_service import RunNotFoundError
+from app.services.extraction_run_write import RunWriteError
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_section_service import SectionNotFoundError
 
@@ -738,7 +738,7 @@ class TestCheckRequestScope:
         self, gates: SimpleNamespace
     ) -> None:
         """The cross-tenant parent case — see the integration suite for why."""
-        gates.instance.side_effect = CoordinateMismatchError("nope")
+        gates.instance.side_effect = RunWriteError("nope", reason="coordinate", run_id=None)
         payload = self._payload(parentInstanceId=str(uuid4()))
         with pytest.raises(HTTPException) as exc:
             await se._check_request_scope(MagicMock(), payload, uuid4())
@@ -759,7 +759,7 @@ class TestCheckRequestScope:
         """A non-member must not learn whether any id exists."""
         gates.coordinate.side_effect = HTTPException(status_code=403, detail="no")
         gates.section.side_effect = SectionNotFoundError("nope")
-        gates.instance.side_effect = CoordinateMismatchError("nope")
+        gates.instance.side_effect = RunWriteError("nope", reason="coordinate", run_id=None)
         payload = self._payload(parentInstanceId=str(uuid4()))
         with pytest.raises(HTTPException) as exc:
             await se._check_request_scope(MagicMock(), payload, uuid4())
@@ -991,7 +991,7 @@ async def test_direct_endpoint_closed_run_is_400():
         patch.object(
             se.ExtractionAttemptService,
             "prepare_request",
-            new=AsyncMock(side_effect=se.InvalidStageTransitionError("closed")),
+            new=AsyncMock(side_effect=se.RunWriteError("closed", reason="stage", run_id=None)),
         ),
         pytest.raises(HTTPException) as error,
     ):

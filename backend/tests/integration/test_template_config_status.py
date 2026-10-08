@@ -23,10 +23,12 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.schemas.hitl_session import TemplateConfigStatusRead
-from app.services import template_version_read_service
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
 from app.services.template_instruction_service import set_template_instruction
-from app.services.template_version_read_service import get_template_config_status
+from app.services.template_versioning import (
+    _read,
+    get_template_config_status,
+)
 from tests.integration.conftest import SEED, set_config_draft_marker
 from tests.integration.helpers.pat_rows import insert_pat_row as _pat
 from tests.integration.helpers.template_fixtures import force_narrow_baseline
@@ -35,7 +37,7 @@ from tests.integration.helpers.template_fixtures import force_narrow_baseline
 async def _publish_primary(db: AsyncSession) -> None:
     """Publish the live tree, so the baseline is the wide builder's own
     output (the seeded v1 snapshot is ``{"entity_types": []}`` — narrow)."""
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     await TemplateVersionService(db).republish(
         project_id=SEED.primary_project,
@@ -61,7 +63,7 @@ async def _edit_primary_field_label(db: AsyncSession, suffix: str) -> None:
 
 @pytest.mark.asyncio
 async def test_status_flips_with_edit_and_publish(db_session: AsyncSession) -> None:
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     await set_config_draft_marker(db_session, SEED.primary_template, None)
     clean = await get_template_config_status(
@@ -155,9 +157,7 @@ async def test_clean_template_builds_no_snapshot(
     def _forbidden(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("a clean template must not build the live snapshot")
 
-    monkeypatch.setattr(
-        template_version_read_service, "build_template_version_snapshot", _forbidden
-    )
+    monkeypatch.setattr(_read, "build_template_version_snapshot", _forbidden)
 
     status = await _status(db_session)
     assert status.has_pending_changes is False

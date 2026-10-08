@@ -33,10 +33,9 @@ from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecisionType,
 )
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 # Sentinel id for an in-test second reviewer (rolled back with the SAVEPOINT).
 SECOND_REVIEWER_ID = UUID("ffffffff-9999-0000-0000-0000000000aa")
@@ -152,7 +151,8 @@ async def _build_two_reviewer_review_run(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager
     )
-    await ExtractionProposalService(db).record_proposal(
+    await land_ai_proposal(
+        db,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,

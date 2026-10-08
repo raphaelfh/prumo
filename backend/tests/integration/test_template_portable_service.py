@@ -19,7 +19,6 @@ from app.core.error_handler import AppError
 from app.models.extraction_versioning import TemplateKind
 from app.schemas.template_portable import PortableSection, PortableTemplate
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_clone_service import TemplateCloneService
 from app.services.template_portable_service import (
     TemplateExportInvalidError,
     TemplateImportInvalidError,
@@ -29,6 +28,7 @@ from app.services.template_portable_service import (
     parse_portable_document,
     to_portable,
 )
+from app.services.template_versioning import clone_template
 from tests.integration.conftest import SEED, clean_project_clones, clone_charms
 
 CHARMS_GLOBAL_ID = UUID("000c0000-0000-0000-0000-000000000001")
@@ -45,7 +45,8 @@ async def _count(db: AsyncSession, sql: str, **params) -> int:
 
 
 async def _clone(db: AsyncSession, project_id: UUID, global_id: UUID, kind: TemplateKind):
-    return await TemplateCloneService(db).clone(
+    return await clone_template(
+        db,
         project_id=project_id,
         global_template_id=global_id,
         user_id=SEED.primary_profile,

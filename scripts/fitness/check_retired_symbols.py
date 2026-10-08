@@ -95,7 +95,7 @@ RETIRED: tuple[Retired, ...] = (
     Retired(
         "ModelExtractionService",
         "entry-group trees B6",
-        "generalized into entry_group_extraction.extract_into_instances",
+        "generalized into ai_extraction._sections.extract_into_instances",
     ),
     Retired(
         "ModelExtractionRequest",
@@ -168,6 +168,117 @@ RETIRED: tuple[Retired, ...] = (
         "getSuggestionKey",
         "run values module",
         "lib/runs/coord.ts coordKey is the one coordinate encoding",
+    ),
+    # One stage/lock oracle for run writes: stage sets are named once, on
+    # ExtractionRunStage; every run-write prologue is open_run_for_write.
+    Retired(
+        "NON_TERMINAL_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.live()",
+    ),
+    Retired(
+        "_ACTIVE_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.live()",
+    ),
+    Retired(
+        "ACTIVE_RUN_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.live()",
+    ),
+    Retired(
+        "_EDITABLE_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.editable()",
+    ),
+    Retired(
+        "_CURRENT_VALUE_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.with_current_values()",
+    ),
+    Retired(
+        "_READY_HINT_STAGES",
+        "run write oracle",
+        "a module-local copy of a stage set; use ExtractionRunStage.reviewing()",
+    ),
+    Retired(
+        "CoordinateMismatchError",
+        "run write oracle",
+        "coordinate refusals are RunWriteError(reason='coordinate')",
+    ),
+    Retired(
+        "assert_coords_coherent",
+        "run write oracle",
+        "open_run_for_write(..., instance_id=, field_id=) binds the coordinate under the run lock",
+    ),
+    # One AI-extraction module: run_from_request in, every candidate landed
+    # through ProposalLanding (one lock, one stage gate, one coordinate bind).
+    Retired(
+        "ExtractionProposalService",
+        "ai extraction module",
+        "proposal rows land through ProposalLanding, the one writer and its per-row rules",
+    ),
+    Retired(
+        "record_proposal_result",
+        "ai extraction module",
+        "a per-row gate re-locked the run once per field; ProposalLanding.land gates once",
+    ),
+    Retired(
+        "locked_result_filter",
+        "ai extraction module",
+        "the post-model re-read lives inside ProposalLanding's one gate",
+    ),
+    Retired(
+        "GenerationCallResult",
+        "ai extraction module",
+        "a pass-through wrapper; ai_extraction.Generation carries engine, snapshot and attempt",
+    ),
+    Retired(
+        "_create_suggestions",
+        "ai extraction module",
+        "split into the candidate build (_candidates) and ProposalLanding.land",
+    ),
+    # One current-run resolver: the ranking lives in current_run_repository,
+    # the seam in app.services.current_run.CurrentRunResolver.
+    Retired(
+        "resolve_or_create_extract_run",
+        "current run resolver",
+        "CurrentRunResolver.resolve_or_create_extract",
+    ),
+    Retired(
+        "_reuse_or_create_run",
+        "current run resolver",
+        "CurrentRunResolver.open_for_session; its created_at-only finalized order lost id ties",
+    ),
+    Retired(
+        "resolve_form_runs",
+        "current run resolver",
+        "CurrentRunResolver.resolve_by_article; its created_at-only order lost id ties",
+    ),
+    Retired(
+        "_form_runs",
+        "current run resolver",
+        "a parity copy of the form-run rule; current_run_repository.resolved_run_ids",
+    ),
+    Retired(
+        "extraction_current_run",
+        "current run resolver",
+        "the Python re-ranking of loaded rows; CurrentRunResolver.current_by_article",
+    ),
+    Retired(
+        "select_current_runs_by_article",
+        "current run resolver",
+        "CurrentRunResolver.current_by_article / current_by_template",
+    ),
+    Retired(
+        "run_recency_key",
+        "current run resolver",
+        "the ranking is one ORDER BY in current_run_repository.current_runs",
+    ),
+    Retired(
+        "last_human_activity_order",
+        "current run resolver",
+        "dead under the one-live-run index (0045): the live tier holds one run",
     ),
 )
 

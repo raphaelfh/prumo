@@ -7,7 +7,7 @@ site now makes ONE call and gets both.
 
 **The pin is written here.** The review question has no equivalent of the
 version snapshot that anchors the template instruction, and
-``section_extraction_service``'s single-section path resolves once per LLM CALL,
+``ai_extraction``'s single-section path resolves once per LLM CALL,
 not once per run — so without a run-scoped pin, two sections extracted ten
 minutes apart could legitimately see different PICOT, and a Celery retry would
 re-read whatever the project says now. First-writer-wins gives the run one

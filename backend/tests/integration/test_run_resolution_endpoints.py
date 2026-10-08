@@ -277,7 +277,7 @@ async def test_form_runs_scopes_resolution_to_body_project_id(
     projects, so claiming ``secondary_project`` passes the membership gate.
     The article's run lives in ``primary_project``; scoping the resolver by
     ``project_id`` must therefore return ``run_id=None`` instead of leaking
-    the cross-project run id. Before the fix ``resolve_form_runs`` filtered
+    the cross-project run id. Before the fix the form-run read filtered
     only on ``article_ids``+``template_id`` and returned the foreign run.
     """
     created = await _create_extraction_run(db_client)  # run in primary_project

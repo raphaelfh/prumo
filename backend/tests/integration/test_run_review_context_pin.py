@@ -2,7 +2,7 @@
 
 The template instruction is safe from mid-run edits because it is read from the
 run's PINNED version snapshot. The review question has no such anchor: it lives
-on the project row, and ``section_extraction_service``'s single-section path
+on the project row, and ``ai_extraction``'s single-section path
 resolves it once per LLM CALL. Without a run-scoped pin, two sections extracted
 ten minutes apart could legitimately see different PICOT, and a Celery retry —
 which re-enters with the same payload and re-reads live state — would be free to

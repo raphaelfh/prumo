@@ -770,8 +770,8 @@ async def test_annotated_accept_agrees_with_clean_edit_and_publishes_clean(
     demote the coord to unresolved divergence and brick finalize), and the
     published value carries NO ``verification`` key."""
     from app.models.extraction_workflow import ExtractionProposalSource
-    from app.services.extraction_proposal_service import ExtractionProposalService
     from app.services.extraction_review_service import ExtractionReviewService
+    from tests.integration.conftest import land_ai_proposal
 
     fx = await _fixtures(db_session)
     if fx is None:
@@ -795,7 +795,8 @@ async def test_annotated_accept_agrees_with_clean_edit_and_publishes_clean(
     )
     await svc.advance_stage(run_id=run.id, target_stage="extract", user_id=profile_id)
 
-    proposal = await ExtractionProposalService(db_session).record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=SEED.primary_instance,
         field_id=SEED.primary_field,
@@ -1124,9 +1125,7 @@ async def test_approve_and_finalize_qa_publishes_agreed_and_finalizes(
     pins that approve-finalize publishes marker envelopes VERBATIM for the QA
     kind ({value: null, absent_reason} — never double-wrapped)."""
     from app.services.extraction_review_service import ExtractionReviewService
-    from tests.integration.test_extraction_proposal_service import (
-        _setup_qa_run_with_instance_field,
-    )
+    from tests.integration.test_proposal_landing import _setup_qa_run_with_instance_field
 
     built = await _setup_qa_run_with_instance_field(db_session)
     if built is None:
@@ -1216,9 +1215,7 @@ async def _qa_run_with_human_proposal(
 
     Returns (run_id, instance_id, field_id, profile_id, newest_proposal_id).
     """
-    from tests.integration.test_extraction_proposal_service import (
-        _setup_qa_run_with_instance_field,
-    )
+    from tests.integration.test_proposal_landing import _setup_qa_run_with_instance_field
 
     built = await _setup_qa_run_with_instance_field(db)
     if built is None:
@@ -1377,14 +1374,15 @@ async def test_qa_materialization_replay_is_noop(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_extraction_advance_does_not_materialize(db_session: AsyncSession) -> None:
-    from tests.integration.test_extraction_proposal_service import (
-        _setup_run_with_instance_field,
-    )
+    from tests.integration.helpers.ai_extraction import run_in_extract
 
-    built = await _setup_run_with_instance_field(db_session)
-    if built is None:
-        pytest.skip("Missing fixtures.")
-    run_id, instance_id, field_id, profile_id = built
+    run = await run_in_extract(db_session)
+    run_id, instance_id, field_id, profile_id = (
+        run.id,
+        SEED.primary_instance,
+        SEED.primary_field,
+        SEED.primary_profile,
+    )
 
     # A stray human proposal on an EXTRACTION run (raw insert — the proposal
     # service's gate blocks human proposals for both kinds).

@@ -111,43 +111,28 @@ class TestExtractionEntityTypeRepository:
 
 class TestExtractionInstanceRepository:
     @pytest.mark.asyncio
-    async def test_get_by_article_returns_all(self) -> None:
-        db = make_db()
-        instances = [make_instance()]
-        db.execute = AsyncMock(return_value=make_scalars_result(instances))
-        repo = ExtractionInstanceRepository(db)
-
-        result = await repo.get_by_article(ARTICLE_ID)
-
-        assert result == instances
-
-    @pytest.mark.asyncio
-    async def test_get_by_article_with_entity_type_filter(self) -> None:
+    async def test_first_of_section_returns_the_first_row(self) -> None:
         db = make_db()
         inst = make_instance(entity_type_id=ENTITY_TYPE_ID)
-        db.execute = AsyncMock(return_value=make_scalars_result([inst]))
+        found = make_scalars_result([inst])
+        found.scalars.return_value.first.return_value = inst
+        db.execute = AsyncMock(return_value=found)
         repo = ExtractionInstanceRepository(db)
 
-        result = await repo.get_by_article(ARTICLE_ID, entity_type_id=ENTITY_TYPE_ID)
+        result = await repo.first_of_section(ARTICLE_ID, ENTITY_TYPE_ID)
 
-        assert result == [inst]
+        assert result is inst
 
     @pytest.mark.asyncio
-    async def test_get_by_article_accepts_string_ids(self) -> None:
+    async def test_first_of_section_none_when_absent(self) -> None:
         db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
+        empty = make_scalars_result([])
+        empty.scalars.return_value.first.return_value = None
+        db.execute = AsyncMock(return_value=empty)
         repo = ExtractionInstanceRepository(db)
 
-        result = await repo.get_by_article(str(ARTICLE_ID))
+        result = await repo.first_of_section(
+            ARTICLE_ID, ENTITY_TYPE_ID, parent_instance_id=ENTITY_TYPE_ID
+        )
 
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_get_by_article_with_string_entity_type_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ExtractionInstanceRepository(db)
-
-        result = await repo.get_by_article(ARTICLE_ID, entity_type_id=str(ENTITY_TYPE_ID))
-
-        assert result == []
+        assert result is None

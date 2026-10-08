@@ -418,27 +418,6 @@ class TestArticleSyncEventRepository:
 
 class TestArticleFileRepository:
     @pytest.mark.asyncio
-    async def test_get_by_article_returns_files(self) -> None:
-        db = make_db()
-        files = [MagicMock(spec=ArticleFile)]
-        db.execute = AsyncMock(return_value=make_scalars_result(files))
-        repo = ArticleFileRepository(db)
-
-        result = await repo.get_by_article(ARTICLE_ID)
-
-        assert result == files
-
-    @pytest.mark.asyncio
-    async def test_get_by_article_with_type_filter(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ArticleFileRepository(db)
-
-        result = await repo.get_by_article(ARTICLE_ID, file_type="pdf")
-
-        assert result == []
-
-    @pytest.mark.asyncio
     async def test_get_latest_pdf_returns_file(self) -> None:
         db = make_db()
         pdf = MagicMock(spec=ArticleFile)
@@ -458,13 +437,3 @@ class TestArticleFileRepository:
         result = await repo.get_latest_pdf(ARTICLE_ID)
 
         assert result is None
-
-    @pytest.mark.asyncio
-    async def test_get_by_article_accepts_string_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = ArticleFileRepository(db)
-
-        result = await repo.get_by_article(str(ARTICLE_ID))
-
-        assert result == []

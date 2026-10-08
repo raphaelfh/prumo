@@ -12,11 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.hitl_session import TemplateKind
 from app.services.project_template_active_service import ProjectTemplateNotFoundError
-from app.services.template_clone_service import TemplateCloneService
 from app.services.template_instruction_service import (
     get_template_instruction,
     set_template_instruction,
 )
+from app.services.template_versioning import clone_template
 from tests.integration.conftest import (
     SEED,
     get_config_draft_marker,
@@ -80,13 +80,14 @@ async def test_set_stages_draft_without_republishing(db_session: AsyncSession) -
 async def test_publish_picks_up_staged_instruction(db_session: AsyncSession) -> None:
     """The staged text reaches the snapshot at Publish, which clears the
     marker."""
-    from app.services.template_version_service import TemplateVersionService
+    from app.services.template_versioning import TemplateVersionService
 
     await db_session.execute(
         text("DELETE FROM public.project_extraction_templates WHERE project_id = :pid"),
         {"pid": str(SEED.secondary_project)},
     )
-    clone = await TemplateCloneService(db_session).clone(
+    clone = await clone_template(
+        db_session,
         project_id=SEED.secondary_project,
         global_template_id=_CHARMS_GLOBAL_ID,
         user_id=SEED.primary_profile,
@@ -208,7 +209,8 @@ async def test_get_returns_value_and_origin_default(
         ),
         {"gid": str(_CHARMS_GLOBAL_ID)},
     )
-    clone = await TemplateCloneService(db_session).clone(
+    clone = await clone_template(
+        db_session,
         project_id=SEED.secondary_project,
         global_template_id=_CHARMS_GLOBAL_ID,
         user_id=SEED.primary_profile,

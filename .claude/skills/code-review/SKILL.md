@@ -53,7 +53,7 @@ Apply it to every diff: yours before you ask for review, anyone's before you app
 ### C. Run state and concurrency (TOCTOU)
 
 - [ ] Stage changes (`pending → extract → consensus → finalized`, or `cancelled`) go through `run_lifecycle_service`, never an ad-hoc `run.stage = …`.
-- [ ] Check-then-write happens under a lock in one transaction: `load_run_for_update` (`services/_extraction_run_lock.py`) for a run row, `take_advisory_xact_lock` (`services/advisory_locks.py`) for a coordinate, keyed exactly as its other callers key it.
+- [ ] Check-then-write happens under a lock in one transaction: `open_run_for_write` (`services/extraction_run_write.py`) for a run write (a hand-rolled `db.get` + stage compare is the drift it replaces); `take_advisory_xact_lock` (`services/advisory_locks.py`) for a coordinate, keyed exactly as its other callers key it.
 - [ ] Opening a HITL session is idempotent: resending the request creates no second run.
 - [ ] A Celery task that mutates run state re-reads it under the lock; state captured at enqueue time is stale.
 

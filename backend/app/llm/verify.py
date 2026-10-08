@@ -24,7 +24,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.models import Model
 
-from app.llm.extractor import LlmUsage, extract_structured
+from app.llm.extractor import LlmUsage, StructuredCall, extract_structured
 from app.llm.value_support import is_numeric_like, numeric_value_supported
 
 NAME = "verify_pass"
@@ -82,6 +82,7 @@ async def run_verify_pass(
     model: Model,
     logger: Any,
     log_context: dict[str, Any] | None = None,
+    extract: StructuredCall = extract_structured,
 ) -> tuple[dict[str, VerifyVerdict], LlmUsage] | None:
     """Judge each proposed ``(field_key, field_label, value_str)`` against
     *pdf_text*; ``None`` on ANY exception (the degrade contract — logged as
@@ -105,7 +106,7 @@ async def run_verify_pass(
             f"PROPOSED VALUES:\n{lines}\n\n"
             "Return one verdict per proposed value, keyed by its field key."
         )
-        output, usage = await extract_structured(
+        output, usage = await extract(
             output_model=_VerifyOutput,
             system_prompt=_SYSTEM,
             user_prompt=user,

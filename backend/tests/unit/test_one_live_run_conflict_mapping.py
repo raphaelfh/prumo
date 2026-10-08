@@ -178,9 +178,9 @@ async def test_reopen_run_maps_one_live_run_to_409() -> None:
     """Reopening onto an occupied coordinate is a conflict, not a crash.
 
     `reopen_run`'s idempotency guard only recognises children OF THIS
-    PARENT, but `resolve_or_create_extract_run` (the "Run AI" path) can
+    PARENT, but `resolve_or_create_extract` (the "Run AI" path) can
     create an UNPARENTED live run over a finalized coordinate — its lookup
-    filters on NON_TERMINAL_STAGES, so a finalized run is invisible to it.
+    filters on ExtractionRunStage.live(), so a finalized run is invisible to it.
     The reopen then inserts, trips
     uq_one_live_extraction_run_per_coord (0045), and — before this — the
     endpoint caught only CannotReopenRunError and ValueError, so the

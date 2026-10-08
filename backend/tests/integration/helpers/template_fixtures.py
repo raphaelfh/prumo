@@ -27,7 +27,9 @@ from app.main import app
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning import (
+    TemplateVersionService,
+)
 from tests.integration.conftest import (
     SEED,
     clean_project_clones,

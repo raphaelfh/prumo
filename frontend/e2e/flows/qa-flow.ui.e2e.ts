@@ -31,7 +31,7 @@ interface OpenSessionResponse {
  * Put the shared fixture's QA run back into the EXTRACT stage.
  *
  * Both tests need an editable, domains-rendering run, and the staged-publish
- * test below finalizes it. `_reuse_or_create_run` deliberately never
+ * test below finalizes it. `CurrentRunResolver.open_for_session` deliberately never
  * auto-creates over a terminal run, so it hands the same read-only run back on
  * every open: the suite passed exactly once per clean stack and failed on every
  * re-run. CI never saw it because CI gets an ephemeral stack. So each test

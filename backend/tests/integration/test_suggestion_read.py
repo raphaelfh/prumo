@@ -35,7 +35,6 @@ from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionReviewerDecisionType,
 )
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
 from app.services.extraction_suggestion_read_service import (
     get_article_instance_ids,
@@ -43,7 +42,7 @@ from app.services.extraction_suggestion_read_service import (
     load_suggestions,
 )
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 _ARTICLES_URL = "/api/v1/articles"
 
@@ -125,9 +124,8 @@ async def _build_suggestion_review_run(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db)
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -484,21 +482,21 @@ async def test_load_suggestions_dedup_latest_per_coord(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
     # Insert two AI proposals for the same coord — only latest wins.
     # Both proposals land in the same DB transaction so they share the same
     # created_at (PostgreSQL now() is constant within a transaction).  To make
     # the ordering deterministic we back-date the OLDER row by 1 second via a
     # raw UPDATE after the flush, before calling load_suggestions.
-    older = await proposal_svc.record_proposal(
+    older = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"value": "OLDER"},
     )
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -560,17 +558,17 @@ async def test_load_suggestions_latest_no_info_keeps_earlier_real_value(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
     # Older run found a value; the latest run abstained (no information).
-    older = await proposal_svc.record_proposal(
+    older = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"value": "REAL-VALUE"},
     )
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -628,16 +626,16 @@ async def test_load_suggestions_newer_marker_wins_over_older_value(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    older = await proposal_svc.record_proposal(
+    older = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"value": "REAL-VALUE"},
     )
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -690,16 +688,16 @@ async def test_load_suggestions_newer_bare_null_does_not_bury_marker(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    older = await proposal_svc.record_proposal(
+    older = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value=marker,
     )
-    await proposal_svc.record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -757,10 +755,9 @@ async def test_load_suggestions_all_no_info_returns_no_info(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
     for _ in range(2):
-        await proposal_svc.record_proposal(
+        await land_ai_proposal(
+            db_session,
             run_id=run.id,
             instance_id=instance_id,
             field_id=field_id,
@@ -845,9 +842,9 @@ async def test_get_suggestion_history_limit(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-    proposal_svc = ExtractionProposalService(db_session)
     for i in range(3):
-        await proposal_svc.record_proposal(
+        await land_ai_proposal(
+            db_session,
             run_id=run.id,
             instance_id=instance_id,
             field_id=field_id,
@@ -1104,9 +1101,8 @@ async def test_load_suggestions_evidence_block_ids_populated(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -1189,9 +1185,8 @@ async def test_get_suggestion_history_evidence_block_ids_populated(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -1264,9 +1259,8 @@ async def test_load_suggestions_evidence_block_ids_empty_when_no_position(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -1343,9 +1337,8 @@ async def test_load_suggestions_evidence_ordered_list(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -1448,9 +1441,8 @@ async def test_load_suggestions_evidence_legacy_length_one(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=manager_id
     )
-
-    proposal_svc = ExtractionProposalService(db_session)
-    proposal = await proposal_svc.record_proposal(
+    proposal = await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,

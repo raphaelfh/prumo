@@ -3,7 +3,7 @@
 Defense-in-depth backstop for GitHub issue #79 (service-layer fix in
 PR #189). Asserts the DB rejects any of the five HITL workflow rows whose
 ``instance.article_id`` differs from its ``run.article_id`` — even on a
-direct SQL write that bypasses ``assert_coords_coherent``.
+direct SQL write that bypasses ``open_run_for_write``.
 
 The trigger is DEFERRABLE INITIALLY DEFERRED, so the violation surfaces at
 COMMIT. These tests use ``db_session_real`` because the SAVEPOINT-based

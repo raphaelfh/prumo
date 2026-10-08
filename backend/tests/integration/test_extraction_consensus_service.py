@@ -16,10 +16,10 @@ from app.services.extraction_consensus_service import (
     ExtractionConsensusService,
     InvalidConsensusError,
 )
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_review_service import ExtractionReviewService
+from app.services.extraction_run_write import RunWriteError
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 
 async def _setup_consensus_run(
@@ -93,7 +93,8 @@ async def _setup_consensus_run(
         target_stage=ExtractionRunStage.EXTRACT,
         user_id=profile_id,
     )
-    proposal = await ExtractionProposalService(db).record_proposal(
+    proposal = await land_ai_proposal(
+        db,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -276,10 +277,8 @@ async def test_record_consensus_rejects_incoherent_coordinates(
     if other_field_id is None:
         pytest.skip("Need >=2 entity_types with fields.")
 
-    from app.services.coordinate_coherence import CoordinateMismatchError
-
     service = ExtractionConsensusService(db_session)
-    with pytest.raises(CoordinateMismatchError):
+    with pytest.raises(RunWriteError, match="Coordinate mismatch"):
         await service.record_consensus(
             run_id=run_id,
             instance_id=instance_id,
@@ -357,7 +356,8 @@ async def test_select_existing_rejects_reject_decision(
     await lifecycle.advance_stage(
         run_id=run.id, target_stage=ExtractionRunStage.EXTRACT, user_id=profile_id
     )
-    await ExtractionProposalService(db_session).record_proposal(
+    await land_ai_proposal(
+        db_session,
         run_id=run.id,
         instance_id=instance_id,
         field_id=field_id,
@@ -400,11 +400,11 @@ async def test_select_existing_rejects_cross_coordinate_decision(
     # Build a second coordinate that is coherent for this run by adding a field
     # to the run instance's own entity_type. (instance_id, other_field_id) then
     # belongs to the run's article + template, so it passes the #189 coherence
-    # guard (assert_coords_coherent) and the call actually reaches the
+    # guard (open_run_for_write) and the call actually reaches the
     # "belongs to" guard this test asserts. We cannot borrow a coordinate from
     # the DB: the seed gives the article exactly one field, and scoping by
     # template alone would pick a *different article's* instance, which the
-    # coherence guard rejects first (CoordinateMismatchError, not the
+    # coherence guard rejects first (RunWriteError, not the
     # InvalidConsensusError under test).
     entity_type_id = (
         await db_session.execute(

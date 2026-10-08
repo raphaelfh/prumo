@@ -23,8 +23,7 @@ from app.repositories.extraction_reviewer_decision_repository import (
 from app.repositories.extraction_reviewer_state_repository import (
     ExtractionReviewerStateRepository,
 )
-from app.services._extraction_run_lock import load_run_for_update
-from app.services.coordinate_coherence import assert_coords_coherent
+from app.services.extraction_run_write import open_run_for_write
 from app.services.value_semantics import (
     AbsentReason,
     disposition_to_marker,
@@ -77,17 +76,10 @@ class ExtractionReviewService:
         ALREADY-STORED marker turns it off, so a template that flipped the flag
         after the fact cannot strand its own history.
         """
-        run = await load_run_for_update(self.db, run_id)
-        if run is None:
-            raise InvalidDecisionError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.EXTRACT.value:
-            raise InvalidDecisionError(
-                f"Cannot record decision: run stage is {run.stage}, not 'extract'"
-            )
-
-        await assert_coords_coherent(
+        await open_run_for_write(
             self.db,
-            run_id=run_id,
+            run_id,
+            expect=ExtractionRunStage.EXTRACT.only(),
             instance_id=instance_id,
             field_id=field_id,
         )
@@ -140,7 +132,7 @@ class ExtractionReviewService:
         #    marker before it is persisted (the consensus agreement key hashes
         #    this value verbatim, so two different codes must stay distinct).
         #    An ``accept_proposal`` carries value=None and is left as-is — its
-        #    proposal was already normalized at record_proposal time. Scoped by
+        #    proposal was already normalized when it landed (``ProposalLanding``). Scoped by
         #    the field's live domain so a coincidental value is untouched.
         # 2. An ALREADY-CODED ``no_information`` marker is REFUSED on a field
         #    that opts out (``allows_no_information``, migration 0062).

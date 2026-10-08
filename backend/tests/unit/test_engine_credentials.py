@@ -29,7 +29,9 @@ _CID_B = str(uuid4())
 _CID_C = str(uuid4())
 
 
-def _row(connection_id: UUID, *, base_url: str = "https://8.8.8.8/v1") -> Any:
+def _row(
+    connection_id: UUID, *, base_url: str = "https://8.8.8.8/v1", output_mode: Any = "tool"
+) -> Any:
     row = type("Row", (), {})()
     row.id, row.base_url, row.label, row.encrypted_api_key = (
         connection_id,
@@ -37,6 +39,7 @@ def _row(connection_id: UUID, *, base_url: str = "https://8.8.8.8/v1") -> Any:
         "host",
         "cipher",
     )
+    row.capabilities = {"output_mode": output_mode, "models_seen": []}
     return row
 
 
@@ -95,8 +98,40 @@ async def test_pinned_connection_resolves_through_the_owner_guard(
         key_scope=KeyScope.USER_BYOK,
         base_url="https://8.8.8.8/v1",
         connection_id=str(cid),
+        output_mode="tool",
     )
     assert calls == [(cid, _USER)] and asked == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        ("tool", "tool"),
+        ("native", "native"),
+        ("prompted", "prompted"),
+        (None, None),
+        ("bogus", None),
+    ],
+    ids=["tool", "native", "prompted", "never-probed", "unknown-degrades"],
+)
+async def test_pinned_connection_carries_its_probed_output_mode(
+    monkeypatch: pytest.MonkeyPatch, stored: Any, expected: Any
+) -> None:
+    """The endpoint probe's verdict is stored on the connection row; the run
+    path reads it HERE, with the key and the host, so the wire call runs on
+    what the probe measured rather than the row default for custom hosts.
+    An unknown stored mode degrades to None, never to a 500."""
+    cid = uuid4()
+    _stub_guard(monkeypatch, _row(cid, output_mode=stored))
+    _stub_decrypt(monkeypatch, "sk-host")
+    creds = await resolve_engine_credentials(
+        object(),
+        user_id=_USER,
+        project_id=_PROJECT,
+        engine=LlmTarget(provider="openai_compatible", model="m", connection_id=str(cid)),
+    )
+    assert creds.output_mode == expected
 
 
 @pytest.mark.asyncio
@@ -156,7 +191,11 @@ async def test_catalogue_engine_walks_the_one_ladder(monkeypatch: pytest.MonkeyP
         engine=LlmTarget(provider="anthropic", model="m"),
     )
     assert creds == EngineCredentials(
-        api_key="sk-shared", key_scope=KeyScope.PROJECT_SHARED, base_url=None, connection_id=None
+        api_key="sk-shared",
+        key_scope=KeyScope.PROJECT_SHARED,
+        base_url=None,
+        connection_id=None,
+        output_mode=None,
     )
     assert asked == ["anthropic"]
 
@@ -168,13 +207,17 @@ async def test_no_key_anywhere_is_none_credentials(monkeypatch: pytest.MonkeyPat
         object(), user_id=_USER, project_id=_PROJECT, engine=LlmTarget(provider="openai", model="m")
     )
     assert creds == EngineCredentials(
-        api_key=None, key_scope=None, base_url=None, connection_id=None
+        api_key=None, key_scope=None, base_url=None, connection_id=None, output_mode=None
     )
 
 
 def test_repr_never_prints_the_key() -> None:
     creds = EngineCredentials(
-        api_key="sk-secret", key_scope=KeyScope.USER_BYOK, base_url=None, connection_id=None
+        api_key="sk-secret",
+        key_scope=KeyScope.USER_BYOK,
+        base_url=None,
+        connection_id=None,
+        output_mode=None,
     )
     assert "sk-secret" not in repr(creds) and "<redacted>" in repr(creds)
 
@@ -208,7 +251,11 @@ async def test_rekey_identity_is_provider_plus_connection(
         project_id=_PROJECT,
         engine=LlmTarget(provider=provider, model="m", connection_id=engine_cid),
         current=EngineCredentials(
-            api_key="old", key_scope=KeyScope.USER_BYOK, base_url=None, connection_id=current_cid
+            api_key="old",
+            key_scope=KeyScope.USER_BYOK,
+            base_url=None,
+            connection_id=current_cid,
+            output_mode=None,
         ),
         keyed_for=keyed_for,
     )

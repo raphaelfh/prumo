@@ -67,11 +67,3 @@ class ArticleAuthorLinkRepository(BaseRepository[ArticleAuthorLink]):
             self.db.add(link)
         await self.db.flush()
         return links
-
-    async def get_by_article(self, article_id: UUID) -> list[ArticleAuthorLink]:
-        result = await self.db.execute(
-            select(ArticleAuthorLink)
-            .where(ArticleAuthorLink.article_id == article_id)
-            .order_by(ArticleAuthorLink.author_order.asc())
-        )
-        return list(result.scalars().all())

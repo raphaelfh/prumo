@@ -580,7 +580,7 @@ class TemplateConfigStatusRead(BaseModel):
 
 
 class TemplateChangeRowRead(BaseModel):
-    """One diff row on the wire, built by ``app.services.template_diff_read``.
+    """One diff row on the wire, built by ``app.services.template_versioning._diff_read``.
 
     Nothing here is typed ``Any``: the baseline side of a diff is raw stored
     JSONB, and an opaque value is summarized server-side rather than

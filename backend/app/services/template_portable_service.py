@@ -53,7 +53,9 @@ from app.services.project_template_active_service import (
     flush_activation,
     owned_template,
 )
-from app.services.template_version_service import TemplateVersionService
+from app.services.template_versioning import (
+    TemplateVersionService,
+)
 
 MAX_REPORTED_ERRORS = 20
 

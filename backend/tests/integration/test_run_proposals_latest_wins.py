@@ -6,7 +6,7 @@ is lost. Root cause is a read-ordering mismatch on the PROPOSAL-stage
 hydration path:
 
   * proposals are append-only; updating a field appends a NEWER row (V2)
-    while V1 remains (extraction_proposal_service.record_proposal);
+    while V1 remains (``ProposalLanding``);
   * the API read returns a coord's proposals OLDEST-first
     (ExtractionProposalRepository.list_by_run -> created_at.asc(),
     extraction_proposal_repository.py:49);
@@ -36,10 +36,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRunStage
 from app.models.extraction_workflow import ExtractionProposalSource
-from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.extraction_run_read_service import get_run_with_workflow_history
 from app.services.run_lifecycle_service import RunLifecycleService
-from tests.integration.conftest import SEED
+from tests.integration.conftest import SEED, land_ai_proposal
 
 
 async def _proposal_stage_coord(
@@ -134,19 +133,19 @@ async def test_read_model_preserves_proposals_for_newest_wins_resolution(
     if fx is None:
         pytest.skip("Seed graph incomplete")
     run_id, instance_id, field_id, user_id = fx
-
-    proposals = ExtractionProposalService(db_session)
     # AI source: human extraction writes go through /decisions now, but the
     # append-only / newest-wins read contract is source-agnostic, so we
     # exercise it via AI proposals (allowed on extraction runs in extract).
-    v1 = await proposals.record_proposal(
+    v1 = await land_ai_proposal(
+        db_session,
         run_id=run_id,
         instance_id=instance_id,
         field_id=field_id,
         source=ExtractionProposalSource.AI,
         proposed_value={"value": "V1-original"},
     )
-    v2 = await proposals.record_proposal(
+    v2 = await land_ai_proposal(
+        db_session,
         run_id=run_id,
         instance_id=instance_id,
         field_id=field_id,

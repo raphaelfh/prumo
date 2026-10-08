@@ -6,7 +6,7 @@ and the pin (``test_run_review_context_pin``). This is the seam that proves
 they are wired together — a manager fills PICOT, a run extracts, and the block
 is in the prompt the model got AND in the provenance a reviewer can read back.
 
-Only the outbound LLM seams are faked. The run row, the pin write, the prompt
+Only the model is faked (``RecordedLlm``). The run row, the pin write, the prompt
 render and the provenance merge are real Postgres and real code.
 """
 
@@ -20,14 +20,11 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.llm.extractor import LlmUsage
 from app.models.extraction import ExtractionRun
-from app.schemas.extraction import SectionExtractionRequest
-from app.services import section_extraction_service as ses
-from app.services import verified_mode as vm
-from app.services.engine_credentials import EngineCredentials
+from tests.fakes.recorded_llm import RecordedLlm
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
+from tests.integration.helpers.ai_extraction import extraction, request, seed_article_text
 
 _PICOT = {
     "population": {
@@ -64,77 +61,27 @@ async def _set_picots(db: AsyncSession, project_id: UUID, picots: dict[str, Any]
     await db.flush()
 
 
-def _stub_llm_seams(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
-    """Fake the wire; capture the user prompt the model would have received."""
-    captured: dict[str, str] = {}
-
-    async def _fake_extract_structured(**kwargs: Any) -> tuple[Any, LlmUsage]:
-        captured.setdefault("user_prompt", kwargs["user_prompt"])
-        return object(), LlmUsage(prompt_tokens=1, completion_tokens=1)
-
-    monkeypatch.setattr(ses, "build_model", lambda *_a, **_k: object())
-    monkeypatch.setattr(vm, "build_model", lambda *_a, **_k: object())
-    monkeypatch.setattr(ses, "extract_structured", _fake_extract_structured)
-    monkeypatch.setattr(
-        ses,
-        "dump_extraction",
-        lambda _out: {
-            "sample_size": {
-                "value": None,
-                "confidence": 0.0,
-                "reasoning": "not reported",
-                "evidence": [],
-                "status": "found",
-            }
-        },
+async def _extract_once(db: AsyncSession, run: ExtractionRun) -> str:
+    """One single-section extraction; the user prompt the model received."""
+    await seed_article_text(db, "ARTICLE BODY")
+    fake = RecordedLlm(fields={"sample_size": {"value": None, "reasoning": "not reported"}})
+    await extraction(db, fake).run_from_request(
+        request(entity_type_id=SEED.primary_entity_type, run_id=run.id)
     )
-    monkeypatch.setattr(vm, "run_verify_pass", _never_called)
-    return captured
-
-
-async def _never_called(**_kw: Any) -> None:
-    return None
-
-
-async def _extract_once(db: AsyncSession, run: ExtractionRun) -> None:
-    service = ses.SectionExtractionService(
-        db=db,
-        user_id=str(SEED.primary_profile),
-        storage=object(),
-        trace_id="review-context-e2e",
-        llm_credentials=EngineCredentials(
-            api_key="sk-never-recorded", key_scope=None, base_url=None, connection_id=None
-        ),
-        repin=True,
-    )
-    service._assemble_prompt_text = _fixed_article  # type: ignore[method-assign]
-    await service.run_from_request(
-        SectionExtractionRequest(
-            projectId=SEED.primary_project,
-            articleId=SEED.primary_article,
-            templateId=SEED.primary_template,
-            entityTypeId=SEED.primary_entity_type,
-            runId=run.id,
-        )
-    )
-
-
-async def _fixed_article(*_a: Any, **_k: Any) -> str:
-    return "ARTICLE BODY"
+    (call,) = fake.field_calls()
+    return call.user_prompt
 
 
 @pytest.mark.asyncio
 async def test_the_review_question_reaches_the_prompt_and_the_provenance(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     run = await engine_setup.run_in_extract(db_session)
     await _set_picots(db_session, run.project_id, _PICOT)
-    captured = _stub_llm_seams(monkeypatch)
-
-    await _extract_once(db_session, run)
+    user_prompt = await _extract_once(db_session, run)
 
     # 1. The model got it, leading the prompt.
-    assert captured["user_prompt"].startswith(f"Review question and scope:\n{_EXPECTED_BLOCK}\n\n")
+    assert user_prompt.startswith(f"Review question and scope:\n{_EXPECTED_BLOCK}\n\n")
 
     await db_session.refresh(run)
     provenance = (run.results or {}).get("provenance") or {}
@@ -155,7 +102,7 @@ async def test_the_review_question_reaches_the_prompt_and_the_provenance(
 
 @pytest.mark.asyncio
 async def test_a_project_with_no_picot_sends_no_block_at_all(
-    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
 ) -> None:
     """The no-regression proof at the level that matters: a whole run.
 
@@ -168,11 +115,9 @@ async def test_a_project_with_no_picot_sends_no_block_at_all(
         {"pid": str(run.project_id)},
     )
     await db_session.flush()
-    captured = _stub_llm_seams(monkeypatch)
+    user_prompt = await _extract_once(db_session, run)
 
-    await _extract_once(db_session, run)
-
-    assert "Review question and scope:" not in captured["user_prompt"]
+    assert "Review question and scope:" not in user_prompt
     await db_session.refresh(run)
     assert ((run.results or {}).get("provenance") or {})["review_context"] == {"text": None}
     await db_session.rollback()

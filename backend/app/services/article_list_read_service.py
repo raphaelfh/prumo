@@ -15,7 +15,6 @@ from sqlalchemy import exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article, ArticleFile
-from app.models.extraction import ExtractionRun
 from app.repositories.article_repository import ArticleFileRepository
 from app.schemas.mcp_articles import (
     McpArticleDetail,
@@ -25,7 +24,7 @@ from app.schemas.mcp_articles import (
     McpArticleTemplateStatus,
 )
 from app.services.article_read_service import ArticleNotFoundError
-from app.services.extraction_current_run import select_current_runs_by_article
+from app.services.current_run import CurrentRunResolver
 from app.services.project_read_service import template_summaries
 from app.utils.opaque_cursor import cursor_text, cursor_uuid, decode_cursor, encode_cursor
 from app.utils.text_caps import cap_json_weight, cap_text
@@ -38,29 +37,13 @@ async def article_template_status(
     extraction status). Reuses the shared current-run rule so this answer never
     disagrees with export or the HITL session path about which run is current."""
     templates = await template_summaries(db, project_id=project_id)
-    run_rows = (
-        (
-            await db.execute(
-                select(ExtractionRun).where(
-                    ExtractionRun.article_id == article_id,
-                    ExtractionRun.project_id == project_id,
-                )
-            )
-        )
-        .scalars()
-        .all()
+    current_by_template = await CurrentRunResolver(db).current_by_template(
+        project_id=project_id, article_id=article_id
     )
-
-    runs_by_template: dict[tuple[UUID, str], list[ExtractionRun]] = {}
-    for run in run_rows:
-        runs_by_template.setdefault((run.template_id, run.kind), []).append(run)
 
     statuses: list[McpArticleTemplateStatus] = []
     for summary in templates:
-        template_runs = runs_by_template.get((summary.template_id, summary.kind), [])
-        current = (
-            select_current_runs_by_article(template_runs).get(article_id) if template_runs else None
-        )
+        current = current_by_template.get(summary.template_id)
         statuses.append(
             McpArticleTemplateStatus(
                 template_id=summary.template_id,
