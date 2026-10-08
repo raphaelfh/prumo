@@ -49,8 +49,10 @@ async def _sections(
         section = await add_section(
             db, SEED.primary_template, name, parent_id=parent, sort_order=100 + order
         )
-        for field in fields:
-            await add_field(db, section, field)
+        # Distinct sort orders: field order reaches the prompt, so ties would
+        # make the memory-summary assertions depend on row order.
+        for field_order, field in enumerate(fields):
+            await add_field(db, section, field, sort_order=field_order)
         ids.append(section)
     await TemplateVersionService(db).republish(
         project_id=SEED.primary_project,
