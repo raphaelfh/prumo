@@ -12,9 +12,9 @@ from pydantic_ai.models.openai import OpenAIChatModel
 import app.llm.registry as registry
 from app.core.config import settings
 from app.llm.provider import MissingLLMKeyError, build_model
-from app.llm.registry import REGISTRY, ProviderSpec
+from app.llm.registry import REGISTRY, LlmAdapter, ProviderSpec
 
-LLM_SPECS = [spec for spec in REGISTRY if spec.serves == "llm"]
+LLM_SPECS = [spec for spec in REGISTRY if spec.llm is not None]
 HOSTED_SPECS = [spec for spec in LLM_SPECS if not spec.needs_host]
 _HOST = "https://llm.lab.example/v1"
 
@@ -37,10 +37,11 @@ def _build(spec: ProviderSpec, **kw: Any) -> Any:
 
 @pytest.mark.parametrize("spec", LLM_SPECS, ids=lambda s: s.id)
 def test_every_llm_row_builds_its_adapter_on_its_own_output_mode(spec: ProviderSpec) -> None:
+    assert spec.llm is not None
     model = _build(spec)
     assert type(model).__name__ == _MODEL_CLASS[spec.id]
     assert model.model_name == "any-model"
-    assert model.profile.default_structured_output_mode == spec.output_mode
+    assert model.profile.default_structured_output_mode == spec.llm.output_mode
 
 
 @pytest.mark.parametrize("spec", HOSTED_SPECS, ids=lambda s: s.id)
@@ -170,15 +171,13 @@ def _fake_row(
         id="fake",
         label="Fake",
         description="a row under test",
-        serves="llm",
         needs_host=needs_host,
         key_optional=needs_host,
         global_key_setting=None if needs_host else "OPENAI_API_KEY",
         docs_url=None,
         scopes=frozenset({"user"}),
-        build=build,  # type: ignore[arg-type]
+        llm=LlmAdapter(build, "prompted"),  # type: ignore[arg-type]
         probe=None,
-        output_mode="prompted",
     )
     monkeypatch.setattr(registry, "REGISTRY", (*REGISTRY, fake))
     return seen

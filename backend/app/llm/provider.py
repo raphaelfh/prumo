@@ -34,18 +34,19 @@ def build_model(
         raise ValueError("model_name must be a non-empty string.")
     provider = provider.lower()
     spec = get_provider(provider)
-    if spec is None or spec.build is None or spec.output_mode is None:
+    if spec is None or spec.llm is None:
         raise ValueError(f"Unsupported LLM provider: {provider!r}")
 
-    mode = output_mode or spec.output_mode
+    build = spec.llm.build
+    mode = output_mode or spec.llm.output_mode
     if spec.needs_host:
         if not base_url:
             raise ValueError(f"{provider} requires a base_url.")
-        return spec.build(model_name, api_key or "no-key-required", base_url, mode)
+        return build(model_name, api_key or "no-key-required", base_url, mode)
 
     key = api_key or global_key_for(provider)
     if not key:
         raise MissingLLMKeyError(
             f"No {spec.label} API key available: pass a key or set {spec.global_key_setting}."
         )
-    return spec.build(model_name, key, None, mode)
+    return build(model_name, key, None, mode)

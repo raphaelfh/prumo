@@ -29,14 +29,13 @@ its CHECK literals) stays light.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Literal
 
-import httpx
-
 if TYPE_CHECKING:
+    import httpx
     from pydantic_ai.models import Model
-    from pydantic_ai.profiles import ModelProfile
     from pydantic_ai.providers import Provider
 
 OutputMode = Literal["native", "tool", "prompted"]
@@ -45,26 +44,34 @@ Outcome = tuple[Literal["ok", "failed"], str | None]
 _TIMEOUT_S = 10.0
 
 
-def _profile(provider: Provider[Any], model_name: str, output_mode: OutputMode) -> ModelProfile:
-    """The provider's own profile for ``model_name`` with the output mode
-    pinned — ``replace`` keeps the provider-specific subclass (its JSON-schema
-    transformer, reasoning flags) intact."""
+def _pinned(
+    model_cls: Callable[..., Model],
+    provider: Provider[Any],
+    model_name: str,
+    output_mode: OutputMode,
+) -> Model:
+    """``model_cls`` on ``provider`` with the output mode pinned into the
+    provider's own profile — ``replace`` keeps the provider-specific subclass
+    (its JSON-schema transformer, reasoning flags) intact."""
     from pydantic_ai.profiles import DEFAULT_PROFILE
 
     base = provider.model_profile(model_name) or DEFAULT_PROFILE
-    return replace(base, default_structured_output_mode=output_mode)
+    profile = replace(base, default_structured_output_mode=output_mode)
+    return model_cls(model_name, provider=provider, profile=profile)
 
 
 def build_openai(
-    model_name: str, api_key: str, _base_url: str | None, output_mode: OutputMode
+    model_name: str, api_key: str, base_url: str | None, output_mode: OutputMode
 ) -> Model:
+    """OpenAI itself (``base_url`` None) and any OpenAI-compatible host. For
+    a host, ``output_mode`` is what the endpoint probe measured on this
+    connection (``build_model`` passes it in), never a guess from the host
+    name — the same ``ollama.com`` URL can serve both."""
     from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
-    provider = OpenAIProvider(api_key=api_key)
-    return OpenAIChatModel(
-        model_name, provider=provider, profile=_profile(provider, model_name, output_mode)
-    )
+    provider = OpenAIProvider(api_key=api_key, base_url=base_url)
+    return _pinned(OpenAIChatModel, provider, model_name, output_mode)
 
 
 def build_anthropic(
@@ -73,10 +80,7 @@ def build_anthropic(
     from pydantic_ai.models.anthropic import AnthropicModel
     from pydantic_ai.providers.anthropic import AnthropicProvider
 
-    provider = AnthropicProvider(api_key=api_key)
-    return AnthropicModel(
-        model_name, provider=provider, profile=_profile(provider, model_name, output_mode)
-    )
+    return _pinned(AnthropicModel, AnthropicProvider(api_key=api_key), model_name, output_mode)
 
 
 def build_google(
@@ -85,10 +89,7 @@ def build_google(
     from pydantic_ai.models.google import GoogleModel
     from pydantic_ai.providers.google import GoogleProvider
 
-    provider = GoogleProvider(api_key=api_key)
-    return GoogleModel(
-        model_name, provider=provider, profile=_profile(provider, model_name, output_mode)
-    )
+    return _pinned(GoogleModel, GoogleProvider(api_key=api_key), model_name, output_mode)
 
 
 def build_ollama(
@@ -101,24 +102,7 @@ def build_ollama(
     from pydantic_ai.providers.ollama import OllamaProvider
 
     provider = OllamaProvider(base_url="https://ollama.com/v1", api_key=api_key)
-    return OllamaModel(
-        model_name, provider=provider, profile=_profile(provider, model_name, output_mode)
-    )
-
-
-def build_openai_compatible(
-    model_name: str, api_key: str, base_url: str | None, output_mode: OutputMode
-) -> Model:
-    """Any OpenAI-compatible host. ``output_mode`` is what the endpoint probe
-    measured on this connection (``build_model`` passes it in), never a guess
-    from the host name — the same ``ollama.com`` URL can serve both."""
-    from pydantic_ai.models.openai import OpenAIChatModel
-    from pydantic_ai.providers.openai import OpenAIProvider
-
-    provider = OpenAIProvider(api_key=api_key, base_url=base_url)
-    return OpenAIChatModel(
-        model_name, provider=provider, profile=_profile(provider, model_name, output_mode)
-    )
+    return _pinned(OllamaModel, provider, model_name, output_mode)
 
 
 def _outcome(status: int, *, unauthorized: tuple[int, ...]) -> Outcome:

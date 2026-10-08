@@ -100,15 +100,13 @@ async def test_the_rows_probe_is_the_call(monkeypatch: pytest.MonkeyPatch) -> No
         id="fake",
         label="Fake",
         description="a row under test",
-        serves="llm",
         needs_host=False,
         key_optional=False,
         global_key_setting="OPENAI_API_KEY",
         docs_url="https://fake.example",
         scopes=frozenset({"user"}),
-        build=None,
+        llm=None,
         probe=probe,
-        output_mode="tool",
     )
     monkeypatch.setattr(registry, "REGISTRY", (*REGISTRY, fake))
     assert await probe_hosted_key("fake", "sk-fake") == ("failed", "http_418")
