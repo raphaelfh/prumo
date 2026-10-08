@@ -41,19 +41,20 @@ async function renderPage(zoom = 1) {
   });
   const store = createViewerStore({zoom, fitWidth: false});
   store.getState().actions.setDocument(await engine.load({kind: 'url', url: 'mock.pdf'}));
-  const {container} = render(
+  const ui = () => (
     <ViewerProvider store={store}>
       <Viewer.Page pageNumber={1}>
         <CanvasLayer />
         <TextLayer />
       </Viewer.Page>
-    </ViewerProvider>,
+    </ViewerProvider>
   );
+  const {container, rerender} = render(ui());
   // The page handle resolves, then the first paint starts at once.
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  return {store, container, renders, textScales};
+  return {store, container, renders, textScales, rerender: () => rerender(ui())};
 }
 
 describe('a page’s layers paint the plan Viewer.Page provides', () => {
@@ -77,6 +78,17 @@ describe('a page’s layers paint the plan Viewer.Page provides', () => {
     });
     expect(renders.map((r) => r.scale)).toEqual([2, 3]);
     expect(textScales).toEqual([1, 1.5]);
+  });
+
+  it('does not repaint when the page re-renders with nothing changed (a virtualized scroll)', async () => {
+    const {container, renders, textScales, rerender} = await renderPage();
+    rerender();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(renders).toHaveLength(1);
+    expect(textScales).toHaveLength(1);
+    expect(container.querySelector('.pdf-viewer-text-layer span')?.textContent).toBe('page one');
   });
 
   it('keeps the canvas bitmap and hides the text layer during a gesture', async () => {

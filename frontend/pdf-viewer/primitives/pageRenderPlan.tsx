@@ -79,7 +79,12 @@ interface SettledView {
   viewRotation: PageRotation;
 }
 
-/** The plan for `pageNumber` from the nearest viewer store, or null until its handle resolves. */
+/**
+ * The plan for `pageNumber` from the nearest viewer store, or null until its
+ * handle resolves. The painters' effects key on the plan's identity; the React
+ * Compiler keeps it stable while its inputs are, so a re-render of the page
+ * (a virtualized scroll) does not repaint it.
+ */
 export function usePageRenderPlan(pageNumber: number): PageRenderPlan | null {
   const handle = usePageHandle(pageNumber);
   const zoom = useViewerStore((s) => s.zoom);
