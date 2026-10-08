@@ -35,12 +35,13 @@ async def ensure_instances(
     entity_types: list[ExtractionEntityType],
     user_id: UUID,
 ) -> dict[UUID, UUID]:
+    """Seed the missing singleton instances; return ``{entity_type_id: instance_id}``."""
     # Issue #64: serialise concurrent open_or_resume calls for the same
     # (article, template) pair so the SELECT-then-INSERT below cannot
     # race and produce duplicate singleton instances. The lock is
     # transaction-scoped, so it is released on commit / rollback and
     # does not require explicit cleanup. The same lock also protects
-    # the active-run lookup in ``_reuse_or_create_run`` (issue #70).
+    # the active-run lookup in ``HITLSessionService._reuse_or_create_run`` (issue #70).
     await take_advisory_xact_lock(db, article_id, project_template_id)
 
     existing_stmt = select(ExtractionInstance).where(

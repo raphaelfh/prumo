@@ -20,6 +20,7 @@ the existing clone (re-activated) instead of creating duplicates. Flushes,
 never commits.
 """
 
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -38,28 +39,19 @@ from app.services.template_versioning._diff import (
 )
 from app.services.template_versioning._publish import (
     PendingConfigDraftError,
-    RepublishResult,
     TemplateVersionService,
 )
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
 class TemplateClone:
     """Result envelope returned by :func:`clone_template`."""
 
-    def __init__(
-        self,
-        *,
-        project_template_id: UUID,
-        version_id: UUID,
-        entity_type_count: int,
-        field_count: int,
-        created: bool,
-    ) -> None:
-        self.project_template_id = project_template_id
-        self.version_id = version_id
-        self.entity_type_count = entity_type_count
-        self.field_count = field_count
-        self.created = created
+    project_template_id: UUID
+    version_id: UUID
+    entity_type_count: int
+    field_count: int
+    created: bool
 
 
 def _snapshot_structure_counts(version: ExtractionTemplateVersion) -> tuple[int, int]:
@@ -127,7 +119,7 @@ async def clone_template(
     # placeholder snapshot (live == snapshot == 0), so zero-state gets its
     # own clause.
     zero_state = entity_types == 0 and fields == 0
-    republished: RepublishResult | None = None
+    version_id = version.id
     if zero_state:
         # Locks BEFORE the rebuild: the rebuild's mark-draft trigger
         # stamps take the template-row lock, and taking republish's
@@ -151,6 +143,7 @@ async def clone_template(
             project_template_id=existing.id,
             user_id=user_id,
         )
+        version_id = republished.version_id
     elif entity_types != snapshot_et or fields != snapshot_field:
         if existing.config_draft_since is not None:
             # B-4: a marker-set drift is a PENDING DRAFT, and this
@@ -166,19 +159,14 @@ async def clone_template(
             user_id=user_id,
             fail_if_pending_draft=True,
         )
-    if republished is not None:
-        version = await db.get(ExtractionTemplateVersion, republished.version_id)
-        assert version is not None, (
-            f"Heal republish left project_extraction_template "
-            f"{existing.id} without an active version."
-        )
+        version_id = republished.version_id
     # ``version`` is deliberately NOT refreshed from the global: it names
     # the structure lineage this clone was built from, and the non-empty
     # heal never rebuilds structure from the global.
     await structure.reactivate(existing, global_tpl=global_tpl, kind=kind)
     return TemplateClone(
         project_template_id=existing.id,
-        version_id=version.id,
+        version_id=version_id,
         entity_type_count=entity_types,
         field_count=fields,
         created=False,

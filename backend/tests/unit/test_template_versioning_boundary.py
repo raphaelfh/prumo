@@ -108,7 +108,7 @@ def test_every_implementation_test_exception_is_still_used() -> None:
 
 def test_the_package_has_private_modules_to_protect() -> None:
     """Guards the test above against renaming the modules out from under it."""
-    private = sorted(p.name for p in PACKAGE_DIR.glob("_*.py"))
+    private = sorted(p.name for p in PACKAGE_DIR.glob("_*.py") if p.name != "__init__.py")
     assert private, "template_versioning has no underscore modules left"
 
 
