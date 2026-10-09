@@ -43,6 +43,7 @@ from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_handler import AppError
 from app.models.extraction import ExtractionRun, ExtractionRunStage, StageSet
 from app.repositories.extraction_repository import ExtractionInstanceRepository
 
@@ -69,6 +70,32 @@ class RunWriteError(Exception):
         self.reason = reason
         self.run_id = run_id
         self.stage = stage
+
+    @property
+    def run_busy(self) -> bool:
+        """The run is in consensus: AI work waits, it is not a bad request."""
+        return self.reason == "stage" and self.stage == ExtractionRunStage.CONSENSUS.value
+
+
+RUN_BUSY_MESSAGE = "AI extraction is paused while this article is in consensus."
+
+
+class RunBusyError(AppError):
+    """An AI extraction kickoff hit a run in consensus (``RunWriteError.run_busy``).
+
+    Adjudication accepts no new AI proposals, so the kickoff is refused as a
+    typed 409 (``error.code = "RUN_BUSY"``) the frontend can word, instead of
+    the bare 400 ``HTTP_ERROR``. The worker classifies the same refusal into
+    ``ExtractionErrorCode.RUN_BUSY`` with :data:`RUN_BUSY_MESSAGE`.
+    """
+
+    def __init__(self, run_id: UUID | None) -> None:
+        super().__init__(
+            code="RUN_BUSY",
+            message=RUN_BUSY_MESSAGE,
+            status_code=409,
+            details={"run_id": str(run_id)},
+        )
 
 
 async def load_run_for_update(db: AsyncSession, run_id: UUID) -> ExtractionRun | None:

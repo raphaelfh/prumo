@@ -26,12 +26,13 @@ interface ExtractionErrorToast {
 // Title copy per code. `satisfies` keeps every key a member of the generated
 // union, so a code the backend does not emit fails typecheck; the lookup takes
 // a plain string because the sync models path reads its code from the untyped
-// error envelope. The backend message is actionable for all three, so it is
-// always the description.
+// error envelope. The backend message is actionable for every mapped code, so
+// it is always the description.
 const TITLE_KEY = {
   MISSING_API_KEY: 'sectionExtractionErrorAuth',
   PDF_NOT_FOUND: 'sectionExtractionErrorTitle',
   MISSING_ENTITY_KEY: 'sectionExtractionErrorNoEntryKey',
+  RUN_BUSY: 'sectionExtractionErrorRunBusy',
 } as const satisfies Partial<Record<ExtractionErrorCode, string>>;
 
 function isMapped(code: string | null | undefined): code is keyof typeof TITLE_KEY {
