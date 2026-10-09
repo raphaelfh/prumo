@@ -33,7 +33,11 @@ from app.schemas.extraction import (
     SectionExtractionRequest,
 )
 from app.services.extraction_attempt_service import ExtractionAttemptService
-from app.services.extraction_run_write import RunWriteError, assert_instance_in_coordinate
+from app.services.extraction_run_write import (
+    RunBusyError,
+    RunWriteError,
+    assert_instance_in_coordinate,
+)
 from app.services.llm_engine_service import resolve_engine
 from app.services.template_section_service import SectionNotFoundError, owned_section
 from app.utils.rate_limiter import limiter
@@ -249,6 +253,8 @@ async def extract_section(
             payload, current_user_sub, job_id=str(uuid.uuid4())
         )
     except RunWriteError as exc:
+        if exc.run_busy:
+            raise RunBusyError(exc.run_id) from exc
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     assert attempt.job_id is not None
 

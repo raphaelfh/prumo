@@ -33,6 +33,15 @@ describe('extractionErrorToast', () => {
     });
   });
 
+  it('maps RUN_BUSY to the consensus-pause title + the backend message', () => {
+    const message = 'AI extraction is paused while this article is in consensus.';
+    expect(extractionErrorToast('RUN_BUSY', message)).toEqual({
+      title: 'sectionExtractionErrorRunBusy',
+      description: message,
+      duration: 8000,
+    });
+  });
+
   it('returns null for the generic code so the caller uses its own fallback', () => {
     expect(extractionErrorToast('EXTRACTION_FAILED', 'something broke')).toBeNull();
   });

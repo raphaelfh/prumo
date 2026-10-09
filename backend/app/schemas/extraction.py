@@ -477,6 +477,10 @@ class ExtractionErrorCode(str, Enum):
       coordinate already holds (``EntryKeyDuplicateError``), refused as a 409
       rather than silently renaming the entry the way the retired model path
       did ("Cox Model (2)").
+    - ``RUN_BUSY``         — the coordinate's live run is in consensus, which
+      accepts no new AI proposals (``RunWriteError.run_busy``; enqueue-time
+      refusal is a 409 ``RunBusyError``), e.g. the run reached consensus
+      while the job was queued.
     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
     """
 
@@ -486,6 +490,7 @@ class ExtractionErrorCode(str, Enum):
     LLM_ENDPOINT_UNAVAILABLE = "LLM_ENDPOINT_UNAVAILABLE"
     MISSING_ENTITY_KEY = "MISSING_ENTITY_KEY"
     ENTRY_KEY_DUPLICATE = "ENTRY_KEY_DUPLICATE"
+    RUN_BUSY = "RUN_BUSY"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
 
 

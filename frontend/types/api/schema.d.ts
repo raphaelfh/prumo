@@ -4116,10 +4116,14 @@ export interface components {
          *       coordinate already holds (``EntryKeyDuplicateError``), refused as a 409
          *       rather than silently renaming the entry the way the retired model path
          *       did ("Cox Model (2)").
+         *     - ``RUN_BUSY``         — the coordinate's live run is in consensus, which
+         *       accepts no new AI proposals (``RunWriteError.run_busy``; enqueue-time
+         *       refusal is a 409 ``RunBusyError``), e.g. the run reached consensus
+         *       while the job was queued.
          *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
          * @enum {string}
          */
-        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "ENTRY_KEY_DUPLICATE" | "EXTRACTION_FAILED";
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "ENTRY_KEY_DUPLICATE" | "RUN_BUSY" | "EXTRACTION_FAILED";
         /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.

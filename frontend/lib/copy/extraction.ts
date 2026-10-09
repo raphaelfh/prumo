@@ -119,6 +119,7 @@ export const extraction = {
     sectionExtractionErrorTitle: 'Extraction error',
     sectionExtractionErrorAuth: 'Authentication error',
     sectionExtractionErrorNoEntryKey: 'Entry key missing',
+    sectionExtractionErrorRunBusy: 'AI extraction is paused during consensus',
     fullAICompleteSummary: '{{n}} suggestion(s) created across {{ok}}/{{total}} sections.',
     // Field/template management toasts
     errors_addField: 'Error adding field',
