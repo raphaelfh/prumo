@@ -341,7 +341,12 @@ export function useRunLifecycleScreen(args: UseRunLifecycleScreenArgs) {
     !runDetail?.peers_revealed;
   const onReveal = () => {
     void setManagerReviewVisibility(projectId ?? '', spec.reviewKind, true)
-      .then(() => permissions.refresh())
+      // The run view is blinded SERVER-side from this very setting
+      // (`caller_can_see_peers`), so the cached payload still hides peer
+      // decisions and reports `peers_revealed: false`. Re-reading permissions
+      // alone flips `canSeeOthers` while `decisionsByCoord` stays empty, and
+      // compare — the thing the reveal is for — never becomes available.
+      .then(() => Promise.all([permissions.refresh(), reread()]))
       .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
   };
 
