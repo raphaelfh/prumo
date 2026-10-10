@@ -314,6 +314,23 @@ describe.each(["extraction", "qa"] as const)("useRunLifecycleScreen (%s)", (kind
       );
     });
 
+    it("re-reads the blinded run view, not only the permissions", async () => {
+      // The reveal flips the setting the run view's server-side blind filter
+      // reads, so the cached view still hides peer decisions until it is
+      // invalidated — permissions alone leave compare unavailable.
+      vi.mocked(setManagerReviewVisibility).mockResolvedValue({} as never);
+      const permissions = { ...blindManager, refresh: vi.fn(async () => undefined) };
+      const { result, invalidate, refreshReaders } = renderLifecycle(kind, { permissions });
+      result.current.reveal.onReveal();
+      await waitFor(() =>
+        expect(invalidate).toHaveBeenCalledWith({
+          queryKey: runsKeys.detail("run-1"),
+          exact: true,
+        }),
+      );
+      expect(refreshReaders).toHaveBeenCalled();
+    });
+
     it("toasts a failed reveal", async () => {
       vi.mocked(setManagerReviewVisibility).mockRejectedValue(new Error("Network error"));
       const { result } = renderLifecycle(kind, { permissions: blindManager });
