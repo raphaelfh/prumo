@@ -1,13 +1,16 @@
 ---
-status: draft
-last_reviewed: 2026-09-24
+status: shipped
+last_reviewed: 2026-10-13
 owner: '@raphaelfh'
+shipped_on: '2026-09-25'
 ---
+
+> **Status:** Shipped 2026-09-25 in #972 (follow-up fix #973).
 
 # Researcher MCP Server — Design Spec
 
 **Date:** 2026-09-23 (revised 2026-09-24)
-**Status:** Draft. Design approved section by section in chat. Revised after
+**Status:** Shipped (#972). Design approved section by section in chat. Revised after
 two review rounds: an adversarial code review, then security, architecture,
 tool-design/SOTA and data/testing reviewers. Two spikes resolved the open
 unknowns (§3.1). Reconciled with the tree in three rounds (2026-09-24):

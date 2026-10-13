@@ -1,8 +1,11 @@
 ---
-status: draft
-last_reviewed: 2026-09-24
+status: shipped
+last_reviewed: 2026-10-13
 owner: '@raphaelfh'
+shipped_on: '2026-09-25'
 ---
+
+> **Status:** Shipped 2026-09-25 in #972 (follow-up fix #973).
 
 # Researcher MCP Server Implementation Plan
 
@@ -14,7 +17,7 @@ owner: '@raphaelfh'
 
 **Tech Stack:** Python 3.13, FastAPI 0.136.3, Starlette 1.3.1, Pydantic 2.13.4, SQLAlchemy 2 async + asyncpg, Alembic, `mcp` 2.2.x (`MCPServer`, `mcp_types`), slowapi 0.1.9 / `limits` 5.8.0, pytest + pytest-asyncio (auto mode); React 19 + TanStack Query + Vitest/MSW for the UI tasks.
 
-**Spec:** `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` at commit `1f9fb6a3` (§10 lists the delivery tasks; this plan follows its numbering 1, 2a, 2b, 3 … 12).
+**Spec:** `docs/superpowers/specs/archive/2026-09-23-researcher-mcp-server-design.md` at commit `1f9fb6a3` (§10 lists the delivery tasks; this plan follows its numbering 1, 2a, 2b, 3 … 12).
 
 ## Global Constraints
 
@@ -41,7 +44,7 @@ owner: '@raphaelfh'
 
 ### Task 1: PAT foundation — dependency, table, service, `/me/tokens`, ADR 0020
 
-`WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec` (branch `feat/researcher-mcp-server`). Spec `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §3 (SDK line), §4.1, §4.2, §4.6, §7 "Code homes", §8 PAT + RLS probes, §10 task 1. Load `backend-development` and `web-testing` first. Before integration tests run `cd "$WT/backend" && uv run alembic upgrade head` (the local DB is shared by every worktree; never reset it).
+`WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec` (branch `feat/researcher-mcp-server`). Spec `docs/superpowers/specs/archive/2026-09-23-researcher-mcp-server-design.md` §3 (SDK line), §4.1, §4.2, §4.6, §7 "Code homes", §8 PAT + RLS probes, §10 task 1. Load `backend-development` and `web-testing` first. Before integration tests run `cd "$WT/backend" && uv run alembic upgrade head` (the local DB is shared by every worktree; never reset it).
 
 **Files:**
 - Modify: `backend/pyproject.toml` (`[project] dependencies`), `backend/uv.lock`
@@ -360,7 +363,7 @@ Expected: all tests pass, every gate exit 0, no mypy error in the listed files.
 
 ### Task 2a: MCP route — server factory, injectable sessions, Host/Origin guard, lifespan, fixtures
 
-`WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec` (branch `feat/researcher-mcp-server`). Spec `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §3 ("Mount factory", "Host/Origin settings", "Lifespan in tests", "DB sessions", "Storage client"), §8 "Fixtures", §10 task 2a. Load `backend-development` and `web-testing` first. Before integration tests run `cd "$WT/backend" && uv run alembic upgrade head` (shared local DB; never reset it). Task 1 already added `mcp>=2.2,<3` (SDK 2.2.x) to `backend/pyproject.toml`. No auth in this task: `/mcp` is unauthenticated until Task 2b wraps it.
+`WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec` (branch `feat/researcher-mcp-server`). Spec `docs/superpowers/specs/archive/2026-09-23-researcher-mcp-server-design.md` §3 ("Mount factory", "Host/Origin settings", "Lifespan in tests", "DB sessions", "Storage client"), §8 "Fixtures", §10 task 2a. Load `backend-development` and `web-testing` first. Before integration tests run `cd "$WT/backend" && uv run alembic upgrade head` (shared local DB; never reset it). Task 1 already added `mcp>=2.2,<3` (SDK 2.2.x) to `backend/pyproject.toml`. No auth in this task: `/mcp` is unauthenticated until Task 2b wraps it.
 
 **Files:**
 - Modify: `backend/app/core/config.py` (two settings + two properties after the CORS block, `:37-80`)
@@ -631,7 +634,7 @@ Expected: tests pass; `make lint-backend` and mypy clean; layered-arch OK; `gene
 
 ### Task 2b: MCP auth, error mapping and the scope/role choke point
 
-`WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec` (branch `feat/researcher-mcp-server`). Spec `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §3 ("PAT auth…", "Scope/role choke point", "Where MCP models live"), §4.3, §4.4, §5.0 (server info, `instructions`, `cacheScope`), §6.3 (span), §7 (rate limits, error table), §8 (fixtures, PAT/auth tests), §10 task 2b. Load `backend-development` and `web-testing` first. Before integration tests run `cd "$WT/backend" && uv run alembic upgrade head` (shared local DB; never reset it).
+`WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec` (branch `feat/researcher-mcp-server`). Spec `docs/superpowers/specs/archive/2026-09-23-researcher-mcp-server-design.md` §3 ("PAT auth…", "Scope/role choke point", "Where MCP models live"), §4.3, §4.4, §5.0 (server info, `instructions`, `cacheScope`), §6.3 (span), §7 (rate limits, error table), §8 (fixtures, PAT/auth tests), §10 task 2b. Load `backend-development` and `web-testing` first. Before integration tests run `cd "$WT/backend" && uv run alembic upgrade head` (shared local DB; never reset it).
 
 State after Tasks 1–2a: `personal_access_tokens` table (model `PersonalAccessToken.scope: Mapped[Literal["read", "read_write"]]`, so it flows into Literal-typed Pydantic fields under strict mypy); `app/services/pat_service.py` with `PAT_PREFIX = "prumo_pat_"`, `hash_secret(secret) -> str`, `active_clause()` (THE active predicate), `create_token(db, *, user_id, payload: PersonalAccessTokenCreateRequest) -> PersonalAccessTokenCreated` (`.secret`, `.token.id/.scope/.expires_at`), `revoke_token(db, *, user_id, token_id)`; `app/api/mcp/server.py` with `mcp = MCPServer(name="prumo")` and `build_mcp_asgi() -> (ASGIApp, StreamableHTTPSessionManager)`; `app/api/mcp/session.py` with `session_factory` / `storage_factory` (read through the module: `from app.api.mcp import session as mcp_session`); `create_app()` serves the SDK app at the exact `Route("/mcp")` (no Mount, no trailing slash) unauthenticated and stores `app.state.mcp_session_manager`; fixtures `mcp_http_client` and autouse `bind_mcp_session_factory` in `backend/tests/integration/mcp/conftest.py`; `_rpc(client, method, params=None, headers=None)` in `tests/integration/mcp/test_mcp_mount.py` posts JSON-RPC to `/mcp`.
 
@@ -930,7 +933,7 @@ Expected: all pass; lint and mypy clean; layered-arch and scope-guards OK. Vultu
 
 ### Task 3: Agent action audit table (`agent_actions`, migration 0079, `agent_action_service`)
 
-**Context.** Every MCP write tool (Tasks 9 and 10) records one append-only row per applied write and per domain-rule refusal (constitution §IX traceability; spec §6.1). This task ships only the table, its ORM model and an insert-only service; no tool calls it yet. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §6.1, §7 "audit row" column.
+**Context.** Every MCP write tool (Tasks 9 and 10) records one append-only row per applied write and per domain-rule refusal (constitution §IX traceability; spec §6.1). This task ships only the table, its ORM model and an insert-only service; no tool calls it yet. Spec: `docs/superpowers/specs/archive/2026-09-23-researcher-mcp-server-design.md` §6.1, §7 "audit row" column.
 
 **Rules for this task (restated, all binding):**
 - Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; never touch the main checkout. Confirm edits landed with `git -C "$WT" status`.
@@ -1182,7 +1185,7 @@ Run each, from `$WT` unless stated:
 
 ### Task 4a: PAT Settings UI — create, list, revoke (Integrations → Personal access tokens)
 
-**Context.** Researchers create, list and revoke the personal access tokens (PATs) their AI agents send to `/mcp`. Backend routes and their generated types already exist (Task 1). This task ships the token CRUD group and a bare reveal dialog (secret + copy + warning, no client snippets yet); Task 4b adds the permanent "Connect an AI agent (MCP)" card and upgrades this dialog to reuse its chip selector. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §4.5 (UI), §4.7 (states), §8 "Frontend".
+**Context.** Researchers create, list and revoke the personal access tokens (PATs) their AI agents send to `/mcp`. Backend routes and their generated types already exist (Task 1). This task ships the token CRUD group and a bare reveal dialog (secret + copy + warning, no client snippets yet); Task 4b adds the permanent "Connect an AI agent (MCP)" card and upgrades this dialog to reuse its chip selector. Spec: `docs/superpowers/specs/archive/2026-09-23-researcher-mcp-server-design.md` §4.5 (UI), §4.7 (states), §8 "Frontend".
 
 **Rules for this task (restated, all binding):**
 - Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; confirm with `git -C "$WT" status`. Frontend tooling runs from `$WT` (repo root: `package.json`, `vitest.config.ts`); there is no `frontend/package.json` — never `cd frontend && npm …`. The worktree needs its own `node_modules` (`npm ci` in `$WT` if absent; never a symlink).
@@ -1350,7 +1353,7 @@ From `$WT`:
 
 ### Task 4b: MCP client configuration card + reveal-dialog reuse
 
-**Context.** Product decision (2026-09-24, spec §4.5): a permanent, Postiz-style "Connect an AI agent (MCP)" card in Settings → Integrations, always visible whether or not the researcher has created a token, with a six-client chip row (Claude Code, Cursor, VS Code / Copilot, Gemini CLI, Codex, Windsurf). Selecting a chip shows that client's one-line instruction and config snippet with a Copy button. The one-time token-reveal dialog (Task 4a, `PersonalAccessTokensGroup.tsx`) reuses the same chip selector with the real secret. Spec: `docs/superpowers/specs/2026-09-23-researcher-mcp-server-design.md` §4.5 (client formats, non-goals), §4.7 (states), §8 "Frontend".
+**Context.** Product decision (2026-09-24, spec §4.5): a permanent, Postiz-style "Connect an AI agent (MCP)" card in Settings → Integrations, always visible whether or not the researcher has created a token, with a six-client chip row (Claude Code, Cursor, VS Code / Copilot, Gemini CLI, Codex, Windsurf). Selecting a chip shows that client's one-line instruction and config snippet with a Copy button. The one-time token-reveal dialog (Task 4a, `PersonalAccessTokensGroup.tsx`) reuses the same chip selector with the real secret. Spec: `docs/superpowers/specs/archive/2026-09-23-researcher-mcp-server-design.md` §4.5 (client formats, non-goals), §4.7 (states), §8 "Frontend".
 
 **Rules for this task (restated, all binding):**
 - Worktree only: `WT=/Users/raphael/PycharmProjects/prumo/.claude/worktrees/researcher-mcp-spec`, branch `feat/researcher-mcp-server`. Absolute paths; `git -C "$WT" …` for every git command; confirm with `git -C "$WT" status`. Frontend tooling runs from `$WT` (repo root); never `cd frontend && npm …`.
