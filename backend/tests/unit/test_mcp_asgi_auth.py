@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from app.api.mcp import asgi_auth
 from app.schemas.mcp_auth import McpPrincipal
@@ -51,7 +53,7 @@ def _fake_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake() -> object:
         class _Ctx:
             async def __aenter__(self) -> SimpleNamespace:
-                return SimpleNamespace(commit=AsyncMock())
+                return SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
 
             async def __aexit__(self, *exc: object) -> None:
                 return None
@@ -187,6 +189,7 @@ async def test_touch_failure_still_serves(monkeypatch: pytest.MonkeyPatch) -> No
     assert recorded["principal"] is PRINCIPAL
     assert len(recorder.calls) == 1
     event, kw = recorder.calls[0]
+    assert event == "mcp_touch_last_used_failed"
     assert "token_id" in kw
 
 
@@ -207,3 +210,115 @@ async def test_contextvar_reset_when_inner_raises(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(LookupError):
         asgi_auth.current_principal()
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        OperationalError("x", {}, Exception()),
+        PoolTimeoutError(),
+        OSError("connection refused"),
+        TimeoutError(),
+    ],
+    ids=["operational", "pool-timeout", "os-error", "timeout"],
+)
+async def test_database_unavailable_during_lookup_is_503(
+    monkeypatch: pytest.MonkeyPatch, exc: Exception
+) -> None:
+    monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(side_effect=exc))
+    recorder = _Recorder()
+    monkeypatch.setattr(asgi_auth, "logger", recorder)
+
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
+        raise AssertionError("inner must not be called")
+
+    sent: list[dict] = []
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    secret = "prumo_pat_" + "s" * 43
+    app = asgi_auth._PatAuthApp(inner)
+    await app(_scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, send)
+
+    assert sent[0]["status"] == 503
+    assert (b"retry-after", b"2") in sent[0]["headers"]
+    body = b"".join(m.get("body", b"") for m in sent[1:])
+    assert b'"ok"' not in body  # not the REST envelope
+
+    assert recorder.calls == [("mcp_auth_unavailable", {"error": type(exc).__name__})]
+    assert secret not in repr(recorder.calls)
+
+
+async def test_one_session_serves_lookup_touch_and_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[SimpleNamespace] = []
+
+    def counting_factory() -> object:
+        class _Ctx:
+            async def __aenter__(self) -> SimpleNamespace:
+                db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+                opened.append(db)
+                return db
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+        return _Ctx()
+
+    monkeypatch.setattr(asgi_auth.mcp_session, "session_factory", counting_factory)
+    resolve = AsyncMock(return_value=PRINCIPAL)
+    touch = AsyncMock(return_value=True)
+    monkeypatch.setattr(asgi_auth, "resolve_principal", resolve)
+    monkeypatch.setattr(asgi_auth, "touch_last_used", touch)
+
+    seen: dict[str, object] = {}
+
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
+        seen["db"] = asgi_auth.mcp_session.current_session()
+        seen["committed_before_dispatch"] = opened[0].commit.await_count
+
+    app = asgi_auth._PatAuthApp(inner)
+    secret = "prumo_pat_" + "a" * 43
+    await app(_scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, lambda _m: None)
+
+    assert len(opened) == 1
+    db = opened[0]
+    assert resolve.await_args is not None and resolve.await_args.args[0] is db
+    assert touch.await_args is not None and touch.await_args.args[0] is db
+    assert seen["db"] is db
+    assert seen["committed_before_dispatch"] == 1
+    assert db.commit.await_count == 1  # the wrapper never commits after dispatch
+    with pytest.raises(LookupError):
+        asgi_auth.mcp_session.current_session()
+
+
+async def test_noop_touch_skips_the_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened: list[SimpleNamespace] = []
+
+    def factory() -> object:
+        class _Ctx:
+            async def __aenter__(self) -> SimpleNamespace:
+                db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+                opened.append(db)
+                return db
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
+        return _Ctx()
+
+    monkeypatch.setattr(asgi_auth.mcp_session, "session_factory", factory)
+    monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(return_value=PRINCIPAL))
+    monkeypatch.setattr(asgi_auth, "touch_last_used", AsyncMock(return_value=False))
+
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
+        return None
+
+    app = asgi_auth._PatAuthApp(inner)
+    secret = "prumo_pat_" + "a" * 43
+    await app(_scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, lambda _m: None)
+
+    assert len(opened) == 1
+    opened[0].commit.assert_not_awaited()

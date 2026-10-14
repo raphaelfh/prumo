@@ -225,9 +225,13 @@ async def resolve_principal(db: AsyncSession, secret: str) -> McpPrincipal | Non
 
 
 async def touch_last_used(db: AsyncSession, token_id: UUID) -> bool:
-    """At most one write per 5 minutes per token; the throttle is in the WHERE clause."""
-    result = await db.execute(
-        update(PersonalAccessToken)
+    """At most one write per 5 minutes per token; the throttle is in the WHERE clause.
+
+    A row another transaction holds locked (a concurrent revoke or touch) is
+    skipped, never waited on: ``False``, as for a throttled row.
+    """
+    unlocked_due = (
+        select(PersonalAccessToken.id)
         .where(
             PersonalAccessToken.id == token_id,
             or_(
@@ -235,6 +239,11 @@ async def touch_last_used(db: AsyncSession, token_id: UUID) -> bool:
                 PersonalAccessToken.last_used_at < func.now() - timedelta(minutes=5),
             ),
         )
+        .with_for_update(skip_locked=True)
+    )
+    result = await db.execute(
+        update(PersonalAccessToken)
+        .where(PersonalAccessToken.id.in_(unlocked_due))
         .values(last_used_at=func.now())
     )
     return cast("CursorResult[Any]", result).rowcount == 1

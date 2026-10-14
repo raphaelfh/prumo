@@ -1,9 +1,11 @@
 """Fixtures for /mcp tests (spec §8).
 
-bind_mcp_session_factory is autouse: every tool / auth-wrapper session in this
-directory joins the test's db_session connection (SAVEPOINT), so seed rows are
-visible and nothing commits for real. @pytest.mark.mcp_real_sessions opts out:
-each session gets its own NullPool connection (race tests; they clean up).
+bind_mcp_session_factory is autouse: the one request session of every /mcp
+request in this directory (``mcp_session.request_session``, opened by the auth
+wrapper or by ``mcp_client``) joins the test's db_session connection
+(SAVEPOINT), so seed rows are visible and nothing commits for real.
+@pytest.mark.mcp_real_sessions opts out: each request session gets its own
+NullPool connection (race tests; they clean up).
 """
 
 import asyncio
@@ -156,15 +158,17 @@ async def pat_outsider_rw(db_session: AsyncSession) -> SeededPat:
 @pytest.fixture
 def mcp_client() -> Callable[[SeededPat], AbstractAsyncContextManager[Client]]:
     """A factory: ``async with mcp_client(pat) as client:`` — an in-memory SDK
-    client wired directly to ``server.mcp``, with ``principal_var`` set for the
-    duration (the contextvar survives because the in-memory transport runs the
-    tool handler in the same asyncio task)."""
+    client wired directly to ``server.mcp``, with ``principal_var`` set and the
+    request session bound (``mcp_session.request_session``, as the auth wrapper
+    binds it) for the duration. Both are set before the client is entered, so
+    the in-memory server task inherits both contextvars. Every call inside one
+    ``async with`` shares that one session, like one /mcp request."""
 
     @asynccontextmanager
     async def connect(pat: SeededPat) -> AsyncIterator[Client]:
         token = principal_var.set(pat.principal)
         try:
-            async with Client(server.mcp) as client:
+            async with mcp_session.request_session(), Client(server.mcp) as client:
                 yield client
         finally:
             principal_var.reset(token)

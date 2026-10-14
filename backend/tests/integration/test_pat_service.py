@@ -280,6 +280,36 @@ async def test_touch_last_used_is_throttled(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_touch_last_used_skips_a_locked_row(_engine: AsyncEngine) -> None:
+    Session = async_sessionmaker(_engine, expire_on_commit=False)
+    async with Session() as setup:
+        created = await create_token(setup, user_id=SEED.outsider_profile, payload=_req())
+        await setup.commit()
+    token_id = created.token.id
+
+    try:
+        async with Session() as holder, Session() as toucher:
+            await holder.execute(
+                text("SELECT id FROM public.personal_access_tokens WHERE id = :id FOR UPDATE"),
+                {"id": str(token_id)},
+            )
+            assert await asyncio.wait_for(touch_last_used(toucher, token_id), 1) is False
+            await toucher.rollback()
+            await holder.rollback()
+
+        async with Session() as after:  # the lock released, the throttle still admits it
+            assert await touch_last_used(after, token_id) is True
+            await after.rollback()
+    finally:
+        async with Session() as cleanup:
+            await cleanup.execute(
+                text("DELETE FROM public.personal_access_tokens WHERE id = :id"),
+                {"id": str(token_id)},
+            )
+            await cleanup.commit()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("update_user", "resolves"),
     [

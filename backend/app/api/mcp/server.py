@@ -29,6 +29,7 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, TextContent, Tool, ToolAnnotations
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import ASGIApp
 
 from app.api.deps.security import is_project_manager, is_project_member
@@ -188,6 +189,7 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
     """The ONE place the checks run, in order: scope, rate limit, membership, role."""
     principal = current_principal()
     write = rule.requires == "write"
+    db: AsyncSession | None = None
 
     with logfire.span("mcp.tool_call", tool=name, token_id=str(principal.token_id)) as span:
         try:
@@ -204,46 +206,50 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
                     retry_after_seconds=retry_after(limit, "pat", str(principal.token_id)),
                 )
 
-            async with mcp_session.session_factory() as db:
-                if rule.project_arg is not None:
-                    if rule.project_arg == "article_id":
-                        # ArticleNotFoundError propagates to the except below -> NOT_FOUND.
-                        project_id = await get_article_project_id(db, kwargs["article_id"])
-                    else:
-                        project_id = kwargs["project_id"]
-                    span.set_attribute("project_id", str(project_id))
+            db = mcp_session.current_session()
+            if rule.project_arg is not None:
+                if rule.project_arg == "article_id":
+                    # ArticleNotFoundError propagates to the except below -> NOT_FOUND.
+                    project_id = await get_article_project_id(db, kwargs["article_id"])
+                else:
+                    project_id = kwargs["project_id"]
+                span.set_attribute("project_id", str(project_id))
 
-                    if not await is_project_member(db, project_id, principal.user_sub):
-                        raise McpToolError(McpErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE)
+                if not await is_project_member(db, project_id, principal.user_sub):
+                    raise McpToolError(McpErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE)
 
-                    if write and not await is_project_manager(db, project_id, principal.user_sub):
-                        raise McpToolError(
-                            McpErrorCode.MANAGER_REQUIRED, "Only a project manager can do this."
-                        )
-
-                if not write:  # a write tool rejects NUL inside its own audited try
-                    reject_nul(kwargs)
-                result = await fn(db, **kwargs)
-                span.set_attribute("outcome", "ok")
-                # `CallToolResult` is itself a `BaseModel` (a tool that builds its own,
-                # e.g. get_article_pdf's resource_link) -- isinstance() alone would match
-                # it too and double-wrap it. Only a tool returning its plain result model
-                # needs the compact text copy built here.
-                if isinstance(result, BaseModel) and not isinstance(result, CallToolResult):
-                    # The SDK's own `convert_result` dumps a returned model twice: once
-                    # (compact) as `structuredContent`, once (indent=2) as the text
-                    # copy. Build the `CallToolResult` ourselves so both copies are the
-                    # SAME compact JSON (spec §5.0); `convert_result` passes a
-                    # `CallToolResult` it is handed straight through, only validating
-                    # `structured_content` against the tool's output schema.
-                    structured_content = result.model_dump(mode="json", by_alias=True)
-                    result = CallToolResult(
-                        content=[TextContent(type="text", text=compact_json(structured_content))],
-                        structured_content=structured_content,
+                if write and not await is_project_manager(db, project_id, principal.user_sub):
+                    raise McpToolError(
+                        McpErrorCode.MANAGER_REQUIRED, "Only a project manager can do this."
                     )
-                span.set_attribute("response_size", _response_size(result))
-                return result
+
+            if not write:  # a write tool rejects NUL inside its own audited try
+                reject_nul(kwargs)
+            result = await fn(db, **kwargs)
+            span.set_attribute("outcome", "ok")
+            # `CallToolResult` is itself a `BaseModel` (a tool that builds its own,
+            # e.g. get_article_pdf's resource_link) -- isinstance() alone would match
+            # it too and double-wrap it. Only a tool returning its plain result model
+            # needs the compact text copy built here.
+            if isinstance(result, BaseModel) and not isinstance(result, CallToolResult):
+                # The SDK's own `convert_result` dumps a returned model twice: once
+                # (compact) as `structuredContent`, once (indent=2) as the text
+                # copy. Build the `CallToolResult` ourselves so both copies are the
+                # SAME compact JSON (spec §5.0); `convert_result` passes a
+                # `CallToolResult` it is handed straight through, only validating
+                # `structured_content` against the tool's output schema.
+                structured_content = result.model_dump(mode="json", by_alias=True)
+                result = CallToolResult(
+                    content=[TextContent(type="text", text=compact_json(structured_content))],
+                    structured_content=structured_content,
+                )
+            span.set_attribute("response_size", _response_size(result))
+            return result
         except Exception as exc:  # noqa: BLE001 - every tool exception is mapped here
+            if db is not None:
+                # Discards a tool's partial, unaudited writes; an audited refusal
+                # already committed its own row through ``audit.refuse``.
+                await db.rollback()
             err = to_tool_error(exc)
             if err.code == McpErrorCode.INTERNAL_ERROR:
                 logger.exception(

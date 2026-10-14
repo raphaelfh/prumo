@@ -14,6 +14,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 from limits import parse
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.responses import Response
 
 from app.api.mcp import session as mcp_session
@@ -23,8 +24,6 @@ from app.services.pat_service import resolve_principal, touch_last_used
 from app.utils.rate_limiter import hit_shared
 
 if TYPE_CHECKING:
-    from uuid import UUID
-
     from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = get_logger(__name__)
@@ -60,19 +59,15 @@ def _bearer(scope: Scope) -> str | None:
     return secret or None
 
 
-async def _touch_last_used(token_id: UUID) -> None:
-    """Best-effort last-used stamp, in its own session; a failure here never blocks auth."""
-    try:
-        async with mcp_session.session_factory() as db:
-            await touch_last_used(db, token_id)
-            await db.commit()
-    except Exception:  # noqa: BLE001 - auth must proceed regardless
-        logger.warning("mcp_touch_last_used_failed", token_id=str(token_id))
-
-
 class _PatAuthApp:
     """A class, not a closure: Starlette's Route runs a plain-function endpoint as
-    request -> response; a class instance is called as a raw ASGI app."""
+    request -> response; a class instance is called as a raw ASGI app.
+
+    One /mcp request runs on ONE session (``mcp_session.request_session``):
+    principal lookup, the last-used touch (committed before dispatch, so the
+    PAT row lock never spans the tool call) and the tool. Nothing commits after
+    dispatch -- a write tool commits its own writes.
+    """
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -83,30 +78,48 @@ class _PatAuthApp:
             return
 
         secret = _bearer(scope)
-        principal = None
-        if secret:
-            async with mcp_session.session_factory() as db:
-                principal = await resolve_principal(db, secret)
-
-        if principal is None:
-            client = scope.get("client")
-            ip = client[0] if client else "unknown"
-            # Only a failed lookup hits the per-IP bucket: a valid PAT never counts.
-            ok = hit_shared(_UNAUTH_LIMIT, "mcp401", ip)
-            response = (
-                Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
-                if ok
-                else Response(status_code=429, headers={"Retry-After": "60"})
-            )
-            await response(scope, receive, send)
+        if not secret:
+            await _unauthorized(scope, receive, send)
             return
 
-        await _touch_last_used(principal.token_id)
-        reset = principal_var.set(principal)
-        try:
-            await self.app(scope, receive, send)
-        finally:
-            principal_var.reset(reset)
+        async with mcp_session.request_session() as db:
+            try:
+                principal = await resolve_principal(db, secret)
+            except (SQLAlchemyError, OSError, TimeoutError) as exc:
+                logger.warning("mcp_auth_unavailable", error=type(exc).__name__)
+                response = Response(status_code=503, headers={"Retry-After": "2"})
+                await response(scope, receive, send)
+                return
+
+            if principal is None:
+                await _unauthorized(scope, receive, send)
+                return
+
+            try:
+                if await touch_last_used(db, principal.token_id):
+                    await db.commit()
+            except Exception:  # noqa: BLE001 - best-effort stamp; auth must proceed regardless
+                logger.warning("mcp_touch_last_used_failed", token_id=str(principal.token_id))
+                await db.rollback()
+
+            reset = principal_var.set(principal)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                principal_var.reset(reset)
+
+
+async def _unauthorized(scope: Scope, receive: Receive, send: Send) -> None:
+    client = scope.get("client")
+    ip = client[0] if client else "unknown"
+    # Only a failed lookup hits the per-IP bucket: a valid PAT never counts.
+    ok = hit_shared(_UNAUTH_LIMIT, "mcp401", ip)
+    response = (
+        Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
+        if ok
+        else Response(status_code=429, headers={"Retry-After": "60"})
+    )
+    await response(scope, receive, send)
 
 
 def with_pat_auth(app: ASGIApp) -> ASGIApp:
