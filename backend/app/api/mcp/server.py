@@ -26,7 +26,7 @@ import logfire
 from limits import parse
 from mcp.server import CacheHint, MCPServer
 from mcp.server.mcpserver import Context
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, InputRequiredResult, TextContent, Tool, ToolAnnotations
@@ -116,9 +116,14 @@ class _PrumoMCPServer(MCPServer[Any]):
             return await super().call_tool(name, arguments, context)
         except ToolError as exc:
             # The SDK validates arguments BEFORE `_dispatch` runs: its failure is
-            # a `ToolError` whose cause is the `ValidationError`. Anything else
-            # (an unknown tool, a crash) keeps the SDK's own handling.
-            if not isinstance(exc.__cause__, ValidationError):
+            # a plain `ToolError` whose cause is the `ValidationError`. An
+            # `UnexpectedToolError` with the same cause is a RESULT failing its
+            # output schema after `_dispatch` ran -- a server bug the SDK logs.
+            # It, and anything else (an unknown tool, a crash), keeps the SDK's
+            # own handling.
+            if isinstance(exc, UnexpectedToolError) or not isinstance(
+                exc.__cause__, ValidationError
+            ):
                 raise
             return _argument_refusal(name, exc.__cause__)
 

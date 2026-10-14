@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 from limits import parse
 from mcp import Client
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -380,3 +381,49 @@ async def test_tools_list_advertises_argument_bounds(
     for key in ("fields", "expected"):
         assert details[key]["additionalProperties"] is False
         assert len(details[key]["properties"]) == 11
+
+
+class _Out(BaseModel):  # module level: agent_tool evaluates the annotations by name
+    x: int
+
+
+class _Wrong(BaseModel):
+    x: str
+
+
+async def test_output_schema_failure_is_not_the_callers_invalid_argument(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A tool RESULT failing its output schema is a server bug the SDK raises
+    as `UnexpectedToolError` (cause: a ValidationError) AFTER `_dispatch` ran:
+    never re-answered as INVALID_ARGUMENT, never charged twice."""
+    runs: list[int] = []
+
+    async def probe_bad_output(db: AsyncSession) -> _Out:  # noqa: ARG001
+        runs.append(1)
+        return _Wrong(x="not-an-int")  # type: ignore[return-value]
+
+    hits: list[str] = []
+    real_hit = server.hit_shared
+
+    def _counting_hit(*args: object, **kwargs: object) -> bool:
+        hits.append(str(args[1:]))
+        return real_hit(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(server, "hit_shared", _counting_hit)
+    server.agent_tool(requires="read", project_arg=None, title="Probe out", description="test")(
+        probe_bad_output
+    )
+    try:
+        async with mcp_client(pat_primary_read) as client:
+            r = await client.call_tool("probe_bad_output", {})
+    finally:
+        server.mcp.remove_tool("probe_bad_output")
+        server._RULES.pop("probe_bad_output", None)
+
+    assert r.is_error is True
+    assert (r.structured_content or {}).get("code") != "INVALID_ARGUMENT"
+    assert len(runs) == 1
+    assert len(hits) == 1
