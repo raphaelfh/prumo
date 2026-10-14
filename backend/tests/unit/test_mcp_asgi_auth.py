@@ -6,6 +6,8 @@ diff coverage; this exercises the wrapper's ``__call__`` directly.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -16,6 +18,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from app.api.mcp import asgi_auth
+from app.core.config import Settings
 from app.schemas.mcp_auth import McpPrincipal
 
 PRINCIPAL = McpPrincipal(
@@ -322,3 +325,87 @@ async def test_noop_touch_skips_the_commit(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert len(opened) == 1
     opened[0].commit.assert_not_awaited()
+
+
+def test_inflight_cap_default_is_eight() -> None:
+    assert Settings.model_fields["MCP_MAX_INFLIGHT_PER_TOKEN"].default == 8
+
+
+def _bearer_scope(secret: str) -> dict:
+    return _scope([(b"authorization", f"Bearer {secret}".encode())])
+
+
+async def _noop_send(_message: dict) -> None:
+    return None
+
+
+async def _wait_for(predicate: Callable[[], bool], timeout: float = 2.0) -> None:
+    async def poll() -> None:
+        while not predicate():
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
+async def test_inflight_cap_admits_eight_per_token_and_refuses_the_ninth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(asgi_auth.settings, "MCP_MAX_INFLIGHT_PER_TOKEN", 8)
+    resolve = AsyncMock(return_value=PRINCIPAL)
+    monkeypatch.setattr(asgi_auth, "resolve_principal", resolve)
+    monkeypatch.setattr(asgi_auth, "touch_last_used", AsyncMock(return_value=False))
+
+    release = asyncio.Event()
+    entered: list[str] = []
+
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
+        entered.append("in")
+        await release.wait()
+
+    app = asgi_auth._PatAuthApp(inner)
+    token_a = "prumo_pat_" + "a" * 43
+    token_b = "prumo_pat_" + "b" * 43
+
+    held = [
+        asyncio.create_task(app(_bearer_scope(token_a), _receive, _noop_send)) for _ in range(8)
+    ]
+    try:
+        await _wait_for(lambda: len(entered) == 8)
+
+        sent: list[dict] = []
+
+        async def send(message: dict) -> None:
+            sent.append(message)
+
+        await app(_bearer_scope(token_a), _receive, send)
+        assert sent[0]["status"] == 429
+        assert (b"retry-after", b"1") in sent[0]["headers"]
+        assert resolve.await_count == 8  # refused before any session lookup
+
+        held.append(asyncio.create_task(app(_bearer_scope(token_b), _receive, _noop_send)))
+        await _wait_for(lambda: len(entered) == 9)  # another token is admitted meanwhile
+    finally:
+        release.set()
+        await asyncio.gather(*held)
+
+    assert asgi_auth._inflight == {}
+
+
+async def test_inflight_slot_is_released_when_the_app_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(asgi_auth.settings, "MCP_MAX_INFLIGHT_PER_TOKEN", 1)
+    monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(return_value=PRINCIPAL))
+    monkeypatch.setattr(asgi_auth, "touch_last_used", AsyncMock(return_value=False))
+
+    async def inner(_scope: dict, _receive: object, _send: object) -> None:
+        raise RuntimeError("tool blew up")
+
+    app = asgi_auth._PatAuthApp(inner)
+    secret = "prumo_pat_" + "c" * 43
+
+    for _ in range(2):  # a leaked slot would turn the second call into a 429
+        with pytest.raises(RuntimeError, match="tool blew up"):
+            await app(_bearer_scope(secret), _receive, _noop_send)
+
+    assert asgi_auth._inflight == {}

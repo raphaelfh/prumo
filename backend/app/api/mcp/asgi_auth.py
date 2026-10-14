@@ -10,6 +10,7 @@ long-lived ASGI app) requires as the thing it wraps.
 
 from __future__ import annotations
 
+from collections import Counter
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
@@ -18,9 +19,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.responses import Response
 
 from app.api.mcp import session as mcp_session
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.mcp_auth import McpPrincipal
-from app.services.pat_service import resolve_principal, touch_last_used
+from app.services.pat_service import hash_secret, resolve_principal, touch_last_used
 from app.utils.rate_limiter import hit_shared
 
 if TYPE_CHECKING:
@@ -31,6 +33,10 @@ logger = get_logger(__name__)
 principal_var: ContextVar[McpPrincipal] = ContextVar("mcp_principal")
 
 _UNAUTH_LIMIT = parse("30/minute")
+
+# Requests in flight per token digest, in this process (the event loop is
+# single-threaded, so check-then-increment needs no lock).
+_inflight: Counter[str] = Counter()
 
 
 def current_principal() -> McpPrincipal:
@@ -82,6 +88,22 @@ class _PatAuthApp:
             await _unauthorized(scope, receive, send)
             return
 
+        # Keyed by a prefix of the token's stored hash (never the secret) and
+        # checked before any DB checkout, so a burst on one token cannot drain
+        # the pool. An unknown bearer counts too, and is then refused with 401.
+        key = hash_secret(secret)[:16]
+        if _inflight[key] >= settings.MCP_MAX_INFLIGHT_PER_TOKEN:
+            await Response(status_code=429, headers={"Retry-After": "1"})(scope, receive, send)
+            return
+        _inflight[key] += 1
+        try:
+            await self._serve(secret, scope, receive, send)
+        finally:
+            _inflight[key] -= 1
+            if _inflight[key] <= 0:
+                del _inflight[key]
+
+    async def _serve(self, secret: str, scope: Scope, receive: Receive, send: Send) -> None:
         async with mcp_session.request_session() as db:
             try:
                 principal = await resolve_principal(db, secret)

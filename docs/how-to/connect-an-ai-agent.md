@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-09-25
+last_reviewed: 2026-10-14
 owner: '@raphaelfh'
 ---
 
@@ -173,6 +173,8 @@ succeeded or not.
 | HTTP 401 | Token missing, mistyped, expired or revoked | Create a new token |
 | HTTP 421 | The server's `MCP_ALLOWED_HOSTS` does not list the host you connected to | Operator fix: add the host to `MCP_ALLOWED_HOSTS` |
 | HTTP 429 | Rate limit hit | Wait and retry |
+| HTTP 429 with `Retry-After: 1` | Too many simultaneous calls on one token | Lower the agent's parallelism |
+| HTTP 503 with `Retry-After` | The database is busy | Retry after the given seconds |
 | `NOT_FOUND` | You are not a member of the project, or the id belongs to another project | Call `list_projects` / `list_articles` |
 | `MANAGER_REQUIRED` | The call needs a project manager | Ask a project manager |
 | `SCOPE_INSUFFICIENT` | A `read` token tried a write tool | Use a `read_write` token |

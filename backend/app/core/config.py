@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     MCP_ALLOWED_HOSTS: str = "localhost:*,127.0.0.1:*,[::1]:*,test"
     # Empty: no browser Origin may call /mcp. CLI agents send no Origin and pass.
     MCP_ALLOWED_ORIGINS: str = ""
+    # Concurrent /mcp requests per token per process; over it -> 429 with
+    # Retry-After: 1, refused before any database checkout.
+    MCP_MAX_INFLIGHT_PER_TOKEN: int = 8
 
     @property
     def mcp_allowed_hosts(self) -> list[str]:
@@ -130,6 +133,15 @@ class Settings(BaseSettings):
     # Set this to the Supabase "Direct connection" URL (port 5432, db.xxx.supabase.co).
     # Falls back to DATABASE_URL in local dev where there is in the pooler.
     DIRECT_DATABASE_URL: str | None = None
+    # The web engine's pool (one gunicorn worker per container). Production
+    # reaches the Supabase pooler in session mode, capped at 15 clients: the
+    # web pool (size + overflow = 8) plus the Celery worker (2 children x up to
+    # 2 sessions = 4) leaves headroom for migrations and admin sessions.
+    # A checkout that waits past DB_POOL_TIMEOUT seconds raises
+    # sqlalchemy.exc.TimeoutError (/mcp answers it with 503 + Retry-After).
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 3
+    DB_POOL_TIMEOUT: float = 10.0
 
     @property
     def async_database_url(self) -> str:
