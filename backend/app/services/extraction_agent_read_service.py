@@ -14,8 +14,8 @@ boundary, never an unblinded aggregate.
 
 Fix rounds 1-2 (page-size cap): every page's real JSON size is measured
 through `compact_json` (`app/utils/compact_json.py`), never
-`BaseModel.model_dump_json()` (more compact, and escapes non-ASCII as raw
-UTF-8 instead of `\\uXXXX`, so it under-counts long non-ASCII values). The
+`BaseModel.model_dump_json()` (no separators, so it under-counts every
+key and list item). The
 budget reserves room for `next_cursor` (`_CURSOR_RESERVE`) and charges
 every article's own envelope -- `title`/`run`/`reason`/`peer_values_hidden`
 -- once per page it appears on, populated, resumed or run-less alike

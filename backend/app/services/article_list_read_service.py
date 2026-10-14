@@ -61,8 +61,8 @@ async def article_template_status(
 _LIST_AUTHORS_CAP = 3
 _LIST_AUTHOR_CAP = 60
 _DETAIL_AUTHORS_CAP = 20
-# A char cap alone lets non-ASCII text through at up to 6x its length once
-# `compact_json` escapes it: each author, each file's name and the abstract
+# A char cap alone lets escaped text (control characters, 6 chars each in
+# `compact_json`) through at up to 6x its length: each author, each file's name and the abstract
 # are cut by serialized weight. 202 = 200 ASCII chars + quotes; 20 authors ~ 4k.
 _DETAIL_AUTHOR_WEIGHT = 202
 _FILENAME_WEIGHT = 202

@@ -14,7 +14,7 @@ def test_cap_json_weight_keeps_a_value_that_fits() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["x" * 500, "漢" * 500, '"\\' * 300, "\n" * 400, "😀" * 200, "a漢😀\x01" * 100],
+    ["x" * 500, "漢" * 500, '"\\' * 300, "\n" * 400, "😀" * 500, "a漢😀\x01" * 100],
     ids=["ascii", "cjk", "escapes", "newlines", "astral", "mixed"],
 )
 def test_cap_json_weight_cuts_to_the_longest_fitting_prefix(value: str) -> None:
@@ -25,6 +25,11 @@ def test_cap_json_weight_cuts_to_the_longest_fitting_prefix(value: str) -> None:
     assert len(compact_json(value[: len(capped) + 1])) > 400
 
 
-def test_cap_json_weight_on_cjk_is_about_a_sixth_of_the_chars() -> None:
-    capped, _ = cap_json_weight("漢" * 10_000, 12_000)
+def test_cap_json_weight_on_control_chars_is_about_a_sixth_of_the_chars() -> None:
+    capped, _ = cap_json_weight("\x01" * 10_000, 12_000)
     assert len(capped) == (12_000 - 2) // 6
+
+
+def test_cap_json_weight_counts_cjk_raw() -> None:
+    capped, _ = cap_json_weight("漢" * 20_000, 12_000)
+    assert len(capped) == 12_000 - 2

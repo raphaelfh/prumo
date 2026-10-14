@@ -34,17 +34,18 @@ async def test_search_confined_to_project(db_session) -> None:
     primary_result = await search_project_text(
         db_session, project_id=SEED.primary_project, query="zebrafishmcp", article_id=None
     )
-    assert len(primary_result.hits) == 1
-    hit = primary_result.hits[0]
-    assert hit.article_id == primary_article
+    assert [row.article_id for row in primary_result.articles] == [primary_article]
+    assert primary_result.articles[0].file_id == primary_file
+    hit = primary_result.articles[0].hits[0]
+    assert len(primary_result.articles[0].hits) == 1
     assert hit.page == 3
     assert hit.locator == "p3·b5"
 
     secondary_result = await search_project_text(
         db_session, project_id=SEED.secondary_project, query="zebrafishmcp", article_id=None
     )
-    assert len(secondary_result.hits) == 1
-    assert secondary_result.hits[0].article_id == secondary_article
+    assert [row.article_id for row in secondary_result.articles] == [secondary_article]
+    assert len(secondary_result.articles[0].hits) == 1
 
 
 async def test_search_article_filter(db_session) -> None:
@@ -66,8 +67,8 @@ async def test_search_article_filter(db_session) -> None:
         query="keywordarticlefilter",
         article_id=first_article,
     )
-    assert len(result.hits) == 1
-    assert result.hits[0].article_id == first_article
+    assert [row.article_id for row in result.articles] == [first_article]
+    assert len(result.articles[0].hits) == 1
 
 
 @pytest.mark.parametrize(
@@ -93,7 +94,7 @@ async def test_search_paging_by_rank_then_id(db_session) -> None:
     page1 = await search_project_text(
         db_session, project_id=SEED.primary_project, query="pagingtermxyz", article_id=None
     )
-    assert len(page1.hits) == 20
+    assert len(_hits(page1)) == 20
     assert page1.next_cursor is not None
 
     page2 = await search_project_text(
@@ -103,12 +104,13 @@ async def test_search_paging_by_rank_then_id(db_session) -> None:
         article_id=None,
         cursor=page1.next_cursor,
     )
-    assert len(page2.hits) == 5
+    assert len(_hits(page2)) == 5
     assert page2.next_cursor is None
 
-    ids_1 = {hit.block_id for hit in page1.hits}
-    ids_2 = {hit.block_id for hit in page2.hits}
-    assert ids_1.isdisjoint(ids_2)
+    locators_1 = {hit.locator for hit in _hits(page1)}
+    locators_2 = {hit.locator for hit in _hits(page2)}
+    assert locators_1.isdisjoint(locators_2)
+    assert len(locators_1 | locators_2) == 25
 
 
 async def test_snippet_is_raw_and_capped(db_session) -> None:
@@ -120,8 +122,8 @@ async def test_snippet_is_raw_and_capped(db_session) -> None:
     result = await search_project_text(
         db_session, project_id=SEED.primary_project, query="snippetcaptest", article_id=None
     )
-    assert len(result.hits) == 1
-    snippet = result.hits[0].snippet
+    assert len(_hits(result)) == 1
+    snippet = _hits(result)[0].snippet
     assert "snippetcaptest" in snippet
     assert len(snippet) <= 400
     assert "ARTICLE_TEXT" not in snippet
@@ -130,10 +132,11 @@ async def test_snippet_is_raw_and_capped(db_session) -> None:
 async def test_search_hit_titles_are_capped(db_session) -> None:
     """F1 (final review): `articles.title` is unbounded Text -- 20 hits on
     1,024-char titles must stay under the 32,000-char result cap, each title
-    cut to 200 chars and flagged."""
+    cut to 200 chars and flagged. Control characters render as 6-char escapes,
+    so a 20-hit page of them is cut on weight, not count."""
     for i in range(21):
         article_id = await insert_article(
-            db_session, SEED.primary_project, title=f"{i:02d}" + "Ã" * 1_022
+            db_session, SEED.primary_project, title=f"{i:02d}" + "\x07" * 1_022
         )
         file_id = await insert_pdf(db_session, SEED.primary_project, article_id)
         await insert_blocks(
@@ -143,18 +146,24 @@ async def test_search_hit_titles_are_capped(db_session) -> None:
         )
 
     seen: list[str] = []
+    page_sizes: list[int] = []
     cursor = None
     while True:
         result = await search_project_text(
             db_session, project_id=SEED.primary_project, query="titlecapkeyword", cursor=cursor
         )
-        # Non-ASCII renders 6x longer escaped: the page is cut on weight, not count.
         assert len(compact_json(result.model_dump(mode="json"))) <= 32_000
-        for hit in result.hits:
-            assert len(hit.title) == 200
-            assert hit.title_truncated is True
-            seen.append(hit.title[:2])
+        page_sizes.append(len(_hits(result)))
+        for row in result.articles:
+            assert len(row.title) == 200
+            assert row.title_truncated is True
+            seen.extend(row.title[:2] for _ in row.hits)
         cursor = result.next_cursor
         if cursor is None:
             break
     assert sorted(seen) == [f"{i:02d}" for i in range(21)]  # every hit once, none lost
+    assert page_sizes[0] < 20  # the first page was cut on weight
+
+
+def _hits(result):
+    return [hit for row in result.articles for hit in row.hits]

@@ -4,8 +4,8 @@ carries it stays inside the 32,000-char result cap. Shared by
 
 Rows are kept tier by tier while they fit BOTH ``DIFF_ROW_CAP`` and a
 character budget measured with ``compact_json`` -- the same rendering the
-cap is measured on, where each non-ASCII char costs up to 6 chars
-(``\\uXXXX``). Each before/after value is cut to 200 chars and each
+cap is measured on (non-ASCII raw, one char each; quotes, backslashes and
+control characters escaped). Each before/after value is cut to 200 chars and each
 ``label_path`` element to 100 before measuring. Any dropped row sets
 ``changes_truncated``; ``counts`` always reports the full diff."""
 

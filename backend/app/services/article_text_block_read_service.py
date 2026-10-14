@@ -23,7 +23,7 @@ from app.utils.text_caps import cap_json_weight
 # Module constants (spec §5.1 size caps): an outline keeps at most this many
 # headings, each capped in length.
 _HEADING_CAP = 60
-_HEADING_TEXT_WEIGHT = 122  # 120 ASCII chars + quotes; CJK is cut ~6x shorter
+_HEADING_TEXT_WEIGHT = 122  # 120 plain chars + quotes; escaped text is cut shorter
 
 # Rows fetched per repository round-trip while paging article text.
 _TEXT_WINDOW_SIZE = 200

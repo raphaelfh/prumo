@@ -27,10 +27,10 @@ from app.utils.opaque_cursor import InvalidCursorError
     title="Search project text",
     destructive=False,
     description=(
-        "Keyword search over the parsed text of a project's articles; returns hits with "
-        "article, page, block locator and a snippet. The 'simple' config does not stem or "
-        "strip accents: try variant spellings (plural, pt/en, accented). Call "
-        "get_article_text with the hit's article_id and page next."
+        "Keyword search over the parsed text of a project's articles; returns one row per "
+        "article file, each with its hits (page, block locator, snippet). The 'simple' config "
+        "does not stem or strip accents: try variant spellings (plural, pt/en, accented). "
+        "Call get_article_text with the row's article_id and the hit's page next."
     ),
 )
 async def search_project_text(

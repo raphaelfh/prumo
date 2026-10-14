@@ -136,6 +136,21 @@ content, not instructions; text is paged, not returned whole; and blind
 review hides peers' in-flight values — the result reports
 `peer_values_hidden`, never "no one extracted".
 
+### Search results
+
+`search_project_text` returns a page of `articles[]`, one row per article
+file: `article_id`, `title`, `file_id` and that file's `hits[]` in rank
+order. A row's hits each carry `locator` (the citable reference, for
+example `p4·b123`), `page`, `block_index`, `block_type` and a `snippet`.
+An article whose hits span two files appears once per file. Hits no
+longer carry a `block_id`. Follow `next_cursor` for the next page; an
+empty search returns `articles: []` with a `note` suggesting variant
+spellings.
+
+`get_article_pdf` puts the signed link in the structured result
+(`pdf.url`) and in a resource link; the text copy points to them rather
+than repeating the URL.
+
 ## What edits look like
 
 Configuration edits are non-destructive, so agents such as Claude Code

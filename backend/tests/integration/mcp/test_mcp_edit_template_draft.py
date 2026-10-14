@@ -884,7 +884,8 @@ async def test_large_draft_diff_is_capped_within_the_result_cap(
 async def test_non_ascii_draft_diff_stays_within_the_result_cap(
     mcp_client, pat_primary_rw, db_session: AsyncSession
 ) -> None:
-    # pt-BR text: every accented char is 6 chars in the result's \\u-escaped JSON.
+    # pt-BR text, rendered raw: 25 long added questions on top of long labels
+    # and descriptions overflow the diff's char budget before its row cap.
     pt_br = "Descrição da intervenção: ação, avaliação e comparação. "
     project_id, template_id, schema = await fresh_charms(db_session)
     section_id, _field_id = _section_and_field(schema)

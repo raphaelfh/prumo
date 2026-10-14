@@ -3,7 +3,8 @@
 
 Covers a plain structured tool (``list_projects``) and a tool that already
 builds its own ``CallToolResult`` with an extra content block
-(``get_article_pdf``): the extra block survives, only the text copy changes.
+(``get_article_pdf``): the extra block survives, and its text copy points at
+the signed URL instead of repeating it (task 1.9b).
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import json
 
 from sqlalchemy import text
 
+from app.utils.compact_json import compact_json
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
 from tests.integration.mcp.tool_calls import call_tool, structured
@@ -25,7 +27,7 @@ async def test_list_projects_text_copy_is_compact_json(mcp_client, pat_primary_r
     block = result.content[0]
     assert block.type == "text"
     assert json.loads(block.text) == result.structured_content
-    assert block.text == json.dumps(result.structured_content)
+    assert block.text == compact_json(result.structured_content)
 
 
 async def test_get_article_pdf_text_copy_is_compact_and_keeps_resource_link(
@@ -45,8 +47,13 @@ async def test_get_article_pdf_text_copy_is_compact_and_keeps_resource_link(
     assert len(resource_links) == 1
 
     block = text_blocks[0]
-    assert json.loads(block.text) == result.structured_content
-    assert block.text == json.dumps(result.structured_content)
+    url = result.structured_content["pdf"]["url"]
+    text_copy = json.loads(block.text)
+    assert url not in block.text
+    assert "resource_link" in text_copy["pdf"]["url"]
+    assert {**text_copy, "pdf": {**text_copy["pdf"], "url": url}} == result.structured_content
+    assert block.text == compact_json(text_copy)
+    assert resource_links[0].uri == url
     # sanity: the compact copy has no SDK-style indentation
     assert "\n" not in block.text
     assert len(fake_storage.calls) == 1
@@ -73,7 +80,12 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
         }
     ),
     "search_project_text": frozenset(
-        {"hits[].block_type", "hits[].locator", "next_cursor", "note"}
+        {
+            "articles[].hits[].block_type",
+            "articles[].hits[].locator",
+            "next_cursor",
+            "note",
+        }
     ),
     "get_article_pdf": frozenset({"pdf.url", "next_step"}),
     "get_extractions": frozenset(
@@ -204,8 +216,24 @@ async def test_read_results_carry_raw_text_and_the_untrusted_flag(
     detail = bodies["get_article"]
     assert detail["abstract"] == "Raw abstract."
     assert [h["text"] for h in detail["outline"]["headings"]] == ["Raw heading"]
-    snippets = [hit["snippet"] for hit in bodies["search_project_text"]["hits"]]
+    snippets = [
+        hit["snippet"] for row in bodies["search_project_text"]["articles"] for hit in row["hits"]
+    ]
     assert snippets
     assert all("ARTICLE_TEXT" not in s for s in snippets)
     assert bodies["get_article_pdf"]["pdf"]["filename"]
     assert len(fake_storage.calls) == 1
+
+
+async def test_text_copy_carries_non_ascii_raw(mcp_client, pat_primary_rw, db_session):
+    title = "Étude clinique 中文 trial"
+    article = await insert_article(db_session, SEED.primary_project, title=title)
+
+    result = await call_tool(
+        mcp_client, pat_primary_rw, "get_article", {"article_id": str(article)}
+    )
+
+    text_copy = result.content[0].text
+    assert title in text_copy
+    assert "\\u" not in text_copy
+    assert json.loads(text_copy) == result.structured_content

@@ -4,10 +4,10 @@ spot)."""
 
 from __future__ import annotations
 
-import json
 import logging
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy import text
 from structlog.testing import capture_logs
@@ -15,6 +15,7 @@ from structlog.testing import capture_logs
 from app.api.mcp import server
 from app.schemas.mcp_articles import McpArticleDetail
 from app.schemas.mcp_search import McpArticlePdfResult, McpSearchResult
+from app.utils.compact_json import compact_json
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
@@ -35,7 +36,8 @@ async def test_search_project_text_tool(mcp_client, pat_primary_rw, db_session):
     )
     McpSearchResult.model_validate(body)
     assert body["untrusted_content"] is True
-    assert len(body["hits"]) == 1
+    assert len(body["articles"]) == 1
+    assert len(body["articles"][0]["hits"]) == 1
 
     empty_body = structured(
         await call_tool(
@@ -45,7 +47,7 @@ async def test_search_project_text_tool(mcp_client, pat_primary_rw, db_session):
             {"project_id": str(SEED.primary_project), "query": "zz-no-match-marker-zz"},
         )
     )
-    assert empty_body["hits"] == []
+    assert empty_body["articles"] == []
     assert "variant spellings" in empty_body["note"]
 
 
@@ -194,10 +196,11 @@ async def test_untrusted_content_flag(mcp_client, pat_primary_rw, db_session):
         )
     )
     assert search_body["untrusted_content"] is True
-    assert search_body["hits"]
-    for hit in search_body["hits"]:
+    hits = [hit for row in search_body["articles"] for hit in row["hits"]]
+    assert hits
+    for hit in hits:
         assert "ARTICLE_TEXT" not in hit["snippet"]
-    assert "hits[].snippet" in search_body["untrusted_fields"]
+    assert "articles[].hits[].snippet" in search_body["untrusted_fields"]
 
     list_body = structured(
         await call_tool(
@@ -247,8 +250,8 @@ async def test_response_size_cap_search_project_text(mcp_client, pat_primary_rw,
             {"project_id": str(SEED.primary_project), "query": "responsizecapmarker"},
         )
     )
-    assert len(body["hits"]) == 20
-    assert len(json.dumps(body)) <= 32_000
+    assert sum(len(row["hits"]) for row in body["articles"]) == 20
+    assert len(compact_json(body)) <= 32_000
 
 
 async def test_search_nul_in_query_is_invalid_argument(mcp_client, pat_primary_read) -> None:
@@ -262,3 +265,113 @@ async def test_search_nul_in_query_is_invalid_argument(mcp_client, pat_primary_r
     )
     payload = error_payload(result)
     assert (payload["code"], payload["field"]) == ("INVALID_ARGUMENT", "query")
+
+
+# --- compact page shape (task 1.9b) -----------------------------------------
+
+_FIVE_HIT_MARKER = "fivehitfixturemarker"
+#: `len(compact_json(...))` of the five-hit fixture page in the per-hit shape
+#: (measured before the grouped shape landed).
+_PRE_CHANGE_5_HIT_SIZE = 2219
+
+
+async def _seed_five_hit_fixture(db_session) -> dict[str, UUID]:
+    """Two articles, one PDF each: three marker blocks in the first, two in
+    the second -- five hits on one page."""
+    ids: dict[str, UUID] = {}
+    for name, title, pages in (
+        ("alpha", "Randomized trial of early mobilisation after hip fracture surgery", (1, 2, 3)),
+        ("beta", "Cohort study of delirium incidence in older surgical inpatients", (4, 5)),
+    ):
+        article = await insert_article(db_session, SEED.primary_project, title=title)
+        file_id = await insert_pdf(db_session, SEED.primary_project, article)
+        await insert_blocks(
+            db_session,
+            file_id,
+            [
+                (p, p * 10, f"{_FIVE_HIT_MARKER} reported in this block.", "paragraph")
+                for p in pages
+            ],
+        )
+        ids[name], ids[f"{name}_file"] = article, file_id
+    return ids
+
+
+async def _search(mcp_client, pat, query: str) -> dict:
+    return structured(
+        await call_tool(
+            mcp_client,
+            pat,
+            "search_project_text",
+            {"project_id": str(SEED.primary_project), "query": query},
+        )
+    )
+
+
+async def test_five_hit_page_is_compact(mcp_client, pat_primary_rw, db_session):
+    ids = await _seed_five_hit_fixture(db_session)
+    body = await _search(mcp_client, pat_primary_rw, _FIVE_HIT_MARKER)
+
+    McpSearchResult.model_validate(body)
+    assert sum(len(row["hits"]) for row in body["articles"]) == 5
+    assert {(row["article_id"], row["file_id"]) for row in body["articles"]} == {
+        (str(ids["alpha"]), str(ids["alpha_file"])),
+        (str(ids["beta"]), str(ids["beta_file"])),
+    }
+    assert len(compact_json(body)) <= 0.6 * _PRE_CHANGE_5_HIT_SIZE
+
+
+async def test_hits_carry_no_block_id(mcp_client, pat_primary_rw, db_session):
+    await _seed_five_hit_fixture(db_session)
+    body = await _search(mcp_client, pat_primary_rw, _FIVE_HIT_MARKER)
+
+    hits = [hit for row in body["articles"] for hit in row["hits"]]
+    assert hits
+    for hit in hits:
+        assert set(hit) == {"locator", "page", "block_index", "block_type", "snippet"}
+    assert "block_id" not in compact_json(body)
+
+
+async def test_article_with_two_files_returns_one_row_per_file(
+    mcp_client, pat_primary_rw, db_session
+):
+    article = await insert_article(db_session, SEED.primary_project, title="Two File Article")
+    files = []
+    for page in (1, 2):
+        file_id = await insert_pdf(db_session, SEED.primary_project, article)
+        await insert_blocks(db_session, file_id, [(page, 0, "twofilemarker here.", "paragraph")])
+        files.append(file_id)
+
+    body = await _search(mcp_client, pat_primary_rw, "twofilemarker")
+
+    rows = body["articles"]
+    assert [row["article_id"] for row in rows] == [str(article), str(article)]
+    assert {row["file_id"] for row in rows} == {str(f) for f in files}
+    assert all(len(row["hits"]) == 1 for row in rows)
+
+
+async def test_empty_search_page(mcp_client, pat_primary_rw):
+    body = await _search(mcp_client, pat_primary_rw, "zz-no-match-marker-zz")
+
+    assert body["articles"] == []
+    assert body["note"]
+    assert body["next_cursor"] is None
+
+
+async def test_pdf_result_repeats_the_signed_url_at_most_twice(
+    mcp_client, pat_primary_rw, db_session, fake_storage
+):
+    article = await insert_article(db_session, SEED.primary_project, title="URL Count Article")
+    await insert_pdf(db_session, SEED.primary_project, article)
+
+    result = await call_tool(
+        mcp_client, pat_primary_rw, "get_article_pdf", {"article_id": str(article)}
+    )
+
+    url = structured(result)["pdf"]["url"]
+    serialized = result.model_dump_json()
+    assert serialized.count(url) <= 2
+    texts = [c.text for c in result.content if c.type == "text"]
+    assert texts
+    assert all(url not in t for t in texts)
+    assert len(fake_storage.calls) == 1

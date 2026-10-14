@@ -99,8 +99,9 @@ def _json_len(value: object) -> int:
 def _fit_outline(detail: McpArticleDetail) -> McpArticleDetail:
     """Drop trailing outline headings until the result fits `RESULT_CAP`.
 
-    Each field is capped on its own, but their CJK worst cases (every char a
-    6-char escape) still sum past the cap; the outline is the one part with
+    Each field is capped on its own, but their escaping worst cases (every
+    char a control character, rendered as a 6-char escape) still sum past
+    the cap; the outline is the one part with
     a truncation flag and a follow-up read (`get_article_text`), so it gives
     way. Measured like the dispatcher renders it: `compact_json` of the
     by-alias dump."""

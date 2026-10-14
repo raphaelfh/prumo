@@ -74,10 +74,11 @@ _CURSOR_RESERVE = 64
 
 def _json_len(model: BaseModel) -> int:
     """Length of `compact_json` (task 2c's one serializer): the same measure
-    the size-cap tests apply (`len(json.dumps(page))`) and the dispatcher
+    the size-cap tests apply (`len(compact_json(page))`) and the dispatcher
     uses for a result's text copy, which is longer than pydantic's own
     compact `model_dump_json()` -- every key and every list item gets extra
-    `", "` / `": "` spacing. All size accounting in this module uses this,
+    `", "` / `": "` spacing. Non-ASCII renders raw (one char each); only
+    quotes, backslashes and control characters grow when escaped. All size accounting in this module uses this,
     never the raw `model_dump_json()` length, or the budget under-charges
     and a page can clear the compact count while still exceeding the real
     32,000-char cap."""

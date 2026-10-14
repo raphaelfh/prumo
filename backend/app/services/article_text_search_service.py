@@ -21,7 +21,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.mcp_search import McpSearchHit, McpSearchResult
+from app.schemas.mcp_search import McpSearchArticle, McpSearchHit, McpSearchResult
 from app.utils.compact_json import compact_json
 from app.utils.opaque_cursor import cursor_rank, cursor_uuid, decode_cursor, encode_cursor
 from app.utils.text_caps import cap_text
@@ -101,7 +101,7 @@ async def search_project_text(
     page_rows = rows[:limit]
 
     if not page_rows:
-        return McpSearchResult(hits=[], next_cursor=None, note=_NO_HITS_NOTE)
+        return McpSearchResult(articles=[], next_cursor=None, note=_NO_HITS_NOTE)
 
     headline_rows = (
         await db.execute(
@@ -111,32 +111,42 @@ async def search_project_text(
     ).all()
     headline_by_id = {row.id: (row.title, row.headline) for row in headline_rows}
 
-    # Hits are packed under the result cap on their `compact_json` weight, not
-    # counted: a non-ASCII title/snippet renders up to 6x longer escaped, so 20
-    # hits can exceed 32,000 chars (final review F1). A page cut short resumes
-    # after its last kept hit, exactly like a full page does.
-    hits: list[McpSearchHit] = []
+    # Hits are grouped one row per (article, file) in first-hit order and
+    # packed under the result cap on their `compact_json` weight, not counted:
+    # JSON escaping (quotes, backslashes, control characters) can still double
+    # a title or snippet, so 20 hits can exceed 32,000 chars (final review F1).
+    # Packing stops at the first hit that does not fit, so the kept hits are a
+    # rank-order prefix and a page cut short resumes after its last kept hit,
+    # exactly like a full page does.
+    groups: dict[tuple[UUID, UUID], McpSearchArticle] = {}
     used = 0
     last_kept = None
     for row in page_rows:
-        title, title_truncated = cap_text(headline_by_id[row.id][0])
         hit = McpSearchHit(
-            article_id=row.article_id,
-            title=title,
-            title_truncated=title_truncated,
-            article_file_id=row.article_file_id,
+            locator=f"p{row.page_number}·b{row.block_index}",
             page=row.page_number,
-            block_id=row.id,
             block_index=row.block_index,
             block_type=row.block_type,
-            locator=f"p{row.page_number}·b{row.block_index}",
             snippet=headline_by_id[row.id][1][:_SNIPPET_CAP],
         )
         cost = len(compact_json(hit.model_dump(mode="json"))) + 2  # + the ", " separator
-        if hits and used + cost > _HITS_BUDGET:
+        key = (row.article_id, row.article_file_id)
+        group = groups.get(key)
+        if group is None:
+            title, title_truncated = cap_text(headline_by_id[row.id][0])
+            group = McpSearchArticle(
+                article_id=row.article_id,
+                title=title,
+                title_truncated=title_truncated,
+                file_id=row.article_file_id,
+                hits=[],
+            )
+            cost += len(compact_json(group.model_dump(mode="json"))) + 2
+        if last_kept is not None and used + cost > _HITS_BUDGET:
             has_more = True
             break
-        hits.append(hit)
+        group.hits.append(hit)
+        groups[key] = group
         used += cost
         last_kept = row
 
@@ -144,4 +154,4 @@ async def search_project_text(
     if has_more and last_kept is not None:
         next_cursor = encode_cursor([repr(last_kept.rank), str(last_kept.id)])
 
-    return McpSearchResult(hits=hits, next_cursor=next_cursor, note=None)
+    return McpSearchResult(articles=list(groups.values()), next_cursor=next_cursor, note=None)
