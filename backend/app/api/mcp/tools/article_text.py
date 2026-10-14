@@ -21,7 +21,13 @@ from app.schemas.mcp_article_text import McpTextPage, chunk_locator_prefix
 from app.services import article_read_service
 from app.services.article_text_block_read_service import page_text_blocks
 from app.utils.opaque_cursor import INT4_MAX, InvalidCursorError
-from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN, neutralize
+from app.utils.untrusted import (
+    envelope_close,
+    envelope_open,
+    escape_marker_lines,
+    neutralize,
+    new_nonce,
+)
 
 # Body budget (spec §5.1): each chunk's text + its locator prefix + its
 # newline. Header, delimiter and trailer lines sit outside this budget.
@@ -34,14 +40,17 @@ def _render(
     article_id: UUID, file_id: UUID | None, page: McpTextPage | None, note: str | None
 ) -> str:
     """The exact result format (spec §5.0): header first, trailer last, in
-    every result, empty or not."""
+    every result, empty or not. They are the only lines starting with
+    `[prumo]`; the body sits in one envelope bound to the nonce the header
+    announces, fresh per response."""
     if page is not None and page.chunks:
         pages = f"{page.chunks[0].page_number}-{page.chunks[-1].page_number}"
     else:
         pages = "none"
 
+    nonce = new_nonce()
     header = (
-        f"[prumo] untrusted_content=true article_id={article_id} "
+        f"[prumo] untrusted_content=true nonce={nonce} article_id={article_id} "
         f"file_id={file_id if file_id is not None else 'none'} pages={pages}"
     )
     next_cursor = page.next_cursor if page is not None else None
@@ -51,10 +60,11 @@ def _render(
         return "\n".join([header, note, trailer])
 
     body_lines = [
-        chunk_locator_prefix(c.page_number, c.block_index, c.char_offset) + neutralize(c.text)
+        chunk_locator_prefix(c.page_number, c.block_index, c.char_offset)
+        + escape_marker_lines(neutralize(c.text))
         for c in (page.chunks if page is not None else [])
     ]
-    return "\n".join([header, UNTRUSTED_OPEN, *body_lines, UNTRUSTED_CLOSE, trailer])
+    return "\n".join([header, envelope_open(nonce), *body_lines, envelope_close(nonce), trailer])
 
 
 @agent_tool(
