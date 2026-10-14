@@ -10,6 +10,10 @@ structured-output mode its probe found it working. One path:
   :class:`ConnectionUnavailableError` (409); there is NO cloud fallback.
 * otherwise — :func:`resolve_provider_key`, the one ladder (caller's key →
   project's shared key → the deployment's global setting).
+
+:func:`assert_engine_ready` is the read-only kickoff precheck over the same
+two paths: it proves a credential exists before anything is queued, without
+decrypting it or stamping ``last_used_at``.
 """
 
 from __future__ import annotations
@@ -25,12 +29,20 @@ from app.services.llm_connection_service import (
     ConnectionUnavailableError,
     KeyScope,
     LlmConnectionService,
+    MissingCredentialError,
+    availability_map,
     capabilities_of,
     owned_user_connection,
     resolve_provider_key,
 )
+from app.services.llm_engine_service import resolve_engine
 
-__all__ = ["EngineCredentials", "rekey_for_adopted_engine", "resolve_engine_credentials"]
+__all__ = [
+    "EngineCredentials",
+    "assert_engine_ready",
+    "rekey_for_adopted_engine",
+    "resolve_engine_credentials",
+]
 
 
 @dataclass(frozen=True)
@@ -122,3 +134,26 @@ async def rekey_for_adopted_engine(
     return await resolve_engine_credentials(
         db, user_id=user_id, project_id=project_id, engine=engine
     )
+
+
+async def assert_engine_ready(db: AsyncSession, *, project_id: UUID, user_id: UUID) -> LlmTarget:
+    """The ONE kickoff precheck: the engine resolves and a credential exists.
+
+    Read-only: no decryption, no ``last_used_at`` write, no provider call. The
+    worker's execution-time :func:`resolve_engine_credentials` is unchanged.
+    """
+    engine = await resolve_engine(db, project_id, user_id)
+    if engine.connection_id is not None:
+        try:
+            connection_id = UUID(engine.connection_id)
+        except ValueError:  # a corrupt pinned id is a typed 409, not a 500
+            raise _unavailable(engine.connection_id) from None
+        if await owned_user_connection(db, connection_id, user_id) is None:
+            raise _unavailable(engine.connection_id)
+        return engine
+    available = await availability_map(
+        db, project_id=project_id, user_id=user_id, providers=[engine.provider]
+    )
+    if available[engine.provider] is None:
+        raise MissingCredentialError(engine.provider)
+    return engine

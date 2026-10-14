@@ -52,6 +52,7 @@ __all__ = [
     "ConnectionUnavailableError",
     "KeyScope",
     "LlmConnectionService",
+    "MissingCredentialError",
     "ResolvedKey",
     "availability_map",
     "capabilities_of",
@@ -90,6 +91,17 @@ class ConnectionUnavailableError(AppError):
 
     def __init__(self, message: str) -> None:
         super().__init__(code="LLM_ENDPOINT_UNAVAILABLE", message=message, status_code=409)
+
+
+class MissingCredentialError(AppError):
+    """No usable credential at any rung for the engine's provider (kickoff precheck)."""
+
+    def __init__(self, provider: str) -> None:
+        super().__init__(
+            code="MISSING_API_KEY",
+            status_code=409,
+            message=f"No API key is configured for {provider}. Add one in Settings.",
+        )
 
 
 class ConnectionNotFoundError(Exception):
