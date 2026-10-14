@@ -63,7 +63,10 @@ def build_limiter(storage_uri: str | None) -> Limiter:
         storage_uri=uri,
         # The limits client is synchronous and runs on the event loop: a
         # hanging Redis must fail fast into the per-process fallback.
-        storage_options=_REDIS_TIMEOUTS if backend == "redis" else {},
+        # slowapi annotates Dict[str, str] but forwards these as kwargs to
+        # limits.storage_from_string (float | str | bool); redis-py needs
+        # numeric timeouts, so the stub is narrower than the real contract.
+        storage_options=_REDIS_TIMEOUTS if backend == "redis" else {},  # type: ignore[arg-type]
         key_prefix="prumo-rl",
         in_memory_fallback_enabled=True,
     )
