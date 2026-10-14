@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import asyncpg
 import pytest
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
@@ -222,8 +223,9 @@ async def test_contextvar_reset_when_inner_raises(monkeypatch: pytest.MonkeyPatc
         PoolTimeoutError(),
         OSError("connection refused"),
         TimeoutError(),
+        asyncpg.exceptions.TooManyConnectionsError("too many clients"),
     ],
-    ids=["operational", "pool-timeout", "os-error", "timeout"],
+    ids=["operational", "pool-timeout", "os-error", "timeout", "too-many-clients"],
 )
 async def test_database_unavailable_during_lookup_is_503(
     monkeypatch: pytest.MonkeyPatch, exc: Exception
@@ -327,8 +329,8 @@ async def test_noop_touch_skips_the_commit(monkeypatch: pytest.MonkeyPatch) -> N
     opened[0].commit.assert_not_awaited()
 
 
-def test_inflight_cap_default_is_eight() -> None:
-    assert Settings.model_fields["MCP_MAX_INFLIGHT_PER_TOKEN"].default == 8
+def test_inflight_cap_default_is_four() -> None:
+    assert Settings.model_fields["MCP_MAX_INFLIGHT_PER_TOKEN"].default == 4
 
 
 def _bearer_scope(secret: str) -> dict:
@@ -409,3 +411,50 @@ async def test_inflight_slot_is_released_when_the_app_raises(
             await app(_bearer_scope(secret), _receive, _noop_send)
 
     assert asgi_auth._inflight == {}
+
+
+async def test_database_unavailable_during_dispatch_replaces_the_response_with_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(return_value=PRINCIPAL))
+    monkeypatch.setattr(asgi_auth, "touch_last_used", AsyncMock(return_value=False))
+
+    async def inner(_scope: dict, _receive: object, send: Callable) -> None:
+        asgi_auth.mcp_session.mark_database_unavailable()  # as the tool dispatcher does
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b'{"result": "tool"}'})
+
+    sent: list[dict] = []
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    app = asgi_auth._PatAuthApp(inner)
+    await app(_bearer_scope("prumo_pat_" + "d" * 43), _receive, send)
+
+    assert [m["type"] for m in sent] == ["http.response.start", "http.response.body"]
+    assert sent[0]["status"] == 503
+    assert (b"retry-after", b"2") in sent[0]["headers"]
+    assert b"tool" not in sent[1]["body"]
+
+
+async def test_a_healthy_dispatch_passes_the_response_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(asgi_auth, "resolve_principal", AsyncMock(return_value=PRINCIPAL))
+    monkeypatch.setattr(asgi_auth, "touch_last_used", AsyncMock(return_value=False))
+
+    async def inner(_scope: dict, _receive: object, send: Callable) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    sent: list[dict] = []
+
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    app = asgi_auth._PatAuthApp(inner)
+    await app(_bearer_scope("prumo_pat_" + "e" * 43), _receive, send)
+
+    assert sent[0]["status"] == 200
+    assert sent[1]["body"] == b"ok"

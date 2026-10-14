@@ -26,7 +26,7 @@ from app.services.pat_service import hash_secret, resolve_principal, touch_last_
 from app.utils.rate_limiter import hit_shared
 
 if TYPE_CHECKING:
-    from starlette.types import ASGIApp, Receive, Scope, Send
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = get_logger(__name__)
 
@@ -89,8 +89,9 @@ class _PatAuthApp:
             return
 
         # Keyed by a prefix of the token's stored hash (never the secret) and
-        # checked before any DB checkout, so a burst on one token cannot drain
-        # the pool. An unknown bearer counts too, and is then refused with 401.
+        # checked before any DB checkout. The default cap is half the web pool,
+        # so one token's burst leaves connections for other callers. An unknown
+        # bearer counts too, and is then refused with 401.
         key = hash_secret(secret)[:16]
         if _inflight[key] >= settings.MCP_MAX_INFLIGHT_PER_TOKEN:
             await Response(status_code=429, headers={"Retry-After": "1"})(scope, receive, send)
@@ -107,10 +108,13 @@ class _PatAuthApp:
         async with mcp_session.request_session() as db:
             try:
                 principal = await resolve_principal(db, secret)
-            except (SQLAlchemyError, OSError, TimeoutError) as exc:
+            except Exception as exc:
+                if not (
+                    isinstance(exc, SQLAlchemyError) or mcp_session.is_database_unavailable(exc)
+                ):
+                    raise
                 logger.warning("mcp_auth_unavailable", error=type(exc).__name__)
-                response = Response(status_code=503, headers={"Retry-After": "2"})
-                await response(scope, receive, send)
+                await _service_unavailable(scope, receive, send)
                 return
 
             if principal is None:
@@ -124,11 +128,33 @@ class _PatAuthApp:
                 logger.warning("mcp_touch_last_used_failed", token_id=str(principal.token_id))
                 await db.rollback()
 
+            replaced = False
+
+            async def send_or_503(message: Message) -> None:
+                # json_response=True: the tool has finished before the response
+                # starts, so a dispatch that found the database unavailable
+                # swaps the tool's 200 for the same 503 the lookup answers.
+                nonlocal replaced
+                if replaced:
+                    return  # the swapped-out response's body
+                if (
+                    message["type"] == "http.response.start"
+                    and mcp_session.database_marked_unavailable()
+                ):
+                    replaced = True
+                    await _service_unavailable(scope, receive, send)
+                    return
+                await send(message)
+
             reset = principal_var.set(principal)
             try:
-                await self.app(scope, receive, send)
+                await self.app(scope, receive, send_or_503)
             finally:
                 principal_var.reset(reset)
+
+
+async def _service_unavailable(scope: Scope, receive: Receive, send: Send) -> None:
+    await Response(status_code=503, headers={"Retry-After": "2"})(scope, receive, send)
 
 
 async def _unauthorized(scope: Scope, receive: Receive, send: Send) -> None:

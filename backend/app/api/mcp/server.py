@@ -56,6 +56,7 @@ logger = get_logger(__name__)
 
 _READ_LIMIT = parse("120/minute")
 _WRITE_LIMIT = parse("20/minute")
+_DB_RETRY_AFTER_SECONDS = 2  # the same wait the HTTP 503 advertises
 
 INSTRUCTIONS = """\
 This server gives an AI agent read and carefully-scoped write access to prumo \
@@ -290,7 +291,18 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
                 # Discards a tool's partial, unaudited writes; an audited refusal
                 # already committed its own row through ``audit.refuse``.
                 await db.rollback()
-            err = to_tool_error(exc)
+            if mcp_session.is_database_unavailable(exc):
+                # Over HTTP the auth wrapper answers 503 + Retry-After instead;
+                # this retryable result is what an in-process client sees.
+                mcp_session.mark_database_unavailable()
+                logger.warning("mcp_tool_db_unavailable", tool=name, error=type(exc).__name__)
+                err = McpToolError(
+                    McpErrorCode.RATE_LIMITED,
+                    "The database is busy; wait and retry.",
+                    retry_after_seconds=_DB_RETRY_AFTER_SECONDS,
+                )
+            else:
+                err = to_tool_error(exc)
             if err.code == McpErrorCode.INTERNAL_ERROR:
                 logger.exception(
                     "mcp_tool_internal_error", tool=name, token_id=str(principal.token_id)
