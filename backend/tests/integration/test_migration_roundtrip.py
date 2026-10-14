@@ -1305,15 +1305,17 @@ async def test_0056_makes_provenance_server_only(migration_session: AsyncSession
 
     Guards the exact failure this hardening was written against: a column-level
     REVOKE layered on a table-level GRANT does nothing, so the protection can
-    look present in the migration and be absent in the database.
+    look present in the migration and be absent in the database. The column
+    grants 0056 left on the other columns were later revoked
+    (``0081_revoke_member_writes``): every proposal write goes through the API.
     """
     assert (
         await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_PROVENANCE)
     ).scalar() is False, (
         "authenticated must NOT be able to UPDATE extraction_proposal_records.provenance"
     )
-    assert (await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_VALUE)).scalar() is True, (
-        "the rest of the table's UPDATE grant must be preserved (only provenance is withheld)"
+    assert (await migration_session.execute(_AUTHENTICATED_CAN_UPDATE_VALUE)).scalar() is False, (
+        "authenticated has no UPDATE on any proposal-record column: writes go through the API"
     )
     assert (
         await migration_session.execute(_AUTHENTICATED_CAN_INSERT_PROVENANCE)
@@ -1328,7 +1330,7 @@ async def test_alembic_head_is_expected_revision(migration_db_url: str) -> None:
     out = _run_alembic("current", database_url=migration_db_url)
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    expected_head = "0080_article_text_fts"
+    expected_head = "0081_revoke_member_writes"
     assert expected_head in out, f"Expected head revision {expected_head!r}, got:\n{out}"
 
 
@@ -1788,3 +1790,37 @@ async def test_migration_0080_article_text_fts_roundtrip(
     finally:
         _run_alembic("upgrade", "head", database_url=migration_db_url)
     assert await has_index()
+
+
+# --- 0081: member writes revoked, append-only history trigger ---------------
+@pytest.mark.asyncio
+async def test_migration_0081_revoke_member_writes_roundtrip(
+    migration_db_url: str, migration_session: AsyncSession
+) -> None:
+    async def posture() -> tuple[bool, bool, bool, bool, bool]:
+        row = (
+            await migration_session.execute(
+                text(
+                    "SELECT has_table_privilege("
+                    "  'authenticated', 'public.extraction_evidence', 'INSERT'),"
+                    " has_any_column_privilege("
+                    "  'authenticated', 'public.extraction_proposal_records', 'INSERT'),"
+                    " has_any_column_privilege("
+                    "  'authenticated', 'public.extraction_proposal_records', 'UPDATE'),"
+                    " has_column_privilege('authenticated',"
+                    "  'public.extraction_proposal_records', 'proposed_value', 'UPDATE'),"
+                    " to_regprocedure('public.refuse_append_only_change()') IS NOT NULL"
+                )
+            )
+        ).one()
+        await migration_session.rollback()
+        return tuple(bool(v) for v in row)  # type: ignore[return-value]
+
+    revoked = (False, False, False, False, True)
+    assert await posture() == revoked
+    _run_alembic("downgrade", "0080_article_text_fts", database_url=migration_db_url)
+    try:
+        assert await posture() == (True, True, True, True, False)
+    finally:
+        _run_alembic("upgrade", "head", database_url=migration_db_url)
+    assert await posture() == revoked

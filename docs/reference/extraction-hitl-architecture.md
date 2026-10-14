@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-10-07
+last_reviewed: 2026-10-14
 owner: '@raphaelfh'
 ---
 
@@ -136,9 +136,19 @@ and `extraction_instance_status` enum were dropped in HITL Phase 3 (migration
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`0076_extraction_batches` (post-squash numbering; run
+`0081_revoke_member_writes` (post-squash numbering; run
 `ls backend/alembic/versions/` for the current head — and bump this line
 in any PR that adds an `extraction_*` migration).
+
+**API-only writes (0081).** `authenticated` holds SELECT but no
+INSERT/UPDATE/DELETE on `article_text_blocks` and the extraction history
+tables (evidence, reviewer decisions and states, consensus decisions,
+published states, proposal records), and no INSERT/UPDATE on
+`article_files` (DELETE stays); the backend is the one writer and the RLS
+policies remain the floor. The `refuse_append_only_change` trigger refuses
+UPDATE/DELETE on reviewer decisions, consensus decisions and proposal
+records for every role but the table owner, so FK cascades and backend
+writes keep working.
 
 **One-live-run invariant (0045).** At most ONE non-terminal run (stage in
 `pending` / `extract` / `consensus`) exists per `(project_id, article_id,
