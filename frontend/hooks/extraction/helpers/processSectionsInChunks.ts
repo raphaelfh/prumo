@@ -15,9 +15,8 @@ import type {ExtractionProgress} from "../useBatchSectionExtractionChunked";
 
 export interface ProcessChunksOptions {
   sections: ModelChildSection[];
-  baseRequest: Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'>;
+  baseRequest: Omit<BatchSectionExtractionRequest, 'sectionIds'>;
   chunkSize: number;
-  pdfText?: string;
   onProgress?: (progress: ExtractionProgress) => void;
 }
 
@@ -39,7 +38,7 @@ export interface ProcessChunksResult {
 export async function processSectionsInChunks(
   options: ProcessChunksOptions
 ): Promise<ProcessChunksResult> {
-  const { sections, baseRequest, chunkSize, pdfText, onProgress } = options;
+  const { sections, baseRequest, chunkSize, onProgress } = options;
 
   if (sections.length === 0) {
     return {
@@ -86,7 +85,6 @@ export async function processSectionsInChunks(
       const chunkRequest: BatchSectionExtractionRequest = {
         ...baseRequest,
         sectionIds: chunk,
-        pdfText: pdfText || undefined,
       };
 
       const result = await SectionExtractionService.extractAllSections(chunkRequest);

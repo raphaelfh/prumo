@@ -44,6 +44,7 @@ import {
 } from "@/hooks/runs/useRunLifecycleScreen";
 import { useRunValues } from "@/hooks/runs/useRunValues";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useProjectMemberRole } from "@/hooks/useProjectMemberRole";
 import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import { countActionableSuggestions } from "@/lib/ai-extraction/suggestionUtils";
 import { t } from "@/lib/copy";
@@ -60,6 +61,11 @@ export default function QualityAssessmentFullScreen() {
     articleId: string;
     templateId: string;
   }>();
+
+  // The one AI kickoff gate, computed here and threaded down: hidden while
+  // the role loads, when no membership was found, and for a viewer.
+  const { role, loading: roleLoading } = useProjectMemberRole(projectId ?? "");
+  const canRunAI = !roleLoading && role !== null && role !== "viewer";
 
   // The ``:templateId`` segment names the project's QA template or a
   // catalogue one; the session-open request takes each in its own field.
@@ -357,6 +363,7 @@ export default function QualityAssessmentFullScreen() {
                         articleId={articleId}
                         templateId={session.projectTemplateId}
                         runId={session.runId}
+                        canRunAI={canRunAI}
                         onExtractionComplete={handleSectionExtractionComplete}
                         defaultOpen={idx === 0}
                         reviewerActivity={{
@@ -420,7 +427,7 @@ export default function QualityAssessmentFullScreen() {
       save={{ state: saveState, lastSavedAt }}
       ai={{
         pendingCount: lifecycle.finalized ? 0 : countActionableSuggestions(aiSuggestions),
-        canExtract: !!(session && runDetail && isRunEditable(runDetail.run.stage)),
+        canExtract: canRunAI && !!(session && runDetail && isRunEditable(runDetail.run.stage)),
         extracting: extractingAI,
         onExtract: onExtractWithAI,
         onOpenSuggestions: () => {

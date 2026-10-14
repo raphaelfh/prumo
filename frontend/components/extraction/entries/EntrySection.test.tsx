@@ -85,6 +85,7 @@ function ctx(over: Partial<EntryFormContextValue> = {}): EntryFormContextValue {
     projectId: 'p1',
     articleId: 'a1',
     templateId: 't1',
+    canRunAI: true,
     entityTypes: [GROUP, DEV, PREDICTORS],
     instances: INSTANCES,
     values: {},

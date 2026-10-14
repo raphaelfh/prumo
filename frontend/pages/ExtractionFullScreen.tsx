@@ -28,6 +28,7 @@ import {
 
 import {useProjectTemplates} from '@/hooks/hitl/useProjectTemplates';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
+import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
@@ -141,6 +142,11 @@ export default function ExtractionFullScreen() {
 
   const stage = (runDetail?.run.stage ?? null) as ExtractionRunStage | null;
   const isFinalized = stage === 'finalized';
+
+  // The one AI kickoff gate, computed here and threaded down: hidden while
+  // the role loads, when no membership was found, and for a viewer.
+  const {role, loading: roleLoading} = useProjectMemberRole(projectId ?? '');
+  const canRunAI = !roleLoading && role !== null && role !== 'viewer';
 
   // The comparison access + the viewer write gate.
   const permissions = useComparisonPermissions(projectId || '', currentUserId, 'extraction');
@@ -498,6 +504,7 @@ export default function ExtractionFullScreen() {
         articleId: articleId || '',
         templateId: template.id,
         runId: activeRunId,
+        canRunAI,
         onExtractionComplete: refreshAISuggestions,
         sectionNavRef,
       }}
@@ -531,7 +538,7 @@ export default function ExtractionFullScreen() {
           // AI seeds proposals only in EXTRACT (re-running past it errors), and
           // only on an OPEN session run — never a parallel run that would
           // orphan the reviewer's edits.
-          canExtract: !!activeRunId && (stage === 'extract' || stage == null),
+          canExtract: canRunAI && !!activeRunId && (stage === 'extract' || stage == null),
           extracting: extractingAI,
           onExtract: onExtractWithAI,
           onOpenSuggestions: () => {

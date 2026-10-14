@@ -81,6 +81,7 @@ describe("QASectionAccordion", () => {
         articleId="a1"
         templateId="t1"
         runId="r1"
+        canRunAI
         instanceId="i1"
         defaultOpen
       />,
@@ -100,6 +101,7 @@ describe("QASectionAccordion", () => {
           articleId="a1"
           templateId="t1"
           runId="r1"
+          canRunAI
           instanceId="i1"
           defaultOpen
         />
@@ -166,6 +168,7 @@ function renderV2(
       articleId="a1"
       templateId="t1"
       runId="r1"
+      canRunAI
       instanceId="i1"
       defaultOpen
       derivedJudgments={[V2_ENTRY]}
@@ -311,6 +314,7 @@ describe("QASectionAccordion — exclusions and summaries (v2)", () => {
         articleId="a1"
         templateId="t1"
         runId="r1"
+        canRunAI
         instanceId="i2"
         defaultOpen
         derivedJudgments={[OVERALL_ENTRY]}
@@ -335,6 +339,7 @@ describe("QASectionAccordion — exclusions and summaries (v2)", () => {
         articleId="a1"
         templateId="t1"
         runId="r1"
+        canRunAI
         instanceId="i2"
         defaultOpen
         derivedJudgments={[
@@ -363,6 +368,7 @@ describe("QASectionAccordion — exclusions and summaries (v2)", () => {
         articleId="a1"
         templateId="t1"
         runId="r1"
+        canRunAI
         instanceId="i2"
         defaultOpen
         derivedJudgments={[OVERALL_ENTRY]}
@@ -388,6 +394,7 @@ describe("QASectionAccordion — editability, scope sections, paired rationales"
             articleId="a1"
             templateId="t1"
             runId="r1"
+            canRunAI
             instanceId="i1"
             defaultOpen
             derivedJudgments={[V2_ENTRY]}
@@ -431,6 +438,7 @@ describe("QASectionAccordion — editability, scope sections, paired rationales"
           articleId="a1"
           templateId="t1"
           runId="r1"
+          canRunAI
           instanceId="i3"
           defaultOpen
           derivedJudgments={[]}
@@ -452,6 +460,7 @@ describe("QASectionAccordion — editability, scope sections, paired rationales"
           articleId="a1"
           templateId="t1"
           runId="r1"
+          canRunAI
           instanceId="i1"
           defaultOpen
           derivedJudgments={[V2_ENTRY]}

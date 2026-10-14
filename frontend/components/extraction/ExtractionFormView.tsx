@@ -76,6 +76,11 @@ export interface ExtractionFormViewProps {
    * accumulate on the session run instead of orphan new runs.
    */
   runId?: string | null;
+  /**
+   * The page's project-role gate, computed once from `useProjectMemberRole`:
+   * false hides every AI kickoff in the form.
+   */
+  canRunAI: boolean;
   /** Callback to refresh values/suggestions after AI extraction. */
   onExtractionComplete?: () => void;
   /** The section layout's handle: the header's suggestion locate opens a section through it. */
@@ -155,6 +160,7 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
     articleId: props.articleId,
     templateId: props.templateId,
     runId: props.runId ?? undefined,
+    canRunAI: props.canRunAI,
     entityTypes: props.entityTypes,
     instances: props.instances,
     values: props.values,
@@ -222,6 +228,7 @@ function ExtractionFormViewComponent({sectionNavRef, ...props}: ExtractionFormVi
                   articleId={props.articleId}
                   templateId={props.templateId}
                   runId={props.runId ?? undefined}
+                  canRunAI={props.canRunAI}
                   aiSuggestions={props.aiSuggestions}
                   onAcceptAI={props.acceptSuggestion}
                   onRejectAI={props.rejectSuggestion}

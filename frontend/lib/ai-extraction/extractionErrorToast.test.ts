@@ -42,6 +42,24 @@ describe('extractionErrorToast', () => {
     });
   });
 
+  it('maps RUN_FINALIZED to the finalized-article title + the backend message', () => {
+    const message = 'This run is finalized.';
+    expect(extractionErrorToast('RUN_FINALIZED', message)).toEqual({
+      title: 'sectionExtractionErrorRunFinalized',
+      description: message,
+      duration: 8000,
+    });
+  });
+
+  it('maps LLM_ENDPOINT_UNAVAILABLE to the unavailable-endpoint title + the backend message', () => {
+    const message = 'The configured endpoint did not answer.';
+    expect(extractionErrorToast('LLM_ENDPOINT_UNAVAILABLE', message)).toEqual({
+      title: 'sectionExtractionErrorEndpointUnavailable',
+      description: message,
+      duration: 8000,
+    });
+  });
+
   it('returns null for the generic code so the caller uses its own fallback', () => {
     expect(extractionErrorToast('EXTRACTION_FAILED', 'something broke')).toBeNull();
   });

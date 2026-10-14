@@ -59,6 +59,8 @@ interface QASectionAccordionProps {
   articleId: string;
   templateId: string;
   runId?: string | null;
+  /** The page's project-role gate for the per-domain AI button. */
+  canRunAI: boolean;
   onExtractionComplete?: (runId?: string) => void | Promise<void>;
   defaultOpen?: boolean;
   /**
@@ -133,6 +135,7 @@ export function QASectionAccordion({
   articleId,
   templateId,
   runId,
+  canRunAI,
   onExtractionComplete,
   defaultOpen = false,
   reviewerActivity,
@@ -372,6 +375,7 @@ export function QASectionAccordion({
               entityTypeId={entityType.id}
               entityLabel={sectionLabel}
               runId={runId}
+              canRunAI={canRunAI}
               onExtractionComplete={onExtractionComplete}
             />
           ) : null}

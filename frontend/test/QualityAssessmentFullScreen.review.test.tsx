@@ -22,6 +22,11 @@ vi.mock("@/hooks/useCurrentUser", () => ({
   useCurrentUser: () => ({ userId: "qa-test-reviewer-id" }),
 }));
 
+// The page's AI kickoff gate reads the project role: a reviewer may run AI.
+vi.mock("@/hooks/useProjectMemberRole", () => ({
+  useProjectMemberRole: () => ({ role: "reviewer", isManager: false, loading: false }),
+}));
+
 // SectionAIExtractButton's useSectionExtraction reads the signed-in user from
 // AuthContext; the harness has no real AuthProvider.
 vi.mock("@/contexts/AuthContext", () => ({

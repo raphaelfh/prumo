@@ -190,7 +190,6 @@ export interface BatchSectionExtractionRequest {
   runId?: string; // Active session run to reuse (avoids orphaning decisions)
   extractAllSections: true; // Flag for batch extraction
   sectionIds?: string[]; // Filter specific sections (for chunking)
-  pdfText?: string; // Pre-processed PDF text (avoids reprocessing)
 }
 
 /**

@@ -33,6 +33,8 @@ const TITLE_KEY = {
   PDF_NOT_FOUND: 'sectionExtractionErrorTitle',
   MISSING_ENTITY_KEY: 'sectionExtractionErrorNoEntryKey',
   RUN_BUSY: 'sectionExtractionErrorRunBusy',
+  RUN_FINALIZED: 'sectionExtractionErrorRunFinalized',
+  LLM_ENDPOINT_UNAVAILABLE: 'sectionExtractionErrorEndpointUnavailable',
 } as const satisfies Partial<Record<ExtractionErrorCode, string>>;
 
 function isMapped(code: string | null | undefined): code is keyof typeof TITLE_KEY {

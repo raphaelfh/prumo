@@ -326,6 +326,7 @@ function QAHarness() {
       projectId="p"
       articleId="a"
       templateId="t"
+      canRunAI
       defaultOpen
       instanceId="inst-1"
       aiSuggestions={suggestions}

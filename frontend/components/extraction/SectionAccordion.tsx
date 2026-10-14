@@ -49,6 +49,8 @@ interface SectionAccordionProps {
      * multiple section extractions accumulating on the same run.
      */
     runId?: string | null;
+  /** The page's project-role gate for the per-section AI button. */
+  canRunAI: boolean;
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
@@ -168,6 +170,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
               entityTypeId={entityType.id}
               entityLabel={entityType.label}
               runId={props.runId}
+              canRunAI={props.canRunAI}
               parentInstanceId={props.parentInstanceId}
               disabled={instances.length === 0 && !isMultiple}
               onExtractionComplete={props.onExtractionComplete}
