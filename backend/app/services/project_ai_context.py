@@ -25,10 +25,8 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.project import Project
 from app.repositories.project_repository import ProjectRepository
 
 #: Ceiling on the rendered block. Mirrors ``llm_template_instruction``'s
@@ -237,32 +235,24 @@ async def set_ai_context(
 ) -> dict[str, Any]:
     """Write either half (or both) under one row lock.
 
-    The lock mirrors ``LlmEngineService``: ``projects.settings`` is plain JSONB
-    read-modify-written by several services, so an unlocked write can drop a
-    concurrent sibling key — and ``managers_see_reviewers`` living in that same
-    column means the dropped key could be a blind-review control silently
-    flipping back on.
+    The switch goes through ``ProjectRepository.update_settings_key``:
+    ``projects.settings`` is one JSONB column shared by several writers, and a
+    write outside that helper could drop a concurrent sibling key, such as the
+    ``managers_see_reviewers`` blind-review control.
     """
-    project = (
-        await db.execute(
-            select(Project)
-            .where(Project.id == project_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-    ).scalar_one_or_none()
+    projects = ProjectRepository(db)
+    project = await projects.lock_for_update(project_id)
     if project is None:
         raise ProjectNotFoundError(f"Project {project_id} not found")
 
+    # Switch first, question second. ``update_settings_key`` re-reads the
+    # locked row with ``populate_existing``, and with ``autoflush=False`` that
+    # re-read would discard a question assigned (unflushed) before it.
+    if picots_enabled is not None:
+        await projects.update_settings_key(
+            project_id, "ai_context", lambda old: {**dict(old or {}), "picots": picots_enabled}
+        )
     if picots is not None:
         project.picots_config_ai_review = picots
-    if picots_enabled is not None:
-        # Plain JSONB (NOT MutableDict): build a new dict and REASSIGN, or the
-        # change is not tracked and never persists. Only our sub-key is written.
-        settings = dict(project.settings or {})
-        ai_context = dict(settings.get("ai_context") or {})
-        ai_context["picots"] = picots_enabled
-        settings["ai_context"] = ai_context
-        project.settings = settings
     await db.flush()
     return await get_ai_context(db, project_id)
