@@ -61,6 +61,7 @@ def _render(
     requires="read",
     project_arg="article_id",
     title="Get article text",
+    destructive=False,
     structured_output=False,
     description=(
         "Read an article's parsed text as markdown blocks, each prefixed with a citable "

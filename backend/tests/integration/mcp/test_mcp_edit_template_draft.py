@@ -837,14 +837,14 @@ async def test_nul_in_an_op_string_is_invalid_argument(
 
 
 async def test_edit_template_draft_hints_are_pinned(mcp_client, pat_primary_rw) -> None:
-    """F17 (final review): a repeated call adds the question twice, so the
-    tool is destructive, NOT idempotent, and closed-world."""
+    """A repeated call adds the question twice, so the tool is NOT idempotent;
+    it only edits an unpublished draft, so it is non-destructive and closed-world."""
     async with mcp_client(pat_primary_rw) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
     a = tools["edit_template_draft"].annotations
     assert (a.read_only_hint, a.destructive_hint, a.idempotent_hint, a.open_world_hint) == (
         False,
-        True,
+        False,
         False,
         False,
     )

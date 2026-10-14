@@ -19,6 +19,9 @@ from app.core.config import API_VERSION
 from tests.integration.conftest import SEED
 from tests.integration.mcp.conftest import SeededPat
 
+# Tools allowed a destructive/open-world hint or a requiresUserInteraction meta.
+_HINT_ALLOWLIST: frozenset[str] = frozenset()
+
 
 async def test_tools_list_is_scope_filtered(
     mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
@@ -414,9 +417,9 @@ async def test_output_schema_failure_is_not_the_callers_invalid_argument(
         return real_hit(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(server, "hit_shared", _counting_hit)
-    server.agent_tool(requires="read", project_arg=None, title="Probe out", description="test")(
-        probe_bad_output
-    )
+    server.agent_tool(
+        requires="read", project_arg=None, title="Probe out", description="test", destructive=False
+    )(probe_bad_output)
     try:
         async with mcp_client(pat_primary_read) as client:
             r = await client.call_tool("probe_bad_output", {})
@@ -443,3 +446,26 @@ async def test_no_tool_listing_cites_internal_spec_sections(
             [tool.description, tool.input_schema, tool.output_schema], ensure_ascii=False
         )
         assert "spec §" not in listing, tool.name
+
+
+async def test_annotation_policy_is_pinned(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+) -> None:
+    """Reads are (read-only, non-destructive, idempotent, closed-world); config
+    writes are non-destructive, closed-world and carry no per-call prompt."""
+    async with mcp_client(pat_primary_rw) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    assert "update_project_details" in tools and "edit_template_draft" in tools
+    for name, tool in tools.items():
+        a = tool.annotations
+        assert a is not None, name
+        hints = (a.read_only_hint, a.destructive_hint, a.idempotent_hint, a.open_world_hint)
+        if a.read_only_hint:
+            assert hints == (True, False, True, False), name
+        elif name not in _HINT_ALLOWLIST:
+            assert a.destructive_hint is False and a.open_world_hint is False, name
+            assert "anthropic/requiresUserInteraction" not in (tool.meta or {}), name
+    assert tools["update_project_details"].annotations.idempotent_hint is True
+    assert tools["edit_template_draft"].annotations.idempotent_hint is False
+    assert not any(w in n for n in tools for w in ("publish", "clone", "import"))

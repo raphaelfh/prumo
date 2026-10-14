@@ -211,7 +211,11 @@ def probe_tools() -> Iterator[None]:
     choke point real tools use, and un-registers them on teardown."""
     registered = [
         agent_tool(
-            requires="read", project_arg="project_id", title="Probe read", description="test"
+            requires="read",
+            project_arg="project_id",
+            title="Probe read",
+            description="test",
+            destructive=False,
         )(probe_read),
         agent_tool(
             requires="write",
@@ -222,21 +226,34 @@ def probe_tools() -> Iterator[None]:
             idempotent=False,
         )(probe_write),
         agent_tool(
-            requires="read", project_arg="article_id", title="Probe article", description="test"
+            requires="read",
+            project_arg="article_id",
+            title="Probe article",
+            description="test",
+            destructive=False,
         )(probe_article),
-        agent_tool(requires="read", project_arg=None, title="Probe whoami", description="test")(
-            probe_whoami
-        ),
+        agent_tool(
+            requires="read",
+            project_arg=None,
+            title="Probe whoami",
+            description="test",
+            destructive=False,
+        )(probe_whoami),
         agent_tool(
             requires="read",
             project_arg=None,
             title="Probe text",
             description="test",
+            destructive=False,
             structured_output=False,
         )(probe_text),
-        agent_tool(requires="read", project_arg=None, title="Probe boom", description="test")(
-            probe_boom
-        ),
+        agent_tool(
+            requires="read",
+            project_arg=None,
+            title="Probe boom",
+            description="test",
+            destructive=False,
+        )(probe_boom),
     ]
     try:
         yield

@@ -88,6 +88,7 @@ def _json_len(model: BaseModel) -> int:
     requires="read",
     project_arg="project_id",
     title="Get template",
+    destructive=False,
     description=(
         "Return a questionnaire: sections -> questions (type, options, instructions), whether a "
         "draft is open, the published version and the draft's changes vs published. Paged: pass "

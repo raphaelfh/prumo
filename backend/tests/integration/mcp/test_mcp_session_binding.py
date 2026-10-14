@@ -121,7 +121,13 @@ _PROBES = (
 def spy_tool() -> Iterator[list[str]]:
     _SPY_CALLS.clear()
     for fn in _PROBES:
-        agent_tool(requires="read", project_arg=None, title=fn.__name__, description="test")(fn)
+        agent_tool(
+            requires="read",
+            project_arg=None,
+            title=fn.__name__,
+            description="test",
+            destructive=False,
+        )(fn)
     try:
         yield _SPY_CALLS
     finally:

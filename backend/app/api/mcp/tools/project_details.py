@@ -37,9 +37,8 @@ _DESCRIPTION = (
     "Edit a project's descriptive fields (name, description, review type and the other "
     "whitelisted columns from get_project). `expected` must carry the value of each field "
     "in `fields` exactly as last read via get_project -- the write is refused if any of "
-    "them changed meanwhile. Clients that support it (e.g. Claude Code) ask the human "
-    "before each call, and every change is audited. Returns the before/after values of "
-    "the changed fields; call get_project next to confirm."
+    "them changed meanwhile. Every applied or refused change is audited. Returns the "
+    "before/after values of the changed fields; call get_project next to confirm."
 )
 
 
@@ -48,9 +47,8 @@ _DESCRIPTION = (
     project_arg="project_id",
     title="Update project details",
     description=_DESCRIPTION,
-    destructive=True,
+    destructive=False,
     idempotent=True,
-    meta={"anthropic/requiresUserInteraction": True},
 )
 async def update_project_details(
     db: AsyncSession, project_id: UUID, fields: _Details, expected: _Details

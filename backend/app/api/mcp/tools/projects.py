@@ -23,6 +23,7 @@ from app.services.profile_names import profile_names
     requires="read",
     project_arg=None,
     title="List projects",
+    destructive=False,
     description=(
         "List the systematic-review projects this token's user belongs to, with the "
         "caller's role in each, plus the token's scope and expiry. Call get_project next."
@@ -45,6 +46,7 @@ async def list_projects(db: AsyncSession) -> McpProjectList:
     requires="read",
     project_arg="project_id",
     title="Get project",
+    destructive=False,
     description=(
         "Return a project's descriptive fields, article counts and templates "
         "(id, kind, active, narrow). Call list_articles or get_template next."

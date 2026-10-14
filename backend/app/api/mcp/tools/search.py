@@ -25,6 +25,7 @@ from app.utils.opaque_cursor import InvalidCursorError
     requires="read",
     project_arg="project_id",
     title="Search project text",
+    destructive=False,
     description=(
         "Keyword search over the parsed text of a project's articles; returns hits with "
         "article, page, block locator and a snippet. The 'simple' config does not stem or "

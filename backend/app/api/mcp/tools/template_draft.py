@@ -106,7 +106,7 @@ _DESCRIPTION = (
     project_arg="project_id",
     title="Edit questionnaire draft",
     description=_DESCRIPTION,
-    destructive=True,
+    destructive=False,
     idempotent=False,
 )
 async def edit_template_draft(

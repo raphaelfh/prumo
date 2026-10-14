@@ -138,15 +138,17 @@ review hides peers' in-flight values — the result reports
 
 ## What edits look like
 
-`update_project_details` only accepts the 11 descriptive fields. Each
-call must include the values it last read (`expected`); Claude Code asks
-you before each call. If a field changed since the agent last read it,
-the call is refused with `STALE_VALUE`.
+Configuration edits are non-destructive, so agents such as Claude Code
+run them without asking you before each call:
 
-`edit_template_draft` adds a question or rewords one. The change is
-saved as an **unpublished draft** — reviewers and AI extraction don't see
-it until a manager publishes it. Once an agent has edited it, the
-Configuration tab shows "includes edits via AI agent · `<token name>`".
+- `update_project_details` only accepts the 11 descriptive fields. Each
+  call must include the values it last read (`expected`). If a field
+  changed since the agent last read it, the call is refused with
+  `STALE_VALUE`.
+- `edit_template_draft` adds a question or rewords one. The change is
+  saved as an **unpublished draft** — reviewers and AI extraction don't
+  see it until a manager publishes it. Once an agent has edited it, the
+  Configuration tab shows "includes edits via AI agent · `<token name>`".
 
 Every applied or refused edit is recorded, whether the agent's call
 succeeded or not.

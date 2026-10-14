@@ -30,6 +30,7 @@ _SIGNED_URL_TTL_SECONDS = 600
     requires="read",
     project_arg="article_id",
     title="Get article PDF link",
+    destructive=False,
     description=(
         "Return a short-lived (10 min) signed URL for the article's PDF. Download it to read "
         "figures and tables. Chat-only clients should use get_article_text instead."

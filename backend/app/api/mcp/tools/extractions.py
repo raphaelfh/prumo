@@ -27,6 +27,7 @@ from app.utils.opaque_cursor import InvalidCursorError
     requires="read",
     project_arg="project_id",
     title="Get extractions",
+    destructive=False,
     description=(
         "Review data extractions for a template: one current run per article, values keyed by "
         "field_id. concise = article x question matrix; detailed = per-field value, decider and "

@@ -28,6 +28,7 @@ from app.utils.untrusted import wrap_untrusted
     requires="read",
     project_arg="project_id",
     title="List articles",
+    destructive=False,
     description=(
         "List a project's articles (title, authors, year, text_status, has_pdf, has_text), "
         "ordered by title. Page with next_cursor. Call get_article next."
@@ -62,6 +63,7 @@ async def list_articles(
     requires="read",
     project_arg="article_id",
     title="Get article",
+    destructive=False,
     description=(
         "Return an article's metadata, abstract, files and the outline of file_id or, "
         "without it, of the latest PDF. Call get_article_text or get_article_pdf next."

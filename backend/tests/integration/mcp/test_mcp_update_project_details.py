@@ -313,16 +313,15 @@ async def test_unexpected_error_is_internal_with_no_row(
     assert (await _audit_count(db_session, outcome="refused")) == 0
 
 
-async def test_update_project_details_requires_user_interaction_meta(mcp_client, pat_primary_rw):
+async def test_update_project_details_is_a_non_destructive_write(mcp_client, pat_primary_rw):
     async with mcp_client(pat_primary_rw) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
     t = tools["update_project_details"]
-    assert t.meta["anthropic/requiresUserInteraction"] is True
-    # F12: confirmation is client-dependent; the audit is not.
-    assert "Clients that support it (e.g. Claude Code) ask" in t.description
+    assert "anthropic/requiresUserInteraction" not in (t.meta or {})
+    assert "ask the human" not in t.description
     assert "audited" in t.description
     a = t.annotations
-    assert a.destructive_hint is True
+    assert a.destructive_hint is False
     assert a.idempotent_hint is True
     assert a.read_only_hint is False
     assert a.open_world_hint is False

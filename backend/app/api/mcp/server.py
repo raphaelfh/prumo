@@ -161,15 +161,16 @@ def agent_tool(
     project_arg: Literal["project_id", "article_id"] | None,
     title: str,
     description: str,
-    destructive: bool = False,
+    destructive: bool,
     idempotent: bool = True,
-    meta: dict[str, Any] | None = None,
     structured_output: bool | None = None,
 ) -> Callable[[_F], _F]:
     """Register a tool through the ONE choke point (``_dispatch``).
 
     ``description`` is a required static string (no docstring fallback).
     Annotation hints are derived from ``requires``/``destructive``/``idempotent``;
+    ``destructive`` has no default because MCP reads a non-read-only tool as
+    destructive unless told otherwise, so every call site states it.
     ``open_world_hint`` is always ``False`` (every tool stays inside prumo's own
     data). Tools never call ``mcp.tool()`` / ``add_tool`` directly.
     """
@@ -201,7 +202,6 @@ def agent_tool(
                 idempotent_hint=idempotent,
                 open_world_hint=False,
             ),
-            meta=meta,
             structured_output=structured_output,
         )
         return fn
