@@ -157,7 +157,7 @@ async def test_unknown_token_is_401_then_429_when_the_bucket_is_spent(
     await app(_scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, send)
     assert sent[0]["status"] == 401
 
-    monkeypatch.setattr(asgi_auth.limiter.limiter, "hit", lambda *_a, **_k: False)
+    monkeypatch.setattr(asgi_auth, "hit_shared", lambda *_a, **_k: False)
     sent.clear()
     await app(_scope([(b"authorization", f"Bearer {secret}".encode())]), _receive, send)
     assert sent[0]["status"] == 429

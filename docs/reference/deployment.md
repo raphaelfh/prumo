@@ -112,6 +112,7 @@ pass it inline (`DATABASE_URL=... uv run ...`), never by editing
 | `web` | `MCP_ALLOWED_HOSTS` | Comma-separated `Host` allow-list for the `/mcp` mount (`web-production-48b398.up.railway.app` in production). Default `localhost:*,127.0.0.1:*,[::1]:*,test`; a host not listed gets 421, so leaving it unset in production fails closed. |
 | `web` | `MCP_ALLOWED_ORIGINS` | Comma-separated browser `Origin` allow-list for `/mcp`. Default empty: no browser origin may call it (CLI agents send no `Origin` and pass). |
 | `web` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable, resolves to private network) |
+| `web` | `RATE_LIMIT_STORAGE_URI` | `${{Redis.REDIS_URL}}` (reference variable). Unset falls back to `memory://`, which is per process: limits then reset on restart and are not shared across instances. |
 | `worker` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable) |
 
 ### Feedback / Linear

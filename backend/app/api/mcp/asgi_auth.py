@@ -20,7 +20,7 @@ from app.api.mcp import session as mcp_session
 from app.core.logging import get_logger
 from app.schemas.mcp_auth import McpPrincipal
 from app.services.pat_service import resolve_principal, touch_last_used
-from app.utils.rate_limiter import limiter
+from app.utils.rate_limiter import hit_shared
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -92,7 +92,7 @@ class _PatAuthApp:
             client = scope.get("client")
             ip = client[0] if client else "unknown"
             # Only a failed lookup hits the per-IP bucket: a valid PAT never counts.
-            ok = limiter.limiter.hit(_UNAUTH_LIMIT, "mcp401", ip)
+            ok = hit_shared(_UNAUTH_LIMIT, "mcp401", ip)
             response = (
                 Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
                 if ok

@@ -199,6 +199,13 @@ class Settings(BaseSettings):
 
     # =================== RATE LIMITING ===================
     RATE_LIMIT_PER_MINUTE: int = 60
+    # Shared limiter storage (Redis in production) so budgets hold across
+    # processes and restarts. Unset -> per-process ``memory://``.
+    RATE_LIMIT_STORAGE_URI: str | None = None
+
+    # =================== REDIS ===================
+    # Celery broker/result backend and the job-owner records.
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     # =================== SECURITY ===================
     # Chave for criptografia de data sensiveis (ex: Zotero API key)

@@ -21,6 +21,7 @@ from redis import Redis
 
 from app.api.deps.scope import assert_kickoff_scope
 from app.api.deps.security import get_current_user_sub
+from app.core.config import settings
 from app.core.deps import CurrentUser, DbSession
 from app.core.logging import get_logger
 from app.llm.catalog import canonical_pair
@@ -42,7 +43,6 @@ from app.services.extraction_run_write import (
 )
 from app.services.template_section_service import SectionNotFoundError, owned_section
 from app.utils.rate_limiter import limiter
-from app.worker.celery_app import REDIS_URL
 from app.worker.tasks.extraction_tasks import run_section_extraction_task
 
 router = APIRouter()
@@ -61,7 +61,7 @@ _SECTION_JOB_OWNER_TTL_SECONDS = 3600
 def _is_queue_available() -> bool:
     try:
         Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             socket_connect_timeout=0.25,
             socket_timeout=0.25,
         ).ping()
@@ -73,7 +73,7 @@ def _is_queue_available() -> bool:
 def _remember_job_owner(job_id: str, user_id: str) -> None:
     with contextlib.suppress(Exception):
         Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             socket_connect_timeout=0.5,
             socket_timeout=0.5,
         ).set(
@@ -87,7 +87,7 @@ def _lookup_job_owner(job_id: str) -> str | None:
     raw: object = None
     with contextlib.suppress(Exception):
         raw = Redis.from_url(
-            REDIS_URL,
+            settings.REDIS_URL,
             socket_connect_timeout=0.5,
             socket_timeout=0.5,
         ).get(f"{_SECTION_JOB_OWNER_KEY_PREFIX}{job_id}")

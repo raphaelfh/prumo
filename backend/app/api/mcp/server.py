@@ -18,10 +18,8 @@ from __future__ import annotations
 import functools
 import importlib
 import inspect
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from math import ceil
 from typing import Any, Literal, TypeVar
 
 import logfire
@@ -48,7 +46,7 @@ from app.core.config import API_VERSION, settings
 from app.core.logging import get_logger
 from app.services.article_read_service import get_article_project_id
 from app.utils.compact_json import compact_json
-from app.utils.rate_limiter import limiter
+from app.utils.rate_limiter import hit_shared, retry_after
 
 logger = get_logger(__name__)
 
@@ -199,12 +197,11 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
                 )
 
             limit = _WRITE_LIMIT if write else _READ_LIMIT
-            if not limiter.limiter.hit(limit, "pat", str(principal.token_id)):
-                stats = limiter.limiter.get_window_stats(limit, "pat", str(principal.token_id))
+            if not hit_shared(limit, "pat", str(principal.token_id)):
                 raise McpToolError(
                     McpErrorCode.RATE_LIMITED,
                     "Too many calls; wait and retry.",
-                    retry_after_seconds=max(1, ceil(stats.reset_time - time.time())),
+                    retry_after_seconds=retry_after(limit, "pat", str(principal.token_id)),
                 )
 
             async with mcp_session.session_factory() as db:
