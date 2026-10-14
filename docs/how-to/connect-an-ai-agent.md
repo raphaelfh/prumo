@@ -178,5 +178,6 @@ succeeded or not.
 | `NOT_FOUND` | You are not a member of the project, or the id belongs to another project | Call `list_projects` / `list_articles` |
 | `MANAGER_REQUIRED` | The call needs a project manager | Ask a project manager |
 | `SCOPE_INSUFFICIENT` | A `read` token tried a write tool | Use a `read_write` token |
+| `INVALID_ARGUMENT` | A tool argument is out of range or malformed; `field` names it | Fix that argument and call again |
 | `DRAFT_LOCK_HELD` | Another manager is editing the draft | Wait for their edit to finish |
 | `NARROW_BASELINE` / `NO_PUBLISHED_VERSION` | The template has never been published | Publish it once in prumo first |

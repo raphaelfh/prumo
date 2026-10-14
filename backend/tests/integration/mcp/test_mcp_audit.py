@@ -482,3 +482,40 @@ async def test_applied_draft_row_matches_draft_marker(
     ).scalar_one()  # exactly one applied row
     marker = await get_config_draft_marker(db_session, template_id)
     assert applied_created_at == marker
+
+
+async def test_malformed_op_writes_one_audited_invalid_argument_row(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "edit_template_draft",
+        {
+            "project_id": str(project_id),
+            "template_id": str(template_id),
+            "ops": [
+                {
+                    "op": "add_question",
+                    "section_id": _section_id(schema),
+                    "label": "Q",
+                    "type": "text",
+                    "options": ["a"],
+                }
+            ],
+        },
+    )
+    payload = error_payload(result)
+    assert (payload["code"], payload["field"], payload["op_index"]) == (
+        "INVALID_ARGUMENT",
+        "options",
+        0,
+    )
+    assert payload["message"] == "options are only allowed for select and multiselect questions"
+    assert (
+        await _audit_count(
+            db_session, outcome="refused", error_code="INVALID_ARGUMENT", tool="edit_template_draft"
+        )
+        == 1
+    )

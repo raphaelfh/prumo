@@ -25,10 +25,12 @@ from typing import Any, Literal, TypeVar
 import logfire
 from limits import parse
 from mcp.server import CacheHint, MCPServer
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import CallToolResult, TextContent, Tool, ToolAnnotations
-from pydantic import BaseModel
+from mcp.types import CallToolResult, InputRequiredResult, TextContent, Tool, ToolAnnotations
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import ASGIApp
 
@@ -42,6 +44,7 @@ from app.api.mcp.errors import (
     error_result,
     reject_nul,
     to_tool_error,
+    validation_failure,
 )
 from app.core.config import API_VERSION, settings
 from app.core.logging import get_logger
@@ -93,7 +96,9 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 
 
 class _PrumoMCPServer(MCPServer[Any]):
-    """Filters ``tools/list`` to what the caller's token scope may call."""
+    """Filters ``tools/list`` to what the caller's token scope may call, and
+    answers a call whose arguments fail the tool's input schema inside the
+    error envelope instead of the SDK's plain-text pydantic dump."""
 
     async def list_tools(self) -> list[Tool]:
         scope = current_principal().scope
@@ -102,6 +107,19 @@ class _PrumoMCPServer(MCPServer[Any]):
             (t for t in tools if scope == "read_write" or _RULES[t.name].requires == "read"),
             key=lambda t: t.name,
         )
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], context: Context[Any, Any] | None = None
+    ) -> CallToolResult | InputRequiredResult:
+        try:
+            return await super().call_tool(name, arguments, context)
+        except ToolError as exc:
+            # The SDK validates arguments BEFORE `_dispatch` runs: its failure is
+            # a `ToolError` whose cause is the `ValidationError`. Anything else
+            # (an unknown tool, a crash) keeps the SDK's own handling.
+            if not isinstance(exc.__cause__, ValidationError):
+                raise
+            return _argument_refusal(name, exc.__cause__)
 
 
 mcp = _PrumoMCPServer(
@@ -185,6 +203,39 @@ def agent_tool(
     return decorator
 
 
+def _charge(rule: _ToolRule, token_id: str) -> None:
+    """Scope, then the rate tier (charged): the first two `_dispatch` checks."""
+    write = rule.requires == "write"
+    if write and current_principal().scope != "read_write":
+        raise McpToolError(
+            McpErrorCode.SCOPE_INSUFFICIENT, "This token's scope cannot call a write tool."
+        )
+    limit = _WRITE_LIMIT if write else _READ_LIMIT
+    if not hit_shared(limit, "pat", token_id):
+        raise McpToolError(
+            McpErrorCode.RATE_LIMITED,
+            "Too many calls; wait and retry.",
+            retry_after_seconds=retry_after(limit, "pat", token_id),
+        )
+
+
+def _argument_refusal(name: str, exc: ValidationError) -> CallToolResult:
+    """A call whose arguments failed the input schema: scope and rate limit
+    still answer first, then INVALID_ARGUMENT naming the field. No project
+    coordinate is bound, so no audit row."""
+    token_id = str(current_principal().token_id)
+    with logfire.span("mcp.tool_call", tool=name, token_id=token_id) as span:
+        try:
+            _charge(_RULES[name], token_id)
+            err = validation_failure(exc)
+        except McpToolError as refusal:
+            err = refusal
+        span.set_attribute("outcome", err.code.value)
+        result = error_result(err)
+        span.set_attribute("response_size", _response_size(result))
+        return result
+
+
 async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any]) -> Any:
     """The ONE place the checks run, in order: scope, rate limit, membership, role."""
     principal = current_principal()
@@ -193,18 +244,7 @@ async def _dispatch(name: str, rule: _ToolRule, fn: Any, kwargs: dict[str, Any])
 
     with logfire.span("mcp.tool_call", tool=name, token_id=str(principal.token_id)) as span:
         try:
-            if write and principal.scope != "read_write":
-                raise McpToolError(
-                    McpErrorCode.SCOPE_INSUFFICIENT, "This token's scope cannot call a write tool."
-                )
-
-            limit = _WRITE_LIMIT if write else _READ_LIMIT
-            if not hit_shared(limit, "pat", str(principal.token_id)):
-                raise McpToolError(
-                    McpErrorCode.RATE_LIMITED,
-                    "Too many calls; wait and retry.",
-                    retry_after_seconds=retry_after(limit, "pat", str(principal.token_id)),
-                )
+            _charge(rule, str(principal.token_id))
 
             db = mcp_session.current_session()
             if rule.project_arg is not None:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Sequence
+from typing import Final
 from uuid import UUID
 
 
@@ -56,7 +57,7 @@ def cursor_uuid(value: str | int) -> UUID:
 # `integer` columns (page, block index) and the `real` a search rank is
 # compared as. `_REAL_MIN` is the smallest normal float4 -- a smaller nonzero
 # rank underflows the CAST; ts_rank never yields one (its floor is 1e-20).
-_INT4_MAX = 2**31 - 1
+INT4_MAX: Final = 2**31 - 1  # also bounds the MCP page arguments
 _REAL_MAX = 3.4028234663852886e38
 _REAL_MIN = 1.1754943508222875e-38
 
@@ -64,7 +65,7 @@ _REAL_MIN = 1.1754943508222875e-38
 def cursor_position(value: str | int) -> int:
     """A non-negative int4: a negative position would wrap a Python index,
     and one past 2^31-1 overflows the Postgres `integer` it is compared to."""
-    if not isinstance(value, int) or not 0 <= value <= _INT4_MAX:
+    if not isinstance(value, int) or not 0 <= value <= INT4_MAX:
         raise InvalidCursorError("cursor is not a valid opaque cursor")
     return value
 

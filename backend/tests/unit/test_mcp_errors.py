@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.exc import DBAPIError
 
 from app.api.mcp.errors import (
@@ -15,6 +15,7 @@ from app.api.mcp.errors import (
     error_result,
     reject_nul,
     to_tool_error,
+    validation_failure,
 )
 from app.core.error_handler import NotFoundError
 from app.services.article_read_service import ArticleNotFoundError
@@ -129,3 +130,51 @@ def test_field_never_echoes_a_nul_or_an_unbounded_key() -> None:
     assert "\x00" not in field
     assert field.startswith("fields.bad\\u0000key")
     assert len(field) <= 200
+
+
+class _Inner(BaseModel):
+    label: str
+
+    @field_validator("label")
+    @classmethod
+    def _no_x(cls, value: str) -> str:
+        if value == "x":
+            raise ValueError("label must not be x")
+        if value == "y":  # raised, not `assert`: pytest rewrites asserts in test modules
+            raise AssertionError("label must not be y")
+        return value
+
+
+class _Outer(BaseModel):
+    items: list[_Inner]
+
+
+def _outer_error(label: str) -> ValidationError:
+    try:
+        _Outer.model_validate({"items": [{"label": "ok"}, {"label": label}]})
+    except ValidationError as exc:
+        return exc
+    raise AssertionError("expected ValidationError")
+
+
+@pytest.mark.parametrize(
+    ("label", "message"),
+    [("x", "label must not be x"), ("y", "label must not be y")],
+    ids=["value-error", "assertion"],
+)
+def test_validation_failure_names_the_dotted_field_and_strips_pydantic_prefixes(
+    label: str, message: str
+) -> None:
+    err = validation_failure(_outer_error(label), prefix="ops", op_index=1)
+    assert err.code == McpErrorCode.INVALID_ARGUMENT
+    assert err.message == message
+    assert err.extras == {"field": "ops.items.1.label", "op_index": 1}
+    rendered = error_result(err).content[0].text
+    assert "pydantic" not in rendered
+    assert "errors.pydantic.dev" not in rendered
+
+
+def test_validation_failure_without_prefix_is_the_bare_loc() -> None:
+    err = validation_failure(_validation_error())
+    assert err.extras == {"field": "label"}
+    assert err.message == "String should have at most 3 characters"

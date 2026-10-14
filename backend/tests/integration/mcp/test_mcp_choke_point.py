@@ -276,3 +276,107 @@ async def test_tool_call_span_carries_no_secret(
     assert span.attrs["outcome"] == "ok"
     for value in span.attrs.values():
         assert "prumo_pat_" not in str(value)
+
+
+# --- argument validation inside the envelope (PRU-80 / PRU-81) ---------------
+
+
+async def test_malformed_argument_is_invalid_argument_naming_the_field(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+) -> None:
+    async with mcp_client(pat_primary_read) as client:
+        r = await client.call_tool("get_project", {"project_id": "abc"})
+    assert r.is_error is True
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "INVALID_ARGUMENT"
+    assert r.structured_content["field"] == "project_id"
+    assert r.structured_content["retryable"] is False
+    assert "pydantic" not in r.content[0].text
+    assert "Error executing tool" not in r.content[0].text
+
+
+async def test_read_token_with_bad_arguments_to_write_tool_is_scope_insufficient(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+) -> None:
+    async with mcp_client(pat_primary_read) as client:
+        r = await client.call_tool("probe_write", {"project_id": "abc"})
+    assert r.structured_content is not None
+    assert r.structured_content["code"] == "SCOPE_INSUFFICIENT"
+
+
+async def test_bad_arguments_are_charged_to_the_rate_tier(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    probe_tools: None,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server, "_READ_LIMIT", parse("1/minute"))
+    async with mcp_client(pat_primary_read) as client:
+        r1 = await client.call_tool("probe_read", {"project_id": "abc"})
+        r2 = await client.call_tool("probe_read", {"project_id": "abc"})
+    assert r1.structured_content is not None
+    assert r1.structured_content["code"] == "INVALID_ARGUMENT"
+    assert r2.structured_content is not None
+    assert r2.structured_content["code"] == "RATE_LIMITED"
+    assert r2.structured_content["retry_after_seconds"] >= 1
+
+
+@pytest.mark.parametrize("limit", [0, -1, 51, 2**31], ids=["zero", "negative", "over", "int4"])
+async def test_list_articles_limit_out_of_range_is_invalid_argument(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_read: SeededPat,
+    limit: int,
+) -> None:
+    async with mcp_client(pat_primary_read) as client:
+        r = await client.call_tool(
+            "list_articles", {"project_id": str(SEED.primary_project), "limit": limit}
+        )
+    assert r.structured_content is not None
+    assert (r.structured_content["code"], r.structured_content["field"]) == (
+        "INVALID_ARGUMENT",
+        "limit",
+    )
+
+
+def _branches(schema: dict) -> list[dict]:
+    """A property's schema, or each branch of its ``anyOf`` (an optional arg)."""
+    return schema.get("anyOf", [schema])
+
+
+async def test_tools_list_advertises_argument_bounds(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+) -> None:
+    async with mcp_client(pat_primary_rw) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    bounded = 0
+    for tool in tools.values():
+        for name, prop in tool.input_schema.get("properties", {}).items():
+            if name in {"limit", "page_from", "page_to"}:
+                ints = [b for b in _branches(prop) if b.get("type") == "integer"]
+                assert ints, (tool.name, name)
+                for branch in ints:
+                    assert "minimum" in branch and "maximum" in branch, (tool.name, name)
+                    bounded += 1
+            if name == "response_format":
+                enums = [b for b in _branches(prop) if "enum" in b]
+                assert enums and set(enums[0]["enum"]) == {"concise", "detailed"}, tool.name
+    assert bounded == 4  # list_articles.limit, get_extractions.limit, page_from, page_to
+
+    ops = tools["edit_template_draft"].input_schema["properties"]["ops"]
+    assert ops["maxItems"] == 25
+    op_names: set[str] = set()
+    for branch in ops["items"]["oneOf"]:
+        op_names |= set(
+            branch["properties"]["op"].get("enum", [branch["properties"]["op"].get("const")])
+        )
+    assert op_names == {"add_question", "update_question"}
+
+    details = tools["update_project_details"].input_schema["properties"]
+    for key in ("fields", "expected"):
+        assert details[key]["additionalProperties"] is False
+        assert len(details[key]["properties"]) == 11

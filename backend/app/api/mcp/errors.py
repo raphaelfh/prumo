@@ -10,7 +10,10 @@ else -> ``INTERNAL_ERROR``: every audited code (``INVALID_ARGUMENT``,
 (Tasks 9/10b) — a copy here would be unreachable or would return an
 audited code with no row. A stray ``pydantic.ValidationError`` is a server
 bug and is logged as ``INTERNAL_ERROR``, never reported as the caller's
-``INVALID_ARGUMENT`` with no audit row.
+``INVALID_ARGUMENT`` with no audit row. A caller's own pydantic failure is
+rendered by ``validation_failure`` -- the one place that turns one into
+``INVALID_ARGUMENT`` (the SDK's argument check, and the write tools' op/field
+parsing).
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from enum import StrEnum
 from typing import Any
 
 from mcp.types import CallToolResult, TextContent
+from pydantic import ValidationError
 
 from app.core.error_handler import NotFoundError
 from app.schemas.mcp_errors import McpToolErrorPayload
@@ -125,6 +129,24 @@ def _safe_field(field: str) -> str:
     out (the payload must not carry the character it may be refusing) and
     capped, so an unbounded key cannot bloat the error."""
     return cap_text(field.replace("\x00", "\\u0000"))[0]
+
+
+_PYDANTIC_PREFIXES = ("Value error, ", "Assertion failed, ")
+
+
+def validation_failure(exc: ValidationError, *, prefix: str = "", **extras: Any) -> McpToolError:
+    """THE MCP rendering of a pydantic failure: first error, dotted field, no library text.
+
+    ``field`` is ``prefix`` joined to the first error's loc; a root-level error
+    (empty loc, no prefix) carries no ``field``."""
+    first = exc.errors(include_url=False)[0]
+    field = ".".join(str(part) for part in (prefix, *first["loc"]) if part != "")
+    message = first["msg"]
+    for p in _PYDANTIC_PREFIXES:
+        message = message.removeprefix(p)
+    if field:
+        extras["field"] = field  # McpToolError escapes and caps it (_safe_field)
+    return McpToolError(McpErrorCode.INVALID_ARGUMENT, message, **extras)
 
 
 def to_tool_error(exc: BaseException) -> McpToolError:

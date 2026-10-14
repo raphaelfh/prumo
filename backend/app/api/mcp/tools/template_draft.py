@@ -13,16 +13,22 @@ before any audited code, so a foreign or missing template always answers
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import ValidationError
+from pydantic import Field, ValidationError, WithJsonSchema
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.asgi_auth import current_principal
 from app.api.mcp.audit import AuditScope, record_applied_write, refuse
-from app.api.mcp.errors import NOT_FOUND_MESSAGE, McpErrorCode, McpToolError, reject_nul
+from app.api.mcp.errors import (
+    NOT_FOUND_MESSAGE,
+    McpErrorCode,
+    McpToolError,
+    reject_nul,
+    validation_failure,
+)
 from app.api.mcp.server import agent_tool
 from app.api.v1.endpoints._integrity import is_deadlock
 from app.schemas.mcp_template_draft import (
@@ -53,6 +59,7 @@ from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_template_config_diff,
 )
+from app.utils.json_schema import inline_json_schema
 
 _TOOL = "edit_template_draft"
 MAX_OPS = 25
@@ -60,6 +67,14 @@ _OPS: dict[str, type[AddQuestionOp] | type[UpdateQuestionOp]] = {
     "add_question": AddQuestionOp,
     "update_question": UpdateQuestionOp,
 }
+# Advertised only: `_parse_ops` still validates each op, so an empty list, too
+# many ops or a malformed op is an AUDITED refusal, not an SDK-level one.
+_OPS_SCHEMA = WithJsonSchema(
+    {
+        **inline_json_schema(list[Annotated[DraftOp, Field(discriminator="op")]]),
+        "maxItems": MAX_OPS,
+    }
+)
 _EDITOR_TAB = {
     "extraction": "tab=extraction&extractionTab=configuration",
     "quality_assessment": "tab=quality&qaTab=configuration",
@@ -89,7 +104,10 @@ _DESCRIPTION = (
     idempotent=False,
 )
 async def edit_template_draft(
-    db: AsyncSession, project_id: UUID, template_id: UUID, ops: list[dict[str, Any]]
+    db: AsyncSession,
+    project_id: UUID,
+    template_id: UUID,
+    ops: Annotated[list[dict[str, Any]], _OPS_SCHEMA],
 ) -> EditTemplateDraftResult:
     scope = AuditScope(
         tool=_TOOL,
@@ -185,11 +203,7 @@ def _parse_ops(ops: list[dict[str, Any]]) -> list[DraftOp]:
         try:
             parsed.append(model.model_validate(raw))
         except ValidationError as exc:
-            first = exc.errors()[0]
-            loc = ".".join(str(part) for part in first["loc"]) or "op"
-            raise McpToolError(
-                McpErrorCode.INVALID_ARGUMENT, first["msg"], op_index=index, field=loc
-            ) from exc
+            raise validation_failure(exc, op_index=index) from exc
     return parsed
 
 
@@ -217,11 +231,7 @@ def _op_failure(exc: DraftOpError) -> McpToolError | None:
             op_index=exc.op_index,
         )
     if isinstance(cause, ValidationError):
-        first = cause.errors()[0]
-        loc = ".".join(str(part) for part in first["loc"]) or "op"
-        return McpToolError(
-            McpErrorCode.INVALID_ARGUMENT, first["msg"], op_index=exc.op_index, field=loc
-        )
+        return validation_failure(cause, op_index=exc.op_index)
     if isinstance(cause, DBAPIError) and is_deadlock(cause):
         return McpToolError(
             McpErrorCode.RETRY, "A concurrent edit won; nothing was changed.", op_index=exc.op_index

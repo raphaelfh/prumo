@@ -8,8 +8,10 @@ which the dispatcher maps to NOT_FOUND.
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.errors import McpErrorCode, McpToolError
@@ -20,10 +22,6 @@ from app.services.article_text_block_read_service import get_file_outline
 from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.opaque_cursor import InvalidCursorError
 from app.utils.untrusted import wrap_untrusted
-
-_QUERY_CAP = 200
-_LIMIT_MIN = 1
-_LIMIT_MAX = 50
 
 
 @agent_tool(
@@ -38,20 +36,12 @@ _LIMIT_MAX = 50
 async def list_articles(
     db: AsyncSession,
     project_id: UUID,
-    query: str | None = None,
+    query: Annotated[str, Field(max_length=200)] | None = None,
     has_pdf: bool | None = None,
     has_text: bool | None = None,
     cursor: str | None = None,
-    limit: int = 25,
+    limit: Annotated[int, Field(ge=1, le=50)] = 25,
 ) -> McpArticleList:
-    if query is not None and len(query) > _QUERY_CAP:
-        raise McpToolError(
-            McpErrorCode.INVALID_ARGUMENT, "query is capped at 200 characters", field="query"
-        )
-    if not _LIMIT_MIN <= limit <= _LIMIT_MAX:
-        raise McpToolError(
-            McpErrorCode.INVALID_ARGUMENT, "limit must be between 1 and 50", field="limit"
-        )
     try:
         return await article_list_read_service.list_project_articles(
             db,

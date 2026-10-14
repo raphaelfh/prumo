@@ -9,26 +9,30 @@ read). One `agent_actions` row per applied write or audited domain refusal
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import ValidationError
+from pydantic import ValidationError, WithJsonSchema
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.audit import AuditScope, record_applied_write, refuse
-from app.api.mcp.errors import McpErrorCode, McpToolError, reject_nul
+from app.api.mcp.errors import McpErrorCode, McpToolError, reject_nul, validation_failure
 from app.api.mcp.server import agent_tool
 from app.api.v1.endpoints._integrity import is_deadlock
 from app.schemas.mcp_project_details import UpdateProjectDetailsResult
 from app.schemas.project_details import ProjectDetailsFields
 from app.services import project_details_service
+from app.utils.json_schema import inline_json_schema
 
 _TOOL = "update_project_details"
 _REVIEW_TYPE_NOTE = (
     "review_type feeds the AI review question; it affects only runs started after this edit"
 )
 _EDITABLE = sorted(ProjectDetailsFields.model_fields)
+# Advertised only: `_parse` still validates, so an unknown key stays an audited
+# FIELD_NOT_EDITABLE (with the editable list), not an SDK-level refusal.
+_Details = Annotated[dict[str, Any], WithJsonSchema(inline_json_schema(ProjectDetailsFields))]
 _DESCRIPTION = (
     "Edit a project's descriptive fields (name, description, review type and the other "
     "whitelisted columns from get_project). `expected` must carry the value of each field "
@@ -49,7 +53,7 @@ _DESCRIPTION = (
     meta={"anthropic/requiresUserInteraction": True},
 )
 async def update_project_details(
-    db: AsyncSession, project_id: UUID, fields: dict[str, Any], expected: dict[str, Any]
+    db: AsyncSession, project_id: UUID, fields: _Details, expected: _Details
 ) -> UpdateProjectDetailsResult:
     scope = AuditScope(
         tool=_TOOL,
@@ -119,7 +123,7 @@ def _parse(
                 field=f"expected.{key}",
             )
     return _validated(fields, prefix=""), _validated(
-        {k: expected[k] for k in fields}, prefix="expected."
+        {k: expected[k] for k in fields}, prefix="expected"
     )
 
 
@@ -127,8 +131,4 @@ def _validated(raw: dict[str, Any], *, prefix: str) -> ProjectDetailsFields:
     try:
         return ProjectDetailsFields.model_validate(raw)
     except ValidationError as exc:
-        first = exc.errors()[0]
-        loc = ".".join(str(part) for part in first["loc"]) or "fields"
-        raise McpToolError(
-            McpErrorCode.INVALID_ARGUMENT, first["msg"], field=f"{prefix}{loc}"
-        ) from exc
+        raise validation_failure(exc, prefix=prefix) from exc

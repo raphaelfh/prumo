@@ -9,8 +9,10 @@ resolves the file, validates arguments and renders the exact text format.
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp.errors import McpErrorCode, McpToolError
@@ -18,12 +20,14 @@ from app.api.mcp.server import agent_tool
 from app.schemas.mcp_article_text import McpTextPage, chunk_locator_prefix
 from app.services import article_read_service
 from app.services.article_text_block_read_service import page_text_blocks
-from app.utils.opaque_cursor import InvalidCursorError
+from app.utils.opaque_cursor import INT4_MAX, InvalidCursorError
 from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN, neutralize
 
 # Body budget (spec §5.1): each chunk's text + its locator prefix + its
 # newline. Header, delimiter and trailer lines sit outside this budget.
 _BODY_BUDGET = 28_000
+# A page number past int4 would overflow the Postgres `integer` it is compared to.
+_Page = Annotated[int, Field(ge=1, le=INT4_MAX)]
 
 
 def _render(
@@ -69,16 +73,10 @@ async def get_article_text(
     db: AsyncSession,
     article_id: UUID,
     file_id: UUID | None = None,
-    page_from: int | None = None,
-    page_to: int | None = None,
+    page_from: _Page | None = None,
+    page_to: _Page | None = None,
     cursor: str | None = None,
 ) -> str:
-    if page_from is not None and page_from < 1:
-        raise McpToolError(
-            McpErrorCode.INVALID_ARGUMENT, "page_from must be >= 1", field="page_from"
-        )
-    if page_to is not None and page_to < 1:
-        raise McpToolError(McpErrorCode.INVALID_ARGUMENT, "page_to must be >= 1", field="page_to")
     if page_from is not None and page_to is not None and page_to < page_from:
         raise McpToolError(
             McpErrorCode.INVALID_ARGUMENT, "page_to must be >= page_from", field="page_to"
