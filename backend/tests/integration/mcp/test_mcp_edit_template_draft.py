@@ -116,6 +116,14 @@ async def test_success_returns_unpublished_draft(
     assert body["draft_fingerprint"]
     assert body["diff"]["changes_truncated"] is False
     assert "Publish" in body["next_step"]
+    assert body["untrusted_content"] is True
+    assert set(body["untrusted_fields"]) == {
+        "applied[].name",
+        "applied[].label",
+        "diff.changes[].label_path[]",
+        "diff.changes[].before",
+        "diff.changes[].after",
+    }
 
     row = (
         await db_session.execute(
@@ -232,6 +240,8 @@ async def test_draft_lock_held(mcp_client, pat_primary_rw, db_session: AsyncSess
     payload = error_payload(result)
     assert payload["code"] == "DRAFT_LOCK_HELD"
     assert payload["holder_name"] == "Integration Reviewer"
+    assert payload["untrusted_content"] is True
+    assert payload["untrusted_fields"] == ["holder_name"]
     assert await draft_lock_holder(db_session, template_id) == SEED.reviewer_profile
     assert await _label_set(db_session, template_id) == before
     assert await _audit_count(db_session, outcome="refused") == 1

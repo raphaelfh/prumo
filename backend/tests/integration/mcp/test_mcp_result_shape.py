@@ -73,7 +73,6 @@ _TRUSTED_PATHS: dict[str, frozenset[str]] = {
     "get_article": frozenset(
         {
             "files[].role",
-            "files[].file_type",
             "files[].extraction_status",
             "extraction_status[].kind",
             "extraction_status[].stage",

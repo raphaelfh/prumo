@@ -91,6 +91,7 @@ class McpArticleDetail(BaseModel):
         "pmid",
         "publication_status",
         "abstract",
+        "files[].file_type",
         "files[].original_filename",
         "outline.headings[].text",
         "extraction_status[].template_name",

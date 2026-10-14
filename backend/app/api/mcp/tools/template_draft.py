@@ -160,6 +160,8 @@ async def edit_template_draft(
                 McpErrorCode.DRAFT_LOCK_HELD,
                 "Another manager is editing this draft.",
                 holder_name=(exc.details or {}).get("holder_name"),
+                untrusted_content=True,
+                untrusted_fields=["holder_name"],
             ),
         )
     except DraftOpError as exc:

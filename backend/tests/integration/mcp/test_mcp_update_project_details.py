@@ -228,6 +228,8 @@ async def test_stale_value_returns_current_and_writes_nothing(
     error = error_payload(result)
     assert error["code"] == "STALE_VALUE"
     assert error["current"] == {"name": current["name"]}
+    assert error["untrusted_content"] is True
+    assert error["untrusted_fields"] == ["current{}"]
 
     after = await _current(db_session, "name")
     assert after["name"] == current["name"]

@@ -76,6 +76,8 @@ async def update_project_details(
                 McpErrorCode.STALE_VALUE,
                 "A field changed since it was read.",
                 current=(exc.details or {})["current"],
+                untrusted_content=True,
+                untrusted_fields=["current{}"],
             ),
         )
     except DBAPIError as exc:
