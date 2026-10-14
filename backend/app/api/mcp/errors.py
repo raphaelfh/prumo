@@ -115,10 +115,15 @@ access refusals, rate limits or unknown session state: a log span only."""
 class McpToolError(Exception):
     """A tool-facing error: code + message + per-code extras (spec §7)."""
 
-    def __init__(self, code: McpErrorCode, message: str, **extras: Any) -> None:
+    def __init__(
+        self, code: McpErrorCode, message: str, *, next_step: str | None = None, **extras: Any
+    ) -> None:
+        """``next_step`` replaces the code's default when one code covers
+        cases that call for different follow-ups."""
         super().__init__(message)
         self.code = code
         self.message = message
+        self.next_step = next_step
         if isinstance(extras.get("field"), str):
             extras["field"] = _safe_field(extras["field"])
         self.extras = extras
@@ -209,7 +214,7 @@ def error_result(err: McpToolError) -> CallToolResult:
         code=err.code.value,
         message=err.message,
         retryable=spec.retryable,
-        next_step=spec.next_step,
+        next_step=err.next_step or spec.next_step,
         **err.extras,
     ).model_dump(mode="json")
     return CallToolResult(

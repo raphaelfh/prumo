@@ -3,11 +3,12 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.api.mcp.draft_diff import DIFF_ROW_CAP, capped_diff
+from app.api.mcp.draft_diff import DIFF_CHAR_BUDGET, DIFF_ROW_CAP, capped_diff
 from app.api.mcp.errors import validation_failure
 from app.core.config import Settings
 from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.mcp_template_draft import AddQuestionOp, UpdateQuestionOp
+from app.utils.compact_json import compact_json
 
 _SECTION_ID = uuid4()
 _FIELD_ID = uuid4()
@@ -123,3 +124,44 @@ def test_capped_diff_under_the_cap_is_not_truncated() -> None:
 
 def test_public_app_url_defaults_to_the_production_frontend_origin() -> None:
     assert Settings.model_fields["PUBLIC_APP_URL"].default == "https://prumoai.vercel.app"
+
+
+def _pt_br_diff(count: int) -> TemplateConfigDiffRead:
+    rows = [
+        {
+            "id": f"modified:field:{i}:llm_description:",
+            "variant": "field_modified",
+            "tier": "semantic",
+            "label_path": ["Seção " + "ç" * 300, "Questão " + "ã" * 300],
+            "attribute": "llm_description",
+            "before": "ação " * 100,
+            "after": "intervenção " * 100,
+        }
+        for i in range(count)
+    ]
+    return TemplateConfigDiffRead.model_validate(
+        {
+            "project_template_id": uuid4(),
+            "status": "available",
+            "changes": {"semantic": rows},
+            "fingerprint": "fp",
+        }
+    )
+
+
+def test_capped_diff_budgets_serialized_chars_for_non_ascii_rows() -> None:
+    capped = capped_diff(_pt_br_diff(DIFF_ROW_CAP), budget=10_000)
+    assert len(compact_json(capped.model_dump(mode="json"))) <= 10_000
+    assert 0 < len(capped.changes) < DIFF_ROW_CAP
+    assert capped.changes_truncated is True
+    assert capped.counts["semantic"] == DIFF_ROW_CAP
+
+
+def test_capped_diff_truncates_label_path_elements() -> None:
+    capped = capped_diff(_pt_br_diff(1))
+    assert [len(label) for label in capped.changes[0].label_path] == [100, 100]
+
+
+def test_capped_diff_default_budget_bounds_the_worst_case() -> None:
+    capped = capped_diff(_pt_br_diff(DIFF_ROW_CAP))
+    assert len(compact_json(capped.model_dump(mode="json"))) <= DIFF_CHAR_BUDGET

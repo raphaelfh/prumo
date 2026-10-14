@@ -61,6 +61,7 @@ from app.services.template_versioning import (
     NoActiveTemplateVersionError,
     get_template_config_diff,
 )
+from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.json_schema import inline_json_schema
 
 _TOOL = "edit_template_draft"
@@ -87,6 +88,11 @@ _EDITOR_TAB = {
 }
 _ROW_GUARDS = (SectionNotFoundError, EntityTypeNotFoundError, FieldNotFoundError)
 _NOT_ALLOWED_MESSAGE = "This op can only be done in the prumo UI."
+_LOCKED_KEY_MESSAGE = "A question's type or options can only be changed in the prumo UI."
+_LOCKED_KEY_NEXT_STEP = (
+    "resend update_question with only the editable_fields listed here; "
+    "change type or options in the prumo UI"
+)
 _NEXT_STEP = (
     "Saved as an unpublished draft. A manager must click Publish in prumo before "
     "reviewers or AI extraction see it."
@@ -170,7 +176,7 @@ async def edit_template_draft(
             McpToolError(McpErrorCode.RETRY, "A concurrent edit won; nothing was changed."),
         )
 
-    return EditTemplateDraftResult(
+    result = EditTemplateDraftResult(
         status="draft_saved_unpublished",
         visible_to_reviewers_and_ai=False,
         applied=[
@@ -184,12 +190,19 @@ async def edit_template_draft(
             )
             for a in applied
         ],
-        diff=capped_diff(diff),
+        diff=capped_diff(diff, budget=0),  # placeholder: measures the rest of the result
         draft_fingerprint=diff.fingerprint,
         editor_url=f"{settings.PUBLIC_APP_URL.rstrip('/')}/projects/{project_id}?"
         f"{_EDITOR_TAB[template.kind]}",
         next_step=_NEXT_STEP,
     )
+    # The diff gets whatever the result cap leaves after everything else
+    # (measured with the row-less diff above, whose own fixed part the
+    # budget then re-counts).
+    rest = len(compact_json(result.model_dump(mode="json"))) - len(
+        compact_json(result.diff.model_dump(mode="json"))
+    )
+    return result.model_copy(update={"diff": capped_diff(diff, budget=RESULT_CAP - rest)})
 
 
 def _parse_ops(ops: list[dict[str, Any]]) -> list[DraftOp]:
@@ -214,7 +227,8 @@ def _parse_ops(ops: list[dict[str, Any]]) -> list[DraftOp]:
         if locked:
             raise McpToolError(
                 McpErrorCode.OP_NOT_ALLOWED_VIA_AGENT,
-                _NOT_ALLOWED_MESSAGE,
+                _LOCKED_KEY_MESSAGE,
+                next_step=_LOCKED_KEY_NEXT_STEP,
                 op_index=index,
                 allowed_ops=_ALLOWED_OPS,
                 field=locked[0],

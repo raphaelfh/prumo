@@ -25,6 +25,7 @@ from app.core.config import settings
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
 from app.services import template_field_naming, template_field_service
 from app.services.pat_service import create_token, resolve_principal
+from app.utils.compact_json import RESULT_CAP, compact_json
 from tests.integration.conftest import SEED, clean_project_clones
 from tests.integration.helpers.template_fixtures import (
     ARTICLE_ID,
@@ -275,7 +276,10 @@ async def test_disallowed_op_refused(
     if blocked_key:
         assert payload["field"] == blocked_key.pop()
         assert payload["editable_fields"] == ["description", "instructions", "label"]
+        assert "update_question" in payload["next_step"]
+        assert "prumo UI" in payload["next_step"]
     else:
+        assert payload["next_step"] == "do this in the prumo UI"
         assert "field" not in payload
         assert "editable_fields" not in payload
     assert await _label_set(db_session, template_id) == before
@@ -875,3 +879,50 @@ async def test_large_draft_diff_is_capped_within_the_result_cap(
     assert body["diff"]["changes_truncated"] is True
     assert body["draft_fingerprint"]
     assert len(json.dumps(body)) <= 32_000
+
+
+async def test_non_ascii_draft_diff_stays_within_the_result_cap(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    # pt-BR text: every accented char is 6 chars in the result's \\u-escaped JSON.
+    pt_br = "Descrição da intervenção: ação, avaliação e comparação. "
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_entity_types SET label = :l WHERE project_template_id = :tid"
+        ),
+        {"l": ("Seção de intervenção " * 10)[:200], "tid": str(template_id)},
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_fields f SET label = :l, llm_description = :d "
+            "FROM public.extraction_entity_types et "
+            "WHERE et.id = f.entity_type_id AND et.project_template_id = :tid"
+        ),
+        {"l": ("Pergunta sobre comparação " * 5)[:100], "d": pt_br * 17, "tid": str(template_id)},
+    )
+    await db_session.flush()
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "edit_template_draft",
+        {
+            "project_id": str(project_id),
+            "template_id": str(template_id),
+            "ops": [
+                {
+                    "op": "add_question",
+                    "section_id": section_id,
+                    "label": f"Questão {i} " + "ç" * 80,
+                    "type": "text",
+                }
+                for i in range(25)
+            ],
+        },
+    )
+    body = structured(result)
+    assert body["diff"]["changes_truncated"] is True
+    assert body["diff"]["changes"]
+    assert len(compact_json(body)) <= RESULT_CAP
