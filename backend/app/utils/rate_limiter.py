@@ -49,18 +49,24 @@ def _principal_key(request: Request) -> str:
     return f"ip:{get_remote_address(request)}"
 
 
+_REDIS_TIMEOUTS = {"socket_connect_timeout": 0.5, "socket_timeout": 0.5}
+
+
 def build_limiter(storage_uri: str | None) -> Limiter:
     """A slowapi ``Limiter`` over ``storage_uri`` (``memory://`` when unset)."""
     uri = storage_uri or "memory://"
+    # The scheme only: the URI can carry a password.
+    backend = "redis" if uri.split("://", 1)[0].startswith("redis") else "memory"
     built = Limiter(
         key_func=_principal_key,
         default_limits=[f"{settings.RATE_LIMIT_PER_MINUTE}/minute"],
         storage_uri=uri,
+        # The limits client is synchronous and runs on the event loop: a
+        # hanging Redis must fail fast into the per-process fallback.
+        storage_options=_REDIS_TIMEOUTS if backend == "redis" else {},
         key_prefix="prumo-rl",
         in_memory_fallback_enabled=True,
     )
-    # The scheme only: the URI can carry a password.
-    backend = "redis" if uri.split("://", 1)[0].startswith("redis") else "memory"
     logger.info("rate_limit_storage_configured", backend=backend)
     return built
 
@@ -72,11 +78,11 @@ _fallback = type(limiter.limiter)(MemoryStorage())
 _storage_down = False
 
 
-def _storage_failed() -> None:
+def _storage_failed(exc: Exception) -> None:
     global _storage_down
     if not _storage_down:
         _storage_down = True
-        logger.warning("rate_limit_storage_unavailable")
+        logger.warning("rate_limit_storage_unavailable", error_type=type(exc).__name__)
 
 
 def _storage_ok() -> None:
@@ -88,8 +94,8 @@ def hit_shared(limit: RateLimitItem, *keys: str) -> bool:
     """Consume one unit of ``limit`` for ``keys``; ``False`` when it is exhausted."""
     try:
         allowed = limiter.limiter.hit(limit, *keys)
-    except Exception:  # noqa: BLE001 - any storage failure fails open to memory
-        _storage_failed()
+    except Exception as exc:  # noqa: BLE001 - any storage failure fails open to memory
+        _storage_failed(exc)
         return _fallback.hit(limit, *keys)
     _storage_ok()
     return allowed
@@ -99,8 +105,8 @@ def retry_after(limit: RateLimitItem, *keys: str) -> int:
     """Whole seconds (at least 1) until ``limit``'s window for ``keys`` resets."""
     try:
         stats = limiter.limiter.get_window_stats(limit, *keys)
-    except Exception:  # noqa: BLE001 - any storage failure fails open to memory
-        _storage_failed()
+    except Exception as exc:  # noqa: BLE001 - any storage failure fails open to memory
+        _storage_failed(exc)
         stats = _fallback.get_window_stats(limit, *keys)
     else:
         _storage_ok()

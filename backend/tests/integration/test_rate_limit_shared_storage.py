@@ -25,16 +25,17 @@ def _redis_reachable(url: str) -> bool:
         return False
 
 
-if not _redis_reachable(settings.REDIS_URL):
-    if os.environ.get("CI"):
-        pytest.fail(f"Redis is required in CI ({settings.REDIS_URL.split('@')[-1]})")
-    pytest.skip("Redis not reachable at settings.REDIS_URL", allow_module_level=True)
-
 _READ = parse("120/minute")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def redis_uri() -> str:
+    """The shared storage URI; a fixture (not a module guard) so collection
+    never fails in jobs that deselect these tests (``-m e2e``)."""
+    if not _redis_reachable(settings.REDIS_URL):
+        if os.environ.get("CI"):
+            pytest.fail(f"Redis is required in CI ({settings.REDIS_URL.split('@')[-1]})")
+        pytest.skip("Redis not reachable at settings.REDIS_URL")
     return settings.REDIS_URL
 
 

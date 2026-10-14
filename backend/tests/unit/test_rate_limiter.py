@@ -35,8 +35,9 @@ def test_storage_failure_falls_back_with_one_warning(monkeypatch: pytest.MonkeyP
     _broken(monkeypatch)
     with capture_logs() as logs:
         assert hit_shared(_READ, "pat", "x") and hit_shared(_READ, "pat", "x")
-    events = [e["event"] for e in logs]
-    assert events.count("rate_limit_storage_unavailable") == 1
+    warnings = [e for e in logs if e["event"] == "rate_limit_storage_unavailable"]
+    assert len(warnings) == 1
+    assert warnings[0]["error_type"] == "ConnectionError"
 
 
 def test_fallback_still_enforces_the_limit_per_process(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,3 +90,10 @@ def test_storage_uri_defaults_unset() -> None:
 
     assert Settings.model_fields["RATE_LIMIT_STORAGE_URI"].default is None
     assert Settings.model_fields["REDIS_URL"].default == "redis://localhost:6379/0"
+
+
+def test_redis_storage_has_short_socket_timeouts() -> None:
+    built = build_limiter("redis://localhost:6390/0")
+    kwargs = built._storage.storage.connection_pool.connection_kwargs
+    assert 0 < kwargs["socket_connect_timeout"] <= 1
+    assert 0 < kwargs["socket_timeout"] <= 1
