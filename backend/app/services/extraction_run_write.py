@@ -76,6 +76,11 @@ class RunWriteError(Exception):
         """The run is in consensus: AI work waits, it is not a bad request."""
         return self.reason == "stage" and self.stage == ExtractionRunStage.CONSENSUS.value
 
+    @property
+    def run_finalized(self) -> bool:
+        """The coordinate's run is finalized: reopen it before running AI again."""
+        return self.reason == "stage" and self.stage == ExtractionRunStage.FINALIZED.value
+
 
 RUN_BUSY_MESSAGE = "AI extraction is paused while this article is in consensus."
 
@@ -93,6 +98,27 @@ class RunBusyError(AppError):
         super().__init__(
             code="RUN_BUSY",
             message=RUN_BUSY_MESSAGE,
+            status_code=409,
+            details={"run_id": str(run_id)},
+        )
+
+
+RUN_FINALIZED_MESSAGE = "This article is finalized. Reopen it to run AI again."
+
+
+class RunFinalizedError(AppError):
+    """An AI kickoff hit a finalized run (``RunWriteError.run_finalized``);
+    sibling of :class:`RunBusyError`.
+
+    Typed 409 (``error.code = "RUN_FINALIZED"``). The worker classifies the
+    same refusal into ``ExtractionErrorCode.RUN_FINALIZED`` with
+    :data:`RUN_FINALIZED_MESSAGE`.
+    """
+
+    def __init__(self, run_id: UUID | None) -> None:
+        super().__init__(
+            code="RUN_FINALIZED",
+            message=RUN_FINALIZED_MESSAGE,
             status_code=409,
             details={"run_id": str(run_id)},
         )

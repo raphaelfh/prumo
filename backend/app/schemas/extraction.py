@@ -100,9 +100,6 @@ class SectionExtractionRequest(BaseModel):
     # Filtrar sections especificas (para chunking)
     section_ids: list[UUID] | None = Field(default=None, alias="sectionIds")
 
-    # Texto do PDF ja processado (evita reprocessar)
-    pdf_text: str | None = Field(default=None, alias="pdfText")
-
     # Opcoes de extraction
     options: ExtractionOptions | None = None
 
@@ -481,6 +478,10 @@ class ExtractionErrorCode(str, Enum):
       accepts no new AI proposals (``RunWriteError.run_busy``; enqueue-time
       refusal is a 409 ``RunBusyError``), e.g. the run reached consensus
       while the job was queued.
+    - ``RUN_FINALIZED``    — the coordinate's run is finalized; AI extraction
+      waits until it is reopened (``RunWriteError.run_finalized``;
+      enqueue-time refusal is a 409 ``RunFinalizedError``), e.g. the run was
+      finalized while the job was queued.
     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
     """
 
@@ -491,6 +492,7 @@ class ExtractionErrorCode(str, Enum):
     MISSING_ENTITY_KEY = "MISSING_ENTITY_KEY"
     ENTRY_KEY_DUPLICATE = "ENTRY_KEY_DUPLICATE"
     RUN_BUSY = "RUN_BUSY"
+    RUN_FINALIZED = "RUN_FINALIZED"
     EXTRACTION_FAILED = "EXTRACTION_FAILED"
 
 

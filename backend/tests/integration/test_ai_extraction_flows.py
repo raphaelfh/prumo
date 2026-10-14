@@ -477,36 +477,6 @@ async def test_a_batch_on_the_session_run_raises_but_leaves_the_run(
     assert refreshed.status not in {"failed", "completed"}
 
 
-async def test_supplied_article_text_still_anchors_evidence(db_session: AsyncSession) -> None:
-    """A caller may pass ``pdf_text``; the model reads it, and the article's
-    parsed blocks are still loaded so evidence anchors."""
-    quote = "Each child cites this sentence."
-    parent, _ = await _entry_with_children(db_session, ("cited_child", ("x",)))
-    run = await run_in_extract(db_session)
-    file_id = await seed_article_text(db_session, quote)
-    fake = RecordedLlm(
-        fields={"x": {"value": "v", "evidence": [{"text": quote, "page_number": 1}]}}
-    )
-
-    await extraction(db_session, fake).run_from_request(
-        request(
-            parent_instance_id=parent,
-            run_id=run.id,
-            extract_all_sections=True,
-            pdf_text="SUPPLIED TEXT",
-        )
-    )
-
-    assert "SUPPLIED TEXT" in fake.field_calls()[0].user_prompt
-    anchored = (
-        await db_session.execute(
-            text("SELECT article_file_id FROM extraction_evidence WHERE run_id=:r"),
-            {"r": run.id},
-        )
-    ).scalar_one()
-    assert anchored == file_id
-
-
 async def test_the_full_pass_merges_every_entry_and_counts_a_failed_one_once(
     db_session: AsyncSession,
 ) -> None:

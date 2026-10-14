@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.error_handler import ConflictError
 from app.schemas.extraction import SectionExtractionRequest
+from app.services import llm_connection_service
 from app.services.extraction_attempt_service import ExtractionAttemptService
 from tests.integration.conftest import SEED
 from tests.integration.test_extraction_attempt_repository import graph as attempt_graph
@@ -33,7 +34,7 @@ async def test_same_request_replays_original_job(graph):
 
 @pytest.mark.parametrize(
     "change",
-    [{"pdf_text": "different"}, {"entity_type_id": uuid4()}, {"parent_instance_id": uuid4()}],
+    [{"entity_type_id": uuid4()}, {"parent_instance_id": uuid4()}],
 )
 async def test_changed_request_conflicts(graph, change):
     db, scope, _, _ = graph
@@ -115,6 +116,7 @@ async def test_http_replay_enqueue_failure_and_revoked_membership(graph, monkeyp
         )
 
     monkeypatch.setattr(endpoint, "_is_queue_available", lambda: True)
+    monkeypatch.setattr(llm_connection_service, "global_key_for", lambda _p: "sk-test")
     monkeypatch.setattr(endpoint, "_remember_job_owner", lambda *args: owners.append(args))
     monkeypatch.setattr(endpoint.run_section_extraction_task, "apply_async", enqueue)
     app.dependency_overrides[get_db] = database
@@ -136,10 +138,6 @@ async def test_http_replay_enqueue_failure_and_revoked_membership(graph, monkeyp
             assert len({call["task_id"] for call in calls}) == 1
             assert len({call["kwargs"]["attempt_id"] for call in calls}) == 1
             assert len(owners) == 3
-            conflict = await client.post(
-                "/api/v1/extraction/sections", json=body | {"pdfText": "changed"}
-            )
-            assert conflict.status_code == 409, conflict.text
             await db.rollback()
             await db.execute(
                 text(
@@ -157,6 +155,81 @@ async def test_http_replay_enqueue_failure_and_revoked_membership(graph, monkeyp
             assert len(calls) == 4
     finally:
         app.dependency_overrides.clear()
+
+
+async def _store_legacy_article_text_key(db, attempt_id) -> None:
+    """An attempt row written before caller-supplied article text was removed
+    carries ``"pdf_text": null`` in its stored payload."""
+    from sqlalchemy import text
+
+    await db.execute(
+        text(
+            "UPDATE public.extraction_attempts "
+            "SET request_payload = request_payload || '{\"pdf_text\": null}'::jsonb "
+            "WHERE id = :id"
+        ),
+        {"id": attempt_id},
+    )
+    await db.commit()
+    db.expire_all()  # the replay must read the stored row, not the cached object
+
+
+async def test_legacy_stored_article_text_key_replays(graph):
+    db, scope, _, _ = graph
+    service = ExtractionAttemptService(db)
+    request = payload(scope, request_id=uuid4())
+    first = await service.prepare_request(request, SEED.primary_profile, job_id="original")
+    await _store_legacy_article_text_key(db, first.id)
+
+    replay = await service.prepare_request(request, SEED.primary_profile, job_id="new")
+
+    assert "pdf_text" in replay.request_payload
+    assert (replay.id, replay.job_id) == (first.id, "original")
+
+
+async def test_legacy_stored_article_text_key_replays_over_http(graph, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.v1.endpoints import section_extraction as endpoint
+    from app.core.deps import get_db
+    from app.core.security import TokenPayload, get_current_user
+    from app.main import app
+
+    db, scope, _, _ = graph
+    request = payload(scope, request_id=uuid4())
+    first = await ExtractionAttemptService(db).prepare_request(
+        request, SEED.primary_profile, job_id="legacy-job"
+    )
+    await _store_legacy_article_text_key(db, first.id)
+
+    async def database():
+        yield db
+
+    async def user():
+        return TokenPayload(
+            sub=str(SEED.primary_profile), email="a@example.com", role="authenticated", aal="aal1"
+        )
+
+    enqueued = []
+    monkeypatch.setattr(endpoint, "_is_queue_available", lambda: True)
+    monkeypatch.setattr(llm_connection_service, "global_key_for", lambda _p: "sk-test")
+    monkeypatch.setattr(endpoint, "_remember_job_owner", lambda *_args: None)
+    monkeypatch.setattr(
+        endpoint.run_section_extraction_task, "apply_async", lambda **kw: enqueued.append(kw)
+    )
+    app.dependency_overrides[get_db] = database
+    app.dependency_overrides[get_current_user] = user
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            r = await client.post(
+                "/api/v1/extraction/sections",
+                json=request.model_dump(mode="json", by_alias=True),
+            )
+    finally:
+        app.dependency_overrides.clear()
+    assert r.status_code == 202, r.text
+    assert r.json()["data"]["job_id"] == "legacy-job"
+    assert [call["task_id"] for call in enqueued] == ["legacy-job"]
 
 
 async def test_omitted_run_is_bound_once(graph):

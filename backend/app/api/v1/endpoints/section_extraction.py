@@ -32,13 +32,14 @@ from app.schemas.extraction import (
     ExtractionJobStatusResponse,
     SectionExtractionRequest,
 )
+from app.schemas.llm_target import LlmTarget
 from app.services.extraction_attempt_service import ExtractionAttemptService
 from app.services.extraction_run_write import (
     RunBusyError,
+    RunFinalizedError,
     RunWriteError,
     assert_instance_in_coordinate,
 )
-from app.services.llm_engine_service import resolve_engine
 from app.services.template_section_service import SectionNotFoundError, owned_section
 from app.utils.rate_limiter import limiter
 from app.worker.celery_app import REDIS_URL
@@ -124,13 +125,14 @@ async def _check_request_scope(
     db: DbSession,
     payload: SectionExtractionRequest,
     current_user_sub: UUID,
-) -> None:
-    """Bind every client-supplied id to the caller's project + template.
+) -> LlmTarget:
+    """Bind every client-supplied id to the caller's project + template, and
+    return the engine the AI kickoff gate resolved.
 
-    The coordinate binding is shared with ``/extraction/models``; the two
-    leaf ids below exist only on this endpoint.
+    The coordinate binding and the kickoff gate live in ``assert_kickoff_scope``;
+    the two leaf ids below exist only on this endpoint.
     """
-    await assert_kickoff_scope(
+    engine = await assert_kickoff_scope(
         db,
         project_id=payload.project_id,
         article_id=payload.article_id,
@@ -176,6 +178,7 @@ async def _check_request_scope(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="parentInstanceId does not belong to this coordinate",
             ) from exc
+    return engine
 
 
 # ======================================================================
@@ -204,20 +207,7 @@ async def extract_section(
     """
     trace_id = getattr(request.state, "trace_id", None) or str(uuid.uuid4())
 
-    await _check_request_scope(db, payload, current_user_sub)
-
-    # C1b enqueue-time gate, AFTER the membership scope (auth precedes engine
-    # work — an outsider gets 403, never this 409). It covers continuations
-    # too, now that a kickoff RE-PINS: every attempt-0 runs the project
-    # engine, so a retired pair is fatal to a ``run_id`` request exactly as
-    # it is to a new one. This gate used to skip continuations because a
-    # pinned run was entitled to its pin and a 409 here could never be
-    # cleared; re-pinning removes both halves of that reasoning — picking a
-    # live model clears it. A retired pair raises EngineRetiredError → the
-    # registered AppError handler serves the typed 409 (error.code
-    # LLM_ENGINE_RETIRED). The worker re-resolves at execution time, so this
-    # only fails fast — and spares the reviewer a queued job that will die.
-    engine = await resolve_engine(db, payload.project_id, current_user_sub)
+    engine = await _check_request_scope(db, payload, current_user_sub)
 
     if not _is_queue_available():
         return JSONResponse(
@@ -255,6 +245,8 @@ async def extract_section(
     except RunWriteError as exc:
         if exc.run_busy:
             raise RunBusyError(exc.run_id) from exc
+        if exc.run_finalized:
+            raise RunFinalizedError(exc.run_id) from exc
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     assert attempt.job_id is not None
 

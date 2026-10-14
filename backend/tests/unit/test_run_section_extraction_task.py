@@ -175,6 +175,39 @@ class TestRunSectionExtractionTaskSingle:
         assert "successful_sections" not in result
         assert "sections" not in result
 
+    def test_legacy_payload_with_article_text_key_still_runs(self):
+        """A job queued before caller-supplied article text was removed still
+        carries ``"pdf_text": null``; the rebuild drops it instead of dying on
+        the forbidden key."""
+        run_id, entity_type_id = str(uuid4()), str(uuid4())
+        payload_dict = {
+            "project_id": str(uuid4()),
+            "article_id": str(uuid4()),
+            "template_id": str(uuid4()),
+            "entity_type_id": entity_type_id,
+            "pdf_text": None,
+        }
+        session = _FakeSession()
+        fake_service = MagicMock()
+        fake_service.run_from_request = AsyncMock(
+            return_value=_single_result(run_id, entity_type_id)
+        )
+
+        with (
+            patch("app.services.ai_extraction.AiExtraction", return_value=fake_service),
+            patch(
+                "app.services.engine_credentials.resolve_provider_key", AsyncMock(return_value=None)
+            ),
+            patch("app.core.factories.create_storage_adapter", return_value=MagicMock()),
+            patch("app.core.deps.get_supabase_client", return_value=MagicMock()),
+            patch("app.worker._session.worker_session", new=_session_factory(session)),
+        ):
+            result = _apply(payload_dict, str(uuid4()))
+
+        assert result["extraction_run_id"] == run_id
+        request = fake_service.run_from_request.await_args.args[0]
+        assert str(request.entity_type_id) == entity_type_id
+
     def test_commits_session_on_success(self):
         run_id = str(uuid4())
         entity_type_id = str(uuid4())

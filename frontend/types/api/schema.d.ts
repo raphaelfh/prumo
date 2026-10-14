@@ -4120,10 +4120,14 @@ export interface components {
          *       accepts no new AI proposals (``RunWriteError.run_busy``; enqueue-time
          *       refusal is a 409 ``RunBusyError``), e.g. the run reached consensus
          *       while the job was queued.
+         *     - ``RUN_FINALIZED``    — the coordinate's run is finalized; AI extraction
+         *       waits until it is reopened (``RunWriteError.run_finalized``;
+         *       enqueue-time refusal is a 409 ``RunFinalizedError``), e.g. the run was
+         *       finalized while the job was queued.
          *     - ``EXTRACTION_FAILED``— generic catch-all for everything else.
          * @enum {string}
          */
-        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "ENTRY_KEY_DUPLICATE" | "RUN_BUSY" | "EXTRACTION_FAILED";
+        ExtractionErrorCode: "PDF_NOT_FOUND" | "MISSING_API_KEY" | "ENGINE_RETIRED" | "LLM_ENDPOINT_UNAVAILABLE" | "MISSING_ENTITY_KEY" | "ENTRY_KEY_DUPLICATE" | "RUN_BUSY" | "RUN_FINALIZED" | "EXTRACTION_FAILED";
         /**
          * ExtractionExportCancelResponse
          * @description Cancel endpoint payload.
@@ -6097,8 +6101,6 @@ export interface components {
             options?: components["schemas"]["ExtractionOptions"] | null;
             /** Parentinstanceid */
             parentInstanceId?: string | null;
-            /** Pdftext */
-            pdfText?: string | null;
             /**
              * Projectid
              * Format: uuid

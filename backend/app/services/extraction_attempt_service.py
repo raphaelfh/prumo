@@ -58,7 +58,12 @@ class ExtractionAttemptService:
         )
         if attempt.owner_id != owner_id:
             raise NotFoundError("Extraction request")
-        if attempt.request_payload != normalized:
+        # One-release deferral, like the note on
+        # ``SectionExtractionRequest.model_config``: an attempt stored before
+        # caller-supplied article text was removed carries ``pdf_text``.
+        # Delete in a later refactor(extraction) once no older attempt can replay.
+        stored = {k: v for k, v in attempt.request_payload.items() if k != "pdf_text"}
+        if stored != normalized:
             raise ConflictError("requestId already belongs to a different extraction request")
         await self.db.commit()
         return attempt

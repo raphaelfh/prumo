@@ -11,8 +11,11 @@ second copy is how two endpoints come to disagree:
 non-member). Used by the ten run-scoped endpoints and by the kickoff gate.
 
 ``assert_kickoff_scope`` — the (project, article, template, run) coordinate
-both AI kickoff endpoints post. It lived inline in ``/extraction/sections``
-only, which is exactly how ``/extraction/models`` shipped without it.
+an AI kickoff posts, bound before any work is queued; each branch ends in
+``assert_ai_kickoff``.
+
+``assert_ai_kickoff`` — THE AI kickoff gate (role, then credentials), shared
+by every endpoint that queues AI work.
 """
 
 from uuid import UUID
@@ -20,8 +23,10 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps.security import ensure_project_member
+from app.api.deps.security import ensure_project_member, ensure_project_reviewer
 from app.schemas.extraction_run import RunSummaryResponse
+from app.schemas.llm_target import LlmTarget
+from app.services import engine_credentials
 from app.services.extraction_run_read_service import RunNotFoundError, get_run_or_raise
 from app.services.project_template_active_service import (
     ProjectTemplateNotFoundError,
@@ -47,6 +52,19 @@ async def load_run_for_member(db: AsyncSession, run_id: UUID, user_sub: UUID) ->
     return run
 
 
+async def assert_ai_kickoff(
+    db: AsyncSession, *, project_id: UUID, current_user_sub: UUID
+) -> LlmTarget:
+    """THE AI kickoff gate: reviewer role first (403), then the credential
+    precheck (409), so a viewer or outsider never learns the project's engine
+    configuration. Fails fast only: the worker re-resolves the engine at
+    execution time."""
+    await ensure_project_reviewer(db, project_id, current_user_sub)
+    return await engine_credentials.assert_engine_ready(
+        db, project_id=project_id, user_id=current_user_sub
+    )
+
+
 async def assert_kickoff_scope(
     db: AsyncSession,
     *,
@@ -55,8 +73,9 @@ async def assert_kickoff_scope(
     template_id: UUID,
     run_id: UUID | None,
     current_user_sub: UUID,
-) -> None:
-    """Bind the request coordinate to the caller, before any work is queued.
+) -> LlmTarget:
+    """Bind the request coordinate to the caller, before any work is queued,
+    then run the AI kickoff gate on the bound project and return its engine.
 
     Membership comes first on the no-run branch. On the run branch the run
     must be resolved before there is a project to check membership against,
@@ -84,7 +103,7 @@ async def assert_kickoff_scope(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="templateId does not belong to projectId",
             ) from exc
-        return
+        return await assert_ai_kickoff(db, project_id=project_id, current_user_sub=current_user_sub)
 
     run = await load_run_for_member(db, run_id, current_user_sub)
     if (
@@ -96,3 +115,4 @@ async def assert_kickoff_scope(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="runId does not match projectId, articleId, and templateId",
         )
+    return await assert_ai_kickoff(db, project_id=run.project_id, current_user_sub=current_user_sub)

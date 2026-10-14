@@ -34,7 +34,6 @@ async def extract_all_sections(
     template_id: UUID,
     parent_instance_id: UUID,
     section_ids: list[UUID] | None,
-    pdf_text: str | None,
     engine: LlmTarget,
     run_id: UUID | None,
 ) -> BatchExtractionResult:
@@ -79,13 +78,9 @@ async def extract_all_sections(
     section_results: list[dict[str, Any]] = []
     total_tokens = 0
     try:
-        if not pdf_text:
-            phase_start = perf_counter()
-            pdf_text = await p.assemble_prompt_text(article_id, model)
-            phases["assemble_prompt"] = (perf_counter() - phase_start) * 1000
-        elif not p.anchor_blocks:
-            # Text supplied → assembly skipped; still needed for evidence anchors.
-            await p.assemble_prompt_text(article_id, model)
+        phase_start = perf_counter()
+        pdf_text = await p.assemble_prompt_text(article_id, model)
+        phases["assemble_prompt"] = (perf_counter() - phase_start) * 1000
 
         phase_start = perf_counter()
         child_types = await _child_entity_types(p, run, parent_instance_id, section_ids)

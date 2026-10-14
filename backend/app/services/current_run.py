@@ -17,8 +17,8 @@ skips it):
 * ``open_for_session`` — the HITL session's run: the resolved run (a finalized
   one is shown read-only, never forked), else a new one;
 * ``resolve_or_create_extract`` — standalone AI extraction's run: the live run,
-  else a new one; a live run in consensus is refused with the run-write
-  oracle's ``RunWriteError(reason="stage")``.
+  else a new one; a live run in consensus, or a finalized run, is refused with
+  the run-write oracle's ``RunWriteError(reason="stage")``.
 """
 
 from __future__ import annotations
@@ -130,10 +130,12 @@ class CurrentRunResolver:
         parameters: dict[str, Any] | None = None,
     ) -> tuple[ExtractionRun, bool]:
         """The live run in EXTRACT for standalone AI extraction, created only
-        when the coordinate has none — AI work lands on the run the reviewer
-        is editing instead of forking a shadow run. A live run in CONSENSUS
-        is refused (``RunWriteError``, reason ``stage``): adjudication accepts
-        no new AI proposals.
+        when the coordinate has none (cancelled runs do not count) — AI work
+        lands on the run the reviewer is editing instead of forking a shadow
+        run. A live run in CONSENSUS is refused (``RunWriteError``, reason
+        ``stage``): adjudication accepts no new AI proposals. A FINALIZED run
+        is refused the same way: forking past it would silently abandon its
+        published values, so AI extraction waits until it is reopened.
 
         ``created=True`` → the caller owns the run's lifecycle
         (start/complete/fail); ``created=False`` → session-owned, hands off.
@@ -142,6 +144,13 @@ class CurrentRunResolver:
         run = await self.resolve(
             project_id=project_id, article_id=article_id, template_id=template_id
         )
+        if run is not None and run.stage == ExtractionRunStage.FINALIZED.value:
+            raise RunWriteError(
+                f"Run {run.id} is finalized; reopen it before running AI extraction",
+                reason="stage",
+                run_id=run.id,
+                stage=run.stage,
+            )
         if run is None or run.stage not in ExtractionRunStage.live():
             return await self._create_in_extract(
                 project_id, article_id, template_id, user_id, parameters

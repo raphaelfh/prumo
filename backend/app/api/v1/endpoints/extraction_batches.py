@@ -13,7 +13,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 
-from app.api.deps.security import ensure_project_reviewer, get_current_user_sub
+from app.api.deps.scope import assert_ai_kickoff
+from app.api.deps.security import get_current_user_sub
 from app.api.v1.endpoints.section_extraction import _is_queue_available
 from app.core.deps import DbSession
 from app.core.logging import get_logger
@@ -28,7 +29,6 @@ from app.services.extraction_batch_service import (
     BatchScopeError,
     ExtractionBatchService,
 )
-from app.services.llm_engine_service import resolve_engine
 from app.utils.rate_limiter import limiter
 from app.worker.tasks.extraction_batch_tasks import advance_extraction_batch
 
@@ -79,8 +79,7 @@ async def start_extraction_batch(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> JSONResponse | ApiResponse[ExtractionBatchDetail]:
     trace_id = _trace_id(request)
-    await ensure_project_reviewer(db, payload.project_id, current_user_sub)  # G1
-    await resolve_engine(db, payload.project_id, current_user_sub)  # G5: typed 409s
+    await assert_ai_kickoff(db, project_id=payload.project_id, current_user_sub=current_user_sub)
     if not _is_queue_available():
         return _queue_unavailable(trace_id)
     try:

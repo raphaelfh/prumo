@@ -52,7 +52,11 @@ def classify_extraction_error(exc: BaseException) -> tuple[ExtractionErrorCode, 
     # this module is imported on the API process too (only for the enum/type).
     from app.llm.provider import MissingLLMKeyError
     from app.services.entity_key import MissingEntityKeyError
-    from app.services.extraction_run_write import RUN_BUSY_MESSAGE, RunWriteError
+    from app.services.extraction_run_write import (
+        RUN_BUSY_MESSAGE,
+        RUN_FINALIZED_MESSAGE,
+        RunWriteError,
+    )
     from app.services.llm_connection_service import ConnectionUnavailableError
     from app.services.llm_engine_service import EngineRetiredError
 
@@ -80,6 +84,11 @@ def classify_extraction_error(exc: BaseException) -> tuple[ExtractionErrorCode, 
         # connection gone / foreign / undecryptable. The message already says
         # how to recover.
         return ExtractionErrorCode.LLM_ENDPOINT_UNAVAILABLE, str(exc).strip() or _GENERIC_MESSAGE
+
+    if isinstance(exc, RunWriteError) and exc.run_finalized:
+        # The run was finalized between enqueue and execution: same copy as
+        # the kickoff's typed 409, never the raw message with the run uuid.
+        return ExtractionErrorCode.RUN_FINALIZED, RUN_FINALIZED_MESSAGE
 
     if isinstance(exc, RunWriteError) and exc.run_busy:
         # The run entered consensus between enqueue and execution; the raw

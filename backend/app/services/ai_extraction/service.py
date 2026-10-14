@@ -146,7 +146,6 @@ class AiExtraction:
                 template_id=payload.template_id,
                 parent_instance_id=payload.parent_instance_id,
                 section_ids=payload.section_ids,
-                pdf_text=payload.pdf_text,
                 engine=engine,
                 run_id=payload.run_id,
             )
@@ -433,7 +432,6 @@ class AiExtraction:
                     template_id=run.template_id,
                     parent_instance_id=entry_id,
                     section_ids=None,
-                    pdf_text=None,
                     engine=engine,
                     run_id=run.id,
                 )

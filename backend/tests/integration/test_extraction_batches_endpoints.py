@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints import extraction_batches as ep
+from app.services import engine_credentials
+from app.services.llm_connection_service import MissingCredentialError
 from app.services.llm_engine_service import EngineRetiredError
 from tests.integration.conftest import SEED
 from tests.integration.helpers import engine_setup
@@ -31,7 +35,7 @@ def queue(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     async def engine(*_args, **_kwargs):  # noqa: ANN002, ANN003
         return MagicMock()
 
-    monkeypatch.setattr(ep, "resolve_engine", engine)
+    monkeypatch.setattr(engine_credentials, "assert_engine_ready", engine)
     return task
 
 
@@ -95,6 +99,48 @@ async def test_viewer_is_refused(
 
 
 @pytest.mark.asyncio
+async def test_outsider_gets_403_before_the_engine_check(
+    client_as_outsider: AsyncClient,
+    queue: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Membership precedes the credential precheck: a non-member never sees
+    the 409 that would reveal the project's engine configuration."""
+
+    async def no_key(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise MissingCredentialError("openai")
+
+    monkeypatch.setattr(engine_credentials, "assert_engine_ready", no_key)
+    response = await client_as_outsider.post(URL, json=_body([SEED.primary_article]))
+    assert response.status_code == 403, response.text
+    queue.delay.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_direct_start_refused_by_the_kickoff_gate_enqueues_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct coroutine call (ASGI-driven handler lines register no coverage)."""
+    from starlette.requests import Request
+
+    task = MagicMock()
+    monkeypatch.setattr(ep, "advance_extraction_batch", task)
+
+    async def refuse(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise HTTPException(status_code=403, detail="Reviewer role required")
+
+    monkeypatch.setattr(ep, "assert_ai_kickoff", refuse)
+    request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
+    payload = ep.CreateExtractionBatchRequest(**_body([SEED.primary_article]))
+    with pytest.raises(HTTPException) as exc:
+        await ep.start_extraction_batch.__wrapped__(
+            request, payload, SimpleNamespace(), SEED.primary_profile
+        )
+    assert exc.value.status_code == 403
+    task.delay.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_foreign_template_and_foreign_article_answer_the_same_400(
     client_as_manager: AsyncClient,
     db_session: AsyncSession,
@@ -132,7 +178,7 @@ async def test_retired_engine_is_409_and_writes_nothing(
     async def retired(*_args, **_kwargs):  # noqa: ANN002, ANN003
         raise EngineRetiredError("retired")
 
-    monkeypatch.setattr(ep, "resolve_engine", retired)
+    monkeypatch.setattr(engine_credentials, "assert_engine_ready", retired)
     before = await _batch_count(db_session)
     response = await client_as_manager.post(URL, json=_body([SEED.primary_article]))
     assert response.status_code == 409 and response.json()["error"]["code"] == "LLM_ENGINE_RETIRED"

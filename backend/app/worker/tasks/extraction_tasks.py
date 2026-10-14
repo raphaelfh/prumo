@@ -93,7 +93,15 @@ def run_section_extraction_task(
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
 
-                request = SectionExtractionRequest(**payload_json)
+                # One-release deferral, like the note on
+                # ``SectionExtractionRequest.model_config``: a payload stored
+                # before caller-supplied article text was removed still
+                # carries ``pdf_text``. Delete in a later refactor(extraction)
+                # once no older attempt can replay. Filtered, not popped:
+                # ``payload_json`` may be the attempt row's own dict.
+                request = SectionExtractionRequest(
+                    **{k: v for k, v in payload_json.items() if k != "pdf_text"}
+                )
 
                 # Attempt 0 is the HUMAN kickoff (one enqueue site — the
                 # endpoint); every later attempt is a Celery retry, which

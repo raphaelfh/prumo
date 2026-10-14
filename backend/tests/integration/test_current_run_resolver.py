@@ -199,20 +199,36 @@ async def test_writer_parks_a_pending_run_in_extract(
     assert (run.id, run.stage, created) == (pending, EXTRACT, False)
 
 
-@pytest.mark.parametrize(
-    ("writer", "reuses"), [(_open, True), (_gate, False)], ids=["session", "extract-gate"]
-)
-async def test_finalized_coordinate(
-    db_session: AsyncSession, aid: UUID, writer, reuses: bool
-) -> None:
-    """The session shows a finalized run read-only (reopen is its own action);
-    standalone AI extraction needs a live run, so it creates one beside it."""
+async def _run_count(db: AsyncSession, aid: UUID) -> int:
+    return (
+        await db.execute(
+            text("SELECT count(*) FROM public.extraction_runs WHERE article_id = :aid"),
+            {"aid": str(aid)},
+        )
+    ).scalar_one()
+
+
+async def test_session_shows_a_finalized_run_read_only(db_session: AsyncSession, aid: UUID) -> None:
+    """The session shows a finalized run read-only; AI extraction refuses
+    until the run is reopened (reopen is its own explicit action)."""
     finalized = await _run(db_session, aid, stage=FINALIZED, minute=0)
 
-    run, created = await writer(db_session, aid)
-    assert (run.id == finalized, created) == (reuses, not reuses)
-    if not reuses:
-        assert run.stage == EXTRACT
+    run, created = await _open(db_session, aid)
+    assert (run.id, run.stage, created) == (finalized, FINALIZED, False)
+
+
+async def test_extract_gate_refuses_a_finalized_coordinate(
+    db_session: AsyncSession, aid: UUID
+) -> None:
+    """Forking a new run beside a finalized one would silently abandon its
+    published values: the gate refuses with the stage refusal instead."""
+    finalized = await _run(db_session, aid, stage=FINALIZED, minute=0)
+
+    with pytest.raises(RunWriteError) as exc:
+        await _gate(db_session, aid)
+    assert (exc.value.reason, exc.value.stage, exc.value.run_id) == ("stage", FINALIZED, finalized)
+    assert exc.value.run_finalized is True
+    assert await _run_count(db_session, aid) == 1
 
 
 @pytest.mark.parametrize("writer", [_open, _gate], ids=["session", "extract-gate"])
