@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from uuid import uuid4
@@ -427,3 +428,18 @@ async def test_output_schema_failure_is_not_the_callers_invalid_argument(
     assert (r.structured_content or {}).get("code") != "INVALID_ARGUMENT"
     assert len(runs) == 1
     assert len(hits) == 1
+
+
+async def test_no_tool_listing_cites_internal_spec_sections(
+    mcp_client: Callable[[SeededPat], AbstractAsyncContextManager[Client]],
+    pat_primary_rw: SeededPat,
+) -> None:
+    async with mcp_client(pat_primary_rw) as client:
+        tools = (await client.list_tools()).tools
+
+    assert tools
+    for tool in tools:
+        listing = json.dumps(
+            [tool.description, tool.input_schema, tool.output_schema], ensure_ascii=False
+        )
+        assert "spec §" not in listing, tool.name

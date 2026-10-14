@@ -354,3 +354,20 @@ async def test_nul_in_a_string_is_invalid_argument_before_any_write(
     assert error["field"] == "fields.description"
     assert (await _current(db_session, "description")) == current
     assert (await _audit_count(db_session, outcome="refused", error_code="INVALID_ARGUMENT")) == 1
+
+
+async def test_null_name_message_has_no_pydantic_prefix(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+):
+    # Regression guard: validation_failure (task 1.7) already strips "Value error, ".
+    current = await _current(db_session, "name")
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "update_project_details",
+        {"project_id": str(P), "fields": {"name": None}, "expected": {"name": current["name"]}},
+    )
+    error = error_payload(result)
+    assert error["code"] == "INVALID_ARGUMENT"
+    assert error["field"] == "name"
+    assert not error["message"].startswith("Value error,")

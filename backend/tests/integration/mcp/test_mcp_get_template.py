@@ -316,7 +316,7 @@ async def _walk_all_pages(mcp_client, pat, project_id, template_id) -> list[dict
 
 async def test_response_size_cap_get_template(mcp_client, pat_primary_read, db_session):
     # B1, diff-heavy shape: 45 new sections with long labels open a draft
-    # with 45 ADDITIVE rows (capped at 40 by _DIFF_ROW_CAP, still filling
+    # with 45 ADDITIVE rows (capped at 40 by DIFF_ROW_CAP, still filling
     # page 1's diff close to its max size), plus a few fields with long
     # `llm_description` ("instructions") text on page 1's questions too.
     project_id, template_id, schema = await fresh_charms(db_session)

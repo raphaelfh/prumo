@@ -9,6 +9,7 @@ must roll back atomically on every refusal.
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -18,7 +19,9 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mcp import session as mcp_session
+from app.api.mcp.draft_diff import DIFF_ROW_CAP
 from app.api.mcp.tools import template_draft as template_draft_tool
+from app.core.config import settings
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
 from app.services import template_field_naming, template_field_service
 from app.services.pat_service import create_token, resolve_principal
@@ -26,6 +29,7 @@ from tests.integration.conftest import SEED, clean_project_clones
 from tests.integration.helpers.template_fixtures import (
     ARTICLE_ID,
     add_field,
+    add_section,
     draft_lock_holder,
     fresh_charms,
 )
@@ -74,8 +78,9 @@ async def _audit_count(db: AsyncSession, *, outcome: str) -> int:
 
 
 async def test_success_returns_unpublished_draft(
-    mcp_client, pat_primary_rw, db_session: AsyncSession
+    mcp_client, pat_primary_rw, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(settings, "PUBLIC_APP_URL", "https://example.test/")
     project_id, template_id, schema = await fresh_charms(db_session)
     section_id, field_id = _section_and_field(schema)
     old_label = _label_of(schema, section_id, field_id)
@@ -103,9 +108,12 @@ async def test_success_returns_unpublished_draft(
     assert [a["op_index"] for a in body["applied"]] == [0, 1]
     assert body["applied"][0]["name"] == "follow_up_months"
     assert body["diff"]["status"] == "available"
-    assert (
-        body["editor_path"] == f"/projects/{project_id}?tab=extraction&extractionTab=configuration"
+    assert body["editor_url"] == (
+        f"https://example.test/projects/{project_id}?tab=extraction&extractionTab=configuration"
     )
+    assert "editor_path" not in body
+    assert body["draft_fingerprint"]
+    assert body["diff"]["changes_truncated"] is False
     assert "Publish" in body["next_step"]
 
     row = (
@@ -262,6 +270,14 @@ async def test_disallowed_op_refused(
     payload = error_payload(result)
     assert payload["code"] == "OP_NOT_ALLOWED_VIA_AGENT"
     assert payload["op_index"] == 1
+    assert payload["allowed_ops"] == ["add_question", "update_question"]
+    blocked_key = {"type", "options"} & bad.keys()
+    if blocked_key:
+        assert payload["field"] == blocked_key.pop()
+        assert payload["editable_fields"] == ["description", "instructions", "label"]
+    else:
+        assert "field" not in payload
+        assert "editable_fields" not in payload
     assert await _label_set(db_session, template_id) == before
     assert await draft_lock_holder(db_session, template_id) is None
     assert await _audit_count(db_session, outcome="refused") == 1
@@ -832,3 +848,30 @@ async def test_edit_template_draft_hints_are_pinned(mcp_client, pat_primary_rw) 
         False,
         False,
     )
+
+
+async def test_large_draft_diff_is_capped_within_the_result_cap(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+    for i in range(DIFF_ROW_CAP + 20):
+        await add_section(db_session, template_id, f"Pending-section-{i}-" + ("X" * 400))
+    await db_session.flush()
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "edit_template_draft",
+        {
+            "project_id": str(project_id),
+            "template_id": str(template_id),
+            "ops": [{"op": "add_question", "section_id": section_id, "label": "Q", "type": "text"}],
+        },
+    )
+    body = structured(result)
+    assert body["diff"]["counts"]["additive"] > DIFF_ROW_CAP
+    assert len(body["diff"]["changes"]) == DIFF_ROW_CAP
+    assert body["diff"]["changes_truncated"] is True
+    assert body["draft_fingerprint"]
+    assert len(json.dumps(body)) <= 32_000

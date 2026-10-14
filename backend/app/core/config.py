@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # =================== CORS ===================
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,https://prumoai.vercel.app"
 
+    # Public origin of the web app: links in agent (MCP) results point here.
+    PUBLIC_APP_URL: str = "https://prumoai.vercel.app"
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Return the CORS allow-list with a safe development fallback."""

@@ -109,6 +109,7 @@ pass it inline (`DATABASE_URL=... uv run ...`), never by editing
 | Service | Key | Value |
 | --- | --- | --- |
 | `web` | `CORS_ORIGINS` | Comma-separated allow-list that **extends** the always-allowed defaults baked into [`backend/app/core/config.py`](../../backend/app/core/config.py) (already pins `prumoai.vercel.app` + localhost). The live value lives in the Railway `web` env — the running env is the source of truth, not this table. |
+| `web` | `PUBLIC_APP_URL` | Public origin of the web app, used for links in agent results (`editor_url`). Default `https://prumoai.vercel.app`; production leaves it unset, so the default applies. There is no staging environment today; one would set its own origin here. |
 | `web` | `MCP_ALLOWED_HOSTS` | Comma-separated `Host` allow-list for the `/mcp` mount (`web-production-48b398.up.railway.app` in production). Default `localhost:*,127.0.0.1:*,[::1]:*,test`; a host not listed gets 421, so leaving it unset in production fails closed. |
 | `web` | `MCP_ALLOWED_ORIGINS` | Comma-separated browser `Origin` allow-list for `/mcp`. Default empty: no browser origin may call it (CLI agents send no `Origin` and pass). |
 | `web` | `MCP_MAX_INFLIGHT_PER_TOKEN` | Concurrent `/mcp` requests per token per process (default 4, half the default web pool of 8, so one token cannot hold every connection); over it the request gets 429 with `Retry-After: 1`. Keep it at most half of `DB_POOL_SIZE` + `DB_MAX_OVERFLOW`. |

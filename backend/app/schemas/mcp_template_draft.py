@@ -8,12 +8,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
-from app.schemas.hitl_session import TemplateConfigDiffRead
+from app.schemas.mcp_templates import McpDraftDiff
 from app.schemas.template_structure import AllowedValues, FieldType
 
 
 class AddQuestionOp(BaseModel):
-    """Append a new question to a section of the active draft (spec §5.2)."""
+    """Append a new question to a section of the active draft."""
 
     model_config = ConfigDict(extra="forbid")
     op: Literal["add_question"]
@@ -62,7 +62,7 @@ DraftOp = AddQuestionOp | UpdateQuestionOp
 
 
 class AppliedQuestion(BaseModel):
-    """One op the tool applied, for the reply (spec §5.2)."""
+    """One op the tool applied, for the reply."""
 
     op_index: int
     op: Literal["add_question", "update_question"]
@@ -78,6 +78,7 @@ class EditTemplateDraftResult(BaseModel):
     status: Literal["draft_saved_unpublished"]
     visible_to_reviewers_and_ai: Literal[False]
     applied: list[AppliedQuestion]
-    diff: TemplateConfigDiffRead
-    editor_path: str
+    diff: McpDraftDiff
+    draft_fingerprint: str | None
+    editor_url: str
     next_step: str
