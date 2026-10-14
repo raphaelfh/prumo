@@ -63,4 +63,12 @@ class McpExtractionsPage(BaseModel):
     next_step: str | None
     articles: list[McpExtractionArticle]
     next_cursor: str | None
-    untrusted_content: bool = True
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = [
+        "questions[].section_label",
+        "questions[].label",
+        "articles[].title",
+        "articles[].values{}.value",
+        "articles[].rows[].value",
+        "articles[].rows[].evidence[].quote",
+    ]

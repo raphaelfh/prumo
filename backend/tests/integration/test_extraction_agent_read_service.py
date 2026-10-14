@@ -20,7 +20,6 @@ from app.services.extraction_run_read_service import get_run_with_workflow_histo
 from app.services.run_lifecycle_service import RunLifecycleService
 from app.utils.compact_json import compact_json
 from app.utils.opaque_cursor import InvalidCursorError, encode_cursor
-from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED, land_ai_proposal
 from tests.integration.helpers.template_fixtures import add_field, add_section
 from tests.integration.mcp.article_seed import insert_article
@@ -399,7 +398,7 @@ async def test_query_count_bounded_per_page(db_session: AsyncSession) -> None:
     assert c_two_runs - c_one_run == c_three_runs - c_two_runs
 
 
-async def test_detailed_evidence_is_wrapped_and_scoped(db_session: AsyncSession) -> None:
+async def test_detailed_evidence_is_raw_and_scoped(db_session: AsyncSession) -> None:
     run_id, reviewer_a, _reviewer_b = await _built_or_skip(db_session)
     template_id = await _template_id_of_run(db_session, run_id)
     instance_id, field_id = await _ai_only_coordinate(
@@ -465,9 +464,10 @@ async def test_detailed_evidence_is_wrapped_and_scoped(db_session: AsyncSession)
     )
     assert ai_row.evidence
     assert ai_row.evidence[0].locator == "p4"
-    assert "QUOTE" in ai_row.evidence[0].quote
-    assert UNTRUSTED_OPEN in ai_row.evidence[0].quote
-    assert UNTRUSTED_CLOSE in ai_row.evidence[0].quote
+    # The stored text_content, capped, returned raw (the result's
+    # untrusted_fields declares the quote).
+    assert ai_row.evidence[0].quote == "QUOTE"
+    assert "ARTICLE_TEXT" not in ai_row.evidence[0].quote
 
     blob = _blob(page)
     assert "PEER-EVIDENCE" not in blob

@@ -25,7 +25,6 @@ from app.schemas.mcp_search import McpSearchHit, McpSearchResult
 from app.utils.compact_json import compact_json
 from app.utils.opaque_cursor import cursor_rank, cursor_uuid, decode_cursor, encode_cursor
 from app.utils.text_caps import cap_text
-from app.utils.untrusted import wrap_untrusted
 
 _PAGE_SIZE = 20
 _SNIPPET_CAP = 400
@@ -131,7 +130,7 @@ async def search_project_text(
             block_index=row.block_index,
             block_type=row.block_type,
             locator=f"p{row.page_number}·b{row.block_index}",
-            snippet=wrap_untrusted(headline_by_id[row.id][1][:_SNIPPET_CAP]),
+            snippet=headline_by_id[row.id][1][:_SNIPPET_CAP],
         )
         cost = len(compact_json(hit.model_dump(mode="json"))) + 2  # + the ", " separator
         if hits and used + cost > _HITS_BUDGET:

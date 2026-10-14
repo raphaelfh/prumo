@@ -74,6 +74,8 @@ async def test_applied_edit_returns_before_after_and_writes_one_row(
         "before": {"description": current["description"]},
         "after": {"description": "New"},
         "note": None,
+        "untrusted_content": True,
+        "untrusted_fields": ["before{}", "after{}"],
     }
 
     after = await _current(db_session, "description")
@@ -327,7 +329,14 @@ async def test_update_project_details_is_a_non_destructive_write(mcp_client, pat
     assert a.open_world_hint is False
     assert t.title
     assert t.output_schema is not None
-    assert set(t.output_schema["properties"]) == {"project_id", "before", "after", "note"}
+    assert set(t.output_schema["properties"]) == {
+        "project_id",
+        "before",
+        "after",
+        "note",
+        "untrusted_content",
+        "untrusted_fields",
+    }
 
 
 async def test_nul_in_a_string_is_invalid_argument_before_any_write(

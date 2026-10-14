@@ -27,7 +27,11 @@ class McpSearchResult(BaseModel):
     hits: list[McpSearchHit]
     next_cursor: str | None
     note: str | None
-    untrusted_content: bool = True
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = [
+        "hits[].title",
+        "hits[].snippet",
+    ]
 
 
 class McpPdfLink(BaseModel):
@@ -41,3 +45,7 @@ class McpArticlePdfResult(BaseModel):
     pdf: McpPdfLink | None
     reason: Literal["no_pdf"] | None
     next_step: str | None
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = [
+        "pdf.filename",
+    ]

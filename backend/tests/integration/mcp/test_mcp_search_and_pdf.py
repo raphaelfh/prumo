@@ -15,7 +15,6 @@ from structlog.testing import capture_logs
 from app.api.mcp import server
 from app.schemas.mcp_articles import McpArticleDetail
 from app.schemas.mcp_search import McpArticlePdfResult, McpSearchResult
-from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
 from tests.integration.mcp.tool_calls import call_tool, error_payload, structured
@@ -195,9 +194,10 @@ async def test_untrusted_content_flag(mcp_client, pat_primary_rw, db_session):
         )
     )
     assert search_body["untrusted_content"] is True
+    assert search_body["hits"]
     for hit in search_body["hits"]:
-        assert hit["snippet"].startswith(UNTRUSTED_OPEN)
-        assert hit["snippet"].endswith(UNTRUSTED_CLOSE)
+        assert "ARTICLE_TEXT" not in hit["snippet"]
+    assert "hits[].snippet" in search_body["untrusted_fields"]
 
     list_body = structured(
         await call_tool(

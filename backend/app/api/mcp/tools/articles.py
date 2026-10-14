@@ -21,7 +21,6 @@ from app.services import article_list_read_service, article_read_service
 from app.services.article_text_block_read_service import get_file_outline
 from app.utils.compact_json import RESULT_CAP, compact_json
 from app.utils.opaque_cursor import InvalidCursorError
-from app.utils.untrusted import wrap_untrusted
 
 
 @agent_tool(
@@ -81,23 +80,11 @@ async def get_article(
         db, article_id=article_id, file_id=file_id
     )
     outline = await get_file_outline(db, article_file_id=file.id) if file is not None else None
-    if outline is not None:
-        # Headings are PDF-derived text (spec §5.0): wrapped like the
-        # abstract. The length cap already ran in get_file_outline, on the
-        # RAW heading text -- wrapping here, after that cap, keeps the
-        # delimiters from eating into it.
-        outline = outline.model_copy(
-            update={
-                "headings": [
-                    heading.model_copy(update={"text": wrap_untrusted(heading.text)})
-                    for heading in outline.headings
-                ]
-            }
-        )
+    # Abstract and headings are returned raw: the result's untrusted_fields
+    # declares them as document text.
     return _fit_outline(
         detail.model_copy(
             update={
-                "abstract": wrap_untrusted(detail.abstract) if detail.abstract else None,
                 "outline": outline,
                 "extraction_status": extraction_status,
             }

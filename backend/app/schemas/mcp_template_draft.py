@@ -82,3 +82,11 @@ class EditTemplateDraftResult(BaseModel):
     draft_fingerprint: str | None
     editor_url: str
     next_step: str
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = [
+        "applied[].name",
+        "applied[].label",
+        "diff.changes[].label_path[]",
+        "diff.changes[].before",
+        "diff.changes[].after",
+    ]

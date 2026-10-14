@@ -74,7 +74,6 @@ from app.utils.opaque_cursor import (
     encode_cursor,
 )
 from app.utils.text_caps import cap_text, join_capped
-from app.utils.untrusted import wrap_untrusted
 
 _PAGE_BUDGET = 28_000
 _CONCISE_VALUE_CAP = 80
@@ -383,7 +382,7 @@ def _evidence_for(
             continue
         out.append(
             McpEvidence(
-                quote=wrap_untrusted(ev.text_content[:_EVIDENCE_QUOTE_CAP]),
+                quote=ev.text_content[:_EVIDENCE_QUOTE_CAP],
                 locator=f"p{ev.page_number}" if ev.page_number is not None else None,
             )
         )

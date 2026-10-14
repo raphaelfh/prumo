@@ -26,7 +26,11 @@ class McpArticleRow(BaseModel):
 class McpArticleList(BaseModel):
     articles: list[McpArticleRow]
     next_cursor: str | None
-    untrusted_content: bool = True
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = [
+        "articles[].title",
+        "articles[].authors[]",
+    ]
 
 
 class McpOutlineHeading(BaseModel):
@@ -78,4 +82,16 @@ class McpArticleDetail(BaseModel):
     files: list[McpArticleFileRow]
     outline: McpFileOutline | None
     extraction_status: list[McpArticleTemplateStatus]
-    untrusted_content: bool = True
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = [
+        "title",
+        "authors[]",
+        "journal_title",
+        "doi",
+        "pmid",
+        "publication_status",
+        "abstract",
+        "files[].original_filename",
+        "outline.headings[].text",
+        "extraction_status[].template_name",
+    ]

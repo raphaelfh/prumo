@@ -4,6 +4,7 @@ needs."""
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -56,3 +57,17 @@ class McpTemplateView(BaseModel):
     sections: list[McpTemplateSection]
     draft_diff: McpDraftDiff | None
     next_cursor: str | None
+    untrusted_content: Literal[True] = True
+    untrusted_fields: list[str] = [
+        "name",
+        "sections[].name",
+        "sections[].label",
+        "sections[].questions[].name",
+        "sections[].questions[].label",
+        "sections[].questions[].description",
+        "sections[].questions[].options[]",
+        "sections[].questions[].instructions",
+        "draft_diff.changes[].label_path[]",
+        "draft_diff.changes[].before",
+        "draft_diff.changes[].after",
+    ]

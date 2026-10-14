@@ -1,6 +1,6 @@
 """`article_text_search_service.search_project_text` (spec §5.1, task 7b):
 keyword search over article text, scoped to a project in the WHERE clause,
-ranked (rank desc, block id), paged, with untrusted-wrapped snippets."""
+ranked (rank desc, block id), paged, with raw capped snippets."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import pytest
 
 from app.services.article_text_search_service import search_project_text
 from app.utils.compact_json import compact_json
-from app.utils.untrusted import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.integration.conftest import SEED
 from tests.integration.mcp.article_seed import insert_article, insert_blocks, insert_pdf
 
@@ -112,7 +111,7 @@ async def test_search_paging_by_rank_then_id(db_session) -> None:
     assert ids_1.isdisjoint(ids_2)
 
 
-async def test_snippet_is_wrapped_and_capped(db_session) -> None:
+async def test_snippet_is_raw_and_capped(db_session) -> None:
     article = await insert_article(db_session, SEED.primary_project, title="Snippet article")
     file_id = await insert_pdf(db_session, SEED.primary_project, article)
     long_text = "snippetcaptest " + ("filler word " * 200)
@@ -123,10 +122,9 @@ async def test_snippet_is_wrapped_and_capped(db_session) -> None:
     )
     assert len(result.hits) == 1
     snippet = result.hits[0].snippet
-    assert snippet.startswith(UNTRUSTED_OPEN)
-    assert snippet.endswith(UNTRUSTED_CLOSE)
-    inner = snippet[len(UNTRUSTED_OPEN) : -len(UNTRUSTED_CLOSE)]
-    assert len(inner) <= 400
+    assert "snippetcaptest" in snippet
+    assert len(snippet) <= 400
+    assert "ARTICLE_TEXT" not in snippet
 
 
 async def test_search_hit_titles_are_capped(db_session) -> None:
