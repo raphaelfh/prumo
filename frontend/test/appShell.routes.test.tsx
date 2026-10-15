@@ -23,6 +23,8 @@ vi.mock('@/pages/Dashboard', () => ({default: () => <div>hub page</div>}));
 vi.mock('@/pages/ProjectView', () => ({default: () => <div>project view</div>}));
 vi.mock('@/pages/UserSettings', () => ({default: () => <div>settings page</div>}));
 vi.mock('@/pages/ExtractionFullScreen', () => ({default: () => <div>run workspace</div>}));
+vi.mock('@/pages/OAuthConsent', () => ({default: () => <div>consent page</div>}));
+vi.mock('@/pages/NotFound', () => ({default: () => <div>not found page</div>}));
 // The footer pulls in the authed user menu and the feedback dialog.
 vi.mock('@/components/layout/SidebarFooter', () => ({
     SidebarFooter: () => <div data-testid="sidebar-footer" />,
@@ -112,6 +114,21 @@ describe('AppShell', () => {
         expect(await screen.findByText('run workspace')).toBeInTheDocument();
         // RunWorkspaceShell, not AppShell: no Topbar, hence no app-shell root.
         expect(screen.queryByTestId('app-shell')).toBeNull();
+    });
+
+    it('renders the consent page outside the app shell', async () => {
+        renderAt('/oauth/consent?request=11111111-1111-4111-8111-111111111111');
+
+        expect(await screen.findByText('consent page')).toBeInTheDocument();
+        expect(screen.queryByTestId('app-shell')).toBeNull();
+    });
+
+    it('matches the consent route only in lowercase', async () => {
+        // The frame headers in vercel.json cover the exact lowercase path only.
+        renderAt('/OAuth/consent?request=11111111-1111-4111-8111-111111111111');
+
+        expect(await screen.findByText('not found page')).toBeInTheDocument();
+        expect(screen.queryByText('consent page')).toBeNull();
     });
 
     it('names the page in a breadcrumb on every shell route', async () => {

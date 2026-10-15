@@ -44,6 +44,7 @@ const QualityAssessmentFullScreen = lazy(
 );
 const UserSettings = lazy(() => import("./pages/UserSettings"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const OAuthConsent = lazy(() => import("./pages/OAuthConsent"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Loading component for Suspense
@@ -136,6 +137,19 @@ const App = () => {
                           <RunRoute tab="quality">
                             <QualityAssessmentFullScreen />
                           </RunRoute>
+                        </ErrorBoundary>
+                      </ProtectedRoute>
+                    }
+                  />
+                  {/* Standalone page, outside AppShell. caseSensitive: only the exact
+                      lowercase path, the one vercel.json's frame headers cover, renders it. */}
+                  <Route
+                    path="/oauth/consent"
+                    caseSensitive
+                    element={
+                      <ProtectedRoute>
+                        <ErrorBoundary context={t('oauthConsent', 'pageTitle')}>
+                          <OAuthConsent />
                         </ErrorBoundary>
                       </ProtectedRoute>
                     }
