@@ -64,6 +64,7 @@ const VARIANT_COPY = {
   field_moved: 'changeFieldMoved',
   field_option_added: 'changeFieldOptionAdded',
   field_option_removed: 'changeFieldOptionRemoved',
+  field_option_renamed: 'changeFieldOptionRenamed',
   field_options_reordered: 'changeFieldOptionsReordered',
   field_removed: 'changeFieldRemoved',
   template_instruction_added: 'changeTemplateInstructionAdded',

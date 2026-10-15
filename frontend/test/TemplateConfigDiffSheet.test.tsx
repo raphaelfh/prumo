@@ -6,7 +6,7 @@
  * 698/800 in the file-size ratchet and cannot absorb this.
  *
  * The sheet ratifies the wire model on screen: every tier group expands to
- * the SAME row list (never a count-only group), every one of the 14
+ * the SAME row list (never a count-only group), every one of the 15
  * generated variants reaches a sentence, and the two non-diff shapes get
  * copy that cannot be read as "no changes".
  *
@@ -240,6 +240,7 @@ const VARIANT_SENTENCE: Record<Variant, string> = {
   field_moved: templateConfig.changeFieldMoved,
   field_option_added: templateConfig.changeFieldOptionAdded,
   field_option_removed: templateConfig.changeFieldOptionRemoved,
+  field_option_renamed: templateConfig.changeFieldOptionRenamed,
   field_options_reordered: templateConfig.changeFieldOptionsReordered.replace(
     '{{n}}',
     String(OPTIONS_REORDER_COUNT),
@@ -251,7 +252,7 @@ const VARIANT_SENTENCE: Record<Variant, string> = {
   template_instruction_removed: templateConfig.changeTemplateInstructionRemoved,
 };
 
-/** All 14, every one in the open tier so no disclosure hides a gap. */
+/** All 15, every one in the open tier so no disclosure hides a gap. */
 const ALL_VARIANTS: RowSeed[] = (
   Object.keys(VARIANT_SENTENCE) as Variant[]
 ).map((variant) => ({
@@ -271,8 +272,8 @@ const ALL_VARIANTS: RowSeed[] = (
 }));
 
 describe('TemplateConfigDiffSheet — variant copy (D8)', () => {
-  it('reaches all 14 generated variants from a rendered row', async () => {
-    expect(Object.keys(VARIANT_SENTENCE)).toHaveLength(14);
+  it('reaches all 15 generated variants from a rendered row', async () => {
+    expect(Object.keys(VARIANT_SENTENCE)).toHaveLength(15);
     loadTemplateConfigDiff.mockResolvedValue(diffOk(ALL_VARIANTS));
     renderSheet();
 
@@ -322,6 +323,32 @@ describe('TemplateConfigDiffSheet — variant copy (D8)', () => {
     expect(fieldsRow).toHaveTextContent(
       `Order changed among ${FIELDS_REORDER_COUNT} fields`,
     );
+  });
+});
+
+describe('TemplateConfigDiffSheet — option rename (field_option_renamed)', () => {
+  it('names an option rename and shows the old and new label', async () => {
+    loadTemplateConfigDiff.mockResolvedValue(
+      diffOk([
+        {
+          id: 'rn1',
+          variant: 'field_option_renamed',
+          // The backend files a rename as cosmetic: the code is unchanged.
+          tier: 'cosmetic',
+          attribute: 'allowed_values',
+          before: 'Development',
+          after: 'Development only',
+        },
+      ]),
+    );
+    renderSheet();
+
+    await userEvent.click(within(await group('cosmetic')).getByRole('button'));
+    const rowEl = within(await group('cosmetic')).getByTestId(
+      'template-diff-row-rn1',
+    );
+    expect(rowEl).toHaveTextContent('Option renamed');
+    expect(rowEl).toHaveTextContent('Development only');
   });
 });
 

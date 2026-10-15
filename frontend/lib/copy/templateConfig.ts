@@ -43,6 +43,7 @@ export const templateConfig = {
   changeFieldMoved: 'Field moved to another section',
   changeFieldOptionAdded: 'Option added',
   changeFieldOptionRemoved: 'Option removed',
+  changeFieldOptionRenamed: 'Option renamed',
   // D8: the option count INCLUDES options added in the same diff
   // (template_diff._diff_options reports len(new) over the whole new list),
   // so "N options reordered" would claim N moves that did not happen. The
@@ -299,6 +300,7 @@ export const templateConfig = {
   moveDialogPlaceholder: 'Move {{field}} to…',
   moveDialogTitle: 'Move field to a section',
   newPerGroupSection: 'New per-{{noun}} section',
+  optionLabelEdit: 'Edit option label',
   perGroupDialogDesc:
     'Lives inside {{group}} — reviewers fill it once for each {{noun}}.',
   // Capitalized inspector variants — the extraction-namespace meta keys
