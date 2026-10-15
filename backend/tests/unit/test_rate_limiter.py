@@ -7,13 +7,21 @@ import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
 from limits import parse
 from structlog.testing import capture_logs
 
 from app.utils import rate_limiter
-from app.utils.rate_limiter import build_limiter, hit_shared, log_storage_backend, retry_after
+from app.utils.rate_limiter import (
+    build_limiter,
+    client_ip,
+    hit_shared,
+    log_storage_backend,
+    retry_after,
+    too_many,
+)
 
 _READ = parse("120/minute")
 _TIGHT = parse("1/minute")
@@ -122,3 +130,24 @@ def test_redis_storage_has_short_socket_timeouts() -> None:
     kwargs = built._storage.storage.connection_pool.connection_kwargs
     assert 0 < kwargs["socket_connect_timeout"] <= 1
     assert 0 < kwargs["socket_timeout"] <= 1
+
+
+def test_too_many_is_none_while_allowed_then_a_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rate_limiter, "limiter", build_limiter("memory://"))
+    bucket = f"t-{uuid4()}"
+    assert too_many(_TIGHT, bucket, "k") is None
+
+    refused = too_many(_TIGHT, bucket, "k")
+    assert refused is not None
+    assert refused.status_code == 429
+    assert refused.body == b'{"error":"too_many_requests"}'
+    assert 1 <= int(refused.headers["retry-after"]) <= 60
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected"),
+    [({"client": ("5.6.7.8", 9)}, "5.6.7.8"), ({}, "unknown"), ({"client": None}, "unknown")],
+    ids=["client", "no-client-key", "client-none"],
+)
+def test_client_ip(scope: dict, expected: str) -> None:
+    assert client_ip(scope) == expected  # type: ignore[arg-type]

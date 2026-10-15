@@ -1,7 +1,9 @@
 """PAT bearer auth for the exact ``/mcp`` route (spec §3, §7).
 
 Pure ASGI, not the SDK ``token_verifier`` — that forces OAuth
-``resource_metadata`` 401s, which a PAT bearer is not. ``_PatAuthApp`` is a
+``resource_metadata`` 401s unconditionally. Here the 401 is a plain ``Bearer``
+challenge with OAuth off, and carries ``resource_metadata`` (the RFC 9728
+document's URL) only when OAuth is on (ADR 0022). ``_PatAuthApp`` is a
 class, not a closure: Starlette's ``Route`` runs a plain-function endpoint
 as a request -> response handler, but a class instance is called as a raw
 ASGI app — which is what the SDK's streamable-http app (a stateful,
@@ -18,11 +20,12 @@ from limits import parse
 from starlette.responses import Response
 
 from app.api.mcp import session as mcp_session
+from app.api.mcp.oauth.routes import resource_metadata_url
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.mcp_auth import McpPrincipal
 from app.services.pat_service import hash_secret, resolve_principal, touch_last_used
-from app.utils.rate_limiter import hit_shared
+from app.utils.rate_limiter import client_ip, hit_shared
 
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -84,7 +87,7 @@ class _PatAuthApp:
 
         secret = _bearer(scope)
         if not secret:
-            await _unauthorized(scope, receive, send)
+            await _unauthorized(scope, receive, send, presented=False)
             return
 
         # Keyed by a prefix of the token's stored hash (never the secret) and
@@ -117,7 +120,7 @@ class _PatAuthApp:
                 return
 
             if principal is None:
-                await _unauthorized(scope, receive, send)
+                await _unauthorized(scope, receive, send, presented=True)
                 return
 
             try:
@@ -159,13 +162,18 @@ async def _service_unavailable(scope: Scope, receive: Receive, send: Send) -> No
     await Response(status_code=503, headers={"Retry-After": "2"})(scope, receive, send)
 
 
-async def _unauthorized(scope: Scope, receive: Receive, send: Send) -> None:
-    client = scope.get("client")
-    ip = client[0] if client else "unknown"
+def _challenge(*, presented: bool) -> str:
+    if not settings.oauth_enabled:
+        return "Bearer"
+    meta = f'resource_metadata="{resource_metadata_url()}"'
+    return f'Bearer error="invalid_token", {meta}' if presented else f"Bearer {meta}"
+
+
+async def _unauthorized(scope: Scope, receive: Receive, send: Send, *, presented: bool) -> None:
     # Only a failed lookup hits the per-IP bucket: a valid PAT never counts.
-    ok = hit_shared(_UNAUTH_LIMIT, "mcp401", ip)
+    ok = hit_shared(_UNAUTH_LIMIT, "mcp401", client_ip(scope))
     response = (
-        Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
+        Response(status_code=401, headers={"WWW-Authenticate": _challenge(presented=presented)})
         if ok
         else Response(status_code=429, headers={"Retry-After": "60"})
     )

@@ -59,6 +59,9 @@ Tokens are opaque prumo secrets valid only at `/mcp`, stored as SHA-256.
 
 The 401 challenge carries `resource_metadata` and never a `scope`, so clients
 fall back to `scopes_supported`, which is `["read", "write"]` today. The
+authorization-server metadata also lists `offline_access` as a no-op marker so
+hosts that request refresh tokens by scope can register; refresh tokens are
+always issued, and the protected-resource metadata stays `["read","write"]`. The
 consent page shows Read (fixed) and "Edit project setup" (unchecked). A later
 scope for starting AI runs will be added with its own unchecked box once its
 server-side gates exist.

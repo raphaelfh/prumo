@@ -5,6 +5,7 @@ Inclui:
 - RequestIdMiddleware: Adiciona trace_id a todas as requests
 - LoggingMiddleware: Log de requests/responses
 - TimingMiddleware: Mede duracao of the requests
+- PathScopedCORSMiddleware: CORSMiddleware except for the OAuth paths
 """
 
 import time
@@ -13,6 +14,8 @@ from typing import Any
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.logging import clear_log_context, get_logger, log_context
 
@@ -142,6 +145,23 @@ class TimingMiddleware(BaseHTTPMiddleware):
         response.headers["X-Response-Time"] = f"{duration_ms:.2f}ms"
 
         return response
+
+
+class PathScopedCORSMiddleware:
+    """CORSMiddleware for every path except ``bypass_paths``, which reach the app
+    untouched so their own route-level CORS answers (ADR 0022). core/ cannot
+    import api/, so main.py passes the paths in."""
+
+    def __init__(self, app: ASGIApp, *, bypass_paths: frozenset[str], **cors_options: Any) -> None:
+        self.app = app
+        self.cors = CORSMiddleware(app, **cors_options)
+        self.bypass_paths = bypass_paths
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"] in self.bypass_paths:
+            await self.app(scope, receive, send)
+            return
+        await self.cors(scope, receive, send)
 
 
 def register_middlewares(app: Any) -> None:

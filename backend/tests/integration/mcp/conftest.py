@@ -17,6 +17,7 @@ from uuid import UUID
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from mcp import Client
 from pydantic import BaseModel
@@ -26,6 +27,7 @@ from app.api.mcp import server
 from app.api.mcp import session as mcp_session
 from app.api.mcp.asgi_auth import current_principal, principal_var
 from app.api.mcp.server import agent_tool
+from app.core.config import settings
 from app.main import create_app
 from app.schemas.mcp_auth import McpPrincipal
 from app.schemas.personal_access_token import PersonalAccessTokenCreateRequest
@@ -67,8 +69,8 @@ def bind_mcp_session_factory(
     monkeypatch.setattr(mcp_session, "session_factory", factory)
 
 
-@pytest_asyncio.fixture
-async def mcp_http_client() -> AsyncGenerator[AsyncClient, None]:
+@asynccontextmanager
+async def _serve(app: FastAPI, base_url: str) -> AsyncIterator[AsyncClient]:
     """A fresh app per test: ASGITransport sends no lifespan events and a
     StreamableHTTPSessionManager.run() works once per instance, so the shared
     module-level app cannot host per-test runs.
@@ -82,7 +84,6 @@ async def mcp_http_client() -> AsyncGenerator[AsyncClient, None]:
     identity for its whole life — regardless of which outer Task drives it
     via ``ready``/``stop`` — so entry and exit both happen inside it.
     """
-    app = create_app()
     ready = asyncio.Event()
     stop = asyncio.Event()
     failure: dict[str, BaseException] = {}
@@ -103,11 +104,59 @@ async def mcp_http_client() -> AsyncGenerator[AsyncClient, None]:
         raise failure["error"]
 
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=base_url) as client:
             yield client
     finally:
         stop.set()
         await manager_task
+
+
+OAUTH_BASE_URL = "http://localhost:8000"
+PRM_URL = OAUTH_BASE_URL + "/.well-known/oauth-protected-resource/mcp"
+
+
+@asynccontextmanager
+async def _client_in_mode(mode: str, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[AsyncClient]:
+    """OAuth off pins ``PUBLIC_API_URL`` to ``None`` (a developer ``.env`` must not
+    flip it). OAuth on uses ``OAUTH_BASE_URL``: the SDK accepts only an https or a
+    localhost http issuer, so never ``http://test``."""
+    on = mode == "oauth_on"
+    monkeypatch.setattr(settings, "PUBLIC_API_URL", OAUTH_BASE_URL if on else None)
+    async with _serve(create_app(), OAUTH_BASE_URL if on else "http://test") as c:
+        yield c
+
+
+@pytest_asyncio.fixture
+async def mcp_http_client(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncClient, None]:
+    async with _client_in_mode("oauth_off", monkeypatch) as c:
+        yield c
+
+
+@pytest_asyncio.fixture
+async def oauth_http_client(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncClient, None]:
+    async with _client_in_mode("oauth_on", monkeypatch) as c:
+        yield c
+
+
+@pytest.fixture(params=["oauth_off", "oauth_on"])
+def auth_mode(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
+
+
+@pytest_asyncio.fixture
+async def mode_http_client(
+    auth_mode: str, monkeypatch: pytest.MonkeyPatch
+) -> AsyncGenerator[AsyncClient, None]:
+    """``mcp_http_client`` or ``oauth_http_client``, per ``auth_mode``."""
+    async with _client_in_mode(auth_mode, monkeypatch) as c:
+        yield c
+
+
+def expected_challenge(mode: str, *, presented: bool) -> str:
+    if mode == "oauth_off":
+        return "Bearer"
+    meta = f'resource_metadata="{PRM_URL}"'
+    return f'Bearer error="invalid_token", {meta}' if presented else f"Bearer {meta}"
 
 
 @dataclass(frozen=True)

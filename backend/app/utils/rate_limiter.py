@@ -13,6 +13,7 @@ so budgets hold across processes and restarts; unset means per-process
 ``memory://``. ``hit_shared``/``retry_after`` are the direct (non-decorator)
 entry points: when the shared storage raises they fall back to a
 per-process memory limiter, failing open across processes during an outage.
+``too_many`` wraps them for raw ASGI apps: one hit, then ``None`` or a 429.
 """
 
 import hashlib
@@ -24,6 +25,8 @@ from limits.storage import MemoryStorage
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.types import Scope
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -124,3 +127,21 @@ def retry_after(limit: RateLimitItem, *keys: str) -> int:
     else:
         _storage_ok()
     return max(1, ceil(stats.reset_time - time.time()))
+
+
+def client_ip(scope: Scope) -> str:
+    """The ASGI scope's client host, or ``"unknown"`` when the server gave none."""
+    client = scope.get("client")
+    return client[0] if client else "unknown"
+
+
+def too_many(limit: RateLimitItem, *keys: str) -> Response | None:
+    """Consume one unit of ``limit`` for ``keys``: ``None`` while allowed, else a
+    429 JSON response carrying ``Retry-After``."""
+    if hit_shared(limit, *keys):
+        return None
+    return JSONResponse(
+        {"error": "too_many_requests"},
+        status_code=429,
+        headers={"Retry-After": str(retry_after(limit, *keys))},
+    )

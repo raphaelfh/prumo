@@ -535,3 +535,29 @@ async def test_a_healthy_dispatch_passes_the_response_through(
 
     assert sent[0]["status"] == 200
     assert sent[1]["body"] == b"ok"
+
+
+_PRM_URL = "http://localhost:8000/.well-known/oauth-protected-resource/mcp"
+
+
+@pytest.mark.parametrize("presented", [False, True], ids=["absent", "presented"])
+def test_challenge_is_plain_bearer_with_oauth_off(
+    monkeypatch: pytest.MonkeyPatch, presented: bool
+) -> None:
+    monkeypatch.setattr(asgi_auth.settings, "PUBLIC_API_URL", None)
+    assert asgi_auth._challenge(presented=presented) == "Bearer"
+
+
+@pytest.mark.parametrize(
+    ("presented", "expected"),
+    [
+        (False, f'Bearer resource_metadata="{_PRM_URL}"'),
+        (True, f'Bearer error="invalid_token", resource_metadata="{_PRM_URL}"'),
+    ],
+    ids=["absent", "presented"],
+)
+def test_challenge_points_at_the_prm_with_oauth_on(
+    monkeypatch: pytest.MonkeyPatch, presented: bool, expected: str
+) -> None:
+    monkeypatch.setattr(asgi_auth.settings, "PUBLIC_API_URL", "http://localhost:8000")
+    assert asgi_auth._challenge(presented=presented) == expected
