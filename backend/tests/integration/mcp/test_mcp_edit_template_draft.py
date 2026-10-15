@@ -92,7 +92,7 @@ async def test_success_returns_unpublished_draft(
             "section_id": section_id,
             "label": "Follow-up (months)",
             "type": "select",
-            "options": ["6", "12"],
+            "options": [{"label": "6"}, {"label": "12"}],
         },
         {"op": "update_question", "field_id": field_id, "label": "Reworded"},
     ]
@@ -156,7 +156,7 @@ async def test_add_question_mapping(mcp_client, pat_primary_rw, db_session: Asyn
             "section_id": section_id,
             "label": "Mapped Q",
             "type": "select",
-            "options": ["a", "b"],
+            "options": [{"label": "Yes"}, {"value": "n", "label": "No"}],
             "instructions": "Some hint",
         }
     ]
@@ -178,9 +178,44 @@ async def test_add_question_mapping(mcp_client, pat_primary_rw, db_session: Asyn
         )
     ).one()
     assert str(row.entity_type_id) == section_id
-    assert row.allowed_values == ["a", "b"]
+    assert row.allowed_values == [{"value": "Yes", "label": "Yes"}, {"value": "n", "label": "No"}]
     assert row.llm_description == "Some hint"
     assert row.sort_order == max_sort_order + 1
+
+
+async def test_add_question_duplicate_option_value_is_invalid_argument(
+    mcp_client, pat_primary_rw, db_session: AsyncSession
+) -> None:
+    project_id, template_id, schema = await fresh_charms(db_session)
+    section_id, _field_id = _section_and_field(schema)
+    before = await _label_set(db_session, template_id)
+    refused_before = await _audit_count(db_session, outcome="refused")
+
+    result = await call_tool(
+        mcp_client,
+        pat_primary_rw,
+        "edit_template_draft",
+        {
+            "project_id": str(project_id),
+            "template_id": str(template_id),
+            "ops": [
+                {
+                    "op": "add_question",
+                    "section_id": section_id,
+                    "label": "Dup options",
+                    "type": "select",
+                    "options": [{"label": "Yes"}, {"value": "Yes", "label": "Again"}],
+                }
+            ],
+        },
+    )
+
+    payload = error_payload(result)
+    assert payload["code"] == "INVALID_ARGUMENT"
+    assert payload["field"] == "options"
+    assert payload["message"] == "option values must be unique"
+    assert await _label_set(db_session, template_id) == before
+    assert await _audit_count(db_session, outcome="refused") == refused_before + 1
 
 
 async def test_derived_name_collision_suffixes(
@@ -374,7 +409,7 @@ async def test_foreign_template_with_too_many_ops_is_not_found(
                 "section_id": section_id,
                 "label": "Q",
                 "type": "text",
-                "options": ["a"],
+                "options": [{"label": "a"}],
             },
             "options",
         ),

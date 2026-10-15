@@ -7430,6 +7430,30 @@
         "title": "OpenHITLSessionResponse",
         "type": "object"
       },
+      "OptionItem": {
+        "additionalProperties": false,
+        "description": "One select/multiselect option: ``value`` is the stored code an answer\ncarries, ``label`` what a person reads. Renaming an option changes only\nits label.",
+        "properties": {
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "OptionItem",
+        "type": "object"
+      },
       "ParserSettingsPayload": {
         "properties": {
           "type": {
@@ -7777,7 +7801,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OptionItem"
                 },
                 "maxItems": 100,
                 "minItems": 1,
@@ -11367,7 +11391,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OptionItem"
                 },
                 "maxItems": 100,
                 "minItems": 1,
@@ -11590,7 +11614,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OptionItem"
                 },
                 "type": "array"
               },
@@ -11835,7 +11859,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OptionItem"
                 },
                 "maxItems": 100,
                 "minItems": 1,

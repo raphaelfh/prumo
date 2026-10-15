@@ -101,6 +101,8 @@ _DESCRIPTION = (
     "Add a question to a section, or reword an existing one, in a project template's "
     "unpublished draft. Never report a question as live -- it stays invisible "
     "to reviewers and to AI extraction until a project manager clicks Publish in prumo. "
+    "A select or multiselect question takes options as [{value?, label}]; a missing value "
+    "becomes the trimmed label, and values must be unique. "
     "After a RETRY or DUPLICATE_NAME error, call get_template before resending an "
     "add_question: it is not idempotent and may have partially applied. At most 25 ops "
     "per call."

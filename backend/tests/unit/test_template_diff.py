@@ -722,3 +722,19 @@ def test_baseline_without_the_key_reads_as_no_key() -> None:
     current = _snapshot(_entity(entity_id, field))
 
     assert diff_snapshots(baseline, current, fields_with_values=NO_VALUES).total == 0
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        ["development_only", "validation_only"],
+        [
+            {"value": "development_only", "label": "Development only"},
+            {"value": "validation_only", "label": "Validation only"},
+        ],
+        {"options": ["development_only", "validation_only"]},
+    ],
+    ids=["legacy", "canonical", "wrapped"],
+)
+def test_option_codes_read_values_from_every_shape(raw: object) -> None:
+    assert _diff._option_codes(raw) == ["development_only", "validation_only"]

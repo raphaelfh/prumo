@@ -19,13 +19,32 @@ from __future__ import annotations
 from typing import Any
 
 
-def normalize_options(allowed_values: Any) -> list[Any]:
-    """Return the raw option list from an ``allowed_values`` payload.
+def _option_item(item: Any) -> dict[str, str] | None:
+    if isinstance(item, str):
+        text = item.strip()
+        return {"value": item, "label": item} if text else None
+    if isinstance(item, dict):
+        value, label = item.get("value"), item.get("label")
+    elif hasattr(item, "value") or hasattr(item, "label"):
+        value, label = getattr(item, "value", None), getattr(item, "label", None)
+    else:
+        return None
+    if value:
+        return {"value": str(value), "label": str(label) if label else str(value)}
+    if label:
+        return {"value": str(label), "label": str(label)}
+    return None
 
-    Tolerates both shapes the template builder emits: ``{"options": [...]}`` or a
-    bare ``[...]``; anything else yields ``[]``. Single source of the shape
-    tolerance, shared by ``option_label_map`` here and
-    ``app.llm.schema._enum_values`` so a new option encoding is handled once.
+
+def normalize_options(allowed_values: Any) -> list[dict[str, str]]:
+    """The one reader of a field's options: any stored shape (bare strings,
+    ``{"options": [...]}``, ``{value[, label]}`` dicts, or ``OptionItem``s) →
+    canonical ``[{"value", "label"}]``. Frozen snapshots keep their legacy
+    shapes; read them through here.
+
+    A label-less option reads its value as its label; a value-less one reads
+    its label as its value. Anything else (``None``, numbers, empty strings or
+    dicts) is skipped; order is preserved.
     """
     if isinstance(allowed_values, dict) and "options" in allowed_values:
         options = allowed_values["options"]
@@ -33,24 +52,14 @@ def normalize_options(allowed_values: Any) -> list[Any]:
         options = allowed_values
     else:
         return []
-    return list(options or [])
+    if not isinstance(options, list):
+        return []
+    return [opt for opt in map(_option_item, options) if opt is not None]
 
 
 def option_label_map(allowed_values: Any) -> dict[str, str]:
-    """Map each select option's stored value (code) to its human label.
-
-    Options are ``{"value","label"}`` dicts or plain strings. Plain strings (and
-    options without a distinct label) map to themselves, so resolution is a safe
-    no-op for label-less templates.
-    """
-    out: dict[str, str] = {}
-    for opt in normalize_options(allowed_values):
-        if isinstance(opt, dict) and "value" in opt:
-            label = opt.get("label")
-            out[str(opt["value"])] = str(label) if label else str(opt["value"])
-        elif isinstance(opt, str):
-            out[opt] = opt
-    return out
+    """Map each select option's stored value (code) to its human label."""
+    return {o["value"]: o["label"] for o in normalize_options(allowed_values)}
 
 
 def value_str_for_claim(*, field_type: str | None, allowed_values: Any, value: Any) -> str:

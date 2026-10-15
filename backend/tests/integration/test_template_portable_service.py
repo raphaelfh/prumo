@@ -388,3 +388,42 @@ async def test_export_of_unrepresentable_rows_is_typed(db_session: AsyncSession)
     assert isinstance(exc.value, AppError) and exc.value.status_code == 422
     assert exc.value.code == "TEMPLATE_EXPORT_INVALID"
     assert any("allowed_values" in e["path"] for e in exc.value.details["errors"])
+
+
+@pytest.mark.asyncio
+async def test_export_reads_legacy_option_rows_canonical(db_session: AsyncSession) -> None:
+    """A live select row still holding bare-string options exports as
+    canonical ``{value, label}`` items instead of failing the export."""
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, SEED.primary_profile)
+    section_name, field_name = (
+        await db_session.execute(
+            text(
+                'UPDATE public.extraction_fields f SET allowed_values = \'["Yes","No"]\'::jsonb '
+                "FROM public.extraction_entity_types et "
+                "WHERE et.id = f.entity_type_id AND f.id = ("
+                "SELECT f2.id FROM public.extraction_fields f2 "
+                "JOIN public.extraction_entity_types et2 ON et2.id = f2.entity_type_id "
+                "WHERE et2.project_template_id = :tid AND f2.field_type = 'select' "
+                "ORDER BY et2.name, f2.name LIMIT 1) RETURNING et.name, f.name"
+            ),
+            {"tid": str(clone.project_template_id)},
+        )
+    ).one()
+
+    doc = await to_portable(
+        db_session, project_id=project_id, template_id=clone.project_template_id
+    )
+
+    def walk(sections: list[PortableSection]):
+        for section in sections:
+            yield section
+            yield from walk(section.sections)
+
+    section = next(s for s in walk(doc.sections) if s.name == section_name)
+    exported = next(f for f in section.fields if f.name == field_name)
+    assert exported.model_dump()["allowed_values"] == [
+        {"value": "Yes", "label": "Yes"},
+        {"value": "No", "label": "No"},
+    ]

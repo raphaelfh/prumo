@@ -24,10 +24,11 @@ Layering: imports nothing from ``app.models`` (check_layered_arch).
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.llm.claim_value import normalize_options
 from app.schemas.extraction import Framework
 from app.schemas.template_structure import (
     AllowedUnits,
@@ -81,6 +82,16 @@ class PortableField(BaseModel):
     # without it degrades the template to "no key declared", which the AI
     # path refuses rather than duplicating.
     is_entity_key: bool = False
+
+    @field_validator("allowed_values", mode="before")
+    @classmethod
+    def _canonical_options(cls, raw: Any) -> list[dict[str, str]] | None:
+        # Legacy files and legacy live rows hold bare strings or the
+        # ``{"options": [...]}`` wrapper; ``AllowedValues`` then checks the
+        # canonical items (1..100, unique by value).
+        if raw is None:
+            return None
+        return normalize_options(raw)
 
 
 class PortableSection(BaseModel):

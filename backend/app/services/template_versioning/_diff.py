@@ -16,9 +16,9 @@ present on both sides under different parents is ONE :attr:`ChangeKind.MOVED`
 change, never remove+add. ``sort_order`` is excluded from the attribute loop
 entirely — ``planFieldMove`` renumbers whole sections on every move, so the
 integers are noise; reorder is derived from the *relative* sequence of ids
-present under the same parent on both sides. Options are bare strings (legacy
-rows may be ``{"options": [{value,label}]}``) reduced to their codes via the
-shared :func:`normalize_options` and set-differenced — no rename detection is
+present under the same parent on both sides. Options, in any stored shape, are
+reduced to their codes (values) via the shared :func:`normalize_options` and
+set-differenced — no rename detection is
 possible, so callers must never claim one.
 
 **D2 — tiers** answer one question: *can this invalidate data a reviewer already
@@ -579,14 +579,8 @@ def _attribute_tier(key: str, before: Any, after: Any, *, has_values: bool) -> C
 
 
 def _option_codes(allowed_values: Any) -> list[str]:
-    """The stored option codes, tolerant of the legacy ``{value,label}`` shape."""
-    codes: list[str] = []
-    for option in normalize_options(allowed_values):
-        if isinstance(option, dict):
-            codes.append(str(option.get("value", option)))
-        else:
-            codes.append(str(option))
-    return codes
+    """The stored option codes (values), in order."""
+    return [o["value"] for o in normalize_options(allowed_values)]
 
 
 def _diff_options(before: _Node, after: _Node) -> list[TemplateChange]:

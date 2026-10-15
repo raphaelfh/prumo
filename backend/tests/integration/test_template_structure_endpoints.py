@@ -136,3 +136,88 @@ async def test_create_field_endpoint_404_for_foreign_project(
     assert res.status_code == 404, res.text
 
     await db_session.rollback()
+
+
+async def _setup_section(db_session: AsyncSession, profile_id: UUID) -> tuple[UUID, UUID, UUID]:
+    project_id = SEED.secondary_project
+    await clean_project_clones(db_session, project_id)
+    clone = await clone_charms(db_session, project_id, profile_id)
+    et_id = await first_entity_type_id(db_session, clone.project_template_id)
+    return project_id, clone.project_template_id, et_id
+
+
+def _select_field(et_id: UUID, name: str, allowed_values: object) -> dict[str, object]:
+    return {
+        "entity_type_id": str(et_id),
+        "name": name,
+        "label": "Select Field",
+        "field_type": "select",
+        "allowed_values": allowed_values,
+    }
+
+
+@pytest.mark.asyncio
+async def test_select_field_rejects_bare_string_options(
+    db_session: AsyncSession,
+    db_client: AsyncClient,
+    auth_as_profile: UUID,
+) -> None:
+    project_id, template_id, et_id = await _setup_section(db_session, auth_as_profile)
+
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/fields",
+        json=_select_field(et_id, "bare_string_options", ["Yes"]),
+    )
+
+    assert res.status_code == 422, res.text
+    assert res.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_select_field_accepts_canonical_options(
+    db_session: AsyncSession,
+    db_client: AsyncClient,
+    auth_as_profile: UUID,
+) -> None:
+    project_id, template_id, et_id = await _setup_section(db_session, auth_as_profile)
+
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/fields",
+        json=_select_field(et_id, "canonical_options", [{"value": "y", "label": "Yes"}]),
+    )
+
+    assert res.status_code == 201, res.text
+    assert res.json()["data"]["allowed_values"] == [{"value": "y", "label": "Yes"}]
+
+
+@pytest.mark.asyncio
+async def test_patch_reads_legacy_options_canonical(
+    db_session: AsyncSession,
+    db_client: AsyncClient,
+    auth_as_profile: UUID,
+) -> None:
+    project_id, template_id, et_id = await _setup_section(db_session, auth_as_profile)
+    created = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/fields",
+        json=_select_field(et_id, "legacy_options", [{"value": "y", "label": "Yes"}]),
+    )
+    assert created.status_code == 201, created.text
+    field_id = created.json()["data"]["id"]
+    await db_session.execute(
+        text(
+            'UPDATE public.extraction_fields SET allowed_values = \'["Yes","No"]\'::jsonb '
+            "WHERE id = :id"
+        ),
+        {"id": field_id},
+    )
+
+    res = await db_client.patch(
+        f"/api/v1/projects/{project_id}/templates/{template_id}/fields/{field_id}",
+        json={"label": "Renamed"},
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["allowed_values"] == [
+        {"value": "Yes", "label": "Yes"},
+        {"value": "No", "label": "No"},
+    ]

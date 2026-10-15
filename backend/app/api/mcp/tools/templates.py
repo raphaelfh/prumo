@@ -271,10 +271,4 @@ def _question(field: RunViewField) -> McpTemplateQuestion:
 
 
 def _options(allowed_values: object) -> list[str] | None:
-    opts = normalize_options(allowed_values)
-    if not opts:
-        return None
-    return [
-        str(opt.get("label") or opt.get("value")) if isinstance(opt, dict) else str(opt)
-        for opt in opts
-    ]
+    return [o["label"] for o in normalize_options(allowed_values)] or None

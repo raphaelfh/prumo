@@ -5,9 +5,11 @@ from pydantic import ValidationError
 
 from app.api.mcp.draft_diff import DIFF_CHAR_BUDGET, DIFF_ROW_CAP, capped_diff
 from app.api.mcp.errors import validation_failure
+from app.api.mcp.tools.template_draft import _DESCRIPTION
 from app.core.config import Settings
 from app.schemas.hitl_session import TemplateConfigDiffRead
 from app.schemas.mcp_template_draft import AddQuestionOp, UpdateQuestionOp
+from app.schemas.template_structure import OptionItem
 from app.utils.compact_json import compact_json
 
 _SECTION_ID = uuid4()
@@ -30,9 +32,14 @@ def _base_add(**overrides: object) -> dict[str, object]:
     [
         ({"label": "x" * 101}, ("label",)),
         ({"type": "rating"}, ("type",)),
-        ({"type": "text", "options": ["a"]}, ("options",)),
+        ({"type": "text", "options": [{"label": "a"}]}, ("options",)),
         ({"type": "select"}, ("options",)),
-        ({"options": ["a", "a"], "type": "select"}, ("options",)),
+        ({"options": [{"label": "a"}, {"label": "a"}], "type": "select"}, ("options",)),
+        (
+            {"options": [{"label": " Yes "}, {"value": "Yes", "label": "Again"}], "type": "select"},
+            ("options",),
+        ),
+        ({"options": [{"label": "a", "extra": 1}], "type": "select"}, ("options", 0, "extra")),
         ({"instructions": "x" * 1001}, ("instructions",)),
         ({"name": "smuggled"}, ("name",)),
     ],
@@ -44,9 +51,38 @@ def test_add_question_op_invalid_cases(overrides: dict[str, object], loc: tuple[
 
 
 def test_add_question_op_multiselect_with_options_is_valid() -> None:
-    op = AddQuestionOp(**_base_add(type="multiselect", options=["a", "b"]))
+    op = AddQuestionOp(
+        **_base_add(type="multiselect", options=[{"label": "Yes"}, {"value": "n", "label": "No"}])
+    )
     assert op.type == "multiselect"
-    assert op.options == ["a", "b"]
+    assert op.options is not None
+    assert [o.to_option_item() for o in op.options] == [
+        OptionItem(value="Yes", label="Yes"),
+        OptionItem(value="n", label="No"),
+    ]
+
+
+def test_add_question_op_missing_value_is_the_trimmed_label() -> None:
+    op = AddQuestionOp(**_base_add(type="select", options=[{"label": " Yes "}]))
+    assert op.options is not None
+    assert op.options[0].to_option_item() == OptionItem(value="Yes", label=" Yes ")
+
+
+def test_add_question_op_bare_string_options_are_invalid() -> None:
+    with pytest.raises(ValidationError):
+        AddQuestionOp(**_base_add(type="select", options=["a"]))
+
+
+def test_duplicate_option_value_message_has_no_pydantic_prefix() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        AddQuestionOp(
+            **_base_add(
+                type="select", options=[{"label": "Yes"}, {"value": "Yes", "label": "Again"}]
+            )
+        )
+    error = validation_failure(exc_info.value)
+    assert error.extras["field"] == "options"
+    assert error.message == "option values must be unique"
 
 
 def test_add_question_op_date_with_no_options_is_valid() -> None:
@@ -165,3 +201,8 @@ def test_capped_diff_truncates_label_path_elements() -> None:
 def test_capped_diff_default_budget_bounds_the_worst_case() -> None:
     capped = capped_diff(_pt_br_diff(DIFF_ROW_CAP))
     assert len(compact_json(capped.model_dump(mode="json"))) <= DIFF_CHAR_BUDGET
+
+
+def test_tool_description_states_the_option_shape() -> None:
+    assert "[{value?, label}]" in _DESCRIPTION
+    assert "trimmed label" in _DESCRIPTION

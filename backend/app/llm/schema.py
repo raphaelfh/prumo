@@ -47,18 +47,9 @@ _LIST_TYPES = ("array", "list", "multiselect")
 
 
 def _enum_values(field: Any) -> list[Any]:
-    """allowed_values options → list of option codes (each option's "value").
-
-    Options are dicts with a "value" key or plain strings. Shape tolerance
-    ({"options": [...]} vs [...]) lives in ``claim_value.normalize_options``.
-    """
-    values: list[Any] = []
-    for opt in normalize_options(getattr(field, "allowed_values", None)):
-        if isinstance(opt, dict) and "value" in opt:
-            values.append(opt["value"])
-        elif isinstance(opt, str):
-            values.append(opt)
-    return values
+    """allowed_values options → list of option codes (each option's "value"),
+    read through ``claim_value.normalize_options``."""
+    return [o["value"] for o in normalize_options(getattr(field, "allowed_values", None))]
 
 
 def _description(field: Any) -> str:

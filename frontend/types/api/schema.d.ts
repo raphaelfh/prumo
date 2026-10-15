@@ -5122,6 +5122,18 @@ export interface components {
             run_id: string;
             run_view?: components["schemas"]["RunViewResponse"] | null;
         };
+        /**
+         * OptionItem
+         * @description One select/multiselect option: ``value`` is the stored code an answer
+         *     carries, ``label`` what a person reads. Renaming an option changes only
+         *     its label.
+         */
+        OptionItem: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
         /** ParserSettingsPayload */
         ParserSettingsPayload: {
             /**
@@ -5303,7 +5315,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: string[] | null;
             /** Allowed Values */
-            allowed_values?: string[] | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /**
              * Allows No Information
              * @default true
@@ -6965,7 +6977,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: string[] | null;
             /** Allowed Values */
-            allowed_values?: string[] | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /**
              * Allows No Information
              * @default true
@@ -7071,7 +7083,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: string[] | null;
             /** Allowed Values */
-            allowed_values?: string[] | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /**
              * Allows No Information
              * @default true
@@ -7182,7 +7194,7 @@ export interface components {
             /** Allowed Units */
             allowed_units?: string[] | null;
             /** Allowed Values */
-            allowed_values?: string[] | null;
+            allowed_values?: components["schemas"]["OptionItem"][] | null;
             /** Allows No Information */
             allows_no_information?: boolean | null;
             /** Allows Not Applicable */

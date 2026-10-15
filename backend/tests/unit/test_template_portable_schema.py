@@ -66,10 +66,48 @@ def test_dump_uses_file_keys_and_omits_defaults() -> None:
 
 
 def test_field_constructed_by_alias_reads_by_attribute_and_dumps_column_names() -> None:
-    fld = PortableField(name="fld", label="F", type="select", required=True, allowed_values=["a"])
+    fld = PortableField(
+        name="fld",
+        label="F",
+        type="select",
+        required=True,
+        allowed_values=[{"value": "a", "label": "A"}],
+    )
     assert fld.field_type == "select" and fld.is_required is True
     dumped = fld.model_dump()
     assert dumped["field_type"] == "select" and dumped["is_required"] is True
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            ["Cohort", "RCT"],
+            [{"value": "Cohort", "label": "Cohort"}, {"value": "RCT", "label": "RCT"}],
+        ),
+        ({"options": ["X"]}, [{"value": "X", "label": "X"}]),
+        (
+            [{"value": "c", "label": "Cohort"}],
+            [{"value": "c", "label": "Cohort"}],
+        ),
+    ],
+    ids=["bare-strings", "wrapper", "canonical"],
+)
+def test_field_options_read_canonical(raw: object, expected: list[dict[str, str]]) -> None:
+    fld = PortableField(name="fld", label="F", type="select", allowed_values=raw)
+    assert fld.model_dump()["allowed_values"] == expected
+
+
+def test_field_options_duplicate_after_canonicalization_rejected() -> None:
+    with pytest.raises(ValidationError, match="option values must be unique"):
+        PortableField(name="fld", label="F", type="select", allowed_values=["a", "a"])
+
+
+def test_field_options_none_stays_none() -> None:
+    assert (
+        PortableField(name="fld", label="F", type="text", allowed_values=None).allowed_values
+        is None
+    )
 
 
 def test_from_attributes_by_name_reads_orm_like_objects() -> None:

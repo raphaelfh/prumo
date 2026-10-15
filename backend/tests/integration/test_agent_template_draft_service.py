@@ -91,7 +91,7 @@ async def test_add_question_maps_columns_and_sort_order(db_session: AsyncSession
         section_id=section_id,
         label="Follow-up (months)",
         type="select",
-        options=["6", "12"],
+        options=[{"label": "6"}, {"value": "m12", "label": "12"}],
         instructions="Longest follow-up",
     )
     applied = await apply_draft_ops(
@@ -109,7 +109,10 @@ async def test_add_question_maps_columns_and_sort_order(db_session: AsyncSession
     assert field.name == "follow_up_months"
     assert field.label == "Follow-up (months)"
     assert field.field_type == "select"
-    assert field.allowed_values == ["6", "12"]
+    assert [o.model_dump() for o in field.allowed_values or []] == [
+        {"value": "6", "label": "6"},
+        {"value": "m12", "label": "12"},
+    ]
     assert field.llm_description == "Longest follow-up"
     assert field.sort_order == current_max + 1
 

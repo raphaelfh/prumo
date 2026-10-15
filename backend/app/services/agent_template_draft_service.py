@@ -110,7 +110,7 @@ async def _add(
         name=template_field_naming.derive_field_name(op.label, taken),
         label=op.label,
         field_type=op.type,
-        allowed_values=op.options,
+        allowed_values=[o.to_option_item() for o in op.options] if op.options else None,
         llm_description=op.instructions,
         sort_order=sort_order,
     )

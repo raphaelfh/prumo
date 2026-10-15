@@ -34,6 +34,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
+from app.llm.claim_value import normalize_options
+
 
 class AbsentReason(StrEnum):
     """The closed vocabulary of coded "no value, on purpose" dispositions.
@@ -163,16 +165,8 @@ def is_disposition_candidate(raw: Any) -> bool:
 
 
 def _option_values(allowed_values: Any) -> set[str]:
-    """The set of option value-strings in a field's ``allowed_values`` (tolerant
-    of both the plain-string and ``{"value": ...}`` option shapes)."""
-    out: set[str] = set()
-    if isinstance(allowed_values, list):
-        for opt in allowed_values:
-            if isinstance(opt, str):
-                out.add(opt)
-            elif isinstance(opt, dict) and isinstance(opt.get("value"), str):
-                out.add(opt["value"])
-    return out
+    """The set of option values (codes) in a field's ``allowed_values``."""
+    return {o["value"] for o in normalize_options(allowed_values)}
 
 
 def disposition_to_marker(

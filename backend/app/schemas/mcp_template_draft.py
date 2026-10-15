@@ -9,7 +9,19 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from app.schemas.mcp_templates import McpDraftDiff
-from app.schemas.template_structure import AllowedValues, FieldType
+from app.schemas.template_structure import FieldType, OptionItem
+
+
+class OptionInput(BaseModel):
+    """One option an agent sends: ``value`` is optional and defaults to the
+    trimmed ``label``."""
+
+    model_config = ConfigDict(extra="forbid")
+    value: str | None = Field(default=None, min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=100)
+
+    def to_option_item(self) -> OptionItem:
+        return OptionItem(value=self.value or self.label.strip(), label=self.label)
 
 
 class AddQuestionOp(BaseModel):
@@ -21,12 +33,16 @@ class AddQuestionOp(BaseModel):
     label: str = Field(min_length=1, max_length=100)
     type: FieldType
     # validate_default: the check must also run when options is omitted.
-    options: AllowedValues | None = Field(default=None, validate_default=True)
+    options: list[OptionInput] | None = Field(
+        default=None, min_length=1, max_length=100, validate_default=True
+    )
     instructions: str | None = Field(default=None, max_length=1000)
 
     @field_validator("options")
     @classmethod
-    def _options_match_type(cls, value: list[str] | None, info: ValidationInfo) -> list[str] | None:
+    def _options_match_type(
+        cls, value: list[OptionInput] | None, info: ValidationInfo
+    ) -> list[OptionInput] | None:
         field_type = info.data.get("type")
         if field_type is None:  # type itself failed; report that error only
             return value
@@ -35,6 +51,10 @@ class AddQuestionOp(BaseModel):
             raise ValueError("options are required for select and multiselect questions")
         if not needs and value is not None:
             raise ValueError("options are only allowed for select and multiselect questions")
+        if value is not None:
+            codes = [option.to_option_item().value for option in value]
+            if len(set(codes)) != len(codes):
+                raise ValueError("option values must be unique")
         return value
 
 

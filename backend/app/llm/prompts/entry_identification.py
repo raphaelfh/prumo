@@ -20,6 +20,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.llm.claim_value import normalize_options
 from app.llm.prompts import (
     Ancestor,
     content_version,
@@ -120,20 +121,9 @@ def _render_ancestry_section(entry_label: str, ancestors: tuple[Ancestor, ...]) 
 
 
 def _allowed_value_names(allowed_values: Any) -> list[str]:
-    """The choices a ``select`` key accepts, in the shape the field stores
-    them: a list of strings, or a list of ``{value, label}`` objects (the
-    VALUE is what an extracted key must equal)."""
-    if not isinstance(allowed_values, list):
-        return []
-    names: list[str] = []
-    for item in allowed_values:
-        if isinstance(item, str):
-            names.append(item)
-        elif isinstance(item, dict):
-            value = item.get("value") or item.get("label")
-            if isinstance(value, str):
-                names.append(value)
-    return names
+    """The choices a ``select`` key accepts: each option's VALUE, which is
+    what an extracted key must equal."""
+    return [o["value"] for o in normalize_options(allowed_values)]
 
 
 def _render_allowed_values_section(key_label: str, allowed_values: Any) -> str:

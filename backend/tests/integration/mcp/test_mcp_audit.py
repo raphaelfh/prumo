@@ -501,7 +501,7 @@ async def test_malformed_op_writes_one_audited_invalid_argument_row(
                     "section_id": _section_id(schema),
                     "label": "Q",
                     "type": "text",
-                    "options": ["a"],
+                    "options": [{"label": "a"}],
                 }
             ],
         },
