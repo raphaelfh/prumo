@@ -151,7 +151,7 @@ class CurrentRunResolver:
                 run_id=run.id,
                 stage=run.stage,
             )
-        if run is None or run.stage not in ExtractionRunStage.live():
+        if run is None:
             return await self._create_in_extract(
                 project_id, article_id, template_id, user_id, parameters
             ), True
