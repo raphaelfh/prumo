@@ -1414,6 +1414,102 @@
         "title": "ApiResponse[NoneType]",
         "type": "object"
       },
+      "ApiResponse_OAuthConsentDecisionRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthConsentDecisionRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[OAuthConsentDecisionRead]",
+        "type": "object"
+      },
+      "ApiResponse_OAuthConsentRequestRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthConsentRequestRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[OAuthConsentRequestRead]",
+        "type": "object"
+      },
       "ApiResponse_OpenHITLSessionResponse_": {
         "properties": {
           "data": {
@@ -6920,6 +7016,140 @@
           }
         },
         "title": "MarkReadyRequest",
+        "type": "object"
+      },
+      "OAuthConsentDecisionRead": {
+        "description": "Where the browser goes next: back to the app, with a code or an error.",
+        "properties": {
+          "redirect_url": {
+            "description": "The app's redirect URI with the decision's query.",
+            "title": "Redirect Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirect_url"
+        ],
+        "title": "OAuthConsentDecisionRead",
+        "type": "object"
+      },
+      "OAuthConsentDecisionRequest": {
+        "additionalProperties": false,
+        "description": "Body of ``POST /api/v1/oauth/requests/{request_id}/decision``.",
+        "properties": {
+          "approve": {
+            "description": "True to connect the app, false to deny it.",
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "write": {
+            "description": "Grant `write` too. Ignored on a deny and on a request that did not ask for it.",
+            "title": "Write",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "approve",
+          "write"
+        ],
+        "title": "OAuthConsentDecisionRequest",
+        "type": "object"
+      },
+      "OAuthConsentRefusalCode": {
+        "description": "Why a consent route refused.\n\n409 ``REQUEST_ALREADY_DECIDED``: the request was already approved or\ndenied (in this tab, another tab, or by a concurrent approval for the same\napp). Slice-local, like ``PersonalAccessTokenRefusalCode``.",
+        "enum": [
+          "REQUEST_ALREADY_DECIDED"
+        ],
+        "title": "OAuthConsentRefusalCode",
+        "type": "string"
+      },
+      "OAuthConsentRefusalError": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/OAuthConsentRefusalCode"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "OAuthConsentRefusalError",
+        "type": "object"
+      },
+      "OAuthConsentRefusalResponse": {
+        "description": "The 409 (``REQUEST_ALREADY_DECIDED``) body, declared so the generated\nclient types the refusal.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/OAuthConsentRefusalError"
+          },
+          "ok": {
+            "default": false,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "OAuthConsentRefusalResponse",
+        "type": "object"
+      },
+      "OAuthConsentRequestRead": {
+        "description": "A pending authorization request, as the consent page shows it.",
+        "properties": {
+          "client_name": {
+            "description": "The name the app registered with.",
+            "title": "Client Name",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the request stops accepting a decision.",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "offers_write": {
+            "description": "True when the app asked for `write`, so the page may offer it.",
+            "title": "Offers Write",
+            "type": "boolean"
+          },
+          "redirect_host": {
+            "description": "Host (and port, when present) the app's redirect URI points at.",
+            "title": "Redirect Host",
+            "type": "string"
+          },
+          "requested_scopes": {
+            "description": "The scopes the app asked for; always includes `read`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Requested Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_name",
+          "redirect_host",
+          "requested_scopes",
+          "offers_write",
+          "expires_at"
+        ],
+        "title": "OAuthConsentRequestRead",
         "type": "object"
       },
       "OpaqueValueState": {
@@ -14051,6 +14281,136 @@
         "summary": "Revoke My Token",
         "tags": [
           "me"
+        ]
+      }
+    },
+    "/api/v1/oauth/requests/{request_id}": {
+      "get": {
+        "operationId": "read_consent_request_api_v1_oauth_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OAuthConsentRequestRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          },
+          "404": {
+            "description": "Unknown or expired request, or OAuth is off"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthConsentRefusalResponse"
+                }
+              }
+            },
+            "description": "Refused: the request was already answered"
+          },
+          "422": {
+            "description": "Malformed request id"
+          },
+          "429": {
+            "description": "Too many requests"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Read Consent Request",
+        "tags": [
+          "oauth-consent"
+        ]
+      }
+    },
+    "/api/v1/oauth/requests/{request_id}/decision": {
+      "post": {
+        "operationId": "decide_consent_request_api_v1_oauth_requests__request_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthConsentDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OAuthConsentDecisionRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid Supabase session"
+          },
+          "404": {
+            "description": "Unknown or expired request, or OAuth is off"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthConsentRefusalResponse"
+                }
+              }
+            },
+            "description": "Refused: the request was already answered"
+          },
+          "422": {
+            "description": "Malformed request id or body"
+          },
+          "429": {
+            "description": "Too many requests"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Decide Consent Request",
+        "tags": [
+          "oauth-consent"
         ]
       }
     },

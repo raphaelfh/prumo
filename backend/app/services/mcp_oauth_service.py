@@ -3,21 +3,37 @@
 Functions take the caller's session and never commit; they return the SDK's
 pydantic types and raise its protocol errors (``RegistrationError``,
 ``AuthorizeError``), which its handlers turn into RFC 6749/7591 responses.
+The consent functions serve the ``/api/v1/oauth`` routes instead and raise
+``AppError`` subclasses, which the global handler maps.
 """
 
 from __future__ import annotations
 
+import secrets
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
-from mcp.server.auth.provider import AuthorizationParams, AuthorizeError, RegistrationError
+from fastapi import status
+from mcp.server.auth.provider import (
+    AuthorizationParams,
+    AuthorizeError,
+    RegistrationError,
+    construct_redirect_uri,
+)
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
+from sqlalchemy import func, insert, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.error_handler import AppError, NotFoundError
+from app.core.integrity import violates_constraint
 from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest
+from app.models.personal_access_token import PersonalAccessToken
+from app.schemas.mcp_oauth import OAuthConsentRefusalCode, OAuthConsentRequestRead
+from app.services.pat_service import hash_secret, revoke_credential
 
 # The granting scopes: what a connection can hold (``read`` / ``read_write``).
 OAUTH_SCOPES: tuple[str, ...] = ("read", "write")
@@ -29,12 +45,36 @@ OFFLINE_ACCESS = "offline_access"
 
 # How long a user has to decide on a pending authorization request.
 REQUEST_TTL = timedelta(minutes=10)
+# How long an approval's authorization code may be exchanged (single use).
+CODE_TTL = timedelta(minutes=5)
+# How long a connection lives before the user must approve the app again.
+CONNECTION_TTL = timedelta(days=90)
 DEFAULT_CLIENT_NAME = "MCP client"
 
 _MAX_REDIRECT_URIS = 5
 _ALWAYS_GRANTED = "read"
 _MAX_CLIENT_NAME = 80
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_UQ_USER_CLIENT = "uq_personal_access_tokens_oauth_user_client"
+
+
+class ConsentRequestNotFoundError(NotFoundError):
+    """Unknown or expired request (or OAuth off): one answer for all three."""
+
+    def __init__(self) -> None:
+        super().__init__("OAuth request", message="This request expired or does not exist.")
+
+
+class ConsentRequestDecidedError(AppError):
+    """The request was already approved or denied, or a concurrent approval
+    for the same user and app won."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code=OAuthConsentRefusalCode.REQUEST_ALREADY_DECIDED,
+            message="This request was already answered.",
+            status_code=status.HTTP_409_CONFLICT,
+        )
 
 
 def redirect_uri_allowed(uri: str) -> bool:
@@ -129,3 +169,120 @@ async def create_request(
     )
     await db.flush()
     return request_id
+
+
+async def _undecided_request(db: AsyncSession, request_id: UUID, *, lock: bool) -> McpOAuthRequest:
+    """The request, refused when missing, decided or expired — decided first,
+    so a reloaded consent page shows the answer rather than "expired".
+
+    The lock covers the request row ONLY (no join): a ``FOR UPDATE`` over the
+    client would serialize two approvals for one app on the client row and
+    hide the unique-index conflict that ``decide_request`` maps to a 409.
+    """
+    stmt = (
+        select(McpOAuthRequest)
+        .where(McpOAuthRequest.id == request_id)
+        .execution_options(populate_existing=True)
+    )
+    if lock:
+        stmt = stmt.with_for_update()
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        raise ConsentRequestNotFoundError()
+    if row.decided_at is not None:
+        raise ConsentRequestDecidedError()
+    if row.expires_at <= datetime.now(UTC):
+        raise ConsentRequestNotFoundError()
+    return row
+
+
+async def _client_name(db: AsyncSession, client_id: UUID) -> str:
+    return (
+        await db.execute(
+            select(McpOAuthClient.client_name).where(McpOAuthClient.client_id == client_id)
+        )
+    ).scalar_one()
+
+
+async def get_consent_request(db: AsyncSession, *, request_id: UUID) -> OAuthConsentRequestRead:
+    """What the consent page shows for a pending request."""
+    row = await _undecided_request(db, request_id, lock=False)
+    return OAuthConsentRequestRead(
+        client_name=await _client_name(db, row.client_id),
+        redirect_host=urlsplit(row.redirect_uri).netloc,
+        requested_scopes=list(row.requested_scopes),
+        offers_write="write" in row.requested_scopes,
+        expires_at=row.expires_at,
+    )
+
+
+async def _record_decision(db: AsyncSession, request_id: UUID, **values: object) -> None:
+    # One ORM UPDATE: it also refreshes the request row held by this session.
+    await db.execute(
+        update(McpOAuthRequest).where(McpOAuthRequest.id == request_id).values(**values)
+    )
+
+
+async def decide_request(
+    db: AsyncSession, *, request_id: UUID, user_id: UUID, approve: bool, write: bool
+) -> str:
+    """Record ``user_id``'s decision; the redirect back to the app.
+
+    A deny redirects with ``error=access_denied``. An approval replaces the
+    user's previous connection to the app (one unrevoked per user and app),
+    creates the new one and mints a single-use authorization code, stored
+    only as its hash. Never commits.
+    """
+    row = await _undecided_request(db, request_id, lock=True)
+    now = datetime.now(UTC)
+    if not approve:
+        await _record_decision(db, request_id, decided_at=now)
+        return construct_redirect_uri(row.redirect_uri, error="access_denied", state=row.state)
+
+    previous = (
+        await db.execute(
+            select(PersonalAccessToken.id).where(
+                PersonalAccessToken.kind == "oauth",
+                PersonalAccessToken.user_id == user_id,
+                PersonalAccessToken.oauth_client_id == row.client_id,
+                PersonalAccessToken.revoked_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if previous is not None:
+        await revoke_credential(db, previous)
+
+    granted = "read_write" if write and "write" in row.requested_scopes else "read"
+    name = await _client_name(db, row.client_id)
+    try:
+        connection_id = (
+            await db.execute(
+                insert(PersonalAccessToken)
+                .values(
+                    kind="oauth",
+                    user_id=user_id,
+                    oauth_client_id=row.client_id,
+                    name=name,
+                    scope=granted,
+                    expires_at=func.now() + CONNECTION_TTL,
+                    project_ids=None,
+                )
+                .returning(PersonalAccessToken.id)
+            )
+        ).scalar_one()
+    except IntegrityError as exc:
+        if violates_constraint(exc, _UQ_USER_CLIENT):
+            raise ConsentRequestDecidedError() from exc
+        raise
+
+    code = secrets.token_urlsafe(32)
+    await _record_decision(
+        db,
+        request_id,
+        decided_at=now,
+        user_id=user_id,
+        connection_id=connection_id,
+        code_hash=hash_secret(code),
+        code_expires_at=now + CODE_TTL,
+    )
+    return construct_redirect_uri(row.redirect_uri, code=code, state=row.state)

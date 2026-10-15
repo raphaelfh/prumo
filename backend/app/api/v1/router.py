@@ -21,6 +21,7 @@ from app.api.v1.endpoints import (
     hitl_sessions,
     llm_engine,
     manager_review_visibility,
+    oauth_consent,
     parser_settings,
     personal_access_tokens,
     project_archive,
@@ -75,6 +76,12 @@ api_router.include_router(
     personal_access_tokens.router,
     prefix="/me",
     tags=["me"],
+)
+
+api_router.include_router(
+    oauth_consent.router,
+    prefix="/oauth",
+    tags=["oauth-consent"],
 )
 
 api_router.include_router(

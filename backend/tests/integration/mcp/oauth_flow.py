@@ -1,5 +1,6 @@
 """HTTP helpers for the OAuth flow tests: register a client, start an
-authorization request, read the consent request id back (ADR 0022)."""
+authorization request, read the consent request id back and approve it
+(ADR 0022)."""
 
 from __future__ import annotations
 
@@ -11,7 +12,9 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
 from httpx import AsyncClient, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.mcp_oauth_service import decide_request
 from tests.integration.mcp.conftest import OAUTH_BASE_URL
 
 CLAUDE_CB = "https://claude.ai/api/mcp/auth_callback"
@@ -65,3 +68,12 @@ async def authorize(
 def consent_request_id(resp: Response) -> UUID:
     query = parse_qs(urlsplit(resp.headers["location"]).query)
     return UUID(query["request"][0])
+
+
+async def approve(db: AsyncSession, request_id: UUID, user_id: UUID, *, write: bool) -> str:
+    """Approve a pending request as ``user_id``; the minted authorization code."""
+    url = await decide_request(
+        db, request_id=request_id, user_id=user_id, approve=True, write=write
+    )
+    await db.flush()
+    return parse_qs(urlsplit(url).query)["code"][0]

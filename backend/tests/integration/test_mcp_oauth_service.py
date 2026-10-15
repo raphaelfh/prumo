@@ -1,21 +1,32 @@
 """The OAuth authorization server's domain rules, called directly on
 ``db_session`` (ADR 0022): the redirect allow-list, client registration and
-lookup, and the pending authorization request."""
+lookup, the pending authorization request and the consent decision."""
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import Any
+from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
 from mcp.server.auth.provider import AuthorizationParams, AuthorizeError, RegistrationError
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, settings
 from app.models.mcp_oauth import McpOAuthClient, McpOAuthRequest
+from app.models.personal_access_token import PersonalAccessToken
 from app.services import mcp_oauth_service as svc
+from tests.integration.conftest import SEED
+from tests.integration.helpers.pat_rows import (
+    insert_oauth_client,
+    insert_oauth_connection,
+    insert_oauth_request,
+)
 
 BASE_URL = "http://localhost:8000"
 MCP_URL = BASE_URL + "/mcp"
@@ -273,3 +284,248 @@ async def test_create_request_refuses_a_foreign_resource(db_session: AsyncSessio
             db_session, client=client, params=_params(resource="https://other.example/mcp")
         )
     assert caught.value.error == "invalid_target"
+
+
+# --------------------------------------------------------------------------- consent decision
+
+
+def _query(url: str) -> dict[str, list[str]]:
+    return parse_qs(urlsplit(url).query)
+
+
+async def _connection(db: AsyncSession, connection_id: UUID) -> PersonalAccessToken:
+    row = (
+        await db.execute(
+            select(PersonalAccessToken)
+            .where(PersonalAccessToken.id == connection_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    return row
+
+
+async def _push_past_expiry(db: AsyncSession, request_id: UUID) -> None:
+    await db.execute(
+        text(
+            "UPDATE public.mcp_oauth_requests SET expires_at = now() - interval '1 minute' "
+            "WHERE id = :id"
+        ),
+        {"id": str(request_id)},
+    )
+
+
+async def test_decide_request_approve_creates_the_connection_and_a_code(
+    db_session: AsyncSession,
+) -> None:
+    client_id = await insert_oauth_client(db_session, client_name="Claude Desktop")
+    request_id = await insert_oauth_request(db_session, client_id=client_id)
+
+    url = await svc.decide_request(
+        db_session, request_id=request_id, user_id=SEED.primary_profile, approve=True, write=True
+    )
+
+    assert url.startswith(CLAUDE_CB + "?")
+    query = _query(url)
+    assert query["state"] == ["st"]
+    code = query["code"][0]
+    request = await db_session.get(McpOAuthRequest, request_id)
+    assert request is not None
+    assert request.decided_at is not None
+    assert request.user_id == SEED.primary_profile
+    assert request.connection_id is not None
+    assert request.code_hash is not None
+    assert request.code_hash != code
+    assert request.code_expires_at is not None
+    connection = await _connection(db_session, request.connection_id)
+    assert connection.kind == "oauth"
+    assert connection.scope == "read_write"
+    assert connection.name == "Claude Desktop"
+    assert connection.user_id == SEED.primary_profile
+    assert connection.oauth_client_id == client_id
+    assert connection.project_ids is None
+    expected = datetime.now(UTC) + timedelta(days=90)
+    assert abs((connection.expires_at - expected).total_seconds()) < 60
+
+
+async def test_decide_request_deny_redirects_with_access_denied(db_session: AsyncSession) -> None:
+    client_id = await insert_oauth_client(db_session)
+    request_id = await insert_oauth_request(db_session, client_id=client_id)
+
+    url = await svc.decide_request(
+        db_session, request_id=request_id, user_id=SEED.primary_profile, approve=False, write=False
+    )
+
+    assert url.startswith(CLAUDE_CB + "?")
+    query = _query(url)
+    assert query["error"] == ["access_denied"]
+    assert query["state"] == ["st"]
+    assert "code" not in query
+    request = await db_session.get(McpOAuthRequest, request_id)
+    assert request is not None
+    assert request.decided_at is not None
+    assert request.connection_id is None
+    assert request.code_hash is None
+    connections = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(PersonalAccessToken)
+            .where(PersonalAccessToken.oauth_client_id == client_id)
+        )
+    ).scalar_one()
+    assert connections == 0
+
+
+async def test_decide_request_approve_revokes_the_previous_connection(
+    db_session: AsyncSession,
+) -> None:
+    client_id = await insert_oauth_client(db_session)
+    previous = await insert_oauth_connection(
+        db_session, user_id=SEED.primary_profile, client_id=client_id
+    )
+    request_id = await insert_oauth_request(db_session, client_id=client_id)
+
+    await svc.decide_request(
+        db_session, request_id=request_id, user_id=SEED.primary_profile, approve=True, write=False
+    )
+
+    assert (await _connection(db_session, previous)).revoked_at is not None
+    request = await db_session.get(McpOAuthRequest, request_id)
+    assert request is not None and request.connection_id is not None
+    assert request.connection_id != previous
+    assert (await _connection(db_session, request.connection_id)).revoked_at is None
+
+
+async def _decided(db: AsyncSession) -> UUID:
+    client_id = await insert_oauth_client(db)
+    request_id = await insert_oauth_request(db, client_id=client_id)
+    await svc.decide_request(
+        db, request_id=request_id, user_id=SEED.primary_profile, approve=True, write=False
+    )
+    await db.flush()
+    return request_id
+
+
+async def _expired(db: AsyncSession) -> UUID:
+    client_id = await insert_oauth_client(db)
+    return await insert_oauth_request(db, client_id=client_id, expires_in=-timedelta(minutes=1))
+
+
+async def _decided_and_expired(db: AsyncSession) -> UUID:
+    request_id = await _decided(db)
+    await _push_past_expiry(db, request_id)
+    return request_id
+
+
+async def _unknown(_db: AsyncSession) -> UUID:
+    return uuid4()
+
+
+_REFUSALS = [
+    (_decided, svc.ConsentRequestDecidedError),
+    (_expired, svc.ConsentRequestNotFoundError),
+    (_decided_and_expired, svc.ConsentRequestDecidedError),
+    (_unknown, svc.ConsentRequestNotFoundError),
+]
+_REFUSAL_IDS = ["decided", "expired", "decided-and-expired", "unknown"]
+
+
+@pytest.mark.parametrize(("make", "error"), _REFUSALS, ids=_REFUSAL_IDS)
+async def test_decide_request_refuses(db_session: AsyncSession, make: Any, error: type) -> None:
+    request_id = await make(db_session)
+    with pytest.raises(error):
+        await svc.decide_request(
+            db_session,
+            request_id=request_id,
+            user_id=SEED.primary_profile,
+            approve=True,
+            write=True,
+        )
+
+
+@pytest.mark.parametrize(("make", "error"), _REFUSALS, ids=_REFUSAL_IDS)
+async def test_get_consent_request_refuses(
+    db_session: AsyncSession, make: Any, error: type
+) -> None:
+    request_id = await make(db_session)
+    with pytest.raises(error):
+        await svc.get_consent_request(db_session, request_id=request_id)
+
+
+def test_consent_errors_map_to_404_and_409() -> None:
+    missing = svc.ConsentRequestNotFoundError()
+    decided = svc.ConsentRequestDecidedError()
+    assert (missing.status_code, missing.code) == (404, "NOT_FOUND")
+    assert missing.message == "This request expired or does not exist."
+    assert (decided.status_code, decided.code) == (409, "REQUEST_ALREADY_DECIDED")
+    assert decided.message == "This request was already answered."
+
+
+@pytest.mark.parametrize(
+    ("scopes", "offers_write"),
+    [(("read", "write"), True), (("read",), False)],
+    ids=["read-write", "read-only"],
+)
+async def test_get_consent_request_returns_the_view(
+    db_session: AsyncSession, scopes: tuple[str, ...], offers_write: bool
+) -> None:
+    client_id = await insert_oauth_client(db_session, client_name="Claude")
+    request_id = await insert_oauth_request(
+        db_session,
+        client_id=client_id,
+        requested_scopes=scopes,
+        redirect_uri="http://localhost:3118/cb",
+    )
+
+    view = await svc.get_consent_request(db_session, request_id=request_id)
+
+    assert view.client_name == "Claude"
+    assert view.redirect_host == "localhost:3118"
+    assert view.requested_scopes == list(scopes)
+    assert view.offers_write is offers_write
+    assert view.expires_at > datetime.now(UTC)
+
+
+async def test_concurrent_approvals_for_one_user_and_client_admit_one(
+    _engine: AsyncEngine,
+) -> None:
+    Session = async_sessionmaker(_engine, expire_on_commit=False)
+    async with Session() as setup:
+        client_id = await insert_oauth_client(setup)
+        first = await insert_oauth_request(setup, client_id=client_id)
+        second = await insert_oauth_request(setup, client_id=client_id)
+        await setup.commit()
+
+    async def _decide(session: AsyncSession, request_id: UUID) -> str:
+        return await svc.decide_request(
+            session, request_id=request_id, user_id=SEED.primary_profile, approve=True, write=False
+        )
+
+    try:
+        async with Session() as a, Session() as b:
+            await _decide(a, first)
+            task = asyncio.create_task(_decide(b, second))
+            await asyncio.sleep(0.2)
+            assert not task.done()  # waiting on the unique index, not on a row lock
+            await a.commit()
+            with pytest.raises(svc.ConsentRequestDecidedError):
+                await task
+            await b.rollback()
+
+        async with Session() as check:
+            unrevoked = (
+                await check.execute(
+                    text(
+                        "SELECT count(*) FROM public.personal_access_tokens "
+                        "WHERE oauth_client_id = :cid AND user_id = :uid AND revoked_at IS NULL"
+                    ),
+                    {"cid": str(client_id), "uid": str(SEED.primary_profile)},
+                )
+            ).scalar_one()
+            assert unrevoked == 1
+    finally:
+        async with Session() as cleanup:
+            await cleanup.execute(
+                text("DELETE FROM public.mcp_oauth_clients WHERE client_id = :cid"),
+                {"cid": str(client_id)},
+            )
+            await cleanup.commit()
