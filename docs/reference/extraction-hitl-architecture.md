@@ -271,7 +271,7 @@ kickoff reaches it through `assert_kickoff_scope`, which first binds the
 request coordinate (project, article, template, run) to the caller; the batch
 kickoff (`extraction_batches.py`) calls it directly on its project. The gate
 checks, in order, the reviewer role (403 for a viewer or non-member), then the
-engine-credential precheck (`engine_credentials.assert_engine_ready`, 409 when
+engine-credential check (`engine_credentials.assert_engine_ready`, 409 when
 no usable credential is configured), so a caller without the role never learns
 the project's engine configuration. The worker re-resolves the engine at
 execution time; the gate only fails fast.
