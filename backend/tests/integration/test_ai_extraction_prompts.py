@@ -237,7 +237,9 @@ async def test_a_stale_exclusion_filters_nothing(db_session: AsyncSession) -> No
 
     fake = await _ask(db_session, run, entity_type_id=section)
 
-    assert [c.field_names for c in fake.field_calls()] == [["q1", "quality_score"]]
+    # Both fields share add_field's default sort_order and the snapshot
+    # orders by sort_order alone, so their relative order is unspecified.
+    assert [sorted(c.field_names) for c in fake.field_calls()] == [["q1", "quality_score"]]
 
 
 async def test_a_study_type_classification_never_narrows_the_ask(
