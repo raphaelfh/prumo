@@ -25,7 +25,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {t} from '@/lib/copy';
-import {normalizeOptions} from '@/lib/extraction/options';
 import {cn} from '@/lib/utils';
 
 import {ringClass, rovingTabIndex, type CellFocus} from './gridCellFocus';
@@ -337,7 +336,7 @@ export function FieldRow({
             tabIndex={rovingTabIndex(focus, rowId, ['options'])}
             className="flex min-h-6 w-full items-center rounded text-left text-[11px] text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="truncate">{normalizeOptions(field.allowedValues).map((o) => o.label).join(', ')}</span>
+            <span className="truncate">{(field.allowedValues ?? []).map((o) => o.label).join(', ')}</span>
           </button>
         </td>
       )}

@@ -656,11 +656,10 @@ describe('TemplateGrid control cells (B-5 Task 5)', () => {
           name: 'study_design',
           label: 'Study design',
           field_type: 'select',
-          // Cast until the grid input is retyped to OptionItem[] (2.2b-2).
           allowed_values: [
             {value: 'coh', label: 'Cohort'},
             {value: 'rct', label: 'RCT'},
-          ] as unknown as string[],
+          ],
           sort_order: 1,
         },
       ],

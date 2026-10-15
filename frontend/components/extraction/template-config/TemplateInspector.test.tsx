@@ -117,14 +117,13 @@ const selectField = section.fields[0];
 const textField = section.fields[1];
 const numberField = section.fields[2];
 const otherField = section.fields[3];
-/** A field whose options carry codes distinct from their labels. The cast
- * goes once `GridField.allowedValues` is typed as options (Task 2.2b-2). */
+/** A field whose options carry codes distinct from their labels. */
 const canonicalSelectField = {
   ...selectField,
   allowedValues: [
     {value: 'coh', label: 'Cohort'},
     {value: 'rct', label: 'RCT'},
-  ] as unknown as string[],
+  ],
 };
 
 /** Destination list the panel threads in — ALWAYS this template's

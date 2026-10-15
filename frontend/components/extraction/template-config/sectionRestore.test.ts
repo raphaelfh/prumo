@@ -252,6 +252,39 @@ describe('replaySection', () => {
     });
   });
 
+  it('replays a legacy string[] option list as {value, label}[] — the field POST rejects bare strings', async () => {
+    const legacy = {
+      id: 'sel',
+      name: 'design',
+      label: 'Design',
+      cardinality: 'one',
+      is_required: false,
+      parent_entity_type_id: null,
+      entry_label: null,
+      sort_order: 0,
+      fields: [
+        {
+          id: 'f-sel',
+          entity_type_id: 'sel',
+          name: 'answer',
+          label: 'Answer',
+          field_type: 'select',
+          allowed_values: ['Yes', 'No'],
+          sort_order: 0,
+        },
+      ],
+    } as unknown as TemplateEntityTypeWithFields;
+    const snapshot = captureSection([legacy], 'sel')!;
+    const d = deps();
+
+    await replaySection(snapshot, d);
+
+    expect(vi.mocked(d.insertField).mock.calls[0][0].allowed_values).toEqual([
+      {value: 'Yes', label: 'Yes'},
+      {value: 'No', label: 'No'},
+    ]);
+  });
+
   it('stops and reports failure when a section cannot be recreated', async () => {
     // Reporting success on a partial replay would leave the user believing
     // their subtree came back.

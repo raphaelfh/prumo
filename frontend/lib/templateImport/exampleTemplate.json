@@ -16,7 +16,11 @@
           "name": "design",
           "label": "Study design",
           "type": "select",
-          "allowed_values": ["Cohort", "Case-control", "RCT"],
+          "allowed_values": [
+            {"value": "Cohort", "label": "Cohort"},
+            {"value": "Case-control", "label": "Case-control"},
+            {"value": "RCT", "label": "RCT"}
+          ],
           "allow_other": true
         }
       ]
